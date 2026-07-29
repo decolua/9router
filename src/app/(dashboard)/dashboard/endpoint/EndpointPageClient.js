@@ -4,19 +4,56 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import {
-  TUNNEL_BENEFITS,
-  TUNNEL_PING_INTERVAL_MS,
-  TUNNEL_PING_MAX_MS,
-  STATUS_POLL_FAST_MS,
-  REACHABLE_MISS_THRESHOLD,
-  CLIENT_PING_FAST_MS,
-} from "./endpointConstants";
-import { clientPingUrl, clientPingAny } from "./endpointPing";
-import EndpointRow from "./components/EndpointRow";
-import StatusAlert from "./components/StatusAlert";
-import Tooltip from "./components/Tooltip";
-import SecurityWarning from "./components/SecurityWarning";
+
+const TUNNEL_BENEFITS = [
+  { icon: "public", title: "Access Anywhere", desc: "Use your API from any network" },
+  { icon: "group", title: "Share Endpoint", desc: "Share URL with team members" },
+  { icon: "code", title: "Use in Cursor/Cline", desc: "Connect AI tools remotely" },
+  { icon: "lock", title: "Encrypted", desc: "End-to-end TLS via Cloudflare" },
+];
+
+const TUNNEL_PING_INTERVAL_MS = 2000;
+const TUNNEL_PING_MAX_MS = 300000;
+const STATUS_POLL_FAST_MS = 5000;
+const STATUS_POLL_SLOW_MS = 30000;
+const REACHABLE_MISS_THRESHOLD = 5;
+const CLIENT_PING_FAST_MS = 10000;
+const CLIENT_PING_SLOW_MS = 60000;
+const CLIENT_PING_TIMEOUT_MS = 5000;
+
+// Browser-side health probe: bypasses backend DNS issues (1.1.1.1 vs OS resolver).
+// Uses no-cors → opaque response means TLS+DNS reach succeeded, which is enough.
+async function clientPingUrl(url) {
+  if (!url) return false;
+  try {
+    await fetch(`${url}/api/health`, {
+      mode: "no-cors",
+      cache: "no-store",
+      signal: AbortSignal.timeout(CLIENT_PING_TIMEOUT_MS),
+    });
+    return true;
+  } catch { return false; }
+}
+
+// Race multiple URLs: resolve true as soon as any one passes ping.
+async function clientPingAny(...urls) {
+  const checks = urls.filter(Boolean).map(clientPingUrl);
+  if (!checks.length) return false;
+  return new Promise((resolve) => {
+    let pending = checks.length;
+    checks.forEach((p) => p.then((ok) => {
+      if (ok) resolve(true);
+      else if (--pending === 0) resolve(false);
+    }));
+  });
+}
+
+const CAVEMAN_LEVELS = [
+  { id: "lite", label: "Lite", desc: "Drop filler, keep grammar" },
+  { id: "full", label: "Full", desc: "Drop articles, fragments OK" },
+  { id: "ultra", label: "Ultra", desc: "Telegraphic, max compression" },
+];
+
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -28,9 +65,21 @@ export default function APIPageClient({ machineId }) {
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
   const [hasPassword, setHasPassword] = useState(true);
- const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
+  const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
+  const [rtkEnabled, setRtkEnabledState] = useState(true);
+  const [prefixCacheEnabled, setPrefixCacheEnabled] = useState(true);
+  const [cavemanEnabled, setCavemanEnabled] = useState(false);
+  const [cavemanLevel, setCavemanLevel] = useState("full");
+  const [compactPoliciesEnabled, setCompactPoliciesEnabled] = useState(false);
+  const [promptDedupEnabled, setPromptDedupEnabled] = useState(false);
+  const [contextPruningEnabled, setContextPruningEnabled] = useState(false);
+  const [contextPruningKeepLast, setContextPruningKeepLast] = useState(8);
+  const [modelRoutingEnabled, setModelRoutingEnabled] = useState(false);
+  const [modelRoutingRules, setModelRoutingRules] = useState({});
+  const [routingRulesDraft, setRoutingRulesDraft] = useState("{}");
+  const [routingRulesError, setRoutingRulesError] = useState("");
 
- // Cloudflare Tunnel state
+  // Cloudflare Tunnel state
   const [tunnelChecking, setTunnelChecking] = useState(true);
   const [tunnelEnabled, setTunnelEnabled] = useState(false);
   const [tunnelReachable, setTunnelReachable] = useState(false);
@@ -76,13 +125,6 @@ export default function APIPageClient({ machineId }) {
 
   // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
-
-  // Client-side local/remote detection (UI hint only, not a security gate)
-  const [isRemoteHost, setIsRemoteHost] = useState(false);
-  useEffect(() => {
-    if (typeof window !== "undefined")
-      setIsRemoteHost(!["localhost", "127.0.0.1", "::1"].includes(window.location.hostname));
-  }, []);
 
   const { copied, copy } = useCopyToClipboard();
 
@@ -130,7 +172,6 @@ export default function APIPageClient({ machineId }) {
         const ok = await clientPingAny(tunnelPublicUrl, tunnelUrl);
         tunnelClientReachableRef.current = ok;
         if (ok) { tunnelMissRef.current = 0; setTunnelReachable(true); if (!tunnelEverReachableRef.current) { tunnelEverReachableRef.current = true; setTunnelEverReachable(true); } }
-        else { tunnelMissRef.current += 1; if (tunnelMissRef.current >= REACHABLE_MISS_THRESHOLD) setTunnelReachable(false); }
       } else {
         tunnelClientReachableRef.current = false;
       }
@@ -138,7 +179,6 @@ export default function APIPageClient({ machineId }) {
         const ok = await clientPingUrl(tsUrl);
         tsClientReachableRef.current = ok;
         if (ok) { tsMissRef.current = 0; setTsReachable(true); if (!tsEverReachableRef.current) { tsEverReachableRef.current = true; setTsEverReachable(true); } }
-        else { tsMissRef.current += 1; if (tsMissRef.current >= REACHABLE_MISS_THRESHOLD) setTsReachable(false); }
       } else {
         tsClientReachableRef.current = false;
       }
@@ -204,6 +244,18 @@ export default function APIPageClient({ machineId }) {
         setRequireLogin(data.requireLogin !== false);
         setHasPassword(data.hasPassword || false);
         setTunnelDashboardAccess(data.tunnelDashboardAccess || false);
+        setRtkEnabledState(data.rtkEnabled !== false);
+        setPrefixCacheEnabled(data.prefixCacheEnabled !== false);
+        setCavemanEnabled(!!data.cavemanEnabled);
+        setCavemanLevel(data.cavemanLevel || "full");
+        setCompactPoliciesEnabled(!!data.compactPoliciesEnabled);
+        setPromptDedupEnabled(!!data.promptDedupEnabled);
+        setContextPruningEnabled(!!data.contextPruningEnabled);
+        setContextPruningKeepLast(Number(data.contextPruningKeepLast) || 8);
+        setModelRoutingEnabled(!!data.modelRoutingEnabled);
+        const rules = data.modelRoutingRules && typeof data.modelRoutingRules === "object" ? data.modelRoutingRules : {};
+        setModelRoutingRules(rules);
+        setRoutingRulesDraft(JSON.stringify(rules, null, 2));
       }
       if (statusRes.ok) {
         const data = await statusRes.json();
@@ -253,6 +305,85 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const patchSetting = async (patch) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) return false;
+      const data = await res.json();
+      const [key] = Object.keys(patch);
+      return Object.prototype.hasOwnProperty.call(data, key) && data[key] === patch[key];
+    } catch (error) {
+      console.log("Error updating setting:", error);
+      return false;
+    }
+  };
+
+  const applySettingToggle = async (patch, setState, value) => {
+    const prev = !value;
+    setState(value);
+    const ok = await patchSetting(patch);
+    if (!ok) setState(prev);
+  };
+
+  const handleRtkEnabled = (value) => applySettingToggle({ rtkEnabled: value }, setRtkEnabledState, value);
+
+  const handlePrefixCacheEnabled = (value) => applySettingToggle({ prefixCacheEnabled: value }, setPrefixCacheEnabled, value);
+
+  const handleCavemanEnabled = (value) => applySettingToggle({ cavemanEnabled: value }, setCavemanEnabled, value);
+
+  const handleCavemanLevel = async (level) => {
+    const prev = cavemanLevel;
+    setCavemanLevel(level);
+    const ok = await patchSetting({ cavemanLevel: level });
+    if (!ok) setCavemanLevel(prev);
+  };
+
+  const handleCompactPoliciesEnabled = (value) => applySettingToggle({ compactPoliciesEnabled: value }, setCompactPoliciesEnabled, value);
+
+  const handlePromptDedupEnabled = (value) => {
+    setPromptDedupEnabled(value);
+    patchSetting({ promptDedupEnabled: value });
+  };
+
+  const handleContextPruningEnabled = (value) => {
+    setContextPruningEnabled(value);
+    patchSetting({ contextPruningEnabled: value });
+  };
+
+  const handleContextPruningKeepLast = (value) => {
+    const n = Math.max(4, Math.min(64, Number(value) || 8));
+    setContextPruningKeepLast(n);
+    patchSetting({ contextPruningKeepLast: n });
+  };
+
+  const handleModelRoutingEnabled = (value) => {
+    setModelRoutingEnabled(value);
+    patchSetting({ modelRoutingEnabled: value });
+  };
+
+  const handleRoutingRulesSave = () => {
+    try {
+      const parsed = JSON.parse(routingRulesDraft || "{}");
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("Expected an object mapping model → { cheap, strong }");
+      }
+      for (const [k, v] of Object.entries(parsed)) {
+        if (!v || typeof v !== "object" || Array.isArray(v)) {
+          throw new Error(`Rule for "${k}" must be an object with optional cheap/strong keys`);
+        }
+      }
+      setModelRoutingRules(parsed);
+      setRoutingRulesError("");
+      patchSetting({ modelRoutingRules: parsed });
+    } catch (e) {
+      setRoutingRulesError(e.message || "Invalid JSON");
+    }
+  };
+
   const fetchData = async () => {
     try {
       const keysRes = await fetch("/api/keys");
@@ -277,8 +408,8 @@ export default function APIPageClient({ machineId }) {
     while (Date.now() - start < TUNNEL_PING_MAX_MS) {
       await new Promise((r) => setTimeout(r, TUNNEL_PING_INTERVAL_MS));
       const ok = await Promise.any(targets.map(async (h) => {
-        const p = await fetch(h, { mode: "cors", cache: "no-store" });
-        if (p.ok) return true;
+        const p = await fetch(h, { mode: "no-cors", cache: "no-store" });
+        if (p.ok || p.type === "opaque") return true;
         throw new Error("not ready");
       })).catch(() => false);
       if (ok) {
@@ -668,8 +799,8 @@ export default function APIPageClient({ machineId }) {
   };
 
   const maskKey = (fullKey) => {
-    if (!fullKey || fullKey.length <= 10) return fullKey || "";
-    return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
+    if (!fullKey) return "";
+    return fullKey.length > 8 ? fullKey.slice(0, 8) + "..." : fullKey;
   };
 
   const toggleKeyVisibility = (keyId) => {
@@ -948,6 +1079,179 @@ export default function APIPageClient({ machineId }) {
         )}
       </Card>
 
+      {/* Token Saver (RTK + Caveman) */}
+      <Card id="rtk">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-lg font-semibold flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary">bolt</span>
+            Token Saver
+          </h2>
+        </div>
+        <div className="flex items-center justify-between pt-2 pb-4 border-b border-border gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Prefix Cache Awareness</p>
+            <p className="text-sm text-text-muted">
+              Mark stable system + tool prefix for Anthropic cache reuse → 40-50% savings on stable content
+            </p>
+          </div>
+          <Toggle
+            checked={prefixCacheEnabled}
+            onChange={() => handlePrefixCacheEnabled(!prefixCacheEnabled)}
+          />
+        </div>
+        <div className="flex items-center justify-between pt-4 pb-4 border-b border-border gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">
+              Compress tool output{" "}
+              <a
+                href="https://github.com/rtk-ai/rtk"
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-normal text-primary underline hover:opacity-80"
+              >
+                (RTK)
+              </a>
+            </p>
+            <p className="text-sm text-text-muted">
+              git/grep/ls/tree/logs → 60-90% fewer input tokens
+            </p>
+          </div>
+          <Toggle
+            checked={rtkEnabled}
+            onChange={() => handleRtkEnabled(!rtkEnabled)}
+          />
+        </div>
+        <div className="flex items-center justify-between pt-4 gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">
+              Compress LLM output{" "}
+              <a
+                href="https://github.com/JuliusBrussee/caveman"
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-normal text-primary underline hover:opacity-80"
+              >
+                (Caveman)
+              </a>
+            </p>
+            <p className="text-sm text-text-muted">
+              Terse-style system prompt → ~65% fewer output tokens (up to 87%)
+            </p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            {cavemanEnabled && (
+              <div className="flex items-center gap-1.5">
+                {CAVEMAN_LEVELS.map((lvl) => (
+                  <button
+                    key={lvl.id}
+                    onClick={() => handleCavemanLevel(lvl.id)}
+                    className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+                      cavemanLevel === lvl.id
+                        ? "bg-primary text-white border-primary"
+                        : "bg-transparent border-border text-text-muted hover:bg-surface-2"
+                    }`}
+                    title={lvl.desc}
+                  >
+                    {lvl.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <Toggle
+              checked={cavemanEnabled}
+              onChange={() => handleCavemanEnabled(!cavemanEnabled)}
+            />
+          </div>
+        </div>
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Compact Response Policies</p>
+            <p className="text-sm text-text-muted">
+              No preamble + no tool narration + format enforcement → ~30-60% fewer output tokens
+            </p>
+          </div>
+          <Toggle
+            checked={compactPoliciesEnabled}
+            onChange={() => handleCompactPoliciesEnabled(!compactPoliciesEnabled)}
+          />
+        </div>
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Prompt Deduplication</p>
+            <p className="text-sm text-text-muted">
+              Collapse duplicate large blocks within a request → drop repeated context across turns
+            </p>
+          </div>
+          <Toggle
+            checked={promptDedupEnabled}
+            onChange={() => handlePromptDedupEnabled(!promptDedupEnabled)}
+          />
+        </div>
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Context Pruning</p>
+            <p className="text-sm text-text-muted">
+              Drop oldest middle turns when conversation grows past threshold (keeps system + first user + last N)
+            </p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            {contextPruningEnabled && (
+              <label className="flex items-center gap-1.5 text-xs text-text-muted">
+                Keep last
+                <input
+                  type="number"
+                  min={4}
+                  max={64}
+                  value={contextPruningKeepLast}
+                  onChange={(e) => handleContextPruningKeepLast(e.target.value)}
+                  className="w-16 px-2 py-1 rounded border border-border bg-input text-sm font-mono text-text-main"
+                />
+              </label>
+            )}
+            <Toggle
+              checked={contextPruningEnabled}
+              onChange={() => handleContextPruningEnabled(!contextPruningEnabled)}
+            />
+          </div>
+        </div>
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Model Routing</p>
+            <p className="text-sm text-text-muted">
+              Re-target requested model based on request shape — simple → cheap, complex → strong
+            </p>
+          </div>
+          <Toggle
+            checked={modelRoutingEnabled}
+            onChange={() => handleModelRoutingEnabled(!modelRoutingEnabled)}
+          />
+        </div>
+        {modelRoutingEnabled && (
+          <div className="mt-3 flex flex-col gap-2">
+            <p className="text-xs text-text-muted">
+              Rules — JSON map of <code className="font-mono">"provider/model"</code> → <code className="font-mono">{`{ cheap, strong }`}</code>.
+              Example: <code className="font-mono">{`{ "anthropic/claude-sonnet-4-5": { "cheap": "anthropic/claude-haiku-4-5" } }`}</code>
+            </p>
+            <textarea
+              value={routingRulesDraft}
+              onChange={(e) => setRoutingRulesDraft(e.target.value)}
+              rows={6}
+              spellCheck={false}
+              className="w-full px-3 py-2 rounded border border-border bg-input text-xs font-mono text-text-main"
+            />
+            {routingRulesError && (
+              <p className="text-xs text-red-500">{routingRulesError}</p>
+            )}
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-text-muted">
+                {Object.keys(modelRoutingRules).length} rule{Object.keys(modelRoutingRules).length === 1 ? "" : "s"} saved
+              </span>
+              <Button size="sm" onClick={handleRoutingRulesSave}>Save rules</Button>
+            </div>
+          </div>
+        )}
+      </Card>
+
       {/* API Keys */}
       <Card id="require-api-key">
         <div className="flex items-center justify-between mb-4">
@@ -972,12 +1276,6 @@ export default function APIPageClient({ machineId }) {
             onChange={() => handleRequireApiKey(!requireApiKey)}
           />
         </div>
-
-        {isRemoteHost && !requireApiKey && (
-          <div className="mb-4 -mt-2">
-            <SecurityWarning message="Endpoint is exposed without an API key." />
-          </div>
-        )}
 
         {keys.length === 0 ? (
           <div className="text-center py-12">
@@ -1145,7 +1443,7 @@ export default function APIPageClient({ machineId }) {
                   Cloudflare Tunnel
                 </p>
                 <p className="text-sm text-text-muted">
-                  Expose your local 9Router to the internet. No port forwarding, no static IP needed. Share endpoint URL with your team or use it in Cursor, Cline, and other AI tools from anywhere.
+                  Expose your local ebRouter to the internet. No port forwarding, no static IP needed. Share endpoint URL with your team or use it in Cursor, Cline, and other AI tools from anywhere.
                 </p>
               </div>
             </div>
@@ -1289,6 +1587,81 @@ export default function APIPageClient({ machineId }) {
   );
 }
 
+/** Reusable endpoint row component */
+function EndpointRow({ label, url, copyId, copied, onCopy, badge, actions }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className={`text-xs font-mono px-1.5 py-0.5 rounded shrink-0 min-w-[88px] text-center ${
+          (badge === "CF" || badge === "TS") ? "bg-primary/10 text-primary" : "bg-surface-2 text-text-muted"
+        }`}>{label}</span>
+      <Input value={url} readOnly className="flex-1 font-mono text-sm" />
+      <button
+        onClick={() => onCopy(url, copyId)}
+        className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors shrink-0"
+      >
+        <span className="material-symbols-outlined text-[18px]">{copied === copyId ? "check" : "content_copy"}</span>
+      </button>
+      {actions}
+    </div>
+  );
+}
+
+/** Reusable status alert */
+function StatusAlert({ status, className = "" }) {
+  // Render URLs in message as clickable links
+  const renderMessage = (msg) => {
+    const parts = msg.split(/(https?:\/\/[^\s]+)/g);
+    return parts.map((part, i) =>
+      /^https?:\/\//.test(part)
+        ? <a key={i} href={part} target="_blank" rel="noreferrer" className="underline font-medium">{part}</a>
+        : part
+    );
+  };
+
+  return (
+    <div className={`p-2 rounded text-sm ${className} ${status.type === "success" ? "bg-green-500/10 text-green-600 dark:text-green-400" :
+        status.type === "warning" ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400" :
+        status.type === "info" ? "bg-blue-500/10 text-blue-600 dark:text-blue-400" :
+          "bg-red-500/10 text-red-600 dark:text-red-400"
+      }`}>
+      {renderMessage(status.message)}
+    </div>
+  );
+}
+
+/** Inline tooltip, Claude Code CLI style */
+function Tooltip({ text }) {
+  return (
+    <span className="relative group inline-flex items-center">
+      <span className="material-symbols-outlined text-[14px] text-text-muted cursor-help">help</span>
+      <span className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 z-50 w-64 rounded bg-gray-900 dark:bg-gray-800 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
+        {text}
+      </span>
+    </span>
+  );
+}
+
+/** Security warning banner with optional action link */
+function SecurityWarning({ message, action }) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400">
+      <span className="material-symbols-outlined text-[16px] shrink-0 mt-0.5">warning</span>
+      <p className="text-xs flex-1">{message}</p>
+      {action && (
+        <a
+          href={action.href}
+          className="text-xs font-medium underline shrink-0 hover:opacity-80"
+          onClick={action.href.startsWith("#") ? (e) => {
+            e.preventDefault();
+            document.getElementById(action.href.slice(1))?.scrollIntoView({ behavior: "smooth" });
+          } : undefined}
+        >
+          {action.label}
+        </a>
+      )}
+    </div>
+  );
+}
 
 APIPageClient.propTypes = {
   machineId: PropTypes.string.isRequired,

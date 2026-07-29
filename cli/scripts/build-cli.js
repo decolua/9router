@@ -81,7 +81,7 @@ function copyRecursive(src, dest) {
   }
 }
 
-console.log("📦 Building 9Router CLI package with Next.js...\n");
+console.log("📦 Building ebRouter CLI package with Next.js...\n");
 
 fs.mkdirSync(buildHomeDir, { recursive: true });
 fs.mkdirSync(path.join(buildHomeDir, "AppData", "Roaming"), { recursive: true });

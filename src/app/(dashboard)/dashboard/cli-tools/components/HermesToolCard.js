@@ -115,7 +115,7 @@ export default function HermesToolCard({
     try {
       const keyToUse = selectedApiKey?.trim()
         || (apiKeys?.length > 0 ? apiKeys[0].key : null)
-        || (!cloudEnabled ? "sk_9router" : null);
+        || (!cloudEnabled ? "sk_ebrouter" : null);
 
       const res = await fetch(ENDPOINT, {
         method: "POST",
@@ -168,7 +168,7 @@ export default function HermesToolCard({
   const getManualConfigs = () => {
     const keyToUse = (selectedApiKey && selectedApiKey.trim())
       ? selectedApiKey
-      : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+      : (!cloudEnabled ? "sk_ebrouter" : "<API_KEY_FROM_DASHBOARD>");
 
     const yamlContent = `model:\n  default: "${selectedModel || "provider/model-id"}"\n  provider: "custom"\n  base_url: "${getEffectiveBaseUrl()}"\n`;
     const envContent = `OPENAI_API_KEY=${keyToUse}\n`;

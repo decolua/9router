@@ -63,7 +63,7 @@ function resolveBundledServerPath() {
 }
 
 // Copy bundled server.js into DATA_DIR so MITM doesn't lock node_modules
-// (prevents EBUSY on `npm i -g 9router@latest` while MITM is running).
+// (prevents EBUSY on `npm i -g ebrouter@latest` while MITM is running).
 function ensureRuntimeServer(bundledPath) {
   try {
     if (!bundledPath || !fs.existsSync(bundledPath)) return bundledPath;
@@ -578,7 +578,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     log(`[MITM] server.js missing at ${effectiveServerPath} → recopying`);
     effectiveServerPath = ensureRuntimeServer(resolveBundledServerPath());
     if (!effectiveServerPath || !fs.existsSync(effectiveServerPath)) {
-      throw new Error(`MITM server.js not found at ${effectiveServerPath}. Reinstall 9router.`);
+      throw new Error(`MITM server.js not found at ${effectiveServerPath}. Reinstall ebrouter.`);
     }
   }
   const mitmRouterBase = await resolveMitmRouterBaseUrl();

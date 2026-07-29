@@ -32,10 +32,10 @@ function ensureRuntimeDir() {
   const pkgPath = path.join(dir, "package.json");
   if (!fs.existsSync(pkgPath)) {
     fs.writeFileSync(pkgPath, JSON.stringify({
-      name: "9router-runtime",
+      name: "ebrouter-runtime",
       version: "1.0.0",
       private: true,
-      description: "User-writable runtime deps for 9router (better-sqlite3 native binary)",
+      description: "User-writable runtime deps for ebRouter (better-sqlite3 native binary)",
     }, null, 2));
   }
   return dir;

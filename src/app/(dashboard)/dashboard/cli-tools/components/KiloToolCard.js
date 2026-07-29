@@ -79,7 +79,7 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
     try {
       const keyToUse = (selectedApiKey && selectedApiKey.trim())
         ? selectedApiKey
-        : (!cloudEnabled ? "sk_9router" : selectedApiKey);
+        : (!cloudEnabled ? "sk_ebrouter" : selectedApiKey);
 
       const res = await fetch("/api/cli-tools/kilo-settings", {
         method: "POST",
@@ -123,7 +123,7 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
   const getManualConfigs = () => {
     const keyToUse = (selectedApiKey && selectedApiKey.trim())
       ? selectedApiKey
-      : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+      : (!cloudEnabled ? "sk_ebrouter" : "<API_KEY_FROM_DASHBOARD>");
 
     return [{
       filename: "~/.local/share/kilo/auth.json",
@@ -173,7 +173,7 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
                   <span className="material-symbols-outlined text-yellow-500">warning</span>
                   <div className="flex-1">
                     <p className="font-medium text-yellow-600 dark:text-yellow-400">Kilo Code not detected locally</p>
-                    <p className="text-sm text-text-muted">Manual configuration is still available if 9router is deployed on a remote server.</p>
+                    <p className="text-sm text-text-muted">Manual configuration is still available if ebRouter is deployed on a remote server.</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 pl-9">

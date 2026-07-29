@@ -1,15 +1,15 @@
 # 🏠 Despliegue en localhost
 
-Ejecuta 9Router en tu máquina local para desarrollo y uso personal.
+Ejecuta ebRouter en tu máquina local para desarrollo y uso personal.
 
 ---
 
 ## 📦 Instalación
 
-Instala 9Router globalmente vía npm:
+Instala ebRouter globalmente vía npm:
 
 ```bash
-npm install -g 9router
+npm install -g ebrouter
 ```
 
 **Requisitos:**
@@ -20,10 +20,10 @@ npm install -g 9router
 
 ## 🚀 Iniciar el servidor
 
-Inicia 9Router con un solo comando:
+Inicia ebRouter con un solo comando:
 
 ```bash
-9router
+ebrouter
 ```
 
 El dashboard se abrirá automáticamente en tu navegador en `http://localhost:3000`
@@ -42,7 +42,7 @@ El dashboard se abrirá automáticamente en tu navegador en `http://localhost:30
 Establece un directorio de datos personalizado usando una variable de entorno:
 
 ```bash
-DATA_DIR=/path/to/data 9router
+DATA_DIR=/path/to/data ebrouter
 ```
 
 ### Puerto personalizado
@@ -53,10 +53,10 @@ El puerto de API (20128) y el puerto del dashboard (3000) están configurados en
 
 ## 🛑 Detener el servidor
 
-Presiona `Ctrl+C` en la terminal donde 9Router se está ejecutando.
+Presiona `Ctrl+C` en la terminal donde ebRouter se está ejecutando.
 
 ```bash
-# En la terminal ejecutando 9router
+# En la terminal ejecutando ebrouter
 ^C  # Presiona Ctrl+C
 ```
 
@@ -69,25 +69,25 @@ El servidor se apagará correctamente y guardará todos los datos.
 Simplemente ejecuta el comando de inicio nuevamente:
 
 ```bash
-9router
+ebrouter
 ```
 
 Todas tus configuraciones, API keys y combos se preservan en el directorio de datos.
 
 ---
 
-## 📊 Actualizar 9Router
+## 📊 Actualizar ebRouter
 
 Actualiza a la última versión:
 
 ```bash
-npm update -g 9router
+npm update -g ebrouter
 ```
 
 Verifica tu versión actual:
 
 ```bash
-npm list -g 9router
+npm list -g ebrouter
 ```
 
 ---
@@ -113,7 +113,7 @@ Si encuentras errores de permisos durante la instalación:
 
 ```bash
 # Usar sudo (no recomendado)
-sudo npm install -g 9router
+sudo npm install -g ebrouter
 
 # O corregir los permisos de npm (recomendado)
 mkdir ~/.npm-global

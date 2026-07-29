@@ -1,0 +1,53 @@
+name: DAST (OWASP ZAP)
+
+on:
+  schedule:
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: Staging URL to scan (e.g. https://staging.example.com)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  zap-baseline:
+    name: OWASP ZAP Baseline Scan
+    runs-on: ubuntu-latest
+    if: ${{ vars.STAGING_URL != '' || github.event.inputs.target_url != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve target URL
+        id: target
+        run: |
+          URL="${{ github.event.inputs.target_url || vars.STAGING_URL }}"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: ${{ steps.target.outputs.url }}
+          cmd_options: "-a -j"
+          allow_issue_writing: false
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: zap-dast-report
+          path: |
+            report_html.html
+            report_json.json
+            report_md.md
+          retention-days: 90
+
+  skip-notice:
+    name: DAST skipped (no staging URL)
+    runs-on: ubuntu-latest
+    if: ${{ vars.STAGING_URL == '' && github.event.inputs.target_url == '' }}
+    steps:
+      - run: |
+          echo "DAST skipped: set repository variable STAGING_URL or provide target_url on workflow_dispatch."

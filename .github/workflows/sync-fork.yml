@@ -1,12 +1,10 @@
+# .github/workflows/sync-fork.yml
 name: Sync Fork
 
 on:
   schedule:
-    - cron: '0 * * * *'
-  workflow_dispatch:
-
-permissions:
-  contents: write
+    - cron: '0 * * * *'  # runs every hour (adjust as needed)
+  workflow_dispatch:       # allows manual trigger too
 
 jobs:
   sync:
@@ -14,21 +12,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.SYNC_TOKEN }}
-          fetch-depth: 0
-
-      - name: Configure git
-        run: |
-          git config user.email "github-actions@github.com"
-          git config user.name "GitHub Actions"
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Sync with upstream
         run: |
           git remote add upstream https://github.com/decolua/9router.git
           git fetch upstream
-          git checkout master
-          git merge upstream/master --no-edit -X theirs || {
-            echo "Merge failed unexpectedly"
-            exit 1
-          }
-          git push https://x-access-token:${{ secrets.SYNC_TOKEN }}@github.com/rsingh888/eb-router.git master
+          git checkout master          
+          git rebase upstream/master
+          git push origin master --force-with-lease

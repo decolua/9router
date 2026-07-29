@@ -1,15 +1,18 @@
 import { NextResponse } from "next/server";
 import { getComboById, updateCombo, deleteCombo, getComboByName } from "@/lib/localDb";
 import { resetComboRotation } from "open-sse/services/combo.js";
+import { withAuthUser } from "@/lib/auth/runtimeUserContext.js";
+
+export const dynamic = "force-dynamic";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
 // GET /api/combos/[id] - Get combo by ID
-export async function GET(request, { params }) {
+export const GET = withAuthUser(async (_request, { params }, user) => {
   try {
     const { id } = await params;
-    const combo = await getComboById(id);
+    const combo = await getComboById(id, user.id);
     
     if (!combo) {
       return NextResponse.json({ error: "Combo not found" }, { status: 404 });
@@ -20,10 +23,10 @@ export async function GET(request, { params }) {
     console.log("Error fetching combo:", error);
     return NextResponse.json({ error: "Failed to fetch combo" }, { status: 500 });
   }
-}
+});
 
 // PUT /api/combos/[id] - Update combo
-export async function PUT(request, { params }) {
+export const PUT = withAuthUser(async (request, { params }, user) => {
   try {
     const { id } = await params;
     const body = await request.json();
@@ -35,15 +38,15 @@ export async function PUT(request, { params }) {
       }
       
       // Check if name already exists (exclude current combo)
-      const existing = await getComboByName(body.name);
+      const existing = await getComboByName(body.name, user.id);
       if (existing && existing.id !== id) {
         return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
       }
     }
     
     // Capture previous name to invalidate rotation state on rename
-    const prev = await getComboById(id);
-    const combo = await updateCombo(id, body);
+    const prev = await getComboById(id, user.id);
+    const combo = await updateCombo(id, body, user.id);
     
     if (!combo) {
       return NextResponse.json({ error: "Combo not found" }, { status: 404 });
@@ -58,14 +61,14 @@ export async function PUT(request, { params }) {
     console.log("Error updating combo:", error);
     return NextResponse.json({ error: "Failed to update combo" }, { status: 500 });
   }
-}
+});
 
 // DELETE /api/combos/[id] - Delete combo
-export async function DELETE(request, { params }) {
+export const DELETE = withAuthUser(async (_request, { params }, user) => {
   try {
     const { id } = await params;
-    const prev = await getComboById(id);
-    const success = await deleteCombo(id);
+    const prev = await getComboById(id, user.id);
+    const success = await deleteCombo(id, user.id);
     
     if (!success) {
       return NextResponse.json({ error: "Combo not found" }, { status: 404 });
@@ -78,4 +81,4 @@ export async function DELETE(request, { params }) {
     console.log("Error deleting combo:", error);
     return NextResponse.json({ error: "Failed to delete combo" }, { status: 500 });
   }
-}
+});

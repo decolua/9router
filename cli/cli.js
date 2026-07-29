@@ -112,7 +112,8 @@ function getDisplayHost() {
 const MAX_PORT_ATTEMPTS = 10;
 // Identifiers for killAllAppProcesses - only kill 9router specifically
 const PROCESS_IDENTIFIERS = [
-  '9router'  // Only package name - avoid killing other apps
+  'ebrouter',
+  '9router',  // legacy global install name
 ];
 
 // Parse arguments
@@ -774,7 +775,7 @@ function startServer(updatePromise) {
             process.on("SIGHUP", () => {});
 
             console.log(`\n⏳ Switching to tray mode... (icon already visible in menu bar)`);
-            console.log(`🔔 9Router is running in tray (PID: ${process.pid})`);
+            console.log(`🔔 ebRouter is running in tray (PID: ${process.pid})`);
             console.log(`   Server: http://${displayHost}:${port}`);
             console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
 
@@ -793,7 +794,7 @@ function startServer(updatePromise) {
           });
           bgProcess.unref();
 
-          console.log(`🔔 9Router is now running in background (PID: ${bgProcess.pid})`);
+          console.log(`\n🔔 ebRouter is now running in background (PID: ${bgProcess.pid})`);
           console.log(`   Server: http://${displayHost}:${port}`);
           console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
 

@@ -45,7 +45,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
   // Pre-fill from existing config
   useEffect(() => {
     if (status?.config && Array.isArray(status.config) && selectedModels.length === 0) {
-      const entry = status.config.find((e) => e.name === "9Router");
+      const entry = status.config.find((e) => e.name === "ebRouter");
       if (entry?.models?.length > 0) {
         setSelectedModels(entry.models.map((m) => m.id));
       }
@@ -66,7 +66,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
     try {
       const keyToUse = (selectedApiKey && selectedApiKey.trim())
         ? selectedApiKey
-        : (!cloudEnabled ? "sk_9router" : selectedApiKey);
+        : (!cloudEnabled ? "sk_ebrouter" : selectedApiKey);
       await fetch("/api/cli-tools/copilot-settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -114,7 +114,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
     try {
       const keyToUse = (selectedApiKey && selectedApiKey.trim())
         ? selectedApiKey
-        : (!cloudEnabled ? "sk_9router" : selectedApiKey);
+        : (!cloudEnabled ? "sk_ebrouter" : selectedApiKey);
 
       const res = await fetch("/api/cli-tools/copilot-settings", {
         method: "POST",
@@ -158,14 +158,14 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
   const getManualConfigs = () => {
     const keyToUse = (selectedApiKey && selectedApiKey.trim())
       ? selectedApiKey
-      : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+      : (!cloudEnabled ? "sk_ebrouter" : "<API_KEY_FROM_DASHBOARD>");
     const effectiveBaseUrl = getEffectiveBaseUrl();
     const modelsToShow = selectedModels.length > 0 ? selectedModels : ["provider/model-id"];
 
     return [{
       filename: "~/Library/Application Support/Code/User/chatLanguageModels.json",
       content: JSON.stringify([{
-        name: "9Router",
+        name: "ebRouter",
         vendor: "azure",
         apiKey: keyToUse,
         models: modelsToShow.map((id) => ({

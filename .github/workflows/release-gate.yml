@@ -1,0 +1,122 @@
+name: Release Security Gate
+
+on:
+  workflow_call:
+    inputs:
+      image-tag:
+        description: Docker image tag to scan
+        required: true
+        type: string
+    secrets:
+      GHCR_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+  packages: read
+  security-events: write
+  actions: read
+
+jobs:
+  gate:
+    name: Pre-release security checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Secret scan (Gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: SCA (npm audit)
+        run: |
+          npm install --ignore-scripts
+          npm audit --audit-level=high
+
+      - name: SCA (Trivy filesystem)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: IaC scan (Checkov)
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: dockerfile,docker_compose
+          quiet: true
+
+      - name: SAST (Semgrep)
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: p/default p/javascript p/nodejs p/secrets
+
+      - name: SAST (CodeQL)
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          config-file: ./.github/codeql/codeql-config.yml
+      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: release-gate
+
+      - name: SCA (OWASP Dependency-Check)
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: ebrouter
+          path: .
+          format: JSON
+          args: --failOnCVSS 9 --enableExperimental
+
+      - name: DAST (OWASP ZAP)
+        if: vars.STAGING_URL != ''
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: ${{ vars.STAGING_URL }}
+          cmd_options: "-a -j"
+          allow_issue_writing: false
+
+      - name: DAST skipped notice
+        if: vars.STAGING_URL == ''
+        run: echo "::warning::STAGING_URL not set — ZAP DAST skipped. Set repository variable STAGING_URL for release DAST gate."
+
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          npm install --ignore-scripts
+          npx --yes @cyclonedx/cyclonedx-npm@latest --output-file sbom.cdx.json --spec-version 1.5
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-sbom
+          path: sbom.cdx.json
+          retention-days: 365
+
+      - name: Generate OSS license register
+        run: node scripts/generate-license-register.mjs
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-license-register
+          path: docs/security/oss-license-register.generated.json
+          retention-days: 365
+
+      - name: Container scan (Trivy)
+        if: inputs.image-tag != ''
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ inputs.image-tag }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true

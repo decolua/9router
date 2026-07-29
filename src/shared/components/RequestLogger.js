@@ -2,15 +2,16 @@
 
 import { useState, useEffect } from "react";
 import Card from "./Card";
+import { usageScopeQueryString } from "@/lib/auth/usageScope";
 
-export default function RequestLogger() {
+export default function RequestLogger({ usageScope = "mine" }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
 
   useEffect(() => {
     fetchLogs();
-  }, []);
+  }, [usageScope]);
 
   useEffect(() => {
     let interval;
@@ -20,12 +21,13 @@ export default function RequestLogger() {
       }, 3000);
     }
     return () => clearInterval(interval);
-  }, [autoRefresh]);
+  }, [autoRefresh, usageScope]);
 
   const fetchLogs = async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
-      const res = await fetch("/api/usage/request-logs");
+      const scopeQs = usageScopeQueryString(usageScope);
+      const res = await fetch(`/api/usage/request-logs?${scopeQs}`);
       if (res.ok) {
         const data = await res.json();
         setLogs(data);

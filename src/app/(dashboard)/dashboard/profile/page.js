@@ -2,38 +2,26 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Card, Button, Toggle, Input } from "@/shared/components";
-import Modal, { ConfirmModal } from "@/shared/components/Modal";
-import LanguageSwitcher from "@/shared/components/LanguageSwitcher";
+import { MfaQrCode } from "@/shared/components/MfaQrCode";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
-import { LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
-import { LOCALE_FLAGS } from "@/shared/constants/locales";
-
-function getLocaleFromCookie() {
-  if (typeof document === "undefined") return "en";
-  const cookie = document.cookie
-    .split(";")
-    .find((c) => c.trim().startsWith(`${LOCALE_COOKIE}=`));
-  const value = cookie ? decodeURIComponent(cookie.split("=")[1]) : "en";
-  return normalizeLocale(value);
-}
 
 export default function ProfilePage() {
   const { theme, setTheme, isDark } = useTheme();
-  const [locale, setLocale] = useState("en");
-  const [langOpen, setLangOpen] = useState(false);
-  const [shutdownOpen, setShutdownOpen] = useState(false);
-  const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [settings, setSettings] = useState({ fallbackStrategy: "fill-first" });
   const [loading, setLoading] = useState(true);
   const [passwords, setPasswords] = useState({ current: "", new: "", confirm: "" });
   const [passStatus, setPassStatus] = useState({ type: "", message: "" });
   const [passLoading, setPassLoading] = useState(false);
+  const [mfaEnabled, setMfaEnabled] = useState(false);
+  const [mfaSetup, setMfaSetup] = useState(null);
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaStatus, setMfaStatus] = useState({ type: "", message: "" });
+  const [mfaLoading, setMfaLoading] = useState(false);
   const [dbLoading, setDbLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
-  const [dbAuth, setDbAuth] = useState({ open: false, mode: "", password: "" });
-  const pendingImportRef = useRef(null);
+  const [dbInfo, setDbInfo] = useState({ driver: "postgres", display: "PostgreSQL", exportFormat: "sql" });
   const [oidcForm, setOidcForm] = useState({
     authMode: "password",
     oidcIssuerUrl: "",
@@ -59,14 +47,14 @@ export default function ProfilePage() {
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
 
   useEffect(() => {
-    setLocale(getLocaleFromCookie());
-  }, [langOpen]);
-
-  useEffect(() => {
-    fetch("/api/settings")
-      .then((res) => res.json())
-      .then((data) => {
+    Promise.all([
+      fetch("/api/settings").then((res) => res.json()),
+      fetch("/api/settings/database?info=1").then((res) => (res.ok ? res.json() : null)),
+    ])
+      .then(([data, databaseInfo]) => {
         setSettings(data);
+        if (databaseInfo) setDbInfo(databaseInfo);
+        setMfaEnabled(data?.mfaEnabled === true);
         setOidcForm({
           authMode: data?.authMode || "password",
           oidcIssuerUrl: data?.oidcIssuerUrl || "",
@@ -224,6 +212,72 @@ export default function ProfilePage() {
       setPassStatus({ type: "error", message: "An error occurred" });
     } finally {
       setPassLoading(false);
+    }
+  };
+
+  const startMfaSetup = async () => {
+    setMfaLoading(true);
+    setMfaStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/auth/mfa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "setup" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to start MFA setup");
+      setMfaSetup(data);
+    } catch (err) {
+      setMfaStatus({ type: "error", message: err.message });
+    } finally {
+      setMfaLoading(false);
+    }
+  };
+
+  const confirmMfaSetup = async () => {
+    setMfaLoading(true);
+    setMfaStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/auth/mfa", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "confirm", code: mfaCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Invalid code");
+      setMfaEnabled(true);
+      setMfaSetup(null);
+      setMfaCode("");
+      setMfaStatus({ type: "success", message: "Two-factor authentication enabled." });
+    } catch (err) {
+      setMfaStatus({ type: "error", message: err.message });
+    } finally {
+      setMfaLoading(false);
+    }
+  };
+
+  const disableMfa = async () => {
+    if (!mfaCode) {
+      setMfaStatus({ type: "error", message: "Enter your current MFA code to disable." });
+      return;
+    }
+    setMfaLoading(true);
+    try {
+      const res = await fetch("/api/auth/mfa", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: mfaCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to disable MFA");
+      setMfaEnabled(false);
+      setMfaCode("");
+      setMfaSetup(null);
+      setMfaStatus({ type: "success", message: "Two-factor authentication disabled." });
+    } catch (err) {
+      setMfaStatus({ type: "error", message: err.message });
+    } finally {
+      setMfaLoading(false);
     }
   };
 
@@ -471,32 +525,38 @@ export default function ProfilePage() {
     }
   };
 
-  const handleExportDatabase = async (password) => {
+  const handleExportDatabase = async () => {
     setDbLoading(true);
     setDbStatus({ type: "", message: "" });
     try {
-      const res = await fetch("/api/settings/database", {
-        headers: { "x-9r-password": password },
-      });
+      const res = await fetch("/api/settings/database");
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || "Failed to export database");
       }
 
-      const payload = await res.json();
-      const content = JSON.stringify(payload, null, 2);
-      const blob = new Blob([content], { type: "application/json" });
+      const format = res.headers.get("X-Backup-Format") || dbInfo.exportFormat || "sql";
+      const contentDisposition = res.headers.get("Content-Disposition") || "";
+      const filenameMatch = contentDisposition.match(/filename="([^"]+)"/);
+      const stamp = new Date().toISOString().replace(/[.:]/g, "-");
+      const fallbackName = format === "sql"
+        ? `ebrouter-backup-${stamp}.sql`
+        : `ebrouter-backup-${stamp}.json`;
+      const filename = filenameMatch?.[1] || fallbackName;
+      const content = await res.text();
+      const blob = new Blob([content], {
+        type: res.headers.get("Content-Type") || (format === "sql" ? "application/sql" : "application/json"),
+      });
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
-      const stamp = new Date().toISOString().replace(/[.:]/g, "-");
       anchor.href = url;
-      anchor.download = `9router-backup-${stamp}.json`;
+      anchor.download = filename;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
       URL.revokeObjectURL(url);
 
-      setDbStatus({ type: "success", message: "Database backup downloaded" });
+      setDbStatus({ type: "success", message: `Database backup downloaded (${filename})` });
     } catch (err) {
       setDbStatus({ type: "error", message: err.message || "Failed to export database" });
     } finally {
@@ -504,27 +564,23 @@ export default function ProfilePage() {
     }
   };
 
-  const handleImportDatabase = (event) => {
+  const handleImportDatabase = async (event) => {
     const file = event.target.files?.[0];
-    if (importFileRef.current) importFileRef.current.value = "";
     if (!file) return;
-    pendingImportRef.current = file;
-    setDbStatus({ type: "", message: "" });
-    setDbAuth({ open: true, mode: "import", password: "" });
-  };
 
-  const runImportDatabase = async (password) => {
-    const file = pendingImportRef.current;
-    if (!file) return;
     setDbLoading(true);
+    setDbStatus({ type: "", message: "" });
+
     try {
       const raw = await file.text();
-      const payload = JSON.parse(raw);
+      const isSql = file.name.toLowerCase().endsWith(".sql");
 
       const res = await fetch("/api/settings/database", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...payload, password }),
+        headers: isSql
+          ? { "Content-Type": "application/sql" }
+          : { "Content-Type": "application/json" },
+        body: isSql ? raw : JSON.stringify(JSON.parse(raw)),
       });
 
       const data = await res.json().catch(() => ({}));
@@ -537,42 +593,14 @@ export default function ProfilePage() {
     } catch (err) {
       setDbStatus({ type: "error", message: err.message || "Invalid backup file" });
     } finally {
-      pendingImportRef.current = null;
+      if (importFileRef.current) {
+        importFileRef.current.value = "";
+      }
       setDbLoading(false);
     }
   };
 
-  // Confirm password modal, then run export or import.
-  const handleDbAuthConfirm = async () => {
-    const { mode, password } = dbAuth;
-    setDbAuth({ open: false, mode: "", password: "" });
-    if (mode === "export") await handleExportDatabase(password);
-    else if (mode === "import") await runImportDatabase(password);
-  };
-
   const observabilityEnabled = settings.enableObservability === true;
-
-  const handleShutdown = async () => {
-    setIsShuttingDown(true);
-    try {
-      await fetch("/api/version/shutdown", { method: "POST" });
-    } catch (e) {
-      // Expected to fail as server shuts down; ignore error
-    }
-    setIsShuttingDown(false);
-    setShutdownOpen(false);
-  };
-
-  const handleLogout = async () => {
-    try {
-      const res = await fetch("/api/auth/logout", { method: "POST" });
-      if (res.ok) {
-        window.location.assign("/login");
-      }
-    } catch (err) {
-      console.error("Failed to logout:", err);
-    }
-  };
 
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-0">
@@ -586,7 +614,9 @@ export default function ProfilePage() {
               </div>
               <div>
                 <h2 className="text-lg sm:text-xl font-semibold">Local Mode</h2>
-                <p className="text-sm text-text-muted">Running on your machine</p>
+                <p className="text-sm text-text-muted">
+                  {dbInfo.driver === "postgres" ? "Connected to PostgreSQL" : "Running on your machine"}
+                </p>
               </div>
             </div>
             <div className="inline-flex p-1 rounded-lg bg-black/5 dark:bg-white/5 w-full sm:w-auto">
@@ -613,15 +643,24 @@ export default function ProfilePage() {
           <div className="flex flex-col gap-3 pt-4 border-t border-border">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 rounded-lg bg-bg border border-border gap-2">
               <div>
-                <p className="font-medium text-sm sm:text-base">Database Location</p>
-                <p className="text-xs sm:text-sm text-text-muted font-mono break-all">~/.9router/db/data.sqlite</p>
+                <p className="font-medium text-sm sm:text-base">Database</p>
+                <p className="text-xs sm:text-sm text-text-muted font-mono break-all">
+                  {dbInfo.driver === "postgres"
+                    ? `PostgreSQL · ${dbInfo.display}`
+                    : dbInfo.display}
+                </p>
+                {dbInfo.exportFormat === "sql" && (
+                  <p className="text-xs text-text-muted mt-1">
+                    Download creates a full `.sql` backup (users, providers, settings, and all tables).
+                  </p>
+                )}
               </div>
             </div>
             <div className="flex flex-col sm:flex-row gap-2">
               <Button
                 variant="secondary"
                 icon="download"
-                onClick={() => setDbAuth({ open: true, mode: "export", password: "" })}
+                onClick={handleExportDatabase}
                 loading={dbLoading}
                 className="w-full sm:w-auto"
               >
@@ -639,7 +678,7 @@ export default function ProfilePage() {
               <input
                 ref={importFileRef}
                 type="file"
-                accept="application/json,.json"
+                accept="application/json,.json,.sql,application/sql,text/plain"
                 className="hidden"
                 onChange={handleImportDatabase}
               />
@@ -650,24 +689,6 @@ export default function ProfilePage() {
               </p>
             )}
           </div>
-        </Card>
-
-        {/* Language */}
-        <Card>
-          <div className="flex items-center gap-3 mb-4">
-            <div className="size-10 rounded-lg bg-blue-500/10 text-blue-500 flex items-center justify-center shrink-0">
-              <span className="material-symbols-outlined text-[20px]">language</span>
-            </div>
-            <h3 className="text-base sm:text-lg font-semibold">Language</h3>
-          </div>
-          <button
-            onClick={() => setLangOpen(true)}
-            className="flex items-center justify-between w-full p-3 rounded-lg bg-bg border border-border hover:border-primary/50 transition-colors"
-            data-i18n-skip="true"
-          >
-            <span className="text-sm text-text-muted">Display language</span>
-            <span className="text-2xl">{LOCALE_FLAGS[locale] || "🌐"}</span>
-          </button>
         </Card>
 
         {/* Security */}
@@ -692,6 +713,64 @@ export default function ProfilePage() {
                 disabled={loading}
               />
             </div>
+            {settings.requireLogin === true && settings.hasPassword && (
+              <div className="flex flex-col gap-3 pt-4 border-t border-border/50">
+                <div>
+                  <p className="font-medium text-sm sm:text-base">Two-factor authentication (TOTP)</p>
+                  <p className="text-xs sm:text-sm text-text-muted">
+                    Add an authenticator app for an extra sign-in step.
+                  </p>
+                </div>
+                {!mfaEnabled && !mfaSetup && (
+                  <Button type="button" variant="secondary" loading={mfaLoading} onClick={startMfaSetup}>
+                    Enable MFA
+                  </Button>
+                )}
+                {mfaSetup && (
+                  <div className="text-xs flex flex-col gap-3 p-3 bg-sidebar rounded">
+                    <p className="text-sm text-text-main">
+                      Scan the QR code with Google Authenticator, Authy, 1Password, or another TOTP app.
+                    </p>
+                    <div className="flex justify-center">
+                      <MfaQrCode uri={mfaSetup.otpauthUri} />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <p className="text-text-muted">Or enter this key manually:</p>
+                      <code className="break-all text-[11px] bg-bg px-2 py-1 rounded border border-border">
+                        {mfaSetup.secret}
+                      </code>
+                    </div>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="6-digit code from app"
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value)}
+                    />
+                    <Button type="button" variant="primary" loading={mfaLoading} onClick={confirmMfaSetup}>
+                      Confirm MFA
+                    </Button>
+                  </div>
+                )}
+                {mfaEnabled && (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-xs text-green-600 dark:text-green-400">MFA is enabled on your account.</p>
+                    <Input
+                      type="text"
+                      placeholder="Current MFA code to disable"
+                      value={mfaCode}
+                      onChange={(e) => setMfaCode(e.target.value)}
+                    />
+                    <Button type="button" variant="secondary" loading={mfaLoading} onClick={disableMfa}>
+                      Disable MFA
+                    </Button>
+                  </div>
+                )}
+                {mfaStatus.message && (
+                  <p className={`text-xs ${mfaStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>{mfaStatus.message}</p>
+                )}
+              </div>
+            )}
             {settings.requireLogin === true && (
               <form onSubmit={handlePasswordChange} className="flex flex-col gap-4 pt-4 border-t border-border/50">
                 {settings.hasPassword && (
@@ -824,7 +903,7 @@ export default function ProfilePage() {
               <div className="flex flex-col gap-2">
                 <label className="font-medium text-sm sm:text-base">Issuer URL</label>
                 <Input
-                  placeholder="https://auth.example.com/application/o/9router/"
+                  placeholder="https://auth.example.com/application/o/ebrouter/"
                   value={oidcForm.oidcIssuerUrl}
                   onChange={(e) => updateOidcForm("oidcIssuerUrl", e.target.value)}
                   disabled={loading || oidcLoading}
@@ -834,7 +913,7 @@ export default function ProfilePage() {
               <div className="flex flex-col gap-2">
                 <label className="font-medium text-sm sm:text-base">Client ID</label>
                 <Input
-                  placeholder="9router-dashboard"
+                  placeholder="ebrouter-dashboard"
                   value={oidcForm.oidcClientId}
                   onChange={(e) => updateOidcForm("oidcClientId", e.target.value)}
                   disabled={loading || oidcLoading}
@@ -1101,82 +1180,12 @@ export default function ProfilePage() {
           </div>
         </Card>
 
-        {/* Account actions */}
-        <div className="flex flex-col sm:flex-row gap-2">
-          <Button
-            variant="outline"
-            fullWidth
-            icon="power_settings_new"
-            onClick={() => setShutdownOpen(true)}
-            className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300"
-          >
-            Shutdown
-          </Button>
-          <Button
-            variant="outline"
-            fullWidth
-            icon="logout"
-            onClick={handleLogout}
-          >
-            Logout
-          </Button>
-        </div>
-
         {/* App Info */}
         <div className="text-center text-xs sm:text-sm text-text-muted py-4">
           <p>{APP_CONFIG.name} v{APP_CONFIG.version}</p>
           <p className="mt-1">Local Mode - All data stored on your machine</p>
         </div>
       </div>
-
-      <LanguageSwitcher
-        hideTrigger
-        isOpen={langOpen}
-        onClose={(next) => {
-          setLangOpen(false);
-          setLocale(next);
-        }}
-      />
-      <ConfirmModal
-        isOpen={shutdownOpen}
-        onClose={() => setShutdownOpen(false)}
-        onConfirm={handleShutdown}
-        title="Close Proxy"
-        message="Are you sure you want to close the proxy server?"
-        confirmText="Close"
-        cancelText="Cancel"
-        variant="danger"
-        loading={isShuttingDown}
-      />
-
-      <Modal
-        isOpen={dbAuth.open}
-        onClose={() => setDbAuth({ open: false, mode: "", password: "" })}
-        title="Confirm Password"
-        size="sm"
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setDbAuth({ open: false, mode: "", password: "" })} disabled={dbLoading}>
-              Cancel
-            </Button>
-            <Button variant="primary" onClick={handleDbAuthConfirm} loading={dbLoading} disabled={!dbAuth.password}>
-              Confirm
-            </Button>
-          </>
-        }
-      >
-        <p className="text-text-muted mb-3 text-sm">
-          Enter your current password to {dbAuth.mode === "export" ? "export" : "import"} the database.
-        </p>
-        <Input
-          type="password"
-          value={dbAuth.password}
-          onChange={(e) => setDbAuth((s) => ({ ...s, password: e.target.value }))}
-          onKeyDown={(e) => { if (e.key === "Enter" && dbAuth.password) handleDbAuthConfirm(); }}
-          placeholder="Current password"
-          autoFocus
-        />
-      </Modal>
     </div>
   );
 }

@@ -1,15 +1,15 @@
 # 🏠 Localhost Deployment
 
-Run 9Router on your local machine for development and personal use.
+Run ebRouter on your local machine for development and personal use.
 
 ---
 
 ## 📦 Installation
 
-Install 9Router globally via npm:
+Install ebRouter globally via npm:
 
 ```bash
-npm install -g 9router
+npm install -g ebrouter
 ```
 
 **Requirements:**
@@ -20,10 +20,10 @@ npm install -g 9router
 
 ## 🚀 Starting the Server
 
-Start 9Router with a single command:
+Start ebRouter with a single command:
 
 ```bash
-9router
+ebrouter
 ```
 
 The dashboard will automatically open in your browser at `http://localhost:3000`
@@ -42,7 +42,7 @@ The dashboard will automatically open in your browser at `http://localhost:3000`
 Set a custom data directory using environment variable:
 
 ```bash
-DATA_DIR=/path/to/data 9router
+DATA_DIR=/path/to/data ebrouter
 ```
 
 ### Custom Port
@@ -53,10 +53,10 @@ The API port (20128) and dashboard port (3000) are configured in the application
 
 ## 🛑 Stopping the Server
 
-Press `Ctrl+C` in the terminal where 9Router is running.
+Press `Ctrl+C` in the terminal where ebRouter is running.
 
 ```bash
-# In the terminal running 9router
+# In the terminal running ebrouter
 ^C  # Press Ctrl+C
 ```
 
@@ -69,25 +69,25 @@ The server will gracefully shut down and save all data.
 Simply run the start command again:
 
 ```bash
-9router
+ebrouter
 ```
 
 All your configurations, API keys, and combos are preserved in the data directory.
 
 ---
 
-## 📊 Updating 9Router
+## 📊 Updating ebRouter
 
 Update to the latest version:
 
 ```bash
-npm update -g 9router
+npm update -g ebrouter
 ```
 
 Check your current version:
 
 ```bash
-npm list -g 9router
+npm list -g ebrouter
 ```
 
 ---
@@ -113,7 +113,7 @@ If you encounter permission errors during installation:
 
 ```bash
 # Use sudo (not recommended)
-sudo npm install -g 9router
+sudo npm install -g ebrouter
 
 # Or fix npm permissions (recommended)
 mkdir ~/.npm-global

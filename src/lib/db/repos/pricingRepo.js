@@ -1,3 +1,4 @@
+import { qAll, qGet, qRun, qExec } from "../query.js";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { makeKv } from "../helpers/kvStore.js";

@@ -1,0 +1,15 @@
+title = "ebRouter Gitleaks Config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allowlisted paths for example credentials and docs"
+paths = [
+  '''\.env\.example$''',
+  '''deploy/client/\.env\.example$''',
+  '''docs/security/''',
+  '''gitbook/''',
+  '''tests/''',
+  '''README\.md$''',
+]

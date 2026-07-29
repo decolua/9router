@@ -3,12 +3,12 @@ import { getModelAliases, setModelAlias } from "@/models";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { AI_MODELS } from "@/shared/constants/config";
 import { getProviderAlias } from "@/shared/constants/providers";
-import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { withAuthUser } from "@/lib/auth/runtimeUserContext.js";
 
 // GET /api/models - Get models with aliases
-export async function GET() {
+export const GET = withAuthUser(async (_request, _ctx, user) => {
   try {
-    const modelAliases = await getModelAliases();
+    const modelAliases = await getModelAliases(user.id);
     const disabled = await getDisabledModels();
 
     const models = AI_MODELS
@@ -19,21 +19,10 @@ export async function GET() {
       })
       .map((m) => {
         const fullModel = `${m.provider}/${m.model}`;
-        const providerAlias = getProviderAlias(m.provider) || m.provider;
-        const routedModel = `${providerAlias}/${m.model}`;
-        const c = getCapabilitiesForModel(m.provider, m.model);
         return {
           ...m,
           fullModel,
-          routedModel,
           alias: modelAliases[fullModel] || m.model,
-          caps: {
-            vision: c.vision,
-            search: c.search,
-            reasoning: c.reasoning,
-            contextWindow: c.contextWindow,
-            maxOutput: c.maxOutput,
-          },
         };
       });
 
@@ -42,10 +31,10 @@ export async function GET() {
     console.log("Error fetching models:", error);
     return NextResponse.json({ error: "Failed to fetch models" }, { status: 500 });
   }
-}
+});
 
 // PUT /api/models - Update model alias
-export async function PUT(request) {
+export const PUT = withAuthUser(async (request, _ctx, user) => {
   try {
     const body = await request.json();
     const { model, alias } = body;
@@ -54,11 +43,11 @@ export async function PUT(request) {
       return NextResponse.json({ error: "Model and alias required" }, { status: 400 });
     }
 
-    const modelAliases = await getModelAliases();
+    const modelAliases = await getModelAliases(user.id);
 
     // Check if alias already exists for different model
     const existingModel = Object.entries(modelAliases).find(
-      ([key, val]) => val === alias && key !== model
+      ([key, val]) => val === model && key !== alias
     );
 
     if (existingModel) {
@@ -66,11 +55,11 @@ export async function PUT(request) {
     }
 
     // Update alias
-    await setModelAlias(model, alias);
+    await setModelAlias(user.id, alias, model);
 
     return NextResponse.json({ success: true, model, alias });
   } catch (error) {
     console.log("Error updating alias:", error);
     return NextResponse.json({ error: "Failed to update alias" }, { status: 500 });
   }
-}
+});

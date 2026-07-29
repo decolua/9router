@@ -1,31 +1,65 @@
 # Docker
 
-Run 9Router in a container. Published image: [`decolua/9router`](https://hub.docker.com/r/decolua/9router) — multi-platform `linux/amd64` + `linux/arm64`.
+Run ebRouter in a container. Build from the included `Dockerfile` (multi-platform `linux/amd64` + `linux/arm64` when published).
 
 ---
 
 # 👤 For Users
 
-## Quick start
+## Quick start (SQLite file in volume)
 
 ```bash
 docker run -d \
   -p 20128:20128 \
   -v "$HOME/.9router:/app/data" \
   -e DATA_DIR=/app/data \
-  --name 9router \
-  decolua/9router:latest
+  --name ebrouter \
+  ebrouter:latest
 ```
 
 App listens on port `20128`. Open: http://localhost:20128
 
+## Quick start (PostgreSQL)
+
+For production-style deployments, use the included Compose stack (app + Postgres):
+
+```bash
+# Set a stable encryption key (recommended)
+export MASTER_KEY="$(openssl rand -base64 32)"
+
+docker compose up -d --build
+```
+
+- App: http://localhost:20128  
+- Data: PostgreSQL volume `pgdata` (via `DATABASE_URL` in compose)  
+- Certs/logs: `ebrouter_data` volume under `/app/data`
+
+**Testing guide:** [docs/POSTGRESQL_TESTING.md](docs/POSTGRESQL_TESTING.md)
+
+## Production client bundle (sell / on-prem)
+
+For shipping to customers (install scripts, backups, pinned image, hardened defaults):
+
+→ **[deploy/client/](deploy/client/)** — zip this folder and send with [README-CLIENT.md](deploy/client/README-CLIENT.md).
+
+Quick start on client machine:
+
+```powershell
+cd deploy\client
+.\install.ps1
+```
+
+Vendor packaging notes: [deploy/client/VENDOR.md](deploy/client/VENDOR.md)
+
+**Full guide (simple language):** [docs/BUNDLING-AND-DEPLOYMENT.md](docs/BUNDLING-AND-DEPLOYMENT.md)
+
 ## Manage container
 
 ```bash
-docker logs -f 9router        # view logs
-docker stop 9router           # stop
-docker start 9router          # start again
-docker rm -f 9router          # remove
+docker logs -f ebrouter        # view logs
+docker stop ebrouter           # stop
+docker start ebrouter          # start again
+docker rm -f ebrouter          # remove
 ```
 
 ## Data persistence
@@ -60,8 +94,8 @@ docker run -d \
   -e PORT=20128 \
   -e HOSTNAME=0.0.0.0 \
   -e DEBUG=true \
-  --name 9router \
-  decolua/9router:latest
+  --name ebrouter \
+  ebrouter:latest
 ```
 
 ## Optional Headroom sidecar
@@ -95,8 +129,8 @@ If Headroom runs on the Docker host instead of as a sidecar, use `http://host.do
 ## Update to latest
 
 ```bash
-docker pull decolua/9router:latest
-docker rm -f 9router
+docker pull ebrouter:latest
+docker rm -f ebrouter
 # re-run the quick start command
 ```
 
@@ -107,26 +141,25 @@ docker rm -f 9router
 ## Build image locally (test)
 
 ```bash
-cd app && docker build -t 9router .
+docker build -t ebrouter .
 
 docker run --rm -p 20128:20128 \
   -v "$HOME/.9router:/app/data" \
   -e DATA_DIR=/app/data \
-  9router
+  ebrouter
 ```
 
-## Publish (automatic via CI)
+## Publish to GitHub Container Registry (GHCR)
 
-Push a git tag `v*` → GitHub Actions builds multi-platform (amd64+arm64) and pushes to:
-- `ghcr.io/decolua/9router:v{version}` + `:latest`
-- `decolua/9router:v{version}` + `:latest`
+Images are published as **`ghcr.io/YOUR_GITHUB_ORG/ebrouter:<version>`** (not legacy `9router`).
+
+**Automatic:** push a git tag `v*` → GitHub Actions builds multi-platform (amd64+arm64) and pushes to GHCR.
 
 ```bash
-# Use scripts/release.js (recommended)
-node scripts/release.js "Release title" "Notes"
-
-# Or manually
-git tag v0.4.x && git push origin v0.4.x
+git tag v0.4.56
+git push origin v0.4.56
 ```
 
-Workflow: `app/.github/workflows/docker-publish.yml`
+**Manual push from your machine:** see [deploy/GHCR-PUBLISH.md](deploy/GHCR-PUBLISH.md).
+
+Workflow: `.github/workflows/docker-publish.yml`

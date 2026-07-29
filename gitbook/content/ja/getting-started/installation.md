@@ -1,6 +1,6 @@
 # インストール
 
-トラブルシューティングのヒント付きの9Router詳細インストールガイド。
+トラブルシューティングのヒント付きのebRouter詳細インストールガイド。
 
 ---
 
@@ -31,37 +31,37 @@ npm --version
 
 ### 方法1: グローバルインストール (推奨)
 
-どこからでも使用できるように9Routerをグローバルインストール:
+どこからでも使用できるようにebRouterをグローバルインストール:
 
 ```bash
-npm install -g 9router
+npm install -g ebrouter
 ```
 
-**9Routerを起動:**
+**ebRouterを起動:**
 
 ```bash
-9router
+ebrouter
 ```
 
 **利点:**
 - ✅ どのディレクトリからでも実行
-- ✅ シンプルなコマンド: `9router`
-- ✅ `npm update -g 9router` で自動更新
+- ✅ シンプルなコマンド: `ebrouter`
+- ✅ `npm update -g ebrouter` で自動更新
 
 ### 方法2: ローカルインストール
 
 特定のプロジェクトにインストール:
 
 ```bash
-mkdir my-9router
-cd my-9router
-npm install 9router
+mkdir my-ebrouter
+cd my-ebrouter
+npm install ebrouter
 ```
 
-**9Routerを起動:**
+**ebRouterを起動:**
 
 ```bash
-npx 9router
+npx ebrouter
 ```
 
 **利点:**
@@ -74,8 +74,8 @@ npx 9router
 GitHubからクローンしてビルド:
 
 ```bash
-git clone https://github.com/decolua/9router.git
-cd 9router/app
+git clone https://github.com/YOUR_ORG/ebRouter.git
+cd ebrouter/app
 npm install
 npm run build
 npm start
@@ -93,7 +93,7 @@ npm start
 ### サーバーを起動
 
 ```bash
-9router
+ebrouter
 ```
 
 **何が起こるか:**
@@ -219,7 +219,7 @@ export ENABLE_REQUEST_LOGS="false"
 
 ```bash
 export DATA_DIR="/custom/path"
-9router
+ebrouter
 ```
 
 ### ポート設定
@@ -230,13 +230,13 @@ export DATA_DIR="/custom/path"
 
 ```bash
 export PORT="3000"
-9router
+ebrouter
 ```
 
 **またはコマンドラインで:**
 
 ```bash
-9router --port 3000
+ebrouter --port 3000
 ```
 
 ---
@@ -263,14 +263,14 @@ kill -9 <PID>
 **解決策2: 別のポートを使用**
 
 ```bash
-9router --port 3000
+ebrouter --port 3000
 ```
 
 ### Permission Denied
 
 **エラー:**
 ```
-Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/9router'
+Error: EACCES: permission denied, mkdir '/usr/local/lib/node_modules/ebrouter'
 ```
 
 **解決策: sudoを使用 (非推奨) またはnpm権限を修正**
@@ -283,7 +283,7 @@ echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
 source ~/.bashrc
 
 # 再度インストール
-npm install -g 9router
+npm install -g ebrouter
 ```
 
 ### Node.jsバージョンが古すぎる
@@ -345,23 +345,23 @@ Dashboard → Provider → Disconnect → Reconnect
 
 ### 高メモリ使用量
 
-**問題:** 9RouterがRAMを使いすぎている
+**問題:** ebRouterがRAMを使いすぎている
 
 **解決策: サーバーを再起動**
 
 ```bash
 # 停止
-pkill -f 9router
+pkill -f ebrouter
 
 # 起動
-9router
+ebrouter
 ```
 
 **または自動再起動にPM2を使用:**
 
 ```bash
 npm install -g pm2
-pm2 start 9router --name 9router
+pm2 start ebrouter --name ebrouter
 pm2 save
 ```
 
@@ -372,8 +372,8 @@ pm2 save
 ### ローカル開発
 
 ```bash
-npm install -g 9router
-9router
+npm install -g ebrouter
+ebrouter
 ```
 
 **ユースケース:** 個人コーディング、テスト
@@ -382,7 +382,7 @@ npm install -g 9router
 
 ```bash
 # インストール
-npm install -g 9router
+npm install -g ebrouter
 
 # 設定
 export JWT_SECRET="your-secure-secret"
@@ -391,7 +391,7 @@ export NODE_ENV="production"
 
 # PM2で起動
 npm install -g pm2
-pm2 start 9router --name 9router
+pm2 start ebrouter --name ebrouter
 pm2 save
 pm2 startup
 ```
@@ -401,15 +401,15 @@ pm2 startup
 ### Docker
 
 ```bash
-docker pull 9router/9router:latest
+docker pull ebrouter/ebrouter:latest
 
 docker run -d \
   -p 20128:20128 \
   -e JWT_SECRET="your-secure-secret" \
   -e INITIAL_PASSWORD="your-password" \
   -v 9router-data:/root/.9router \
-  --name 9router \
-  9router/9router:latest
+  --name ebrouter \
+  ebrouter/ebrouter:latest
 ```
 
 **ユースケース:** コンテナデプロイ、Kubernetes
@@ -444,7 +444,7 @@ server {
 ### グローバルインストールを削除
 
 ```bash
-npm uninstall -g 9router
+npm uninstall -g ebrouter
 ```
 
 ### データディレクトリを削除
@@ -473,6 +473,6 @@ nano ~/.bashrc  # または ~/.zshrc
 
 ## ヘルプが必要?
 
-- **ウェブサイト**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/decolua/9router](https://github.com/decolua/9router)
-- **Issues**: [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **ウェブサイト**: [ebrouter.example.com](https://ebrouter.example.com)
+- **GitHub**: [github.com/YOUR_ORG/ebRouter](https://github.com/YOUR_ORG/ebRouter)
+- **Issues**: [github.com/YOUR_ORG/ebRouter/issues](https://github.com/YOUR_ORG/ebRouter/issues)

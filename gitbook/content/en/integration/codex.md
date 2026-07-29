@@ -1,12 +1,12 @@
 # OpenAI Codex CLI Integration
 
-Integrate 9Router with OpenAI Codex CLI to route your OpenAI API requests through 9Router's intelligent routing system.
+Integrate ebRouter with OpenAI Codex CLI to route your OpenAI API requests through ebRouter's intelligent routing system.
 
 ## Prerequisites
 
 - OpenAI Codex CLI installed
-- 9Router running locally or cloud endpoint configured
-- API key from 9Router dashboard
+- ebRouter running locally or cloud endpoint configured
+- API key from ebRouter dashboard
 
 ## Setup
 
@@ -15,11 +15,11 @@ Integrate 9Router with OpenAI Codex CLI to route your OpenAI API requests throug
 Set the following environment variables in your shell configuration file (`~/.bashrc`, `~/.zshrc`, or `~/.bash_profile`):
 
 ```bash
-# Base URL for 9Router
+# Base URL for ebRouter
 export OPENAI_BASE_URL="http://localhost:20128/v1"
 
-# API Key from 9Router dashboard
-export OPENAI_API_KEY="your-9router-api-key"
+# API Key from ebRouter dashboard
+export OPENAI_API_KEY="your-ebrouter-api-key"
 ```
 
 ### 2. Reload Shell Configuration
@@ -39,7 +39,7 @@ echo $OPENAI_API_KEY
 
 ## Available Models
 
-9Router provides the following Codex models:
+ebRouter provides the following Codex models:
 
 | Model ID | Description |
 |----------|-------------|
@@ -77,7 +77,7 @@ You can also configure Codex CLI using a configuration file. Create or edit `~/.
 ```json
 {
   "baseUrl": "http://localhost:20128/v1",
-  "apiKey": "your-9router-api-key",
+  "apiKey": "your-ebrouter-api-key",
   "defaultModel": "cx/gpt-5.2-codex"
 }
 ```
@@ -88,7 +88,7 @@ You can also configure Codex CLI using a configuration file. Create or edit `~/.
 
 If you encounter authentication errors:
 
-1. Verify your API key is correct in 9Router dashboard
+1. Verify your API key is correct in ebRouter dashboard
 2. Check that `OPENAI_API_KEY` environment variable is set
 3. Ensure the API key has not expired
 
@@ -96,7 +96,7 @@ If you encounter authentication errors:
 
 If you encounter connection errors:
 
-1. Verify 9Router is running: `curl http://localhost:20128/health`
+1. Verify ebRouter is running: `curl http://localhost:20128/health`
 2. Check environment variables are set correctly
 3. Ensure no firewall is blocking port 20128
 
@@ -104,19 +104,19 @@ If you encounter connection errors:
 
 If you get "model not available" errors:
 
-1. Verify the model name matches your 9Router configuration
-2. Check that the OpenAI provider connection is active in 9Router dashboard
+1. Verify the model name matches your ebRouter configuration
+2. Check that the OpenAI provider connection is active in ebRouter dashboard
 3. Ensure the model is available in your connected providers
 
 ## Cloud Endpoint
 
-To use 9Router cloud endpoint instead of localhost:
+To use ebRouter cloud endpoint instead of localhost:
 
 ```bash
-export OPENAI_BASE_URL="https://9router.com"
+export OPENAI_BASE_URL="https://ebrouter.example.com"
 ```
 
-Make sure you have configured your API key in the 9Router cloud dashboard.
+Make sure you have configured your API key in the ebRouter cloud dashboard.
 
 ## Advanced Configuration
 

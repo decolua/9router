@@ -1,12 +1,12 @@
 # Tích hợp OpenAI Codex CLI
 
-Tích hợp 9Router với OpenAI Codex CLI để định tuyến request API OpenAI qua hệ thống routing thông minh của 9Router.
+Tích hợp ebRouter với OpenAI Codex CLI để định tuyến request API OpenAI qua hệ thống routing thông minh của ebRouter.
 
 ## Yêu cầu
 
 - OpenAI Codex CLI đã cài đặt
-- 9Router đang chạy cục bộ hoặc cloud endpoint đã cấu hình
-- API key từ 9Router dashboard
+- ebRouter đang chạy cục bộ hoặc cloud endpoint đã cấu hình
+- API key từ ebRouter dashboard
 
 ## Setup
 
@@ -15,11 +15,11 @@ Tích hợp 9Router với OpenAI Codex CLI để định tuyến request API Ope
 Đặt các biến môi trường sau trong file cấu hình shell (`~/.bashrc`, `~/.zshrc`, hoặc `~/.bash_profile`):
 
 ```bash
-# Base URL for 9Router
+# Base URL for ebRouter
 export OPENAI_BASE_URL="http://localhost:20128/v1"
 
-# API Key from 9Router dashboard
-export OPENAI_API_KEY="your-9router-api-key"
+# API Key from ebRouter dashboard
+export OPENAI_API_KEY="your-ebrouter-api-key"
 ```
 
 ### 2. Reload Shell Configuration
@@ -39,7 +39,7 @@ echo $OPENAI_API_KEY
 
 ## Model có sẵn
 
-9Router cung cấp các model Codex sau:
+ebRouter cung cấp các model Codex sau:
 
 | Model ID | Mô tả |
 |----------|-------------|
@@ -77,7 +77,7 @@ Bạn cũng có thể cấu hình Codex CLI qua file cấu hình. Tạo hoặc s
 ```json
 {
   "baseUrl": "http://localhost:20128/v1",
-  "apiKey": "your-9router-api-key",
+  "apiKey": "your-ebrouter-api-key",
   "defaultModel": "cx/gpt-5.2-codex"
 }
 ```
@@ -88,7 +88,7 @@ Bạn cũng có thể cấu hình Codex CLI qua file cấu hình. Tạo hoặc s
 
 Nếu gặp lỗi xác thực:
 
-1. Xác minh API key đúng trong 9Router dashboard
+1. Xác minh API key đúng trong ebRouter dashboard
 2. Kiểm tra biến môi trường `OPENAI_API_KEY` đã set
 3. Đảm bảo API key chưa hết hạn
 
@@ -96,7 +96,7 @@ Nếu gặp lỗi xác thực:
 
 Nếu gặp lỗi kết nối:
 
-1. Xác minh 9Router đang chạy: `curl http://localhost:20128/health`
+1. Xác minh ebRouter đang chạy: `curl http://localhost:20128/health`
 2. Kiểm tra biến môi trường đã set đúng
 3. Đảm bảo không firewall nào chặn port 20128
 
@@ -104,19 +104,19 @@ Nếu gặp lỗi kết nối:
 
 Nếu gặp lỗi "model not available":
 
-1. Xác minh tên model khớp với cấu hình 9Router
-2. Kiểm tra kết nối provider OpenAI đang hoạt động trong 9Router dashboard
+1. Xác minh tên model khớp với cấu hình ebRouter
+2. Kiểm tra kết nối provider OpenAI đang hoạt động trong ebRouter dashboard
 3. Đảm bảo model có sẵn trong các provider đã kết nối
 
 ## Cloud Endpoint
 
-Để dùng 9Router cloud endpoint thay vì localhost:
+Để dùng ebRouter cloud endpoint thay vì localhost:
 
 ```bash
-export OPENAI_BASE_URL="https://9router.com"
+export OPENAI_BASE_URL="https://ebrouter.example.com"
 ```
 
-Đảm bảo bạn đã cấu hình API key trong 9Router cloud dashboard.
+Đảm bảo bạn đã cấu hình API key trong ebRouter cloud dashboard.
 
 ## Cấu hình Nâng cao
 

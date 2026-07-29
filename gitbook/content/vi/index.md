@@ -1,14 +1,14 @@
-# Chào mừng đến với 9Router
+# Chào mừng đến với ebRouter
 
 **Dùng Claude, Codex, Gemini MIỄN PHÍ • Lựa chọn siêu rẻ từ $0.20/1M tokens**
 
-9Router là bộ định tuyến mô hình AI giúp tối đa hóa giá trị subscription và giảm chi phí thông qua định tuyến thông minh và fallback tự động.
+ebRouter là bộ định tuyến mô hình AI giúp tối đa hóa giá trị subscription và giảm chi phí thông qua định tuyến thông minh và fallback tự động.
 
 ---
 
-## 9Router là gì?
+## ebRouter là gì?
 
-9Router là một proxy thông minh nằm giữa các công cụ lập trình của bạn (Cursor, Cline, Claude Desktop) và các nhà cung cấp AI. Nó tự động định tuyến request đến model tốt nhất hiện có dựa trên quota, chi phí và tính khả dụng.
+ebRouter là một proxy thông minh nằm giữa các công cụ lập trình của bạn (Cursor, Cline, Claude Desktop) và các nhà cung cấp AI. Nó tự động định tuyến request đến model tốt nhất hiện có dựa trên quota, chi phí và tính khả dụng.
 
 **Đừng lãng phí tiền:**
 - ❌ Quota subscription hết hạn mỗi tháng mà không dùng đến
@@ -66,7 +66,7 @@ Tổng: $5.20/tháng so với $2000 trên ChatGPT API!
 
 ---
 
-## Tại sao chọn 9Router?
+## Tại sao chọn ebRouter?
 
 ### Tối đa hóa Subscription
 
@@ -105,10 +105,10 @@ Bắt đầu trong 2 phút:
 
 ```bash
 # Install globally
-npm install -g 9router
+npm install -g ebrouter
 
 # Start (dashboard opens automatically)
-9router
+ebrouter
 ```
 
 🎉 **Dashboard mở** → Kết nối provider → Bắt đầu code!
@@ -143,7 +143,7 @@ Model: cc/claude-opus-4-5-20251101
 
 ### Cho Mobile/Remote Coding
 
-- Dùng cloud deployment (https://9router.com)
+- Dùng cloud deployment (https://ebrouter.example.com)
 - Truy cập từ iPad, điện thoại, mọi nơi
 - Không bị giới hạn localhost
 - Mạng Cloudflare edge (300+ vị trí)

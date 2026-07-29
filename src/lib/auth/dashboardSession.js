@@ -20,7 +20,13 @@ function loadJwtSecret() {
   return generated;
 }
 
-const SECRET = new TextEncoder().encode(loadJwtSecret());
+let secretBytes = null;
+function getSecretBytes() {
+  if (!secretBytes) {
+    secretBytes = new TextEncoder().encode(loadJwtSecret());
+  }
+  return secretBytes;
+}
 
 export function shouldUseSecureCookie(request) {
   const forceSecureCookie = process.env.AUTH_COOKIE_SECURE === "true";
@@ -34,13 +40,13 @@ export async function createDashboardAuthToken(claims = {}) {
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("24h")
-    .sign(SECRET);
+    .sign(getSecretBytes());
 }
 
 export async function verifyDashboardAuthToken(token) {
   if (!token) return false;
   try {
-    await jwtVerify(token, SECRET);
+    await jwtVerify(token, getSecretBytes());
     return true;
   } catch {
     return false;
@@ -50,7 +56,7 @@ export async function verifyDashboardAuthToken(token) {
 export async function getDashboardAuthSession(token) {
   if (!token) return null;
   try {
-    const { payload } = await jwtVerify(token, SECRET);
+    const { payload } = await jwtVerify(token, getSecretBytes());
     return payload;
   } catch {
     return null;

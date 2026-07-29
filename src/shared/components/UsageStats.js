@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
 
@@ -13,11 +13,11 @@ function isLLMProvider(id) {
 import Badge from "./Badge";
 import Card from "./Card";
 import OverviewCards from "@/app/(dashboard)/dashboard/usage/components/OverviewCards";
+import OptimizationSavings from "@/app/(dashboard)/dashboard/usage/components/OptimizationSavings";
 import UsageTable, { fmt, fmtTime } from "@/app/(dashboard)/dashboard/usage/components/UsageTable";
-import dynamic from "next/dynamic";
-// Lazy-load: keeps @xyflow/react out of the shared bundle until topology renders
-const ProviderTopology = dynamic(() => import("@/app/(dashboard)/dashboard/usage/components/ProviderTopology"), { ssr: false });
+import ProviderTopology from "@/app/(dashboard)/dashboard/usage/components/ProviderTopology";
 import UsageChart from "@/app/(dashboard)/dashboard/usage/components/UsageChart";
+import { usageScopeQueryString } from "@/lib/auth/usageScope";
 
 function timeAgo(timestamp) {
   const diff = Math.floor((Date.now() - new Date(timestamp)) / 1000);
@@ -91,16 +91,9 @@ function sortData(dataMap, pendingMap = {}, sortBy, sortOrder) {
     .map(([key, data]) => {
       const totalTokens = (data.promptTokens || 0) + (data.completionTokens || 0);
       const totalCost = data.cost || 0;
-      // ponytail: cost split is a token-share allocation of the (rate-accurate)
-      // server total, not a per-rate recompute. cached is a subset of prompt, so
-      // peel it out of the input share. Upgrade to a stored per-component cost
-      // breakdown if exact cached-rate cost display is needed.
-      const cachedTokens = data.cachedTokens || 0;
-      const nonCachedInput = Math.max(0, (data.promptTokens || 0) - cachedTokens);
-      const inputCost = totalTokens > 0 ? nonCachedInput * (totalCost / totalTokens) : 0;
-      const cachedCost = totalTokens > 0 ? cachedTokens * (totalCost / totalTokens) : 0;
+      const inputCost = totalTokens > 0 ? (data.promptTokens || 0) * (totalCost / totalTokens) : 0;
       const outputCost = totalTokens > 0 ? (data.completionTokens || 0) * (totalCost / totalTokens) : 0;
-      return { ...data, key, totalTokens, totalCost, inputCost, cachedCost, outputCost, pending: pendingMap[key] || 0 };
+      return { ...data, key, totalTokens, totalCost, inputCost, outputCost, pending: pendingMap[key] || 0 };
     })
     .sort((a, b) => {
       let valA = a[sortBy];
@@ -131,7 +124,7 @@ function groupDataByKey(data, keyField) {
     if (!groups[gk]) {
       groups[gk] = {
         groupKey: gk,
-        summary: { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, totalTokens: 0, cost: 0, inputCost: 0, cachedCost: 0, outputCost: 0, lastUsed: null, pending: 0 },
+        summary: { requests: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, inputCost: 0, outputCost: 0, lastUsed: null, pending: 0 },
         items: [],
       };
     }
@@ -139,11 +132,9 @@ function groupDataByKey(data, keyField) {
     s.requests += item.requests || 0;
     s.promptTokens += item.promptTokens || 0;
     s.completionTokens += item.completionTokens || 0;
-    s.cachedTokens += item.cachedTokens || 0;
     s.totalTokens += item.totalTokens || 0;
     s.cost += item.cost || 0;
     s.inputCost += item.inputCost || 0;
-    s.cachedCost += item.cachedCost || 0;
     s.outputCost += item.outputCost || 0;
     s.pending += item.pending || 0;
     if (item.lastUsed && (!s.lastUsed || new Date(item.lastUsed) > new Date(s.lastUsed))) {
@@ -200,7 +191,7 @@ const PERIODS = [
   { value: "60d", label: "60D" },
 ];
 
-export default function UsageStats({ period: periodProp, setPeriod: setPeriodProp, hidePeriodSelector = false } = {}) {
+export default function UsageStats({ period: periodProp, setPeriod: setPeriodProp, hidePeriodSelector = false, usageScope = "mine" } = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -214,24 +205,15 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const [viewMode, setViewMode] = useState("costs");
   const [providers, setProviders] = useState([]);
   const [periodLocal, setPeriodLocal] = useState("today");
-  const isInitialLoad = useRef(true);
-  const hasLoadedStats = useRef(false);
   const period = periodProp ?? periodLocal;
   const setPeriod = setPeriodProp ?? setPeriodLocal;
 
   // Fetch connected providers once, deduplicate by provider type
   // Always include noAuth free providers (e.g. opencode) regardless of connections
   useEffect(() => {
-    Promise.all([
-      fetch("/api/providers").then((r) => r.ok ? r.json() : null),
-      fetch("/api/provider-nodes").then((r) => r.ok ? r.json() : null),
-    ])
-      .then(([d, nodesData]) => {
-        // Build node name lookup for custom providers
-        const nodeNameMap = {};
-        for (const node of (nodesData?.nodes || [])) {
-          nodeNameMap[node.id] = node.name;
-        }
+    fetch("/api/providers")
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => {
         const seen = new Set();
         const unique = (d?.connections || []).filter((c) => {
           if (c.isActive === false) return false;
@@ -239,10 +221,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           if (seen.has(c.provider)) return false;
           seen.add(c.provider);
           return true;
-        }).map((c) => ({
-          ...c,
-          nodeName: nodeNameMap[c.provider] || null,
-        }));
+        });
         const noAuthProviders = Object.values(FREE_PROVIDERS)
           .filter((p) => p.noAuth && !seen.has(p.id) && isLLMProvider(p.id))
           .map((p) => ({ provider: p.id, name: p.name }));
@@ -251,50 +230,42 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       .catch(() => {});
   }, []);
 
-  // Fetch filtered stats via REST when period changes
+  // Fetch filtered stats via REST when period or scope changes
   useEffect(() => {
-    // First load: show full spinner; subsequent: show subtle fetching indicator
-    if (isInitialLoad.current) {
-      isInitialLoad.current = false;
-      setLoading(true);
-    } else {
-      setFetching(true);
-    }
+    setStats(null);
+    setLoading(true);
+    setFetching(false);
 
-    fetch(`/api/usage/stats?period=${period}`)
+    const scopeQs = usageScopeQueryString(usageScope);
+    fetch(`/api/usage/stats?period=${period}&${scopeQs}`)
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
-        if (data) {
-          hasLoadedStats.current = true;
-          setStats((prev) => ({ ...prev, ...data }));
-        }
+        if (data) setStats((prev) => ({ ...prev, ...data }));
       })
       .catch(() => {})
       .finally(() => {
         setLoading(false);
         setFetching(false);
       });
-  }, [period]);
+  }, [period, usageScope]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // SSE connection - real-time updates for activeRequests + recentRequests only
   useEffect(() => {
-    const es = new EventSource("/api/usage/stream");
+    const scopeQs = usageScopeQueryString(usageScope);
+    const es = new EventSource(`/api/usage/stream?${scopeQs}`);
 
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
         // Always merge only real-time fields, never overwrite full stats from REST
-        setStats((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            activeRequests: data.activeRequests,
-            recentRequests: data.recentRequests,
-            errorProvider: data.errorProvider,
-            pending: data.pending,
-          };
-        });
-        if (hasLoadedStats.current) setLoading(false);
+        setStats((prev) => ({
+          ...(prev || {}),
+          activeRequests: data.activeRequests,
+          recentRequests: data.recentRequests,
+          errorProvider: data.errorProvider,
+          pending: data.pending,
+        }));
+        setLoading(false);
       } catch (err) {
         console.error("[SSE CLIENT] parse error:", err);
       }
@@ -303,7 +274,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     es.onerror = () => setLoading(false);
 
     return () => es.close();
-  }, []);
+  }, [usageScope]);
 
   const toggleSort = useCallback((tableType, field) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -467,6 +438,9 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       {/* Overview cards */}
       {loading ? spinner : <OverviewCards stats={stats} />}
 
+      {/* Optimization Savings (TOAAS layer attribution) */}
+      {loading ? null : <OptimizationSavings period={period} usageScope={usageScope} />}
+
       {/* Provider topology + Recent Requests */}
       {loading ? spinner : (
         <div className="grid min-w-0 grid-cols-1 items-stretch gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
@@ -481,7 +455,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       )}
 
       {/* Token / Cost chart - sync period */}
-      {loading ? spinner : <UsageChart period={period} />}
+      {loading ? spinner : <UsageChart period={period} usageScope={usageScope} />}
 
       {/* Table with dropdown selector */}
       <div className="flex flex-col gap-3">

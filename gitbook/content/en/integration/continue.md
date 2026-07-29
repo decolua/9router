@@ -1,13 +1,13 @@
 # Continue VSCode Extension Integration
 
-Integrate 9Router with Continue extension to bring AI assistance directly into Visual Studio Code.
+Integrate ebRouter with Continue extension to bring AI assistance directly into Visual Studio Code.
 
 ## Prerequisites
 
 - Visual Studio Code installed
 - Continue extension installed from VSCode marketplace
-- 9Router API key from [dashboard](https://9router.com/dashboard)
-- 9Router running (local or cloud)
+- ebRouter API key from [dashboard](https://ebrouter.example.com/dashboard)
+- ebRouter running (local or cloud)
 
 ## Configuration Steps
 
@@ -18,7 +18,7 @@ Integrate 9Router with Continue extension to bring AI assistance directly into V
 3. Type "Continue: Open Config" and select it
 4. This opens `~/.continue/config.json`
 
-### 2. Add 9Router Model Configuration
+### 2. Add ebRouter Model Configuration
 
 Add the following configuration to your `config.json`:
 
@@ -27,7 +27,7 @@ Add the following configuration to your `config.json`:
 {
   "models": [
     {
-      "title": "9Router - Claude Opus",
+      "title": "ebRouter - Claude Opus",
       "provider": "openai",
       "model": "cc/claude-opus-4-5-20251101",
       "apiKey": "your-api-key-from-dashboard",
@@ -42,28 +42,28 @@ Add the following configuration to your `config.json`:
 {
   "models": [
     {
-      "title": "9Router - Claude Opus (Best)",
+      "title": "ebRouter - Claude Opus (Best)",
       "provider": "openai",
       "model": "cc/claude-opus-4-5-20251101",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
-      "title": "9Router - Claude Sonnet (Balanced)",
+      "title": "ebRouter - Claude Sonnet (Balanced)",
       "provider": "openai",
       "model": "cc/claude-sonnet-4-20250514",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
-      "title": "9Router - DeepSeek Chat (Code)",
+      "title": "ebRouter - DeepSeek Chat (Code)",
       "provider": "openai",
       "model": "cx/deepseek-chat",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
-      "title": "9Router - Claude Haiku (Fast)",
+      "title": "ebRouter - Claude Haiku (Fast)",
       "provider": "openai",
       "model": "cc/claude-haiku-4-20250514",
       "apiKey": "your-api-key-from-dashboard",
@@ -73,10 +73,10 @@ Add the following configuration to your `config.json`:
 }
 ```
 
-**For Cloud 9Router:**
+**For Cloud ebRouter:**
 Replace `apiBase` with:
 ```json
-"apiBase": "https://9router.com/v1"
+"apiBase": "https://ebrouter.example.com/v1"
 ```
 
 ### 3. Save and Reload
@@ -89,7 +89,7 @@ Replace `apiBase` with:
 
 1. Open Continue sidebar (click Continue icon in left panel)
 2. Click model selector dropdown at the top
-3. Choose your preferred 9Router model
+3. Choose your preferred ebRouter model
 
 ## Available Models
 
@@ -139,7 +139,7 @@ Add custom system prompts for specific behaviors:
 {
   "models": [
     {
-      "title": "9Router - Code Expert",
+      "title": "ebRouter - Code Expert",
       "provider": "openai",
       "model": "cx/deepseek-chat",
       "apiKey": "your-api-key",
@@ -158,7 +158,7 @@ Adjust model behavior with parameters:
 {
   "models": [
     {
-      "title": "9Router - Creative Writer",
+      "title": "ebRouter - Creative Writer",
       "provider": "openai",
       "model": "cc/claude-opus-4-5-20251101",
       "apiKey": "your-api-key",
@@ -204,13 +204,13 @@ Configure what context Continue sends to the model:
 ## Troubleshooting
 
 ### Model Not Responding
-- Check 9Router is running: `curl http://localhost:20128/health`
+- Check ebRouter is running: `curl http://localhost:20128/health`
 - Verify API key in config.json
 - Check VSCode Developer Console for errors: `Help` → `Toggle Developer Tools`
 
 ### Wrong Model Selected
 - Click model dropdown in Continue sidebar
-- Select correct 9Router model
+- Select correct ebRouter model
 - Model name must match exactly (case-sensitive)
 
 ### Configuration Not Loading
@@ -221,7 +221,7 @@ Configure what context Continue sends to the model:
 ### Slow Performance
 - Switch to faster models (haiku, flash)
 - Reduce context size in contextProviders
-- Check network latency to 9Router
+- Check network latency to ebRouter
 
 ## Best Practices
 

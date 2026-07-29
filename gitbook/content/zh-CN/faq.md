@@ -1,12 +1,12 @@
 # 常见问题
 
-关于 9Router 的常见问题。
+关于 ebRouter 的常见问题。
 
 ---
 
-## 什么是 9Router?
+## 什么是 ebRouter?
 
-**9Router 是一款 AI 模型路由工具,能够最大化你的订阅价值并最小化成本。**
+**ebRouter 是一款 AI 模型路由工具,能够最大化你的订阅价值并最小化成本。**
 
 它使用 3 层回退系统在多个 AI 提供商之间智能路由请求:
 1. **订阅层** - 充分利用你已付费的 Claude Code、Codex、Gemini 配额
@@ -23,7 +23,7 @@
 
 ## 价格是如何计算的?
 
-**9Router 采用三层定价策略:**
+**ebRouter 采用三层定价策略:**
 
 ### 第 1 层:订阅(优先使用)
 - **Claude Code**(Pro/Max):$20-100/月 - 5 小时 + 每周配额
@@ -50,9 +50,9 @@
 
 ---
 
-## 9Router 是免费的吗?
+## ebRouter 是免费的吗?
 
-**是的,9Router 本身 100% 免费且开源。**
+**是的,ebRouter 本身 100% 免费且开源。**
 
 **可用的免费层提供商:**
 - **Gemini CLI** - 每月 180K 次补全(免费 Google 账户)
@@ -96,7 +96,7 @@
 
 ## 可以同时使用多个提供商吗?
 
-**可以!这正是 9Router 的核心功能。**
+**可以!这正是 ebRouter 的核心功能。**
 
 **通过组合(Combos),你可以把多个提供商串联起来实现自动回退:**
 
@@ -129,7 +129,7 @@
 
 ## 配额跟踪是如何工作的?
 
-**9Router 为所有提供商提供实时配额跟踪:**
+**ebRouter 为所有提供商提供实时配额跟踪:**
 
 **功能:**
 - **Token 消耗** - 每次请求的输入/输出 tokens
@@ -154,17 +154,17 @@
 
 ---
 
-## 9Router 能配合 Cursor 使用吗?
+## ebRouter 能配合 Cursor 使用吗?
 
 **可以,但 Cursor 需要使用云端 endpoint。**
 
 **问题:** Cursor IDE 不支持 localhost endpoint。
 
-**解决方案:** 使用 9Router 云端部署:
+**解决方案:** 使用 ebRouter 云端部署:
 
 ```
 Cursor Settings → Models → Advanced:
-  OpenAI API Base URL: https://9router.com/v1
+  OpenAI API Base URL: https://ebrouter.example.com/v1
   OpenAI API Key: [从仪表盘获取]
   Model: cc/claude-opus-4-5-20251101
 ```
@@ -172,8 +172,8 @@ Cursor Settings → Models → Advanced:
 **替代方案:** 在 VPS 上自托管,使用公开域名:
 ```bash
 # 部署到 VPS
-git clone https://github.com/decolua/9router.git
-cd 9router/app
+git clone https://github.com/YOUR_ORG/ebRouter.git
+cd ebrouter/app
 npm install && npm run build
 npm start
 
@@ -192,22 +192,22 @@ npm start
 
 ---
 
-## 可以自托管 9Router 吗?
+## 可以自托管 ebRouter 吗?
 
-**可以!9Router 支持多种部署方式:**
+**可以!ebRouter 支持多种部署方式:**
 
 ### Localhost(默认)
 ```bash
-npm install -g 9router
-9router
+npm install -g ebrouter
+ebrouter
 → 仪表盘: http://localhost:3000
 → API: http://localhost:20128/v1
 ```
 
 ### VPS/云
 ```bash
-git clone https://github.com/decolua/9router.git
-cd 9router/app
+git clone https://github.com/YOUR_ORG/ebRouter.git
+cd ebrouter/app
 npm install && npm run build
 
 export JWT_SECRET="your-secure-secret"
@@ -219,17 +219,17 @@ npm start
 
 ### Docker
 ```bash
-docker build -t 9router .
+docker build -t ebrouter .
 docker run -d \
   -p 3000:3000 \
   -e JWT_SECRET="your-secret" \
   -v 9router-data:/app/data \
-  9router
+  ebrouter
 ```
 
 ### Cloudflare Workers
 ```bash
-cd 9router/app
+cd ebrouter/app
 npm run deploy:cloudflare
 ```
 
@@ -245,11 +245,11 @@ npm run deploy:cloudflare
 
 ## 我的数据安全吗?
 
-**是的,9Router 优先考虑安全和隐私:**
+**是的,ebRouter 优先考虑安全和隐私:**
 
 **本地存储:**
 - 所有数据存储在本地 `~/.9router`(或自定义 `DATA_DIR`)
-- 不会发送数据到 9Router 服务器
+- 不会发送数据到 ebRouter 服务器
 - OAuth tokens 使用 JWT 加密
 
 **无遥测:**
@@ -268,31 +268,31 @@ npm run deploy:cloudflare
 - 云端部署启用 HTTPS
 - 定期轮换 API keys
 
-**9Router 存储的内容:**
+**ebRouter 存储的内容:**
 - 提供商 OAuth tokens(加密)
 - API keys(加密)
 - 使用统计(仅本地)
 - 组合配置
 
-**9Router 不存储的内容:**
+**ebRouter 不存储的内容:**
 - 你的 prompt 或响应
 - 你生成的代码
 - 个人信息
 
 ---
 
-## 如何更新 9Router?
+## 如何更新 ebRouter?
 
 **更新方式取决于安装类型:**
 
 ### 全局 NPM 安装
 ```bash
-npm update -g 9router
+npm update -g ebrouter
 ```
 
 ### 本地安装
 ```bash
-cd 9router/app
+cd ebrouter/app
 git pull origin main
 npm install
 npm run build
@@ -301,22 +301,22 @@ npm start
 
 ### Docker
 ```bash
-docker pull 9router:latest
-docker stop 9router
-docker rm 9router
+docker pull ebrouter:latest
+docker stop ebrouter
+docker rm ebrouter
 docker run -d \
   -p 3000:3000 \
   -v 9router-data:/app/data \
-  9router:latest
+  ebrouter:latest
 ```
 
 **查看版本:**
 ```bash
-9router --version
+ebrouter --version
 ```
 
 **破坏性变更:**
-- 查看 [CHANGELOG.md](https://github.com/decolua/9router/blob/main/CHANGELOG.md)
+- 查看 [CHANGELOG.md](https://github.com/YOUR_ORG/ebRouter/blob/main/CHANGELOG.md)
 - 大版本更新前备份 `~/.9router`
 - 阅读大版本的迁移指南
 
@@ -329,18 +329,18 @@ docker run -d \
 ### 贡献方式:
 
 1. **报告 bug:**
-   - [GitHub Issues](https://github.com/decolua/9router/issues)
+   - [GitHub Issues](https://github.com/YOUR_ORG/ebRouter/issues)
    - 附上错误日志、复现步骤
 
 2. **功能请求:**
-   - [GitHub Discussions](https://github.com/decolua/9router/discussions)
+   - [GitHub Discussions](https://github.com/YOUR_ORG/ebRouter/discussions)
    - 描述使用场景和价值
 
 3. **提交代码:**
    ```bash
    # Fork 仓库
-   git clone https://github.com/YOUR_USERNAME/9router.git
-   cd 9router
+   git clone https://github.com/YOUR_USERNAME/ebrouter.git
+   cd ebrouter
    
    # 创建分支
    git checkout -b feature/your-feature
@@ -375,13 +375,13 @@ docker run -d \
 - 更新文档
 - 提交保持原子化、描述清晰
 
-详情见 [CONTRIBUTING.md](https://github.com/decolua/9router/blob/main/CONTRIBUTING.md)。
+详情见 [CONTRIBUTING.md](https://github.com/YOUR_ORG/ebRouter/blob/main/CONTRIBUTING.md)。
 
 ---
 
 ## 需要更多帮助?
 
-- **文档:** [9router.com/docs](https://9router.com/docs)
-- **GitHub:** [github.com/decolua/9router](https://github.com/decolua/9router)
-- **Issues:** [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **文档:** [ebrouter.example.com/docs](https://ebrouter.example.com/docs)
+- **GitHub:** [github.com/YOUR_ORG/ebRouter](https://github.com/YOUR_ORG/ebRouter)
+- **Issues:** [github.com/YOUR_ORG/ebRouter/issues](https://github.com/YOUR_ORG/ebRouter/issues)
 - **故障排除:** [troubleshooting.md](troubleshooting.md)

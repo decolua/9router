@@ -1,25 +1,23 @@
 import { getUsageStats, statsEmitter, getActiveRequests } from "@/lib/usageDb";
+import { withUsageUser } from "@/lib/auth/runtimeUserContext.js";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export const GET = withUsageUser(async (request, _ctx, _user, { filterUserId }) => {
   const encoder = new TextEncoder();
-  const state = { closed: false, keepalive: null, send: null, sendPending: null, cachedStats: null };
+  const state = { closed: false, keepalive: null, send: null, sendPending: null, cachedStats: null, filterUserId };
 
   const stream = new ReadableStream({
     async start(controller) {
-      // Full stats refresh (heavy) + immediate lightweight push
       state.send = async () => {
         if (state.closed) return;
         try {
-          // Push lightweight update immediately so UI reflects changes fast
           if (state.cachedStats) {
-            const { activeRequests, recentRequests, errorProvider } = await getActiveRequests();
+            const { activeRequests, recentRequests, errorProvider } = await getActiveRequests(state.filterUserId);
             const quickStats = { ...state.cachedStats, activeRequests, recentRequests, errorProvider };
             controller.enqueue(encoder.encode(`data: ${JSON.stringify(quickStats)}\n\n`));
           }
-          // Then do full recalc and update cache
-          const stats = await getUsageStats();
+          const stats = await getUsageStats("today", state.filterUserId);
           state.cachedStats = stats;
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
         } catch {
@@ -30,11 +28,10 @@ export async function GET() {
         }
       };
 
-      // Lightweight push: only refresh activeRequests + recentRequests on pending changes
       state.sendPending = async () => {
         if (state.closed || !state.cachedStats) return;
         try {
-          const { activeRequests, recentRequests, errorProvider } = await getActiveRequests();
+          const { activeRequests, recentRequests, errorProvider } = await getActiveRequests(state.filterUserId);
           const stats = { ...state.cachedStats, activeRequests, recentRequests, errorProvider };
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
         } catch {
@@ -76,4 +73,4 @@ export async function GET() {
       Connection: "keep-alive",
     },
   });
-}
+});

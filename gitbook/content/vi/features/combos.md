@@ -6,7 +6,7 @@ Tạo các tổ hợp model tùy chỉnh với fallback tự động. Combo cho 
 
 ## Combos là gì?
 
-Combos là **chuỗi fallback tùy chỉnh** bạn tạo trong dashboard. Thay vì dùng một model duy nhất, bạn định nghĩa một chuỗi các model mà 9Router sẽ thử theo thứ tự.
+Combos là **chuỗi fallback tùy chỉnh** bạn tạo trong dashboard. Thay vì dùng một model duy nhất, bạn định nghĩa một chuỗi các model mà ebRouter sẽ thử theo thứ tự.
 
 **Ví dụ:**
 ```
@@ -22,7 +22,7 @@ Models:
 Model: premium-coding
 ```
 
-9Router tự động thử từng model theo thứ tự cho đến khi thành công.
+ebRouter tự động thử từng model theo thứ tự cho đến khi thành công.
 
 ---
 
@@ -354,7 +354,7 @@ Sửa `~/.claude/config.json`:
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
-  "anthropic_api_key": "your-9router-api-key",
+  "anthropic_api_key": "your-ebrouter-api-key",
   "model": "budget-combo"
 }
 ```
@@ -363,7 +363,7 @@ Sửa `~/.claude/config.json`:
 
 ```bash
 export OPENAI_BASE_URL="http://localhost:20128"
-export OPENAI_API_KEY="your-9router-api-key"
+export OPENAI_API_KEY="your-ebrouter-api-key"
 
 codex --model quality-first "your prompt"
 ```
@@ -480,7 +480,7 @@ Dashboard → Combos → Edit → Budget:
   Monthly limit: $50
 ```
 
-Khi đạt giới hạn, 9Router bỏ qua model trả phí và chỉ dùng free tier.
+Khi đạt giới hạn, ebRouter bỏ qua model trả phí và chỉ dùng free tier.
 
 ### Bật/Tắt Model trong Combo
 

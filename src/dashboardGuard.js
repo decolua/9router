@@ -1,7 +1,40 @@
 import { NextResponse } from "next/server";
-import { getSettings, validateApiKey } from "@/lib/localDb";
+import { getSettings, validateApiKey, isApiKeyValid } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { verifyDashboardAuthToken, getDashboardAuthSession } from "@/lib/auth/dashboardSession";
+import { attachUserHeaders, getCliContextUser, getSessionUser } from "@/lib/auth/requestContext";
+import { checkApiRateLimit } from "@/lib/auth/apiRateLimiter.js";
+import { getClientIp } from "@/lib/auth/loginLimiter";
+import { ORG_SLUG_HEADER } from "@/lib/org/orgContext.js";
+
+const ORG_PATH_RE = /^\/o\/([a-z0-9-]+)(\/.*)?$/i;
+
+function resolveOrgRewrite(request) {
+  const match = request.nextUrl.pathname.match(ORG_PATH_RE);
+  if (!match) return null;
+
+  const slug = match[1].toLowerCase();
+  const rest = match[2] || "/";
+  const url = request.nextUrl.clone();
+  url.pathname = rest;
+
+  const headers = new Headers(request.headers);
+  headers.set(ORG_SLUG_HEADER, slug);
+
+  return { url, headers, pathname: rest };
+}
+
+function passThrough(orgCtx, init) {
+  if (!orgCtx) return NextResponse.next(init);
+
+  const headers = new Headers(orgCtx.headers);
+  if (init?.request?.headers) {
+    for (const [key, value] of init.request.headers.entries()) {
+      headers.set(key, value);
+    }
+  }
+  return NextResponse.rewrite(orgCtx.url, { request: { headers } });
+}
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
@@ -24,8 +57,14 @@ const PUBLIC_API_PATHS = [
   "/api/init",
   "/api/locale",
   "/api/auth/login",
+  "/api/auth/login/mfa",
+  "/api/auth/forgot-password",
+  "/api/auth/reset-password",
   "/api/auth/logout",
+  "/api/auth/signup",
   "/api/auth/status",
+  "/api/auth/org-check",
+  "/api/auth/register-org",
   "/api/auth/oidc",
   "/api/version",
   "/api/settings/require-login",
@@ -63,6 +102,8 @@ const PROTECTED_API_PATHS = [
   "/api/mcp",
   "/api/translator",
   "/api/tunnel",
+  "/api/users",
+  "/api/audit",
 ];
 
 // Routes that spawn child processes or read host secrets — restrict to localhost.
@@ -130,7 +171,30 @@ function extractApiKey(request) {
 async function hasValidApiKey(request) {
   const apiKey = extractApiKey(request);
   if (!apiKey) return false;
-  return await validateApiKey(apiKey);
+  return await isApiKeyValid(apiKey);
+}
+
+async function forwardWithUser(request, user, orgCtx) {
+  const headers = attachUserHeaders(request, user);
+  return passThrough(orgCtx, { request: { headers } });
+}
+
+async function forwardAuthenticated(request, orgCtx) {
+  const token = request.cookies.get("auth_token")?.value;
+  if (token) {
+    const user = await getSessionUser(token);
+    if (user?.status === "active") return forwardWithUser(request, user, orgCtx);
+  }
+  if (await hasValidCliToken(request)) {
+    const admin = await getCliContextUser();
+    if (admin) return forwardWithUser(request, admin, orgCtx);
+  }
+  const settings = await loadSettings();
+  if (settings?.requireLogin === false) {
+    const admin = await getCliContextUser();
+    if (admin) return forwardWithUser(request, admin, orgCtx);
+  }
+  return passThrough(orgCtx);
 }
 
 async function canAccessPublicLlmApi(request) {
@@ -181,7 +245,8 @@ export const __test__ = {
 };
 
 export async function proxy(request) {
-  const { pathname } = request.nextUrl;
+  const orgCtx = resolveOrgRewrite(request);
+  const pathname = orgCtx?.pathname ?? request.nextUrl.pathname;
 
   // Local-only gate for spawn-capable / host-secret routes.
   if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
@@ -193,22 +258,42 @@ export async function proxy(request) {
   // Always protected - require valid JWT or local CLI token (machineId-based)
   if (ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {
     if (await hasValidCliToken(request) || await hasValidToken(request))
-      return NextResponse.next();
+      return passThrough(orgCtx);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   if (isPublicLlmApi(pathname)) {
-    if (await canAccessPublicLlmApi(request)) return NextResponse.next();
+    const ip = getClientIp(request);
+    const apiKey = extractApiKey(request);
+    const limit = checkApiRateLimit({ ip, apiKey: apiKey || undefined });
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded", scope: limit.scope },
+        { status: 429, headers: { "Retry-After": String(limit.retryAfter) } }
+      );
+    }
+    if (await canAccessPublicLlmApi(request)) return passThrough(orgCtx);
     return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
   }
 
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
   if (pathname.startsWith("/api/")) {
-    if (isPublicApi(pathname)) return NextResponse.next();
-    if (await hasValidCliToken(request) || await isAuthenticated(request))
-      return NextResponse.next();
+    if (isPublicApi(pathname)) return passThrough(orgCtx);
+    if (await hasValidCliToken(request)) {
+      const admin = await getCliContextUser();
+      if (admin) return forwardWithUser(request, admin, orgCtx);
+      return passThrough(orgCtx);
+    }
+    if (await isAuthenticated(request)) return forwardAuthenticated(request, orgCtx);
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  if (pathname === "/signup") return passThrough(orgCtx);
+  if (pathname === "/reset-password") return passThrough(orgCtx);
+  if (pathname === "/login") return passThrough(orgCtx);
+  if (pathname === "/register") return passThrough(orgCtx);
+  if (pathname === "/landing") return passThrough(orgCtx);
+  if (pathname === "/callback") return passThrough(orgCtx);
 
   // Protect all dashboard routes
   if (pathname.startsWith("/dashboard")) {
@@ -236,13 +321,15 @@ export async function proxy(request) {
     }
 
     // If login not required, allow through
-    if (!requireLogin) return NextResponse.next();
+    if (!requireLogin) return passThrough(orgCtx);
 
     // Verify JWT token
     const token = request.cookies.get("auth_token")?.value;
     if (token) {
       if (await verifyDashboardAuthToken(token)) {
-        return NextResponse.next();
+        const user = await getSessionUser(token);
+        if (user?.status === "active") return forwardWithUser(request, user, orgCtx);
+        return passThrough(orgCtx);
       } else {
         return NextResponse.redirect(new URL("/login", request.url));
       }
@@ -251,10 +338,10 @@ export async function proxy(request) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Redirect / to /dashboard if logged in, or /dashboard if it's the root
+  // Send unauthenticated visitors straight to login (login page redirects to dashboard when authed).
   if (pathname === "/") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  return NextResponse.next();
+  return passThrough(orgCtx);
 }

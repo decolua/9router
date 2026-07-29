@@ -1,9 +1,9 @@
 {
-  "name": "9router",
-  "version": "0.5.40",
-  "description": "9Router CLI - Start and manage 9Router server",
+  "name": "ebrouter",
+  "version": "0.4.55",
+  "description": "ebRouter CLI - Start and manage ebRouter server",
   "bin": {
-    "9router": "./cli.js"
+    "ebrouter": "./cli.js"
   },
   "files": [
     "cli.js",
@@ -34,7 +34,7 @@
     "node": ">=18.0.0"
   },
   "keywords": [
-    "9router",
+    "ebrouter",
     "cli",
     "proxy",
     "ai",

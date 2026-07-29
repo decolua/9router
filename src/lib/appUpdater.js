@@ -159,7 +159,7 @@ export async function killAppProcesses() {
 // Resolve npx/9router binary to relaunch after update (cross-platform)
 function resolveRelaunchCommand() {
   const isWin = process.platform === "win32";
-  // Prefer `npx 9router` — works regardless of global bin path changes after npm i -g
+  // Prefer `npx ebrouter` — works regardless of global bin path changes after npm i -g
   const npx = isWin ? "npx.cmd" : "npx";
   return { cmd: npx, args: [UPDATER_CONFIG.npmPackageName] };
 }

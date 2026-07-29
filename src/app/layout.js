@@ -3,6 +3,7 @@ import { GoogleAnalytics } from "@next/third-parties/google";
 import "material-symbols/outlined.css";
 import "./globals.css";
 import { ThemeProvider } from "@/shared/components/ThemeProvider";
+import { FontsLoadedMarker } from "@/shared/components/FontsLoadedMarker";
 import "@/lib/network/initOutboundProxy"; // Auto-initialize outbound proxy env
 import "@/shared/services/bootstrap"; // Auto-run initializeApp (watchdog, auto-resume tunnel)
 import { initConsoleLogCapture } from "@/lib/consoleLogBuffer";
@@ -17,7 +18,7 @@ const inter = Inter({
 });
 
 export const metadata = {
-  title: "9Router - AI Infrastructure Management",
+  title: "ebRouter - AI Infrastructure Management",
   description: "One endpoint for all your AI providers. Manage keys, monitor usage, and scale effortlessly.",
   icons: {
     icon: "/favicon.svg",
@@ -31,14 +32,8 @@ export const viewport = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `if(document.fonts&&document.fonts.ready){document.fonts.ready.then(function(){document.documentElement.classList.add('fonts-loaded')})}else{document.documentElement.classList.add('fonts-loaded')}`,
-          }}
-        />
-      </head>
-      <body className={`${inter.variable} font-sans antialiased`}>
+      <body className={`${inter.variable} font-sans antialiased`} suppressHydrationWarning>
+        <FontsLoadedMarker />
         <ThemeProvider>
           <RuntimeI18nProvider>
             {children}

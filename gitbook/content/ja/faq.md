@@ -1,12 +1,12 @@
 # よくある質問
 
-9Routerに関する一般的な質問。
+ebRouterに関する一般的な質問。
 
 ---
 
-## 9Routerとは?
+## ebRouterとは?
 
-**9Routerは、サブスクリプションの価値を最大化し、コストを最小限に抑えるAIモデルルーターです。**
+**ebRouterは、サブスクリプションの価値を最大化し、コストを最小限に抑えるAIモデルルーターです。**
 
 3階層フォールバックシステムを使用して、複数のAIプロバイダー間でリクエストをインテリジェントにルーティングします:
 1. **サブスクリプション階層** - すでに支払っているClaude Code、Codex、Geminiのクォータを最大化
@@ -23,7 +23,7 @@
 
 ## 料金体系はどうなっていますか?
 
-**9Routerは3階層の料金戦略を使用します:**
+**ebRouterは3階層の料金戦略を使用します:**
 
 ### Tier 1: サブスクリプション(最初に最大化)
 - **Claude Code** (Pro/Max): 月$20〜100 - 5時間 + 週次クォータ
@@ -50,9 +50,9 @@
 
 ---
 
-## 9Routerは無料ですか?
+## ebRouterは無料ですか?
 
-**はい、9Router自体は100%無料でオープンソースです。**
+**はい、ebRouter自体は100%無料でオープンソースです。**
 
 **利用可能な無料階層プロバイダー:**
 - **Gemini CLI** - 月18万コンプリーション(無料Googleアカウント)
@@ -96,7 +96,7 @@
 
 ## 複数のプロバイダーを使用できますか?
 
-**はい! これは9Routerのコア機能です。**
+**はい! これはebRouterのコア機能です。**
 
 **コンボにより、複数のプロバイダーを自動フォールバック付きで連鎖させることができます:**
 
@@ -129,7 +129,7 @@ Dashboard → Combos → Create New
 
 ## クォータトラッキングはどのように機能しますか?
 
-**9Routerはすべてのプロバイダーのクォータをリアルタイムで追跡します:**
+**ebRouterはすべてのプロバイダーのクォータをリアルタイムで追跡します:**
 
 **機能:**
 - **トークン消費** - リクエストごとの入出力トークン
@@ -154,17 +154,17 @@ Dashboard → Providers → Quota Tracking
 
 ---
 
-## 9RouterはCursorで動作しますか?
+## ebRouterはCursorで動作しますか?
 
 **はい、ただしCursorはクラウドエンドポイントが必要です。**
 
 **問題:** Cursor IDEはlocalhostエンドポイントをサポートしていません。
 
-**解決策:** 9Routerクラウドデプロイメントを使用:
+**解決策:** ebRouterクラウドデプロイメントを使用:
 
 ```
 Cursor Settings → Models → Advanced:
-  OpenAI API Base URL: https://9router.com/v1
+  OpenAI API Base URL: https://ebrouter.example.com/v1
   OpenAI API Key: [ダッシュボードから取得]
   Model: cc/claude-opus-4-5-20251101
 ```
@@ -172,8 +172,8 @@ Cursor Settings → Models → Advanced:
 **代替案:** パブリックドメインでVPSにセルフホスト:
 ```bash
 # VPSへデプロイ
-git clone https://github.com/decolua/9router.git
-cd 9router/app
+git clone https://github.com/YOUR_ORG/ebRouter.git
+cd ebrouter/app
 npm install && npm run build
 npm start
 
@@ -192,22 +192,22 @@ npm start
 
 ---
 
-## 9Routerをセルフホストできますか?
+## ebRouterをセルフホストできますか?
 
-**はい! 9Routerは複数のデプロイメントオプションをサポートします:**
+**はい! ebRouterは複数のデプロイメントオプションをサポートします:**
 
 ### Localhost(デフォルト)
 ```bash
-npm install -g 9router
-9router
+npm install -g ebrouter
+ebrouter
 → Dashboard: http://localhost:3000
 → API: http://localhost:20128/v1
 ```
 
 ### VPS/クラウド
 ```bash
-git clone https://github.com/decolua/9router.git
-cd 9router/app
+git clone https://github.com/YOUR_ORG/ebRouter.git
+cd ebrouter/app
 npm install && npm run build
 
 export JWT_SECRET="your-secure-secret"
@@ -219,17 +219,17 @@ npm start
 
 ### Docker
 ```bash
-docker build -t 9router .
+docker build -t ebrouter .
 docker run -d \
   -p 3000:3000 \
   -e JWT_SECRET="your-secret" \
   -v 9router-data:/app/data \
-  9router
+  ebrouter
 ```
 
 ### Cloudflare Workers
 ```bash
-cd 9router/app
+cd ebrouter/app
 npm run deploy:cloudflare
 ```
 
@@ -245,11 +245,11 @@ npm run deploy:cloudflare
 
 ## データは安全ですか?
 
-**はい、9Routerはセキュリティとプライバシーを優先します:**
+**はい、ebRouterはセキュリティとプライバシーを優先します:**
 
 **ローカルストレージ:**
 - すべてのデータは`~/.9router`(またはカスタム`DATA_DIR`)にローカル保存
-- 9Routerサーバーへのデータ送信なし
+- ebRouterサーバーへのデータ送信なし
 - OAuthトークンはJWTで暗号化
 
 **テレメトリなし:**
@@ -268,31 +268,31 @@ npm run deploy:cloudflare
 - クラウドデプロイでHTTPSを有効化
 - APIキーを定期的にローテーション
 
-**9Routerが保存するもの:**
+**ebRouterが保存するもの:**
 - プロバイダーOAuthトークン(暗号化)
 - APIキー(暗号化)
 - 使用統計(ローカルのみ)
 - コンボ設定
 
-**9Routerが保存しないもの:**
+**ebRouterが保存しないもの:**
 - プロンプトやレスポンス
 - 生成したコード
 - 個人情報
 
 ---
 
-## 9Routerを更新するには?
+## ebRouterを更新するには?
 
 **更新方法はインストールタイプによって異なります:**
 
 ### グローバルNPMインストール
 ```bash
-npm update -g 9router
+npm update -g ebrouter
 ```
 
 ### ローカルインストール
 ```bash
-cd 9router/app
+cd ebrouter/app
 git pull origin main
 npm install
 npm run build
@@ -301,22 +301,22 @@ npm start
 
 ### Docker
 ```bash
-docker pull 9router:latest
-docker stop 9router
-docker rm 9router
+docker pull ebrouter:latest
+docker stop ebrouter
+docker rm ebrouter
 docker run -d \
   -p 3000:3000 \
   -v 9router-data:/app/data \
-  9router:latest
+  ebrouter:latest
 ```
 
 **バージョンを確認:**
 ```bash
-9router --version
+ebrouter --version
 ```
 
 **破壊的変更:**
-- [CHANGELOG.md](https://github.com/decolua/9router/blob/main/CHANGELOG.md)を確認
+- [CHANGELOG.md](https://github.com/YOUR_ORG/ebRouter/blob/main/CHANGELOG.md)を確認
 - メジャー更新前に`~/.9router`をバックアップ
 - メジャーバージョンの移行ガイドを確認
 
@@ -329,18 +329,18 @@ docker run -d \
 ### 貢献方法:
 
 1. **バグを報告:**
-   - [GitHub Issues](https://github.com/decolua/9router/issues)
+   - [GitHub Issues](https://github.com/YOUR_ORG/ebRouter/issues)
    - エラーログ、再現手順を含める
 
 2. **機能をリクエスト:**
-   - [GitHub Discussions](https://github.com/decolua/9router/discussions)
+   - [GitHub Discussions](https://github.com/YOUR_ORG/ebRouter/discussions)
    - ユースケースと利点を説明
 
 3. **コードを提出:**
    ```bash
    # リポジトリをフォーク
-   git clone https://github.com/YOUR_USERNAME/9router.git
-   cd 9router
+   git clone https://github.com/YOUR_USERNAME/ebrouter.git
+   cd ebrouter
    
    # ブランチを作成
    git checkout -b feature/your-feature
@@ -375,13 +375,13 @@ docker run -d \
 - ドキュメントを更新
 - コミットは小さく、わかりやすく
 
-詳細は[CONTRIBUTING.md](https://github.com/decolua/9router/blob/main/CONTRIBUTING.md)を参照。
+詳細は[CONTRIBUTING.md](https://github.com/YOUR_ORG/ebRouter/blob/main/CONTRIBUTING.md)を参照。
 
 ---
 
 ## さらにヘルプが必要?
 
-- **ドキュメント:** [9router.com/docs](https://9router.com/docs)
-- **GitHub:** [github.com/decolua/9router](https://github.com/decolua/9router)
-- **Issues:** [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **ドキュメント:** [ebrouter.example.com/docs](https://ebrouter.example.com/docs)
+- **GitHub:** [github.com/YOUR_ORG/ebRouter](https://github.com/YOUR_ORG/ebRouter)
+- **Issues:** [github.com/YOUR_ORG/ebRouter/issues](https://github.com/YOUR_ORG/ebRouter/issues)
 - **トラブルシューティング:** [troubleshooting.md](troubleshooting.md)

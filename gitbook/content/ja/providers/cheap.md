@@ -45,10 +45,10 @@ Dashboard → API Keys → Create New
 → APIキーをコピー ("zhipu-"で始まる)
 ```
 
-**ステップ3: 9Routerに追加**
+**ステップ3: ebRouterに追加**
 
 ```bash
-9router
+ebrouter
 # Dashboard → Providers → Add API Key
 
 Provider: glm
@@ -117,10 +117,10 @@ Dashboard → API Management → Create Key
 → APIキーをコピー
 ```
 
-**ステップ3: 9Routerに追加**
+**ステップ3: ebRouterに追加**
 
 ```bash
-9router
+ebrouter
 # Dashboard → Providers → Add API Key
 
 Provider: minimax
@@ -190,10 +190,10 @@ Dashboard → API Keys → Create New
 → APIキーをコピー
 ```
 
-**ステップ3: 9Routerに追加**
+**ステップ3: ebRouterに追加**
 
 ```bash
-9router
+ebrouter
 # Dashboard → Providers → Add API Key
 
 Provider: kimi

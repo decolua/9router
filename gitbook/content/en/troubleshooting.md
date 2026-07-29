@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Common issues and solutions when using 9Router.
+Common issues and solutions when using ebRouter.
 
 ---
 
@@ -78,7 +78,7 @@ Common issues and solutions when using 9Router.
 **Solutions:**
 
 1. **Auto-refresh (default):**
-   9Router automatically refreshes tokens. Wait 30 seconds and retry.
+   ebRouter automatically refreshes tokens. Wait 30 seconds and retry.
 
 2. **Manual reconnect:**
    ```
@@ -135,15 +135,15 @@ Common issues and solutions when using 9Router.
 **Problem:** "ECONNREFUSED" or "Cannot connect to localhost:20128".
 
 **Causes:**
-- 9Router not running
+- ebRouter not running
 - Port 20128 blocked
 - Firewall blocking connection
 
 **Solutions:**
 
-1. **Start 9Router:**
+1. **Start ebRouter:**
    ```bash
-   9router
+   ebrouter
    ```
    Dashboard should open at http://localhost:3000
 
@@ -164,7 +164,7 @@ Common issues and solutions when using 9Router.
 4. **Use cloud endpoint:**
    If localhost doesn't work (e.g., Cursor IDE):
    ```
-   Endpoint: https://9router.com/v1
+   Endpoint: https://ebrouter.example.com/v1
    ```
 
 ---
@@ -175,15 +175,15 @@ Common issues and solutions when using 9Router.
 
 **Causes:**
 - Port 3000 already in use
-- 9Router crashed
+- ebRouter crashed
 - Browser cache issues
 
 **Solutions:**
 
-1. **Check if 9Router is running:**
+1. **Check if ebRouter is running:**
    ```bash
    # Check process
-   ps aux | grep 9router
+   ps aux | grep ebrouter
    
    # Check port 3000
    lsof -i :3000
@@ -199,13 +199,13 @@ Common issues and solutions when using 9Router.
    taskkill /PID <PID> /F
    ```
 
-3. **Restart 9Router:**
+3. **Restart ebRouter:**
    ```bash
    # Stop
-   pkill -f 9router
+   pkill -f ebrouter
    
    # Start
-   9router
+   ebrouter
    ```
 
 4. **Clear browser cache:**
@@ -346,6 +346,6 @@ Common issues and solutions when using 9Router.
 
 ## Need More Help?
 
-- **GitHub Issues:** [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
-- **Documentation:** [9router.com/docs](https://9router.com/docs)
+- **GitHub Issues:** [github.com/YOUR_ORG/ebRouter/issues](https://github.com/YOUR_ORG/ebRouter/issues)
+- **Documentation:** [ebrouter.example.com/docs](https://ebrouter.example.com/docs)
 - **FAQ:** [faq.md](faq.md)

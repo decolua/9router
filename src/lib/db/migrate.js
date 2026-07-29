@@ -7,6 +7,34 @@ import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
 import { getAppVersion } from "./version.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
+import { isMasterKeyConfigured, getKeyFingerprint } from "../crypto/masterKey.js";
+
+// Boot guard: detect wrong/missing MASTER_KEY before decryption attempts.
+function verifyMasterKeyAgainstStored(adapter) {
+  const stored = getMetaSync(adapter, "masterKeyFingerprint", null);
+
+  if (stored && !isMasterKeyConfigured()) {
+    throw new Error(
+      "[DB][boot] Encrypted data exists in this database (masterKeyFingerprint stamped) but MASTER_KEY is not set. " +
+      "Set MASTER_KEY to the same value used previously, or restore an earlier backup. Refusing to start."
+    );
+  }
+
+  if (stored && isMasterKeyConfigured()) {
+    const current = getKeyFingerprint();
+    if (current !== stored) {
+      throw new Error(
+        `[DB][boot] MASTER_KEY mismatch: stored fingerprint ${stored.slice(0, 8)}… does not match current ${current.slice(0, 8)}…. ` +
+        "Encrypted data cannot be read with this key. Restore the correct MASTER_KEY or run the rotation tool. Refusing to start."
+      );
+    }
+    return;
+  }
+
+  if (!stored && isMasterKeyConfigured()) {
+    setMetaSync(adapter, "masterKeyFingerprint", getKeyFingerprint());
+  }
+}
 
 // Marker file: prevents re-importing legacy JSON when user wipes data.sqlite.
 const MIGRATED_MARKER = path.join(DB_DIR, ".migrated-from-json");
@@ -113,7 +141,20 @@ function importLegacyMain(adapter, data) {
   if (!data || typeof data !== "object") return;
 
   if (data.settings) {
-    adapter.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(data.settings)]);
+    const defaultOrgId =
+      getMetaSync(adapter, "defaultOrgId", null) ||
+      adapter.get(`SELECT id FROM organizations WHERE slug = 'default'`)?.id;
+    if (defaultOrgId) {
+      adapter.run(
+        `INSERT INTO settings(orgId, data) VALUES(?, ?) ON CONFLICT(orgId) DO UPDATE SET data = excluded.data`,
+        [defaultOrgId, stringifyJson(data.settings)],
+      );
+    } else {
+      adapter.run(
+        `INSERT INTO settings(orgId, data) VALUES(?, ?) ON CONFLICT(orgId) DO UPDATE SET data = excluded.data`,
+        ["legacy", stringifyJson(data.settings)],
+      );
+    }
   }
 
   importWithAssertion(adapter, "providerConnections", data.providerConnections || [], (c) => {
@@ -217,6 +258,11 @@ export async function runMigrationOnce(adapter) {
   if (_migratedAdapters.has(adapter)) return;
   _migratedAdapters.add(adapter);
 
+  if (adapter.dialect === "postgres") {
+    const { runMigrationOncePostgres } = await import("./migratePostgres.js");
+    return runMigrationOncePostgres(adapter);
+  }
+
   // Capture freshness BEFORE migrations stamp _meta (otherwise we'd misclassify
   // a brand-new DB as non-fresh once schemaVersion is written).
   const fresh = isFreshDb(adapter);
@@ -245,6 +291,9 @@ export async function runMigrationOnce(adapter) {
 
   // 1. Always run versioned migrations chain (skip-version safe)
   const migInfo = runVersionedMigrations(adapter);
+
+  // 1a. Verify MASTER_KEY matches encrypted data fingerprint.
+  verifyMasterKeyAgainstStored(adapter);
 
   // 2. Additive sync (auto add missing columns/indexes declared in TABLES)
   syncSchemaFromTables(adapter);
@@ -282,6 +331,10 @@ export async function runMigrationOnce(adapter) {
       }
       throw err;
     }
+
+    // Migration 002 ran on an empty DB before import; encrypt secrets written from legacy JSON.
+    const encryptMigration = MIGRATIONS.find((m) => m.version === 2);
+    if (encryptMigration) encryptMigration.up(adapter);
 
     try { fs.writeFileSync(MIGRATED_MARKER, new Date().toISOString()); } catch {}
     pruneOldBackups();

@@ -8,9 +8,8 @@ import {
 } from "@/models";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { AI_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers";
+import { withAuthUser } from "@/lib/auth/runtimeUserContext.js";
 import { normalizeProviderId, normalizeProviderSpecificData } from "@/lib/providerNormalization";
-
-export const dynamic = "force-dynamic";
 
 function normalizeProxyConfig(body = {}) {
   const enabled = body?.connectionProxyEnabled === true;
@@ -47,9 +46,9 @@ async function normalizeProxyPoolId(proxyPoolId) {
 }
 
 // GET /api/providers - List all connections
-export async function GET() {
+export const GET = withAuthUser(async (_request, _ctx, user) => {
   try {
-    const connections = await getProviderConnections();
+    const connections = await getProviderConnections({ userId: user.id });
 
     // Build nodeNameMap for compatible providers (id → name)
     let nodeNameMap = {};
@@ -81,10 +80,10 @@ export async function GET() {
     console.log("Error fetching providers:", error);
     return NextResponse.json({ error: "Failed to fetch providers" }, { status: 500 });
   }
-}
+});
 
 // POST /api/providers - Create new connection (API Key only, OAuth via separate flow)
-export async function POST(request) {
+export const POST = withAuthUser(async (request, _ctx, user) => {
   try {
     const body = await request.json();
     const provider = normalizeProviderId(body.provider);
@@ -173,6 +172,7 @@ export async function POST(request) {
     }
 
     const newConnection = await createProviderConnection({
+      userId: user.id,
       provider,
       authType: isWebCookieProvider ? "cookie" : "apikey",
       name: connectionName,
@@ -194,4 +194,4 @@ export async function POST(request) {
     console.log("Error creating provider:", error);
     return NextResponse.json({ error: "Failed to create provider" }, { status: 500 });
   }
-}
+});

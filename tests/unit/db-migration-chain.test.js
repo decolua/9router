@@ -7,16 +7,22 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 let tempDir;
 const originalDataDir = process.env.DATA_DIR;
 
+function readSettingsRow(db) {
+  const cols = db.all("PRAGMA table_info(settings)").map((c) => c.name);
+  if (cols.includes("orgId")) {
+    return db.get("SELECT orgId, data FROM settings LIMIT 1");
+  }
+  return db.get("SELECT data FROM settings WHERE id=1");
+}
+
 beforeEach(() => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-mig-"));
   process.env.DATA_DIR = tempDir;
-  // Reset global singleton so each test gets fresh adapter pointed at tempDir
   delete global._dbAdapter;
   vi.resetModules();
 });
 
 afterEach(() => {
-  // Close adapter to release file handles before rm
   try { global._dbAdapter?.instance?.close?.(); } catch {}
   delete global._dbAdapter;
   if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
@@ -34,20 +40,18 @@ describe("Schema migrations", () => {
 
     const tables = db.all(`SELECT name FROM sqlite_master WHERE type='table'`).map(t => t.name);
     expect(tables).toEqual(expect.arrayContaining([
-      "_meta", "settings", "providerConnections", "providerNodes",
-      "proxyPools", "apiKeys", "combos", "kv", "usageHistory", "usageDaily", "requestDetails",
+      "_meta", "settings", "organizations", "users", "userSettings", "userInvites", "providerConnections", "providerNodes",
+      "proxyPools", "apiKeys", "combos", "kv", "usageHistory", "usageDaily", "requestDetails", "auditLogs",
     ]));
   });
 
   it("existing DB at older schemaVersion → re-applies pending migrations on restart", async () => {
-    // 1st boot
     const { getAdapter } = await import("@/lib/db/driver.js");
     const db = await getAdapter();
-    db.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, ['{"foo":"bar"}']);
+    db.run(`INSERT INTO settings(orgId, data) VALUES(?, ?) ON CONFLICT(orgId) DO UPDATE SET data = excluded.data`, ["bootstrap", '{"foo":"bar"}']);
     db.run(`UPDATE _meta SET value = '0' WHERE key = 'schemaVersion'`);
     db.close?.();
 
-    // 2nd boot: full reset to simulate process restart
     delete global._dbAdapter;
     vi.resetModules();
     const { getAdapter: getAdapter2 } = await import("@/lib/db/driver.js");
@@ -56,12 +60,11 @@ describe("Schema migrations", () => {
     const row = db2.get(`SELECT value FROM _meta WHERE key='schemaVersion'`);
     expect(parseInt(row.value, 10)).toBe(latestVersion());
 
-    const settings = db2.get(`SELECT data FROM settings WHERE id=1`);
+    const settings = readSettingsRow(db2);
     expect(JSON.parse(settings.data)).toEqual({ foo: "bar" });
   });
 
   it("fresh DB + legacy db.json → imports data automatically", async () => {
-    // Simulate user upgrading: place legacy JSON in DATA_DIR before first boot
     const legacy = {
       settings: { foo: "legacy-value" },
       apiKeys: [{ id: "k1", key: "abc", name: "test", createdAt: new Date().toISOString() }],
@@ -72,7 +75,7 @@ describe("Schema migrations", () => {
     const { getAdapter } = await import("@/lib/db/driver.js");
     const db = await getAdapter();
 
-    const settings = db.get(`SELECT data FROM settings WHERE id=1`);
+    const settings = readSettingsRow(db);
     expect(JSON.parse(settings.data)).toEqual({ foo: "legacy-value" });
 
     const keys = db.all(`SELECT * FROM apiKeys`);

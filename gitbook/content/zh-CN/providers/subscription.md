@@ -32,7 +32,7 @@
 **步骤 1:通过仪表盘连接**
 
 ```bash
-9router
+ebrouter
 # 仪表盘打开 → 提供商 → 连接 Claude Code
 ```
 
@@ -82,7 +82,7 @@ Model: cc/claude-opus-4-5-20251101
 **步骤 1:通过仪表盘连接**
 
 ```bash
-9router
+ebrouter
 # 仪表盘 → 提供商 → 连接 Codex
 ```
 
@@ -134,7 +134,7 @@ Model: cx/gpt-5.2-codex
 **步骤 1:通过仪表盘连接**
 
 ```bash
-9router
+ebrouter
 # 仪表盘 → 提供商 → 连接 Gemini CLI
 ```
 
@@ -186,7 +186,7 @@ Model: gc/gemini-3-flash-preview
 **步骤 1:通过仪表盘连接**
 
 ```bash
-9router
+ebrouter
 # 仪表盘 → 提供商 → 连接 GitHub
 ```
 
@@ -236,7 +236,7 @@ Model: gh/gpt-5
 **步骤 1:通过仪表盘连接**
 
 ```bash
-9router
+ebrouter
 # 仪表盘 → 提供商 → 连接 Antigravity
 ```
 
@@ -292,7 +292,7 @@ Model: ag/gemini-3-pro-high
 ```
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [从 9router 仪表盘获取]
+  OpenAI API Key: [从 ebrouter 仪表盘获取]
   Model: cc/claude-opus-4-5-20251101
 ```
 
@@ -316,7 +316,7 @@ CLI 中使用: premium-coding
 
 ## 配额跟踪
 
-9Router 实时跟踪配额:
+ebRouter 实时跟踪配额:
 
 - **Token 消耗** - 每次请求的输入/输出 tokens
 - **重置倒计时** - 下次配额重置剩余时间
@@ -385,7 +385,7 @@ Claude Code Pro
 ### "OAuth token expired"
 
 **方案:**
-- 9Router 会自动刷新
+- ebRouter 会自动刷新
 - 若仍有问题: 仪表盘 → 提供商 → 重新连接
 
 ### "Rate limiting"

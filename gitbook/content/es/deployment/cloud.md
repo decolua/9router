@@ -1,6 +1,6 @@
 # ☁️ Despliegue en la nube
 
-Despliega 9Router en VPS o Docker para acceso remoto y uso en producción.
+Despliega ebRouter en VPS o Docker para acceso remoto y uso en producción.
 
 ---
 
@@ -16,8 +16,8 @@ Despliega 9Router en VPS o Docker para acceso remoto y uso en producción.
 ### Paso 1: Clonar el repositorio
 
 ```bash
-git clone https://github.com/decolua/9router.git
-cd 9router/app
+git clone https://github.com/YOUR_ORG/ebRouter.git
+cd ebrouter/app
 ```
 
 ### Paso 2: Instalar dependencias
@@ -74,8 +74,8 @@ PM2 mantiene tu aplicación corriendo y la reinicia en caso de crash:
 # Instalar PM2 globalmente
 npm install -g pm2
 
-# Iniciar 9Router con PM2
-pm2 start npm --name 9router -- start
+# Iniciar ebRouter con PM2
+pm2 start npm --name ebrouter -- start
 
 # Guardar la configuración de PM2
 pm2 save
@@ -89,13 +89,13 @@ pm2 startup
 
 ```bash
 # Ver logs
-pm2 logs 9router
+pm2 logs ebrouter
 
 # Reiniciar aplicación
-pm2 restart 9router
+pm2 restart ebrouter
 
 # Detener aplicación
-pm2 stop 9router
+pm2 stop ebrouter
 
 # Ver estado
 pm2 status
@@ -147,17 +147,17 @@ CMD ["npm", "run", "start"]
 
 ```bash
 # Construir imagen
-docker build -t 9router .
+docker build -t ebrouter .
 
 # Ejecutar contenedor
 docker run -d \
-  --name 9router \
+  --name ebrouter \
   -p 3000:3000 \
   -p 20128:20128 \
   -e JWT_SECRET="your-secure-secret-change-this" \
   -e INITIAL_PASSWORD="your-secure-password" \
   -v 9router-data:/app/data \
-  9router
+  ebrouter
 ```
 
 ### Opción 2: Docker Compose
@@ -168,9 +168,9 @@ Crea `docker-compose.yml`:
 version: '3.8'
 
 services:
-  9router:
+  ebrouter:
     build: .
-    container_name: 9router
+    container_name: ebrouter
     ports:
       - "3000:3000"
       - "20128:20128"
@@ -223,7 +223,7 @@ sudo apt install nginx
 
 ### Paso 2: Configurar Nginx
 
-Crea `/etc/nginx/sites-available/9router`:
+Crea `/etc/nginx/sites-available/ebrouter`:
 
 ```nginx
 server {
@@ -247,7 +247,7 @@ server {
     ssl_ciphers HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers on;
 
-    # Proxy to 9Router
+    # Proxy to ebRouter
     location / {
         proxy_pass http://localhost:3000;
         proxy_http_version 1.1;
@@ -284,7 +284,7 @@ server {
 
 ```bash
 # Crear enlace simbólico
-sudo ln -s /etc/nginx/sites-available/9router /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/ebrouter /etc/nginx/sites-enabled/
 
 # Probar configuración
 sudo nginx -t
@@ -333,7 +333,7 @@ sudo ufw allow 22/tcp
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 
-# Si NO usas proxy reverso, permite los puertos de 9Router
+# Si NO usas proxy reverso, permite los puertos de ebRouter
 sudo ufw allow 3000/tcp
 sudo ufw allow 20128/tcp
 
@@ -363,22 +363,22 @@ ssh -L 3000:localhost:3000 user@your-server.com
 # Actualizar paquetes del sistema
 sudo apt update && sudo apt upgrade -y
 
-# Actualizar 9Router
-cd /path/to/9router/app
+# Actualizar ebRouter
+cd /path/to/ebrouter/app
 git pull
 npm install
 npm run build
-pm2 restart 9router
+pm2 restart ebrouter
 ```
 
 ### 5. Estrategia de respaldo
 
 ```bash
 # Respaldar el directorio de datos
-tar -czf 9router-backup-$(date +%Y%m%d).tar.gz /var/lib/9router
+tar -czf ebrouter-backup-$(date +%Y%m%d).tar.gz /var/lib/9router
 
 # Respaldo automatizado diario (agregar a crontab)
-0 2 * * * tar -czf /backups/9router-$(date +\%Y\%m\%d).tar.gz /var/lib/9router
+0 2 * * * tar -czf /backups/ebrouter-$(date +\%Y\%m\%d).tar.gz /var/lib/9router
 ```
 
 ---
@@ -392,7 +392,7 @@ tar -czf 9router-backup-$(date +%Y%m%d).tar.gz /var/lib/9router
 pm2 status
 
 # Ver logs
-pm2 logs 9router --lines 100
+pm2 logs ebrouter --lines 100
 
 # Monitorear recursos
 pm2 monit
@@ -429,20 +429,20 @@ netstat -tulpn | grep -E '3000|20128'
 
 ```bash
 # Verificar logs
-pm2 logs 9router
+pm2 logs ebrouter
 
 # Verificar si los puertos están en uso
 sudo lsof -i :3000
 sudo lsof -i :20128
 
 # Verificar variables de entorno
-pm2 env 9router
+pm2 env ebrouter
 ```
 
 ### Nginx 502 Bad Gateway
 
 ```bash
-# Verificar si 9Router está corriendo
+# Verificar si ebRouter está corriendo
 pm2 status
 
 # Verificar logs de error de Nginx

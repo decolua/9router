@@ -1,30 +1,43 @@
+# ebRouter with PostgreSQL for application data.
+# Default local dev still uses SQLite (no compose required).
+#
+#   docker compose up -d
+#   open http://localhost:20128
+#
 services:
-  9router:
-    image: decolua/9router:latest
-    container_name: 9router
-    restart: always
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ebrouter
+      POSTGRES_PASSWORD: ebrouter
+      POSTGRES_DB: ebrouter
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ebrouter -d ebrouter"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ebrouter:
+    build: .
     ports:
       - "20128:20128"
-    volumes:
-      - 9router-data:/app/data
-    env_file:
-      - .env
     environment:
       DATA_DIR: /app/data
       PORT: "20128"
       HOSTNAME: "0.0.0.0"
-      NODE_ENV: production
-      HEADROOM_URL: http://headroom:8787
+      DATABASE_URL: postgres://ebrouter:ebrouter@postgres:5432/ebrouter
+      JWT_SECRET: change-me-to-a-long-random-secret
+      INITIAL_PASSWORD: change-me
+      # Generate with: openssl rand -base64 32
+      MASTER_KEY: ${MASTER_KEY:-}
+    volumes:
+      - ebrouter_data:/app/data
     depends_on:
-      - headroom
-
-  headroom:
-    image: ghcr.io/chopratejas/headroom:latest
-    container_name: headroom
-    restart: always
-    ports:
-      - "8787:8787"
+      postgres:
+        condition: service_healthy
 
 volumes:
-  9router-data:
-    name: 9router-data
+  pgdata:
+  ebrouter_data:

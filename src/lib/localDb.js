@@ -1,5 +1,4 @@
 // Shim → re-export from new SQLite-based DB layer (src/lib/db/)
-// Kept for backward compatibility with existing imports.
 export {
   getSettings, updateSettings, isCloudEnabled, getCloudUrl,
   getProviderConnections, getProviderConnectionById,
@@ -10,12 +9,17 @@ export {
   createProviderNode, updateProviderNode, deleteProviderNode,
   getProxyPools, getProxyPoolById,
   createProxyPool, updateProxyPool, deleteProxyPool,
-  getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey, validateApiKey,
+  getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey,
+  validateApiKey, resolveApiKeyUserId, isApiKeyValid,
   getCombos, getComboById, getComboByName,
   createCombo, updateCombo, deleteCombo,
   getModelAliases, setModelAlias, deleteModelAlias,
   getCustomModels, addCustomModel, deleteCustomModel,
   getMitmAlias, setMitmAliasAll,
   getPricing, getPricingForModel, updatePricing, resetPricing, resetAllPricing,
+  getUsers, getUserById, getUserByEmail, getAdminUser, countUsers,
+  createUser, verifyUserPassword, updateUser, setUserStatus, createInvite, consumeInvite, deleteUser,
+  getUserSettings, updateUserSettings, getEffectiveSettings,
   exportDb, importDb,
+  createBackupDownload, getDatabaseInfo,
 } from "@/lib/db/index.js";

@@ -1,15 +1,15 @@
 # 🏠 ローカルホストデプロイメント
 
-開発と個人利用のため、ローカルマシンで9Routerを実行。
+開発と個人利用のため、ローカルマシンでebRouterを実行。
 
 ---
 
 ## 📦 インストール
 
-npm経由で9Routerをグローバルインストール:
+npm経由でebRouterをグローバルインストール:
 
 ```bash
-npm install -g 9router
+npm install -g ebrouter
 ```
 
 **要件:**
@@ -20,10 +20,10 @@ npm install -g 9router
 
 ## 🚀 サーバーの起動
 
-一つのコマンドで9Routerを起動:
+一つのコマンドでebRouterを起動:
 
 ```bash
-9router
+ebrouter
 ```
 
 ダッシュボードが自動的にブラウザで `http://localhost:3000` に開きます。
@@ -42,7 +42,7 @@ npm install -g 9router
 環境変数を使ってカスタムデータディレクトリを設定:
 
 ```bash
-DATA_DIR=/path/to/data 9router
+DATA_DIR=/path/to/data ebrouter
 ```
 
 ### カスタムポート
@@ -53,7 +53,7 @@ APIポート(20128)とダッシュボードポート(3000)はアプリケーシ�
 
 ## 🛑 サーバーの停止
 
-9Routerが実行されているターミナルで `Ctrl+C` を押します。
+ebRouterが実行されているターミナルで `Ctrl+C` を押します。
 
 ```bash
 # 9routerを実行しているターミナル
@@ -69,25 +69,25 @@ APIポート(20128)とダッシュボードポート(3000)はアプリケーシ�
 起動コマンドを再度実行するだけです:
 
 ```bash
-9router
+ebrouter
 ```
 
 すべての設定、APIキー、コンボはデータディレクトリに保持されます。
 
 ---
 
-## 📊 9Routerの更新
+## 📊 ebRouterの更新
 
 最新バージョンに更新:
 
 ```bash
-npm update -g 9router
+npm update -g ebrouter
 ```
 
 現在のバージョンを確認:
 
 ```bash
-npm list -g 9router
+npm list -g ebrouter
 ```
 
 ---
@@ -113,7 +113,7 @@ kill -9 <PID>
 
 ```bash
 # sudoを使用 (非推奨)
-sudo npm install -g 9router
+sudo npm install -g ebrouter
 
 # またはnpm権限を修正 (推奨)
 mkdir ~/.npm-global

@@ -7,15 +7,23 @@ on:
   workflow_dispatch:
 
 env:
-  GHCR_IMAGE: ghcr.io/${{ github.repository }}
-  DOCKERHUB_IMAGE: decolua/9router
+  # Image name is always "ebrouter" (not legacy 9router). Owner = GitHub org/user.
+  GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/ebrouter
 
 jobs:
+  security-gate:
+    uses: ./.github/workflows/release-gate.yml
+    with:
+      image-tag: ""
+    secrets: inherit
+
   build-and-push:
+    needs: security-gate
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+      security-events: write
 
     steps:
       - uses: actions/checkout@v4
@@ -29,24 +37,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{ env.GHCR_IMAGE }}
-            ${{ env.DOCKERHUB_IMAGE }}
+          images: ${{ env.GHCR_IMAGE }}
           tags: |
             type=semver,pattern={{version}}
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -56,5 +57,32 @@ jobs:
           cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache
           cache-to: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache,mode=max
           platforms: linux/amd64,linux/arm64
-          provenance: false
-          sbom: false
+          provenance: true
+          sbom: true
+
+      - name: Container scan (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.GHCR_IMAGE }}:${{ steps.meta.outputs.version }}
+          format: sarif
+          output: trivy-image.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          npm install --ignore-scripts
+          npx --yes @cyclonedx/cyclonedx-npm@latest --output-file sbom.cdx.json --spec-version 1.5
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-sbom-${{ github.ref_name }}
+          path: sbom.cdx.json
+          retention-days: 365

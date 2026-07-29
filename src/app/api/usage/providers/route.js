@@ -1,17 +1,18 @@
 import { NextResponse } from "next/server";
-import { getDistinctProviders } from "@/lib/requestDetailsDb";
+import { getRequestDetails } from "@/lib/requestDetailsDb";
 import { getProviderNodes } from "@/lib/localDb";
 import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
+import { withUsageUser } from "@/lib/auth/runtimeUserContext.js";
 
 /**
  * GET /api/usage/providers
- * Returns list of unique providers from request details
+ * Returns list of unique providers from request details (scoped to user/org).
  */
-export async function GET() {
+export const GET = withUsageUser(async (_request, _ctx, _user, { filterUserId }) => {
   try {
-    // Query DISTINCT provider column directly — avoids parsing every row's
-    // full JSON blob (can be hundreds of MB), which previously caused OOM.
-    const providerIds = await getDistinctProviders();
+    const { details } = await getRequestDetails({ pageSize: 9999, filterUserId });
+
+    const providerIds = [...new Set(details.map((r) => r.provider).filter(Boolean))].sort();
 
     const providerNodes = await getProviderNodes();
     const nodeMap = {};
@@ -19,7 +20,7 @@ export async function GET() {
       nodeMap[node.id] = node.name;
     }
 
-    const providers = providerIds.map(providerId => {
+    const providers = providerIds.map((providerId) => {
       let name = providerId;
       if (nodeMap[providerId]) {
         name = nodeMap[providerId];
@@ -33,9 +34,6 @@ export async function GET() {
     return NextResponse.json({ providers });
   } catch (error) {
     console.error("[API] Failed to get providers:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch providers" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to fetch providers" }, { status: 500 });
   }
-}
+});

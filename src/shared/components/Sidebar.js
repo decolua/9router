@@ -6,26 +6,25 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG, UPDATER_CONFIG } from "@/shared/constants/config";
+import { orgScopedPath } from "@/lib/org/clientOrgPath.js";
 import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
-import NineRemotePromoModal from "./NineRemotePromoModal";
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
-const VISIBLE_MEDIA_KINDS = ["embedding", "image", "video", "tts", "stt"];
+const VISIBLE_MEDIA_KINDS = ["embedding", "image", "tts", "stt"];
 // Combined entry: webSearch + webFetch share one page at /dashboard/media-providers/web
 const COMBINED_WEB_ITEM = { id: "web", label: "Web Fetch & Search", icon: "travel_explore", href: "/dashboard/media-providers/web" };
 
 const navItems = [
-  { href: "/dashboard/endpoint", label: "Endpoint & Key", icon: "api" },
+  { href: "/dashboard/endpoint", label: "Endpoint", icon: "api" },
   { href: "/dashboard/providers", label: "Providers", icon: "dns" },
   // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
   { href: "/dashboard/combos", label: "Combos", icon: "layers" },
   { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
   { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
-  { href: "/dashboard/token-saver", label: "Token Saver", icon: "savings" },
-  // { href: "/dashboard/pxpipe", label: "PXPIPE", icon: "image" },
+  { href: "/dashboard/mitm", label: "MITM", icon: "security" },
   { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
 ];
 
@@ -42,21 +41,37 @@ const systemItems = [
 export default function Sidebar({ onClose }) {
   const pathname = usePathname();
   const [mediaOpen, setMediaOpen] = useState(false);
-  const [showRemoteModal, setShowRemoteModal] = useState(false);
+  const [showShutdownModal, setShowShutdownModal] = useState(false);
+  const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [orgName, setOrgName] = useState("");
   const { copied, copy } = useCopyToClipboard(2000);
 
   const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
 
   useEffect(() => {
-    fetch("/api/settings")
+    fetch(orgScopedPath("/api/settings"), { cache: "no-store" })
       .then(res => res.json())
-      .then(data => { if (data.enableTranslator) setEnableTranslator(true); })
+      .then(data => {
+        if (data.enableTranslator) setEnableTranslator(true);
+        if (data.currentUser?.role === "admin") setIsAdmin(true);
+      })
+      .catch(() => {});
+
+    fetch(orgScopedPath("/api/auth/status"), { cache: "no-store" })
+      .then(res => res.json())
+      .then(data => {
+        if (data?.organization?.name) setOrgName(data.organization.name);
+        if (data?.isAdmin === true || data?.currentUser?.role === "admin") {
+          setIsAdmin(true);
+        }
+      })
       .catch(() => {});
   }, []);
 
@@ -107,6 +122,18 @@ export default function Sidebar({ onClose }) {
   // user runs the command manually in another terminal.
 
 
+  const handleShutdown = async () => {
+    setIsShuttingDown(true);
+    try {
+      await fetch("/api/version/shutdown", { method: "POST" });
+    } catch (e) {
+      // Expected to fail as server shuts down; ignore error
+    }
+    setIsShuttingDown(false);
+    setShowShutdownModal(false);
+    setIsDisconnected(true);
+  };
+
   return (
     <>
       <aside className="flex w-72 flex-col border-r border-border-subtle bg-vibrancy backdrop-blur-xl transition-colors duration-300 min-h-full">
@@ -119,14 +146,25 @@ export default function Sidebar({ onClose }) {
 
         {/* Logo */}
         <div className="px-6 py-4 flex flex-col gap-2">
-          <Link href="/dashboard" className="flex items-center gap-3">
-            <div className="flex items-center justify-center size-9 rounded-[10px] bg-gradient-to-br from-brand-500 to-brand-700 shadow-[var(--shadow-warm)]">
+          <Link href={orgScopedPath("/dashboard")} className="flex items-start gap-3 min-w-0">
+            <div className="flex shrink-0 items-center justify-center size-9 rounded-[10px] bg-gradient-to-br from-brand-500 to-brand-700 shadow-[var(--shadow-warm)]">
               <span className="material-symbols-outlined text-white text-[20px]">hub</span>
             </div>
-            <div className="flex flex-col">
-              <h1 className="text-lg font-semibold tracking-tight text-text-main">
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <h1
+                className="text-lg font-semibold leading-tight tracking-tight text-text-main truncate"
+                title={APP_CONFIG.name}
+              >
                 {APP_CONFIG.name}
               </h1>
+              {orgName ? (
+                <p
+                  className="text-xs font-medium leading-snug text-primary line-clamp-2 break-words"
+                  title={orgName}
+                >
+                  {orgName}
+                </p>
+              ) : null}
               <span className="text-xs text-text-muted">v{APP_CONFIG.version}</span>
             </div>
           </Link>
@@ -291,19 +329,51 @@ export default function Sidebar({ onClose }) {
               ) : null;
             })}
 
-            {/* Remote */}
-            <button
-              onClick={() => setShowRemoteModal(true)}
-              className={cn(
-                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group w-full",
-                "text-text-muted hover:bg-surface-2 hover:text-text-main"
-              )}
-            >
-              <span className="material-symbols-outlined text-[18px] group-hover:text-primary transition-colors">
-                computer
-              </span>
-              <span className="text-[13px] font-medium">Remote</span>
-            </button>
+            {isAdmin && (
+              <Link
+                href="/dashboard/organization"
+                onClick={onClose}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                  isActive("/dashboard/organization")
+                    ? "bg-primary/10 text-primary"
+                    : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                )}
+              >
+                <span
+                  className={cn(
+                    "material-symbols-outlined text-[18px]",
+                    isActive("/dashboard/organization") ? "fill-1" : "group-hover:text-primary transition-colors"
+                  )}
+                >
+                  domain
+                </span>
+                <span className="text-[13px] font-medium">Organization</span>
+              </Link>
+            )}
+
+            {isAdmin && (
+              <Link
+                href="/dashboard/users"
+                onClick={onClose}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                  isActive("/dashboard/users")
+                    ? "bg-primary/10 text-primary"
+                    : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                )}
+              >
+                <span
+                  className={cn(
+                    "material-symbols-outlined text-[18px]",
+                    isActive("/dashboard/users") ? "fill-1" : "group-hover:text-primary transition-colors"
+                  )}
+                >
+                  group
+                </span>
+                <span className="text-[13px] font-medium">Team</span>
+              </Link>
+            )}
 
             {/* Settings */}
             <Link
@@ -329,17 +399,40 @@ export default function Sidebar({ onClose }) {
           </div>
         </nav>
 
+        {/* Footer section */}
+        <div className="p-3 border-t border-border-subtle">
+          {/* Shutdown button */}
+          <Button
+            variant="outline"
+            fullWidth
+            icon="power_settings_new"
+            onClick={() => setShowShutdownModal(true)}
+            className="text-red-500 border-red-200 hover:bg-red-50 hover:border-red-300"
+          >
+            Shutdown
+          </Button>
+        </div>
       </aside>
 
-      {/* Remote Promo Modal */}
-      <NineRemotePromoModal isOpen={showRemoteModal} onClose={() => setShowRemoteModal(false)} />
+      {/* Shutdown Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showShutdownModal}
+        onClose={() => setShowShutdownModal(false)}
+        onConfirm={handleShutdown}
+        title="Close Proxy"
+        message="Are you sure you want to close the proxy server?"
+        confirmText="Close"
+        cancelText="Cancel"
+        variant="danger"
+        loading={isShuttingDown}
+      />
 
       {/* Update Confirmation Modal */}
       <ConfirmModal
         isOpen={showUpdateModal}
         onClose={() => setShowUpdateModal(false)}
         onConfirm={handleUpdate}
-        title="Update 9Router"
+        title="Update ebRouter"
         message={`Show install command for v${updateInfo?.latestVersion || ""}? You can copy it and shutdown to install manually.`}
         confirmText="Show Command"
         cancelText="Cancel"
@@ -390,7 +483,7 @@ function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdow
           <span className="material-symbols-outlined text-[24px]">content_copy</span>
         </div>
         <div>
-          <h2 className="text-lg font-semibold">Update 9Router{latestVersion ? ` to v${latestVersion}` : ""}</h2>
+          <h2 className="text-lg font-semibold">Update ebRouter{latestVersion ? ` to v${latestVersion}` : ""}</h2>
           <p className="text-xs text-white/60">
             {isDisconnected
               ? "Server stopped. Paste the command into a terminal to install."
@@ -409,7 +502,7 @@ function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdow
       <ol className="text-xs text-white/70 space-y-1 list-decimal list-inside mb-4">
         <li>Click <strong>Copy & Shutdown</strong> below.</li>
         <li>Paste the command into your terminal and press Enter.</li>
-        <li>Run <code className="px-1 rounded bg-white/10 text-green-400">9router</code> again after install.</li>
+        <li>Run <code className="px-1 rounded bg-white/10 text-green-400">ebrouter</code> again after install.</li>
       </ol>
 
       {isDisconnected ? (
