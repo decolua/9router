@@ -24,8 +24,7 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { applyKiroSessionReplay } from "../../utils/kiroSessionReplay.js";
-import { resolveContinuationId, resolveSessionIdentity } from "../../utils/sessionManager.js";
+import { v4 as uuidv4 } from "uuid";
 import {
   resolveKiroModel,
   resolveKiroThinkingBudget,
@@ -419,73 +418,60 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     ? (credentials?.providerSpecificData?.profileArn || "")
     : (credentials?.providerSpecificData?.profileArn || resolveDefaultProfileArn(authMethod));
 
-  // Kiro CLI/KAS sends system prompt as top-level `systemPrompt`. Keep a
-  // content fallback too because the CodeWhisperer surface does not always
-  // enforce top-level systemPrompt for direct calls.
-  const timestamp = new Date().toISOString();
-  const systemPromptParts = [];
-  if (thinkingBudget !== null && !usesNativeGptEffort) {
-    systemPromptParts.push(buildThinkingSystemPrefix(thinkingBudget));
-  }
-  if (agentic) systemPromptParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
-  const systemInstruction = extractClaudeSystemText(body.system);
-  if (systemInstruction) systemPromptParts.push(systemInstruction);
-  const systemPrompt = systemPromptParts.filter(Boolean).join("\n\n");
-  const currentTimeContext = `[Context: Current time is ${timestamp}]`;
-  const contentPrefix = [systemPrompt, currentTimeContext].filter(Boolean).join("\n\n");
+  let finalContent = currentMessage?.userInputMessage?.content || "";
 
-  const sessionIdentity = resolveSessionIdentity({
-    headers: credentials?.rawHeaders,
-    body,
-    connectionId: credentials?.connectionId,
-    scope: "kiro",
-  });
-  const conversationId = sessionIdentity.sessionId;
-  const continuationId = resolveContinuationId({
-    sessionId: conversationId,
-    connectionId: credentials?.connectionId,
-    scope: "kiro",
-    ephemeral: sessionIdentity.ephemeral,
-  });
-  const replay = applyKiroSessionReplay({
-    conversationId,
-    connectionId: credentials?.connectionId,
-    modelId: upstreamModel,
-    systemPrompt,
-    contentPrefix,
-    currentContentPrefix: currentTimeContext,
-    history,
-    currentMessage,
-  });
-  const replayCurrent = replay.currentMessage?.userInputMessage || {};
+  // System prompt: pass via native systemInstruction field (Kiro/Q API supports it)
+  // and also prepend as <instructions> in user content as fallback for upstreams
+  // that don't support the native field.
+  // ponytail: embed in content (v0.5.20 pattern) — Kiro rejects top-level
+  // `systemPrompt` field with REQUEST_BODY_INVALID. Revert to top-level when
+  // upstream schema accepts it (monitor decolua/9router#2716).
+  let systemInstruction = undefined;
+  if (body.system) {
+    const systemText = extractClaudeSystemText(body.system);
+    if (systemText) {
+      systemInstruction = systemText;
+      finalContent = `<instructions>\n${systemText}\n</instructions>\n\n${finalContent}`;
+    }
+  }
+
+  // Prefix order: thinking_mode tag, timestamp marker, then agentic prompt.
+  const timestamp = new Date().toISOString();
+  const prefixParts = [];
+  if (thinkingBudget !== null && !usesNativeGptEffort) prefixParts.push(buildThinkingSystemPrefix(thinkingBudget));
+  prefixParts.push(`[Context: Current time is ${timestamp}]`);
+  if (agentic) prefixParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
+  finalContent = `${prefixParts.join("\n\n")}\n\n${finalContent}`;
+
   const userInputMessage = {
-    content: replayCurrent.content || "",
+    content: finalContent,
     modelId: upstreamModel,
     origin: "AI_EDITOR",
-    ...(replayCurrent.userInputMessageContext && {
-      userInputMessageContext: replayCurrent.userInputMessageContext,
+    ...(currentMessage?.userInputMessage?.userInputMessageContext && {
+      userInputMessageContext:
+        currentMessage.userInputMessage.userInputMessageContext,
     }),
-    ...(replayCurrent.images && {
-      images: replayCurrent.images,
+    ...(currentMessage?.userInputMessage?.images && {
+      images: currentMessage.userInputMessage.images,
     }),
   };
+
+  if (systemInstruction) {
+    userInputMessage.systemInstruction = systemInstruction;
+  }
 
   const payload = {
     conversationState: {
       chatTriggerType: "MANUAL",
-      conversationId,
-      agentContinuationId: continuationId,
-      agentTaskType: "vibe",
+      conversationId: uuidv4(),
       currentMessage: {
         userInputMessage,
       },
-      history: replay.history,
+      history,
     },
-    agentMode: "vibe",
   };
 
   if (profileArn) payload.profileArn = profileArn;
-  if (systemPrompt) payload.systemPrompt = systemPrompt;
   if (additionalModelRequestFields) {
     payload.additionalModelRequestFields = additionalModelRequestFields;
   }
