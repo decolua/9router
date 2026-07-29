@@ -1,0 +1,38 @@
+name: Notify Homebrew Tap
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require cross-repository dispatch token
+        env:
+          HOMEBREW_TAP_DISPATCH_TOKEN: ${{ secrets.HOMEBREW_TAP_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$HOMEBREW_TAP_DISPATCH_TOKEN" ]; then
+            echo "HOMEBREW_TAP_DISPATCH_TOKEN is required to update decolua/homebrew-9router."
+            exit 1
+          fi
+
+      - name: Ask the tap to check npm and open an update PR
+        uses: actions/github-script@v7
+        env:
+          HOMEBREW_TAP_DISPATCH_TOKEN: ${{ secrets.HOMEBREW_TAP_DISPATCH_TOKEN }}
+        with:
+          github-token: ${{ env.HOMEBREW_TAP_DISPATCH_TOKEN }}
+          script: |
+            await github.rest.repos.createDispatchEvent({
+              owner: "decolua",
+              repo: "homebrew-9router",
+              event_type: "npm-release",
+              client_payload: {
+                source_tag: context.payload.release.tag_name,
+                source_release: context.payload.release.html_url,
+              },
+            });
