@@ -6,6 +6,9 @@ import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
+import { saveErrorLog } from "@/lib/usageDb.js";
+
+const ENDPOINT_COMBO = "/v1/chat/completions";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -301,6 +304,26 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
+      const provider = modelStr.includes("/") ? modelStr.slice(0, modelStr.indexOf("/")) : "unknown";
+      const failedModel = modelStr.includes("/") ? modelStr.slice(modelStr.indexOf("/") + 1) : modelStr;
+      saveErrorLog({
+        endpoint: ENDPOINT_COMBO,
+        provider,
+        model: failedModel,
+        connectionId: `combo-${comboName || modelStr}`,
+        comboName: comboName || null,
+        statusCode: result.status,
+        errorMessage: errorText || result.statusText,
+        request: null,
+        providerRequest: null,
+        providerResponse: null,
+        meta: {
+          fallback: true,
+          retryAfter,
+          retryAfterHuman: retryAfter ? formatRetryAfter(retryAfter) : null,
+          latency: {}
+        }
+      }).catch(() => {});
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
       lastError = error.message || String(error);
