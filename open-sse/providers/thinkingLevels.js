@@ -31,9 +31,13 @@ const FORMAT_LEVELS = {
 };
 
 // Model-name pattern overrides (glob, first match wins) — more precise than format default.
+// GPT-5.6 patterns must precede broad *codex* so Sol/Terra/Luna keep their matrix.
 const PATTERN_THINKING = [
-  // gpt-5.6-sol accepts max (maps to xhigh on wire); live probe rejected ultra.
-  { pattern: "*gpt-5.6-sol*", levels: ["none", "minimal", "low", "medium", "high", "xhigh", "max"] },
+  // Sol/Terra accept max + ultra on the wire.
+  { pattern: "*gpt-5.6-sol*", levels: ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"] },
+  { pattern: "*gpt-5.6-terra*", levels: ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"] },
+  // Luna accepts max; ultra falls back to max in applyThinking.
+  { pattern: "*gpt-5.6-luna*", levels: ["none", "minimal", "low", "medium", "high", "xhigh", "max"] },
   { pattern: "*codex*", levels: ["low", "medium", "high", "xhigh"] }, // codex cannot disable thinking
 ];
 
