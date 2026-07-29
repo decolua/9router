@@ -11,7 +11,6 @@ import { openaiToKiroRequest } from "../../open-sse/translator/request/openai-to
 
 const contentOf = (result) =>
   result.conversationState.currentMessage.userInputMessage.content;
-const systemPromptOf = (result) => result.systemPrompt || "";
 
 describe("openaiToKiroRequest", () => {
   describe("basic message conversion", () => {
@@ -294,7 +293,7 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
-      expect(systemPromptOf(result)).toContain("<max_thinking_length>1024</max_thinking_length>");
+      expect(contentOf(result)).toContain("<max_thinking_length>1024</max_thinking_length>");
       expect(result.additionalModelRequestFields).toEqual({
         thinking: { type: "adaptive", display: "summarized" },
         output_config: { effort: "low" },
@@ -309,7 +308,7 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
-      expect(systemPromptOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
+      expect(contentOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
       expect(result.additionalModelRequestFields).toEqual({
         thinking: { type: "adaptive", display: "summarized" },
         output_config: { effort: "high" },
@@ -331,8 +330,6 @@ describe("openaiToKiroRequest", () => {
       expect(result.additionalModelRequestFields).toEqual({
         reasoning: { effort },
       });
-      expect(systemPromptOf(result)).not.toContain("<thinking_mode>");
-      expect(systemPromptOf(result)).not.toContain("<max_thinking_length>");
       expect(contentOf(result)).not.toContain("<thinking_mode>");
       expect(contentOf(result)).not.toContain("<max_thinking_length>");
     });
@@ -351,8 +348,8 @@ describe("openaiToKiroRequest", () => {
       expect(result.additionalModelRequestFields).toEqual({
         reasoning: { effort: wireEffort },
       });
-      expect(systemPromptOf(result)).not.toContain("<thinking_mode>");
-      expect(systemPromptOf(result)).not.toContain("<max_thinking_length>");
+      expect(contentOf(result)).not.toContain("<thinking_mode>");
+      expect(contentOf(result)).not.toContain("<max_thinking_length>");
     });
 
     it("omits GPT-5.6 effort fields and legacy prompt tags when effort is absent", () => {
@@ -363,8 +360,8 @@ describe("openaiToKiroRequest", () => {
       const result = openaiToKiroRequest("gpt-5.6-sol", body, true, {});
 
       expect(result.additionalModelRequestFields).toBeUndefined();
-      expect(systemPromptOf(result)).not.toContain("<thinking_mode>");
-      expect(systemPromptOf(result)).not.toContain("<max_thinking_length>");
+      expect(contentOf(result)).not.toContain("<thinking_mode>");
+      expect(contentOf(result)).not.toContain("<max_thinking_length>");
     });
 
     it.each(["auto", "minimal", "ultra"])(
@@ -378,8 +375,8 @@ describe("openaiToKiroRequest", () => {
         const result = openaiToKiroRequest("gpt-5.6-luna", body, true, {});
 
         expect(result.additionalModelRequestFields).toBeUndefined();
-        expect(systemPromptOf(result)).toContain("<thinking_mode>enabled</thinking_mode>");
-        expect(systemPromptOf(result)).toContain("<max_thinking_length>");
+        expect(contentOf(result)).toContain("<thinking_mode>enabled</thinking_mode>");
+        expect(contentOf(result)).toContain("<max_thinking_length>");
       }
     );
 
@@ -394,8 +391,8 @@ describe("openaiToKiroRequest", () => {
         const result = openaiToKiroRequest("gpt-5.6-luna", body, true, {});
 
         expect(result.additionalModelRequestFields).toBeUndefined();
-        expect(systemPromptOf(result)).not.toContain("<thinking_mode>");
-        expect(systemPromptOf(result)).not.toContain("<max_thinking_length>");
+        expect(contentOf(result)).not.toContain("<thinking_mode>");
+        expect(contentOf(result)).not.toContain("<max_thinking_length>");
       }
     );
 
@@ -408,8 +405,8 @@ describe("openaiToKiroRequest", () => {
       const result = openaiToKiroRequest("gpt-5.6-sol-thinking", body, true, {});
 
       expect(result.additionalModelRequestFields).toBeUndefined();
-      expect(systemPromptOf(result)).toContain("<thinking_mode>enabled</thinking_mode>");
-      expect(systemPromptOf(result)).toContain("<max_thinking_length>");
+      expect(contentOf(result)).toContain("<thinking_mode>enabled</thinking_mode>");
+      expect(contentOf(result)).toContain("<max_thinking_length>");
     });
 
     it("does not send additionalModelRequestFields for legacy Kiro model ids", () => {
@@ -420,7 +417,7 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.5", body, true, {});
 
-      expect(systemPromptOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
+      expect(contentOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
       expect(result.additionalModelRequestFields).toBeUndefined();
     });
 
@@ -432,7 +429,7 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4-20250514", body, true, {});
 
-      expect(systemPromptOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
+      expect(contentOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
       expect(result.additionalModelRequestFields).toBeUndefined();
     });
 
@@ -444,7 +441,7 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-3.7", body, true, {});
 
-      expect(systemPromptOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
+      expect(contentOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
       expect(result.additionalModelRequestFields).toBeUndefined();
     });
 
@@ -456,7 +453,7 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("kiro/claude-3-7-sonnet-20250219", body, true, {});
 
-      expect(systemPromptOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
+      expect(contentOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
       expect(result.additionalModelRequestFields).toBeUndefined();
     });
 
@@ -468,7 +465,7 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("kiro/gpt-4o", body, true, {});
 
-      expect(systemPromptOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
+      expect(contentOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
       expect(result.additionalModelRequestFields).toBeUndefined();
     });
 
@@ -480,7 +477,7 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("gpt-4o", body, true, {});
 
-      expect(systemPromptOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
+      expect(contentOf(result)).toContain("<max_thinking_length>24576</max_thinking_length>");
       expect(result.additionalModelRequestFields).toBeUndefined();
     });
 
@@ -498,7 +495,7 @@ describe("openaiToKiroRequest", () => {
       });
     });
 
-    it("clamps reasoning_effort max to Kiro max_thinking_length 32000", () => {
+    it("preserves reasoning_effort max with Kiro max_thinking_length 32000", () => {
       const body = {
         reasoning_effort: "max",
         messages: [{ role: "user", content: "Think as much as possible" }]
@@ -506,11 +503,11 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
-      expect(systemPromptOf(result)).toContain("<max_thinking_length>32000</max_thinking_length>");
-      expect(result.additionalModelRequestFields?.output_config?.effort).toBe("high");
+      expect(contentOf(result)).toContain("<max_thinking_length>32000</max_thinking_length>");
+      expect(result.additionalModelRequestFields?.output_config?.effort).toBe("max");
     });
 
-    it("clamps OpenAI Responses reasoning.effort xhigh to max_thinking_length 32000", () => {
+    it("preserves OpenAI Responses reasoning.effort xhigh with max_thinking_length 32000", () => {
       const body = {
         reasoning: { effort: "xhigh" },
         messages: [{ role: "user", content: "Think extra deeply" }]
@@ -518,8 +515,8 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
-      expect(systemPromptOf(result)).toContain("<max_thinking_length>32000</max_thinking_length>");
-      expect(result.additionalModelRequestFields?.output_config?.effort).toBe("high");
+      expect(contentOf(result)).toContain("<max_thinking_length>32000</max_thinking_length>");
+      expect(result.additionalModelRequestFields?.output_config?.effort).toBe("xhigh");
     });
 
     it("uses Claude thinking.budget_tokens as max_thinking_length", () => {
@@ -530,7 +527,7 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
-      expect(systemPromptOf(result)).toContain("<max_thinking_length>4096</max_thinking_length>");
+      expect(contentOf(result)).toContain("<max_thinking_length>4096</max_thinking_length>");
     });
 
     it("uses the default budget for synthetic -thinking models with no explicit config", () => {
@@ -540,54 +537,41 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.6-thinking", body, true, {});
 
-      expect(systemPromptOf(result)).toContain("<max_thinking_length>16000</max_thinking_length>");
+      expect(contentOf(result)).toContain("<max_thinking_length>16000</max_thinking_length>");
     });
 
-    it("keeps top-level systemPrompt stable across turns", () => {
-      const first = openaiToKiroRequest(
+    it("embeds thinking prompt in user content without top-level fields", () => {
+      const result = openaiToKiroRequest(
         "claude-sonnet-4.6-thinking",
         { messages: [{ role: "user", content: "first" }] },
         true,
         {}
       );
-      const second = openaiToKiroRequest(
-        "claude-sonnet-4.6-thinking",
-        { messages: [{ role: "user", content: "second" }] },
-        true,
-        {}
-      );
 
-      expect(first.systemPrompt).toBe(second.systemPrompt);
-      expect(first.systemPrompt).not.toContain("Current time");
-      expect(first.conversationState.currentMessage.userInputMessage.content).toContain("Current time");
+      expect(result.systemPrompt).toBeUndefined();
+      expect(result.agentMode).toBeUndefined();
+      expect(contentOf(result)).toContain("<thinking_mode>enabled</thinking_mode>");
+      expect(contentOf(result)).toContain("Current time");
     });
 
-    it("replays frozen msg0 for explicit Kiro sessions while keeping current time fresh", () => {
+    it("uses the client session id without session-replay fields", () => {
       const credentials = {
         connectionId: "kiro-account-openai-replay",
         rawHeaders: { "x-session-id": "hermes-session-openai-replay" },
       };
-      const first = openaiToKiroRequest(
-        "claude-sonnet-4.6",
-        { messages: [{ role: "user", content: "first turn" }] },
-        true,
-        credentials
-      );
-      const second = openaiToKiroRequest(
+      const result = openaiToKiroRequest(
         "claude-sonnet-4.6",
         { messages: [{ role: "user", content: "second turn" }] },
         true,
         credentials
       );
 
-      expect(second.conversationState.conversationId).toBe("hermes-session-openai-replay");
-      expect(second.conversationState.agentContinuationId).toBe(first.conversationState.agentContinuationId);
-      expect(second.conversationState.history[0].userInputMessage.content).toBe(
-        first.conversationState.currentMessage.userInputMessage.content
-      );
-      expect(second.conversationState.history[0].userInputMessage.modelId).toBe("claude-sonnet-4.6");
-      expect(second.conversationState.currentMessage.userInputMessage.content).toContain("Current time");
-      expect(second.conversationState.currentMessage.userInputMessage.content).toContain("second turn");
+      expect(result.conversationState.conversationId).toBe("hermes-session-openai-replay");
+      expect(result.conversationState.agentContinuationId).toBeUndefined();
+      expect(result.conversationState.agentTaskType).toBeUndefined();
+      expect(result.agentMode).toBeUndefined();
+      expect(contentOf(result)).toContain("Current time");
+      expect(contentOf(result)).toContain("second turn");
     });
 
     it("does not inject thinking prefix for reasoning_effort none", () => {
@@ -598,8 +582,8 @@ describe("openaiToKiroRequest", () => {
 
       const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
 
-      expect(systemPromptOf(result)).not.toContain("<thinking_mode>enabled</thinking_mode>");
-      expect(systemPromptOf(result)).not.toContain("<max_thinking_length>");
+      expect(contentOf(result)).not.toContain("<thinking_mode>enabled</thinking_mode>");
+      expect(contentOf(result)).not.toContain("<max_thinking_length>");
       expect(result.additionalModelRequestFields).toBeUndefined();
     });
   });
