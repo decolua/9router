@@ -353,6 +353,19 @@ export function cleanJSONSchemaForAntigravity(schema) {
   function addPlaceholders(obj) {
     if (!obj || typeof obj !== "object") return;
 
+    // Empty schema {} (no type, no properties) after $ref removal — treat as object with placeholder
+    if (Object.keys(obj).length === 0) {
+      obj.type = "object";
+      obj.properties = {
+        reason: {
+          type: "string",
+          description: "Brief explanation of why you are calling this tool"
+        }
+      };
+      obj.required = ["reason"];
+      return;
+    }
+
     if (obj.type === "object") {
       if (!obj.properties || Object.keys(obj.properties).length === 0) {
         obj.properties = {
