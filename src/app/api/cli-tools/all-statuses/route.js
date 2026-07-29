@@ -17,34 +17,34 @@ import { GET as opencodeGet } from "../opencode-settings/route";
 import { GET as piGet } from "../pi-settings/route";
 
 const STATUS_GETTERS = {
-	claude: claudeGet,
-	codex: codexGet,
-	opencode: opencodeGet,
-	droid: droidGet,
-	openclaw: openclawGet,
-	hermes: hermesGet,
-	cowork: coworkGet,
-	copilot: copilotGet,
-	cline: clineGet,
-	kilo: kiloGet,
-	"deepseek-tui": deepseekTuiGet,
-	jcode: jcodeGet,
-	"grok-build": grokBuildGet,
-	pi: piGet,
+  claude: claudeGet,
+  codex: codexGet,
+  opencode: opencodeGet,
+  droid: droidGet,
+  openclaw: openclawGet,
+  hermes: hermesGet,
+  cowork: coworkGet,
+  copilot: copilotGet,
+  cline: clineGet,
+  kilo: kiloGet,
+  "deepseek-tui": deepseekTuiGet,
+  jcode: jcodeGet,
+  "grok-build": grokBuildGet,
+  pi: piGet,
 };
 
 // Batch endpoint: gather all CLI tool statuses in one round-trip
 export async function GET() {
-	const entries = await Promise.all(
-		Object.entries(STATUS_GETTERS).map(async ([toolId, getter]) => {
-			try {
-				const res = await getter();
-				const data = await res.json();
-				return [toolId, data];
-			} catch {
-				return [toolId, null];
-			}
-		}),
-	);
-	return NextResponse.json(Object.fromEntries(entries));
+  const entries = await Promise.all(
+    Object.entries(STATUS_GETTERS).map(async ([toolId, getter]) => {
+      try {
+        const res = await getter();
+        const data = await res.json();
+        return [toolId, data];
+      } catch {
+        return [toolId, null];
+      }
+    }),
+  );
+  return NextResponse.json(Object.fromEntries(entries));
 }

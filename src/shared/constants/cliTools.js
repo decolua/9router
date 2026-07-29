@@ -396,6 +396,10 @@ amp --model "{{model}}"
     configType: "custom",
     docsUrl: "https://pi.dev/docs/latest/models",
     defaultCommand: "pi",
+    defaultModels: [
+      { id: "claude-sonnet-5", name: "Claude Sonnet 5", alias: "claude-sonnet-5" },
+      { id: "gpt-4o", name: "GPT-4o", alias: "gpt-4o" },
+    ],
     notes: [
       {
         type: "info",
