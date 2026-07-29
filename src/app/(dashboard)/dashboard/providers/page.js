@@ -294,15 +294,27 @@ export default function ProvidersPage() {
   const freeEntries = Object.entries(FREE_PROVIDERS)
     .filter(([, info]) => !info.hidden && matchSearch(info.name))
     .sort(([, a], [, b]) => (b.noAuth ? 1 : 0) - (a.noAuth ? 1 : 0));
-  const freeTierEntries = sortByPriority(
-    Object.entries(FREE_TIER_PROVIDERS).filter(
+  // Free Tier cards may be oauth-only (e.g. kimchi) or dual-auth, so count via
+  // dualAuthTypes per provider instead of a fixed "apikey" — otherwise oauth
+  // connections are invisible here (mismatch with the detail page).
+  const freeTierEntries = Object.entries(FREE_TIER_PROVIDERS)
+    .filter(
       ([, info]) =>
         !info.hidden &&
         matchSearch(info.name) &&
         (info.serviceKinds ?? ["llm"]).includes("llm"),
-    ),
-    "freeTier",
-  ).sort(([, a], [, b]) => (b.noAuth ? 1 : 0) - (a.noAuth ? 1 : 0));
+    )
+    .sort(([ka, a], [kb, b]) => {
+      const pa = a.priority ?? 999;
+      const pb = b.priority ?? 999;
+      if (pa !== pb) return pa - pb;
+      const noAuthDiff = (b.noAuth ? 1 : 0) - (a.noAuth ? 1 : 0);
+      if (noAuthDiff !== 0) return noAuthDiff;
+      const ca = getProviderStats(ka, dualAuthTypes(a, ka)).connected > 0 ? 0 : 1;
+      const cb = getProviderStats(kb, dualAuthTypes(b, kb)).connected > 0 ? 0 : 1;
+      if (ca !== cb) return ca - cb;
+      return (a.name || "").localeCompare(b.name || "");
+    });
   // API Key: connected providers first, then alphabetical by name
   const apikeyEntries = Object.entries(APIKEY_PROVIDERS)
     .filter(
@@ -495,16 +507,19 @@ export default function ProvidersPage() {
               />
             );
           })}
-          {freeTierEntries.map(([key, info]) => (
-            <ApiKeyProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "apikey")}
-              authType="apikey"
-              onToggle={(active) => handleToggleProvider(key, "apikey", active)}
-            />
-          ))}
+          {freeTierEntries.map(([key, info]) => {
+            const freeAuthTypes = dualAuthTypes(info, key);
+            return (
+              <ApiKeyProviderCard
+                key={key}
+                providerId={key}
+                provider={info}
+                stats={getProviderStats(key, freeAuthTypes)}
+                authType={Array.isArray(freeAuthTypes) ? (freeAuthTypes[0] ?? "apikey") : freeAuthTypes}
+                onToggle={(active) => handleToggleProvider(key, freeAuthTypes, active)}
+              />
+            );
+          })}
         </div>
       </div>
       )}
