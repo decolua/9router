@@ -14,6 +14,10 @@ const DEFAULT_SETTINGS = {
   stickyRoundRobinLimit: 3,
   providerStrategies: {},
   quotaVisibility: {},
+  // Per-provider retry-delay fallback: { [providerId]: "auto" | <seconds> }.
+  // "auto"/absent → provider-reported reset else built-in backoff; a number is
+  // the lock duration used when the provider reports no reset of its own.
+  retryDelayByProvider: {},
   comboStrategy: "fallback",
   comboStickyRoundRobinLimit: 1,
   comboStrategies: {},

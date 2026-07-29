@@ -30,6 +30,21 @@ const AUTO_PING_SETTINGS_KEYS = {
   codex: "codexAutoPing",
 };
 
+// Per-provider retry-delay options. "auto" = honor the provider's reported reset
+// (retryDelay / Retry-After / resets_at), else the built-in backoff. A number is
+// the cooldown (seconds) used only when the provider reports no reset of its own.
+const RETRY_DELAY_OPTIONS = [
+  { value: "auto", label: "Retry: Auto" },
+  { value: "15", label: "Retry: 15s" },
+  { value: "30", label: "Retry: 30s" },
+  { value: "60", label: "Retry: 1m" },
+  { value: "120", label: "Retry: 2m" },
+  { value: "300", label: "Retry: 5m" },
+  { value: "600", label: "Retry: 10m" },
+  { value: "1800", label: "Retry: 30m" },
+  { value: "3600", label: "Retry: 1h" },
+];
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -65,6 +80,7 @@ export default function ProviderDetailPage() {
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
+  const [retryDelay, setRetryDelay] = useState("auto");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [liveModels, setLiveModels] = useState([]);
@@ -316,6 +332,9 @@ export default function ProviderDetailPage() {
       // Load per-provider thinking config
       const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
       setThinkingMode(thinkingCfg.mode || "auto");
+      // Load per-provider retry-delay override
+      const rd = (settingsData.retryDelayByProvider || {})[providerId];
+      setRetryDelay(rd != null && rd !== "auto" ? String(rd) : "auto");
       const autoPingSettingsKey = AUTO_PING_SETTINGS_KEYS[providerId];
       const apCfg = autoPingSettingsKey ? settingsData[autoPingSettingsKey] || {} : {};
       setAutoPing({ enabled: apCfg.enabled === true, connections: apCfg.connections || {} });
@@ -429,6 +448,32 @@ export default function ProviderDetailPage() {
   const handleThinkingModeChange = (mode) => {
     setThinkingMode(mode);
     saveThinkingConfig(mode);
+  };
+
+  const saveRetryDelay = async (value) => {
+    try {
+      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
+      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+      const current = settingsData.retryDelayByProvider || {};
+      const updated = { ...current };
+      if (!value || value === "auto") {
+        delete updated[providerId];
+      } else {
+        updated[providerId] = Number(value);
+      }
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ retryDelayByProvider: updated }),
+      });
+    } catch (error) {
+      console.log("Error saving retry delay:", error);
+    }
+  };
+
+  const handleRetryDelayChange = (value) => {
+    setRetryDelay(value);
+    saveRetryDelay(value);
   };
 
   const saveAutoPing = async (next) => {
@@ -1327,6 +1372,20 @@ export default function ProviderDetailPage() {
             <p className="text-text-muted">
               {connections.length} connection{connections.length === 1 ? "" : "s"}
             </p>
+          </div>
+          {/* Retry-delay control — right side of the provider header */}
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <span className="hidden text-xs text-text-muted sm:inline">Retry delay</span>
+            <select
+              value={retryDelay}
+              onChange={(e) => handleRetryDelayChange(e.target.value)}
+              title="Cooldown after a rate-limit/error when the provider reports no reset time of its own. Auto = honor the provider's reported delay, else built-in backoff."
+              className="rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
+            >
+              {RETRY_DELAY_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
           </div>
         </div>
       </div>
