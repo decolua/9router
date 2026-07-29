@@ -256,6 +256,37 @@ input, textarea {
   background: rgba(229, 106, 74, 0.55);
 }
 
+/* Global thin mac-like scrollbars (overrides clunky Windows/Linux default) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 120, 120, 0.35) transparent;
+}
+.dark * {
+  scrollbar-color: rgba(180, 180, 180, 0.3) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(120, 120, 120, 0.35);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(120, 120, 120, 0.55);
+}
+.dark *::-webkit-scrollbar-thumb {
+  background-color: rgba(180, 180, 180, 0.3);
+}
+.dark *::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(180, 180, 180, 0.5);
+}
+
 /* Reusable elevated card */
 .card-soft {
   background-color: var(--color-surface);
