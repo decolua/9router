@@ -8,31 +8,27 @@ import {
 	getModelsByProviderId,
 	PROVIDER_ID_TO_ALIAS,
 } from "@/shared/constants/models";
-import {
-	ClaudeToolCard,
-	ClineToolCard,
-	CodexToolCard,
-	CopilotToolCard,
-	CoworkToolCard,
-	DeepSeekTuiToolCard,
-	DefaultToolCard,
-	DroidToolCard,
-	GrokBuildToolCard,
-	HermesToolCard,
-	JcodeToolCard,
-	KiloToolCard,
-	OpenClawToolCard,
-	OpenCodeToolCard,
-	PiToolCard,
-} from "../components";
+import ClaudeToolCard from "../components/ClaudeToolCard";
+import ClineToolCard from "../components/ClineToolCard";
+import CodexToolCard from "../components/CodexToolCard";
+import CopilotToolCard from "../components/CopilotToolCard";
+import CoworkToolCard from "../components/CoworkToolCard";
+import DeepSeekTuiToolCard from "../components/DeepSeekTuiToolCard";
+import DefaultToolCard from "../components/DefaultToolCard";
+import DroidToolCard from "../components/DroidToolCard";
+import GrokBuildToolCard from "../components/GrokBuildToolCard";
+import HermesToolCard from "../components/HermesToolCard";
+import JcodeToolCard from "../components/JcodeToolCard";
+import KiloToolCard from "../components/KiloToolCard";
+import OpenClawToolCard from "../components/OpenClawToolCard";
+import OpenCodeToolCard from "../components/OpenCodeToolCard";
+import PiToolCard from "../components/PiToolCard";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
 
-export default function ToolDetailClient({ toolId, machineId }) {
-	const tool = CLI_TOOLS[toolId];
+function useToolDetailData() {
 	const [connections, setConnections] = useState([]);
 	const [loading, setLoading] = useState(true);
-	const [modelMappings, setModelMappings] = useState({});
 	const [cloudEnabled, setCloudEnabled] = useState(false);
 	const [tunnelEnabled, setTunnelEnabled] = useState(false);
 	const [tunnelPublicUrl, setTunnelPublicUrl] = useState("");
@@ -41,16 +37,16 @@ export default function ToolDetailClient({ toolId, machineId }) {
 	const [apiKeys, setApiKeys] = useState([]);
 
 	useEffect(() => {
-		let mounted = true;
+		const ctrl = new AbortController();
 		(async () => {
 			try {
 				const [provRes, settingsRes, tunnelRes, keysRes] = await Promise.all([
-					fetch("/api/providers"),
-					fetch("/api/settings"),
-					fetch("/api/tunnel/status"),
-					fetch("/api/keys"),
+					fetch("/api/providers", { signal: ctrl.signal }),
+					fetch("/api/settings", { signal: ctrl.signal }),
+					fetch("/api/tunnel/status", { signal: ctrl.signal }),
+					fetch("/api/keys", { signal: ctrl.signal }),
 				]);
-				if (!mounted) return;
+				if (ctrl.signal.aborted) return;
 				if (provRes.ok) {
 					const data = await provRes.json();
 					setConnections(data.connections || []);
@@ -75,15 +71,40 @@ export default function ToolDetailClient({ toolId, machineId }) {
 					setApiKeys(data.keys || []);
 				}
 			} catch (error) {
+				if (error.name === "AbortError") return;
 				console.log("Error loading tool data:", error);
 			} finally {
-				if (mounted) setLoading(false);
+				if (!ctrl.signal.aborted) setLoading(false);
 			}
 		})();
-		return () => {
-			mounted = false;
-		};
+		return () => ctrl.abort();
 	}, []);
+
+	return {
+		connections,
+		loading,
+		cloudEnabled,
+		tunnelEnabled,
+		tunnelPublicUrl,
+		tailscaleEnabled,
+		tailscaleUrl,
+		apiKeys,
+	};
+}
+
+export default function ToolDetailClient({ toolId, machineId }) {
+	const tool = CLI_TOOLS[toolId];
+	const {
+		connections,
+		loading,
+		cloudEnabled,
+		tunnelEnabled,
+		tunnelPublicUrl,
+		tailscaleEnabled,
+		tailscaleUrl,
+		apiKeys,
+	} = useToolDetailData();
+	const [modelMappings, setModelMappings] = useState({});
 
 	const getActiveProviders = () =>
 		connections.filter((c) => c.isActive !== false);
