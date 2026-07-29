@@ -58,7 +58,7 @@ describe("getUsageForProvider(kimi) auth selection", () => {
     vi.clearAllMocks();
   });
 
-  it("OAuth path: Bearer + X-Msh-* (OmniRoute /usages parity; not chat x-api-key)", async () => {
+  it("OAuth path: Bearer + X-Msh-* (not chat x-api-key)", async () => {
     proxyAwareFetch.mockResolvedValueOnce(jsonResponse(ACTIVE_USAGE));
 
     const usage = await getUsageForProvider({

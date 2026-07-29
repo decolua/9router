@@ -1,5 +1,4 @@
 // Zed hosted LLM aggregator — auth + model-catalog helpers.
-// Ported from OmniRoute open-sse/shared/zedAuth.ts (plain JS, no TS types).
 //
 // Zed's cloud (cloud.zed.dev) authenticates native apps with a self-generated RSA
 // keypair instead of a registered OAuth client_id/secret:

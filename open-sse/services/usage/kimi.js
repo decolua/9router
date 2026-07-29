@@ -3,7 +3,7 @@
  *
  * Dual auth (single provider id `kimi`):
  *   - apiKey present → x-api-key only (platform / coding API key)
- *   - else accessToken → Bearer + X-Msh-* (device-code OAuth; OmniRoute parity)
+ *   - else accessToken → Bearer + X-Msh-* (device-code OAuth)
  *
  * Note: chat messages use combined x-api-key; /usages OAuth is Bearer.
  * 403 permission_denied is NOT auth-expired — account lacks usage feature / sub.

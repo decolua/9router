@@ -35,7 +35,7 @@ const USAGE = U("grok-cli");
 const BILLING_URL = USAGE.url || "https://cli-chat-proxy.grok.com/v1/billing?format=credits";
 const USER_URL = USAGE.userUrl || "https://cli-chat-proxy.grok.com/v1/user?include=subscription";
 
-// SuperGrok weekly pool — same endpoint OmniRoute #6844 / steipete CodexBar docs.
+// SuperGrok weekly pool.
 const GRPC_CREDITS_URL =
   "https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig";
 // Empty gRPC-web request frame (flag 0 + length 0). Without it upstream returns

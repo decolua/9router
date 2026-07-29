@@ -10,8 +10,7 @@
 // depending on which upstream Zed fronts for the model — translated back to
 // OpenAI Chat Completions by reusing the existing translators.
 //
-// Ported from OmniRoute open-sse/executors/zed-hosted.ts. Overrides execute()
-// entirely (does NOT use DefaultExecutor's pipeline) because the Zed wire
+// Overrides execute() entirely (does NOT use DefaultExecutor's pipeline) because the Zed wire
 // shape (thread envelope, LLM-token exchange, NDJSON status frames) doesn't
 // fit the generic transformRequest/buildUrl contract.
 

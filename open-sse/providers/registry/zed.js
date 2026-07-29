@@ -1,5 +1,4 @@
 // Zed provider — RSA keypair callback auth (NOT standard OAuth).
-// Source of truth: .repo/cockpit-tools/src-tauri/src/modules/zed_oauth.rs + zed_account.rs.
 export default {
   id: "zed",
   priority: 10,
@@ -20,11 +19,10 @@ export default {
   hasOAuth: true,
 
   transport: {
-    // Zed hosted LLM aggregator (OmniRoute-verified): cloud.zed.dev/completions is a
+    // Zed hosted LLM aggregator: cloud.zed.dev/completions is a
     // multi-format proxy fronting Anthropic/OpenAI/Google/xAI depending on the model.
     // Wire protocol = NDJSON/SSE-ish stream authenticated with a short-lived LLM bearer
-    // token exchanged from the RSA-decrypted access_token (see open-sse/shared/zedAuth
-    // in OmniRoute). cockpit-tools only covered the RSA login + cloud.zed.dev quota path.
+    // token exchanged from the RSA-decrypted access_token (see open-sse/shared/zedAuth).
     baseUrl: "https://cloud.zed.dev/completions",
     format: "openai",
     forceStream: true,
@@ -43,7 +41,7 @@ export default {
       url: "https://cloud.zed.dev/client/users/me", // verified in zed_account.rs
     },
     // Live catalog discovery — Zed's hosted model list changes frequently and is fetched
-    // per-connection rather than hardcoded (OmniRoute pattern).
+    // per-connection rather than hardcoded.
     modelsUrl: "https://cloud.zed.dev/models",
   },
 

@@ -1,6 +1,5 @@
 // CodeBuddy international (codebuddy.ai) — mirrors codebuddy-cn registry shape,
-// swapping the Tencent CN domain for the .ai endpoint set discovered in
-// cockpit-tools/src-tauri/src/modules/codebuddy_oauth.rs. All OAuth/plugin URLs
+// swapping the Tencent CN domain for the .ai endpoint set. All OAuth/plugin URLs
 // use the /v2/plugin prefix with platform=ide (CN uses platform=CLI).
 export default {
   id: "codebuddy-intl",
