@@ -721,7 +721,10 @@ export async function testSingleConnection(id) {
   const effectiveProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
 
   if (effectiveProxy.connectionProxyEnabled && effectiveProxy.connectionProxyUrl && !effectiveProxy.vercelRelayUrl) {
-    const proxyResult = await testProxyUrl({ proxyUrl: effectiveProxy.connectionProxyUrl });
+    const proxyResult = await testProxyUrl({
+      proxyUrl: effectiveProxy.connectionProxyUrl,
+      testUrl: connection.provider === "github" ? "https://api.github.com/" : undefined,
+    });
     if (!proxyResult.ok) {
       const proxyError = sanitizeOAuthError(proxyResult.error || `Proxy test failed with status ${proxyResult.status}`);
       await updateProviderConnection(id, {

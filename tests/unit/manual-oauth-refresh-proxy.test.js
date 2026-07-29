@@ -109,6 +109,24 @@ describe("manual OAuth test refresh routing", () => {
     );
   });
 
+  it("tests GitHub proxies against GitHub", async () => {
+    const githubConnection = {
+      ...connection,
+      id: "github-test",
+      provider: "github",
+      refreshToken: null,
+    };
+    mocks.getProviderConnectionById.mockResolvedValue(githubConnection);
+
+    const result = await testSingleConnection(githubConnection.id);
+
+    expect(result.valid).toBe(true);
+    expect(mocks.testProxyUrl).toHaveBeenCalledWith({
+      proxyUrl: effectiveProxy.connectionProxyUrl,
+      testUrl: "https://api.github.com/",
+    });
+  });
+
   it.each(["gemini-cli", "antigravity", "claude", "kiro", "qwen"])(
     "passes selected proxy to shared %s manual refresh",
     async (provider) => {
