@@ -23,11 +23,13 @@
   "scripts": {
     "dev": "nodemon -I --watch cli.js --watch src --watch hooks --ext js,json cli.js",
     "build": "node scripts/build-cli.js",
-    "pack:cli": "npm run build && npm pack --pack-destination ../..",
+    "pack:cli": "npm run build && npm pack --pack-destination ../.. && npm run verify:packed -- ../..",
     "publish:cli": "npm run build && npm publish",
     "postinstall": "node hooks/postinstall.js",
     "prepack": "node scripts/verify-bundled-dependencies.js",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build && npm run verify:packed",
+    "test:homebrew-mode": "node --test test/homebrew-mode.test.js",
+    "verify:packed": "node scripts/verify-packed-cli.js"
   },
   "dependencies": {
     "enquirer": "^2.4.1",

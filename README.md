@@ -80,16 +80,6 @@ npm install -g 9router
 9router
 ```
 
-**macOS (Homebrew):**
-
-```bash
-brew tap decolua/9router
-brew install 9router
-9router
-```
-
-See [Homebrew installation and maintenance](docs/homebrew.md) for updates, removal, and maintainer release guidance.
-
 🎉 Dashboard opens at `http://localhost:20128`
 
 **2. Connect a FREE provider (no signup needed):**

@@ -10,6 +10,7 @@ const { spawnSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const { getRuntimeDir, getRuntimeNodeModules, runNpmInstall, summarizeNpmError } = require("./sqliteRuntime");
+const { isHomebrewManaged } = require("./packageManager");
 
 const SYSTRAY_PKG = "systray2";
 const SYSTRAY_VERSION = "2.1.4";
@@ -87,6 +88,10 @@ function npmInstall(pkgs, { silent = false } = {}) {
 // Public: ensure systray2 is installed on macOS/Linux only.
 // Windows skips entirely (uses PowerShell tray).
 function ensureTrayRuntime({ silent = false } = {}) {
+  if (isHomebrewManaged()) {
+    return { systray: false, skipped: true };
+  }
+
   // Always evict the legacy `systray` package — its binary is broken on
   // modern macOS and an AV false-positive on Windows.
   cleanupLegacySystray({ silent });
