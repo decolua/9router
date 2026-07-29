@@ -12,7 +12,7 @@ import {
 import { buildCursorHeaders } from "../utils/cursorChecksum.js";
 import { estimateUsage } from "../utils/usageTracking.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
-import { chatChunkSse } from "../utils/sse.js";
+import { chatChunkSse, sseChunk } from "../utils/sse.js";
 import { FORMATS } from "../translator/formats.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import zlib from "zlib";
@@ -543,6 +543,9 @@ export class CursorExecutor extends BaseExecutor {
           if (done) break;
           pending = Buffer.concat([pending, Buffer.from(value)]);
           pending = decodeAgentFrames(pending, (payload) => {
+            // A single read can carry several frames; once the turn is over the
+            // rest of the batch must not reach the already-closed controller.
+            if (finished) return;
             const serverMessage = decodeMessage(payload);
 
             // agent.v1.AgentServerMessage.interaction_update
@@ -570,9 +573,12 @@ export class CursorExecutor extends BaseExecutor {
               if (execRequest.has(10)) {
                 session.write(createRequestContextResponse());
               } else {
+                // Every other ExecServerMessage variant is an editor-backed tool
+                // (shell, read, write, …) that 9router cannot service. Fail the
+                // turn rather than narrating protocol state as assistant text.
+                debugLog(`[CURSOR AGENT] Unsupported exec request fields: ${[...execRequest.keys()].join(",")}`);
                 finished = true;
                 onEvent({ type: "error", value: "Cursor AgentService requested an unsupported IDE tool" });
-                onEvent({ type: "done" });
               }
             }
           });
@@ -630,7 +636,12 @@ export class CursorExecutor extends BaseExecutor {
           } else if (event.type === "thinking") {
             controller.enqueue(encoder.encode(chatChunkSse({ id: responseId, created, model, delta: { reasoning_content: event.value } })));
           } else if (event.type === "error") {
-            controller.enqueue(encoder.encode(chatChunkSse({ id: responseId, created, model, delta: { content: `\n[${event.value}]` } })));
+            // An SSE error frame, not a content delta: a protocol failure must not
+            // be rendered to the user as the assistant's reply, and downstream
+            // usage tracking must not record the turn as a success.
+            controller.enqueue(encoder.encode(sseChunk({ error: { message: event.value, type: "api_error" } })));
+            controller.enqueue(encoder.encode(SSE_DONE));
+            controller.close();
           } else if (event.type === "done") {
             controller.enqueue(encoder.encode(chatChunkSse({ id: responseId, created, model, delta: {}, finishReason: "stop" })));
             controller.enqueue(encoder.encode(SSE_DONE));
