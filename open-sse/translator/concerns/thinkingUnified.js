@@ -97,6 +97,24 @@ export function extractThinking(body) {
     return { mode: "auto" };
   }
 
+  // Kiro shape (post-translation). The kiro translators map thinking intent onto
+  // additionalModelRequestFields rather than a top-level field, so a translated
+  // kiro payload carries no shape any branch above recognizes:
+  //   output_config.effort → modern Claude models
+  //   reasoning.effort     → GPT-5.6
+  // Checked last so a client body that also sets a canonical field keeps its
+  // existing precedence (resolveKiroThinkingBudget reads source bodies too).
+  const amrf = body.additionalModelRequestFields;
+  if (amrf && typeof amrf === "object") {
+    const amrfEffort = amrf.output_config?.effort ?? (typeof amrf.reasoning === "object" ? amrf.reasoning?.effort : null);
+    if (typeof amrfEffort === "string" && amrfEffort) {
+      const e = amrfEffort.toLowerCase();
+      if (e === "none" || e === "off") return { mode: "none" };
+      if (e === "auto") return { mode: "auto" };
+      return { mode: "level", level: e };
+    }
+  }
+
   return null;
 }
 
