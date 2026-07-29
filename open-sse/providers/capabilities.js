@@ -174,6 +174,12 @@ export const PROVIDER_CAPABILITIES = {
     "deepseek-v4-flash":  { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
     "deepseek-v3-2-volc": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 96000, maxOutput: 32000 },
   },
+  // Poolside Laguna — OpenAI-compatible, all reasoning-capable (262K context, 32K max output).
+  "poolside": {
+    "laguna-s-2.1":  { reasoning: true, thinkingFormat: "openai", contextWindow: 262000, maxOutput: 32000 },
+    "laguna-xs-2.1": { reasoning: true, thinkingFormat: "openai", contextWindow: 262000, maxOutput: 32000 },
+    "laguna-m.1":    { reasoning: true, thinkingFormat: "openai", contextWindow: 262000, maxOutput: 32000 },
+  },
 };
 
 /**

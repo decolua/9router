@@ -115,6 +115,7 @@ import p112 from "./tencent.js";
 import p113 from "./morph.js";
 import p114 from "./devin-cli.js";
 // import p104 from "./windsurf.js";
+import p115 from "./poolside.js";
 
 export default [
   p0,
@@ -231,4 +232,5 @@ export default [
   p113,
   p114,
   // p104, // windsurf — hidden, no tool calling
+  p115,
 ];
