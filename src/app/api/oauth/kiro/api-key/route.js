@@ -5,8 +5,8 @@ import { createProviderConnection } from "@/models";
 /**
  * POST /api/oauth/kiro/api-key
  * Import a Kiro API key (headless auth). The key is a long-lived bearer
- * credential — there is no refresh token. It is validated by listing
- * CodeWhisperer profiles, then stored with authMethod="api_key".
+ * credential — there is no refresh token. It is validated against the Amazon
+ * Q model catalog, then stored with authMethod="api_key".
  */
 export async function POST(request) {
   try {
@@ -21,7 +21,7 @@ export async function POST(request) {
 
     const kiroService = new KiroService();
 
-    // Validate the key and resolve its profileArn via ListAvailableProfiles
+    // Validate the key against the same Amazon Q surface used for inference.
     const credential = await kiroService.validateApiKey(
       apiKey,
       region || "us-east-1"
@@ -40,7 +40,7 @@ export async function POST(request) {
       expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
       email: email || null,
       providerSpecificData: {
-        profileArn: credential.profileArn,
+        ...(credential.profileArn ? { profileArn: credential.profileArn } : {}),
         region: credential.region,
         authMethod: "api_key",
         provider: "API Key",
