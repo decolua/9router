@@ -19,12 +19,13 @@ const checkPiInstalled = async () => {
 		await execAsync(command, { windowsHide: true });
 		return true;
 	} catch {
-		try {
-			await fs.access(getConfigPath());
-			return true;
-		} catch {
-			return false;
-		}
+		// CLI binary not found, fall through to config file check
+	}
+	try {
+		await fs.access(getConfigPath());
+		return true;
+	} catch {
+		return false;
 	}
 };
 
@@ -32,8 +33,7 @@ const readConfig = async () => {
 	try {
 		const content = await fs.readFile(getConfigPath(), "utf-8");
 		return JSON.parse(content);
-	} catch (error) {
-		if (error.code === "ENOENT") return null;
+	} catch {
 		return null;
 	}
 };
@@ -70,7 +70,7 @@ export async function GET() {
 			},
 		});
 	} catch (error) {
-		console.log("Error checking pi settings:", error);
+		console.error("Error checking pi settings:", error);
 		return NextResponse.json(
 			{ error: "Failed to check pi settings" },
 			{ status: 500 },
@@ -145,7 +145,7 @@ export async function POST(request) {
 			configPath,
 		});
 	} catch (error) {
-		console.log("Error applying pi settings:", error);
+		console.error("Error applying pi settings:", error);
 		return NextResponse.json(
 			{ error: "Failed to apply settings" },
 			{ status: 500 },
@@ -197,7 +197,7 @@ export async function DELETE(request) {
 				: "9Router settings removed from Pi",
 		});
 	} catch (error) {
-		console.log("Error resetting pi settings:", error);
+		console.error("Error resetting pi settings:", error);
 		return NextResponse.json(
 			{ error: "Failed to reset pi settings" },
 			{ status: 500 },
