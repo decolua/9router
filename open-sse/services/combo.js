@@ -18,7 +18,7 @@ const TOOL_RESULT_PREFIX = "[Tool result: ";
 // Flatten tool turns into prose so panel models keep the context but can't loop
 // on tools: drop the request's tools, turn tool/function results into assistant
 // text, and inline assistant tool_calls names instead of the structured field.
-function flattenToolHistory(messages) {
+export function flattenToolHistory(messages) {
   return messages
     .filter((msg) => msg)
     .map((msg) => {
@@ -336,7 +336,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
  * Panel responses are already translated to the client format by chatCore, so the
  * leaf content→string step reuses the translator's own extractTextContent.
  */
-function extractPanelText(json) {
+export function extractPanelText(json) {
   if (!json || typeof json !== "object") return "";
 
   // OpenAI chat completion
@@ -397,7 +397,7 @@ function appendUserTurn(body, text) {
  * Sources are anonymized ("Source N") so the judge weighs substance, not the
  * reputation of a model brand.
  */
-function buildJudgePrompt(answers) {
+export function buildJudgePrompt(answers) {
   const panel = answers
     .map((a, i) => `[Source ${i + 1}]\n${a.text}`)
     .join("\n\n");
