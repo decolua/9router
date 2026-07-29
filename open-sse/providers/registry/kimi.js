@@ -85,5 +85,8 @@ export default {
   },
   features: {
     usage: true,
+    // API-key connections also hit /v1/usages (x-api-key) — need usageApikey
+    // so isUsageEligible + /api/usage allow non-oauth authType.
+    usageApikey: true,
   },
 };
