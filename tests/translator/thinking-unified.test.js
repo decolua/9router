@@ -52,6 +52,21 @@ describe("extractThinking", () => {
   it("no intent → null", () => {
     expect(extractThinking({ messages: [] })).toBeNull();
   });
+  it("kiro additionalModelRequestFields.output_config.effort (modern claude)", () => {
+    expect(extractThinking({ additionalModelRequestFields: { thinking: { type: "adaptive", display: "summarized" }, output_config: { effort: "high" } } }))
+      .toEqual({ mode: "level", level: "high" });
+  });
+  it("kiro additionalModelRequestFields.reasoning.effort (gpt-5.6)", () => {
+    expect(extractThinking({ additionalModelRequestFields: { reasoning: { effort: "xhigh" } } }))
+      .toEqual({ mode: "level", level: "xhigh" });
+  });
+  it("kiro additionalModelRequestFields absent → null", () => {
+    expect(extractThinking({ conversationState: { currentMessage: {} } })).toBeNull();
+  });
+  it("canonical client fields win over additionalModelRequestFields", () => {
+    expect(extractThinking({ reasoning_effort: "low", additionalModelRequestFields: { output_config: { effort: "high" } } }))
+      .toEqual({ mode: "level", level: "low" });
+  });
 });
 
 describe("applyThinking per provider format", () => {
