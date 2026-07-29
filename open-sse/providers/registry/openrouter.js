@@ -15,6 +15,8 @@ export default {
     },
   },
   category: "freeTier",
+  authType: "apikey",
+  authModes: ["apikey"],
   transport: {
     baseUrl: "https://openrouter.ai/api/v1/chat/completions",
     thinkingFormat: "openai",

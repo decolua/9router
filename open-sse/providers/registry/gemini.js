@@ -16,6 +16,8 @@ export default {
     },
   },
   category: "freeTier",
+  authType: "apikey",
+  authModes: ["apikey"],
   mediaPriority: 1,
   transport: {
     baseUrl: "https://generativelanguage.googleapis.com/v1beta/models",
