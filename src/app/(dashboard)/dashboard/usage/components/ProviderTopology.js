@@ -7,6 +7,7 @@ import {
   Handle,
   Position,
   Controls,
+  ControlButton,
   BaseEdge,
   getBezierPath,
 } from "@xyflow/react";
@@ -551,8 +552,46 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
     }
   }, [nodes.length]);
 
+  const handleFitAllModels = useCallback(() => {
+    if (rfInstance.current) {
+      rfInstance.current.fitView({ padding: 0.25, duration: 400 });
+    }
+  }, []);
+
+  const handleFitProvidersOnly = useCallback(() => {
+    if (rfInstance.current && nodes.length > 0) {
+      const providerNodes = nodes.filter((n) => n.type === "router" || n.type === "provider");
+      rfInstance.current.fitView({ nodes: providerNodes, padding: 0.25, duration: 400 });
+    }
+  }, [nodes]);
+
   return (
-    <div ref={containerRef} className="h-[350px] w-full min-w-0 rounded-lg border border-border bg-bg-subtle/30 sm:h-[520px]">
+    <div ref={containerRef} className="relative h-[350px] w-full min-w-0 rounded-lg border border-border bg-bg-subtle/30 sm:h-[520px]">
+      {/* Floating View Switcher Bar */}
+      {providers.length > 0 && (
+        <div className="absolute top-3 right-3 z-10 flex items-center gap-1 rounded-lg border border-border/80 bg-bg/90 p-1 backdrop-blur-md shadow-md text-xs">
+          <button
+            type="button"
+            onClick={handleFitAllModels}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium text-text-muted hover:text-text hover:bg-bg-hover transition-colors"
+            title="Zoom out to fit all connected models"
+          >
+            <span className="material-symbols-outlined text-[15px]">account_tree</span>
+            <span>All Models</span>
+          </button>
+          <div className="w-[1px] h-4 bg-border/60" />
+          <button
+            type="button"
+            onClick={handleFitProvidersOnly}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium text-text-muted hover:text-text hover:bg-bg-hover transition-colors"
+            title="Zoom in to focus on providers only"
+          >
+            <span className="material-symbols-outlined text-[15px]">hub</span>
+            <span>Providers Only</span>
+          </button>
+        </div>
+      )}
+
       {providers.length === 0 ? (
         <div className="h-full flex items-center justify-center text-text-muted text-sm">
           No providers connected
@@ -579,7 +618,14 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
           nodesConnectable={false}
           elementsSelectable={false}
         >
-          <Controls showInteractive={false} className="react-flow-controls-custom" />
+          <Controls showInteractive={false} className="react-flow-controls-custom">
+            <ControlButton onClick={handleFitAllModels} title="Fit All Models (Full Zoom Out)">
+              <span className="material-symbols-outlined text-[16px]">fit_screen</span>
+            </ControlButton>
+            <ControlButton onClick={handleFitProvidersOnly} title="Focus Providers Only">
+              <span className="material-symbols-outlined text-[16px]">hub</span>
+            </ControlButton>
+          </Controls>
         </ReactFlow>
       )}
     </div>
