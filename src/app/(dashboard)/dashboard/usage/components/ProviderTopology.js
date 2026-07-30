@@ -311,7 +311,7 @@ const nodeTypes = { provider: ProviderNode, router: RouterNode, model: ModelNode
 const edgeTypes = { topology: TopologyEdge };
 
 // Place 9Router center, Providers on inner ellipse, Models branching on outer ellipse
-function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet) {
+function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet, modelDisplayMode = "on") {
   const nodeW = 150;
   const nodeH = 34;
   const routerW = 120;
@@ -320,7 +320,7 @@ function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet) {
 
   if (count === 0) {
     return {
-      nodes: [{ id: "router", type: "router", position: { x: 0, y: 0 }, data: { activeCount: 0 }, draggable: false }],
+      nodes: [{ id: "router", type: "router", position: { x: 0, y: 0 }, data: { activeCount: activeSet.size }, draggable: false }],
       edges: [],
     };
   }
@@ -403,12 +403,26 @@ function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet) {
       style: edgeStyle(active, last, error),
     });
 
-    // Branch out Model sub-nodes from Provider
-    if (models.length > 0) {
-      const modelDist = 135;
-      const mCount = models.length;
+    // Filter models based on modelDisplayMode ("on" | "auto" | "off")
+    let modelsToRender = [];
+    if (modelDisplayMode === "on") {
+      modelsToRender = models;
+    } else if (modelDisplayMode === "auto") {
+      modelsToRender = models.filter((m) => {
+        const mKey = m.toLowerCase();
+        return activeModelSet.has(mKey) || activeModelSet.has(`${pKey}/${mKey}`);
+      });
+    } else {
+      // "off" mode -> no model sub-nodes
+      modelsToRender = [];
+    }
 
-      models.forEach((m, j) => {
+    // Branch out Model sub-nodes from Provider
+    if (modelsToRender.length > 0) {
+      const modelDist = 135;
+      const mCount = modelsToRender.length;
+
+      modelsToRender.forEach((m, j) => {
         const modelId = `model-${p.provider}-${m}`;
         const mKey = m.toLowerCase();
         const modelActive = activeModelSet.has(mKey) || activeModelSet.has(`${pKey}/${mKey}`);
@@ -517,9 +531,13 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
 
   const activeModelSet = rawActiveData.mSet;
 
+  // 3-way model display mode ("on" | "auto" | "off")
+  const [modelDisplayMode, setModelDisplayMode] = useState("auto");
+  const [activeView, setActiveView] = useState("providers");
+
   const { nodes, edges } = useMemo(
-    () => buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet),
-    [providers, activeSet, activeModelSet, lastSet, errorSet]
+    () => buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet, modelDisplayMode),
+    [providers, activeSet, activeModelSet, lastSet, errorSet, modelDisplayMode]
   );
 
   const providersKey = useMemo(
@@ -529,7 +547,6 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
 
   const rfInstance = useRef(null);
   const containerRef = useRef(null);
-  const [activeView, setActiveView] = useState("providers"); // default focus on providers
 
   const fitCurrentView = useCallback((view = activeView) => {
     if (!rfInstance.current || nodes.length === 0) return;
@@ -578,36 +595,81 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
 
   return (
     <div ref={containerRef} className="relative h-[380px] w-full min-w-0 rounded-lg border border-border bg-bg-subtle/30 sm:h-[540px]">
-      {/* Floating View Switcher Bar */}
+      {/* Floating Control Bar */}
       {providers.length > 0 && (
-        <div className="absolute top-3 right-3 z-10 flex items-center gap-1 rounded-lg border border-border/80 bg-bg/90 p-1 backdrop-blur-md shadow-md text-xs">
-          <button
-            type="button"
-            onClick={handleFitProvidersOnly}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium transition-colors ${
-              activeView === "providers"
-                ? "bg-primary text-white shadow-sm font-semibold"
-                : "text-text-muted hover:text-text hover:bg-bg-hover"
-            }`}
-            title="Zoom In ~115% Focus on Providers"
-          >
-            <span className="material-symbols-outlined text-[15px]">hub</span>
-            <span>Providers Only (115%)</span>
-          </button>
+        <div className="absolute top-3 right-3 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-border/80 bg-bg/90 p-1.5 backdrop-blur-md shadow-md text-xs">
+          {/* Models 3-Way Toggle (ON / AUTO / OFF) */}
+          <div className="flex items-center gap-1 bg-bg-subtle/90 px-1 py-0.5 rounded-md border border-border/60">
+            <span className="text-[11px] text-text-muted px-1 font-semibold">Models:</span>
+            <button
+              type="button"
+              onClick={() => setModelDisplayMode("on")}
+              className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
+                modelDisplayMode === "on"
+                  ? "bg-primary text-white shadow-xs"
+                  : "text-text-muted hover:text-text hover:bg-bg-hover"
+              }`}
+              title="Munculkan SEMUA cabang model"
+            >
+              ON
+            </button>
+            <button
+              type="button"
+              onClick={() => setModelDisplayMode("auto")}
+              className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
+                modelDisplayMode === "auto"
+                  ? "bg-cyan-500 text-white shadow-xs"
+                  : "text-text-muted hover:text-text hover:bg-bg-hover"
+              }`}
+              title="Model HANYA muncul saat sedang diproses/aktif"
+            >
+              AUTO
+            </button>
+            <button
+              type="button"
+              onClick={() => setModelDisplayMode("off")}
+              className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
+                modelDisplayMode === "off"
+                  ? "bg-stone-700 text-white shadow-xs"
+                  : "text-text-muted hover:text-text hover:bg-bg-hover"
+              }`}
+              title="Sembunyikan SEMUA cabang model"
+            >
+              OFF
+            </button>
+          </div>
+
           <div className="w-[1px] h-4 bg-border/60" />
-          <button
-            type="button"
-            onClick={handleFitAllModels}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium transition-colors ${
-              activeView === "models"
-                ? "bg-primary text-white shadow-sm font-semibold"
-                : "text-text-muted hover:text-text hover:bg-bg-hover"
-            }`}
-            title="Zoom Out to fit all models"
-          >
-            <span className="material-symbols-outlined text-[15px]">account_tree</span>
-            <span>All Models</span>
-          </button>
+
+          {/* View Fit Zoom Switcher */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={handleFitProvidersOnly}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-md font-medium transition-colors ${
+                activeView === "providers"
+                  ? "bg-primary/20 text-primary border border-primary/30 font-semibold"
+                  : "text-text-muted hover:text-text hover:bg-bg-hover"
+              }`}
+              title="Zoom In 115% Fokus ke Provider"
+            >
+              <span className="material-symbols-outlined text-[14px]">hub</span>
+              <span>Providers</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleFitAllModels}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-md font-medium transition-colors ${
+                activeView === "models"
+                  ? "bg-primary/20 text-primary border border-primary/30 font-semibold"
+                  : "text-text-muted hover:text-text hover:bg-bg-hover"
+              }`}
+              title="Zoom Full semua model"
+            >
+              <span className="material-symbols-outlined text-[14px]">account_tree</span>
+              <span>All</span>
+            </button>
+          </div>
         </div>
       )}
 
