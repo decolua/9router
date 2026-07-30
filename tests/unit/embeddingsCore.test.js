@@ -267,6 +267,51 @@ describe("buildEmbeddingsUrl", () => {
     expect(url).toBe("https://myhost.ai/v1/embeddings");
   });
 
+  it("ollama-local default host → http://localhost:11434/v1/embeddings", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "ollama-local", model: "nomic-embed-text" },
+      credentials: {},
+    }));
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://localhost:11434/v1/embeddings",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ model: "nomic-embed-text", input: "Hello world", encoding_format: "float" }),
+      })
+    );
+  });
+
+  it("ollama-local custom host → respects baseUrl from providerSpecificData", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "ollama-local", model: "bge-m3" },
+      credentials: { providerSpecificData: { baseUrl: "http://192.168.1.100:11434" } },
+    }));
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://192.168.1.100:11434/v1/embeddings",
+      expect.anything()
+    );
+  });
+
+  it("ollama-local custom host with trailing slashes → strips trailing slashes cleanly", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "ollama-local", model: "bge-m3" },
+      credentials: { providerSpecificData: { baseUrl: "http://192.168.1.100:11434///" } },
+    }));
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://192.168.1.100:11434/v1/embeddings",
+      expect.anything()
+    );
+  });
+
   it("openai-compatible-* without baseUrl → falls back to api.openai.com", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
 
