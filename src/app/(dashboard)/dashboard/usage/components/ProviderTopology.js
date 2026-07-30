@@ -107,14 +107,13 @@ function ModelNode({ data }) {
   const { label, active } = data;
   return (
     <div
-      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] transition-all duration-300 ${
+      className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[10px] tracking-tight font-mono transition-all duration-300 ${
         active
-          ? "bg-bg border-cyan-400 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.7)] font-bold animate-pulse z-20 scale-105"
-          : "bg-bg-subtle/80 border-border/70 text-text-muted font-mono"
+          ? "bg-cyan-950/70 border-cyan-400 text-cyan-200 shadow-[0_0_14px_rgba(34,211,238,0.75)] font-bold animate-pulse z-20 scale-105"
+          : "bg-bg-subtle/95 border-border/80 text-text-muted hover:border-primary/50 hover:text-text shadow-xs"
       }`}
       style={{
-        minWidth: "110px",
-        maxWidth: "180px",
+        maxWidth: "160px",
       }}
     >
       <Handle type="target" position={Position.Top} id="top" className="!bg-transparent !border-0 !w-0 !h-0" />
@@ -123,11 +122,11 @@ function ModelNode({ data }) {
       <Handle type="target" position={Position.Right} id="right" className="!bg-transparent !border-0 !w-0 !h-0" />
 
       {/* Active pulse dot */}
-      <span className="relative flex h-2 w-2 shrink-0">
+      <span className="relative flex h-1.5 w-1.5 shrink-0">
         {active ? (
           <>
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-80" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
+            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400" />
           </>
         ) : (
           <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-text-muted/40" />
@@ -325,8 +324,8 @@ function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet, mo
     };
   }
 
-  const rx = Math.max(260, (180 * count) / (2 * Math.PI));
-  const ry = rx; // True circular symmetry for clean vertical & diagonal branching
+  const rx = Math.max(185, (125 * count) / (2 * Math.PI));
+  const ry = Math.max(145, rx * 0.72);
 
   const nodes = [];
   const edges = [];
@@ -431,16 +430,16 @@ function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet, mo
         const offset = j - mid;
         
         // Spread angle (fan out symmetrically)
-        const fanSpread = mCount > 1 ? 0.18 : 0;
+        const fanSpread = mCount > 1 ? 0.16 : 0;
         const mAngle = angle + offset * fanSpread;
         
         // Stagger distance outward based on distance from the center of the fan (V-shape)
-        const baseDist = 140;
-        const distStep = 45;
+        const baseDist = 110;
+        const distStep = 38;
         const distOffset = baseDist + Math.abs(offset) * distStep;
 
         const mx = (rx + distOffset) * Math.cos(mAngle);
-        const my = (ry + distOffset) * Math.sin(mAngle);
+        const my = (ry + (distOffset * 0.8)) * Math.sin(mAngle);
 
         // Pick handle connections matching radial direction
         let pSourceHandle = "s-right";
