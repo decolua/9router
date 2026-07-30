@@ -25,6 +25,12 @@ export async function getApiKeyById(id) {
   return rowToKey(row);
 }
 
+export async function getApiKeyByKey(key) {
+  const db = await getAdapter();
+  const row = db.get(`SELECT * FROM apiKeys WHERE key = ?`, [key]);
+  return rowToKey(row);
+}
+
 export async function createApiKey(name, machineId) {
   if (!machineId) throw new Error("machineId is required");
   const db = await getAdapter();

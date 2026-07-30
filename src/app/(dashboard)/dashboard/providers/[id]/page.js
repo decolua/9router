@@ -43,6 +43,7 @@ export default function ProviderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [providerNode, setProviderNode] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
+  const [apiKeys, setApiKeys] = useState([]);
   const [showOAuthModal, setShowOAuthModal] = useState(false);
   const [showIFlowCookieModal, setShowIFlowCookieModal] = useState(false);
   const [showAddApiKeyModal, setShowAddApiKeyModal] = useState(false);
@@ -51,6 +52,7 @@ export default function ProviderDetailPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showEditNodeModal, setShowEditNodeModal] = useState(false);
   const [showBulkProxyModal, setShowBulkProxyModal] = useState(false);
+  const [showBulkApiKeyModal, setShowBulkApiKeyModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [modelAliases, setModelAliases] = useState({});
   const [customModels, setCustomModels] = useState([]);
@@ -62,6 +64,7 @@ export default function ProviderDetailPage() {
   const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
   const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
+  const [bulkUpdatingApiKey, setBulkUpdatingApiKey] = useState(false);
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
@@ -291,22 +294,27 @@ export default function ProviderDetailPage() {
 
   const fetchConnections = useCallback(async () => {
     try {
-      const [connectionsRes, nodesRes, proxyPoolsRes, settingsRes] = await Promise.all([
+      const [connectionsRes, nodesRes, proxyPoolsRes, settingsRes, apiKeysRes] = await Promise.all([
         fetch("/api/providers", { cache: "no-store" }),
         fetch("/api/provider-nodes", { cache: "no-store" }),
         fetch("/api/proxy-pools?isActive=true", { cache: "no-store" }),
         fetch("/api/settings", { cache: "no-store" }),
+        fetch("/api/keys", { cache: "no-store" }),
       ]);
       const connectionsData = await connectionsRes.json();
       const nodesData = await nodesRes.json();
       const proxyPoolsData = await proxyPoolsRes.json();
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+      const apiKeysData = apiKeysRes.ok ? await apiKeysRes.json() : {};
       if (connectionsRes.ok) {
         const filtered = (connectionsData.connections || []).filter(c => c.provider === providerId);
         setConnections(filtered);
       }
       if (proxyPoolsRes.ok) {
         setProxyPools(proxyPoolsData.proxyPools || []);
+      }
+      if (apiKeysRes.ok) {
+        setApiKeys(apiKeysData.keys || []);
       }
       // Load per-provider strategy override
       const override = (settingsData.providerStrategies || {})[providerId] || {};
@@ -923,6 +931,31 @@ export default function ProviderDetailPage() {
     return applyProxyAssignments(targets);
   };
 
+  const applyApiKeyAssignments = async (allowedApiKeyIds) => {
+    setBulkUpdatingApiKey(true);
+    try {
+      let failed = 0;
+      for (const conn of connections) {
+        try {
+          const res = await fetch(`/api/providers/${conn.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ allowedApiKeyIds }),
+          });
+          if (!res.ok) failed += 1;
+        } catch (e) {
+          console.log("Error applying API key scope for", conn.id, e);
+          failed += 1;
+        }
+      }
+      if (failed > 0) alert(`Updated with ${failed} failed request(s).`);
+      await fetchConnections();
+      setShowBulkApiKeyModal(false);
+    } finally {
+      setBulkUpdatingApiKey(false);
+    }
+  };
+
   const handleApplyOneToOne = () => {
     const activePools = proxyPools.filter((p) => p.isActive === true);
     if (activePools.length === 0) {
@@ -956,6 +989,7 @@ export default function ProviderDetailPage() {
               <ConnectionRow
                 connection={conn}
                 proxyPools={proxyPools}
+                apiKeys={apiKeys}
                 isOAuth={isOAuth}
                 isFirst={index === 0}
                 isLast={index === connections.length - 1}
@@ -983,6 +1017,30 @@ export default function ProviderDetailPage() {
                     }
                   } catch (error) {
                     console.log("Error updating proxy:", error);
+                  }
+                }}
+                onUpdateApiKeys={async (allowedApiKeyIds) => {
+                  try {
+                    const res = await fetch(`/api/providers/${conn.id}`, {
+                      method: "PUT",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ allowedApiKeyIds }),
+                    });
+                    if (res.ok) {
+                      setConnections(prev => prev.map(c =>
+                        c.id === conn.id
+                          ? {
+                              ...c,
+                              providerSpecificData: {
+                                ...c.providerSpecificData,
+                                allowedApiKeyIds: allowedApiKeyIds.length > 0 ? allowedApiKeyIds : undefined,
+                              },
+                            }
+                          : c
+                      ));
+                    }
+                  } catch (error) {
+                    console.log("Error updating API key scope:", error);
                   }
                 }}
                 onEdit={() => {
@@ -1043,6 +1101,47 @@ export default function ProviderDetailPage() {
         {bulkUpdatingProxy && <p className="text-xs text-text-muted">Applying...</p>}
 
         <Button onClick={closeBulkProxyModal} variant="ghost" fullWidth disabled={bulkUpdatingProxy}>
+          Cancel
+        </Button>
+      </div>
+    </Modal>
+  );
+
+  const bulkApiKeyModal = (
+    <Modal
+      isOpen={showBulkApiKeyModal}
+      onClose={() => { if (!bulkUpdatingApiKey) setShowBulkApiKeyModal(false); }}
+      title={`Apply API Key Scope (${connections.length} connections)`}
+    >
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col">
+          <button
+            onClick={() => applyApiKeyAssignments([])}
+            disabled={bulkUpdatingApiKey}
+            className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span className="material-symbols-outlined text-text-muted text-[18px]">key_off</span>
+            <span className="text-sm text-text-main">Any key (unrestricted) for all</span>
+          </button>
+          {apiKeys.map((key) => (
+            <button
+              key={key.id}
+              onClick={() => applyApiKeyAssignments([key.id])}
+              disabled={bulkUpdatingApiKey || key.isActive === false}
+              className="flex items-center gap-2 rounded-lg px-3 py-2 text-left transition-colors hover:bg-black/[0.04] dark:hover:bg-white/[0.04] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-text-muted text-[18px]">vpn_key</span>
+              <span className="truncate text-sm text-text-main">{key.name || key.id}</span>
+              {key.isActive === false && (
+                <span className="text-[10px] text-text-muted">(disabled)</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {bulkUpdatingApiKey && <p className="text-xs text-text-muted">Applying...</p>}
+
+        <Button onClick={() => setShowBulkApiKeyModal(false)} variant="ghost" fullWidth disabled={bulkUpdatingApiKey}>
           Cancel
         </Button>
       </div>
@@ -1433,6 +1532,16 @@ export default function ProviderDetailPage() {
                   Apply Proxy
                 </Button>
               )}
+              {connections.length > 0 && apiKeys.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon="vpn_key"
+                  onClick={() => setShowBulkApiKeyModal(true)}
+                >
+                  Apply API Key
+                </Button>
+              )}
               {connections.length > 0 && (
                 <>
                   {selectedConnectionIds.length > 0 && (
@@ -1683,6 +1792,7 @@ export default function ProviderDetailPage() {
       </Card>
 
       {bulkActionModal}
+      {bulkApiKeyModal}
 
       {/* Modals */}
       {providerId === "kiro" ? (

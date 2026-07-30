@@ -1,4 +1,4 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
+import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getApiKeyByKey, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
@@ -21,6 +21,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
+  const requestApiKey = options?.apiKey || null;
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
@@ -59,7 +60,24 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       };
     }
 
-    const connections = await getProviderConnections({ provider: providerId, isActive: true });
+    let connections = await getProviderConnections({ provider: providerId, isActive: true });
+    const apiKeyRecord = requestApiKey ? await getApiKeyByKey(requestApiKey) : null;
+    const requestApiKeyId = apiKeyRecord?.isActive ? apiKeyRecord.id : null;
+
+    if (requestApiKeyId) {
+      const scopedConnections = connections.filter((connection) => {
+        const allowedApiKeyIds = connection.providerSpecificData?.allowedApiKeyIds;
+        if (!Array.isArray(allowedApiKeyIds) || allowedApiKeyIds.length === 0) return true;
+        return allowedApiKeyIds.includes(requestApiKeyId);
+      });
+      if (scopedConnections.length > 0) {
+        connections = scopedConnections;
+      } else {
+        log.warn("AUTH", `${provider} | API key scope has no allowed ${providerId} connections`);
+        return null;
+      }
+    }
+
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {

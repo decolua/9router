@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   getProviderConnectionById,
   getProxyPoolById,
+  getApiKeyById,
   updateProviderConnection,
   deleteProviderConnection,
 } from "@/models";
@@ -55,8 +56,30 @@ async function normalizeProxyPoolUpdate(proxyPoolIdInput) {
   return { hasProxyPoolField: true, proxyPoolId };
 }
 
-function shouldMergeProviderSpecificData(existing, incoming, hasLegacyProxy, hasProxyPoolField) {
-  return existing !== undefined || incoming !== undefined || hasLegacyProxy || hasProxyPoolField;
+function shouldMergeProviderSpecificData(existing, incoming, hasLegacyProxy, hasProxyPoolField, hasAllowedApiKeyIdsField) {
+  return existing !== undefined || incoming !== undefined || hasLegacyProxy || hasProxyPoolField || hasAllowedApiKeyIdsField;
+}
+
+async function normalizeAllowedApiKeyIds(input) {
+  if (input === undefined) {
+    return { hasAllowedApiKeyIdsField: false, allowedApiKeyIds: null };
+  }
+
+  if (input === null || input === "" || input === "__none__") {
+    return { hasAllowedApiKeyIdsField: true, allowedApiKeyIds: [] };
+  }
+
+  const rawIds = Array.isArray(input) ? input : [input];
+  const ids = [...new Set(rawIds.map((id) => String(id || "").trim()).filter(Boolean))];
+
+  for (const id of ids) {
+    const apiKey = await getApiKeyById(id);
+    if (!apiKey) {
+      return { hasAllowedApiKeyIdsField: true, error: `API key not found: ${id}` };
+    }
+  }
+
+  return { hasAllowedApiKeyIdsField: true, allowedApiKeyIds: ids };
 }
 
 // GET /api/providers/[id] - Get single connection
@@ -116,6 +139,11 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: proxyPoolResult.error }, { status: 400 });
     }
 
+    const allowedApiKeyIdsResult = await normalizeAllowedApiKeyIds(body.allowedApiKeyIds);
+    if (allowedApiKeyIdsResult.error) {
+      return NextResponse.json({ error: allowedApiKeyIdsResult.error }, { status: 400 });
+    }
+
     const updateData = {};
     if (name !== undefined) updateData.name = name;
     if (priority !== undefined) updateData.priority = priority;
@@ -132,7 +160,8 @@ export async function PUT(request, { params }) {
         existing.providerSpecificData,
         providerSpecificData,
         proxyConfig.hasAnyProxyField,
-        proxyPoolResult.hasProxyPoolField
+        proxyPoolResult.hasProxyPoolField,
+        allowedApiKeyIdsResult.hasAllowedApiKeyIdsField
       )
     ) {
       updateData.providerSpecificData = {
@@ -151,6 +180,14 @@ export async function PUT(request, { params }) {
           delete updateData.providerSpecificData.proxyPoolId;
         } else {
           updateData.providerSpecificData.proxyPoolId = proxyPoolResult.proxyPoolId;
+        }
+      }
+
+      if (allowedApiKeyIdsResult.hasAllowedApiKeyIdsField) {
+        if (!allowedApiKeyIdsResult.allowedApiKeyIds?.length) {
+          delete updateData.providerSpecificData.allowedApiKeyIds;
+        } else {
+          updateData.providerSpecificData.allowedApiKeyIds = allowedApiKeyIdsResult.allowedApiKeyIds;
         }
       }
     }

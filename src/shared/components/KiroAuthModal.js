@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
-import { Modal, Button, Input } from "@/shared/components";
+import Modal from "./Modal";
+import Button from "./Button";
+import Input from "./Input";
 
 /**
  * Kiro Auth Method Selection Modal

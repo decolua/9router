@@ -2,7 +2,9 @@
 
 import { useState } from "react";
 import PropTypes from "prop-types";
-import { Modal, Button, Input } from "@/shared/components";
+import Modal from "./Modal";
+import Button from "./Button";
+import Input from "./Input";
 
 /**
  * iFlow Cookie Authentication Modal

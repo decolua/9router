@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
-import { Modal, Button, Input } from "@/shared/components";
+import Modal from "./Modal";
+import Button from "./Button";
+import Input from "./Input";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
 /**

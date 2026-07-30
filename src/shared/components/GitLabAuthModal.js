@@ -2,7 +2,10 @@
 
 import { useState } from "react";
 import PropTypes from "prop-types";
-import { Modal, Button, Input, OAuthModal } from "@/shared/components";
+import Modal from "./Modal";
+import Button from "./Button";
+import Input from "./Input";
+import OAuthModal from "./OAuthModal";
 
 const GITLAB_COM = "https://gitlab.com";
 
