@@ -505,34 +505,12 @@ exports[`GOLDEN response stream: OpenAI-Responses (codex) → OpenAI > text + re
           "tool_calls": [
             {
               "function": {
-                "arguments": "",
+                "arguments": "{"city":"NYC"}",
                 "name": "get_weather",
               },
               "id": "call_1",
               "index": 0,
               "type": "function",
-            },
-          ],
-        },
-        "finish_reason": null,
-        "index": 0,
-      },
-    ],
-    "created": 0,
-    "id": "chatcmpl-<TS>",
-    "model": "unknown",
-    "object": "chat.completion.chunk",
-  },
-  {
-    "choices": [
-      {
-        "delta": {
-          "tool_calls": [
-            {
-              "function": {
-                "arguments": "{"city":"NYC"}",
-              },
-              "index": 0,
             },
           ],
         },
