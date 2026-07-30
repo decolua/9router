@@ -123,15 +123,17 @@ export async function POST(request, { params }) {
   }
 }
 
-function extractGeminiClientApiKey(request) {
+// All credentials the client presented, in precedence order — clients can send
+// an unrelated Authorization header alongside a valid x-goog-api-key, so every
+// candidate must be validated (matches src/sse/services/auth.js semantics).
+function extractGeminiClientApiKeyCandidates(request) {
+  const candidates = [];
+  const push = (v) => { if (v && !candidates.includes(v)) candidates.push(v); };
   const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
-
-  const googleApiKey = request.headers.get("x-goog-api-key");
-  if (googleApiKey) return googleApiKey;
-
-  const url = new URL(request.url);
-  return url.searchParams.get("key");
+  if (authHeader?.startsWith("Bearer ")) push(authHeader.slice(7));
+  push(request.headers.get("x-goog-api-key"));
+  push(new URL(request.url).searchParams.get("key"));
+  return candidates;
 }
 
 function normalizeGeminiNativeModel(model) {
@@ -181,17 +183,15 @@ async function validateGeminiNativeClientKey(request) {
   const settings = await getSettings();
   if (!settings.requireApiKey) return null;
 
-  const apiKey = extractGeminiClientApiKey(request);
-  if (!apiKey) {
+  const candidates = extractGeminiClientApiKeyCandidates(request);
+  if (candidates.length === 0) {
     return Response.json({ error: { message: "Missing API key" } }, { status: 401 });
   }
 
-  const valid = await isValidApiKey(apiKey);
-  if (!valid) {
-    return Response.json({ error: { message: "Invalid API key" } }, { status: 401 });
+  for (const apiKey of candidates) {
+    if (await isValidApiKey(apiKey)) return null;
   }
-
-  return null;
+  return Response.json({ error: { message: "Invalid API key" } }, { status: 401 });
 }
 
 function buildGeminiNativeAuthHeaders(credentials) {
