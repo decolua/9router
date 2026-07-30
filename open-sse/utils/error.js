@@ -38,6 +38,25 @@ export function errorResponse(statusCode, message) {
 }
 
 /**
+ * Auth error Response in the client's native format. Anthropic endpoints
+ * (/v1/messages*) get the standard Anthropic error envelope so clients like
+ * Claude Code surface the message correctly; everything else keeps the
+ * OpenAI-compatible shape.
+ * @param {string|null} endpoint - Request pathname (e.g. "/v1/messages")
+ * @param {string} message - Error message
+ * @returns {Response}
+ */
+export function authErrorResponse(endpoint, message) {
+  if (endpoint?.includes("/v1/messages")) {
+    return new Response(
+      JSON.stringify({ type: "error", error: { type: "authentication_error", message } }),
+      { status: 401, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }
+    );
+  }
+  return errorResponse(401, message);
+}
+
+/**
  * Write error to SSE stream (for streaming)
  * @param {WritableStreamDefaultWriter} writer - Stream writer
  * @param {number} statusCode - HTTP status code

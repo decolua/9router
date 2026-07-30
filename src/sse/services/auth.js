@@ -298,22 +298,40 @@ export async function clearAccountError(connectionId, currentConnection, model =
 }
 
 /**
- * Extract API key from request headers
+ * Extract API key from request headers (first presented credential).
  */
 export function extractApiKey(request) {
-  // Check Authorization header first
+  return extractApiKeyCandidates(request)[0] || null;
+}
+
+/**
+ * All credentials the client presented, in precedence order.
+ * Anthropic clients (e.g. Claude Code with an active claude.ai session or
+ * ANTHROPIC_AUTH_TOKEN set) can send an unrelated Authorization header
+ * ALONGSIDE a valid x-api-key — api.anthropic.com still authenticates on
+ * x-api-key, so every presented credential must be checked.
+ */
+export function extractApiKeyCandidates(request) {
+  const candidates = [];
+  const push = (v) => { if (v && !candidates.includes(v)) candidates.push(v); };
   const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) {
-    return authHeader.slice(7);
-  }
+  if (authHeader?.startsWith("Bearer ")) push(authHeader.slice(7));
+  push(request.headers.get("x-api-key"));
+  return candidates;
+}
 
-  // Check Anthropic x-api-key header
-  const xApiKey = request.headers.get("x-api-key");
-  if (xApiKey) {
-    return xApiKey;
+/**
+ * Resolve the client's API key against the apiKeys table.
+ * Returns { apiKey, valid }: when valid, apiKey is the credential that
+ * actually validated (use it for usage attribution); otherwise apiKey is the
+ * first presented credential (or null if none).
+ */
+export async function resolveClientApiKey(request) {
+  const candidates = extractApiKeyCandidates(request);
+  for (const key of candidates) {
+    if (await validateApiKey(key)) return { apiKey: key, valid: true };
   }
-
-  return null;
+  return { apiKey: candidates[0] || null, valid: false };
 }
 
 /**
