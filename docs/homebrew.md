@@ -83,8 +83,17 @@ A `.pkg` should normally become a Cask only when it installs a GUI application
 or needs installer behavior a Formula cannot reproduce safely; retain the
 Formula for the CLI otherwise.
 
+OpenAI Codex is a useful reference for the native-artifact stage: its Homebrew
+Cask selects architecture-specific release archives and SHA-256 values, exposes
+the packaged executable with `binary`, and uses GitHub release tags for
+`livecheck`. 9Router should adopt those artifact-selection patterns if it later
+ships standalone ARM64 and x86_64 archives, while retaining the Formula name
+and `brew install 9router` command unless installer behavior requires a Cask.
+
 ## References
 
 - [Homebrew: How to Create and Maintain a Tap](https://docs.brew.sh/How-to-Create-and-Maintain-a-Tap)
 - [Homebrew Formula Cookbook](https://docs.brew.sh/Formula-Cookbook)
 - [Homebrew Formula API](https://rubydoc.brew.sh/Formula)
+- [OpenAI Codex repository](https://github.com/openai/codex)
+- [OpenAI Codex Homebrew Cask](https://github.com/Homebrew/homebrew-cask/blob/HEAD/Casks/c/codex.rb)
