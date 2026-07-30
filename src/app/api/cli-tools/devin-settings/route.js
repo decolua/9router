@@ -13,15 +13,25 @@ const execAsync = promisify(exec);
 // matches what the runtime actually spawns.
 const candidateDevinPaths = () => {
   const home = os.homedir();
-  const paths = [
-    path.join(home, ".local", "share", "devin", "bin", "devin"),
-    path.join(home, ".devin", "bin", "devin"),
-  ];
-  if (process.platform === "win32") {
-    const localAppData = process.env.LOCALAPPDATA || path.join(home, "AppData", "Local");
-    paths.push(path.join(localAppData, "devin", "cli", "bin", "devin.exe"));
-  }
-  return paths;
+  const isWin = os.platform() === "win32";
+  const localAppData = process.env.LOCALAPPDATA || path.join(home, "AppData", "Local");
+  // Mirror resolveDevinBin in the executor — cover installer + common
+  // package-manager locations so detection matches runtime resolution.
+  return isWin
+    ? [
+      path.join(localAppData, "devin", "cli", "bin", "devin.exe"),
+      path.join(home, ".local", "bin", "devin.exe"),
+      path.join(home, "scoop", "shims", "devin.exe"),
+      path.join(localAppData, "Programs", "devin", "devin.exe"),
+    ]
+    : [
+      path.join(home, ".local", "share", "devin", "bin", "devin"),
+      path.join(home, ".devin", "bin", "devin"),
+      path.join(home, ".local", "bin", "devin"),
+      "/opt/homebrew/bin/devin",
+      "/usr/local/bin/devin",
+      "/usr/bin/devin",
+    ];
 };
 
 const checkDevinInstalled = async () => {

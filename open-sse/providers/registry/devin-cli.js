@@ -3,6 +3,7 @@ export default {
   alias: "dv",
   aliases: ["devin"],
   uiAlias: "dv",
+  hidden: true,
   display: {
     name: "Devin CLI",
     icon: "smart_toy",
@@ -11,7 +12,7 @@ export default {
     website: "https://devin.ai",
     notice: {
       signupUrl: "https://cli.devin.ai",
-      text: "Install the Devin CLI and run `devin auth login` first. Spawns the `devin` binary via ACP/stdio — no API key field. Uses the default agent with built-in fs/shell tools (DEVIN_PERMISSION_MODE=bypass). Local use only. Set CLI_DEVIN_AGENT_TYPE=summarizer for a tool-less mode.",
+      text: "Install: `curl -fsSL https://cli.devin.ai/install.sh | bash` (macOS: `brew install --cask devin-cli`, Windows PowerShell: `irm https://static.devin.ai/cli/setup.ps1 | iex`). Then run `devin auth login`. No API key needed.",
     },
   },
   category: "free",

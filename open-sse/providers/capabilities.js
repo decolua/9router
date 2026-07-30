@@ -174,11 +174,10 @@ export const PROVIDER_CAPABILITIES = {
     "deepseek-v4-flash":  { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
     "deepseek-v3-2-volc": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 96000, maxOutput: 32000 },
   },
-  // Poolside Laguna — OpenAI-compatible, all reasoning-capable (262K context, 32K max output).
+  // Poolside Laguna — OpenAI-compatible, all reasoning-capable (32K max output).
   "poolside": {
-    "laguna-s-2.1":  { reasoning: true, thinkingFormat: "openai", contextWindow: 262000, maxOutput: 32000 },
-    "laguna-xs-2.1": { reasoning: true, thinkingFormat: "openai", contextWindow: 262000, maxOutput: 32000 },
-    "laguna-m.1":    { reasoning: true, thinkingFormat: "openai", contextWindow: 262000, maxOutput: 32000 },
+    "laguna-s-2.1":  { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 32000 },
+    "laguna-xs-2.1": { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 },
   },
 };
 
@@ -301,6 +300,13 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*sonar*",         caps: { search: true, contextWindow: 128000 } },
   { pattern: "*pplx*",          caps: { search: true, contextWindow: 128000 } },
   { pattern: "*perplexity*",    caps: { search: true, contextWindow: 128000 } },
+
+  // ── Poolside Laguna (resellers: openrouter/nvidia/kilocode/vercel/...) ──
+  // Free tiers cap S 2.1 well below the paid 1M window → match the free suffix
+  // (":free" or "-free", depending on reseller) before the plain id.
+  { pattern: "*laguna-s-2.1*free*", caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 } },
+  { pattern: "*laguna-s-2.1*",  caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 32000 } },
+  { pattern: "*laguna*",        caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 } },
 
   // ── Others ───────────────────────────────────────────────────────
   { pattern: "*hunyuan*",       caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },

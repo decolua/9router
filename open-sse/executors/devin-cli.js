@@ -32,26 +32,34 @@ function resolveDevinBin() {
   const envBin = process.env.CLI_DEVIN_BIN?.trim();
   if (envBin) return envBin;
 
-  // 2. Common name (PATH lookup handled by spawn shell option)
   const isWin = process.platform === "win32";
-
-  // 3. Windows installer default: %LOCALAPPDATA%\devin\cli\bin\devin.exe
-  if (isWin) {
-    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
-    const winPath = path.join(localAppData, "devin", "cli", "bin", "devin.exe");
-    if (fs.existsSync(winPath)) return winPath;
-  }
-
-  // 4. Linux/macOS installer paths
   const home = os.homedir();
-  for (const candidate of [
-    path.join(home, ".local", "share", "devin", "bin", "devin"),
-    path.join(home, ".devin", "bin", "devin"),
-  ]) {
+
+  // 2. Known installer / package-manager locations. spawn uses shell:false on
+  //    macOS/Linux, so process.env.PATH alone may miss ~/.local/bin, Homebrew,
+  //    Scoop, etc. when the server runs detached (tray/daemon/launchd) without
+  //    a login shell — probe these explicitly before falling back to PATH.
+  const candidates = isWin
+    ? [
+      // Official installer: %LOCALAPPDATA%\devin\cli\bin\devin.exe
+      path.join(process.env.LOCALAPPDATA || path.join(home, "AppData", "Local"), "devin", "cli", "bin", "devin.exe"),
+      path.join(home, ".local", "bin", "devin.exe"),
+      path.join(home, "scoop", "shims", "devin.exe"),
+      path.join(process.env.LOCALAPPDATA || path.join(home, "AppData", "Local"), "Programs", "devin", "devin.exe"),
+    ]
+    : [
+      path.join(home, ".local", "share", "devin", "bin", "devin"),
+      path.join(home, ".devin", "bin", "devin"),
+      path.join(home, ".local", "bin", "devin"), // pipx / user install
+      "/opt/homebrew/bin/devin",                  // Homebrew (Apple Silicon)
+      "/usr/local/bin/devin",                     // Homebrew (Intel) / manual
+      "/usr/bin/devin",
+    ];
+  for (const candidate of candidates) {
     if (fs.existsSync(candidate)) return candidate;
   }
 
-  // Fallback — rely on PATH
+  // 3. Fallback — rely on process.env.PATH
   return isWin ? "devin.exe" : "devin";
 }
 
