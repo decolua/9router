@@ -19,13 +19,13 @@ The quota tracker omits Qoder organization quota records whenever their reported
 
 ## Acceptance Criteria
 
-- [ ] Given an organization quota with `total: 0`, `used: 20000`, and `remaining: 0`, the quota tracker includes an `Organization` row with an inferred total of `20000`.
-- [ ] Given an organization quota with `total: 0`, `used: 3804`, and `remaining: 6196`, the quota tracker displays `3804 / 10000` and `62%` remaining.
-- [ ] A positive reported total remains authoritative and is not replaced by the inferred total.
-- [ ] The included organization row preserves its reported usage, unit, and reset time.
-- [ ] Given an organization quota whose `total`, `used`, and `remaining` values are all zero, the normalized quota output omits the organization row.
-- [ ] Personal Qoder quota normalization remains unchanged.
-- [ ] Automated regression tests cover non-zero total, used, and remaining values plus the all-zero placeholder case.
+- [x] Given an organization quota with `total: 0`, `used: 20000`, and `remaining: 0`, the quota tracker includes an `Organization` row with an inferred total of `20000`.
+- [x] Given an organization quota with `total: 0`, `used: 3804`, and `remaining: 6196`, the quota tracker displays `3804 / 10000` and `62%` remaining.
+- [x] A positive reported total remains authoritative and is not replaced by the inferred total.
+- [x] The included organization row preserves its reported usage, unit, and reset time.
+- [x] Given an organization quota whose `total`, `used`, and `remaining` values are all zero, the normalized quota output omits the organization row.
+- [x] Personal Qoder quota normalization remains unchanged.
+- [x] Automated regression tests cover non-zero total, used, and remaining values plus the all-zero placeholder case.
 
 ## Non-Goals
 

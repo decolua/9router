@@ -211,6 +211,6 @@ Expected: all selected tests pass with zero failures.
 
 Run lint, syntax checking, the repository differential suite, and an independent review. Update the existing branch and pull request only after all gates pass.
 
-- [ ] **Step 6: Rebuild and reinstall locally**
+- [x] **Step 6: Rebuild and reinstall locally**
 
 Build the CLI tarball, install it globally, restart the launch agent, and verify the health endpoint plus the Qoder quota page behavior.
