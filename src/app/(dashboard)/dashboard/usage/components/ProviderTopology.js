@@ -417,9 +417,8 @@ function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet, mo
       modelsToRender = [];
     }
 
-    // Branch out Model sub-nodes from Provider
+    // Branch out Model sub-nodes radially outward from Provider (menjulur keluar)
     if (modelsToRender.length > 0) {
-      const modelDist = 135;
       const mCount = modelsToRender.length;
 
       modelsToRender.forEach((m, j) => {
@@ -427,18 +426,26 @@ function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet, mo
         const mKey = m.toLowerCase();
         const modelActive = activeModelSet.has(mKey) || activeModelSet.has(`${pKey}/${mKey}`);
 
-        // Spread models in a small arc around provider's angle
-        const arcSpread = mCount > 1 ? 0.35 : 0;
-        const mAngle = angle + (j - (mCount - 1) / 2) * arcSpread;
+        // Radial projection outward from center
+        const fanSpread = mCount > 1 ? 0.22 : 0;
+        const mAngle = angle + (j - (mCount - 1) / 2) * fanSpread;
+        
+        // Stagger distance radially outward per model index j so text never overlaps
+        const distStep = 45;
+        const distOffset = 120 + j * distStep;
 
-        const mx = (rx + modelDist) * Math.cos(mAngle);
-        const my = (ry + modelDist) * Math.sin(mAngle);
+        const mx = (rx + distOffset) * Math.cos(mAngle);
+        const my = (ry + (distOffset * 0.6)) * Math.sin(mAngle);
 
+        // Pick handle connections matching radial direction
         let pSourceHandle = "s-right";
         let mTargetHandle = "left";
-        if (mx < cx) {
-          pSourceHandle = "s-left";
-          mTargetHandle = "right";
+        if (Math.abs(mAngle + Math.PI / 2) < Math.PI / 6) {
+          pSourceHandle = "s-top"; mTargetHandle = "bottom";
+        } else if (Math.abs(mAngle - Math.PI / 2) < Math.PI / 6) {
+          pSourceHandle = "s-bottom"; mTargetHandle = "top";
+        } else if (cx < 0) {
+          pSourceHandle = "s-left"; mTargetHandle = "right";
         }
 
         nodes.push({
