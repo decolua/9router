@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Show meaningful Qoder organization quota rows even when Qoder reports a zero total.
+**Goal:** Show meaningful Qoder organization quota rows and finite allocations even when Qoder reports a zero total.
 
-**Architecture:** Keep the server response and quota-table rendering unchanged. Narrow the Qoder-specific normalization filter so it suppresses only organization placeholders whose reported numeric values are all zero.
+**Architecture:** Keep the server response and generic quota-table rendering unchanged. In the Qoder-specific normalization path, suppress only all-zero organization placeholders and infer a missing total from absolute used plus remaining credits.
 
 **Tech Stack:** JavaScript ESM, Vitest, existing Next.js dashboard utilities
 
@@ -174,3 +174,43 @@ gh pr create --repo decolua/9router --base master --head Beants:fix/qoder-organi
 ```
 
 Expected: both governance documents are tracked, the branch is present on the fork, and the upstream pull request URL is returned.
+
+---
+
+### Task 2: Render Zero-Total Qoder Allocations as Finite
+
+**Files:**
+- Modify: `tests/unit/qoder-quota.test.js`
+- Modify: `src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js`
+
+**Interfaces:**
+- Consumes: Qoder quota rows shaped as `{ total, used, remaining, unit, resetAt }`.
+- Produces: normalized quota rows whose total is the positive reported total, or `used + remaining` when the reported total is zero.
+
+- [x] **Step 1: Extend the regression tests**
+
+Add coverage for `total: 0`, `used: 3804`, and `remaining: 6196`. Assert a normalized total of `10000` and a calculated remaining percentage of `62`. Update the existing zero-total cases to expect the inferred total.
+
+- [x] **Step 2: Verify the regression is red**
+
+Run: `cd tests && npx vitest run unit/qoder-quota.test.js`
+
+Expected: the inferred-total assertions fail because the current parser preserves `total: 0`.
+
+- [x] **Step 3: Implement the Qoder-only total fallback**
+
+Use the positive reported total when available. Otherwise, set the normalized total to the sum of numeric used and remaining credits. Continue omitting the absolute `remaining` field so generic percentage handling is unchanged.
+
+- [x] **Step 4: Verify focused and adjacent behavior**
+
+Run: `cd tests && npx vitest run unit/qoder-quota.test.js unit/provider-quota-visibility.test.js unit/usage-dispatch.test.js`
+
+Expected: all selected tests pass with zero failures.
+
+- [x] **Step 5: Run quality gates and independent review**
+
+Run lint, syntax checking, the repository differential suite, and an independent review. Update the existing branch and pull request only after all gates pass.
+
+- [ ] **Step 6: Rebuild and reinstall locally**
+
+Build the CLI tarball, install it globally, restart the launch agent, and verify the health endpoint plus the Qoder quota page behavior.

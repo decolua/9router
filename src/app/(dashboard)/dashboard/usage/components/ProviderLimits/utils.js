@@ -413,7 +413,8 @@ export function parseQuotaData(provider, data) {
             normalizedQuotas.push({
               name: quotaType === "user" ? "Personal" : quotaType === "organization" ? "Organization" : quotaType,
               used: quota.used || 0,
-              total: quota.total || 0,
+              total: Math.max(0, Number(quota.total) || 0)
+                || ((Number(quota.used) || 0) + (Number(quota.remaining) || 0)),
               unit: quota.unit,
               resetAt: quota.resetAt || null,
             });

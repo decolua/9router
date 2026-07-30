@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { parseQuotaData } from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
+import {
+  getRemainingPercentage,
+  parseQuotaData,
+} from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
 
 describe("Qoder organization quota visibility", () => {
   const resetAt = "2026-07-31T16:00:00.000Z";
 
   it.each([
-    ["total", { total: 1, used: 0, remaining: 0 }],
-    ["used", { total: 0, used: 20000, remaining: 0 }],
-    ["remaining", { total: 0, used: 0, remaining: 1 }],
-  ])("keeps organization quota when %s is non-zero", (_field, organization) => {
+    ["total", { total: 1, used: 0, remaining: 0 }, 1],
+    ["used", { total: 0, used: 20000, remaining: 0 }, 20000],
+    ["remaining", { total: 0, used: 0, remaining: 1 }, 1],
+    ["invalid total", { total: -1, used: 3804, remaining: 6196 }, 10000],
+  ])("keeps organization quota when %s is non-zero", (_field, organization, expectedTotal) => {
     const data = {
       quotas: {
         user: {
@@ -29,10 +33,35 @@ describe("Qoder organization quota visibility", () => {
     expect(parseQuotaData("qoder", data)).toContainEqual({
       name: "Organization",
       used: organization.used,
-      total: organization.total,
+      total: expectedTotal,
       unit: "credits",
       resetAt,
     });
+  });
+
+  it("infers a finite organization total from used and remaining credits", () => {
+    const data = {
+      quotas: {
+        organization: {
+          total: 0,
+          used: 3804,
+          remaining: 6196,
+          unit: "credits",
+          resetAt,
+        },
+      },
+    };
+
+    const [organization] = parseQuotaData("qoder", data);
+
+    expect(organization).toEqual({
+      name: "Organization",
+      used: 3804,
+      total: 10000,
+      unit: "credits",
+      resetAt,
+    });
+    expect(getRemainingPercentage(organization)).toBe(62);
   });
 
   it("still hides an all-zero organization placeholder", () => {
