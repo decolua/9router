@@ -255,6 +255,7 @@ export default function RequestDetailsTab() {
                 <th className="text-left p-4 text-sm font-semibold text-text-main">Timestamp</th>
                 <th className="text-left p-4 text-sm font-semibold text-text-main">Model</th>
                 <th className="text-left p-4 text-sm font-semibold text-text-main">Provider</th>
+                <th className="text-center p-4 text-sm font-semibold text-text-main">Input Guard</th>
                 <th className="text-right p-4 text-sm font-semibold text-text-main">Input Tokens</th>
                 <th className="text-right p-4 text-sm font-semibold text-text-main">Cached</th>
                 <th className="text-right p-4 text-sm font-semibold text-text-main">Cache Creation</th>
@@ -266,7 +267,7 @@ export default function RequestDetailsTab() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="p-8 text-center text-text-muted">
+                  <td colSpan="10" className="p-8 text-center text-text-muted">
                     <div className="flex items-center justify-center gap-2">
                       <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
                       Loading...
@@ -275,7 +276,7 @@ export default function RequestDetailsTab() {
                 </tr>
               ) : details.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="p-8 text-center text-text-muted">
+                  <td colSpan="10" className="p-8 text-center text-text-muted">
                     No request details found
                   </td>
                 </tr>
@@ -296,6 +297,14 @@ export default function RequestDetailsTab() {
                          {getProviderName(detail.provider, providerNameCache)}
                        </span>
                      </td>
+                    <td className="p-4 text-center">
+                      {detail.convoy?.applied ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2 py-1 text-xs text-green-600">
+                          <span className="material-symbols-outlined text-[14px]">filter_alt</span>
+                          {detail.convoy.hits?.length || 0} applied
+                        </span>
+                      ) : <span className="text-sm text-text-muted">Not applied</span>}
+                    </td>
                     <td className="p-4 text-sm text-text-main text-right font-mono">
                       {getInputTokens(detail.tokens).toLocaleString()}
                     </td>
@@ -451,6 +460,28 @@ export default function RequestDetailsTab() {
                     Reason: <span className="font-mono">{selectedDetail.pxpipe.reason}</span>
                     {selectedDetail.pxpipe.detail ? ` — ${selectedDetail.pxpipe.detail}` : ""}
                   </p>
+                )}
+              </div>
+            )}
+
+            {selectedDetail.convoy && (
+              <div className="rounded-lg border border-black/5 p-4 dark:border-white/5">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[18px] text-text-muted">filter_alt</span>
+                  <span className="text-sm font-semibold text-text-main">Input Guard</span>
+                  <span className={`rounded px-2 py-0.5 text-xs ${selectedDetail.convoy.applied ? "bg-green-500/15 text-green-600" : "bg-black/5 text-text-muted dark:bg-white/5"}`}>
+                    {selectedDetail.convoy.applied ? "Applied" : "No match"}
+                  </span>
+                </div>
+                {selectedDetail.convoy.applied && (
+                  <div className="space-y-1 text-sm">
+                    {(selectedDetail.convoy.hits || []).map((hit) => (
+                      <div key={hit.ruleId} className="flex items-center justify-between gap-3 rounded bg-black/[0.02] px-3 py-2 dark:bg-white/[0.02]">
+                        <span className="text-text-main">{hit.ruleName}</span>
+                        <span className="font-mono text-xs text-text-muted">{hit.count} match(es)</span>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             )}
