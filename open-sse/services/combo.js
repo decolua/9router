@@ -404,6 +404,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       // Catch unexpected exceptions to ensure fallback continues
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = error.comboFallbackStatus || 500;
+      // Score throw-class failures too. The returned-Response path records at
+      // the status branch above; without this, a model whose failure mode is
+      // "HTTP 200 then the stream ends before the first event" (preflight
+      // throws with comboFallbackStatus 502) stays permanently healthy and
+      // keeps winning first place over models that fail honestly.
+      recordModelFailure(modelStr);
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
   }
