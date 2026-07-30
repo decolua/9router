@@ -309,11 +309,13 @@ export function extractApiKey(request) {
 
   // Check Anthropic x-api-key header
   const xApiKey = request.headers.get("x-api-key");
-  if (xApiKey) {
-    return xApiKey;
-  }
+  if (xApiKey) return xApiKey;
 
-  return null;
+  const googleApiKey = request.headers.get("x-goog-api-key");
+  if (googleApiKey) return googleApiKey;
+
+  try { return new URL(request.url).searchParams.get("key") || null; }
+  catch { return null; }
 }
 
 /**

@@ -11,6 +11,7 @@
     "dev:bun": "bun --bun next dev --webpack --port 20127",
     "build:bun": "bun --bun next build --webpack",
     "start:bun": "bun ./.next/standalone/server.js",
+    "test:policy": "npx vitest run --config tests/vitest.config.js tests/unit/api-key-policies.test.js tests/unit/api-key-edit-route.test.js",
     "cli:pack": "npm --prefix cli run pack:cli",
     "cli:publish": "npm --prefix cli run publish:cli"
   },

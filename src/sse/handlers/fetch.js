@@ -5,6 +5,7 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
+import { authorizeApiKeyRequest } from "../services/apiKeyPolicy.js";
 import { getSettings, getCombos } from "@/lib/localDb";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
 import { handleFetchCore } from "open-sse/handlers/fetch/index.js";
@@ -120,6 +121,9 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
     log.warn("FETCH", "Unknown provider", { provider: providerInput });
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `Unknown provider: ${providerInput}`);
   }
+
+  const policy = await authorizeApiKeyRequest(request, { model: `${resolvedProvider.alias || providerId}/fetch`, body });
+  if (policy.error) return policy.error;
 
   const providerConfig = resolvedProvider.fetchConfig;
   if (!providerConfig) {
