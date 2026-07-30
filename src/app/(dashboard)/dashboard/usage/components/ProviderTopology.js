@@ -416,30 +416,36 @@ function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet, mo
       modelsToRender = [];
     }
 
-    // Branch out Model sub-nodes radially outward from Provider (menjulur keluar)
+    // Branch out Model sub-nodes in multi-tier concentric tree arcs to guarantee 0 text overlap
     if (modelsToRender.length > 0) {
       const mCount = modelsToRender.length;
+
+      // Determine number of concentric layers based on model count
+      const numLayers = mCount > 9 ? 3 : (mCount > 3 ? 2 : 1);
 
       modelsToRender.forEach((m, j) => {
         const modelId = `model-${p.provider}-${m}`;
         const mKey = m.toLowerCase();
         const modelActive = activeModelSet.has(mKey) || activeModelSet.has(`${pKey}/${mKey}`);
 
-        // Clean Symmetric Fan Out (Menjulur Keluar)
-        const mid = (mCount - 1) / 2;
-        const offset = j - mid;
-        
-        // Spread angle (fan out symmetrically)
-        const fanSpread = mCount > 1 ? 0.16 : 0;
-        const mAngle = angle + offset * fanSpread;
-        
-        // Stagger distance outward based on distance from the center of the fan (V-shape)
+        // Layer/Row allocation
+        const layerIndex = j % numLayers;
+        const colIndex = Math.floor(j / numLayers);
+        const itemsInThisLayer = Math.ceil((mCount - layerIndex) / numLayers);
+        const midCol = (itemsInThisLayer - 1) / 2;
+        const colOffset = colIndex - midCol;
+
+        // Angular spread
+        const fanSpread = mCount > 10 ? 0.24 : 0.20;
+        const mAngle = angle + colOffset * fanSpread;
+
+        // Radial clearance per layer so text boxes never touch vertically or horizontally
         const baseDist = 110;
-        const distStep = 38;
-        const distOffset = baseDist + Math.abs(offset) * distStep;
+        const layerSpacing = 44; // 44px radial clearance per layer
+        const distOffset = baseDist + layerIndex * layerSpacing + Math.abs(colOffset) * 16;
 
         const mx = (rx + distOffset) * Math.cos(mAngle);
-        const my = (ry + (distOffset * 0.8)) * Math.sin(mAngle);
+        const my = (ry + (distOffset * 0.85)) * Math.sin(mAngle);
 
         // Pick handle connections matching radial direction
         let pSourceHandle = "s-right";
