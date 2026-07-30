@@ -37,7 +37,7 @@ function createSilentWavFile() {
   return new Blob([buffer], { type: "audio/wav" });
 }
 
-async function getInternalHeaders() {
+async function getInternalHeaders(connectionId = null) {
   let apiKey = null;
   try {
     const keys = await getApiKeys();
@@ -47,11 +47,13 @@ async function getInternalHeaders() {
   const headers = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
   headers["x-9r-cli-token"] = await getConsistentMachineId(CLI_TOKEN_SALT);
+  if (connectionId) headers["x-9router-connection-id"] = String(connectionId);
   return headers;
 }
 
-export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`) {
-  const headers = await getInternalHeaders();
+export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`, options = {}) {
+  const timeoutMs = Math.max(1000, Number(options.timeoutMs) || 15000);
+  const headers = await getInternalHeaders(options.connectionId);
   const start = Date.now();
 
   if (kind === "embedding") {
@@ -59,7 +61,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       method: "POST",
       headers,
       body: JSON.stringify({ model, input: "test" }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const latencyMs = Date.now() - start;
     const rawText = await res.text().catch(() => "");
@@ -82,7 +84,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       method: "POST",
       headers,
       body: JSON.stringify({ model, prompt: "test" }),
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const latencyMs = Date.now() - start;
     const rawText = await res.text().catch(() => "");
@@ -111,7 +113,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       method: "POST",
       headers: Object.fromEntries(Object.entries(headers).filter(([key]) => key.toLowerCase() !== "content-type")),
       body: form,
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const latencyMs = Date.now() - start;
     const rawText = await res.text().catch(() => "");
@@ -141,7 +143,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       stream: false,
       messages: [{ role: "user", content: "hi" }],
     }),
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const latencyMs = Date.now() - start;
 
