@@ -1,0 +1,38 @@
+# Qoder Organization Quota Visibility Spec
+
+## Problem Statement
+
+The quota tracker omits Qoder organization quota records whenever their reported total is zero. Qoder can report meaningful organization usage in that state, so users cannot see all quota data already returned by the local usage API.
+
+## Success Metrics
+
+- 100% of Qoder organization quota records with a non-zero `total`, `used`, or `remaining` value appear as quota tracker rows.
+- 100% of all-zero Qoder organization placeholder records remain hidden from the quota tracker.
+- Existing focused quota-parser tests pass with zero failures.
+
+## User Stories
+
+- As a Qoder user, I want organization usage returned by 9Router to appear in the quota tracker so that I can see usage beyond my personal allocation.
+- As a Qoder user without an organization allocation, I do not want an empty organization row cluttering the quota tracker.
+
+## Acceptance Criteria
+
+- [ ] Given an organization quota with `total: 0`, `used: 20000`, and `remaining: 0`, the quota tracker includes an `Organization` row.
+- [ ] The included organization row preserves its reported usage, total, unit, and reset time.
+- [ ] Given an organization quota whose `total`, `used`, and `remaining` values are all zero, the normalized quota output omits the organization row.
+- [ ] Personal Qoder quota normalization remains unchanged.
+- [ ] Automated regression tests cover non-zero total, used, and remaining values plus the all-zero placeholder case.
+
+## Non-Goals
+
+- Changing the Qoder upstream request or server-side usage response.
+- Changing quota percentage calculation or unlimited-quota display behavior.
+- Changing normalization for providers other than Qoder.
+- Adding dependencies or modifying provider authentication.
+
+## Constraints
+
+- Must use the existing Qoder quota normalization path.
+- Must preserve the existing JavaScript and Vitest toolchain.
+- Must not add third-party dependencies.
+- Test coverage for the changed behavior must be complete.
