@@ -163,14 +163,20 @@ export class AntigravityService {
       if (result.done === true) {
         // Extract final project ID from response
         let finalProjectId = projectId;
-        if (result.response?.cloudaicompanionProject) {
-          const respProject = result.response.cloudaicompanionProject;
+        let respProject = result.response?.cloudaicompanionProject;
+        if (!respProject && result.cloudaicompanionProject) {
+          respProject = result.cloudaicompanionProject;
+        }
+
+        if (respProject) {
           if (typeof respProject === 'string') {
             finalProjectId = respProject.trim();
           } else if (respProject.id) {
             finalProjectId = respProject.id.trim();
           }
         }
+        
+        console.log("[Antigravity] Raw completeOnboarding response:", JSON.stringify(result));
         return { success: true, projectId: finalProjectId };
       }
 

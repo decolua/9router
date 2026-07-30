@@ -8,6 +8,7 @@
  */
 
 import { CLOUD_CODE_API, LOAD_CODE_ASSIST_HEADERS, LOAD_CODE_ASSIST_METADATA } from "../config/appConstants.js";
+import { generateProjectId } from "../translator/formats/gemini.js";
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
 // connectionId -> { projectId: string, fetchedAt: number }
@@ -236,7 +237,10 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints) {
                     console.log(`[ProjectId] Successfully onboarded, project ID: ${projectId}`);
                     return projectId;
                 }
-                throw new Error("onboardUser done but no project_id in response");
+                // PR FIX: Google deprecated automatic project creation for standard-tier.
+                // It now requires a user-defined GCP project.
+                console.warn(`[ProjectId] Standard-tier account requires a manual GCP Project ID. Google blocked automatic onboarding.`);
+                return "__REQUIRES_GCP_PROJECT__";
             }
 
             // Server not done yet – wait and retry
@@ -289,9 +293,15 @@ function extractProjectId(data) {
  * Extract project ID from onboardUser response.
  */
 function extractProjectIdFromOnboard(data) {
-    if (!data?.response) return null;
+    if (!data) return null;
 
-    const project = data.response.cloudaicompanionProject;
+    // Check nested in response (Long-Running Operation format)
+    let project = data.response?.cloudaicompanionProject;
+    
+    // Fallback: check directly at root
+    if (!project && data.cloudaicompanionProject) {
+        project = data.cloudaicompanionProject;
+    }
 
     if (typeof project === "string") {
         const id = project.trim();
