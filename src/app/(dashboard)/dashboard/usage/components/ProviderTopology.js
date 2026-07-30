@@ -30,80 +30,68 @@ function getProviderImageUrl(providerId) {
   return getProviderIconSrc(providerId);
 }
 
-// Custom provider node - rectangle with image + name + connected models
+// Custom Provider Node — connected to router and branching out to models
 function ProviderNode({ data }) {
-  const { label, color, imageUrl, textIcon, active, models = [] } = data;
+  const { label, color, imageUrl, textIcon, active } = data;
   const [imgError, setImgError] = useState(false);
   return (
     <div
-      className="flex flex-col gap-1.5 px-3.5 py-2.5 rounded-lg border-2 transition-all duration-300 bg-bg"
+      className="flex items-center gap-2.5 px-3.5 py-2 rounded-lg border-2 transition-all duration-300 bg-bg"
       style={{
         borderColor: active ? color : "var(--color-border)",
-        boxShadow: active ? `0 0 16px ${color}40` : "none",
-        minWidth: "160px",
-        maxWidth: "220px",
+        boxShadow: active ? `0 0 18px ${color}50` : "none",
+        minWidth: "140px",
       }}
     >
+      {/* Target handles from Router */}
       <Handle type="target" position={Position.Top} id="top" className="!bg-transparent !border-0 !w-0 !h-0" />
       <Handle type="target" position={Position.Bottom} id="bottom" className="!bg-transparent !border-0 !w-0 !h-0" />
       <Handle type="target" position={Position.Left} id="left" className="!bg-transparent !border-0 !w-0 !h-0" />
       <Handle type="target" position={Position.Right} id="right" className="!bg-transparent !border-0 !w-0 !h-0" />
 
-      <div className="flex items-center gap-2">
-        {/* Provider icon */}
-        <div
-          className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
-          style={{ backgroundColor: `${color}15` }}
-        >
-          {imageUrl && !imgError ? (
-            <img
-              src={imageUrl}
-              alt={label}
-              className="w-5 h-5 rounded-sm object-contain"
-              loading="lazy"
-              decoding="async"
-              onError={() => {
-                const m = imageUrl?.match(/^\/providers\/([^/]+)\.png$/i);
-                if (m) markProviderIconMissing(m[1]);
-                setImgError(true);
-              }}
-            />
-          ) : (
-            <span className="text-xs font-bold" style={{ color }}>{textIcon}</span>
-          )}
-        </div>
+      {/* Source handles to Model sub-nodes */}
+      <Handle type="source" position={Position.Top} id="s-top" className="!bg-transparent !border-0 !w-0 !h-0" />
+      <Handle type="source" position={Position.Bottom} id="s-bottom" className="!bg-transparent !border-0 !w-0 !h-0" />
+      <Handle type="source" position={Position.Left} id="s-left" className="!bg-transparent !border-0 !w-0 !h-0" />
+      <Handle type="source" position={Position.Right} id="s-right" className="!bg-transparent !border-0 !w-0 !h-0" />
 
-        {/* Provider name */}
-        <span
-          className="text-sm font-semibold truncate flex-1"
-          style={{ color: active ? color : "var(--color-text)" }}
-        >
-          {label}
-        </span>
-
-        {/* Active indicator */}
-        {active && (
-          <span className="relative flex h-2 w-2 shrink-0">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: color }} />
-            <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: color }} />
-          </span>
+      {/* Provider icon */}
+      <div
+        className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
+        style={{ backgroundColor: `${color}15` }}
+      >
+        {imageUrl && !imgError ? (
+          <img
+            src={imageUrl}
+            alt={label}
+            className="w-5 h-5 rounded-sm object-contain"
+            loading="lazy"
+            decoding="async"
+            onError={() => {
+              const m = imageUrl?.match(/^\/providers\/([^/]+)\.png$/i);
+              if (m) markProviderIconMissing(m[1]);
+              setImgError(true);
+            }}
+          />
+        ) : (
+          <span className="text-xs font-bold" style={{ color }}>{textIcon}</span>
         )}
       </div>
 
-      {/* Model badges (if models exist for this provider) */}
-      {models && models.length > 0 && (
-        <div className="flex flex-wrap gap-1 pt-1.5 border-t border-border/40">
-          {models.map((m, idx) => (
-            <span
-              key={idx}
-              className="text-[10px] px-1.5 py-0.5 rounded bg-bg-subtle text-primary font-mono truncate max-w-[180px] border border-primary/20 flex items-center gap-1"
-              title={m}
-            >
-              <span className="w-1 h-1 rounded-full bg-primary inline-block"></span>
-              {m}
-            </span>
-          ))}
-        </div>
+      {/* Provider name */}
+      <span
+        className="text-sm font-semibold truncate"
+        style={{ color: active ? color : "var(--color-text)" }}
+      >
+        {label}
+      </span>
+
+      {/* Active indicator */}
+      {active && (
+        <span className="relative flex h-2 w-2 shrink-0 ml-auto">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: color }} />
+          <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: color }} />
+        </span>
       )}
     </div>
   );
@@ -113,7 +101,50 @@ ProviderNode.propTypes = {
   data: PropTypes.object.isRequired,
 };
 
-// Center 9Router node — pulse/glow on card only (no expanding rings)
+// Custom Model Sub-Node — branches out from Provider
+function ModelNode({ data }) {
+  const { label, active } = data;
+  return (
+    <div
+      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[11px] transition-all duration-300 ${
+        active
+          ? "bg-bg border-cyan-400 text-cyan-300 shadow-[0_0_15px_rgba(34,211,238,0.7)] font-bold animate-pulse z-20 scale-105"
+          : "bg-bg-subtle/80 border-border/70 text-text-muted font-mono"
+      }`}
+      style={{
+        minWidth: "110px",
+        maxWidth: "180px",
+      }}
+    >
+      <Handle type="target" position={Position.Top} id="top" className="!bg-transparent !border-0 !w-0 !h-0" />
+      <Handle type="target" position={Position.Bottom} id="bottom" className="!bg-transparent !border-0 !w-0 !h-0" />
+      <Handle type="target" position={Position.Left} id="left" className="!bg-transparent !border-0 !w-0 !h-0" />
+      <Handle type="target" position={Position.Right} id="right" className="!bg-transparent !border-0 !w-0 !h-0" />
+
+      {/* Active pulse dot */}
+      <span className="relative flex h-2 w-2 shrink-0">
+        {active ? (
+          <>
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-80" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
+          </>
+        ) : (
+          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-text-muted/40" />
+        )}
+      </span>
+
+      <span className="truncate" title={label}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
+ModelNode.propTypes = {
+  data: PropTypes.object.isRequired,
+};
+
+// Center 9Router node — pulse/glow on card only
 function RouterNode({ data }) {
   const powering = (data.activeCount || 0) > 0;
   return (
@@ -152,7 +183,7 @@ RouterNode.propTypes = {
   data: PropTypes.object.isRequired,
 };
 
-// Active: electric kame beam (multi-layer stroke + sparks). Idle/last/error: solid BaseEdge.
+// Topology Edge (Bezier curve with electric Kame animation when active)
 function TopologyEdge({
   id,
   sourceX,
@@ -236,7 +267,7 @@ function TopologyEdge({
           />
         </circle>
       ))}
-      {/* Electric sparks (short-lived blink along path) */}
+      {/* Electric sparks */}
       {Array.from({ length: SPARK_COUNT }, (_, i) => (
         <circle
           key={`${id}-s-${i}`}
@@ -275,29 +306,26 @@ TopologyEdge.propTypes = {
   data: PropTypes.object,
 };
 
-const nodeTypes = { provider: ProviderNode, router: RouterNode };
+const nodeTypes = { provider: ProviderNode, router: RouterNode, model: ModelNode };
 const edgeTypes = { topology: TopologyEdge };
 
-// Place N nodes evenly along an ellipse around the router center.
-function buildLayout(providers, activeSet, lastSet, errorSet) {
-  const nodeW = 180;
-  const nodeH = 30;
+// Place 9Router center, Providers on inner ellipse, Models branching on outer ellipse
+function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet) {
+  const nodeW = 150;
+  const nodeH = 34;
   const routerW = 120;
   const routerH = 44;
-  const nodeGap = 24;
-
   const count = providers.length;
 
-  // Compute rx so arc spacing between nodes >= nodeW + nodeGap
-  const minRx = ((nodeW + nodeGap) * count) / (2 * Math.PI);
-  const rx = Math.max(320, minRx);
-  const ry = Math.max(200, rx * 0.55); // ellipse ratio ~0.55
   if (count === 0) {
     return {
       nodes: [{ id: "router", type: "router", position: { x: 0, y: 0 }, data: { activeCount: 0 }, draggable: false }],
       edges: [],
     };
   }
+
+  const rx = Math.max(360, (230 * count) / (2 * Math.PI));
+  const ry = Math.max(240, rx * 0.55);
 
   const nodes = [];
   const edges = [];
@@ -319,28 +347,24 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
 
   providers.forEach((p, i) => {
     const config = getProviderConfig(p.provider);
-    const active = activeSet.has(p.provider?.toLowerCase());
-    const last = !active && lastSet.has(p.provider?.toLowerCase());
-    const error = !active && errorSet.has(p.provider?.toLowerCase());
+    const pKey = p.provider?.toLowerCase();
+    const models = p.models || [];
+
+    // Check if any model under this provider is active
+    const hasActiveModel = models.some((m) => {
+      const mKey = m.toLowerCase();
+      return activeModelSet.has(mKey) || activeModelSet.has(`${pKey}/${mKey}`);
+    });
+    const active = activeSet.has(pKey) || hasActiveModel;
+    const last = !active && lastSet.has(pKey);
+    const error = !active && errorSet.has(pKey);
     const nodeId = `provider-${p.provider}`;
-    // Extract models array for this provider (or test models if p.models exists)
-    const models = p.models || (p.provider === "antigravity" ? ["gemini-2.5-pro", "claude-3.7-sonnet"] : []);
 
-    const data = {
-      label: (config.name !== p.provider ? config.name : null) || p.nodeName || p.name || p.provider,
-      color: config.color || "#6b7280",
-      imageUrl: getProviderImageUrl(p.provider),
-      textIcon: config.textIcon || (p.provider || "?").slice(0, 2).toUpperCase(),
-      active,
-      models,
-    };
-
-    // Distribute evenly starting from top (−π/2), clockwise
+    // Angle distribution for providers around router center
     const angle = -Math.PI / 2 + (2 * Math.PI * i) / count;
     const cx = rx * Math.cos(angle);
     const cy = ry * Math.sin(angle);
 
-    // Pick router handle closest to the node direction
     let sourceHandle, targetHandle;
     if (Math.abs(angle + Math.PI / 2) < Math.PI / 4 || Math.abs(angle - 3 * Math.PI / 2) < Math.PI / 4) {
       sourceHandle = "top"; targetHandle = "bottom";
@@ -356,7 +380,13 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
       id: nodeId,
       type: "provider",
       position: { x: cx - nodeW / 2, y: cy - nodeH / 2 },
-      data,
+      data: {
+        label: (config.name !== p.provider ? config.name : null) || p.nodeName || p.name || p.provider,
+        color: config.color || "#6b7280",
+        imageUrl: getProviderImageUrl(p.provider),
+        textIcon: config.textIcon || (p.provider || "?").slice(0, 2).toUpperCase(),
+        active,
+      },
       draggable: false,
     });
 
@@ -367,80 +397,143 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
       sourceHandle,
       target: nodeId,
       targetHandle,
-      // Built-in animated uses stroke-dasharray (CPU-heavy); use particle beam instead
       animated: false,
       data: { active },
       style: edgeStyle(active, last, error),
     });
+
+    // Branch out Model sub-nodes from Provider
+    if (models.length > 0) {
+      const modelDist = 180;
+      const mCount = models.length;
+
+      models.forEach((m, j) => {
+        const modelId = `model-${p.provider}-${m}`;
+        const mKey = m.toLowerCase();
+        const modelActive = activeModelSet.has(mKey) || activeModelSet.has(`${pKey}/${mKey}`);
+
+        // Spread models in a small arc around provider's angle
+        const arcSpread = mCount > 1 ? 0.32 : 0;
+        const mAngle = angle + (j - (mCount - 1) / 2) * arcSpread;
+
+        const mx = (rx + modelDist) * Math.cos(mAngle);
+        const my = (ry + modelDist) * Math.sin(mAngle);
+
+        let pSourceHandle = "s-right";
+        let mTargetHandle = "left";
+        if (mx < cx) {
+          pSourceHandle = "s-left";
+          mTargetHandle = "right";
+        }
+
+        nodes.push({
+          id: modelId,
+          type: "model",
+          position: { x: mx - 60, y: my - 15 },
+          data: {
+            label: m,
+            active: modelActive,
+            color: config.color || "#22d3ee",
+          },
+          draggable: false,
+        });
+
+        edges.push({
+          id: `e-${modelId}`,
+          type: "topology",
+          source: nodeId,
+          sourceHandle: pSourceHandle,
+          target: modelId,
+          targetHandle: mTargetHandle,
+          animated: false,
+          data: { active: modelActive },
+          style: edgeStyle(modelActive, false, false),
+        });
+      });
+    }
   });
 
   return { nodes, edges };
 }
 
 export default function ProviderTopology({ providers = [], activeRequests = [], lastProvider = "", errorProvider = "" }) {
-  // Serialize to stable string keys so useMemo only re-runs when values actually change
+  // Stable active tracking
   const activeKey = useMemo(
-    () => activeRequests.map((r) => r.provider?.toLowerCase()).filter(Boolean).sort().join(","),
+    () => (activeRequests || []).map((r) => `${r.provider}:${r.model}`).sort().join(","),
     [activeRequests]
   );
   const lastKey = lastProvider?.toLowerCase() || "";
   const errorKey = errorProvider?.toLowerCase() || "";
 
-  const rawActiveSet = useMemo(() => new Set(activeKey ? activeKey.split(",") : []), [activeKey]);
+  const rawActiveData = useMemo(() => {
+    const pSet = new Set();
+    const mSet = new Set();
+    (activeRequests || []).forEach((r) => {
+      if (r.provider) pSet.add(r.provider.toLowerCase());
+      if (r.model) {
+        const norm = r.model.toLowerCase();
+        mSet.add(norm);
+        if (norm.includes("/")) {
+          mSet.add(norm.split("/").pop());
+        }
+      }
+    });
+    return { pSet, mSet };
+  }, [activeKey]);
+
   const lastSet = useMemo(() => new Set(lastKey ? [lastKey] : []), [lastKey]);
   const errorSet = useMemo(() => new Set(errorKey ? [errorKey] : []), [errorKey]);
 
-  // Track firstSeen per active provider; drop provider if running too long (BE stuck)
   const firstSeenRef = useRef({});
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
     const seen = firstSeenRef.current;
     const now = Date.now();
-    for (const p of rawActiveSet) {
+    for (const p of rawActiveData.pSet) {
       if (!seen[p]) seen[p] = now;
     }
     for (const p of Object.keys(seen)) {
-      if (!rawActiveSet.has(p)) delete seen[p];
+      if (!rawActiveData.pSet.has(p)) delete seen[p];
     }
-  }, [rawActiveSet]);
+  }, [rawActiveData]);
 
   useEffect(() => {
-    if (rawActiveSet.size === 0) return;
+    if (rawActiveData.pSet.size === 0) return;
     const id = setInterval(() => setTick((t) => t + 1), FE_ACTIVE_TICK_MS);
     return () => clearInterval(id);
-  }, [rawActiveSet]);
+  }, [rawActiveData]);
 
   const activeSet = useMemo(() => {
     const now = Date.now();
     const filtered = new Set();
-    for (const p of rawActiveSet) {
+    for (const p of rawActiveData.pSet) {
       const ts = firstSeenRef.current[p];
       if (!ts || now - ts < FE_ACTIVE_TIMEOUT_MS) filtered.add(p);
     }
     return filtered;
-  }, [rawActiveSet, tick]);
+  }, [rawActiveData, tick]);
+
+  const activeModelSet = rawActiveData.mSet;
 
   const { nodes, edges } = useMemo(
-    () => buildLayout(providers, activeSet, lastSet, errorSet),
-    [providers, activeSet, lastSet, errorSet]
+    () => buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet),
+    [providers, activeSet, activeModelSet, lastSet, errorSet]
   );
 
-  // Stable key — only remount when provider list changes
   const providersKey = useMemo(
-    () => providers.map((p) => p.provider).sort().join(","),
+    () => providers.map((p) => `${p.provider}:${(p.models || []).join("-")}`).sort().join(","),
     [providers]
   );
 
   const rfInstance = useRef(null);
   const containerRef = useRef(null);
-  const fitOpts = { padding: 0.2, duration: 200 };
+  const fitOpts = { padding: 0.25, duration: 200 };
   const onInit = useCallback((instance) => {
     rfInstance.current = instance;
     setTimeout(() => instance.fitView(fitOpts), 50);
   }, []);
 
-  // Re-fit on container resize
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -451,7 +544,6 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
     return () => ro.disconnect();
   }, []);
 
-  // Re-fit when node count/layout changes
   useEffect(() => {
     if (rfInstance.current) {
       const id = setTimeout(() => rfInstance.current.fitView(fitOpts), 50);
@@ -460,7 +552,7 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
   }, [nodes.length]);
 
   return (
-    <div ref={containerRef} className="h-[320px] w-full min-w-0 rounded-lg border border-border bg-bg-subtle/30 sm:h-[480px]">
+    <div ref={containerRef} className="h-[350px] w-full min-w-0 rounded-lg border border-border bg-bg-subtle/30 sm:h-[520px]">
       {providers.length === 0 ? (
         <div className="h-full flex items-center justify-center text-text-muted text-sm">
           No providers connected
@@ -499,6 +591,7 @@ ProviderTopology.propTypes = {
     id: PropTypes.string,
     provider: PropTypes.string,
     name: PropTypes.string,
+    models: PropTypes.arrayOf(PropTypes.string),
   })),
   activeRequests: PropTypes.arrayOf(PropTypes.shape({
     provider: PropTypes.string,
@@ -508,3 +601,4 @@ ProviderTopology.propTypes = {
   lastProvider: PropTypes.string,
   errorProvider: PropTypes.string,
 };
+
