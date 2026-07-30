@@ -180,7 +180,17 @@ export async function installHeadroomExtras(extras = []) {
   // so it cannot be poisoned by caller input — the comma-list is a fixed
   // ['proxy', ...requested]. No shell interpolation.
   const extrasList = ["proxy", ...requested].join(",");
-  const spec = `headroom-ai[${extrasList}]`;
+  // Floor the spec at the installed version. Without it, an extra whose deps are
+  // unsatisfiable on this platform (e.g. `ml` needs torch, which has no
+  // musl/Python-3.14 wheel) makes pip backtrack through older releases hunting
+  // for one where the extra simply doesn't exist — then DOWNGRADE to it. Seen in
+  // the wild: 0.5.4 -> 0.2.2, whose half-finished uninstall removed the
+  // `headroom` console script and left the CLI undetectable. With a floor pip
+  // reports the real conflict instead.
+  const installedVersion = getInstalledHeadroomExtras(py)?.version || null;
+  const spec = installedVersion
+    ? `headroom-ai[${extrasList}]>=${installedVersion}`
+    : `headroom-ai[${extrasList}]`;
   const args = ["-m", "pip", "install", "--upgrade", spec];
 
   ensureDir();
@@ -200,8 +210,16 @@ export async function installHeadroomExtras(extras = []) {
         const status = getInstalledHeadroomExtras(py);
         resolve({ success: true, code, spec, extras: requested, ...status });
       } else {
-        const err = new Error(`pip install exited with code=${code} — see headroom/install.log`);
-        err.code = "INSTALL_FAILED";
+        // Turn pip's resolver wall-of-text into something actionable: the common
+        // failure is an extra that cannot be built for this interpreter/libc.
+        const log = getInstallLogTail(400);
+        const unsatisfiable = /No matching distribution found|does not provide the extra|ResolutionImpossible/i.test(log);
+        const err = new Error(
+          unsatisfiable
+            ? `Could not install headroom extras [${requested.join(", ")}] — a dependency has no wheel for this interpreter/platform (the "ml" extra needs torch, which publishes nothing for musl/Alpine). Existing install left as-is. See headroom/install.log.`
+            : `pip install exited with code=${code} — see headroom/install.log`
+        );
+        err.code = unsatisfiable ? "EXTRA_UNAVAILABLE" : "INSTALL_FAILED";
         reject(err);
       }
     });
