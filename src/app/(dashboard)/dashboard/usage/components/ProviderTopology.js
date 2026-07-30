@@ -529,41 +529,52 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
 
   const rfInstance = useRef(null);
   const containerRef = useRef(null);
-  const fitOpts = { padding: 0.25, duration: 200 };
+  const [activeView, setActiveView] = useState("providers"); // default focus on providers
+
+  const fitCurrentView = useCallback((view = activeView) => {
+    if (!rfInstance.current || nodes.length === 0) return;
+    if (view === "providers") {
+      const providerNodes = nodes.filter((n) => n.type === "router" || n.type === "provider");
+      rfInstance.current.fitView({ nodes: providerNodes, padding: 0.2, duration: 300 });
+    } else {
+      rfInstance.current.fitView({ padding: 0.2, duration: 300 });
+    }
+  }, [nodes, activeView]);
+
   const onInit = useCallback((instance) => {
     rfInstance.current = instance;
-    setTimeout(() => instance.fitView(fitOpts), 50);
-  }, []);
+    setTimeout(() => {
+      const providerNodes = nodes.filter((n) => n.type === "router" || n.type === "provider");
+      instance.fitView({ nodes: providerNodes.length > 0 ? providerNodes : nodes, padding: 0.2, duration: 300 });
+    }, 60);
+  }, [nodes]);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const ro = new ResizeObserver(() => {
-      if (rfInstance.current) rfInstance.current.fitView(fitOpts);
+      fitCurrentView(activeView);
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [fitCurrentView, activeView]);
 
   useEffect(() => {
-    if (rfInstance.current) {
-      const id = setTimeout(() => rfInstance.current.fitView(fitOpts), 50);
+    if (rfInstance.current && nodes.length > 0) {
+      const id = setTimeout(() => fitCurrentView(activeView), 60);
       return () => clearTimeout(id);
     }
-  }, [nodes.length]);
+  }, [nodes.length, activeView, fitCurrentView]);
 
   const handleFitAllModels = useCallback(() => {
-    if (rfInstance.current) {
-      rfInstance.current.fitView({ padding: 0.25, duration: 400 });
-    }
-  }, []);
+    setActiveView("models");
+    fitCurrentView("models");
+  }, [fitCurrentView]);
 
   const handleFitProvidersOnly = useCallback(() => {
-    if (rfInstance.current && nodes.length > 0) {
-      const providerNodes = nodes.filter((n) => n.type === "router" || n.type === "provider");
-      rfInstance.current.fitView({ nodes: providerNodes, padding: 0.25, duration: 400 });
-    }
-  }, [nodes]);
+    setActiveView("providers");
+    fitCurrentView("providers");
+  }, [fitCurrentView]);
 
   return (
     <div ref={containerRef} className="relative h-[350px] w-full min-w-0 rounded-lg border border-border bg-bg-subtle/30 sm:h-[520px]">
@@ -572,22 +583,30 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
         <div className="absolute top-3 right-3 z-10 flex items-center gap-1 rounded-lg border border-border/80 bg-bg/90 p-1 backdrop-blur-md shadow-md text-xs">
           <button
             type="button"
-            onClick={handleFitAllModels}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium text-text-muted hover:text-text hover:bg-bg-hover transition-colors"
-            title="Zoom out to fit all connected models"
+            onClick={handleFitProvidersOnly}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium transition-colors ${
+              activeView === "providers"
+                ? "bg-primary text-white shadow-sm font-semibold"
+                : "text-text-muted hover:text-text hover:bg-bg-hover"
+            }`}
+            title="Focus on Providers & 9Router"
           >
-            <span className="material-symbols-outlined text-[15px]">account_tree</span>
-            <span>All Models</span>
+            <span className="material-symbols-outlined text-[15px]">hub</span>
+            <span>Providers Only</span>
           </button>
           <div className="w-[1px] h-4 bg-border/60" />
           <button
             type="button"
-            onClick={handleFitProvidersOnly}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium text-text-muted hover:text-text hover:bg-bg-hover transition-colors"
-            title="Zoom in to focus on providers only"
+            onClick={handleFitAllModels}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium transition-colors ${
+              activeView === "models"
+                ? "bg-primary text-white shadow-sm font-semibold"
+                : "text-text-muted hover:text-text hover:bg-bg-hover"
+            }`}
+            title="Zoom out to show all model branches"
           >
-            <span className="material-symbols-outlined text-[15px]">hub</span>
-            <span>Providers Only</span>
+            <span className="material-symbols-outlined text-[15px]">account_tree</span>
+            <span>All Models</span>
           </button>
         </div>
       )}
@@ -603,9 +622,8 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
           edges={edges}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
-          fitView
-          fitViewOptions={fitOpts}
-          minZoom={0.1}
+          fitView={false}
+          minZoom={0.35}
           maxZoom={2}
           onInit={onInit}
           proOptions={{ hideAttribution: true }}
@@ -619,11 +637,11 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
           elementsSelectable={false}
         >
           <Controls showInteractive={false} className="react-flow-controls-custom">
-            <ControlButton onClick={handleFitAllModels} title="Fit All Models (Full Zoom Out)">
-              <span className="material-symbols-outlined text-[16px]">fit_screen</span>
-            </ControlButton>
             <ControlButton onClick={handleFitProvidersOnly} title="Focus Providers Only">
               <span className="material-symbols-outlined text-[16px]">hub</span>
+            </ControlButton>
+            <ControlButton onClick={handleFitAllModels} title="Fit All Models">
+              <span className="material-symbols-outlined text-[16px]">fit_screen</span>
             </ControlButton>
           </Controls>
         </ReactFlow>
