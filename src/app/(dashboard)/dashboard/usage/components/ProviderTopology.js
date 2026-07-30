@@ -325,8 +325,8 @@ function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet, mo
     };
   }
 
-  const rx = Math.max(250, (160 * count) / (2 * Math.PI));
-  const ry = Math.max(150, rx * 0.52);
+  const rx = Math.max(260, (180 * count) / (2 * Math.PI));
+  const ry = rx; // True circular symmetry for clean vertical & diagonal branching
 
   const nodes = [];
   const edges = [];
@@ -426,22 +426,21 @@ function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet, mo
         const mKey = m.toLowerCase();
         const modelActive = activeModelSet.has(mKey) || activeModelSet.has(`${pKey}/${mKey}`);
 
-        // Clean Symmetric V-Shape Fan Out (Menjulur Keluar)
+        // Clean Symmetric Fan Out (Menjulur Keluar)
         const mid = (mCount - 1) / 2;
         const offset = j - mid;
         
         // Spread angle (fan out symmetrically)
-        const fanSpread = 0.15;
+        const fanSpread = mCount > 1 ? 0.18 : 0;
         const mAngle = angle + offset * fanSpread;
         
         // Stagger distance outward based on distance from the center of the fan (V-shape)
-        // This completely prevents text overlap when spreading horizontally or vertically
-        const baseDist = 135;
+        const baseDist = 140;
         const distStep = 45;
         const distOffset = baseDist + Math.abs(offset) * distStep;
 
         const mx = (rx + distOffset) * Math.cos(mAngle);
-        const my = (ry + (distOffset * 0.75)) * Math.sin(mAngle);
+        const my = (ry + distOffset) * Math.sin(mAngle);
 
         // Pick handle connections matching radial direction
         let pSourceHandle = "s-right";
