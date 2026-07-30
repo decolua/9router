@@ -66,6 +66,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const stripList = getModelStrip(alias, model);
   const upstreamModel = getModelUpstreamId(alias, model);
 
+  // Native passthrough: CLI tool and provider are the same ecosystem
+  // Skip all translation/normalization — only model and Bearer are swapped
+  const clientTool = detectClientTool(clientRawRequest?.headers || {}, body);
+  const passthrough = isNativePassthrough(clientTool, provider);
+
   // Inject provider-level thinking config override (only if client hasn't set)
   // on/off → extended type (body.thinking), none/low/medium/high → effort type (body.reasoning_effort)
   if (providerThinking?.mode && providerThinking.mode !== "auto") {
@@ -75,8 +80,25 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       body = { ...body, thinking: { type: "enabled", budget_tokens: 10000 } };
     } else if (mode === "off" && !body.thinking) {
       body = { ...body, thinking: { type: "disabled" } };
-    } else if (!body.reasoning_effort) {
-      body = { ...body, reasoning_effort: mode };
+    } else if (mode !== "on" && mode !== "off") {
+      // A client can say "think, but I'm not naming a level" in a shape that
+      // isn't reasoning_effort — Cherry Studio sends Claude's
+      // thinking:{type:"enabled"} with no budget_tokens for its Auto effort.
+      // extractThinking() reads the thinking field before reasoning_effort, so
+      // testing only for reasoning_effort here let that unlevelled intent
+      // silently outrank this setting. Ask extractThinking() instead: it is the
+      // one reader of client thinking intent, so it agrees with the code that
+      // later decides which field wins.
+      const intent = extractThinking(body);
+      const clientNamedLevel = intent != null && intent.mode !== "auto";
+      if (!clientNamedLevel) {
+        body = { ...body, reasoning_effort: mode };
+        // Translated paths re-emit thinking in the target's native shape from the
+        // winning intent, so the stale unlevelled field has to go or it wins
+        // again. Passthrough forwards the client's body untouched and never reads
+        // reasoning_effort — dropping the field there would just silence thinking.
+        if (!passthrough) delete body.thinking;
+      }
     }
   }
 
@@ -94,8 +116,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // DeepSeek-TUI: interactive TUI panel sends stream:true and needs SSE.
   // Non-interactive mode (-p flag) sends without stream and can't parse SSE.
   // Only force non-streaming when client didn't explicitly request it.
-  const detectedTool = detectClientTool(clientRawRequest?.headers || {}, body);
-  if (detectedTool === "deepseek-tui" && body.stream !== true) stream = false;
+  if (clientTool === "deepseek-tui" && body.stream !== true) stream = false;
 
   // Check client Accept header preference for non-streaming requests
   // This fixes AI SDK compatibility where clients send Accept: application/json
@@ -110,11 +131,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (clientRawRequest) reqLogger.logClientRawRequest(clientRawRequest.endpoint, clientRawRequest.body, clientRawRequest.headers);
   reqLogger.logRawRequest(body);
   log?.debug?.("FORMAT", `${sourceFormat} → ${targetFormat} | stream=${stream}`);
-
-  // Native passthrough: CLI tool and provider are the same ecosystem
-  // Skip all translation/normalization — only model and Bearer are swapped
-  const clientTool = detectClientTool(clientRawRequest?.headers || {}, body);
-  const passthrough = isNativePassthrough(clientTool, provider);
 
   // Expose raw client headers to translators/executors for session-id resolution
   if (credentials) credentials.rawHeaders = clientRawRequest?.headers || {};
