@@ -108,7 +108,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
           if (note.type === "cloudCheck" && (cloudEnabled || tunnelEnabled)) return null;
           
           const isWarning = note.type === "warning";
-          const isError = note.type === "cloudCheck" && !cloudEnabled && !tunnelEnabled;
+          const isError = note.type === "error" || (note.type === "cloudCheck" && !cloudEnabled && !tunnelEnabled);
           
           let bgClass = "bg-blue-500/10 border-blue-500/30";
           let textClass = "text-blue-600 dark:text-blue-400";
@@ -145,7 +145,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
   };
 
   const renderGuideSteps = () => {
-    if (!tool.guideSteps) return <p className="text-text-muted text-sm">Coming soon...</p>;
+    if (!tool.guideSteps) return renderNotes() || <p className="text-text-muted text-sm">Coming soon...</p>;
 
     return (
       <div className="flex flex-col gap-4">
