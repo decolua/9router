@@ -17,6 +17,37 @@ describe("compressWithHeadroom", () => {
     expect(body.messages[0].content).toBe("hello");
   });
 
+  it("sends Bearer token when provided", async () => {
+    global.fetch = vi.fn(async () => new Response(JSON.stringify({
+      messages: [{ role: "user", content: "short" }],
+      tokens_before: 100,
+      tokens_after: 20,
+      tokens_saved: 80,
+    }), { status: 200 }));
+    const body = { messages: [{ role: "user", content: "long" }] };
+
+    await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787", token: "my-secret-token" });
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      "http://localhost:8787/v1/compress",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer my-secret-token" }),
+      })
+    );
+  });
+
+  it("omits Authorization header when token is empty", async () => {
+    global.fetch = vi.fn(async () => new Response(JSON.stringify({
+      messages: [{ role: "user", content: "short" }],
+    }), { status: 200 }));
+    const body = { messages: [{ role: "user", content: "long" }] };
+
+    await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787", token: "" });
+
+    const headers = global.fetch.mock.calls[0][1].headers;
+    expect(headers.Authorization).toBeUndefined();
+  });
+
   it("compresses messages in-place", async () => {
     global.fetch = vi.fn(async () => new Response(JSON.stringify({
       messages: [{ role: "user", content: "short" }],
