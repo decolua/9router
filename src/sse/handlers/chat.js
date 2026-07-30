@@ -1,12 +1,3 @@
-import "open-sse/index.js";
-
-import {
-  getProviderCredentials,
-  markAccountUnavailable,
-  clearAccountError,
-  extractApiKey,
-  isValidApiKey,
-} from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
@@ -22,6 +13,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { saveErrorLog } from "@/lib/usageDb.js";
 
 /**
  * Handle chat completion request
@@ -279,6 +271,28 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       excludeConnectionIds.add(credentials.connectionId);
       lastError = result.error;
       lastStatus = result.status;
+
+      const errorBody = result.response ? await result.response.clone().json().catch(() => ({})) : {};
+      const errorMessage = errorBody?.error?.message || errorBody?.error?.message || errorBody?.message || result.error;
+      saveErrorLog({
+        endpoint: new URL(request.url).pathname,
+        provider,
+        model,
+        connectionId: credentials.connectionId,
+        comboName: null,
+        statusCode: result.status,
+        errorMessage,
+        request: clientRawRequest?.body || null,
+        providerRequest: null,
+        providerResponse: result.response ? errorBody : null,
+        meta: {
+          fallback: true,
+          retryAfter: result.resetsAtMs ? new Date(result.resetsAtMs).toISOString() : null,
+          retryAfterHuman: credentials.retryAfterHuman,
+          latency: {}
+        }
+      }).catch(() => {});
+
       continue;
     }
 
