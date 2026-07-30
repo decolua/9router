@@ -441,22 +441,49 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     </div>
   );
 
-  // Map models by provider from stats.byModel
+  // Map all models per active provider (combining static registry models + recorded usage)
   const providersWithModels = useMemo(() => {
-    const modelMap = {};
+    const usedModelMap = {};
     if (stats?.byModel) {
       Object.values(stats.byModel).forEach((item) => {
         const pKey = item.provider?.toLowerCase();
         if (!pKey) return;
-        if (!modelMap[pKey]) modelMap[pKey] = new Set();
-        if (item.rawModel) modelMap[pKey].add(item.rawModel);
+        if (!usedModelMap[pKey]) usedModelMap[pKey] = new Set();
+        if (item.rawModel) usedModelMap[pKey].add(item.rawModel);
       });
     }
+
     return providers.map((p) => {
       const pKey = p.provider?.toLowerCase();
-      const detected = modelMap[pKey] ? Array.from(modelMap[pKey]) : [];
-      // Test model list fallback for 1 provider (antigravity) to verify rendering
-      const models = detected.length > 0 ? detected : (pKey === "antigravity" ? ["gemini-2.5-pro", "claude-3.7-sonnet"] : []);
+      const config = AI_PROVIDERS[pKey] || AI_PROVIDERS[p.provider] || {};
+
+      // Get all static registered models for this provider
+      const staticModels = (config.models || []).map((m) => (typeof m === "string" ? m : m.id)).filter(Boolean);
+
+      // Get all used models for this provider
+      const usedModels = usedModelMap[pKey] ? Array.from(usedModelMap[pKey]) : [];
+
+      // Combine unique model names
+      const allModelSet = new Set([...usedModels, ...staticModels]);
+      let models = Array.from(allModelSet);
+
+      // Default fallbacks if empty
+      if (models.length === 0) {
+        if (pKey === "antigravity") models = ["gemini-2.5-flash", "gemini-3-flash", "claude-sonnet-4-6"];
+        else if (pKey === "codex") models = ["gpt-5.4", "gpt-5.4-mini", "gpt-4o"];
+        else if (pKey === "groq") models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
+        else if (pKey === "cerebras") models = ["llama-3.3-70b", "llama3.1-8b"];
+        else if (pKey === "mistral") models = ["codestral-latest", "mistral-large-latest"];
+        else if (pKey === "deepseek") models = ["deepseek-chat", "deepseek-coder"];
+        else if (pKey === "openrouter") models = ["auto", "free"];
+        else if (pKey === "opencode") models = ["deepseek-v4-flash-free"];
+      }
+
+      // Limit to max 6 models per provider for clean UI spacing
+      if (models.length > 6) {
+        models = models.slice(0, 6);
+      }
+
       return { ...p, models };
     });
   }, [providers, stats?.byModel]);
