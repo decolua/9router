@@ -426,25 +426,31 @@ function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet, mo
         const mKey = m.toLowerCase();
         const modelActive = activeModelSet.has(mKey) || activeModelSet.has(`${pKey}/${mKey}`);
 
-        // Radial projection outward from center
-        const fanSpread = mCount > 1 ? 0.22 : 0;
-        const mAngle = angle + (j - (mCount - 1) / 2) * fanSpread;
+        // Clean Symmetric V-Shape Fan Out (Menjulur Keluar)
+        const mid = (mCount - 1) / 2;
+        const offset = j - mid;
         
-        // Stagger distance radially outward per model index j so text never overlaps
+        // Spread angle (fan out symmetrically)
+        const fanSpread = 0.15;
+        const mAngle = angle + offset * fanSpread;
+        
+        // Stagger distance outward based on distance from the center of the fan (V-shape)
+        // This completely prevents text overlap when spreading horizontally or vertically
+        const baseDist = 135;
         const distStep = 45;
-        const distOffset = 120 + j * distStep;
+        const distOffset = baseDist + Math.abs(offset) * distStep;
 
         const mx = (rx + distOffset) * Math.cos(mAngle);
-        const my = (ry + (distOffset * 0.6)) * Math.sin(mAngle);
+        const my = (ry + (distOffset * 0.75)) * Math.sin(mAngle);
 
         // Pick handle connections matching radial direction
         let pSourceHandle = "s-right";
         let mTargetHandle = "left";
-        if (Math.abs(mAngle + Math.PI / 2) < Math.PI / 6) {
+        if (Math.abs(mAngle + Math.PI / 2) < Math.PI / 4) {
           pSourceHandle = "s-top"; mTargetHandle = "bottom";
-        } else if (Math.abs(mAngle - Math.PI / 2) < Math.PI / 6) {
+        } else if (Math.abs(mAngle - Math.PI / 2) < Math.PI / 4) {
           pSourceHandle = "s-bottom"; mTargetHandle = "top";
-        } else if (cx < 0) {
+        } else if (Math.cos(mAngle) < 0) {
           pSourceHandle = "s-left"; mTargetHandle = "right";
         }
 
