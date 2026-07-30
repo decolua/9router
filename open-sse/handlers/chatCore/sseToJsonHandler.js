@@ -4,6 +4,7 @@ import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
+import { applyReasoningVisibility } from "../../utils/reasoningVisibility.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -229,17 +230,8 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       status: "success"
     }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
 
-    // Strip reasoning_content only when content is non-empty.
-    // When content is empty (e.g. thinking models that used all tokens for reasoning),
-    // reasoning_content is the only useful output and must be preserved.
-    // Previously this was unconditional, which broke Qwen3.5, Claude extended thinking, etc.
-    if (parsed?.choices) {
-      for (const choice of parsed.choices) {
-        if (choice?.message?.reasoning_content && choice.message.content) {
-          delete choice.message.reasoning_content;
-        }
-      }
-    }
+    // reasoning_content is kept by default; only an explicit opt-out drops it.
+    applyReasoningVisibility(parsed, clientRawRequest);
 
     return { success: true, response: new Response(JSON.stringify(parsed), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {
