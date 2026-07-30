@@ -325,8 +325,8 @@ function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet) {
     };
   }
 
-  const rx = Math.max(360, (230 * count) / (2 * Math.PI));
-  const ry = Math.max(240, rx * 0.55);
+  const rx = Math.max(250, (160 * count) / (2 * Math.PI));
+  const ry = Math.max(150, rx * 0.52);
 
   const nodes = [];
   const edges = [];
@@ -405,7 +405,7 @@ function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet) {
 
     // Branch out Model sub-nodes from Provider
     if (models.length > 0) {
-      const modelDist = 180;
+      const modelDist = 135;
       const mCount = models.length;
 
       models.forEach((m, j) => {
@@ -414,7 +414,7 @@ function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet) {
         const modelActive = activeModelSet.has(mKey) || activeModelSet.has(`${pKey}/${mKey}`);
 
         // Spread models in a small arc around provider's angle
-        const arcSpread = mCount > 1 ? 0.32 : 0;
+        const arcSpread = mCount > 1 ? 0.35 : 0;
         const mAngle = angle + (j - (mCount - 1) / 2) * arcSpread;
 
         const mx = (rx + modelDist) * Math.cos(mAngle);
@@ -430,7 +430,7 @@ function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet) {
         nodes.push({
           id: modelId,
           type: "model",
-          position: { x: mx - 60, y: my - 15 },
+          position: { x: mx - 55, y: my - 14 },
           data: {
             label: m,
             active: modelActive,
@@ -535,9 +535,9 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
     if (!rfInstance.current || nodes.length === 0) return;
     if (view === "providers") {
       const providerNodes = nodes.filter((n) => n.type === "router" || n.type === "provider");
-      rfInstance.current.fitView({ nodes: providerNodes, padding: 0.2, duration: 300 });
+      rfInstance.current.fitView({ nodes: providerNodes.length > 0 ? providerNodes : nodes, padding: -0.15, duration: 300 });
     } else {
-      rfInstance.current.fitView({ padding: 0.2, duration: 300 });
+      rfInstance.current.fitView({ padding: 0.05, duration: 300 });
     }
   }, [nodes, activeView]);
 
@@ -545,7 +545,7 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
     rfInstance.current = instance;
     setTimeout(() => {
       const providerNodes = nodes.filter((n) => n.type === "router" || n.type === "provider");
-      instance.fitView({ nodes: providerNodes.length > 0 ? providerNodes : nodes, padding: 0.2, duration: 300 });
+      instance.fitView({ nodes: providerNodes.length > 0 ? providerNodes : nodes, padding: -0.15, duration: 300 });
     }, 60);
   }, [nodes]);
 
@@ -577,7 +577,7 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
   }, [fitCurrentView]);
 
   return (
-    <div ref={containerRef} className="relative h-[350px] w-full min-w-0 rounded-lg border border-border bg-bg-subtle/30 sm:h-[520px]">
+    <div ref={containerRef} className="relative h-[380px] w-full min-w-0 rounded-lg border border-border bg-bg-subtle/30 sm:h-[540px]">
       {/* Floating View Switcher Bar */}
       {providers.length > 0 && (
         <div className="absolute top-3 right-3 z-10 flex items-center gap-1 rounded-lg border border-border/80 bg-bg/90 p-1 backdrop-blur-md shadow-md text-xs">
@@ -589,10 +589,10 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
                 ? "bg-primary text-white shadow-sm font-semibold"
                 : "text-text-muted hover:text-text hover:bg-bg-hover"
             }`}
-            title="Focus on Providers & 9Router"
+            title="Zoom In ~115% Focus on Providers"
           >
             <span className="material-symbols-outlined text-[15px]">hub</span>
-            <span>Providers Only</span>
+            <span>Providers Only (115%)</span>
           </button>
           <div className="w-[1px] h-4 bg-border/60" />
           <button
@@ -603,7 +603,7 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
                 ? "bg-primary text-white shadow-sm font-semibold"
                 : "text-text-muted hover:text-text hover:bg-bg-hover"
             }`}
-            title="Zoom out to show all model branches"
+            title="Zoom Out to fit all models"
           >
             <span className="material-symbols-outlined text-[15px]">account_tree</span>
             <span>All Models</span>
@@ -623,8 +623,8 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           fitView={false}
-          minZoom={0.35}
-          maxZoom={2}
+          minZoom={0.5}
+          maxZoom={2.5}
           onInit={onInit}
           proOptions={{ hideAttribution: true }}
           panOnDrag
@@ -637,7 +637,7 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
           elementsSelectable={false}
         >
           <Controls showInteractive={false} className="react-flow-controls-custom">
-            <ControlButton onClick={handleFitProvidersOnly} title="Focus Providers Only">
+            <ControlButton onClick={handleFitProvidersOnly} title="Zoom In 115% Providers Only">
               <span className="material-symbols-outlined text-[16px]">hub</span>
             </ControlButton>
             <ControlButton onClick={handleFitAllModels} title="Fit All Models">
