@@ -58,14 +58,14 @@ function ProviderNode({ data }) {
 
       {/* Provider icon */}
       <div
-        className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
+        className="w-5 h-5 rounded flex items-center justify-center shrink-0"
         style={{ backgroundColor: `${color}15` }}
       >
         {imageUrl && !imgError ? (
           <img
             src={imageUrl}
             alt={label}
-            className="w-5 h-5 rounded-sm object-contain"
+            className="w-3.5 h-3.5 rounded-sm object-contain"
             loading="lazy"
             decoding="async"
             onError={() => {
@@ -75,7 +75,7 @@ function ProviderNode({ data }) {
             }}
           />
         ) : (
-          <span className="text-xs font-bold" style={{ color }}>{textIcon}</span>
+          <span className="text-[9px] font-bold" style={{ color }}>{textIcon}</span>
         )}
       </div>
 
@@ -104,38 +104,44 @@ ProviderNode.propTypes = {
 
 // Custom Model Sub-Node — branches out from Provider
 function ModelNode({ data }) {
-  const { label, active } = data;
+  const { label, active, radialRotation = 0, radialHandle = "left" } = data;
   return (
-    <div
-      className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[10px] tracking-tight font-mono transition-all duration-300 ${
-        active
-          ? "bg-cyan-950/70 border-cyan-400 text-cyan-200 shadow-[0_0_14px_rgba(34,211,238,0.75)] font-bold animate-pulse z-20 scale-105"
-          : "bg-bg-subtle/95 border-border/80 text-text-muted hover:border-primary/50 hover:text-text shadow-xs"
-      }`}
-      style={{
-        maxWidth: "160px",
-      }}
-    >
-      <Handle type="target" position={Position.Top} id="top" className="!bg-transparent !border-0 !w-0 !h-0" />
-      <Handle type="target" position={Position.Bottom} id="bottom" className="!bg-transparent !border-0 !w-0 !h-0" />
-      <Handle type="target" position={Position.Left} id="left" className="!bg-transparent !border-0 !w-0 !h-0" />
-      <Handle type="target" position={Position.Right} id="right" className="!bg-transparent !border-0 !w-0 !h-0" />
+    <div className="relative h-7 w-40">
+      <div
+        className={`absolute left-1/2 top-1/2 flex w-max max-w-40 items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[10px] tracking-tight transition-all duration-300 ${
+          active
+            ? "bg-cyan-950/70 border-cyan-400 text-cyan-200 shadow-[0_0_14px_rgba(34,211,238,0.75)] font-bold animate-pulse z-20 scale-105"
+            : "bg-bg-subtle/95 border-border/80 text-text-muted hover:border-primary/50 hover:text-text shadow-xs"
+        }`}
+        style={{
+          transform: `translate(-50%, -50%) rotate(${radialRotation}deg)`,
+          transformOrigin: "center",
+        }}
+      >
+        {/* Keep the edge attached to the rotated pill side facing 9Router. */}
+        <Handle
+          type="target"
+          position={radialHandle === "right" ? Position.Right : Position.Left}
+          id="radial"
+          className="!bg-transparent !border-0 !w-0 !h-0"
+        />
 
-      {/* Active pulse dot */}
-      <span className="relative flex h-1.5 w-1.5 shrink-0">
-        {active ? (
-          <>
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-80" />
-            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400" />
-          </>
-        ) : (
-          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-text-muted/40" />
-        )}
-      </span>
+        {/* Active pulse dot */}
+        <span className="relative flex h-1.5 w-1.5 shrink-0">
+          {active ? (
+            <>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-80" />
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400" />
+            </>
+          ) : (
+            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-text-muted/40" />
+          )}
+        </span>
 
-      <span className="truncate" title={label}>
-        {label}
-      </span>
+        <span className="truncate" title={label}>
+          {label}
+        </span>
+      </div>
     </div>
   );
 }
@@ -313,6 +319,8 @@ const edgeTypes = { topology: TopologyEdge };
 function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet, modelDisplayMode = "on") {
   const nodeW = 150;
   const nodeH = 34;
+  const modelW = 160;
+  const modelH = 28;
   const routerW = 120;
   const routerH = 44;
   const count = providers.length;
@@ -435,37 +443,50 @@ function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet, mo
         const midCol = (itemsInThisLayer - 1) / 2;
         const colOffset = colIndex - midCol;
 
-        // Angular spread
-        const fanSpread = mCount > 10 ? 0.24 : 0.20;
-        const mAngle = angle + colOffset * fanSpread;
+        // Keep every provider's fan inside its own angular sector. This prevents
+        // neighbouring providers from crossing into each other's radial labels.
+        const providerSector = (2 * Math.PI) / count;
+        const usableFan = providerSector * 0.68;
+        const fanStep = itemsInThisLayer > 1 ? usableFan / (itemsInThisLayer - 1) : 0;
+        const mAngle = angle + colOffset * fanStep;
 
-        // Radial clearance per layer so text boxes never touch vertically or horizontally
-        const baseDist = 110;
-        const layerSpacing = 44; // 44px radial clearance per layer
+        // Radial labels use their long axis toward 9Router, so each tier needs
+        // enough depth for the whole pill rather than only its horizontal height.
+        const baseDist = 120;
+        const layerSpacing = 150;
         const distOffset = baseDist + layerIndex * layerSpacing + Math.abs(colOffset) * 16;
 
         const mx = (rx + distOffset) * Math.cos(mAngle);
         const my = (ry + (distOffset * 0.85)) * Math.sin(mAngle);
 
-        // Pick handle connections matching radial direction
+        // Align the model name's axis to the actual line through the 9Router
+        // center. Flip labels on the left half so their text remains upright.
+        const radialAngle = Math.atan2(my, mx);
+        let radialRotation = (radialAngle * 180) / Math.PI;
+        if (radialRotation > 90) radialRotation -= 180;
+        if (radialRotation < -90) radialRotation += 180;
+        const radialHandle = Math.cos(radialAngle) < 0 ? "right" : "left";
+
+        // Pick handle connections matching the same center-based radial direction
         let pSourceHandle = "s-right";
-        let mTargetHandle = "left";
-        if (Math.abs(mAngle + Math.PI / 2) < Math.PI / 4) {
-          pSourceHandle = "s-top"; mTargetHandle = "bottom";
-        } else if (Math.abs(mAngle - Math.PI / 2) < Math.PI / 4) {
-          pSourceHandle = "s-bottom"; mTargetHandle = "top";
-        } else if (Math.cos(mAngle) < 0) {
-          pSourceHandle = "s-left"; mTargetHandle = "right";
+        if (radialAngle < -Math.PI / 4 && radialAngle > -(3 * Math.PI) / 4) {
+          pSourceHandle = "s-top";
+        } else if (radialAngle > Math.PI / 4 && radialAngle < (3 * Math.PI) / 4) {
+          pSourceHandle = "s-bottom";
+        } else if (Math.cos(radialAngle) < 0) {
+          pSourceHandle = "s-left";
         }
 
         nodes.push({
           id: modelId,
           type: "model",
-          position: { x: mx - 55, y: my - 14 },
+          position: { x: mx - modelW / 2, y: my - modelH / 2 },
           data: {
             label: m,
             active: modelActive,
             color: config.color || "#22d3ee",
+            radialRotation,
+            radialHandle,
           },
           draggable: false,
         });
@@ -476,7 +497,7 @@ function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet, mo
           source: nodeId,
           sourceHandle: pSourceHandle,
           target: modelId,
-          targetHandle: mTargetHandle,
+          targetHandle: "radial",
           animated: false,
           data: { active: modelActive },
           style: edgeStyle(modelActive, false, false),
