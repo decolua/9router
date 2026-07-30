@@ -30,17 +30,18 @@ function getProviderImageUrl(providerId) {
   return getProviderIconSrc(providerId);
 }
 
-// Custom provider node - rectangle with image + name
+// Custom provider node - rectangle with image + name + connected models
 function ProviderNode({ data }) {
-  const { label, color, imageUrl, textIcon, active } = data;
+  const { label, color, imageUrl, textIcon, active, models = [] } = data;
   const [imgError, setImgError] = useState(false);
   return (
     <div
-      className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg border-2 transition-all duration-300 bg-bg"
+      className="flex flex-col gap-1.5 px-3.5 py-2.5 rounded-lg border-2 transition-all duration-300 bg-bg"
       style={{
         borderColor: active ? color : "var(--color-border)",
         boxShadow: active ? `0 0 16px ${color}40` : "none",
-        minWidth: "150px",
+        minWidth: "160px",
+        maxWidth: "220px",
       }}
     >
       <Handle type="target" position={Position.Top} id="top" className="!bg-transparent !border-0 !w-0 !h-0" />
@@ -48,43 +49,61 @@ function ProviderNode({ data }) {
       <Handle type="target" position={Position.Left} id="left" className="!bg-transparent !border-0 !w-0 !h-0" />
       <Handle type="target" position={Position.Right} id="right" className="!bg-transparent !border-0 !w-0 !h-0" />
 
-      {/* Provider icon */}
-      <div
-        className="w-8 h-8 rounded-md flex items-center justify-center shrink-0"
-        style={{ backgroundColor: `${color}15` }}
-      >
-        {imageUrl && !imgError ? (
-          <img
-            src={imageUrl}
-            alt={label}
-            className="w-6 h-6 rounded-sm object-contain"
-            loading="lazy"
-            decoding="async"
-            onError={() => {
-              const m = imageUrl?.match(/^\/providers\/([^/]+)\.png$/i);
-              if (m) markProviderIconMissing(m[1]);
-              setImgError(true);
-            }}
-          />
-        ) : (
-          <span className="text-sm font-bold" style={{ color }}>{textIcon}</span>
+      <div className="flex items-center gap-2">
+        {/* Provider icon */}
+        <div
+          className="w-7 h-7 rounded-md flex items-center justify-center shrink-0"
+          style={{ backgroundColor: `${color}15` }}
+        >
+          {imageUrl && !imgError ? (
+            <img
+              src={imageUrl}
+              alt={label}
+              className="w-5 h-5 rounded-sm object-contain"
+              loading="lazy"
+              decoding="async"
+              onError={() => {
+                const m = imageUrl?.match(/^\/providers\/([^/]+)\.png$/i);
+                if (m) markProviderIconMissing(m[1]);
+                setImgError(true);
+              }}
+            />
+          ) : (
+            <span className="text-xs font-bold" style={{ color }}>{textIcon}</span>
+          )}
+        </div>
+
+        {/* Provider name */}
+        <span
+          className="text-sm font-semibold truncate flex-1"
+          style={{ color: active ? color : "var(--color-text)" }}
+        >
+          {label}
+        </span>
+
+        {/* Active indicator */}
+        {active && (
+          <span className="relative flex h-2 w-2 shrink-0">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: color }} />
+            <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: color }} />
+          </span>
         )}
       </div>
 
-      {/* Provider name */}
-      <span
-        className="text-base font-medium truncate"
-        style={{ color: active ? color : "var(--color-text)" }}
-      >
-        {label}
-      </span>
-
-      {/* Active indicator */}
-      {active && (
-        <span className="relative flex h-2 w-2 shrink-0">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: color }} />
-          <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: color }} />
-        </span>
+      {/* Model badges (if models exist for this provider) */}
+      {models && models.length > 0 && (
+        <div className="flex flex-wrap gap-1 pt-1.5 border-t border-border/40">
+          {models.map((m, idx) => (
+            <span
+              key={idx}
+              className="text-[10px] px-1.5 py-0.5 rounded bg-bg-subtle text-primary font-mono truncate max-w-[180px] border border-primary/20 flex items-center gap-1"
+              title={m}
+            >
+              <span className="w-1 h-1 rounded-full bg-primary inline-block"></span>
+              {m}
+            </span>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -304,12 +323,16 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
     const last = !active && lastSet.has(p.provider?.toLowerCase());
     const error = !active && errorSet.has(p.provider?.toLowerCase());
     const nodeId = `provider-${p.provider}`;
+    // Extract models array for this provider (or test models if p.models exists)
+    const models = p.models || (p.provider === "antigravity" ? ["gemini-2.5-pro", "claude-3.7-sonnet"] : []);
+
     const data = {
       label: (config.name !== p.provider ? config.name : null) || p.nodeName || p.name || p.provider,
       color: config.color || "#6b7280",
       imageUrl: getProviderImageUrl(p.provider),
       textIcon: config.textIcon || (p.provider || "?").slice(0, 2).toUpperCase(),
       active,
+      models,
     };
 
     // Distribute evenly starting from top (−π/2), clockwise

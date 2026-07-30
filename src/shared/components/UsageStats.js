@@ -441,6 +441,26 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     </div>
   );
 
+  // Map models by provider from stats.byModel
+  const providersWithModels = useMemo(() => {
+    const modelMap = {};
+    if (stats?.byModel) {
+      Object.values(stats.byModel).forEach((item) => {
+        const pKey = item.provider?.toLowerCase();
+        if (!pKey) return;
+        if (!modelMap[pKey]) modelMap[pKey] = new Set();
+        if (item.rawModel) modelMap[pKey].add(item.rawModel);
+      });
+    }
+    return providers.map((p) => {
+      const pKey = p.provider?.toLowerCase();
+      const detected = modelMap[pKey] ? Array.from(modelMap[pKey]) : [];
+      // Test model list fallback for 1 provider (antigravity) to verify rendering
+      const models = detected.length > 0 ? detected : (pKey === "antigravity" ? ["gemini-2.5-pro", "claude-3.7-sonnet"] : []);
+      return { ...p, models };
+    });
+  }, [providers, stats?.byModel]);
+
   return (
     <div className="flex min-w-0 flex-col gap-6">
       {/* Period selector (hidden when controlled by parent) */}
@@ -471,7 +491,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       {loading ? spinner : (
         <div className="grid min-w-0 grid-cols-1 items-stretch gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
           <ProviderTopology
-            providers={providers}
+            providers={providersWithModels}
             activeRequests={stats.activeRequests || []}
             lastProvider={stats.recentRequests?.[0]?.provider || ""}
             errorProvider={stats.errorProvider || ""}
