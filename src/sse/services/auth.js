@@ -285,7 +285,13 @@ export async function clearAccountError(connectionId, currentConnection, model =
 
   // Only reset error state if no active locks remain
   if (remainingActiveLocks.length === 0) {
-    Object.assign(clearObj, { testStatus: "active", lastError: null, lastErrorAt: null, backoffLevel: 0 });
+    Object.assign(clearObj, {
+      testStatus: "active",
+      lastError: null,
+      errorCode: null,
+      lastErrorAt: null,
+      backoffLevel: 0
+    });
   }
 
   await updateProviderConnection(connectionId, clearObj);
