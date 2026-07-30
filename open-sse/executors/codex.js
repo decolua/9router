@@ -55,13 +55,15 @@ function convertSystemToDeveloperRole(body) {
   }
 }
 
-// Strip server-generated item IDs (rs_/fc_/resp_/msg_) from input — avoids 404 with store=false
+// Strip invalid or stored item IDs before sending a store=false request.
 function stripStoredItemReferences(body) {
   if (!Array.isArray(body.input)) return;
   body.input = body.input.filter((item) => {
     if (typeof item === "string" && SERVER_ID_PATTERN.test(item)) return false;
     if (item && typeof item === "object" && !Array.isArray(item)) {
       if (item.type === "item_reference") return false;
+      // function_call.id is optional input metadata; call_id carries tool-result correlation.
+      if (item.type === "function_call") delete item.id;
       if (typeof item.id === "string" && SERVER_ID_PATTERN.test(item.id)) delete item.id;
     }
     return true;
@@ -406,7 +408,7 @@ export class CodexExecutor extends BaseExecutor {
 
     // Keep system prompts in body.input as role=developer so they stay in the cacheable prefix
     convertSystemToDeveloperRole(body);
-    // Strip server-generated item IDs (rs_/fc_/resp_/msg_) — Codex /responses can't resolve when store=false
+    // Strip invalid function-call IDs and stored references that Codex cannot resolve with store=false
     stripStoredItemReferences(body);
     // Flatten function tools + drop unsupported types
     normalizeCodexTools(body);
