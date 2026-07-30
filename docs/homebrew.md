@@ -2,11 +2,15 @@
 
 > **Status: not yet published.** Do not advertise `brew tap decolua/9router`
 > or `brew install 9router` until the separate `decolua/homebrew-9router` tap
-> is public, its Formula PR is merged, and its checks are green.
+> is public, its Formula PR is merged, and its checks are green. The reviewed
+> staging implementation is tracked in
+> `mythic3011/homebrew-9router#1`; transfer or recreate it under the decolua
+> organization before enabling the public commands.
 
 ## Release prerequisites
 
-1. Create and review the companion `decolua/homebrew-9router` Formula PR.
+1. Transfer or recreate the reviewed staging Formula PR under
+   `decolua/homebrew-9router`, then merge it there.
 2. Verify the Formula on Apple Silicon and Intel macOS runners with `brew audit`,
    source install, and `brew test`.
 3. Configure `HOMEBREW_TAP_DISPATCH_TOKEN` with permission to dispatch the tap
