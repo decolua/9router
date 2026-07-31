@@ -1,0 +1,35 @@
+name: Test Homebrew Package Boundary
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/test-homebrew-package.yml"
+      - "cli/**"
+      - "docs/homebrew.md"
+  push:
+    branches: [master]
+    paths:
+      - ".github/workflows/test-homebrew-package.yml"
+      - "cli/**"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install CLI package dependencies
+        run: npm --prefix cli install --ignore-scripts --no-package-lock --no-audit --no-fund
+
+      - name: Verify Homebrew-managed behavior
+        run: npm --prefix cli run test:homebrew-mode
+
+      - name: Verify packed CLI installs offline
+        run: npm --prefix cli run verify:packed
