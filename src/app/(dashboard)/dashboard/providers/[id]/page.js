@@ -77,6 +77,7 @@ export default function ProviderDetailPage() {
   const [oneByOneCurrentConnectionId, setOneByOneCurrentConnectionId] = useState(null);
   const [oneByOneResults, setOneByOneResults] = useState({});
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
+  const [refreshingAllProfiles, setRefreshingAllProfiles] = useState(false);
   const stopOneByOneRef = useRef(false);
   const [importingQoderModels, setImportingQoderModels] = useState(false);
   const { copied, copy } = useCopyToClipboard();
@@ -143,6 +144,7 @@ export default function ProviderDetailPage() {
   const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId] || authModes.includes("oauth");
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
+  const supportsProfileRefresh = providerInfo?.features?.profileRefresh === true;
   const staticModels = getModelsByProviderId(providerId);
   const models = providerId === "cursor" && liveModels.length > 0
     ? liveModels
@@ -484,6 +486,42 @@ export default function ProviderDetailPage() {
 
     return () => { cancelled = true; };
   }, [providerId, connections]);
+
+  const handleRefreshProfile = async (connectionId) => {
+    try {
+      const res = await fetch(`/api/providers/${connectionId}/refresh-profile`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        console.warn("Profile refresh request failed");
+        return;
+      }
+      if (data.connection) {
+        setConnections((prev) =>
+          prev.map((c) => (c.id === connectionId ? { ...c, ...data.connection } : c)),
+        );
+      } else {
+        await fetchConnections();
+      }
+    } catch {
+      console.warn("Profile refresh request failed");
+    }
+  };
+
+  const handleRefreshAllProfiles = async () => {
+    if (!supportsProfileRefresh || refreshingAllProfiles) return;
+    const targets = connections.filter((c) => c.authType === "oauth");
+    if (targets.length === 0) return;
+    setRefreshingAllProfiles(true);
+    try {
+      for (const conn of targets) {
+        await handleRefreshProfile(conn.id);
+      }
+    } finally {
+      setRefreshingAllProfiles(false);
+    }
+  };
 
   // Fetch suggested models from provider's public API (if configured)
   useEffect(() => {
@@ -1454,6 +1492,17 @@ export default function ProviderDetailPage() {
                   >
                     {oneByOneRunning ? "Testing Connection One-by-One..." : "Test Connection One-by-One"}
                   </Button>
+                  {supportsProfileRefresh && connections.some((c) => c.authType === "oauth") && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      icon={refreshingAllProfiles ? "progress_activity" : "sync"}
+                      onClick={handleRefreshAllProfiles}
+                      disabled={refreshingAllProfiles}
+                    >
+                      {refreshingAllProfiles ? "刷新中..." : "全部刷新"}
+                    </Button>
+                  )}
                   {oneByOneRunning && (
                     <Button
                       size="sm"

@@ -43,6 +43,14 @@ export default {
     usage: {
       url: "https://copilot.tencent.com/v2/billing/meter/get-user-resource",
     },
+    modelDiscovery: {
+      urlTemplate: "https://copilot.tencent.com/console/enterprises/{enterpriseId}/models",
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "CodeBuddy/5.3.3",
+        "X-Requested-With": "XMLHttpRequest",
+      },
+    },
   },
   models: [
     { id: "glm-5.2", name: "GLM-5.2" },
@@ -73,5 +81,6 @@ export default {
   features: {
     usage: true,
     usageApikey: true,
+    profileRefresh: true,
   },
 };
