@@ -257,6 +257,7 @@ export function initState(sourceFormat) {
       inThinking: false,
       funcArgsBuf: {},
       funcNames: {},
+      funcNamespaces: {},
       funcCallIds: {},
       funcItemAdded: {},
       funcArgsDone: {},

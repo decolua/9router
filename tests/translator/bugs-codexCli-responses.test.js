@@ -1,13 +1,55 @@
 // Real Codex CLI requests (OpenAI Responses API: { input:[], instructions }) → providers.
 import { describe, it, expect } from "vitest";
 import "./registerAll.js";
-import { translateRequest } from "../../open-sse/translator/index.js";
+import { initState, translateRequest, translateResponse } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 
 const R2O = (body) => translateRequest(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI, "m", body, true, null, null);
 const O2R = (body) => translateRequest(FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES, "m", body, true, null, null);
 
 describe("Codex CLI Responses → OpenAI", () => {
+  it("round-trips Responses namespace functions through Chat Completions", () => {
+    const out = R2O({
+      input: "Review SQL",
+      tools: [{
+        type: "namespace",
+        name: "ai_audit",
+        tools: [{ type: "function", name: "get_table_metadata", parameters: { type: "object", properties: {} } }],
+      }],
+    });
+    expect(out.tools[0]).toMatchObject({ type: "function", function: { name: "get_table_metadata" } });
+
+    const state = initState(FORMATS.OPENAI_RESPONSES);
+    state.toolNamespaces = new Map([["get_table_metadata", "ai_audit"]]);
+    const events = [
+      ...translateResponse(FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES, {
+        id: "chatcmpl-1",
+        choices: [{
+          index: 0,
+          delta: {
+            tool_calls: [{
+              index: 0,
+              id: "call_1",
+              type: "function",
+              function: { name: "get_table_metadata", arguments: '{"table":"pg_tables"}' },
+            }],
+          },
+        }],
+      }, state),
+      ...translateResponse(FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES, {
+        id: "chatcmpl-1",
+        choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
+      }, state),
+    ];
+    for (const eventName of ["response.output_item.added", "response.output_item.done"]) {
+      expect(events.find(event => event.event === eventName).data.item).toMatchObject({
+        type: "function_call",
+        name: "get_table_metadata",
+        namespace: "ai_audit",
+      });
+    }
+  });
+
   // openai-responses.js:103 — function_call with empty name skipped, can leave tool_calls: []
   // KNOWN BUG: empty tool_calls array is rejected by OpenAI/Codex
   it.fails("assistant has no empty tool_calls array when all names are empty", () => {
