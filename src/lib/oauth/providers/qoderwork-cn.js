@@ -1,26 +1,25 @@
-import { QODER_CONFIG } from "../constants/oauth.js";
+import { QODERWORK_CN_CONFIG } from "../constants/oauth.js";
 
-const qoder = {
-  config: QODER_CONFIG,
+/**
+ * QoderWork CN — same device flow as intl Qoder, different hosts + client_id.
+ *
+ * Everything region-specific lives in the protocol Profile ("cn-work"), so this
+ * file only differs from qoder.js in three places: the config, the profile id,
+ * and the synthetic-email prefix used for dedup.
+ */
+const qoderworkCn = {
+  config: QODERWORK_CN_CONFIG,
   flowType: "device_code",
-  // Qoder uses a custom device flow: PKCE + nonce + machine_id are generated
-  // locally, the user lands on qoder.com/device/selectAccounts in the
-  // browser, and we poll openapi.qoder.sh until a `dt-...` token appears.
   requestDeviceCode: async (config) => {
     const { QoderService } = await import("@/lib/oauth/services/qoder");
     const flow = await new QoderService({
       profile: config.protocolProfile,
     }).initiateDeviceFlow();
-    // Match the device_code shape the rest of the OAuthModal expects
-    // (device_code, user_code, verification_uri[_complete], interval).
-    // The poll endpoint identifies us by nonce+verifier, not by a
-    // server-issued device_code, so we plumb our own values through:
-    //   device_code   = nonce  (modal forwards as deviceCode on poll)
-    //   codeVerifier  = our PKCE verifier (route forwards as codeVerifier)
     return {
       device_code: flow.nonce,
       user_code: flow.nonce.slice(0, 8).toUpperCase(),
-      verification_uri: config.loginUrl,
+      // CN has no separate landing page: the complete URL *is* the login page.
+      verification_uri: flow.verificationUriComplete,
       verification_uri_complete: flow.verificationUriComplete,
       expires_in: 300,
       interval: 2,
@@ -53,13 +52,9 @@ const qoder = {
     if (result.status === "pending") {
       return { ok: false, data: { error: "authorization_pending" } };
     }
-    // Best-effort profile lookup so we have a name/email to display.
     const userInfo = await svc.fetchUserInfo(result.accessToken);
-    // expireTime is a Unix-ms timestamp from QoderService.parseExpiry,
-    // which already falls back to "now + 30 days" when the upstream
-    // omits expiry. Floor to a sane minimum (1 day) so a stale or
-    // skewed upstream timestamp doesn't truncate the stored token below
-    // something useful.
+    // expireTime is Unix-ms from parseExpiry (already defaults to +30d when the
+    // upstream omits expiry). Floor at 1 day so a skewed clock can't truncate.
     const minSeconds = 24 * 60 * 60;
     const remainingSeconds = Math.floor((result.expireTime - Date.now()) / 1000);
     const expiresIn = Math.max(minSeconds, remainingSeconds);
@@ -82,11 +77,9 @@ const qoder = {
     const rawEmail = (tokens._qoderEmail || "").trim();
     const displayName = (tokens._qoderName || "").trim() || null;
     const userId = tokens._qoderUserId || "";
-    // Dedup in createProviderConnection requires a non-empty email. When
-    // fetchUserInfo silently fails (returns ""), fall back to a stable
-    // synthetic identifier derived from userId so re-logins update the
-    // existing row instead of accumulating "Account N" duplicates.
-    const email = rawEmail || (userId ? `qoder-user-${userId}` : null);
+    // Dedup needs a non-empty email; CN accounts are phone-based and often
+    // return none, so fall back to a stable synthetic id keyed on userId.
+    const email = rawEmail || (userId ? `qoderwork-cn-user-${userId}` : null);
     return {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token || null,
@@ -104,4 +97,4 @@ const qoder = {
   },
 };
 
-export default qoder;
+export default qoderworkCn;

@@ -227,6 +227,14 @@ function applyFormat(fmt, body, cfg, caps) {
       if (level) body.reasoning_effort = level === "max" ? "xhigh" : level;
       break;
     }
+    case "qoder": {
+      // Qoder (intl + CN) accepts the full effort enum none..max verbatim — pure
+      // passthrough, do NOT clamp "max".
+      if (none && canDisable) { body.reasoning_effort = "none"; break; }
+      const level = toLevel(eff);
+      if (level) body.reasoning_effort = level;
+      break;
+    }
     case "claude-adaptive": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
       // output_config.effort alone does NOT turn thinking on: Anthropic requires
