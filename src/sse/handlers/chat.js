@@ -17,6 +17,7 @@ import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
+import { recordOutcome } from "open-sse/services/healthTracker.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
@@ -230,6 +231,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Use shared chatCore
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+    // chatCore resolves once upstream response headers are in, so this is a
+    // time-to-first-byte measurement even for streaming responses.
+    const attemptStartedAt = Date.now();
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
@@ -267,6 +271,17 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
       }
+    });
+
+    recordOutcome({
+      connectionId: credentials.connectionId,
+      connectionName: credentials.connectionName,
+      provider,
+      model,
+      ok: !!result.success,
+      latencyMs: Date.now() - attemptStartedAt,
+      status: result.status ?? null,
+      config: chatSettings.latencyAwareConfig,
     });
 
     if (result.success) return result.response;
