@@ -20,7 +20,6 @@ export default {
     baseUrl: "https://api3.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation",
     headers: {},
     timeoutMs: 120000,
-    stallTimeoutMs: 120000,
     usage: {
       url: "https://openapi.qoder.sh/api/v2/quota/usage",
     },
@@ -45,7 +44,7 @@ export default {
     centerBaseUrl: "https://center.qoder.sh",
     chatBaseUrl: "https://api3.qoder.sh",
     deviceTokenUrl: "https://openapi.qoder.sh/api/v1/deviceToken/poll",
-    refreshUrl: "https://center.qoder.sh/algo/api/v3/user/refresh_token",
+    refreshUrl: "https://openapi.qoder.sh/api/v1/deviceToken/refresh",
     userInfoUrl: "https://openapi.qoder.sh/api/v1/userinfo",
     quotaUsageUrl: "https://openapi.qoder.sh/api/v2/quota/usage",
     loginUrl: "https://qoder.com/device/selectAccounts",
@@ -53,4 +52,5 @@ export default {
   features: {
     usage: true,
   },
+  protocolProfile: "intl",
 };

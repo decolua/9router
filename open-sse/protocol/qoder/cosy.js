@@ -1,10 +1,11 @@
 /**
- * Qoder COSY (hybrid RSA+AES+MD5) signing, ported from CLIProxyAPIPlus
- * qoder-provider branch (internal/auth/qoder/cosy.go).
+ * Qoder COSY (hybrid RSA+AES+MD5) signing, protocol core.
+ * Live-validated against intl + QoderWork CN (newline field delimiter).
  *
  * Every signed request carries:
  *   - an AES-128-CBC payload of the user info, the AES key wrapped in RSA
- *   - an MD5 signature over `payload || cosyKey || timestamp || body || sigPath`
+ *   - an MD5 signature over payload, cosyKey, timestamp, body, sigPath
+ *     joined with newline (space SEP is rejected upstream as Signature invalid)
  *   - the body's MD5 hash + length so the server can validate integrity
  *   - 17 Cosy-* / X-* headers fingerprinting the client (machine id, IDE
  *     version, organization id, etc.)
@@ -14,24 +15,16 @@
  */
 
 import crypto from "crypto";
-import { v4 as uuidv4 } from "uuid";
 
-import {
-  QODER_CLIENT_TYPE,
-  QODER_DATA_POLICY,
-  QODER_IDE_VERSION,
-  QODER_LOGIN_VERSION,
-  QODER_MACHINE_OS,
-  QODER_MACHINE_TYPE,
-  QODER_RSA_PUBLIC_KEY,
-} from "./constants.js";
+import { QODER_RSA_PUBLIC_KEY } from "./constants.js";
+import { resolveProfile } from "./profile.js";
 
 // AES-128 wants a 16-byte key. Match qodercli/Veria: take the first 16 chars
 // of a fresh UUID's canonical string (hyphens included). The key is fresh
 // per request so even though the IV reuses the key bytes, each request still
 // has a unique IV.
 function generateAesKey() {
-  return uuidv4().slice(0, 16);
+  return crypto.randomUUID().slice(0, 16);
 }
 
 function pkcs7Pad(data, blockSize) {
@@ -96,7 +89,7 @@ function computeSigPath(requestUrl) {
  * every request from the same auth carries the same machineId.
  */
 export function generateMachineId() {
-  return uuidv4();
+  return crypto.randomUUID();
 }
 
 /**
@@ -111,11 +104,14 @@ export function generateMachineId() {
  * @param {string} [creds.name]            Display name (optional).
  * @param {string} [creds.email]           Email (optional, can be empty).
  * @param {string} [creds.machineId]       Persisted machine UUID.
+ * @param {string} [creds.machineToken]    SecurityGuard UMID; falls back to machineId.
+ * @param {import("./profile.js").QoderProfile|string|null} [profile]
  * @returns {Record<string, string>} Header map ready to merge onto fetch().
  */
-export function buildCosyHeaders(body, requestUrl, creds) {
+export function buildCosyHeaders(body, requestUrl, creds, profile = null) {
   if (!creds?.userId) throw new Error("cosy: user id is empty");
   if (!creds?.authToken) throw new Error("cosy: auth token is empty");
+  const p = resolveProfile(profile);
 
   const bodyBuf = Buffer.isBuffer(body)
     ? body
@@ -132,22 +128,28 @@ export function buildCosyHeaders(body, requestUrl, creds) {
   });
 
   const timestamp = String(Math.floor(Date.now() / 1000));
-  const requestId = uuidv4();
+  const requestId = crypto.randomUUID();
 
   const payloadJson = JSON.stringify({
     version: "v1",
     requestId,
     info,
-    cosyVersion: QODER_IDE_VERSION,
-    ideVersion: "",
+    cosyVersion: p.ideVersion || "1.0.0",
+    // Desktop generateAuthToken uses ideVersion || "1.0.0" (not empty).
+    ideVersion: p.ideVersion || "1.0.0",
   });
   const payloadB64 = Buffer.from(payloadJson, "utf8").toString("base64");
 
   const sigPath = computeSigPath(requestUrl);
-  const sigInput = `${payloadB64}\n${cosyKey}\n${timestamp}\n${bodyBuf.toString("latin1")}\n${sigPath}`;
+  // Live 2026-07-28: both intl (api3.qoder.sh) and CN gateway reject space SEP
+  // with HTTP 403 {"code":"101","message":"Signature invalid"}; newline works.
+  // Keep one SEP for the whole protocol family (profile only changes hosts/fingerprint).
+  const sep = "\n";
+  const sigInput = `${payloadB64}${sep}${cosyKey}${sep}${timestamp}${sep}${bodyBuf.toString("latin1")}${sep}${sigPath}`;
   const sig = md5Hex(Buffer.from(sigInput, "latin1"));
 
   const machineId = creds.machineId || generateMachineId();
+  const machineToken = creds.machineToken || machineId;
   const bodyHash = md5Hex(bodyBuf);
   const bodyLength = String(bodyBuf.length);
 
@@ -156,20 +158,20 @@ export function buildCosyHeaders(body, requestUrl, creds) {
     "Cosy-Key": cosyKey,
     "Cosy-User": creds.userId,
     "Cosy-Date": timestamp,
-    "Cosy-Version": QODER_IDE_VERSION,
+    "Cosy-Version": p.ideVersion,
     "Cosy-Machineid": machineId,
-    "Cosy-Machinetoken": machineId,
-    "Cosy-Machinetype": QODER_MACHINE_TYPE,
-    "Cosy-Machineos": QODER_MACHINE_OS,
-    "Cosy-Clienttype": QODER_CLIENT_TYPE,
+    "Cosy-Machinetoken": machineToken,
+    "Cosy-Machinetype": p.machineType,
+    "Cosy-Machineos": p.machineOs,
+    "Cosy-Clienttype": p.clientType,
     "Cosy-Clientip": "127.0.0.1",
     "Cosy-Bodyhash": bodyHash,
     "Cosy-Bodylength": bodyLength,
     "Cosy-Sigpath": sigPath,
-    "Cosy-Data-Policy": QODER_DATA_POLICY,
+    "Cosy-Data-Policy": p.dataPolicy,
     "Cosy-Organization-Id": "",
     "Cosy-Organization-Tags": "",
-    "Login-Version": QODER_LOGIN_VERSION,
-    "X-Request-Id": uuidv4(),
+    "Login-Version": p.loginVersion,
+    "X-Request-Id": crypto.randomUUID(),
   };
 }

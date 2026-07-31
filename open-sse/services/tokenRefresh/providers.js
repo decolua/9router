@@ -668,3 +668,41 @@ export async function refreshWindsurfToken(credentials, log) {
   );
   return null;
 }
+
+// Qoder / QoderWork CN — POST openapi /api/v1/deviceToken/refresh
+// { refresh_token } → device_token|token + refresh_token
+export async function refreshQoderDeviceToken(refreshToken, profileId = "intl", log) {
+  if (!refreshToken) return null;
+  const dedupKey = `qoder:${profileId || "intl"}`;
+  return dedupRefresh(dedupKey, refreshToken, async () => {
+    try {
+      const mod = await import("../../../src/lib/oauth/services/qoder.js");
+      const svc = new mod.QoderService({ profile: profileId });
+      const tokens = await svc.refreshDeviceToken(refreshToken);
+      log?.info?.("TOKEN_REFRESH", "Successfully refreshed Qoder device token", {
+        profile: profileId,
+        hasNewAccessToken: !!tokens.accessToken,
+        hasNewRefreshToken: !!tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
+      });
+      return {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken || refreshToken,
+        expiresIn: tokens.expiresIn,
+      };
+    } catch (e) {
+      const status = e?.status;
+      log?.error?.("TOKEN_REFRESH", `Qoder device refresh failed (${profileId})`, {
+        error: e?.message || String(e),
+        status,
+      });
+      if (status === 401 || status === 403) {
+        return {
+          error: "invalid_grant",
+          message: e?.message || "Qoder refresh rejected",
+        };
+      }
+      return null;
+    }
+  }, log);
+}
