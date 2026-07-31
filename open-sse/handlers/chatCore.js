@@ -51,7 +51,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   })();
   const reqTag = log?.tagForSession ? log.tagForSession(sessionSeed) : (log?.nextTag ? log.nextTag() : "");
 
-  const sourceFormat = sourceFormatOverride || detectFormat(body);
+  // Format resolution: Override > Endpoint > Body-based
+  const sourceFormat = sourceFormatOverride || (clientRawRequest?.endpoint?.includes("/messages") ? FORMATS.CLAUDE : detectFormat(body));
 
   // Check for bypass patterns (warmup, skip, cc naming)
   const bypassResponse = handleBypassRequest(body, model, userAgent, ccFilterNaming);

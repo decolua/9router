@@ -95,7 +95,7 @@ export function detectFormat(body) {
     
     // If content is string, it's likely OpenAI (Claude also supports this)
     // Check for other Claude-specific indicators
-    if (body.system !== undefined || body.anthropic_version) {
+    if (body.system !== undefined || body.anthropic_version || body['anthropic-version']) {
       return "claude";
     }
   }
