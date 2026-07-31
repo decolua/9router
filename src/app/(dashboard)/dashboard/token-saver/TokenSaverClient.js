@@ -44,6 +44,8 @@ export default function TokenSaverClient() {
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
   const [ponytailLevel, setPonytailLevel] = useState("full");
+  const [customSystemPromptEnabled, setCustomSystemPromptEnabled] = useState(false);
+  const [customSystemPrompt, setCustomSystemPrompt] = useState("");
   const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
   const [pxpipeMinChars, setPxpipeMinChars] = useState(25000);
   const [pxpipeStatus, setPxpipeStatus] = useState({
@@ -352,6 +354,13 @@ export default function TokenSaverClient() {
     setPonytailLevel(level);
     patchSetting({ ponytailLevel: level });
   };
+  const handleCustomSystemPromptEnabled = (value) => {
+    setCustomSystemPromptEnabled(value);
+    patchSetting({ customSystemPromptEnabled: value });
+  };
+  const handleCustomSystemPromptBlur = () => {
+    patchSetting({ customSystemPrompt });
+  };
 
   const refreshPxpipeStatus = useCallback(async () => {
     setPxpipeStatus((s) => ({ ...s, loading: true }));
@@ -421,6 +430,8 @@ export default function TokenSaverClient() {
           setCavemanLevel(data.cavemanLevel || "full");
           setPonytailEnabled(!!data.ponytailEnabled);
           setPonytailLevel(data.ponytailLevel || "full");
+          setCustomSystemPromptEnabled(!!data.customSystemPromptEnabled);
+          setCustomSystemPrompt(data.customSystemPrompt || "");
           setPxpipeEnabled(!!data.pxpipeEnabled);
           if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
           refreshHeadroomStatus();
@@ -731,6 +742,35 @@ export default function TokenSaverClient() {
               checked={ponytailEnabled}
               onChange={() => handlePonytailEnabled(!ponytailEnabled)}
             />
+          </div>
+        </div>
+        {/* Custom user-defined system prompt */}
+        <div className="flex items-start justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">
+              Custom system prompt
+            </p>
+            <p className="text-sm text-text-muted">
+              Inject your own text into the system message of every request
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-2 shrink-0 min-w-[300px]">
+            {customSystemPromptEnabled && (
+              <textarea
+                value={customSystemPrompt}
+                onChange={(e) => setCustomSystemPrompt(e.target.value)}
+                onBlur={handleCustomSystemPromptBlur}
+                placeholder="Enter your custom system prompt here..."
+                rows={3}
+                className="w-full px-3 py-2 rounded text-sm border border-border bg-surface-2 text-text placeholder:text-text-muted resize-y focus:outline-none focus:border-primary"
+              />
+            )}
+            <div className="flex items-center gap-3 shrink-0">
+              <Toggle
+                checked={customSystemPromptEnabled}
+                onChange={() => handleCustomSystemPromptEnabled(!customSystemPromptEnabled)}
+              />
+            </div>
           </div>
         </div>
         {/* PXPIPE hidden from UI — experimental, not exposed to users yet */}
