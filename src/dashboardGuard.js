@@ -183,6 +183,17 @@ export const __test__ = {
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
 
+  // Process-local Codex gateway control plane. The secret is generated at
+  // server start and the TCP peer is stamped by custom-server.js.
+  if (
+    pathname.startsWith("/api/internal/codex-native/")
+    && process.env.CODEX_NATIVE_INTERNAL_SECRET
+    && request.headers.get("x-9r-internal-secret") === process.env.CODEX_NATIVE_INTERNAL_SECRET
+    && isLocalRequest(request)
+  ) {
+    return NextResponse.next();
+  }
+
   // Local-only gate for spawn-capable / host-secret routes.
   if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
     if (!(await canAccessLocalOnlyRoute(request))) {

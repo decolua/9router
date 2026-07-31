@@ -67,6 +67,19 @@ const { ensureSqliteRuntime, buildEnvWithRuntime } = require("./hooks/sqliteRunt
 const { ensureTrayRuntime } = require("./hooks/trayRuntime");
 const args = process.argv.slice(2);
 
+// Provider-scoped auth hook used by modern Codex. Stdout must contain only the
+// bearer token because Codex consumes it directly.
+if (args[0] === "codex" && args[1] === "auth-token") {
+  const { run } = require("./src/cli/commands/codexAuthToken");
+  run(args.slice(2))
+    .then((code) => process.exit(code))
+    .catch((err) => {
+      console.error(err?.message || String(err));
+      process.exit(1);
+    });
+  return;
+}
+
 // Subcommands (`9router xai video …`) run against an already-running gateway
 // and bypass the launcher flow (no runtime self-heal, no server spawn).
 if (args[0] === "xai" && args[1] === "video") {
@@ -154,6 +167,7 @@ Options:
   -v, --version       Show version
 
 Commands:
+  codex auth-token     Print the provider-scoped Codex bridge token
   xai video --prompt "..." --output video.mp4
                       Generate a Grok Imagine video via the running gateway
                       (see: ${APP_NAME} xai video --help)

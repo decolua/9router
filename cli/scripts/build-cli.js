@@ -3,6 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
+const { copyRuntimePackages } = require("../../scripts/copy-runtime-packages.cjs");
 
 const cliDir = path.resolve(__dirname, "..");
 const appDir = path.resolve(cliDir, "..");
@@ -165,6 +166,7 @@ console.log("✅ Copied standalone build\n");
 const customServerSrc = path.join(appDir, "custom-server.js");
 if (fs.existsSync(customServerSrc)) {
   fs.copyFileSync(customServerSrc, path.join(cliAppDir, "custom-server.js"));
+  copyRecursive(path.join(appDir, "server"), path.join(cliAppDir, "server"));
   console.log("✅ Copied custom-server.js\n");
 } else {
   console.warn("⚠️  custom-server.js not found — server will run without real-IP injection\n");
@@ -195,6 +197,19 @@ function ensureModuleInBundle(pkg) {
   console.log(`✅ Bundled ${pkg}`);
 }
 ensureModuleInBundle("sql.js");
+// custom-server.js loads the native gateway outside Next's traced module graph.
+copyRuntimePackages(
+  ["ws", "https-proxy-agent", "socks-proxy-agent"],
+  path.join(cliAppDir, "node_modules"),
+  {
+    searchPaths: [appDir, rootDir],
+    storeDirs: [
+      path.join(appDir, "node_modules", ".pnpm"),
+      path.join(rootDir, "node_modules", ".pnpm"),
+    ],
+    onCopy: (pkg, version) => console.log(`✅ Bundled ${pkg}@${version}`),
+  }
+);
 const betterDir = path.join(cliAppDir, "node_modules", "better-sqlite3");
 if (fs.existsSync(betterDir)) {
   fs.rmSync(betterDir, { recursive: true, force: true });
