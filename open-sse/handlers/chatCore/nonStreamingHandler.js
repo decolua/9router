@@ -9,6 +9,7 @@ import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
+import { unfenceJsonChoices } from "../../utils/jsonFence.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -281,6 +282,9 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       }
     }
   }
+
+  // JSON mode: drop a ```json fence the provider added around the object
+  unfenceJsonChoices(body, translatedResponse);
 
   reqLogger.logConvertedResponse(translatedResponse);
 

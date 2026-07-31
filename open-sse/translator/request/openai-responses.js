@@ -195,6 +195,13 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
     delete result.max_output_tokens;
   }
 
+  // Structured Output: Responses `text.format` → Chat `response_format` (`text` is not a Chat field)
+  if (result.text !== undefined) {
+    const responseFormat = textFormatToResponseFormat(result.text);
+    if (responseFormat && result.response_format === undefined) result.response_format = responseFormat;
+    delete result.text;
+  }
+
   delete result.input;
   delete result.instructions;
   delete result.include;
@@ -382,7 +389,37 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   if (body.reasoning_effort !== undefined) result.reasoning = { effort: body.reasoning_effort, summary: "auto" };
   if (body.service_tier !== undefined) result.service_tier = body.service_tier;
 
+  // Structured Output: Chat `response_format` → Responses `text.format` (#dropped otherwise)
+  const textFormat = responseFormatToTextFormat(body.response_format);
+  if (textFormat) result.text = { format: textFormat };
+
   return result;
+}
+
+/**
+ * Chat Completions `response_format` → Responses API `text.format`.
+ * Responses nests the schema one level up and flattens json_schema.{name,schema,strict}.
+ */
+function responseFormatToTextFormat(responseFormat) {
+  if (responseFormat?.type === "json_schema") {
+    const js = responseFormat.json_schema;
+    if (!js?.schema) return null;
+    return { type: "json_schema", name: js.name || "response", schema: js.schema, strict: js.strict ?? true };
+  }
+  if (responseFormat?.type === "json_object") return { type: "json_object" };
+  return null;
+}
+
+/**
+ * Responses API `text.format` → Chat Completions `response_format` (inverse of the above).
+ */
+function textFormatToResponseFormat(text) {
+  const fmt = text?.format;
+  if (fmt?.type === "json_schema" && fmt.schema) {
+    return { type: "json_schema", json_schema: { name: fmt.name || "response", schema: fmt.schema, strict: fmt.strict ?? true } };
+  }
+  if (fmt?.type === "json_object") return { type: "json_object" };
+  return null;
 }
 
 // Register both directions
