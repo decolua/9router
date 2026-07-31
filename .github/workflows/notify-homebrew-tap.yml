@@ -21,7 +21,7 @@ jobs:
           fi
 
       - name: Ask the tap to check npm and open an update PR
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           HOMEBREW_TAP_DISPATCH_TOKEN: ${{ secrets.HOMEBREW_TAP_DISPATCH_TOKEN }}
         with:

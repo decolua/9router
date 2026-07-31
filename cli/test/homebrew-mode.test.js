@@ -6,6 +6,7 @@ const path = require("path");
 const test = require("node:test");
 
 const packageRoot = path.resolve(__dirname, "..");
+const packageJson = require("../package.json");
 const { getUpdateCommand, isHomebrewManaged } = require("../hooks/packageManager");
 const { buildEnvWithRuntime } = require("../hooks/sqliteRuntime");
 
@@ -35,18 +36,25 @@ test("Homebrew mode excludes the user runtime from NODE_PATH", () => {
 test("Homebrew mode does not create a runtime dependency directory", () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "9router-homebrew-mode-"));
   try {
+    const environment = {
+      ...process.env,
+      APPDATA: home,
+      HOME: home,
+      NINEROUTER_PACKAGE_MANAGER: "homebrew",
+    };
     const output = execFileSync(process.execPath, ["cli.js", "--version"], {
       cwd: packageRoot,
       encoding: "utf8",
-      env: {
-        ...process.env,
-        APPDATA: home,
-        HOME: home,
-        NINEROUTER_PACKAGE_MANAGER: "homebrew",
-      },
+      env: environment,
+    });
+    const help = execFileSync(process.execPath, ["cli.js", "--help"], {
+      cwd: packageRoot,
+      encoding: "utf8",
+      env: environment,
     });
 
-    assert.match(output, /^0\.5\.40\s*$/);
+    assert.strictEqual(output.trim(), packageJson.version);
+    assert.match(help, /Usage: 9router/);
     assert.strictEqual(fs.existsSync(path.join(home, ".9router", "runtime")), false);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });

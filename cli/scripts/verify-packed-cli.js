@@ -58,18 +58,29 @@ try {
 
   const home = path.join(temporaryRoot, "home");
   const binary = path.join(installPrefix, "node_modules", ".bin", "9router");
+  const environment = {
+    ...process.env,
+    APPDATA: home,
+    HOME: home,
+    NINEROUTER_PACKAGE_MANAGER: "homebrew",
+  };
   const version = run(binary, ["--version"], {
     cwd: installPrefix,
-    env: {
-      ...process.env,
-      APPDATA: home,
-      HOME: home,
-      NINEROUTER_PACKAGE_MANAGER: "homebrew",
-    },
+    env: environment,
   }).trim();
+  const help = run(binary, ["--help"], {
+    cwd: installPrefix,
+    env: environment,
+  });
 
   if (version !== packageJson.version) {
     throw new Error(`packed CLI reported ${version}, expected ${packageJson.version}`);
+  }
+  if (!help.includes("Usage: 9router")) {
+    throw new Error("packed CLI help smoke test failed");
+  }
+  if (fs.existsSync(path.join(home, ".9router", "runtime"))) {
+    throw new Error("packed CLI mutated the Homebrew-managed runtime directory");
   }
 
   console.log(`Verified packed ${packageJson.name}@${packageJson.version} installs and runs offline.`);
