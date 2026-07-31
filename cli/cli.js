@@ -153,7 +153,9 @@ Options:
   -H, --host <host>   Host to bind (default: ${DEFAULT_HOST})
   -n, --no-browser    Don't open browser automatically
   -l, --log           Show server logs (default: hidden)
-  -t, --tray          Run in system tray mode (background)
+  -t, --tray          ${homebrewManaged
+    ? "Run without the TUI (tray unavailable in Homebrew)"
+    : "Run in system tray mode (background)"}
   --skip-update       Skip auto-update check
   -h, --help          Show this help message
   -v, --version       Show version
@@ -694,6 +696,10 @@ function startServer(updatePromise) {
 
   // Initialize tray icon (runs alongside TUI)
   const initTrayIcon = () => {
+    if (homebrewManaged) {
+      return null;
+    }
+
     try {
       const { initTray } = require("./src/cli/tray/tray");
       initTray({
@@ -722,8 +728,13 @@ function startServer(updatePromise) {
 
     waitServerReady(port).then(() => {
       initTrayIcon();
-      console.log("\n💡 Router is now running in system tray. Close this terminal if you want.");
-      console.log("   Right-click tray icon to open dashboard or quit.\n");
+      if (homebrewManaged) {
+        console.log("\n💡 Router is running without a terminal interface.");
+        console.log("   Homebrew installations do not enable the unsigned x86-only tray helper.\n");
+      } else {
+        console.log("\n💡 Router is now running in system tray. Close this terminal if you want.");
+        console.log("   Right-click tray icon to open dashboard or quit.\n");
+      }
     });
 
     return;

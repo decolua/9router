@@ -18,8 +18,16 @@
 4. Publish npm before the GitHub Release so the dispatcher can read and checksum
    the immutable tarball.
 
-The public install, update, and uninstall commands belong in the tap README
-only after those prerequisites are met.
+After those prerequisites are met, publish this lifecycle documentation:
+
+```bash
+brew tap decolua/9router
+brew install 9router
+brew update
+brew upgrade 9router
+brew info 9router
+brew uninstall 9router
+```
 
 ## Architecture
 
@@ -48,6 +56,16 @@ Homebrew mode uses the wrapper environment marker
 `NINEROUTER_PACKAGE_MANAGER=homebrew`. In that mode the CLI must neither run
 postinstall/runtime npm installs nor add `~/.9router/runtime` to `NODE_PATH`.
 The Formula owns every runtime dependency it needs.
+
+The current Homebrew mode deliberately disables the macOS tray helper.
+`systray2@2.1.4` ships an unsigned x86_64-only executable, so packaging it
+would require Rosetta on Apple Silicon and weaken the reproducible native
+architecture contract. `--tray` remains a headless server mode for command
+compatibility, but it does not create a tray icon in Homebrew installs. The
+Formula and CLI tests must verify that Homebrew mode never resolves tray code
+from `~/.9router/runtime`. Restore the icon only after 9Router publishes signed
+ARM64 and x86_64 tray artifacts or replaces the helper with a native universal
+build.
 
 The packed-tarball verifier builds the npm archive, installs it offline with
 lifecycle scripts disabled, and runs `9router --version` in Homebrew mode before

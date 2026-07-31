@@ -9,6 +9,7 @@ const packageRoot = path.resolve(__dirname, "..");
 const packageJson = require("../package.json");
 const { getUpdateCommand, isHomebrewManaged } = require("../hooks/packageManager");
 const { buildEnvWithRuntime } = require("../hooks/sqliteRuntime");
+const { isTraySupported, resolveSystray } = require("../src/cli/tray/tray");
 
 test("Homebrew mode selects Homebrew update guidance", () => {
   const env = { NINEROUTER_PACKAGE_MANAGER: "homebrew" };
@@ -31,6 +32,13 @@ test("Homebrew mode excludes the user runtime from NODE_PATH", () => {
 
   assert.strictEqual(environment.NODE_PATH.includes(path.join(home, ".9router", "runtime")), false);
   assert.match(environment.NODE_PATH, /\/existing\/node-path$/);
+});
+
+test("Homebrew mode disables tray resolution", () => {
+  const environment = { NINEROUTER_PACKAGE_MANAGER: "homebrew" };
+
+  assert.strictEqual(isTraySupported(environment), false);
+  assert.strictEqual(resolveSystray(environment), null);
 });
 
 test("Homebrew mode does not create a runtime dependency directory", () => {
