@@ -4,10 +4,8 @@ import { KiroService } from "../../src/lib/oauth/services/kiro.js";
 /**
  * Regression tests for Kiro API-key auth.
  *
- * KiroService.validateApiKey resolves a profileArn with the key (via
- * CodeWhisperer ListAvailableProfiles) and returns a credential shaped for
- * persistence with authMethod="api_key". The response profile field name
- * varies (`arn` vs `profileArn`) — both are accepted by listAvailableProfiles.
+ * KiroService.validateApiKey validates against the Amazon Q model catalog and
+ * returns an account-bound credential without inventing a profileArn.
  *
  * Note: OAuth (Builder ID / IDC) profileArn resolution is handled upstream by
  * fetchKiroProfileArn in providers.js and is covered there — not here.
@@ -16,11 +14,10 @@ describe("kiro API-key auth (KiroService.validateApiKey)", () => {
   beforeEach(() => vi.restoreAllMocks());
   afterEach(() => vi.restoreAllMocks());
 
-  it("validates an API key and resolves a credential with profileArn", async () => {
-    const expectedArn = "arn:aws:codewhisperer:us-east-1:444:profile/KEY";
+  it("validates an API key against Amazon Q without inventing profileArn", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
-      json: async () => ({ profiles: [{ arn: expectedArn }] }),
+      json: async () => ({ models: [{ modelId: "claude-opus-5" }] }),
     });
 
     const svc = new KiroService();
@@ -29,20 +26,18 @@ describe("kiro API-key auth (KiroService.validateApiKey)", () => {
     expect(cred).toEqual({
       accessToken: "my-secret-key",
       refreshToken: null,
-      profileArn: expectedArn,
+      profileArn: null,
       region: "us-east-1",
       authMethod: "api_key",
     });
 
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("https://codewhisperer.us-east-1.amazonaws.com");
-    expect(init.headers.Authorization).toBe("Bearer my-secret-key");
-    expect(init.headers["x-amz-target"]).toBe(
-      "AmazonCodeWhispererService.ListAvailableProfiles"
+    expect(url).toBe(
+      "https://q.us-east-1.amazonaws.com/ListAvailableModels?origin=AI_EDITOR"
     );
-    // ListAvailableProfiles rejects tokentype:API_KEY with 403
-    expect(init.headers.tokentype).toBeUndefined();
-    expect(init.headers.TokenType).toBeUndefined();
+    expect(init.method).toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer my-secret-key");
+    expect(init.headers.TokenType).toBe("API_KEY");
   });
 
   it("rejects an empty API key without a network call", async () => {
@@ -61,6 +56,17 @@ describe("kiro API-key auth (KiroService.validateApiKey)", () => {
     const svc = new KiroService();
     await expect(svc.validateApiKey("bad-key")).rejects.toThrow(
       /API key validation failed/
+    );
+  });
+
+  it("rejects a 200 response with an empty model catalog", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ models: [] }),
+    });
+    const svc = new KiroService();
+    await expect(svc.validateApiKey("empty-key")).rejects.toThrow(
+      /returned no available models/
     );
   });
 });

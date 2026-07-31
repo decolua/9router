@@ -33,7 +33,11 @@ import { FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { TimeoutError } from "./base.js";
 import {
   QODER_CHAT_URL_ENCODED,
+  QODER_JOB_TOKEN_EXCHANGE_URL,
+  QODER_USERINFO_URL,
   QODER_MODEL_MAP,
+  QODER_IDE_VERSION,
+  QODER_CLIENT_TYPE,
 } from "../shared/qoder/constants.js";
 import { getQoderModelConfig, resolveQoderModels } from "../services/qoderModels.js";
 
@@ -221,8 +225,13 @@ async function buildQoderRequestBody({ model, body, credentials, log, proxyOptio
  * Each upstream line looks like:
  *   data: {"statusCodeValue":200,"body":"{\"choices\":[{\"delta\":{...}}]}"}
  * The inner body is an OpenAI streaming chunk (or "[DONE]"). We unwrap it
- * and re-emit as `data: <inner>\n\n`. Errors become `data: [DONE]\n\n` plus
- * a synthetic OpenAI error chunk.
+ * and re-emit as `data: <inner>\n\n`. Errors become a synthetic OpenAI error
+ * chunk + [DONE].
+ *
+ * Critical: Qoder's SSE often keeps the socket open after the terminal
+ * [DONE]/error frame (agent keepalive). Non-streaming clients drain via
+ * response.text() which hangs until the socket closes — so on terminal
+ * events we cancel the upstream reader and close our stream immediately.
  */
 function wrapQoderSSE(response, model) {
   if (!response.ok || !response.body) return response;
@@ -231,15 +240,14 @@ function wrapQoderSSE(response, model) {
   const encoder = new TextEncoder();
   let buffer = "";
   let doneEmitted = false;
+  const reader = response.body.getReader();
 
-  // Process one already-extracted SSE line (no trailing newline). Returns
-  // false when the line indicated end-of-stream so the caller can stop
-  // forwarding any remaining chunks after [DONE].
+  // Process one already-extracted SSE line (no trailing newline).
   const processLine = (line, controller) => {
     const trimmed = line.replace(/\r$/, "").trim();
     if (!trimmed) return;
     if (!trimmed.startsWith("data:")) return;
-    if (doneEmitted) return; // never forward chunks past stream end
+    if (doneEmitted) return;
 
     const data = trimmed.slice(5).trimStart();
     if (data === "[DONE]") {
@@ -272,47 +280,60 @@ function wrapQoderSSE(response, model) {
       doneEmitted = true;
       return;
     }
-    // Inner is an OpenAI-shaped chunk. Strip any embedded newlines so the
-    // SSE frame stays a single event (a literal "\n" inside `inner` would
-    // otherwise split the frame across multiple data: lines and downstream
-    // parsers would reassemble them as separate events).
+    // Strip embedded newlines so the SSE frame stays a single event.
     const sanitized = inner.replace(/\r?\n/g, "");
     controller.enqueue(encoder.encode(`data: ${sanitized}\n\n`));
   };
 
-  const transform = new TransformStream({
-    transform(chunk, controller) {
-      buffer += decoder.decode(chunk, { stream: true });
-      let nl;
-      while ((nl = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, nl);
-        buffer = buffer.slice(nl + 1);
-        processLine(line, controller);
+  const stream = new ReadableStream({
+    // Use start()+loop (not pull): a pull that buffers a partial line without
+    // enqueueing would never be re-invoked, hanging consumers like .text().
+    async start(controller) {
+      try {
+        while (!doneEmitted) {
+          const { done, value } = await reader.read();
+          if (done) {
+            buffer += decoder.decode();
+            if (buffer.length > 0) {
+              processLine(buffer, controller);
+              buffer = "";
+            }
+            break;
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+          let nl;
+          while ((nl = buffer.indexOf("\n")) !== -1) {
+            const line = buffer.slice(0, nl);
+            buffer = buffer.slice(nl + 1);
+            processLine(line, controller);
+            if (doneEmitted) {
+              // Terminal frame received — drop upstream keepalive and end.
+              await reader.cancel().catch(() => {});
+              controller.close();
+              return;
+            }
+          }
+        }
+      } catch {
+        // fall through to terminal [DONE] + close
+      } finally {
+        if (!doneEmitted) {
+          try {
+            controller.enqueue(encoder.encode(SSE_DONE));
+            doneEmitted = true;
+          } catch { /* already closed */ }
+        }
+        try { controller.close(); } catch { /* already closed */ }
+        await reader.cancel().catch(() => {});
       }
     },
-    flush(controller) {
-      // Finalize the decoder so any pending multi-byte sequence is
-      // released into `buffer` instead of being silently dropped.
-      buffer += decoder.decode();
-      // Drain any trailing line that arrived without a terminating newline
-      // (e.g. upstream closed the socket immediately after the last write,
-      // or a CDN stripped the final CRLF). Without this, the chunk that
-      // carries finish_reason is silently lost.
-      if (buffer.length > 0) {
-        processLine(buffer, controller);
-        buffer = "";
-      }
-      if (!doneEmitted) {
-        controller.enqueue(encoder.encode(SSE_DONE));
-        doneEmitted = true;
-      }
+    cancel() {
+      return reader.cancel().catch(() => {});
     },
   });
 
-  const transformed = response.body.pipeThrough(transform);
-  // Build a Response with passable headers; the streaming handler reads
-  // `.body` as a ReadableStream regardless of Content-Type.
-  return new Response(transformed, {
+  return new Response(stream, {
     status: response.status,
     statusText: response.statusText,
     headers: {
@@ -320,6 +341,92 @@ function wrapQoderSSE(response, model) {
       "Cache-Control": "no-cache",
     },
   });
+}
+
+// ── PAT (Personal Access Token) → job-token exchange ───────────────────────
+// PATs (pt-...) cannot sign COSY requests directly. Exchange them for a
+// short-lived job token (jt-...) via /api/v1/jobToken/exchange (plain JSON,
+// not COSY-signed), then resolve the userId from userinfo. Mirrors the
+// official qodercli flow. Cached per-PAT until near-expiry.
+const PAT_PREFIX = "pt-";
+const PAT_REFRESH_BUFFER_MS = 5 * 60 * 1000;
+const patJobCache = new Map();
+
+export function isQoderPat(token) {
+  return typeof token === "string" && token.startsWith(PAT_PREFIX);
+}
+
+async function exchangeJobToken(pat, proxyOptions = null, signal = null) {
+  const res = await proxyAwareFetch(
+    QODER_JOB_TOKEN_EXCHANGE_URL,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "User-Agent": "qodercli/1.0.0",
+        "Cosy-Version": QODER_IDE_VERSION,
+        "Cosy-ClientType": QODER_CLIENT_TYPE,
+      },
+      body: JSON.stringify({ personal_token: pat }),
+      signal,
+    },
+    proxyOptions,
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`qoder PAT exchange failed: ${res.status} ${text.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  if (!data.token) throw new Error("qoder PAT exchange returned no job token");
+
+  let expiresAt = Date.now() + 24 * 60 * 60 * 1000;
+  if (data.expires_at) {
+    const parsed = Date.parse(data.expires_at);
+    if (!Number.isNaN(parsed)) expiresAt = parsed;
+  } else if (typeof data.expires_in === "number" && data.expires_in > 0) {
+    expiresAt = Date.now() + data.expires_in;
+  }
+  return { jobToken: data.token, jobRefreshToken: data.refresh_token || "", expiresAt };
+}
+
+async function fetchUserIdForJobToken(jobToken, proxyOptions = null, signal = null) {
+  try {
+    const res = await proxyAwareFetch(
+      QODER_USERINFO_URL,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${jobToken}`,
+          Accept: "application/json",
+          "User-Agent": "qodercli/1.0.0",
+        },
+        signal,
+      },
+      proxyOptions,
+    );
+    if (!res.ok) return "";
+    const info = await res.json().catch(() => ({}));
+    return info.id || info.userId || info.user_id || "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Exchange a PAT for a job token + userId, caching until near-expiry so repeat
+ * chat requests don't re-exchange. Returns { accessToken, userId }.
+ */
+async function resolvePatCredential(pat, proxyOptions = null, signal = null) {
+  const cached = patJobCache.get(pat);
+  if (cached && cached.expiresAt - Date.now() > PAT_REFRESH_BUFFER_MS) {
+    return cached;
+  }
+  const { jobToken, expiresAt } = await exchangeJobToken(pat, proxyOptions, signal);
+  const userId = await fetchUserIdForJobToken(jobToken, proxyOptions, signal);
+  const entry = { accessToken: jobToken, userId, expiresAt };
+  patJobCache.set(pat, entry);
+  return entry;
 }
 
 export class QoderExecutor extends BaseExecutor {
@@ -338,6 +445,34 @@ export class QoderExecutor extends BaseExecutor {
   //   - response stream re-wrapped from {statusCodeValue, body} to OpenAI SSE
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     const url = this.buildUrl();
+
+    // PAT (pt-...) → exchange for short-lived job token + resolve userId so
+    // downstream COSY signing + catalog fetch work. Device tokens (dt-...) and
+    // job tokens (jt-...) skip this and are used directly.
+    const rawToken = credentials?.apiKey || credentials?.accessToken;
+    if (isQoderPat(rawToken)) {
+      try {
+        const resolved = await resolvePatCredential(rawToken, proxyOptions, signal);
+        credentials = {
+          ...credentials,
+          accessToken: resolved.accessToken,
+          apiKey: undefined,
+          providerSpecificData: {
+            authMethod: "pat",
+            ...(credentials?.providerSpecificData || {}),
+            userId: resolved.userId || credentials?.providerSpecificData?.userId || "",
+            machineId: credentials?.providerSpecificData?.machineId || "",
+          },
+        };
+      } catch (err) {
+        log?.error?.("QODER", `PAT exchange failed: ${err.message}`);
+        const fakeResp = new Response(
+          JSON.stringify({ error: { message: `qoder PAT exchange failed: ${err.message}` } }),
+          { status: 401, headers: { "Content-Type": "application/json" } },
+        );
+        return { response: fakeResp, url, headers: {}, transformedBody: body };
+      }
+    }
 
     const psd = credentials?.providerSpecificData || {};
     if (!psd.userId) {
@@ -456,4 +591,6 @@ export const __test__ = {
   normalizeMessages,
   wrapQoderSSE,
   buildQoderRequestBody,
+  isQoderPat,
+  resolvePatCredential,
 };
