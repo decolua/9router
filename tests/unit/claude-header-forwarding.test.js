@@ -50,7 +50,9 @@ describe("claudeHeaderCache", () => {
     const cached = cacheModule.getCachedClaudeHeaders();
     expect(cached).not.toBeNull();
     expect(cached["user-agent"]).toBe("claude-code/2.1.63 node/24.3.0");
-    expect(cached["anthropic-beta"]).toBe("claude-code-20250219,oauth-2025-04-20");
+    // anthropic-beta is request-scoped + entitlement-sensitive: never cached,
+    // or one client's flags ride along on everyone else's requests.
+    expect(cached["anthropic-beta"]).toBeUndefined();
     expect(cached["x-app"]).toBe("cli");
     expect(cached["x-stainless-os"]).toBe("MacOS");
     // Non-identity header must not leak in
@@ -150,27 +152,61 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
 
     // Live values should win over static providers.js values
     expect(headers["user-agent"]).toBe("claude-code/2.1.63 node/24.3.0");
-    // Beta flags are MERGED (static + cached) to preserve required flags like oauth
-    const betaFlags = headers["anthropic-beta"].split(",").map(s => s.trim());
-    expect(betaFlags).toContain("claude-code-20250219");
-    expect(betaFlags).toContain("oauth-2025-04-20");
-    expect(betaFlags).toContain("interleaved-thinking-2025-05-14");
     expect(headers["x-stainless-package-version"]).toBe("0.74.0");
     expect(headers["x-stainless-os"]).toBe("MacOS");
+    // Beta flags come from the registry's curated static list only — the cached
+    // client's flags are NOT merged in.
+    const beta = headers["Anthropic-Beta"] || headers["anthropic-beta"] || "";
+    expect(beta.split(",").map(s => s.trim())).toContain("oauth-2025-04-20");
   });
 
   it("removes conflicting Title-Case static keys when cached lowercase keys exist", () => {
     const executor = new DefaultExecutor("claude");
     const headers = executor.buildHeaders({ apiKey: "sk-test" }, true);
 
-    // Title-Case variants from providers.js must be gone
+    // Title-Case variants from providers.js must be gone for CACHED keys
     expect(headers["Anthropic-Version"]).toBeUndefined();
-    expect(headers["Anthropic-Beta"]).toBeUndefined();
     expect(headers["User-Agent"]).toBeUndefined();
     expect(headers["X-App"]).toBeUndefined();
     // Lowercase variants must be present
     expect(headers["anthropic-version"]).toBe("2023-06-01");
     expect(headers["x-app"]).toBe("cli");
+    // anthropic-beta is not cached, so the static Title-Case header survives and
+    // must NOT be shadowed by a lowercase copy (which would send it twice).
+    expect(headers["Anthropic-Beta"]).toBeTruthy();
+    expect(headers["anthropic-beta"]).toBeUndefined();
+  });
+
+  it("never leaks a cached client's context-1m beta onto other requests", async () => {
+    // Regression: a Claude Code session with the 1M-context beta enabled used to
+    // poison every later claude request on the process — including 4-token ones —
+    // with 429 "Usage credits are required for long context requests." because
+    // that beta is pay-as-you-go and subscription accounts are not entitled.
+    vi.resetModules();
+    const cache = await import("open-sse/utils/claudeHeaderCache.js");
+    cache.cacheClaudeHeaders({
+      "user-agent": "claude-code/2.1.63 node/24.3.0",
+      "x-app": "cli",
+      "anthropic-beta": "claude-code-20250219,oauth-2025-04-20,context-1m-2025-08-07",
+    });
+    expect(cache.getCachedClaudeHeaders()["anthropic-beta"]).toBeUndefined();
+
+    const mod = await import("open-sse/executors/default.js");
+    const Exec = mod.DefaultExecutor || mod.default;
+    const headers = new Exec("claude").buildHeaders({ apiKey: "sk-test" }, true);
+    const beta = headers["Anthropic-Beta"] || headers["anthropic-beta"] || "";
+    expect(beta).not.toContain("context-1m");
+  });
+
+  it("does not mutate the shared cache across repeated builds", async () => {
+    // Regression: the overlay wrote merged beta flags back into the singleton, so
+    // flags accumulated forever and outlived the request that introduced them.
+    const cache = await import("open-sse/utils/claudeHeaderCache.js");
+    const before = JSON.stringify(cache.getCachedClaudeHeaders());
+    const executor = new DefaultExecutor("claude");
+    executor.buildHeaders({ apiKey: "sk-test" }, true);
+    executor.buildHeaders({ apiKey: "sk-test" }, true);
+    expect(JSON.stringify(cache.getCachedClaudeHeaders())).toBe(before);
   });
 
   it("sets x-api-key auth when apiKey is provided", () => {
