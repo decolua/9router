@@ -1,6 +1,10 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
-import { resolveKiroModel } from "../config/kiroConstants.js";
+import {
+  KIRO_CODEWHISPERER_TARGET,
+  KIRO_ENDPOINT_FALLBACK_STATUSES,
+  resolveKiroModel,
+} from "../config/kiroConstants.js";
 import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
@@ -216,12 +220,17 @@ export class KiroExecutor extends BaseExecutor {
     super("kiro", PROVIDERS.kiro);
   }
 
-  buildHeaders(credentials, stream = true) {
+  buildHeaders(credentials, stream = true, url = "") {
     const headers = {
       ...this.config.headers,
       "Amz-Sdk-Request": "attempt=1; max=3",
       "Amz-Sdk-Invocation-Id": uuidv4()
     };
+    if (url.includes("://codewhisperer.")) {
+      headers["X-Amz-Target"] = KIRO_CODEWHISPERER_TARGET;
+    } else {
+      delete headers["X-Amz-Target"];
+    }
 
     // API-key auth: the key is stored as accessToken and sent as a bearer token
     // exactly like an OAuth access token, but with an extra `tokentype: API_KEY`
@@ -238,8 +247,8 @@ export class KiroExecutor extends BaseExecutor {
     const apiKey = credentials?.apiKey || (isApiKey ? credentials?.accessToken : null);
     if (isApiKey && apiKey) {
       headers["Authorization"] = `Bearer ${apiKey}`;
-      headers["tokentype"] = "API_KEY";
-    } else if (credentials.accessToken) {
+      headers["TokenType"] = "API_KEY";
+    } else if (credentials?.accessToken) {
       headers["Authorization"] = `Bearer ${credentials.accessToken}`;
       if (isExternalIdp) {
         headers["TokenType"] = "EXTERNAL_IDP";
@@ -252,14 +261,14 @@ export class KiroExecutor extends BaseExecutor {
   /**
    * Auth-aware endpoint ordering.
    *
-   * API-key Kiro connections store a raw CodeWhisperer credential (validated
-   * against codewhisperer.us-east-1.amazonaws.com via ListAvailableProfiles).
+   * API-key Kiro connections use the Amazon Q surface. The legacy
+   * codewhisperer.* GenerateAssistantResponse endpoint can authenticate the key
+   * but rejects the same valid payload with REQUEST_BODY_INVALID. Since a 400
+   * is terminal in BaseExecutor, putting CodeWhisperer first prevents the working
+   * q.* endpoint from ever being tried. Keep q.* first only for api_key accounts.
+   *
    * The Kiro IDE gateway (runtime.*.kiro.dev) expects Kiro OIDC/social tokens
-   * and rejects an `tokentype: API_KEY` token with 401/403 — which
-   * BaseExecutor.execute() returns immediately (only 429 / network errors fall
-   * through to the next host). So for api-key auth we must try the *.amazonaws.com
-   * CodeWhisperer hosts FIRST, mirroring the Kiro-Go reference fork which never
-   * routes api-key traffic through kiro.dev. External IdP enterprise tokens also
+   * and rejects TokenType=API_KEY. External IdP enterprise tokens instead
    * use the CodeWhisperer surface, with the `TokenType: EXTERNAL_IDP` header.
    * Other OAuth methods keep the default order (kiro.dev first) since their
    * tokens are what that gateway accepts.
@@ -284,12 +293,28 @@ export class KiroExecutor extends BaseExecutor {
 
     const amazon = baseUrls.filter((u) => u.includes("amazonaws.com")).map(regionalize);
     const others = baseUrls.filter((u) => !u.includes("amazonaws.com"));
+    if (authMethod === "api_key") {
+      const q = amazon.filter((u) => u.includes("://q."));
+      const remaining = amazon.filter((u) => !u.includes("://q."));
+      return q.length > 0
+        ? [...q, ...remaining, ...others]
+        : [...amazon, ...others];
+    }
+
     return amazon.length > 0 ? [...amazon, ...others] : baseUrls;
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     const baseUrls = this.getOrderedBaseUrls(credentials);
     return baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;
+  }
+
+  // Retry only endpoint/auth-surface failures. Payload-invalid HTTP 400 must be
+  // terminal: sending the same malformed body to every surface cannot repair it.
+  shouldRetry(status, urlIndex) {
+    const hasFallback = urlIndex + 1 < this.getFallbackCount();
+    return super.shouldRetry(status, urlIndex)
+      || (hasFallback && KIRO_ENDPOINT_FALLBACK_STATUSES.has(status));
   }
 
   transformRequest(model, body, stream, credentials) {
