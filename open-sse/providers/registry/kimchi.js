@@ -13,7 +13,7 @@ export default {
       signupUrl: "https://app.kimchi.dev",
     },
   },
-  category: "oauth",
+  category: "freeTier",
   authModes: ["oauth"],
   hasOAuth: true,
   transport: {
