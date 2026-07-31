@@ -5,7 +5,7 @@
 > is public, its Formula PR is merged, and its checks are green. The reviewed
 > staging implementation is tracked in
 > `mythic3011/homebrew-9router#1`; transfer or recreate it under the decolua
-> organization before enabling the public commands.
+> account before enabling the public commands.
 
 ## Release prerequisites
 
