@@ -117,12 +117,86 @@ export const GITLAB_CONFIG = { ...PROVIDER_OAUTH["gitlab"] };
 // CodeBuddy (Tencent) OAuth Configuration (Browser OAuth Polling Flow)
 export const CODEBUDDY_CONFIG = { ...PROVIDER_OAUTH["codebuddy-cn"] };
 
+// CodeBuddy International — same shape as CN, .ai domain (mirror of codebuddy-cn).
+export const CODEBUDDY_INTL_CONFIG = { ...PROVIDER_OAUTH["codebuddy-intl"] };
+
 // Kimchi OAuth Configuration (Browser token callback flow)
 export const KIMCHI_CONFIG = { ...PROVIDER_OAUTH["kimchi"] };
 
 // Grok CLI / Grok Build OAuth Configuration (Device Code Flow)
 // Endpoint: cli-chat-proxy.grok.com — same client_id as xai, different flow + scopes
 export const GROK_CLI_CONFIG = { ...PROVIDER_OAUTH["grok-cli"] };
+
+// Trae (ByteDance marscode) OAuth — authorization_code flow with local callback.
+//   1) POST GetLoginGuidance {loginTraceID} → {Result.LoginHost}
+//   2) Browser opens ${loginHost}/authorization?client_id=...&login_trace_id=...&auth_callback_url=${cb}
+//   3) Redirect → ${cb}?refreshToken=...&loginHost=...&isRedirect=true
+//   4) POST ExchangeToken {ClientID, RefreshToken, ClientSecret:"-"} → {Result.AccessToken, ExpiresAt}
+//   5) POST GetUserInfo (x-cloudide-token) → email/name
+export const TRAE_CONFIG = {
+  clientId: "ono9krqynydwx5",
+  clientSecret: "-",
+  loginGuidanceUrls: [
+    "https://api.marscode.com/cloudide/api/v3/trae/GetLoginGuidance",
+    "https://api.trae.ai/cloudide/api/v3/trae/GetLoginGuidance",
+    "https://www.trae.ai/cloudide/api/v3/trae/GetLoginGuidance",
+  ],
+  apiOrigins: [
+    "https://api.marscode.com",
+    "https://api.trae.ai",
+    "https://www.trae.ai",
+    "https://www.marscode.com",
+  ],
+  exchangeTokenPath: "/cloudide/api/v3/trae/oauth/ExchangeToken",
+  getUserInfoPath: "/cloudide/api/v3/trae/GetUserInfo",
+  authorizationPath: "/authorization",
+  callbackPath: "/callback",
+  minAppVersion: "3.5.54",
+  defaultAppVersion: "3.5.54",
+  defaultAppType: "stable",
+  defaultPluginVersion: "local",
+  // service machine id is derived at runtime; device_id "0" is the stable default
+  defaultDeviceId: "0",
+  userAgent: "Trae/1.0.0 antigravity-cockpit-tools",
+  webUrl: "https://www.trae.ai",
+  authScheme: "Cloud-IDE-JWT",
+  tokenLifetimeDays: 14,
+  oauthTimeoutMs: 600_000,
+};
+
+// Windsurf / Devin CLI OAuth — authorization_code (implicit) flow with local callback.
+//   1) Browser opens windsurf.com/windsurf/signin?response_type=token&client_id=...&redirect_uri=${cb}
+//   2) Redirect → ${cb}?access_token=${firebaseJWT}&state=...
+//   3) POST RegisterUser {firebase_id_token} → {apiKey, apiServerUrl, name}
+//   4) POST GetOneTimeAuthToken → GetCurrentUser (best-effort email/plan)
+export const WINDSURF_CONFIG = {
+  clientId: "3GUryQ7ldAeKEuD2obYnppsnmj58eP5u",
+  authBaseUrl: "https://www.windsurf.com",
+  signInPath: "/windsurf/signin",
+  registerApiBaseUrl: "https://register.windsurf.com",
+  registerPath: "/exa.seat_management_pb.SeatManagementService/RegisterUser",
+  oneTimeAuthPath: "/exa.seat_management_pb.SeatManagementService/GetOneTimeAuthToken",
+  currentUserPath: "/exa.seat_management_pb.SeatManagementService/GetCurrentUser",
+  planStatusPath: "/exa.seat_management_pb.SeatManagementService/GetPlanStatus",
+  userStatusPath: "/exa.seat_management_pb.SeatManagementService/GetUserStatus",
+  defaultApiServerUrl: "https://server.codeium.com",
+  firebaseApiKey: "AIzaSyDsOl-1XpT5err0Tcn0TFFod1H8gVGIycY",
+  callbackPath: "/windsurf-auth-callback",
+  userAgent: "antigravity-cockpit-tools",
+  oauthTimeoutMs: 600_000,
+};
+
+// Zed hosted LLM aggregator — RSA keypair native-app auth (NOT OAuth).
+// Client generates ephemeral RSA-2048 keypair; user signs in at zed.dev/native_app_signin;
+// Zed redirects to local callback with access_token RSA-encrypted against our public key.
+// See open-sse/shared/zedAuth.js for the keypair/decrypt helpers.
+export const ZED_HOSTED_CONFIG = {
+  webBaseUrl: "https://zed.dev",
+  cloudBaseUrl: "https://cloud.zed.dev",
+  llmBaseUrl: "https://cloud.zed.dev",
+  defaultNativeAppPort: 58443,
+  oauthTimeoutMs: 600_000,
+};
 
 // OAuth timeout (5 minutes)
 export const OAUTH_TIMEOUT = 300000;
@@ -147,6 +221,10 @@ export const PROVIDERS = {
   CLINEPASS: "clinepass",
   GITLAB: "gitlab",
   CODEBUDDY: "codebuddy-cn",
+  CODEBUDDY_INTL: "codebuddy-intl",
   KIMCHI: "kimchi",
   GROK_CLI: "grok-cli",
+  TRAE: "trae",
+  WINDSURF: "windsurf",
+  ZED: "zed",
 };
