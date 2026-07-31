@@ -59,6 +59,12 @@ export async function getModelInfo(modelStr) {
       if (matchedEmbedding) {
         return { provider: matchedEmbedding.id, model: parsed.model };
       }
+
+      const videoNodes = await getProviderNodes({ type: "custom-video" });
+      const matchedVideo = videoNodes.find((node) => node.prefix === parsed.providerAlias);
+      if (matchedVideo) {
+        return { provider: matchedVideo.id, model: parsed.model };
+      }
     }
     return {
       provider: parsed.provider,

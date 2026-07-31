@@ -13,8 +13,14 @@ const VIDEO_FETCH_TIMEOUT_MS = Number(process.env.VIDEO_FETCH_TIMEOUT_MS || 1200
 // which upstream rejects before job creation).
 export const VIDEO_ACTIONS = new Set(["generations", "edits", "extensions"]);
 
-export function getVideoConfig(provider) {
-  return PROVIDER_MEDIA[provider]?.videoConfig || null;
+export function getVideoConfig(provider, credentials = null) {
+  const registryConfig = PROVIDER_MEDIA[provider]?.videoConfig;
+  if (registryConfig) return registryConfig;
+  // Custom video nodes (custom-video-*) carry their baseUrl on the connection
+  // credential — no registry entry exists for them.
+  const baseUrl = credentials?.providerSpecificData?.baseUrl;
+  if (baseUrl) return { baseUrl };
+  return null;
 }
 
 /** Strip bearer tokens / obvious secrets from text destined for clients or logs. */
@@ -86,7 +92,7 @@ export async function handleVideoProxyCore({
   log,
   onCredentialsRefreshed,
 }) {
-  const config = getVideoConfig(provider);
+  const config = getVideoConfig(provider, credentials);
   if (!config) {
     return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Provider '${provider}' does not support video generation`);
   }

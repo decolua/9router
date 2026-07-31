@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createProviderNode, getProviderNodes } from "@/models";
-import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX, CUSTOM_EMBEDDING_PREFIX } from "@/shared/constants/providers";
+import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX, CUSTOM_EMBEDDING_PREFIX, CUSTOM_VIDEO_PREFIX } from "@/shared/constants/providers";
 import { generateId } from "@/shared/utils";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +15,10 @@ const ANTHROPIC_COMPATIBLE_DEFAULTS = {
 
 const CUSTOM_EMBEDDING_DEFAULTS = {
   baseUrl: "https://api.openai.com/v1",
+};
+
+const CUSTOM_VIDEO_DEFAULTS = {
+  baseUrl: "https://api.x.ai/v1/videos",
 };
 
 // GET /api/provider-nodes - List all provider nodes
@@ -71,6 +75,23 @@ export async function POST(request) {
       const node = await createProviderNode({
         id: `${CUSTOM_EMBEDDING_PREFIX}${generateId()}`,
         type: "custom-embedding",
+        prefix: prefix.trim(),
+        baseUrl: sanitizedBaseUrl,
+        name: name.trim(),
+      });
+      return NextResponse.json({ node }, { status: 201 });
+    }
+
+    if (nodeType === "custom-video") {
+      // Strip trailing slash and a trailing action if the user pasted the full
+      // create endpoint. Runtime appends /generations (or /{request_id}) itself,
+      // so baseUrl must be the /videos root.
+      let sanitizedBaseUrl = (baseUrl || CUSTOM_VIDEO_DEFAULTS.baseUrl).trim().replace(/\/$/, "");
+      sanitizedBaseUrl = sanitizedBaseUrl.replace(/\/(generations|edits|extensions)$/, "");
+
+      const node = await createProviderNode({
+        id: `${CUSTOM_VIDEO_PREFIX}${generateId()}`,
+        type: "custom-video",
         prefix: prefix.trim(),
         baseUrl: sanitizedBaseUrl,
         name: name.trim(),
