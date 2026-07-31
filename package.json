@@ -6,11 +6,13 @@
   "scripts": {
     "dev": "next dev --port 20127",
     "dev:webpack": "next dev --webpack --port 20127",
-    "build": "next build --webpack",
+    "build": "npm run generate:provider-registry && next build --webpack",
     "start": "next start --port 20127",
     "dev:bun": "bun --bun next dev --webpack --port 20127",
-    "build:bun": "bun --bun next build --webpack",
+    "build:bun": "npm run generate:provider-registry && bun --bun next build --webpack",
     "start:bun": "bun ./.next/standalone/server.js",
+    "generate:provider-registry": "node scripts/generate-provider-registry.mjs",
+    "check:provider-registry": "node scripts/generate-provider-registry.mjs --check",
     "cli:pack": "npm --prefix cli run pack:cli",
     "cli:publish": "npm --prefix cli run publish:cli"
   },
