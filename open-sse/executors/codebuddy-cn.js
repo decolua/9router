@@ -1,13 +1,14 @@
 import { DefaultExecutor } from "./default.js";
+import {
+  sanitizeChatBody,
+  createSseNormalizeTransform,
+} from "../protocol/codebuddy/index.js";
 
 /**
- * CodeBuddyExecutor — talks to https://copilot.tencent.com/v2/chat/completions
+ * CodeBuddyExecutor — thin adapter over protocol/codebuddy.
  *
- * CodeBuddy is OpenAI-compatible but rejects non-stream chat requests
- * (HTTP 400, code 11101 "Non-stream chat request is currently not supported").
- * The same-format (openai→openai) translator path leaves body.stream as the
- * client sent it, so we force it true here — 9router still re-aggregates the
- * SSE into a JSON response for non-streaming clients.
+ * Upstream: OpenAI Chat Completions at copilot.tencent.com/v2/chat/completions.
+ * Wire rules (allowlist, reasoning gate, stream force, SSE dirt) live in protocol/.
  */
 export class CodeBuddyExecutor extends DefaultExecutor {
   constructor() {
@@ -15,26 +16,23 @@ export class CodeBuddyExecutor extends DefaultExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
-    const transformed = super.transformRequest(model, body, stream, credentials);
-    transformed.stream = true;
+    // DefaultExecutor: json_schema fallback + stripUnsupportedParams + injectReasoningContent
+    // (injector is a no-op for this provider). Then protocol allowlist.
+    const base = super.transformRequest(model, body, stream, credentials);
+    return sanitizeChatBody(base && typeof base === "object" ? base : body);
+  }
 
-    // CodeBuddy only surfaces model reasoning when the request carries the CLI's
-    // OpenAI-style params: reasoning_effort + reasoning_summary:"auto". 9router's
-    // thinking pipeline sets reasoning_effort only when the client asks, and never
-    // sets reasoning_summary — so reasoning never shows. Mirror the CLI here.
-    const eff = transformed.reasoning_effort;
-    if (eff === "none" || eff === "off") {
-      delete transformed.reasoning_effort; // gateway has no "none" — just omit
-    } else if (eff) {
-      // Client explicitly asked for reasoning — mirror the CLI's reasoning_summary
-      // so CodeBuddy surfaces the model's reasoning.
-      transformed.reasoning_summary = "auto";
-    }
-    // No reasoning requested: leave both unset. Forcing reasoning_effort:"medium"
-    // + reasoning_summary on plain requests makes CodeBuddy trip its content
-    // filter and return an error (#2071).
-    return transformed;
+  async execute(opts) {
+    const result = await super.execute(opts);
+    if (!result?.response?.ok || !result.response.body) return result;
+
+    const normalized = result.response.body.pipeThrough(createSseNormalizeTransform());
+    const response = new Response(normalized, {
+      status: result.response.status,
+      statusText: result.response.statusText,
+      headers: result.response.headers,
+    });
+    return { ...result, response };
   }
 }
 
-export default CodeBuddyExecutor;
