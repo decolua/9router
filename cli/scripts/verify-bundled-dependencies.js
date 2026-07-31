@@ -7,9 +7,20 @@ const packageRoot = path.resolve(__dirname, "..");
 const packageJsonPath = path.join(packageRoot, "package.json");
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
 const bundledDependencies = packageJson.bundleDependencies;
+const runtimeDependencies = Object.keys(packageJson.dependencies || {});
 
 if (!Array.isArray(bundledDependencies) || bundledDependencies.length === 0) {
   console.error("bundleDependencies must list the runtime dependencies shipped in the npm tarball.");
+  process.exit(1);
+}
+
+const unbundled = runtimeDependencies.filter(
+  (dependency) => !bundledDependencies.includes(dependency)
+);
+if (unbundled.length > 0) {
+  console.error(
+    `Cannot pack 9router: runtime dependencies are not bundled: ${unbundled.join(", ")}.`
+  );
   process.exit(1);
 }
 
@@ -26,4 +37,4 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
-console.log(`Verified bundled runtime dependencies: ${bundledDependencies.join(", ")}`);
+console.error(`Verified bundled runtime dependencies: ${bundledDependencies.join(", ")}`);
