@@ -137,6 +137,15 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (passthrough) {
     log?.debug?.("PASSTHROUGH", `${clientTool} → ${provider} | native lossless`);
     translatedBody = { ...body, model: stripThinkingSuffix(upstreamModel) };
+
+    if (provider === "codex" && Array.isArray(translatedBody.input)) {
+      translatedBody.input = translatedBody.input.map((item) => {
+        if (item?.type !== "additional_tools") return item;
+
+        const { content, ...normalizedItem } = item;
+        return normalizedItem;
+      });
+    }
     // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
     if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, translatedBody.model);
   } else {
