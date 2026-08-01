@@ -1,6 +1,7 @@
 # v0.5.45 (2026-07-30)
 
 ## Features
+- **TTS**: add Xiaomi MiMo text-to-speech (preset voices 冰糖/茉莉/苏打/白桦/Mia/Chloe/Milo/Dean, style control, language hint dropdown with Auto-detect, i18n for Style label/placeholder)
 - **Providers**: add Poolside (OpenAI-compatible)
 - **Providers**: add api-airforce, baidu, bazaarlink, bluesminds, kilo-gateway, llm7, morph, sambanova, tencent
 - **OAuth**: zed / trae / windsurf providers + harden callback proxies
