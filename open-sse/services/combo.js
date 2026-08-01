@@ -9,6 +9,7 @@ import { demoteUnhealthy, recordModelFailure, recordModelSuccess } from "./model
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
+import { estimateInputTokens } from "../utils/usageTracking.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -320,9 +321,19 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
+  const inputTokens = estimateInputTokens(body);
+  const requestedOutputTokens = Number(body?.max_tokens ?? body?.max_output_tokens ?? body?.generationConfig?.maxOutputTokens) || 0;
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
+    const slash = modelStr.indexOf("/");
+    const provider = slash > 0 ? modelStr.slice(0, slash) : "";
+    const model = slash > 0 ? modelStr.slice(slash + 1) : modelStr;
+    const contextWindow = getCapabilitiesForModel(provider, model).contextWindow;
+    if (contextWindow && inputTokens + requestedOutputTokens > contextWindow) {
+      log.info("COMBO", `Skipping ${modelStr}, request needs ~${inputTokens + requestedOutputTokens} tokens but window is ${contextWindow}`);
+      continue;
+    }
     // A model that told us to back off is skipped until its window elapses —
     // retrying it only spends a round trip to be told the same thing again.
     // Every model cooling down still falls through to the normal exhausted path.

@@ -49,6 +49,24 @@ describe("combo cascade skip wiring", () => {
     expect(tried).toContain("a/two");
   });
 
+  it("skips models whose context window cannot fit the request", async () => {
+    const tried = [];
+    const handleSingleModel = vi.fn(async (_body, modelStr) => {
+      tried.push(modelStr);
+      return okResponse();
+    });
+
+    await handleComboChat({
+      body: { system: "x".repeat(800_000), max_tokens: 1 },
+      models: ["ag/claude-opus-4-6-thinking", "ocg/qwen3.7-max"],
+      handleSingleModel,
+      log,
+      comboName: "c",
+    });
+
+    expect(tried).toEqual(["ocg/qwen3.7-max"]);
+  });
+
   it("tries a demoted model last instead of first", async () => {
     for (let i = 0; i < 3; i++) recordModelFailure("a/sick");
     const tried = [];
