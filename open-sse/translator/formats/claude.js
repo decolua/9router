@@ -22,6 +22,69 @@ export function hasValidContent(msg) {
   return false;
 }
 
+// Anthropic allows at most 4 cache breakpoints per request. system + tools take
+// one each, leaving two for messages.
+const MAX_MESSAGE_CACHE_BREAKPOINTS = 2;
+
+// thinking/redacted_thinking blocks cannot carry cache_control.
+function canHoldCacheControl(block) {
+  return block?.type !== CLAUDE_BLOCK.THINKING && block?.type !== CLAUDE_BLOCK.REDACTED_THINKING;
+}
+
+// True when a breakpoint can actually be attached to this message. Used to skip
+// messages that would silently waste one of the scarce breakpoint slots.
+function acceptsCacheBreakpoint(msg) {
+  return Array.isArray(msg?.content) && msg.content.some(canHoldCacheControl);
+}
+
+// Attach a cache breakpoint to the last cacheable block of a message.
+function setCacheBreakpoint(msg) {
+  if (!Array.isArray(msg?.content)) return false;
+  for (let j = msg.content.length - 1; j >= 0; j--) {
+    if (canHoldCacheControl(msg.content[j])) {
+      msg.content[j].cache_control = { type: "ephemeral" };
+      return true;
+    }
+  }
+  return false;
+}
+
+// Pick which assistant messages get a cache breakpoint.
+//
+// A single breakpoint on the last assistant message is worst-case for prompt
+// caching: Anthropic only reads cache up to a breakpoint, so when that
+// breakpoint advances each turn there is nothing left at the previous position
+// to read from — the whole prefix is re-written every turn. Observed in
+// production: ~688k cache-creation tokens re-written 29s after the prior
+// request, with the context only growing ~985 tokens.
+//
+// Fix: cascade two breakpoints, positioned relative to the END of the
+// conversation:
+//   anchor = second-to-last assistant → this is exactly where the PREVIOUS turn
+//            put its tail breakpoint, so the cache written last turn is read
+//            back in full.
+//   tail   = last assistant → extends the cache by just this turn's delta.
+//
+// Anthropic checks cache hits at each breakpoint longest-prefix-first, so the
+// anchor absorbs everything up to last turn and only the delta is re-written.
+// Returns a Set of indices into `messages`.
+export function pickCacheBreakpointIndices(messages) {
+  const assistantIdx = [];
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    // Skip messages a breakpoint can't attach to (empty, or thinking-only) —
+    // picking one would waste a slot from the budget of 2.
+    if (msg.role === ROLE.ASSISTANT && acceptsCacheBreakpoint(msg)) {
+      assistantIdx.push(i);
+    }
+  }
+  if (assistantIdx.length === 0) return new Set();
+
+  // Take the last N assistant messages (N = breakpoint budget), tail last.
+  const chosen = assistantIdx.slice(-MAX_MESSAGE_CACHE_BREAKPOINTS);
+  return new Set(chosen);
+}
+
 // Fix tool_use/tool_result ordering for Claude API
 // 1. Assistant message with tool_use: remove text AFTER tool_use (Claude doesn't allow)
 // 2. Merge consecutive same-role messages
@@ -122,31 +185,39 @@ export function normalizeClaudePassthrough(body, model = "") {
     if (Object.keys(body.output_config).length === 0) delete body.output_config;
   }
 
-  // 2. Hoist mid-conversation system messages into the top-level system field
+  // 2. Convert mid-conversation system messages to user messages IN PLACE.
+  //
+  // The Messages API rejects role:"system" inside messages, so these have to go
+  // somewhere. Hoisting them into the top-level `system` is the obvious move and
+  // is what this did before — but it wrecks the prompt cache.
+  //
+  // Anthropic caches the prefix in the order tools → system → messages, and a
+  // cache entry only matches an EXACT prefix. Claude Code injects a fresh
+  // reminder every few turns ("The task tools haven't been used recently…",
+  // date-changed notices, hook output), so hoisting grew `system` by one block
+  // each time, invalidating every cached message behind it. Measured over 62
+  // consecutive request pairs in production: `system` grew 7 times and all 7
+  // re-wrote ~133k tokens with cache reads collapsing to the system+tools floor
+  // (39,218), while the 53 turns whose `system` was unchanged wrote 400-1400.
+  //
+  // Keeping them in `messages` means growth only ever APPENDS at the tail, which
+  // is what prompt caching is designed for. Two consecutive user messages are
+  // accepted (verified against the live API), and the translator path's
+  // fixToolUseOrdering merges same-role neighbours anyway.
   if (Array.isArray(body.messages)) {
-    const systemBlocks = [];
-    const messages = [];
     for (const msg of body.messages) {
-      if (msg.role === ROLE.SYSTEM) {
-        const text = typeof msg.content === "string"
-          ? msg.content
-          : Array.isArray(msg.content)
-            ? msg.content.map(b => (typeof b === "string" ? b : b?.text || "")).join("\n")
-            : "";
-        if (text.trim()) systemBlocks.push({ type: CLAUDE_BLOCK.TEXT, text });
-        continue;
-      }
-      messages.push(msg);
-    }
-
-    if (systemBlocks.length > 0) {
-      const existing = Array.isArray(body.system)
-        ? body.system
-        : typeof body.system === "string" && body.system.trim()
-          ? [{ type: "text", text: body.system }]
+      if (msg.role !== ROLE.SYSTEM) continue;
+      const blocks = typeof msg.content === "string"
+        ? [{ type: CLAUDE_BLOCK.TEXT, text: msg.content }]
+        : Array.isArray(msg.content)
+          ? msg.content.map(b => (typeof b === "string" ? { type: CLAUDE_BLOCK.TEXT, text: b } : b))
           : [];
-      body.system = [...existing, ...systemBlocks];
-      body.messages = messages;
+      // Empty text blocks would make the API reject the message outright.
+      const kept = blocks.filter(b => b?.type !== CLAUDE_BLOCK.TEXT || b.text?.trim());
+      msg.role = ROLE.USER;
+      msg.content = kept.length > 0
+        ? kept
+        : [{ type: CLAUDE_BLOCK.TEXT, text: "(system reminder)" }];
     }
   }
 
@@ -260,24 +331,16 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     const lastMessageIsUser = lastMessage?.role === "user";
     const thinkingEnabled = body.thinking?.type === "enabled" && lastMessageIsUser;
 
-    // Pass 2 (reverse): add cache_control to last assistant + handle thinking for Anthropic
-    let lastAssistantProcessed = false;
+    // Cascading cache breakpoints: a stride-pinned anchor to READ from plus the
+    // tail to extend. See pickCacheBreakpointIndices.
+    const cacheBreakpointIdx = pickCacheBreakpointIndices(filtered);
+
+    // Pass 2 (reverse): add cache_control breakpoints + handle thinking for Anthropic
     for (let i = filtered.length - 1; i >= 0; i--) {
       const msg = filtered[i];
 
       if (msg.role === "assistant" && Array.isArray(msg.content)) {
-        // Add cache_control to last non-thinking block of first (from end) assistant with content
-        // thinking/redacted_thinking blocks do not support cache_control
-        if (!lastAssistantProcessed && msg.content.length > 0) {
-          for (let j = msg.content.length - 1; j >= 0; j--) {
-            const block = msg.content[j];
-            if (block.type !== CLAUDE_BLOCK.THINKING && block.type !== CLAUDE_BLOCK.REDACTED_THINKING) {
-              block.cache_control = { type: "ephemeral" };
-              break;
-            }
-          }
-          lastAssistantProcessed = true;
-        }
+        if (cacheBreakpointIdx.has(i)) setCacheBreakpoint(msg);
 
         // Handle thinking blocks for Anthropic-compatible endpoints.
         if (handlesThinkingBlocks(provider)) {

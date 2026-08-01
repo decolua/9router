@@ -14,15 +14,21 @@ describe("normalizeClaudePassthrough — haiku adaptive thinking (docs 11 §1)",
     expect(out.thinking).toEqual({ type: "adaptive" });
   });
 
-  it("hoists mid-conversation system messages into top-level system", () => {
+  // Used to hoist these into top-level `system`. That grew the cached prefix by a
+  // block every time Claude Code injected a reminder, invalidating every cached
+  // message behind it (~133k tokens re-written per occurrence in production), so
+  // they are now converted in place. The invariant that matters is unchanged:
+  // no role:"system" may reach the API inside messages.
+  it("converts mid-conversation system messages to user in place", () => {
     const out = normalizeClaudePassthrough({
       messages: [
         { role: "user", content: "hi" },
         { role: "system", content: "be brief" },
       ],
     });
-    expect(out.system).toEqual([{ type: "text", text: "be brief" }]);
+    expect(out.system).toBeUndefined();
     expect(out.messages.every((m) => m.role !== "system")).toBe(true);
+    expect(out.messages[1]).toEqual({ role: "user", content: [{ type: "text", text: "be brief" }] });
   });
 });
 
