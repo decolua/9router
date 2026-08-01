@@ -236,7 +236,10 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints) {
                     console.log(`[ProjectId] Successfully onboarded, project ID: ${projectId}`);
                     return projectId;
                 }
-                throw new Error("onboardUser done but no project_id in response");
+                // Google deprecated automatic project creation for standard-tier.
+                // Return flag so caller can return a clear error instead of retrying.
+                console.warn("[ProjectId] onboardUser completed but no project_id — standard-tier account requires manual GCP Project ID");
+                return "__REQUIRES_GCP_PROJECT__";
             }
 
             // Server not done yet – wait and retry
