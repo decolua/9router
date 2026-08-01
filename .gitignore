@@ -86,3 +86,9 @@ graphify-out/*
 .codegraph/
 .PR/
 .next-analyze/*
+
+# Nix build result symlinks
+/result
+/result-*
+# Devbox generated artifacts
+.devbox/
