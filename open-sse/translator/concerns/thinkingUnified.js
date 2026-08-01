@@ -236,13 +236,19 @@ function applyFormat(fmt, body, cfg, caps) {
       // Sonnet 5. Send both fields — the documented adaptive-thinking shape.
       body.thinking = { type: "adaptive" };
       const level = toLevel(eff);
-      body.output_config = { effort: level === "xhigh" ? "high" : level };
+      // output_config.effort only accepts low|medium|high|xhigh — omit it in
+      // auto mode (thinking is already on; upstream picks its own level). #2894
+      if (level && level !== "auto") body.output_config = { effort: level === "xhigh" ? "high" : level };
       break;
     }
     case "claude-budget": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
       const budget = toBudget(eff, caps.thinkingRange);
-      body.thinking = budget === -1 ? { type: "enabled" } : { type: "enabled", budget_tokens: budget || 8192 };
+      // Anthropic requires budget_tokens whenever type === "enabled" — auto mode
+      // (-1) gets 10000, matching normalizeClaudePassthrough's downgrade. #2894
+      body.thinking = budget === -1
+        ? { type: "enabled", budget_tokens: 10000 }
+        : { type: "enabled", budget_tokens: budget || 8192 };
       break;
     }
     case "gemini-level": {

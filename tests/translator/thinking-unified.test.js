@@ -68,6 +68,28 @@ describe("applyThinking per provider format", () => {
     const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "high" }, "claude");
     expect(out.thinking).toEqual({ type: "enabled", budget_tokens: 24576 });
   });
+  // #2894 Bug 2: toLevel() returns the literal "auto" for adaptive-without-effort;
+  // output_config.effort only accepts low|medium|high|xhigh → must be omitted.
+  it("claude-adaptive auto mode omits output_config.effort (#2894)", () => {
+    const out = apply("claude", "claude-opus-4.8", { thinking: { type: "adaptive" } }, "claude");
+    expect(out.thinking).toEqual({ type: "adaptive" });
+    expect(out.output_config).toBeUndefined();
+  });
+  // #2894 Bug 1: Anthropic requires budget_tokens whenever thinking.type === "enabled",
+  // so claude-budget in auto mode must not emit a bare { type: "enabled" }.
+  it("claude-budget auto mode emits budget_tokens (#2894)", () => {
+    const out = apply("claude", "claude-haiku-4.5", { thinking: { type: "adaptive" } }, "claude");
+    expect(out.thinking).toEqual({ type: "enabled", budget_tokens: 10000 });
+  });
+  // #2894: Claude 5 family (incl. fable/mythos) must resolve to claude-adaptive,
+  // not fall through to the generic budget patterns.
+  it("claude 5 family adaptive-without-effort → valid adaptive body (#2894)", () => {
+    for (const model of ["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-mythos-5"]) {
+      const out = apply("claude", model, { thinking: { type: "adaptive" } }, "claude");
+      expect(out.thinking, model).toEqual({ type: "adaptive" });
+      expect(out.output_config, model).toBeUndefined();
+    }
+  });
   it("gemini-3 → thinkingLevel", () => {
     const out = apply("gemini", "gemini-3-pro", { reasoning_effort: "medium" }, "gemini");
     expect(out.generationConfig.thinkingConfig.thinkingLevel).toBe("medium");
