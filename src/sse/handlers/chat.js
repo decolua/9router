@@ -23,6 +23,52 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 
+function getToolName(tool) {
+  return tool?.name || tool?.function?.name || tool?.type || "unknown";
+}
+
+function getToolSource(name) {
+  if (name.startsWith("mcp__")) {
+    const parts = name.split("__");
+    return parts[1] ? `mcp:${parts[1]}` : "mcp";
+  }
+  if (name.startsWith("web_search") || name.startsWith("web_fetch")) return "hosted:web";
+  if (name.startsWith("computer_") || name.startsWith("str_replace_")) return "hosted:computer";
+  return "client";
+}
+
+function summarizeToolSources(tools) {
+  if (!Array.isArray(tools) || tools.length === 0) return null;
+  const names = tools.map(getToolName);
+  const sourceCounts = new Map();
+  for (const name of names) {
+    const source = getToolSource(name);
+    sourceCounts.set(source, (sourceCounts.get(source) || 0) + 1);
+  }
+  const sources = Array.from(sourceCounts.entries())
+    .map(([source, count]) => `${source}=${count}`)
+    .join(", ");
+  const visibleNames = names.slice(0, 80).join(", ");
+  const suffix = names.length > 80 ? `, ... +${names.length - 80} more` : "";
+  return `${tools.length} tools | sources: ${sources} | names: ${visibleNames}${suffix}`;
+}
+
+function isDeterministicPayloadError(status, errorText) {
+  if (status !== HTTP_STATUS.BAD_REQUEST) return false;
+  const text = typeof errorText === "string" ? errorText.toLowerCase() : "";
+  return text.includes("content_length_exceeds_threshold") ||
+    text.includes("input is too long") ||
+    text.includes("context length") ||
+    text.includes("maximum context") ||
+    text.includes("too many tokens");
+}
+
+function isNonAccountRecoverableError(provider, status, errorText) {
+  if (isDeterministicPayloadError(status, errorText)) return true;
+  const text = typeof errorText === "string" ? errorText.toLowerCase() : "";
+  return provider === "nvidia" && status === HTTP_STATUS.BAD_GATEWAY && text.includes("fetch connect timeout");
+}
+
 /**
  * Handle chat completion request
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
@@ -64,6 +110,11 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Enforce API key if enabled in settings
   const settings = await getSettings();
+  if (settings.logToolSources === true) {
+    const toolSummary = summarizeToolSources(body.tools);
+    if (toolSummary) log.debug("TOOLS", toolSummary);
+  }
+
   if (settings.requireApiKey) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
