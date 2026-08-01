@@ -59,8 +59,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
   const modelTargetFormat = getModelTargetFormat(alias, model);
-  // Multi-endpoint providers: pick transport matching sourceFormat → zero translation
-  const runtimeTransport = resolveTransport(provider, sourceFormat);
+  // Multi-endpoint providers: model-required formats override client format.
+  // GPT-5.6 tool calls with reasoning must use OpenAI Responses, even when the
+  // client sends Chat Completions format.
+  const runtimeTransport = resolveTransport(provider, modelTargetFormat || sourceFormat);
   const targetFormat = modelTargetFormat || runtimeTransport?.format || getTargetFormat(provider);
   if (runtimeTransport && credentials) credentials.runtimeTransport = runtimeTransport;
   const stripList = getModelStrip(alias, model);

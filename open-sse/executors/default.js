@@ -117,7 +117,7 @@ export class DefaultExecutor extends BaseExecutor {
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
-    // Runtime transport (multi-endpoint providers): use the sourceFormat-matched endpoint
+    // Runtime transport (multi-endpoint providers): use the resolved endpoint.
     const rt = credentials?.runtimeTransport;
     if (rt?.baseUrl) {
       return rt.urlSuffix ? `${rt.baseUrl}${rt.urlSuffix}` : rt.baseUrl;
