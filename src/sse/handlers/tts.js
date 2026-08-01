@@ -2,7 +2,7 @@ import {
   extractApiKey, isValidApiKey,
   getProviderCredentials, markAccountUnavailable,
 } from "../services/auth.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getApiKeyByKey } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleTtsCore } from "open-sse/handlers/ttsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -33,11 +33,23 @@ export async function handleTts(request) {
   log.request("POST", `${url.pathname} | ${modelStr} | format=${responseFormat}${language ? ` | lang=${language}` : ""}`);
 
   const settings = await getSettings();
+  const apiKey = extractApiKey(request);
   if (settings.requireApiKey) {
-    const apiKey = extractApiKey(request);
     if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     const valid = await isValidApiKey(apiKey);
     if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+  }
+
+  // Per-key combo access control
+  if (apiKey && modelStr) {
+    const keyData = await getApiKeyByKey(apiKey);
+    if (keyData && Array.isArray(keyData.allowedCombos) && keyData.allowedCombos.length > 0) {
+      const comboCheck = await getComboModels(modelStr);
+      if (comboCheck && !keyData.allowedCombos.includes(modelStr)) {
+        log.warn("AUTH", `API key "${keyData.name}" not allowed to access combo "${modelStr}"`);
+        return errorResponse(HTTP_STATUS.FORBIDDEN, `Access denied: combo "${modelStr}" is not allowed for this API key`);
+      }
+    }
   }
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");

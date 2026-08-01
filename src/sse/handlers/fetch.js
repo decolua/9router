@@ -5,7 +5,7 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getSettings, getCombos } from "@/lib/localDb";
+import { getSettings, getCombos, getApiKeyByKey } from "@/lib/localDb";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
 import { handleFetchCore } from "open-sse/handlers/fetch/index.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -85,6 +85,19 @@ export async function handleFetch(request) {
   } catch (err) {
     log.warn("FETCH", "Blocked URL", { url: targetUrl });
     return errorResponse(HTTP_STATUS.BAD_REQUEST, err.message);
+  }
+
+  // Per-key combo access control
+  if (apiKey && providerInput) {
+    const keyData = await getApiKeyByKey(apiKey);
+    if (keyData && Array.isArray(keyData.allowedCombos) && keyData.allowedCombos.length > 0) {
+      const combosData = await getCombos();
+      const isCombo = getComboModelsFromData(providerInput, combosData);
+      if (isCombo && !keyData.allowedCombos.includes(providerInput)) {
+        log.warn("AUTH", `API key "${keyData.name}" not allowed to access combo "${providerInput}"`);
+        return errorResponse(HTTP_STATUS.FORBIDDEN, `Access denied: combo "${providerInput}" is not allowed for this API key`);
+      }
+    }
   }
 
   // Combo expansion: providerInput may be a combo name → run fallback/round-robin across providers

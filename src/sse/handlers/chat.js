@@ -8,7 +8,7 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getApiKeyByKey } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
@@ -73,6 +73,18 @@ export async function handleChat(request, clientRawRequest = null) {
     if (!valid) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+    }
+  }
+
+  // Per-key combo access control
+  if (apiKey && modelStr) {
+    const keyData = await getApiKeyByKey(apiKey);
+    if (keyData && Array.isArray(keyData.allowedCombos) && keyData.allowedCombos.length > 0) {
+      const comboCheck = await getComboModels(modelStr);
+      if (comboCheck && !keyData.allowedCombos.includes(modelStr)) {
+        log.warn("AUTH", `API key "${keyData.name}" not allowed to access combo "${modelStr}"`);
+        return errorResponse(HTTP_STATUS.FORBIDDEN, `Access denied: combo "${modelStr}" is not allowed for this API key`);
+      }
     }
   }
 

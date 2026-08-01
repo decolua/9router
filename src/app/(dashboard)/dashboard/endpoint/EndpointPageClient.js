@@ -24,6 +24,10 @@ export default function APIPageClient({ machineId }) {
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
+  const [combos, setCombos] = useState([]);
+  const [newKeyAllowedCombos, setNewKeyAllowedCombos] = useState([]);
+  const [editKey, setEditKey] = useState(null);
+  const [editKeyAllowedCombos, setEditKeyAllowedCombos] = useState([]);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -255,10 +259,17 @@ export default function APIPageClient({ machineId }) {
 
   const fetchData = async () => {
     try {
-      const keysRes = await fetch("/api/keys");
+      const [keysRes, combosRes] = await Promise.all([
+        fetch("/api/keys"),
+        fetch("/api/combos"),
+      ]);
       const keysData = await keysRes.json();
       if (keysRes.ok) {
         setKeys(keysData.keys || []);
+      }
+      if (combosRes.ok) {
+        const combosData = await combosRes.json();
+        setCombos(combosData.combos || combosData || []);
       }
     } catch (error) {
       console.log("Error fetching data:", error);
@@ -614,7 +625,7 @@ export default function APIPageClient({ machineId }) {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({ name: newKeyName, allowedCombos: newKeyAllowedCombos }),
       });
       const data = await res.json();
 
@@ -622,6 +633,7 @@ export default function APIPageClient({ machineId }) {
         setCreatedKey(data.key);
         await fetchData();
         setNewKeyName("");
+        setNewKeyAllowedCombos([]);
         setShowAddModal(false);
       }
     } catch (error) {
@@ -664,6 +676,22 @@ export default function APIPageClient({ machineId }) {
       }
     } catch (error) {
       console.log("Error toggling key:", error);
+    }
+  };
+
+  const handleUpdateKeyCombos = async (id, allowedCombos) => {
+    try {
+      const res = await fetch(`/api/keys/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowedCombos }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setKeys(prev => prev.map(k => k.id === id ? { ...k, allowedCombos: data.key?.allowedCombos || allowedCombos } : k));
+      }
+    } catch (error) {
+      console.log("Error updating key combos:", error);
     }
   };
 
@@ -1027,6 +1055,23 @@ export default function APIPageClient({ machineId }) {
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
+                  <div className="flex flex-wrap items-center gap-1 mt-1">
+                    <span className="text-xs text-text-muted">Combos:</span>
+                    {Array.isArray(key.allowedCombos) && key.allowedCombos.length > 0 ? (
+                      key.allowedCombos.map((c) => (
+                        <span key={c} className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">{c}</span>
+                      ))
+                    ) : (
+                      <span className="text-xs text-text-muted">All</span>
+                    )}
+                    <button
+                      onClick={() => { setEditKey(key); setEditKeyAllowedCombos(Array.isArray(key.allowedCombos) ? [...key.allowedCombos] : []); }}
+                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                      title="Edit combo access"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">edit</span>
+                    </button>
+                  </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <Toggle
@@ -1077,6 +1122,32 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
+          {combos.length > 0 && (
+            <div>
+              <p className="text-sm font-medium mb-2">Allowed Combos</p>
+              <p className="text-xs text-text-muted mb-2">Leave empty to allow all combos. Select specific combos to restrict access.</p>
+              <div className="flex flex-col gap-1.5 max-h-40 overflow-y-auto border border-border rounded-lg p-2">
+                {combos.map((combo) => (
+                  <label key={combo.id || combo.name} className="flex items-center gap-2 cursor-pointer text-sm">
+                    <input
+                      type="checkbox"
+                      checked={newKeyAllowedCombos.includes(combo.name)}
+                      onChange={() => {
+                        setNewKeyAllowedCombos(prev =>
+                          prev.includes(combo.name)
+                            ? prev.filter(c => c !== combo.name)
+                            : [...prev, combo.name]
+                        );
+                      }}
+                      className="rounded border-border"
+                    />
+                    <span>{combo.name}</span>
+                    {combo.kind && <span className="text-xs text-text-muted">({combo.kind})</span>}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
               Create
@@ -1272,6 +1343,58 @@ export default function APIPageClient({ machineId }) {
               {tsLoading ? "Disabling..." : "Disable"}
             </Button>
             <Button onClick={() => setShowDisableTsModal(false)} variant="ghost" fullWidth disabled={tsLoading}>Cancel</Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Combo Access Modal */}
+      <Modal
+        isOpen={!!editKey}
+        title={`Edit Combo Access — ${editKey?.name || ""}`}
+        onClose={() => { setEditKey(null); setEditKeyAllowedCombos([]); }}
+      >
+        <div className="flex flex-col gap-4">
+          {combos.length > 0 ? (
+            <div>
+              <p className="text-sm text-text-muted mb-2">Select which combos this key can access. Leave empty to allow all.</p>
+              <div className="flex flex-col gap-1.5 max-h-40 overflow-y-auto border border-border rounded-lg p-2">
+                {combos.map((combo) => (
+                  <label key={combo.id || combo.name} className="flex items-center gap-2 cursor-pointer text-sm">
+                    <input
+                      type="checkbox"
+                      checked={editKeyAllowedCombos.includes(combo.name)}
+                      onChange={() => {
+                        setEditKeyAllowedCombos(prev =>
+                          prev.includes(combo.name)
+                            ? prev.filter(c => c !== combo.name)
+                            : [...prev, combo.name]
+                        );
+                      }}
+                      className="rounded border-border"
+                    />
+                    <span>{combo.name}</span>
+                    {combo.kind && <span className="text-xs text-text-muted">({combo.kind})</span>}
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-text-muted">No combos available.</p>
+          )}
+          <div className="flex gap-2">
+            <Button
+              onClick={async () => {
+                if (editKey) {
+                  await handleUpdateKeyCombos(editKey.id, editKeyAllowedCombos);
+                  setEditKey(null);
+                  setEditKeyAllowedCombos([]);
+                }
+              }}
+              fullWidth
+            >
+              Save
+            </Button>
+            <Button onClick={() => { setEditKey(null); setEditKeyAllowedCombos([]); }} variant="ghost" fullWidth>Cancel</Button>
           </div>
         </div>
       </Modal>

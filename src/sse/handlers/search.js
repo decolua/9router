@@ -5,7 +5,7 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getSettings, getCombos } from "@/lib/localDb";
+import { getSettings, getCombos, getApiKeyByKey } from "@/lib/localDb";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
 import { handleSearchCore } from "open-sse/handlers/search/index.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -66,6 +66,19 @@ export async function handleSearch(request) {
   if (!query || typeof query !== "string" || !query.trim()) {
     log.warn("SEARCH", "Missing query");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: query");
+  }
+
+  // Per-key combo access control
+  if (apiKey && providerInput) {
+    const keyData = await getApiKeyByKey(apiKey);
+    if (keyData && Array.isArray(keyData.allowedCombos) && keyData.allowedCombos.length > 0) {
+      const combosData = await getCombos();
+      const isCombo = getComboModelsFromData(providerInput, combosData);
+      if (isCombo && !keyData.allowedCombos.includes(providerInput)) {
+        log.warn("AUTH", `API key "${keyData.name}" not allowed to access combo "${providerInput}"`);
+        return errorResponse(HTTP_STATUS.FORBIDDEN, `Access denied: combo "${providerInput}" is not allowed for this API key`);
+      }
+    }
   }
 
   // Combo expansion: providerInput may be a combo name → run fallback/round-robin across providers
