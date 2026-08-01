@@ -137,13 +137,16 @@ export function getTargetFormat(provider) {
 }
 
 // Resolve which transport to use for a provider given the client sourceFormat.
-// Multi-endpoint providers (transport.transports[]) pick the entry matching sourceFormat
-// to avoid lossy translation; falls back to the default transport when no match.
-export function resolveTransport(provider, sourceFormat) {
+// A model-level format override also overrides transport selection so the translated
+// request body and upstream endpoint always use the same wire format.
+// Otherwise, multi-endpoint providers pick the entry matching sourceFormat to avoid
+// lossy translation; callers fall back to the default transport when no match exists.
+export function resolveTransport(provider, sourceFormat, modelTargetFormat = null) {
   const config = PROVIDERS[provider];
   const transports = config?.transports;
   if (!Array.isArray(transports) || !transports.length) return null;
-  return transports.find(t => t.format === sourceFormat) || null;
+  const transportFormat = modelTargetFormat || sourceFormat;
+  return transports.find(t => t.format === transportFormat) || null;
 }
 
 // Check if last message is from user
