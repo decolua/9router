@@ -1,27 +1,42 @@
-# 9Router Embeddings Tests
+# 9Router Test Suite
 
-Unit tests for the `/v1/embeddings` endpoint implementation.
+Vitest suite covering the open-sse handlers, translator, provider executors, DB
+layer, and security audits (plus the original `/v1/embeddings` unit tests).
 
 ## Setup
 
-Vitest must be installed globally or in `/tmp/node_modules` (due to npm workspace hoisting from the root Next.js project):
+Vitest is a local dev dependency of this `tests/` package — no global install and
+no `/tmp` workarounds. From the repo root, make sure app dependencies are
+installed, then install the test dependencies:
 
 ```bash
-cd /tmp && npm install vitest
+npm ci                  # repo root — installs open-sse/src deps + better-sqlite3
+cd tests && npm install # installs vitest into tests/node_modules
 ```
 
 ## Running Tests
 
 ```bash
-cd tests/
-NODE_PATH=/tmp/node_modules /tmp/node_modules/.bin/vitest run --reporter=verbose --config ./vitest.config.js
+cd tests
+npm test           # full suite, verbose reporter
+npm run test:watch # watch mode
 ```
 
-Or using the package script (from the `tests/` directory):
+## CI gate (no-regression)
+
+CI does **not** require every test to pass. A curated set of known failures
+(`__baseline__/known-fails.txt`) is tolerated — some are intentional
+"bug-exposing" TODO tests. The gate only fails when a test that is **not** in
+that list fails (a real pass→fail regression):
 
 ```bash
-npm test
+cd tests
+npm run test:ci    # runs the suite (JSON) then the no-regression gate
 ```
+
+`test:ci` writes JSON results to `tests/.test-results.json` (gitignored) and runs
+`__baseline__/verify-no-regression.mjs`, which exits non-zero on any regression.
+This is what the GitHub Actions workflow (`.github/workflows/test.yml`) runs.
 
 ## Test Files
 

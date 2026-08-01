@@ -3,10 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Unit tests for 9router embeddings endpoint",
+  "description": "Test suite for 9router (open-sse handlers, translator, executors, db, security)",
   "scripts": {
-    "test": "NODE_PATH=/tmp/node_modules /tmp/node_modules/.bin/vitest run --reporter=verbose",
-    "test:watch": "NODE_PATH=/tmp/node_modules /tmp/node_modules/.bin/vitest --reporter=verbose"
+    "test": "vitest run --reporter=verbose",
+    "test:watch": "vitest --reporter=verbose",
+    "test:json": "vitest run --reporter=json --outputFile=./.test-results.json",
+    "gate": "node __baseline__/verify-no-regression.mjs ./.test-results.json",
+    "test:ci": "npm run test:json || true && npm run gate"
   },
   "devDependencies": {
     "vitest": "^4.0.0"

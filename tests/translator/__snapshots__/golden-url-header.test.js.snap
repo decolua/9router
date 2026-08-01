@@ -229,26 +229,26 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.4.80",
+    "User-Agent": "9Router/<VER>",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.4.80",
-    "X-CORE-VERSION": "0.4.80",
+    "X-CLIENT-VERSION": "<VER>",
+    "X-CORE-VERSION": "<VER>",
     "X-IS-MULTIROOT": "false",
-    "X-PLATFORM": "darwin",
-    "X-PLATFORM-VERSION": "v22.22.0",
+    "X-PLATFORM": "<PLATFORM>",
+    "X-PLATFORM-VERSION": "<NODEVER>",
     "X-Title": "Cline",
   },
   "nonStream": {
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.4.80",
+    "User-Agent": "9Router/<VER>",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.4.80",
-    "X-CORE-VERSION": "0.4.80",
+    "X-CLIENT-VERSION": "<VER>",
+    "X-CORE-VERSION": "<VER>",
     "X-IS-MULTIROOT": "false",
-    "X-PLATFORM": "darwin",
-    "X-PLATFORM-VERSION": "v22.22.0",
+    "X-PLATFORM": "<PLATFORM>",
+    "X-PLATFORM-VERSION": "<NODEVER>",
     "X-Title": "Cline",
   },
   "oauth": {
@@ -256,13 +256,13 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.4.80",
+    "User-Agent": "9Router/<VER>",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.4.80",
-    "X-CORE-VERSION": "0.4.80",
+    "X-CLIENT-VERSION": "<VER>",
+    "X-CORE-VERSION": "<VER>",
     "X-IS-MULTIROOT": "false",
-    "X-PLATFORM": "darwin",
-    "X-PLATFORM-VERSION": "v22.22.0",
+    "X-PLATFORM": "<PLATFORM>",
+    "X-PLATFORM-VERSION": "<NODEVER>",
     "X-Title": "Cline",
   },
 }
@@ -539,6 +539,28 @@ exports[`GOLDEN buildHeaders (default executor providers) > kilocode → headers
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > kimchi → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "User-Agent": "kimchi/0.0.0",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "User-Agent": "kimchi/0.0.0",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "User-Agent": "kimchi/0.0.0",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > kimi → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -572,7 +594,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi-coding → head
     "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
     "X-Msh-Device-Id": "kimi-<TS>",
-    "X-Msh-Device-Model": "darwin arm64",
+    "X-Msh-Device-Model": "<PLATFORM> <ARCH>",
     "X-Msh-Platform": "9router",
     "X-Msh-Version": "2.1.2",
     "x-api-key": "<CRED>",
@@ -582,7 +604,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi-coding → head
     "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
     "X-Msh-Device-Id": "kimi-<TS>",
-    "X-Msh-Device-Model": "darwin arm64",
+    "X-Msh-Device-Model": "<PLATFORM> <ARCH>",
     "X-Msh-Platform": "9router",
     "X-Msh-Version": "2.1.2",
     "x-api-key": "<CRED>",
@@ -593,7 +615,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi-coding → head
     "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
     "X-Msh-Device-Id": "kimi-<TS>",
-    "X-Msh-Device-Model": "darwin arm64",
+    "X-Msh-Device-Model": "<PLATFORM> <ARCH>",
     "X-Msh-Platform": "9router",
     "X-Msh-Version": "2.1.2",
     "x-api-key": "<CRED>",
@@ -866,6 +888,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > together → headers
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > venice → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > vercel-ai-gateway → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -972,8 +1013,8 @@ exports[`GOLDEN buildUrl (default executor providers) > assemblyai → url (stre
 
 exports[`GOLDEN buildUrl (default executor providers) > blackbox → url (stream + non-stream) 1`] = `
 {
-  "nonStream": "https://api.blackbox.ai/chat/completions",
-  "stream": "https://api.blackbox.ai/chat/completions",
+  "nonStream": "https://api.blackbox.ai/v1/chat/completions",
+  "stream": "https://api.blackbox.ai/v1/chat/completions",
 }
 `;
 
@@ -1103,6 +1144,13 @@ exports[`GOLDEN buildUrl (default executor providers) > kilocode → url (stream
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > kimchi → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://llm.kimchi.dev/openai/v1/chat/completions",
+  "stream": "https://llm.kimchi.dev/openai/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > kimi → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.kimi.com/coding/v1/messages?beta=true",
@@ -1205,6 +1253,13 @@ exports[`GOLDEN buildUrl (default executor providers) > together → url (stream
 {
   "nonStream": "https://api.together.xyz/v1/chat/completions",
   "stream": "https://api.together.xyz/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > venice → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.venice.ai/api/v1/chat/completions",
+  "stream": "https://api.venice.ai/api/v1/chat/completions",
 }
 `;
 

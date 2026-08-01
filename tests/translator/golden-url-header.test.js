@@ -23,15 +23,25 @@ const SPECIALIZED = new Set([
   "xiaomi-tokenplan", "mimo-free",
 ]);
 
-// Sanitize header: khử token + field thời gian động (kimi X-Msh-Device-Id) để snapshot ổn định.
+// Sanitize header: khử token + mọi giá trị phụ thuộc môi trường (app version,
+// platform, arch, node version, kimi timestamp) để snapshot ổn định & PORTABLE
+// across machines / OS / node versions / CI. Dùng giá trị runtime hiện tại
+// (process.platform/arch/version) nên khớp trên mọi máy, không chỉ máy sinh golden.
 function sanitize(headers) {
   const out = {};
   for (const [k, v] of Object.entries(headers)) {
-    out[k] = typeof v === "string"
-      ? v.replace(/Bearer .+/, "Bearer <TOK>")
-          .replace(/sk-test-APIKEY|tok-test-ACCESS/g, "<CRED>")
-          .replace(/kimi-\d{10,}/g, "kimi-<TS>")
-      : v;
+    if (typeof v !== "string") { out[k] = v; continue; }
+    let s = v
+      .replace(/Bearer .+/, "Bearer <TOK>")
+      .replace(/sk-test-APIKEY|tok-test-ACCESS/g, "<CRED>")
+      .replace(/kimi-\d{10,}/g, "kimi-<TS>")
+      .replace(/9Router\/\d+\.\d+\.\d+\S*/g, "9Router/<VER>")
+      .replaceAll(process.version, "<NODEVER>")        // e.g. v20.20.2
+      .replaceAll(process.platform, "<PLATFORM>")      // e.g. linux / darwin
+      .replaceAll(process.arch, "<ARCH>");             // e.g. x64 / arm64
+    // App version cũng xuất hiện trần trong các header này.
+    if (k === "X-CLIENT-VERSION" || k === "X-CORE-VERSION") s = "<VER>";
+    out[k] = s;
   }
   return out;
 }

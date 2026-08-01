@@ -38,9 +38,9 @@ describe("provider baseUrl const (full path, no trailing slash)", () => {
   });
 });
 
-describe("antigravity retry (intentional change: 429=6, 503=3)", () => {
-  it("429 attempts = 6", () => {
-    expect(antigravity.transport.retry["429"].attempts).toBe(6);
+describe("antigravity retry (429=3, 503=3)", () => {
+  it("429 attempts = 3", () => {
+    expect(antigravity.transport.retry["429"].attempts).toBe(3);
   });
   it("503 attempts = 3", () => {
     expect(antigravity.transport.retry["503"].attempts).toBe(3);

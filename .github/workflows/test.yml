@@ -1,0 +1,47 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
+      # The repo intentionally does not commit a package-lock.json (it is
+      # gitignored), so there is no lockfile for `npm ci` or setup-node's npm
+      # cache to key on — hence plain `npm install` and no `cache: npm`.
+      #
+      # Root deps power the code under test (open-sse, src) and the native
+      # better-sqlite3 driver used by the DB concurrency tests. better-sqlite3
+      # is an optionalDependency with Linux prebuilds, so install resolves it.
+      - name: Install app dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Install test dependencies (vitest)
+        working-directory: tests
+        run: npm install --no-audit --no-fund
+
+      # Vitest exits non-zero because a curated set of known failures
+      # (tests/__baseline__/known-fails.txt) is deliberately tolerated. The
+      # no-regression gate below is the real pass/fail signal, so let this step
+      # always succeed and hand its JSON output to the gate.
+      - name: Run test suite (vitest → JSON)
+        working-directory: tests
+        run: npm run test:json || true
+
+      - name: No-regression gate (fails only on a real pass→fail regression)
+        working-directory: tests
+        run: npm run gate
