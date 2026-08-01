@@ -220,7 +220,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
     if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
       const pid = await getProjectIdForConnection(credentials.connectionId, refreshedCredentials.accessToken, provider);
-      if (pid) {
+      if (pid === "__REQUIRES_GCP_PROJECT__") {
+        log.warn("CHAT", `[${provider}] Google requires a manual GCP Project ID for this account.`);
+        return errorResponse(
+          HTTP_STATUS.FORBIDDEN,
+          "GCP_PROJECT_REQUIRED: Google Antigravity now requires a free GCP Project ID. Please create one at console.cloud.google.com and enter it in your 9Router Settings."
+        );
+      } else if (pid) {
         refreshedCredentials.projectId = pid;
         // Persist to DB in background so subsequent requests have it immediately
         updateProviderCredentials(credentials.connectionId, { projectId: pid }).catch(() => { });
