@@ -46,7 +46,8 @@ export async function getIflowUsage(accessToken) {
 
 /**
  * Ollama Cloud Usage
- * GET https://ollama.com/api/usage — session (5h) + weekly (7d) usage % (0–100).
+ * GET https://ollama.com/api/usage — session (5h) + weekly (7d) `usage` is a 0..1
+ *   ratio (1.0 = limit reached, e.g. weekly 100% used). No reset timestamp exposed.
  * POST https://ollama.com/api/me — plan label (fail-open).
  * Auth: Authorization: Bearer <apiKey>
  */
@@ -95,9 +96,12 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
 
     const limits = data?.limits && typeof data.limits === "object" ? data.limits : {};
 
-    function pctQuota(usagePct, resetAt = null) {
-      const used = Math.max(0, Math.min(100, Number(usagePct) || 0));
-      return { used, total: 100, remainingPercentage: 100 - used, resetAt, unlimited: false };
+    // Ollama `usage` is a 0..1 ratio (1.0 = limit reached). Convert to a 0..100
+    // bar. Do NOT set absolute `remaining` — QuotaTable reads remainingPercentage.
+    function ratioQuota(usageRatio, resetAt = null) {
+      const ratio = Math.max(0, Math.min(1, Number(usageRatio) || 0));
+      const usedPct = Math.round(ratio * 100);
+      return { used: usedPct, total: 100, remainingPercentage: 100 - usedPct, resetAt, unlimited: false };
     }
 
     const sessionRaw = limits.session?.usage;
@@ -116,8 +120,8 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
     }
 
     const quotas = {};
-    if (hasSession) quotas["Session (5h)"] = pctQuota(sessionNum);
-    if (hasWeekly) quotas["Weekly (7d)"] = pctQuota(weeklyNum);
+    if (hasSession) quotas["Session (5h)"] = ratioQuota(sessionNum);
+    if (hasWeekly) quotas["Weekly (7d)"] = ratioQuota(weeklyNum);
 
     return { plan, quotas };
   } catch (error) {

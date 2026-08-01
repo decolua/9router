@@ -80,9 +80,9 @@ describe("getUsageForProvider(ollama)", () => {
       unlimited: false,
     });
     expect(usage.quotas["Weekly (7d)"]).toMatchObject({
-      used: 1,
+      used: 100,
       total: 100,
-      remainingPercentage: 99,
+      remainingPercentage: 0,
       unlimited: false,
     });
     // Must not set absolute remaining — UI treats remaining as %
@@ -140,9 +140,9 @@ describe("parseQuotaData(ollama)", () => {
           resetAt: null,
         },
         "Weekly (7d)": {
-          used: 1,
+          used: 100,
           total: 100,
-          remainingPercentage: 99,
+          remainingPercentage: 0,
           resetAt: null,
         },
       },
@@ -157,9 +157,9 @@ describe("parseQuotaData(ollama)", () => {
     });
     expect(rows[1]).toMatchObject({
       name: "Weekly (7d)",
-      used: 1,
+      used: 100,
       total: 100,
-      remainingPercentage: 99,
+      remainingPercentage: 0,
     });
   });
 });
