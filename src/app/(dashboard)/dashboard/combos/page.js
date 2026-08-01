@@ -115,7 +115,11 @@ export default function CombosPage() {
       const updated = { ...comboStrategies };
       const next = { ...(updated[comboName] || {}), ...patch };
       // Prune to keep settings clean: default fallback with no extras = no entry.
-      if (!next.fallbackStrategy || next.fallbackStrategy === "fallback") {
+      // Extras include timeout, sticky limit, fusion config — preserve when any are set.
+      if ((!next.fallbackStrategy || next.fallbackStrategy === "fallback") &&
+          (!next.timeoutMs || next.timeoutMs === 0) &&
+          (!next.stickyLimit) &&
+          (!next.judgeModel)) {
         delete updated[comboName];
       } else {
         updated[comboName] = next;
@@ -303,6 +307,27 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
               selectClassName="py-1.5 text-xs"
             />
           </div>
+
+          {/* Per-model timeout (fallback / round-robin only; fusion has its own panel timeout) */}
+          {current !== "fusion" && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] text-text-muted whitespace-nowrap">Timeout</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={(strategy.timeoutMs || 0) / 1000}
+                onChange={(e) => {
+                  const sec = parseInt(e.target.value, 10) || 0;
+                  onSetStrategy({ timeoutMs: sec * 1000 });
+                }}
+                className="w-10 rounded border border-black/10 dark:border-white/10 bg-transparent px-1 py-0.5 text-[11px] text-text-main text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                placeholder="0"
+                title="Max seconds per model before fallback. 0 = use fetch connect timeout (60s)"
+              />
+              <span className="text-[10px] text-text-muted">s</span>
+            </div>
+          )}
 
           <div className="grid grid-cols-3 gap-1 sm:flex">
             <button
