@@ -17,9 +17,12 @@ export default function createOpenAIEmbeddingAdapter(providerId) {
     buildHeaders: (creds) => {
       return { "Content-Type": "application/json", ...bearerAuth(creds), ...(cfg.headers || {}) };
     },
-    buildBody: (model, { input, encoding_format, dimensions }) => {
+    buildBody: (model, { input, encoding_format, dimensions, input_type }) => {
       const body = { model, input };
       if (encoding_format) body.encoding_format = encoding_format;
+      // Asymmetric embedding models (e.g. NVIDIA NIM nvidia/llama-nemotron-embed-*)
+      // require input_type ("query" | "passage"); forward it when the client sends it.
+      if (input_type != null && input_type !== "") body.input_type = input_type;
       if (dimensions != null && dimensions !== "") {
         const dim = Number(dimensions);
         if (Number.isFinite(dim) && dim > 0) body.dimensions = dim;
