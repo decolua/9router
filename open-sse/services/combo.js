@@ -6,6 +6,7 @@ import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
+import { stripContextWindowSuffix } from "./model.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -201,12 +202,16 @@ export function resetComboRotation(comboName) {
  * @returns {string[]|null} Array of models or null if not a combo
  */
 export function getComboModelsFromData(modelStr, combosData) {
+  if (!modelStr || typeof modelStr !== "string") return null;
+  // Strip client context tags ([1m]/[500k]/...) so "my-glm52[500k]" hits combo "my-glm52"
+  modelStr = stripContextWindowSuffix(modelStr);
+
   // Don't check if it's in provider/model format
   if (modelStr.includes("/")) return null;
-  
+
   // Handle both array and object formats
   const combos = Array.isArray(combosData) ? combosData : (combosData?.combos || []);
-  
+
   const combo = combos.find(c => c.name === modelStr);
   if (combo && combo.models && combo.models.length > 0) {
     return combo.models;

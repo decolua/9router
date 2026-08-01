@@ -9,7 +9,7 @@ import {
 } from "../services/auth.js";
 import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { getSettings } from "@/lib/localDb";
-import { getModelInfo, getComboModels } from "../services/model.js";
+import { getModelInfo, getComboModels, stripContextWindowSuffix } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
@@ -48,7 +48,12 @@ export async function handleChat(request, clientRawRequest = null) {
   }
   cacheClaudeHeaders(clientRawRequest.headers);
 
-  const modelStr = body.model;
+  // Strip client context-window tags ([1m]/[500k]/...) so combo/alias lookup
+  // matches the base name. Claude Code appends these as UI hints.
+  const modelStr = stripContextWindowSuffix(body.model);
+  if (typeof body.model === "string" && modelStr !== body.model) {
+    body.model = modelStr;
+  }
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
 

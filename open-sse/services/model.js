@@ -21,6 +21,23 @@ const BUILTIN_MODEL_ALIASES = {
   "grok-build": "gcli/grok-build",
 };
 
+// Claude Code / client context-window tags appended to model ids, e.g.
+// "my-glm52[1m]", "claude-sonnet-4-6[200k]", "glm/glm-5.2[500k]".
+// These are client-side UI hints, not part of the upstream model id.
+// Strip them so combo/alias lookup and provider routing match the base name.
+// Matches trailing [digits] with optional k/m unit (case-insensitive).
+const CONTEXT_WINDOW_SUFFIX_RE = /\[(\d+)([kKmM])?\]\s*$/;
+
+/**
+ * Strip trailing client context-window tags like [1m] / [500k] / [200k].
+ * @param {string} modelStr
+ * @returns {string}
+ */
+export function stripContextWindowSuffix(modelStr) {
+  if (typeof modelStr !== "string" || !modelStr) return modelStr;
+  return modelStr.replace(CONTEXT_WINDOW_SUFFIX_RE, "").trimEnd();
+}
+
 /**
  * Resolve provider alias to provider ID
  */
@@ -35,6 +52,9 @@ export function parseModel(modelStr) {
   if (!modelStr) {
     return { provider: null, model: null, isAlias: false, providerAlias: null };
   }
+
+  // Drop client context-window tags before any routing/lookup
+  modelStr = stripContextWindowSuffix(modelStr);
 
   // Check if standard format: provider/model or alias/model
   if (modelStr.includes("/")) {

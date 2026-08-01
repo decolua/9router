@@ -1,7 +1,14 @@
 // Re-export from open-sse with localDb integration
 import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
-import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
+import {
+  parseModel as parseModelCore,
+  resolveModelAliasFromMap,
+  getModelInfoCore,
+  stripContextWindowSuffix,
+} from "open-sse/services/model.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
+
+export { stripContextWindowSuffix };
 
 // Local provider alias overrides (HMR-friendly, applied on top of open-sse map)
 const LOCAL_PROVIDER_ALIASES = {
@@ -84,6 +91,9 @@ export async function getModelInfo(modelStr) {
  */
 export async function getComboModels(modelStr) {
   // Only check if it's not in provider/model format
+  if (!modelStr || typeof modelStr !== "string") return null;
+  // Strip client context tags ([1m]/[500k]/...) so "my-glm52[500k]" hits combo "my-glm52"
+  modelStr = stripContextWindowSuffix(modelStr);
   if (modelStr.includes("/")) return null;
 
   const combo = await getComboByName(modelStr);
