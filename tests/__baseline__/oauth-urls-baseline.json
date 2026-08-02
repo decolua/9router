@@ -13,8 +13,8 @@
       "auth": "https://api.anthropic.com/v1/oauth/authorize"
     },
     "qwen": {
-      "token": "https://qwen.ai/api/v1/oauth2/token",
-      "auth": "https://qwen.ai/api/v1/oauth2/device/code"
+      "token": "https://chat.qwen.ai/api/v1/oauth2/token",
+      "auth": "https://chat.qwen.ai/api/v1/oauth2/device/code"
     },
     "iflow": {
       "token": "https://iflow.cn/oauth/token",
@@ -33,24 +33,25 @@
     "iflow": "https://iflow.cn/oauth/token",
     "kiro": "https://prod.us-east-1.auth.desktop.kiro.dev/refreshToken",
     "xai": "https://auth.x.ai/oauth2/token",
+    "grok-cli": "https://auth.x.ai/oauth2/token",
     "cline": "https://api.cline.bot/api/v1/auth/token",
-    "kimi-coding": "https://auth.kimi.com/api/oauth/token"
+    "kimi": "https://auth.kimi.com/api/oauth/token"
   },
   "authUrls": {
-    "qwen": "https://chat.qwen.ai/api/v1/oauth2/device/code",
-    "iflow": "https://iflow.cn/oauth",
     "kiro": "https://prod.us-east-1.auth.desktop.kiro.dev"
   },
   "refreshUrls": {
     "cline": "https://api.cline.bot/api/v1/auth/refresh",
-    "kimi-coding": "https://auth.kimi.com/api/oauth/token",
-    "xai": "https://auth.x.ai/oauth2/token"
+    "kimi": "https://auth.kimi.com/api/oauth/token",
+    "xai": "https://auth.x.ai/oauth2/token",
+    "grok-cli": "https://auth.x.ai/oauth2/token"
   },
   "clientIds": {
     "claude": "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
     "codex": "app_EMoamEEZ73f0CkXaXp7hrann",
     "qwen": "f0304373b74a44d2b584a3fb70ca9e56",
     "iflow": "10009311001",
-    "kimi-coding": "17e5f671-d194-4dfb-9706-5516cb48c098"
+    "kimi": "17e5f671-d194-4dfb-9706-5516cb48c098",
+    "grok-cli": "b1a00492-073a-47ea-816f-4c329264a828"
   }
 }

@@ -1,3 +1,119 @@
+# v0.5.45 (2026-07-30)
+
+## Features
+- **Providers**: add Poolside (OpenAI-compatible)
+- **Providers**: add api-airforce, baidu, bazaarlink, bluesminds, kilo-gateway, llm7, morph, sambanova, tencent
+- **OAuth**: zed / trae / windsurf providers + harden callback proxies
+- **CLI tools**: set Claude Code max context tokens
+- **Qoder**: PAT auth + refresh model list
+- **Gemini**: Gemini 3.6 Flash tier routing + Gemini 3.5 Flash Lite
+- **Claude**: bump default Opus to `claude-opus-5`
+- **Kiro**: add Claude Opus 5 models
+- **Usage**: Kimi and DeepSeek usage handlers
+- **Usage**: SuperGrok weekly pool via gRPC-web
+
+## Fixes
+- **Refresh**: rotate `refresh_token` between retry attempts
+- **Kiro**: canonicalize tool history and route API keys correctly
+- **Kiro**: normalize dashboard thinking intensity models
+- **Cursor**: stop leaking agent tool errors as text
+- **Gemini**: fill empty tool schemas after `$ref` strip
+- **Antigravity**: strip `stream_options` from non-stream requests
+- **Jina-reader**: recover after transient errors, use JSON POST API
+- **Usage**: record exact embedding tokens
+- **Tunnel**: preserve successor cloudflared PID
+- **Console-log**: initialize capture at server boot + prevent SSE proxy buffering
+- **Dashboard**: count dual-auth, free-tier OAuth and API-key connections correctly
+- **Dashboard**: flex quota rows, thin global scrollbars, no hidden-row overflow
+
+## Docs
+- **i18n**: expand pt-BR translation to 986 terms
+- README: Indonesian translation
+
+# v0.5.40 (2026-07-20)
+
+## Features
+- **i18n**: add Khmer (km) translations
+- **CLI tools**: configure Grok Build subagent models
+- **Kimi**: merge OAuth into dual-auth provider, add K3 / K2.7 models
+- **Dashboard**: ProviderTopology flow animation
+
+## Fixes
+- **DB**: resolve better-sqlite3 parameter binding crash
+- **Translator**: pass `service_tier` through OpenAI → Responses conversion
+- **Kiro**: map GPT-5.6 reasoning effort fields
+- **Kiro**: validate terminal streams before emitting output
+- **Kiro**: map GPT reasoning effort fields
+- **Codex**: current `client_version` + refresh-aware model sync
+- **Alicode-intl**: split into Coding Plan + Model Studio providers
+- **Cursor**: HTTP/2 AgentService support + version bump 3.12.17
+- **Dashboard**: cut duplicate API/icon spam, lazy-load provider assets
+
+
+# v0.5.35 (2026-07-16)
+
+## Features
+- **xAI**: Grok Imagine video generation (`/v1/videos`) + CLI
+- **CLI tools**: Grok Build setup — choose separate main/general-purpose/explore/plan models and preserve each model's context window
+- **GitHub Copilot**: route Claude models through Copilot's native `/v1/messages`
+- **Kiro**: add GPT-5.6 model family (#2596)
+- **RTK**: `X-9Router-Token-Saver` header to bypass token savers per request
+- **Providers**: quota visibility settings
+- **Translator**: drop temperature for all Claude models
+- **i18n**: Thai (th) + Persian (fa) translations / README
+
+## Fixes
+- **Providers**: bulk-add API keys no longer overwrite existing keys (gap-fill `Key N`)
+- **Anthropic**: lowercase `anthropic-version` header to prevent duplication on `/v1/messages`
+- **Alicode-intl**: use DashScope compatible-mode endpoint so standard keys work
+- **Grok CLI**: align Grok Build with current subscription protocol (#2590)
+- **Grok CLI**: surface `expiresAt` so proactive token refresh fires (#2546)
+- **Kiro**: improve direct session cache reuse
+- **Models**: populate capabilities for live-catalog LLM models
+- **Models**: list compatible provider models in `/v1/models`
+- **Thinking**: send explicit `thinking:{type:adaptive}` alongside `output_config.effort`
+- **Translator**: strip `client_metadata` when converting openai-responses → openai
+
+## Improvements
+- **Perf**: skip inactive background services on startup
+
+## Docs
+- README: Persian YouTube tutorial
+
+# v0.5.30 (2026-07-10)
+
+## Features
+- **Perplexity**: add Agent API provider (#2492)
+- **Grok CLI**: add Grok CLI / Grok Build provider with OAuth device-code flow (#2502)
+- **Featherless**: add OpenAI-compatible provider presets
+- **SearXNG**: configure endpoint via SEARXNG_URL env (#2499)
+- **Providers**: add max thinking level for gpt-5.6-sol (#2500)
+- **Headroom**: add extras detection and install UI (#2403)
+- **Headroom**: activate/uninstall extras + fix interpreter detection
+- **PXPipe**: PXPIPE token saver — multimodal prompt compression (#2465)
+- **Proxy-Pools**: auto-rotate strategy for no-auth providers (#2409)
+
+## Fixes
+- **Cloudflare-AI**: support accountId in bulk key import (#2449)
+- **DB**: backup on schema change, MCP child cleanup, codex models, usage providers OOM
+- **Codex**: avoid bare-email OAuth dedup (#2477)
+- **CLI**: allow staged app bundle builds (#2479)
+- **Headroom**: compress Kiro conversation state (#2488)
+- **Gemini-CLI**: raise output floor for thinking and add validated toolConfig (#2486)
+- **GitHub**: label Copilot profiles by account identity (#2498)
+- **OpenAI-to-Claude**: unwrap bare {function:{…}} tools without parent type (#2473)
+- **Translator**: clamp thinking effort max->xhigh for OpenAI format (#2466)
+- **RTK/find**: detect and group Windows backslash-style find output (#2448)
+- **Codex**: handle fast tier and capacity SSE (#2452)
+- **Volcengine-ark**: clamp Kimi max_tokens to 32768 endpoint cap
+- **Antigravity**: align provider fingerprint with IDE Desktop 2.1.1 (#2389)
+- **Pricing**: update Claude/Codex model rates and add new models
+
+## Improvements
+- **i18n(zh-CN)**: complete Chinese translations for all UI strings (#2436)
+- **API**: caching for tunnel and version status endpoints
+- **Perf**: faster dev startup and lighter bundle
+
 # v0.5.20 (2026-07-07)
 
 ## Features

@@ -1,5 +1,4 @@
-import { platform, arch } from "os";
-import { ANTIGRAVITY_OAUTH_CLIENT } from "../shared.js";
+import { ANTIGRAVITY_IDE_BASE_URL, ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_OAUTH_CLIENT } from "../shared.js";
 
 // Inline IDE User-Agent (cannot import from appConstants — circular dependency)
 const _p = platform() === "win32" ? "windows" : platform();
@@ -24,10 +23,7 @@ export default {
   category: "oauth",
   serviceKinds: ["llm", "image"],
   transport: {
-    baseUrls: [
-      "https://daily-cloudcode-pa.googleapis.com",
-      "https://daily-cloudcode-pa.sandbox.googleapis.com",
-    ],
+    baseUrls: [ANTIGRAVITY_IDE_BASE_URL],
     format: "antigravity",
     headers: {
       "User-Agent": AG_IDE_UA,
@@ -44,6 +40,7 @@ export default {
       },
     },
     usage: {
+      // Discovery (quota/project) on PROD; daily host rejects these.
       quotaApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
       loadProjectApiUrl: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
       tokenUrl: "https://oauth2.googleapis.com/token",
@@ -52,6 +49,10 @@ export default {
     clientSecret: "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",
   },
   models: [
+    { id: "gemini-3.6-flash-high", name: "Gemini 3.6 Flash (High)", upstreamModelId: "gemini-3.6-flash-tiered(high)" },
+    { id: "gemini-3.6-flash-medium", name: "Gemini 3.6 Flash (Medium)", upstreamModelId: "gemini-3.6-flash-tiered(medium)" },
+    { id: "gemini-3.6-flash-low", name: "Gemini 3.6 Flash (Low)", upstreamModelId: "gemini-3.6-flash-tiered(low)" },
+    { id: "gemini-3.5-flash-high", name: "Gemini 3.5 Flash (High)" },
     { id: "gemini-3-flash-agent", name: "Gemini 3.5 Flash (High)" },
     { id: "gemini-3.5-flash-low", name: "Gemini 3.5 Flash (Medium)" },
     { id: "gemini-3.5-flash-extra-low", name: "Gemini 3.5 Flash (Low)" },
@@ -75,7 +76,7 @@ export default {
       "https://www.googleapis.com/auth/cclog",
       "https://www.googleapis.com/auth/experimentsandconfigs",
     ],
-    apiEndpoint: "https://cloudcode-pa.googleapis.com",
+    apiEndpoint: "https://daily-cloudcode-pa.googleapis.com",
     apiVersion: "v1internal",
     loadCodeAssistEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
     onboardUserEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",

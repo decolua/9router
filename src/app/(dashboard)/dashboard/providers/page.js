@@ -10,6 +10,7 @@ import {
   Toggle,
 } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
+import { getProviderIconSrc } from "@/shared/utils/providerIcon";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import {
   FREE_PROVIDERS,
@@ -276,6 +277,16 @@ export default function ProvidersPage() {
     }))
     .filter((p) => matchSearch(p.name));
 
+  // Dual-auth providers (oauth + apikey) store API keys as authType "apikey"
+  // (and sometimes "api_key"). Card stats must count both so totals match detail.
+  // kiro has no authModes in registry but accepts both (headless uses "api_key").
+  const dualAuthTypes = (info, key) => {
+    if (key === "kiro") return ["oauth", "apikey", "api_key"];
+    const modes = info?.authModes;
+    if (!Array.isArray(modes) || !modes.includes("apikey")) return "oauth";
+    return ["oauth", "apikey", "api_key"];
+  };
+
   const oauthEntries = sortByPriority(
     Object.entries(OAUTH_PROVIDERS).filter(([, info]) => !info.hidden && matchSearch(info.name)),
     "oauth",
@@ -283,15 +294,27 @@ export default function ProvidersPage() {
   const freeEntries = Object.entries(FREE_PROVIDERS)
     .filter(([, info]) => !info.hidden && matchSearch(info.name))
     .sort(([, a], [, b]) => (b.noAuth ? 1 : 0) - (a.noAuth ? 1 : 0));
-  const freeTierEntries = sortByPriority(
-    Object.entries(FREE_TIER_PROVIDERS).filter(
+  // Free Tier cards may be oauth-only (e.g. kimchi) or dual-auth, so count via
+  // dualAuthTypes per provider instead of a fixed "apikey" — otherwise oauth
+  // connections are invisible here (mismatch with the detail page).
+  const freeTierEntries = Object.entries(FREE_TIER_PROVIDERS)
+    .filter(
       ([, info]) =>
         !info.hidden &&
         matchSearch(info.name) &&
         (info.serviceKinds ?? ["llm"]).includes("llm"),
-    ),
-    "freeTier",
-  ).sort(([, a], [, b]) => (b.noAuth ? 1 : 0) - (a.noAuth ? 1 : 0));
+    )
+    .sort(([ka, a], [kb, b]) => {
+      const pa = a.priority ?? 999;
+      const pb = b.priority ?? 999;
+      if (pa !== pb) return pa - pb;
+      const noAuthDiff = (b.noAuth ? 1 : 0) - (a.noAuth ? 1 : 0);
+      if (noAuthDiff !== 0) return noAuthDiff;
+      const ca = getProviderStats(ka, dualAuthTypes(a, ka)).connected > 0 ? 0 : 1;
+      const cb = getProviderStats(kb, dualAuthTypes(b, kb)).connected > 0 ? 0 : 1;
+      if (ca !== cb) return ca - cb;
+      return (a.name || "").localeCompare(b.name || "");
+    });
   // API Key: connected providers first, then alphabetical by name
   const apikeyEntries = Object.entries(APIKEY_PROVIDERS)
     .filter(
@@ -423,16 +446,19 @@ export default function ProvidersPage() {
           </div>
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-          {oauthEntries.map(([key, info]) => (
-            <ProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "oauth")}
-              authType="oauth"
-              onToggle={(active) => handleToggleProvider(key, "oauth", active)}
-            />
-          ))}
+          {oauthEntries.map(([key, info]) => {
+            const authTypes = dualAuthTypes(info, key);
+            return (
+              <ProviderCard
+                key={key}
+                providerId={key}
+                provider={info}
+                stats={getProviderStats(key, authTypes)}
+                authType="oauth"
+                onToggle={(active) => handleToggleProvider(key, authTypes, active)}
+              />
+            );
+          })}
         </div>
       </div>
       )}
@@ -465,12 +491,9 @@ export default function ProvidersPage() {
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
           {freeEntries.map(([key, info]) => {
-            // Kiro accepts both OAuth and api-key connections; count/toggle both
-            // so the card total matches the provider detail page (#kiro-apikey).
-            // Kiro's headless api-key flow persists authType "api_key" (underscore),
-            // while generic apikey providers use "apikey" — include both spellings.
-            const freeAuthTypes =
-              key === "kiro" ? ["oauth", "apikey", "api_key"] : "oauth";
+            // Dual-auth (e.g. kiro): count/toggle oauth + apikey/api_key so the
+            // card total matches the provider detail page.
+            const freeAuthTypes = dualAuthTypes(info, key);
             return (
               <ProviderCard
                 key={key}
@@ -484,16 +507,19 @@ export default function ProvidersPage() {
               />
             );
           })}
-          {freeTierEntries.map(([key, info]) => (
-            <ApiKeyProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "apikey")}
-              authType="apikey"
-              onToggle={(active) => handleToggleProvider(key, "apikey", active)}
-            />
-          ))}
+          {freeTierEntries.map(([key, info]) => {
+            const freeAuthTypes = dualAuthTypes(info, key);
+            return (
+              <ApiKeyProviderCard
+                key={key}
+                providerId={key}
+                provider={info}
+                stats={getProviderStats(key, freeAuthTypes)}
+                authType={Array.isArray(freeAuthTypes) ? (freeAuthTypes[0] ?? "apikey") : freeAuthTypes}
+                onToggle={(active) => handleToggleProvider(key, freeAuthTypes, active)}
+              />
+            );
+          })}
         </div>
       </div>
       )}
@@ -756,12 +782,12 @@ function ApiKeyProviderCard({
   };
 
   const getIconPath = () => {
-    if (isCompatible)
+    if (isCompatible && provider.apiType)
       return provider.apiType === "responses"
         ? "/providers/oai-r.png"
         : "/providers/oai-cc.png";
     if (isAnthropicCompatible) return "/providers/anthropic-m.png";
-    return `/providers/${provider.id}.png`;
+    return getProviderIconSrc(provider.id);
   };
 
   return (

@@ -55,10 +55,14 @@ describe("extractThinking", () => {
 });
 
 describe("applyThinking per provider format", () => {
-  it("claude 4.6+ → adaptive output_config (no budget_tokens)", () => {
+  it("claude 4.6+ → adaptive thinking + output_config (no budget_tokens)", () => {
     const out = apply("claude", "claude-opus-4.7", { reasoning_effort: "high" }, "claude");
     expect(out.output_config).toEqual({ effort: "high" });
-    expect(out.thinking).toBeUndefined();
+    // Anthropic: on Opus 4.6/4.7/4.8 and Sonnet 4.6 thinking stays OFF unless
+    // thinking:{type:"adaptive"} is sent explicitly; output_config alone is not
+    // enough (and Anthropic-compatible shims like Copilot default off even on
+    // Sonnet 5). Both fields together are the documented adaptive shape.
+    expect(out.thinking).toEqual({ type: "adaptive" });
   });
   it("claude haiku → enabled+budget", () => {
     const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "high" }, "claude");
@@ -78,10 +82,26 @@ describe("applyThinking per provider format", () => {
     const out = apply("gemini", "gemini-3-pro", { reasoning_effort: "auto" }, "gemini");
     expect(out.generationConfig.thinkingConfig.thinkingLevel).toBe("high");
   });
+  it("gemini-3 high thinking raises too-small maxOutputTokens", () => {
+    const out = apply("gemini-cli", "gemini-3.1-pro-preview", {
+      request: { generationConfig: { maxOutputTokens: 128 } },
+      reasoning_effort: "high",
+    }, "gemini-cli");
+    expect(out.request.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "high", includeThoughts: true });
+    expect(out.request.generationConfig.maxOutputTokens).toBe(65535);
+  });
   it("gemini-2.5 → thinkingBudget", () => {
     const out = apply("gemini", "gemini-2.5-flash", { reasoning_effort: "high" }, "gemini");
     expect(out.generationConfig.thinkingConfig.thinkingBudget).toBe(24576);
     expect(out.generationConfig.thinkingConfig.thinkingLevel).toBeUndefined();
+  });
+  it("gemini-2.5 budget thinking keeps enough room for answer tokens", () => {
+    const out = apply("gemini-cli", "gemini-2.5-pro", {
+      request: { generationConfig: { maxOutputTokens: 1024 } },
+      reasoning_effort: "high",
+    }, "gemini-cli");
+    expect(out.request.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 24576, includeThoughts: true });
+    expect(out.request.generationConfig.maxOutputTokens).toBe(32768);
   });
   it("GLM off → enable_thinking:false (not thinking.disabled)", () => {
     const out = apply("openai", "glm-4.6", { reasoning_effort: "none" }, "glm");

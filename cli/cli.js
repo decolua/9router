@@ -4,7 +4,27 @@ const { spawn, exec, execSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
+const net = require("net");
 const os = require("os");
+
+// Poll until the server accepts TCP connections on port, or timeout — avoids blind fixed waits.
+function waitServerReady(port, { timeoutMs = 15000, intervalMs = 150 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  return new Promise((resolve) => {
+    const tryConnect = () => {
+      const socket = net.connect({ host: "127.0.0.1", port }, () => {
+        socket.destroy();
+        resolve(true);
+      });
+      socket.on("error", () => {
+        socket.destroy();
+        if (Date.now() >= deadline) return resolve(false);
+        setTimeout(tryConnect, intervalMs);
+      });
+    };
+    tryConnect();
+  });
+}
 
 // Native spinner - no external dependency
 function createSpinner(text) {
@@ -46,6 +66,19 @@ const pkg = require("./package.json");
 const { ensureSqliteRuntime, buildEnvWithRuntime } = require("./hooks/sqliteRuntime");
 const { ensureTrayRuntime } = require("./hooks/trayRuntime");
 const args = process.argv.slice(2);
+
+// Subcommands (`9router xai video …`) run against an already-running gateway
+// and bypass the launcher flow (no runtime self-heal, no server spawn).
+if (args[0] === "xai" && args[1] === "video") {
+  const { run } = require("./src/cli/commands/xaiVideo");
+  run(args.slice(2))
+    .then((code) => process.exit(code))
+    .catch((err) => {
+      console.error(`❌ ${err?.message || err}`);
+      process.exit(1);
+    });
+  return;
+}
 
 // Self-heal SQLite runtime deps (sql.js + better-sqlite3) into ~/.9router/runtime
 // so the server can resolve them via NODE_PATH. Best-effort — sql.js is required,
@@ -119,6 +152,11 @@ Options:
   --skip-update       Skip auto-update check
   -h, --help          Show this help message
   -v, --version       Show version
+
+Commands:
+  xai video --prompt "..." --output video.mp4
+                      Generate a Grok Imagine video via the running gateway
+                      (see: ${APP_NAME} xai video --help)
 `);
     process.exit(0);
   } else if (args[i] === "--version" || args[i] === "-v") {
@@ -212,16 +250,17 @@ function killCloudflaredByAppPort(appPort) {
 function killAllAppProcesses(appPort) {
   return new Promise((resolve) => {
     try {
-      // Kill MIT first (privileged process, needs special handling)
-      killProxyByPidFile();
-      // Kill cloudflared/tailscale by PID file (precise, only this app's tunnel)
-      killTunnelByPidFile();
+      // Background: MITM + tunnel/cloudflared run on separate ports/processes —
+      // killing them doesn't free the app port, so don't block the critical path.
+      // Server-side MITM manager has stale-lock recovery and starts deferred (~3s).
+      setImmediate(() => {
+        try { killProxyByPidFile(); } catch {}
+        try { killTunnelByPidFile(); } catch {}
+        try { killCloudflaredByAppPort(appPort); } catch {}
+      });
 
       const platform = process.platform;
       let pids = [];
-
-      // Catch stale PID files: kill cloudflared bound to this app's port
-      pids.push(...killCloudflaredByAppPort(appPort));
 
       if (platform === "win32") {
         // Windows: use WMI to get full CommandLine (tasklist /V doesn't include it)
@@ -499,14 +538,11 @@ if (!fs.existsSync(serverPath)) {
   process.exit(1);
 }
 
-// Check for updates FIRST, then start server
-checkForUpdate().then((latestVersion) => {
-  killAllAppProcesses(port).then(() => {
-    return killProcessOnPort(port);
-  }).then(() => {
-    startServer(latestVersion);
-  });
-});
+// Start server immediately; run update check in parallel (not on the critical path).
+const updatePromise = checkForUpdate();
+killAllAppProcesses(port)
+  .then(() => killProcessOnPort(port))
+  .then(() => startServer(updatePromise));
 
 // Show interface selection menu
 async function showInterfaceMenu(latestVersion) {
@@ -556,7 +592,9 @@ async function showInterfaceMenu(latestVersion) {
 const MAX_RESTARTS = 2;
 const RESTART_RESET_MS = 30000; // Reset counter if alive > 30s
 
-function startServer(latestVersion) {
+function startServer(updatePromise) {
+  // Accept either a Promise (parallel update check) or a resolved value.
+  const latestVersionPromise = Promise.resolve(updatePromise);
   const displayHost = getDisplayHost();
   const url = `http://${displayHost}:${port}/dashboard`;
   // Surface real network exposure when bound to all interfaces (default 0.0.0.0).
@@ -574,7 +612,7 @@ function startServer(latestVersion) {
   function spawnServer() {
     serverStartTime = Date.now();
     crashLog = [];
-    const child = spawn(RUNTIME, ["--max-old-space-size=6144", serverPath], {
+    const child = spawn(RUNTIME, ["--dns-result-order=ipv4first", "--max-old-space-size=6144", serverPath], {
       cwd: standaloneDir,
       stdio: showLog ? "inherit" : ["ignore", "ignore", "pipe"],
       detached: true,
@@ -677,17 +715,19 @@ function startServer(latestVersion) {
     console.log(`\n🚀 ${pkg.name} v${pkg.version}`);
     console.log(`Server: http://${displayHost}:${port}`);
 
-    setTimeout(() => {
+    waitServerReady(port).then(() => {
       initTrayIcon();
       console.log("\n💡 Router is now running in system tray. Close this terminal if you want.");
       console.log("   Right-click tray icon to open dashboard or quit.\n");
-    }, 2000);
+    });
 
     return;
   }
 
   // Wait for server to be ready, then show interface menu loop + tray
-  setTimeout(async () => {
+  waitServerReady(port).then(async () => {
+    // Resolve parallel update check (already running); don't block server start on it.
+    const latestVersion = await latestVersionPromise;
     // Start tray icon alongside TUI
     initTrayIcon();
 
@@ -745,7 +785,7 @@ function startServer(latestVersion) {
           // Windows/Linux: spawn detached bgProcess (systray works fine in child)
           console.log(`\n⏳ Starting background process... (tray icon will appear in ~3s)`);
 
-          const bgProcess = spawn(process.execPath, [__filename, "--tray", "--skip-update", "-p", port.toString()], {
+          const bgProcess = spawn(process.execPath, ["--dns-result-order=ipv4first", __filename, "--tray", "--skip-update", "-p", port.toString()], {
             detached: true,
             stdio: "ignore",
             windowsHide: true,
@@ -772,7 +812,7 @@ function startServer(latestVersion) {
       cleanup();
       process.exit(1);
     }
-  }, 3000);
+  });
 
   function attachServerEvents() {
     server.on("error", (err) => {

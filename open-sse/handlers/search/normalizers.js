@@ -1,7 +1,6 @@
 /**
  * Search Response Normalizers
  *
- * Ported from OmniRoute open-sse/handlers/search.ts.
  * Each normalizer maps a provider-specific response into the unified SearchResult shape.
  */
 

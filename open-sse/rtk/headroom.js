@@ -18,6 +18,8 @@ function jsonBytes(value) {
 function messagePayload(body) {
   if (Array.isArray(body?.messages)) return body.messages;
   if (Array.isArray(body?.input)) return body.input;
+  const kiro = collectKiroHeadroomMessages(body);
+  if (kiro) return kiro.messages;
   return null;
 }
 
@@ -79,6 +81,121 @@ function hasUnsafeResponsesInputForCompression(body) {
     if (!item || typeof item !== "object" || Array.isArray(item)) return false;
     return typeof item.type === "string" && item.type !== "message";
   });
+}
+
+function collectKiroHeadroomMessages(body) {
+  const state = body?.conversationState;
+  if (!state || typeof state !== "object") return null;
+
+  const messages = [];
+  const targets = [];
+
+  const addTextTarget = (role, text, target, extra = {}) => {
+    if (typeof text !== "string") return;
+    messages.push({ role, content: text, ...extra });
+    targets.push(target);
+  };
+
+  const toToolCalls = (toolUses) => {
+    if (!Array.isArray(toolUses) || toolUses.length === 0) return undefined;
+    const calls = toolUses.map((toolUse) => ({
+      id: toolUse?.toolUseId,
+      type: "function",
+      function: {
+        name: toolUse?.name || "",
+        arguments: JSON.stringify(toolUse?.input || {}),
+      },
+    })).filter((call) => call.id || call.function.name);
+    return calls.length > 0 ? calls : undefined;
+  };
+
+  const visit = (item) => {
+    const user = item?.userInputMessage;
+    if (user) {
+      addTextTarget("system", user.systemInstruction, { object: user, key: "systemInstruction" });
+      addTextTarget("user", user.content, { object: user, key: "content" });
+
+      const toolResults = user.userInputMessageContext?.toolResults;
+      if (Array.isArray(toolResults)) {
+        for (const toolResult of toolResults) {
+          const content = toolResult?.content;
+          if (!Array.isArray(content)) continue;
+          for (const part of content) {
+            addTextTarget(
+              "tool",
+              part?.text,
+              { object: part, key: "text" },
+              toolResult?.toolUseId ? { tool_call_id: toolResult.toolUseId } : {}
+            );
+          }
+        }
+      }
+      return;
+    }
+
+    const assistant = item?.assistantResponseMessage;
+    if (assistant) {
+      const toolCalls = toToolCalls(assistant.toolUses);
+      addTextTarget(
+        "assistant",
+        assistant.content,
+        { object: assistant, key: "content" },
+        toolCalls ? { tool_calls: toolCalls } : {}
+      );
+    }
+  };
+
+  if (Array.isArray(state.history)) {
+    for (const item of state.history) visit(item);
+  }
+  if (state.currentMessage) visit(state.currentMessage);
+
+  return messages.length > 0 ? { messages, targets } : null;
+}
+
+function textFromHeadroomMessage(message) {
+  const content = message?.content;
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return null;
+
+  const parts = [];
+  for (const part of content) {
+    if (typeof part === "string") {
+      parts.push(part);
+    } else if (typeof part?.text === "string") {
+      parts.push(part.text);
+    }
+  }
+  return parts.length > 0 ? parts.join("\n") : null;
+}
+
+function applyKiroHeadroomMessages(projection, compressedMessages, diagnostics) {
+  if (!Array.isArray(compressedMessages) || compressedMessages.length !== projection.messages.length) {
+    setDiagnostic(diagnostics, "proxy response did not match Kiro message count");
+    return false;
+  }
+
+  const updates = [];
+  for (let i = 0; i < projection.messages.length; i++) {
+    const expected = projection.messages[i];
+    const actual = compressedMessages[i];
+    if (!actual || actual.role !== expected.role) {
+      setDiagnostic(diagnostics, "proxy response did not preserve Kiro message order");
+      return false;
+    }
+
+    const text = textFromHeadroomMessage(actual);
+    if (text === null) {
+      setDiagnostic(diagnostics, "proxy response missing Kiro text content");
+      return false;
+    }
+    updates.push({ target: projection.targets[i], text });
+  }
+
+  for (const update of updates) {
+    update.target.object[update.target.key] = update.text;
+  }
+  return true;
 }
 
 // POST messages to Headroom /v1/compress; returns compressed messages + stats or null.
@@ -167,6 +284,22 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
         false
       );
       if (Array.isArray(responsesBody?.input)) body.input = responsesBody.input;
+      if (diagnostics) diagnostics.after = captureSizeSnapshot(body);
+      return data;
+    }
+
+    // Kiro shape: conversationState.history/currentMessage are projected to
+    // OpenAI messages for the proxy, then copied back into the original Kiro
+    // fields. Keep the provider payload shape intact for Kiro's executor.
+    if (format === "kiro") {
+      const projection = collectKiroHeadroomMessages(body);
+      if (!projection) {
+        setDiagnostic(diagnostics, "Kiro request did not project to messages[]");
+        return null;
+      }
+      const data = await callCompress(url, projection.messages, model, timeoutMs, compressUserMessages, diagnostics || {});
+      if (!data) return null;
+      if (!applyKiroHeadroomMessages(projection, data.messages, diagnostics)) return null;
       if (diagnostics) diagnostics.after = captureSizeSnapshot(body);
       return data;
     }

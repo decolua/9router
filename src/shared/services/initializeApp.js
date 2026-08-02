@@ -14,8 +14,8 @@ import {
   WATCHDOG_INTERVAL_MS, NETWORK_CHECK_INTERVAL_MS, VIRTUAL_IFACE_REGEX,
 } from "@/lib/tunnel";
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
-import { startQuotaAutoPing } from "@/shared/services/quotaAutoPing";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
+import { killAllBridges } from "@/lib/mcp/stdioSseBridge";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -32,6 +32,10 @@ import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 
 process.setMaxListeners(20);
 
+// Defer heavy startup work so the first HTTP request (login → dashboard) isn't
+// starved by DB cleanup, cloudflared download, lsof/DNS probes and OAuth pings.
+const STARTUP_DEFER_MS = 3000;
+
 // Survive Next.js hot reload
 const g = global.__appSingleton ??= {
   signalHandlersRegistered: false,
@@ -47,26 +51,12 @@ const g = global.__appSingleton ??= {
 
 export async function initializeApp() {
   try {
-    await cleanupProviderConnections();
-    const settings = await getSettings();
-
-    // Auto-resume tunnel (once per process)
-    if (settings.tunnelEnabled && !g.tunnelAutoResumed) {
-      g.tunnelAutoResumed = true;
-      console.log("[InitApp] Tunnel was enabled, auto-resuming...");
-      safeRestartTunnel("startup").catch((e) => console.log("[InitApp] Tunnel resume failed:", e.message));
-    }
-
-    // Auto-resume tailscale (once per process)
-    if (settings.tailscaleEnabled && !g.tailscaleAutoResumed) {
-      g.tailscaleAutoResumed = true;
-      console.log("[InitApp] Tailscale was enabled, auto-resuming...");
-      safeRestartTailscale("startup").catch((e) => console.log("[InitApp] Tailscale resume failed:", e.message));
-    }
-
+    // Register cleanup + exit-respawn callback immediately so signals and
+    // unexpected cloudflared exits are handled even during the deferred window.
     if (!g.signalHandlersRegistered) {
       const cleanup = () => {
         try { removeAllDNSEntriesSync(); } catch { /* best effort */ }
+        try { killAllBridges(); } catch { /* best effort */ }
         killCloudflared();
         process.exit();
       };
@@ -76,30 +66,63 @@ export async function initializeApp() {
       g.signalHandlersRegistered = true;
     }
 
-    ensureCloudflared().catch(() => {});
-
-    // Sync mitmAlias DB → JSON cache so standalone MITM server can read it
-    syncMitmAliasCache().catch(() => {});
-
-    // Auto-respawn tunnel when cloudflared exits unexpectedly (e.g. network change drop)
     setTunnelUnexpectedExitCallback(() => {
       safeRestartTunnel("unexpected-exit").catch(() => {});
     });
 
-    startWatchdog();
-    startNetworkMonitor();
-    autoStartMitm();
-    startQuotaAutoPing();
+    // Defer the heavy work — nothing here blocks incoming requests.
+    setTimeout(() => {
+      runHeavyStartup().catch((e) => console.error("[InitApp] deferred startup failed:", e.message));
+    }, STARTUP_DEFER_MS);
   } catch (error) {
     console.error("[InitApp] Error:", error);
   }
 }
 
-async function autoStartMitm() {
+async function runHeavyStartup() {
+  await cleanupProviderConnections();
+  const settings = await getSettings();
+
+  // Auto-resume tunnel (once per process)
+  if (settings.tunnelEnabled && !g.tunnelAutoResumed) {
+    g.tunnelAutoResumed = true;
+    console.log("[InitApp] Tunnel was enabled, auto-resuming...");
+    safeRestartTunnel("startup").catch((e) => console.log("[InitApp] Tunnel resume failed:", e.message));
+  }
+
+  // Auto-resume tailscale (once per process)
+  if (settings.tailscaleEnabled && !g.tailscaleAutoResumed) {
+    g.tailscaleAutoResumed = true;
+    console.log("[InitApp] Tailscale was enabled, auto-resuming...");
+    safeRestartTailscale("startup").catch((e) => console.log("[InitApp] Tailscale resume failed:", e.message));
+  }
+
+  if (settings.tunnelEnabled) ensureCloudflared().catch(() => {});
+
+  if (settings.mitmEnabled) {
+    // Sync mitmAlias DB → JSON cache so standalone MITM server can read it.
+    syncMitmAliasCache().catch(() => {});
+    autoStartMitm(settings);
+  }
+
+  configureTunnelMonitoring(settings);
+
+  if (hasQuotaAutoPingEnabled(settings)) {
+    import("@/shared/services/quotaAutoPing")
+      .then(({ startQuotaAutoPing }) => startQuotaAutoPing())
+      .catch((e) => console.log("[AutoPing] scheduler start failed:", e.message));
+  }
+}
+
+function hasQuotaAutoPingEnabled(settings) {
+  return [settings?.claudeAutoPing, settings?.codexAutoPing]
+    .some((config) => Object.values(config?.connections || {}).some(Boolean));
+}
+
+async function autoStartMitm(settings) {
   if (g.mitmStartInProgress) return;
   g.mitmStartInProgress = true;
   try {
-    const settings = await getSettings();
     if (!settings.mitmEnabled) return;
     const mitmStatus = await getMitmStatus();
     if (mitmStatus.running) return;
@@ -218,6 +241,12 @@ function startWatchdog() {
   if (g.watchdogInterval.unref) g.watchdogInterval.unref();
 }
 
+function stopWatchdog() {
+  if (!g.watchdogInterval) return;
+  clearInterval(g.watchdogInterval);
+  g.watchdogInterval = null;
+}
+
 // ─── Network monitor: detect IPv4 fingerprint change + sleep/wake ────────────
 
 function getNetworkFingerprint() {
@@ -277,6 +306,25 @@ function startNetworkMonitor() {
   }, NETWORK_CHECK_INTERVAL_MS);
 
   if (g.networkMonitorInterval.unref) g.networkMonitorInterval.unref();
+}
+
+
+function stopNetworkMonitor() {
+  if (!g.networkMonitorInterval) return;
+  clearInterval(g.networkMonitorInterval);
+  g.networkMonitorInterval = null;
+  g.lastNetworkFingerprint = null;
+  g.lastOnline = null;
+}
+
+export function configureTunnelMonitoring(settings) {
+  if (settings?.tunnelEnabled || settings?.tailscaleEnabled) {
+    startWatchdog();
+    startNetworkMonitor();
+    return;
+  }
+  stopWatchdog();
+  stopNetworkMonitor();
 }
 
 export default initializeApp;

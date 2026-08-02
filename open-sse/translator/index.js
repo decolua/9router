@@ -62,8 +62,13 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // Always ensure tool_calls have id (some providers require it)
   ensureToolCallIds(result);
   
-  // Fix missing tool responses (insert empty tool_result if needed)
-  fixMissingToolResponses(result);
+  // Kiro performs stricter source-aware reconciliation after session replay.
+  // The generic helper inserts OpenAI `role: tool` messages, which a direct
+  // Claude→Kiro translator cannot consume and which cannot repair partial
+  // parallel tool results.
+  if (targetFormat !== FORMATS.KIRO) {
+    fixMissingToolResponses(result);
+  }
 
   // Capture thinking intent from the original (pre-translation) body, before any
   // format conversion strips/renames the fields. Applied after translation.
@@ -103,8 +108,16 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     }
   }
 
-  // Normalize thinking to the target provider-native format (config-driven, capability-aware)
-  applyThinking(targetFormat, model, result, provider, thinkingIntent);
+  // Normalize thinking to the target provider-native format (config-driven, capability-aware).
+  // Kiro's GenerateAssistantResponse request does not accept the generic top-level
+  // `thinking` field; its translators map thinking intent to KAS-compatible
+  // systemPrompt/additionalModelRequestFields instead.
+  const kiroThinkingMappedByTranslator =
+    targetFormat === FORMATS.KIRO &&
+    (sourceFormat === FORMATS.OPENAI || sourceFormat === FORMATS.CLAUDE);
+  if (!kiroThinkingMappedByTranslator) {
+    applyThinking(targetFormat, model, result, provider, thinkingIntent);
+  }
 
   // Always normalize to clean OpenAI format when target is OpenAI
   // This handles hybrid requests (e.g., OpenAI messages + Claude tools)
