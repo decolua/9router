@@ -111,6 +111,7 @@ const OAUTH_TEST_CONFIG = {
     authPrefix: "Bearer ",
   },
   "codebuddy-cn": { tokenExists: true },
+  "codebuddy-intl": { tokenExists: true },
   kimchi: {
     url: KIMCHI_CONFIG.validationUrl || "https://api.cast.ai/v1/llm/openai/supported-providers",
     method: "GET",
@@ -816,6 +817,26 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
           headers: { Authorization: `Bearer ${connection.apiKey}` },
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "qoder": {
+        // PAT (pt-...) exchange → job token. A successful exchange proves the PAT.
+        const raw = connection.apiKey || "";
+        const pat = raw.startsWith("pt-") ? raw : `pt-${raw}`;
+        const exRes = await fetchWithConnectionProxy(
+          "https://openapi.qoder.sh/api/v1/jobToken/exchange",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+              "Cosy-Version": "1.0.1",
+              "Cosy-ClientType": "5",
+            },
+            body: JSON.stringify({ personal_token: pat }),
+          },
+          effectiveProxy,
+        );
+        return { valid: exRes.ok, error: exRes.ok ? null : "Invalid Personal Access Token" };
       }
       default:
         return { valid: false, error: "Provider test not supported" };
