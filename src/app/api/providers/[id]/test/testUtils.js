@@ -17,7 +17,7 @@ import {
   CLINE_CONFIG,
   KILOCODE_CONFIG,
   KIMCHI_CONFIG,
-  ZED_CONFIG,
+  ZED_HOSTED_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
 
@@ -128,14 +128,22 @@ const OAUTH_TEST_CONFIG = {
       402: "Connected, but Grok Build credits are exhausted (spending limit). Add credits or upgrade SuperGrok.",
     },
   },
-  // Zed Hosted AI — probe /models with Bearer llm_token (no inference quota).
+  // Zed Hosted AI — probe /client/users/me with "userId accessToken" user auth
+  // (same scheme as open-sse/shared/zedAuth.buildZedUserAuthHeader). LLM bearer
+  // tokens are minted on demand and must not be stored as accessToken.
   zed: {
-    url: `${(ZED_CONFIG.apiEndpoint || "https://cloud.zed.dev").replace(/\/$/, "")}${ZED_CONFIG.modelsPath || "/models"}`,
+    url: `${(ZED_HOSTED_CONFIG.cloudBaseUrl || "https://cloud.zed.dev").replace(/\/$/, "")}/client/users/me`,
     method: "GET",
     authHeader: "Authorization",
-    authPrefix: "Bearer ",
+    authPrefix: "",
+    // buildAuth overrides the default `${prefix}${accessToken}` composition
+    buildAuth: (accessToken, connection) => {
+      const userId = connection?.providerSpecificData?.userId;
+      if (!userId || !accessToken) return null;
+      return `${userId} ${accessToken}`;
+    },
     extraHeaders: { Accept: "application/json" },
-    refreshable: true,
+    refreshable: false,
   },
 };
 
@@ -250,7 +258,7 @@ async function refreshOAuthToken(connection) {
       return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
     }
 
-    if (provider === "codex" || provider === "grok-cli" || provider === "xai" || provider === "zed") {
+    if (provider === "codex" || provider === "grok-cli" || provider === "xai") {
       return await refreshProviderCredentials(provider, connection, console);
     }
 
@@ -420,9 +428,15 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
 
   try {
     const testUrl = config.buildUrl ? config.buildUrl(accessToken) : config.url;
+    const authValue = config.buildAuth
+      ? config.buildAuth(accessToken, connection)
+      : `${config.authPrefix}${accessToken}`;
+    if (config.buildAuth && !authValue) {
+      return { valid: false, error: "Zed credential is missing userId or accessToken", refreshed };
+    }
     const headers = config.noAuth
       ? { ...config.extraHeaders }
-      : { [config.authHeader]: `${config.authPrefix}${accessToken}`, ...config.extraHeaders };
+      : { [config.authHeader]: authValue, ...config.extraHeaders };
     const fetchOpts = { method: config.method, headers };
     if (config.body) fetchOpts.body = config.body;
     const res = await fetchWithConnectionProxy(testUrl, fetchOpts, effectiveProxy);
@@ -444,9 +458,12 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
       const tokens = await refreshOAuthToken(connection);
       if (tokens) {
         const retryUrl = config.buildUrl ? config.buildUrl(tokens.accessToken) : testUrl;
+        const retryAuth = config.buildAuth
+          ? config.buildAuth(tokens.accessToken, { ...connection, ...tokens, providerSpecificData: { ...(connection.providerSpecificData || {}), ...(tokens.providerSpecificData || {}) } })
+          : `${config.authPrefix}${tokens.accessToken}`;
         const retryHeaders = config.noAuth
           ? { ...config.extraHeaders }
-          : { [config.authHeader]: `${config.authPrefix}${tokens.accessToken}`, ...config.extraHeaders };
+          : { [config.authHeader]: retryAuth, ...config.extraHeaders };
         const retryOpts = { method: config.method, headers: retryHeaders };
         if (config.body) retryOpts.body = config.body;
         const retryRes = await fetchWithConnectionProxy(retryUrl, retryOpts, effectiveProxy);
@@ -794,6 +811,26 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
           headers: { Authorization: `Bearer ${connection.apiKey}` },
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "qoder": {
+        // PAT (pt-...) exchange → job token. A successful exchange proves the PAT.
+        const raw = connection.apiKey || "";
+        const pat = raw.startsWith("pt-") ? raw : `pt-${raw}`;
+        const exRes = await fetchWithConnectionProxy(
+          "https://openapi.qoder.sh/api/v1/jobToken/exchange",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+              "Cosy-Version": "1.0.1",
+              "Cosy-ClientType": "5",
+            },
+            body: JSON.stringify({ personal_token: pat }),
+          },
+          effectiveProxy,
+        );
+        return { valid: exRes.ok, error: exRes.ok ? null : "Invalid Personal Access Token" };
       }
       default:
         return { valid: false, error: "Provider test not supported" };

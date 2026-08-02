@@ -1,55 +1,72 @@
+// Zed provider — RSA keypair callback auth (NOT standard OAuth).
 export default {
   id: "zed",
-  priority: 55,
-  alias: "zed",
-  uiAlias: "zed",
+  priority: 10,
+  alias: "zd",
+  uiAlias: "zd",
+  // Visible: RSA native-app OAuth via OAuthModal + optional CLI credential import.
+  hidden: false,
   display: {
-    name: "Zed Hosted AI",
+    name: "Zed",
     icon: "code",
-    color: "#1348DC",
-    textIcon: "Z",
+    color: "#A855F7",
     website: "https://zed.dev",
     notice: {
-      signupUrl: "https://zed.dev",
+      signupUrl: "https://zed.dev/native_app_signin",
     },
   },
   category: "oauth",
+  authType: "oauth",
+  hasOAuth: true,
+
   transport: {
-    baseUrl: "https://cloud.zed.dev",
-    chatPath: "/completions",
-    format: "zed",
+    // Zed hosted LLM aggregator: cloud.zed.dev/completions is a
+    // multi-format proxy fronting Anthropic/OpenAI/Google/xAI depending on the model.
+    // Wire protocol = NDJSON/SSE-ish stream authenticated with a short-lived LLM bearer
+    // token exchanged from the RSA-decrypted access_token (see open-sse/shared/zedAuth).
+    baseUrl: "https://cloud.zed.dev/completions",
+    format: "openai",
+    forceStream: true,
     headers: {
-      "Content-Type": "application/json",
-      "x-zed-client-supports-status-messages": "true",
-      "x-zed-client-supports-x-ai": "true",
+      "content-type": "application/json",
     },
+    // Auth scheme is non-standard: "Authorization: <user_id> <access_token>" plus a duplicate
+    // x-zed-cloud-token header (verified in zed_account.rs build_authorization_header +
+    // cloud fetch). Executor builds both; scheme here is a marker for config-driven tooling.
+    auth: {
+      combined: true,
+      header: "Authorization",
+      scheme: "<user_id> <access_token>", // placeholder — real value built in executor
+    },
+    usage: {
+      url: "https://cloud.zed.dev/client/users/me", // verified in zed_account.rs
+    },
+    // Live catalog discovery — Zed's hosted model list changes frequently and is fetched
+    // per-connection rather than hardcoded.
+    modelsUrl: "https://cloud.zed.dev/models",
   },
-  // Catalog from GET /models (Bearer llm_token). Plan gating still applies at /completions.
-  models: [
-    { id: "claude-sonnet-5", name: "Claude Sonnet 5" },
-    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
-    { id: "claude-sonnet-4-5", name: "Claude Sonnet 4.5" },
-    { id: "claude-haiku-4-5", name: "Claude Haiku 4.5" },
-    { id: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
-    { id: "gpt-5.6-terra", name: "GPT-5.6 Terra" },
-    { id: "gpt-5.6-luna", name: "GPT-5.6 Luna" },
-    { id: "gpt-5.5", name: "GPT-5.5" },
-    { id: "gpt-5.4", name: "GPT-5.4" },
-    { id: "gpt-5.3-codex", name: "GPT-5.3-Codex" },
-    { id: "gpt-5.2", name: "GPT-5.2" },
-    { id: "gpt-5.2-codex", name: "GPT-5.2-Codex" },
-    { id: "gpt-5-mini", name: "GPT-5 mini" },
-    { id: "gpt-5-nano", name: "GPT-5 nano" },
-    { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro" },
-    { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash" },
-    { id: "gemini-3-flash", name: "Gemini 3 Flash" },
-  ],
+
+  // Empty static catalog + passthrough: Zed fronts a rotating set of upstream models
+  // (Claude/GPT/Gemini/Grok). Resolved live via modelsUrl; any client-sent model id is
+  // forwarded as-is rather than validated against a frozen list.
+  models: [],
+  passthroughModels: true,
+
   oauth: {
-    apiEndpoint: "https://cloud.zed.dev",
-    completionsPath: "/completions",
-    modelsPath: "/models",
-    llmTokensPath: "/client/llm_tokens",
-    usersMePath: "/client/users/me",
-    refreshLeadMs: 300000,
+    // Zed auth flow is RSA-based, NOT OAuth2/PKCE:
+    //   1. App generates RSA-2048 keypair locally (PKCS#1 DER, URL-safe base64).
+    //   2. Bind random TCP port on 127.0.0.1.
+    //   3. Open https://zed.dev/native_app_signin?native_app_port={port}&native_app_public_key={pub}.
+    //   4. After login, browser redirects http://127.0.0.1:{port}/?user_id=...&access_token=...
+    //      where access_token = base64(RSA-encrypted plaintext token).
+    //   5. Decrypt with private key (OAEP-SHA256, fallback PKCS1v15). Store user_id + plaintext token.
+    // No clientId/clientSecret/tokenUrl/refreshUrl — long-lived access_token, no refresh.
+    authorizeUrl: "https://zed.dev/native_app_signin",
+    platform: "zed",
+    rsaKeyExchange: true, // new flag: signals frontend/router this flow needs local RSA + TCP listener.
+  },
+
+  features: {
+    usage: true,
   },
 };

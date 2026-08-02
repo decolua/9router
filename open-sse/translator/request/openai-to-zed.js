@@ -9,7 +9,7 @@ import { FORMATS } from "../formats.js";
 import { openaiToClaudeRequest } from "./openai-to-claude.js";
 import { openaiToGeminiRequest } from "./openai-to-gemini.js";
 import { openaiToOpenAIResponsesRequest } from "./openai-responses.js";
-import { resolveZedProvider } from "../../config/zedConstants.js";
+import { ZED_PROVIDER, resolveZedProvider } from "../../config/zedConstants.js";
 import crypto from "crypto";
 
 export { resolveZedProvider };
@@ -22,27 +22,27 @@ function randomId() {
  * @param {string} model
  * @param {object} body - OpenAI chat completion body
  * @param {boolean} stream
+ * @param {object} [credentials]
  */
-export function openaiToZedRequest(model, body, stream = true) {
+export function openaiToZedRequest(model, body, stream = true, credentials = null) {
   // Already a CompletionBody
   if (body?.provider_request && body?.provider) {
     return { ...body, model: body.model || model };
   }
 
-  const provider = resolveZedProvider(model);
+  const provider = resolveZedProvider(null, model);
   const wantStream = stream !== false;
   let providerRequest;
 
-  if (provider === "anthropic") {
+  if (provider === ZED_PROVIDER.anthropic) {
     providerRequest = openaiToClaudeRequest(model, body, wantStream);
-  } else if (provider === "google") {
+  } else if (provider === ZED_PROVIDER.google) {
     providerRequest = openaiToGeminiRequest(model, body, wantStream);
-  } else if (provider === "open_ai") {
+  } else if (provider === ZED_PROVIDER.openai) {
     // Zed Hosted OpenAI models speak Responses API (`input` + typed content)
-    providerRequest = openaiToOpenAIResponsesRequest(model, body, wantStream);
-    providerRequest.stream = wantStream;
+    providerRequest = openaiToOpenAIResponsesRequest(model, body, wantStream, credentials);
   } else {
-    // x_ai — OpenAI chat-compatible
+    // XAi — OpenAI chat-compatible
     providerRequest = { ...body, model, stream: wantStream };
     delete providerRequest.thread_id;
     delete providerRequest.prompt_id;

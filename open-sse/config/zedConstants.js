@@ -1,36 +1,43 @@
 /**
  * Zed Hosted AI constants — model→upstream-provider routing and client defaults.
- * Used by the openai→zed translator and ZedExecutor.
+ * Used by ZedExecutor (open-sse/executors/zed.js).
+ *
+ * Zed's /completions envelope expects PascalCase provider tags matching the
+ * native client (Anthropic / OpenAi / Google / XAi).
  */
 
-/** Default x-zed-version header value. */
-export const ZED_CLIENT_VERSION = "1.6.3";
+/** Default x-zed-version header value when registry omits appVersion. */
+export const ZED_CLIENT_VERSION = "0.200.0";
 
-/** LLM bearer token lifetime when upstream omits expires_in (seconds). */
-export const ZED_LLM_TOKEN_EXPIRES_IN = 3600;
+/** LLM bearer token lifetime used by the in-process cache (ms). */
+export const ZED_LLM_TOKEN_TTL_MS = 50 * 60 * 1000;
+
+/** Wire-protocol provider tags Zed accepts in CompletionBody.provider. */
+export const ZED_PROVIDER = {
+  anthropic: "Anthropic",
+  openai: "OpenAi",
+  google: "Google",
+  xai: "XAi",
+};
+
+export const ZED_DEFAULT_PROVIDER = ZED_PROVIDER.openai;
 
 /**
- * Ordered model-id patterns that map a Zed catalog model onto the nested
- * upstream provider Zed expects in CompletionBody.provider.
- * First match wins; unmatched models fall back to ZED_DEFAULT_PROVIDER.
+ * Resolve which nested Zed upstream provider a catalog value or model id should use.
+ * @param {string|null|undefined} catalogProvider - raw `provider` from Zed's /models
+ * @param {string|null|undefined} model
+ * @returns {string} one of ZED_PROVIDER.*
  */
-export const ZED_PROVIDER_PATTERNS = [
-  { provider: "anthropic", pattern: /(claude|anthropic)/i },
-  { provider: "google", pattern: /(gemini|google)/i },
-  { provider: "x_ai", pattern: /(grok|x[_-]?ai)/i },
-];
+export function resolveZedProvider(catalogProvider, model) {
+  const raw = String(catalogProvider || "").toLowerCase();
+  if (raw === "anthropic") return ZED_PROVIDER.anthropic;
+  if (raw === "openai" || raw === "open_ai") return ZED_PROVIDER.openai;
+  if (raw === "google" || raw === "gemini") return ZED_PROVIDER.google;
+  if (raw === "xai" || raw === "x_ai" || raw === "x-ai") return ZED_PROVIDER.xai;
 
-export const ZED_DEFAULT_PROVIDER = "open_ai";
-
-/**
- * Resolve which nested Zed upstream provider a model id should use.
- * @param {string} model
- * @returns {string}
- */
-export function resolveZedProvider(model) {
   const m = String(model || "").toLowerCase();
-  for (const { provider, pattern } of ZED_PROVIDER_PATTERNS) {
-    if (pattern.test(m)) return provider;
-  }
+  if (/(claude|anthropic)/i.test(m)) return ZED_PROVIDER.anthropic;
+  if (/(gemini|google)/i.test(m)) return ZED_PROVIDER.google;
+  if (/(grok|x[_-]?ai)/i.test(m)) return ZED_PROVIDER.xai;
   return ZED_DEFAULT_PROVIDER;
 }

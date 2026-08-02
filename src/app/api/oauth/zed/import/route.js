@@ -4,7 +4,9 @@ import { createProviderConnection } from "@/models";
 
 /**
  * POST /api/oauth/zed/import
- * Import Zed Hosted AI credentials (user_id + access_token) and mint an LLM token.
+ * Import Zed Hosted AI credentials (user_id + access_token).
+ * Stores the long-lived user token the same way RSA OAuth does; LLM bearer
+ * tokens are minted on demand by open-sse/shared/zedAuth.js.
  *
  * Request body:
  * - userId: string
@@ -27,17 +29,15 @@ export async function POST(request) {
     const connection = await createProviderConnection({
       provider: "zed",
       authType: "oauth",
-      accessToken: tokenData.llmToken,
-      refreshToken: tokenData.accessToken,
-      expiresAt: new Date(Date.now() + tokenData.expiresIn * 1000).toISOString(),
+      accessToken: tokenData.accessToken,
+      refreshToken: null,
+      expiresAt: null,
       email: tokenData.email || null,
+      displayName: tokenData.name || undefined,
       providerSpecificData: {
-        userId: tokenData.userId,
-        zedAccessToken: tokenData.accessToken,
-        organizationId: tokenData.organizationId,
         authMethod: "imported",
-        provider: "Imported",
-        llmToken: tokenData.llmToken,
+        userId: tokenData.userId,
+        organizationId: tokenData.organizationId || "",
       },
       testStatus: "active",
     });
