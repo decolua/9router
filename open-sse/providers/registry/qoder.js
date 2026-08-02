@@ -16,8 +16,10 @@ export default {
   },
   category: "free",
   transport: {
-    baseUrl: "https://api3.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation",
-    headers: {},
+    baseUrl: "https://api2-v2.qoder.sh/model/v1/chat/completions",
+    headers: {
+      "User-Agent": "qoder/1.1.11",
+    },
     timeoutMs: 120000,
     stallTimeoutMs: 120000,
     usage: {
@@ -41,6 +43,7 @@ export default {
   oauth: {
     openApiBaseUrl: "https://openapi.qoder.sh",
     centerBaseUrl: "https://center.qoder.sh",
+    modelApiBaseUrl: "https://api2-v2.qoder.sh",
     chatBaseUrl: "https://api3.qoder.sh",
     deviceTokenUrl: "https://openapi.qoder.sh/api/v1/deviceToken/poll",
     refreshUrl: "https://center.qoder.sh/algo/api/v3/user/refresh_token",

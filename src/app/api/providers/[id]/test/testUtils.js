@@ -73,7 +73,25 @@ const OAUTH_TEST_CONFIG = {
     method: "GET",
     authHeader: "Authorization",
     authPrefix: "Bearer ",
+    extraHeaders: { "User-Agent": "qoder/1.1.11" },
     refreshable: false,
+    // The new api2-v2 chat endpoint returns 403 code 112 "pricingUrl" for
+    // free trial accounts. The userinfo endpoint succeeds (auth is fine),
+    // but the account can't actually use inference. We inspect the response
+    // body for plan_tier and surface a soft warning when it's free tier.
+    inspectBody: true,
+    softWarningOnBody: (body) => {
+      try {
+        const parsed = typeof body === "string" ? JSON.parse(body) : body;
+        const tier = parsed?.plan_tier || parsed?.planTier || parsed?.plan?.tier;
+        if (tier && typeof tier === "string" && tier.toUpperCase().includes("FREE")) {
+          return "Connected, but this is a free-tier Qoder account. Inference requires a Pro plan — upgrade at qoder.com to use chat.";
+        }
+      } catch {
+        // Body wasn't JSON or didn't contain plan_tier — no warning.
+      }
+      return null;
+    },
   },
   kimi: { checkExpiry: true, refreshable: true },
   "kimi-coding": { checkExpiry: true, refreshable: true },
@@ -154,6 +172,16 @@ export function classifyOAuthProbeResult(res, config, bodyText = "") {
       return { valid: true, error: softMap[status], soft: true };
     }
     return { valid: true, error: null, soft: false };
+  }
+
+  // Body-based soft warning (e.g. Qoder free-tier plan_tier). Auth works,
+  // but the account may not have inference access. The response body is
+  // inspected for a condition that warrants a warning.
+  if (res.ok && config?.inspectBody && typeof config.softWarningOnBody === "function") {
+    const warning = config.softWarningOnBody(bodyText);
+    if (warning) {
+      return { valid: true, error: warning, soft: true };
+    }
   }
 
   return { valid: true, error: null, soft: false };
@@ -416,7 +444,10 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     const fetchOpts = { method: config.method, headers };
     if (config.body) fetchOpts.body = config.body;
     const res = await fetchWithConnectionProxy(testUrl, fetchOpts, effectiveProxy);
-    const bodyText = !res.ok ? await res.text().catch(() => "") : "";
+    // Read body on error (for error classification) AND on success when
+    // inspectBody is configured (e.g. Qoder plan_tier soft warning).
+    const shouldReadBody = !res.ok || config.inspectBody;
+    const bodyText = shouldReadBody ? await res.text().catch(() => "") : "";
 
     const classified = classifyOAuthProbeResult(res, config, bodyText);
     if (classified.valid) {
@@ -440,7 +471,8 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
         const retryOpts = { method: config.method, headers: retryHeaders };
         if (config.body) retryOpts.body = config.body;
         const retryRes = await fetchWithConnectionProxy(retryUrl, retryOpts, effectiveProxy);
-        const retryBody = !retryRes.ok ? await retryRes.text().catch(() => "") : "";
+        const retryShouldReadBody = !retryRes.ok || config.inspectBody;
+        const retryBody = retryShouldReadBody ? await retryRes.text().catch(() => "") : "";
         const retryClassified = classifyOAuthProbeResult(retryRes, config, retryBody);
         if (retryClassified.valid) {
           return {

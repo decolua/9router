@@ -747,8 +747,10 @@
     "format": "openai-responses"
   },
   "qoder": {
-    "baseUrl": "https://api3.qoder.sh/algo/api/v2/service/pro/sse/agent_chat_generation",
-    "headers": {},
+    "baseUrl": "https://api2-v2.qoder.sh/model/v1/chat/completions",
+    "headers": {
+      "User-Agent": "qoder/1.1.11"
+    },
     "timeoutMs": 120000,
     "stallTimeoutMs": 120000,
     "usage": {

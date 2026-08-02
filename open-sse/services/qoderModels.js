@@ -1,15 +1,18 @@
 /**
  * Qoder model catalog fetcher.
  *
- * Calls /algo/api/v2/model/list (COSY-signed) on the inference host to get
- * the live catalog for an authenticated Qoder account, then caches the
- * per-model `model_config` blocks by key. Chat requests later look up the
- * exact server-published metadata for the model they want — Qoder's chat
- * endpoint silently downgrades to a different model when the wrong
- * model_config is sent.
+ * Tries the new api2-v2.qoder.sh/model/v1/models endpoint first (simple Bearer
+ * auth, standard OpenAI model list format). Falls back to the legacy
+ * api3.qoder.sh/algo/api/v2/model/list endpoint (COSY-signed) if the new one
+ * fails.
  *
- * On any error the live cache stays empty and chatExecuteCall surfaces the
- * problem to the user as "model config not yet fetched, retry shortly".
+ * Caches the per-model `model_config` blocks by key. Chat requests use the
+ * max_output_tokens from model_config as the default max_tokens — but the new
+ * api2-v2 chat endpoint doesn't require model_config in the request body
+ * (unlike the old COSY endpoint which silently downgraded models).
+ *
+ * On any error the live cache stays empty and the executor falls back to
+ * default max_tokens=32768.
  */
 
 import { createHash } from "crypto";
@@ -18,6 +21,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { buildCosyHeaders } from "../shared/qoder/cosy.js";
 import {
   QODER_MODEL_LIST_URL,
+  QODER_MODEL_LIST_URL_V2,
 } from "../shared/qoder/constants.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
@@ -45,7 +49,7 @@ function cacheKey(credentials) {
 }
 
 /**
- * Strip credential -> COSY creds for buildCosyHeaders.
+ * Strip credential -> COSY creds for buildCosyHeaders (legacy fallback only).
  */
 function cosyCredsFromConnection(credentials) {
   const psd = credentials?.providerSpecificData || {};
@@ -59,12 +63,106 @@ function cosyCredsFromConnection(credentials) {
 }
 
 /**
- * Fetch the live model list for this credential. Returns:
- *   { models: [{ id, name, contextLength, isVL, isReasoning, ... }, ...],
- *     rawConfigs: Map<modelKey, modelConfigObject> }
- * or `null` on any error.
+ * Fetch model list from the NEW api2-v2 endpoint (Bearer auth, standard
+ * OpenAI model list format). Returns { models, rawConfigs } or null on error.
+ *
+ * The new endpoint likely returns a simpler list. We try to normalize it
+ * into the same shape as the legacy endpoint's `chat` array.
  */
-async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null) {
+async function fetchQoderCatalogV2(credentials, signal, proxyOptions = null) {
+  if (!credentials?.accessToken) return null;
+
+  const headers = {
+    Accept: "application/json",
+    Authorization: `Bearer ${credentials.accessToken}`,
+    "User-Agent": "qoder/1.1.11",
+  };
+
+  const controller = new AbortController();
+  let timer = null;
+  let abortListener = null;
+  let response;
+  try {
+    timer = setTimeout(() => controller.abort("timeout"), FETCH_TIMEOUT_MS);
+    if (signal && typeof signal.addEventListener === "function") {
+      if (signal.aborted) {
+        controller.abort(signal.reason);
+      } else {
+        abortListener = () => controller.abort(signal.reason);
+        signal.addEventListener("abort", abortListener);
+      }
+    }
+    response = await proxyAwareFetch(
+      QODER_MODEL_LIST_URL_V2,
+      {
+        method: "GET",
+        headers,
+        signal: controller.signal,
+      },
+      proxyOptions,
+    );
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (signal && abortListener) signal.removeEventListener("abort", abortListener);
+  }
+
+  if (!response.ok) return null;
+
+  const body = await response.json().catch(() => null);
+  if (!body) return null;
+
+  // The new endpoint may return either:
+  // 1. { data: [{ id, ... }, ...] } — standard OpenAI /v1/models format
+  // 2. { chat: [{ key, ... }, ...] } — same as the legacy endpoint
+  // 3. [{ id, ... }, ...] — bare array
+  // Normalize all into the legacy { chat: [...] } shape.
+  let entries;
+  if (Array.isArray(body)) {
+    entries = body;
+  } else if (Array.isArray(body.data)) {
+    entries = body.data;
+  } else if (Array.isArray(body.chat)) {
+    entries = body.chat;
+  } else if (body.models && Array.isArray(body.models)) {
+    entries = body.models;
+  } else {
+    return null;
+  }
+
+  const models = [];
+  const rawConfigs = new Map();
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object") continue;
+    // The new endpoint uses "id"; the legacy uses "key". Support both.
+    const key = entry.key || entry.id;
+    if (!key) continue;
+
+    rawConfigs.set(key, entry);
+    if (entry.enable === false) continue;
+
+    const display = entry.display_name || entry.name || key;
+    const ctx = Number(entry.max_input_tokens || entry.context_length) || 131_072;
+    models.push({
+      id: key,
+      name: `${display}`,
+      contextLength: ctx,
+      isVL: !!entry.is_vl,
+      isReasoning: !!entry.is_reasoning,
+      maxOutputTokens: Number(entry.max_output_tokens) || 0,
+      description: entry.description || "",
+    });
+  }
+
+  if (models.length === 0 && rawConfigs.size === 0) return null;
+  return { models, rawConfigs };
+}
+
+/**
+ * Fetch model list from the LEGACY api3 endpoint (COSY-signed). Returns
+ * { models, rawConfigs } or null on error. Used as fallback when the new
+ * endpoint fails.
+ */
+async function fetchQoderCatalogLegacy(credentials, signal, proxyOptions = null) {
   const creds = cosyCredsFromConnection(credentials);
   if (!creds.userId || !creds.authToken) return null;
 
@@ -81,9 +179,6 @@ async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null) {
   try {
     timer = setTimeout(() => controller.abort("timeout"), FETCH_TIMEOUT_MS);
     if (signal && typeof signal.addEventListener === "function") {
-      // If the parent signal already aborted before we got here, the
-      // 'abort' event has already fired and addEventListener won't
-      // re-trigger it. Propagate the cancellation immediately.
       if (signal.aborted) {
         controller.abort(signal.reason);
       } else {
@@ -117,8 +212,6 @@ async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null) {
     const key = entry.key;
     if (!key) continue;
 
-    // Always cache the config — chat needs model_config even for UI-hidden
-    // models (enable:false). Upstream still accepts chat for these keys.
     rawConfigs.set(key, entry);
     if (entry.enable === false) continue;
 
@@ -139,9 +232,24 @@ async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null) {
 }
 
 /**
+ * Fetch the live model list, trying the new V2 endpoint first, then falling
+ * back to the legacy COSY-signed endpoint.
+ */
+async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null) {
+  // Try new endpoint first (simple Bearer auth).
+  const v2Result = await fetchQoderCatalogV2(credentials, signal, proxyOptions);
+  if (v2Result) return v2Result;
+
+  // Fall back to legacy endpoint (COSY-signed).
+  const legacyResult = await fetchQoderCatalogLegacy(credentials, signal, proxyOptions);
+  return legacyResult;
+}
+
+/**
  * Get the cached model_config block for a given model key, fetching the
  * catalog first if needed. Returns null when the catalog can't be fetched
- * (so callers can fall back to the static registry).
+ * (so callers can fall back to defaults — the new endpoint doesn't require
+ * model_config in the request body).
  */
 export async function getQoderModelConfig(credentials, modelKey, options = {}) {
   const cached = await resolveQoderModels(credentials, options);

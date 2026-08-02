@@ -1,15 +1,29 @@
 /**
- * Qoder API constants ported from CLIProxyAPIPlus qoder-provider branch.
+ * Qoder API constants.
  *
  * Endpoint set:
  *   openapi.qoder.sh   - device flow + userinfo + quota usage
  *   center.qoder.sh    - token refresh (best-effort, currently 403 for device tokens)
- *   api3.qoder.sh      - inference (chat) + model list, requires COSY signing
+ *   api2-v2.qoder.sh   - NEW inference (chat) + model list, simple Bearer auth,
+ *                        standard OpenAI-compatible request/response (qodercli v1.1.11+)
+ *   api3.qoder.sh      - LEGACY inference (chat) + model list, requires COSY signing
  *   qoder.com/device   - browser landing page for device authorization
+ *
+ * The new api2-v2 endpoint is preferred — it uses the same device token as
+ * Bearer auth and speaks standard OpenAI chat completions, so no COSY signing
+ * or SSE envelope unwrapping is needed. The old api3 constants are retained
+ * for rollback / fallback.
  */
 
 export const QODER_OPENAPI_BASE = "https://openapi.qoder.sh";
 export const QODER_CENTER_BASE = "https://center.qoder.sh";
+
+// ---- NEW: api2-v2 (OpenAI-compatible, Bearer auth) ----
+export const QODER_MODEL_API_BASE = "https://api2-v2.qoder.sh";
+export const QODER_MODEL_CHAT_URL = `${QODER_MODEL_API_BASE}/model/v1/chat/completions`;
+export const QODER_MODEL_LIST_URL_V2 = `${QODER_MODEL_API_BASE}/model/v1/models`;
+
+// ---- LEGACY: api3 (COSY-signed) — kept for fallback / rollback ----
 export const QODER_CHAT_BASE = "https://api3.qoder.sh";
 
 export const QODER_LOGIN_URL = "https://qoder.com/device/selectAccounts";
@@ -20,7 +34,7 @@ export const QODER_USERINFO_URL = `${QODER_OPENAPI_BASE}/api/v1/userinfo`;
 export const QODER_QUOTA_USAGE_URL = `${QODER_OPENAPI_BASE}/api/v2/quota/usage`;
 export const QODER_REFRESH_TOKEN_URL = `${QODER_CENTER_BASE}/algo/api/v3/user/refresh_token`;
 
-// Inference endpoints (under /algo on api3.qoder.sh, all COSY-signed)
+// ---- LEGACY inference endpoints (under /algo on api3.qoder.sh, all COSY-signed) ----
 export const QODER_CHAT_SIG_PATH = "/api/v2/service/pro/sse/agent_chat_generation";
 export const QODER_CHAT_URL = `${QODER_CHAT_BASE}/algo${QODER_CHAT_SIG_PATH}?FetchKeys=llm_model_result&AgentId=agent_common`;
 export const QODER_CHAT_URL_ENCODED = `${QODER_CHAT_URL}&Encode=1`;
