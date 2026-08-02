@@ -1,9 +1,17 @@
 import crypto from "crypto";
 import open from "open";
+import { platform, arch } from "os";
 import { GEMINI_CONFIG, getOAuthClientMetadata } from "../constants/oauth.js";
 import { getServerCredentials } from "../config/index.js";
 import { startLocalServer } from "../utils/server.js";
 import { spinner as createSpinner } from "../utils/ui.js";
+
+// Build User-Agent matching the real Antigravity IDE format
+function getAntigravityUserAgent() {
+  const p = platform() === "win32" ? "windows" : platform();
+  const a = arch() === "x64" ? "amd64" : arch();
+  return `antigravity/ide/2.1.1 ${p}/${a}`;
+}
 
 /**
  * Gemini CLI (Google Cloud Code Assist) OAuth Service
@@ -69,9 +77,7 @@ export class GeminiCLIService {
         headers: {
           "Authorization": `Bearer ${accessToken}`,
           "Content-Type": "application/json",
-          "User-Agent": "google-api-nodejs-client/9.15.1",
-          "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-          "Client-Metadata": JSON.stringify(getOAuthClientMetadata())
+          "User-Agent": getAntigravityUserAgent(),
         },
         body: JSON.stringify({
           metadata: getOAuthClientMetadata(),
