@@ -24,7 +24,10 @@ export default {
   category: "oauth",
   serviceKinds: ["llm", "image"],
   transport: {
-    baseUrls: [ANTIGRAVITY_IDE_BASE_URL],
+    baseUrls: [
+      ANTIGRAVITY_IDE_BASE_URL,
+      "https://cloudcode-pa.googleapis.com"
+    ],
     format: "antigravity",
     headers: {
       "User-Agent": AG_IDE_UA,
