@@ -1,6 +1,6 @@
 import { platform, arch, hostname } from "os";
 import { PROVIDERS, PROVIDER_OAUTH } from "./providers.js";
-import { ANTIGRAVITY_IDE_USER_AGENT } from "../providers/shared.js";
+import { ANTIGRAVITY_IDE_VERSION } from "../providers/shared.js";
 import { createRequire } from "module";
 
 // === Gemini CLI === derive từ registry gemini-cli.transport
@@ -72,8 +72,6 @@ function getIdeArch() {
   if (a === "x64") return "amd64";
   return a; // arm64, etc.
 }
-
-export const ANTIGRAVITY_IDE_VERSION = "2.1.1";
 
 export function getPlatformUserAgent() {
   return `antigravity/ide/${ANTIGRAVITY_IDE_VERSION} ${getIdePlatform()}/${getIdeArch()}`;

@@ -1,3 +1,4 @@
+import { platform, arch } from "os";
 import { ANTIGRAVITY_IDE_BASE_URL, ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_OAUTH_CLIENT } from "../shared.js";
 
 // Inline IDE User-Agent (cannot import from appConstants — circular dependency)
