@@ -65,8 +65,10 @@ reuse the resolved per-provider model levels:
 
 - Preserve `max` or `ultra` when the target provider/model explicitly supports
   the requested level.
-- Convert unsupported `max` or `ultra` requests to `xhigh`, preserving the
-  existing safe fallback for generic OpenAI-compatible providers.
+- Convert `ultra` to `max` for GPT-5.6 Luna, preserving the highest level Luna
+  supports.
+- Convert other unsupported `max` or `ultra` requests to `xhigh`, preserving
+  the existing safe fallback for generic OpenAI-compatible providers.
 - Leave all existing lower levels and `none` handling unchanged.
 
 This keeps one capability source for the dashboard and translation behavior
@@ -77,7 +79,8 @@ instead of duplicating the GPT-5.6 matrix.
 Make Codex reasoning normalization model-aware. After virtual review models
 are resolved to their upstream base model, preserve a requested level when
 the Codex capability resolver lists it. Continue converting unsupported
-`max` or `ultra` values to `xhigh`.
+`max` or `ultra` values to `xhigh`, except that Luna converts `ultra` to its
+supported `max` level.
 
 Do not add `max` to the executor's legacy hyphen-suffix parser because
 `gpt-5.1-codex-max` is an actual model identifier. Dashboard overrides use the
@@ -86,8 +89,8 @@ before executor dispatch.
 
 ## Error and Compatibility Behavior
 
-- `cx/gpt-5.6-luna(ultra)` falls back to `xhigh` rather than sending an
-  unsupported level upstream.
+- `cx/gpt-5.6-luna(ultra)` becomes `max` rather than sending an unsupported
+  level upstream.
 - Non-GPT-5.6 Codex models retain their current supported levels and fallback
   behavior.
 - Kiro GPT-5.6 routes no longer inherit the Codex Sol-only picker override and
@@ -102,8 +105,8 @@ Use test-driven development with focused unit coverage:
 1. Level resolver tests for Sol, Terra, Luna, their review variants, an older
    Codex model, and Kiro isolation.
 2. Shared translator tests proving `max` and `ultra` survive only for supported
-   Codex model/provider combinations and unsupported combinations become
-   `xhigh`.
+   Codex model/provider combinations, Luna `ultra` becomes `max`, and other
+   unsupported combinations become `xhigh`.
 3. Codex executor tests proving native and translated request shapes preserve
    supported values after upstream model resolution.
 4. Existing thinking translation and Codex executor suites to guard generic
