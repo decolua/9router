@@ -46,10 +46,12 @@ async function normalizeProxyPoolId(proxyPoolId) {
   return { proxyPoolId: normalizedId };
 }
 
-// GET /api/providers - List all connections
-export async function GET() {
+// GET /api/providers - List connections (optionally filtered by ?provider=)
+export async function GET(request) {
   try {
-    const connections = await getProviderConnections();
+    const { searchParams } = new URL(request.url);
+    const provider = searchParams.get("provider");
+    const connections = await getProviderConnections(provider ? { provider } : {});
 
     // Build nodeNameMap for compatible providers (id → name)
     let nodeNameMap = {};
