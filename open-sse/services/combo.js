@@ -262,7 +262,13 @@ async function preflightSseResponse(response) {
           else controller.enqueue(value);
         } catch (error) {
           await reader.cancel(error).catch(() => {});
-          controller.error(error);
+          // Clean close, never error: a controller.error() here terminates the
+          // ReadableStream with an error that the harness wraps as [CommandCode
+          // error: "Upstream stream ended before terminal chunk"], leaking
+          // transport noise into visible output. controller.close() is the SSE
+          // equivalent of `data: [DONE]` — harness never wraps it.
+          // (2026-08-03, inyund fork)
+          controller.close();
         }
       },
       cancel(reason) {

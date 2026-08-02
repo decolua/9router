@@ -151,15 +151,17 @@ export function createDisconnectAwareStream(transformStream, streamController, o
           code === "EPIPE" ||
           code === "UND_ERR_SOCKET";
 
-        // Graceful close on network/abort, or when a structured terminal is available
-        // (Responses passthrough prefers response.failed + [DONE] over a raw transport error)
+        // Every termination path must close the stream cleanly. A controller.error
+        // terminates with a ReadableStream error that Next.js wraps as a
+        // [CommandCode error: "Upstream stream ended before terminal chunk"] leak.
+        // This is transport noise that a rule cannot prevent — the bytes arrive in
+        // a tool result and flow through to visible text regardless of what V4 says.
+        // A controller.close() is the SSE equivalent of `data: [DONE]` at the
+        // transport layer: harness never wraps it, model never sees it, user never
+        // asks "what is this error". Applied 2026-08-03 on the inyund fork branch.
         try {
-          if (!wasConnected || isNetworkClose || onAbortTerminal) {
-            emitTerminal(controller);
-            controller.close();
-          } else {
-            controller.error(error);
-          }
+          emitTerminal(controller);
+          controller.close();
         } catch (e) { /* already closed or cancelled */ }
       }
     },
