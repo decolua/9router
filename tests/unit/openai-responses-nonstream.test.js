@@ -41,6 +41,31 @@ describe("non-stream Chat upstream for a Responses-API client (op-ericding bug)"
     expect(fc.arguments).toBe("{\"cmd\":\"ls\"}");
   });
 
+  it("translates marked Chat tools into Responses custom_tool_call output", () => {
+    const customBody = structuredClone(CHAT_TOOL_BODY);
+    customBody.choices[0].message.tool_calls[0] = {
+      id: "call_exec",
+      type: "function",
+      function: {
+        name: "exec",
+        arguments: "{\"input\":\"return await tools.shell({command: 'pwd'});\"}"
+      }
+    };
+    const out = translateNonStreamingResponse(
+      customBody,
+      FORMATS.OPENAI,
+      FORMATS.OPENAI_RESPONSES,
+      new Set(["exec"])
+    );
+    const call = (out.output || []).find((item) => item.type === "custom_tool_call");
+    expect(call).toMatchObject({
+      call_id: "call_exec",
+      name: "exec",
+      input: "return await tools.shell({command: 'pwd'});"
+    });
+    expect(out.output.some((item) => item.type === "function_call")).toBe(false);
+  });
+
   it("keeps chat.completion text content as a Responses message item", () => {
     const body = {
       ...CHAT_TOOL_BODY,
@@ -97,6 +122,20 @@ describe("forced-SSE JSON path for a Responses-API client behind a chat upstream
     expect(fc).toBeTruthy();
     expect(fc.name).toBe("shell");
     expect(fc.arguments).toBe("{\"cmd\":\"pwd\"}");
+  });
+
+  it("returns a custom_tool_call for a marked tool", async () => {
+    const ctx = sseCtx(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI);
+    ctx.customToolNames = new Set(["shell"]);
+    const result = await handleForcedSSEToJson(ctx);
+    expect(result.success).toBe(true);
+    const json = await result.response.json();
+    const call = (json.output || []).find((item) => item.type === "custom_tool_call");
+    expect(call).toMatchObject({
+      call_id: "call_9",
+      name: "shell",
+      input: "{\"cmd\":\"pwd\"}"
+    });
   });
 
   it("still returns chat.completion for a plain chat client", async () => {
