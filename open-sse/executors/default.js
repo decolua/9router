@@ -168,6 +168,10 @@ export class DefaultExecutor extends BaseExecutor {
     // Hooks run BEFORE auth so dynamic overlays (claude cached headers) can't clobber the token.
     for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);
     applyAuth(headers, desc, credentials);
+    if (this.provider === "claude" && credentials?._clientSessionId) {
+      delete headers["x-claude-code-session-id"];
+      headers["X-Claude-Code-Session-Id"] = credentials._clientSessionId;
+    }
 
     // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
