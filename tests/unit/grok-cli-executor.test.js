@@ -1,4 +1,9 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
+  proxyAwareFetch: vi.fn(),
+}));
+
+import { proxyAwareFetch } from "../../open-sse/utils/proxyFetch.js";
 import {
   GrokCliExecutor,
   countGrokCliUserTurns,
@@ -8,6 +13,7 @@ import {
   normalizeGrokCliEffort,
   supportsGrokCliReasoningEffort,
 } from "../../open-sse/executors/grok-cli.js";
+import { GrokCliCompatibilityError } from "../../open-sse/executors/grok-cli-compat.js";
 import { getExecutor, hasSpecializedExecutor } from "../../open-sse/executors/index.js";
 import { PROVIDERS, PROVIDER_OAUTH, PROVIDER_MODELS } from "../../open-sse/providers/index.js";
 import { getModelUpstreamId } from "../../open-sse/config/providerModels.js";
@@ -64,6 +70,7 @@ describe("GrokCliExecutor", () => {
   let executor;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     _resetGrokCliTurnStore();
     executor = new GrokCliExecutor();
   });
@@ -89,14 +96,20 @@ describe("GrokCliExecutor", () => {
     const headers = executor.buildHeaders(
       {
         accessToken: "tok_test",
-        providerSpecificData: { email: "u@example.com", userId: "uid-1" },
+        providerSpecificData: {
+          email: "u@example.com",
+          userId: "uid-1",
+          deploymentId: "deployment-1",
+        },
       },
       true
     );
 
     expect(headers.Authorization).toBe("Bearer tok_test");
     expect(headers.Accept).toBe("text/event-stream");
-    expect(headers["x-xai-token-auth"]).toBeUndefined();
+    expect(headers["X-XAI-Token-Auth"]).toBe("xai-grok-cli");
+    expect(headers["x-authenticateresponse"]).toBe("authenticate-response");
+    expect(headers["x-grok-client-mode"]).toBe("headless");
     expect(headers["x-grok-client-identifier"]).toBe("grok-shell");
     expect(headers["x-grok-client-version"]).toBe("0.2.99");
     expect(headers["x-grok-session-id"]).toBe("sess-abc");
@@ -105,10 +118,11 @@ describe("GrokCliExecutor", () => {
     expect(headers["x-grok-turn-idx"]).toBe("3");
     expect(headers["x-grok-agent-id"]).toBe("agent-1");
     expect(headers["x-grok-model-override"]).toBe("grok-4.5");
+    expect(headers["x-grok-user-id"]).toBe("uid-1");
+    expect(headers["x-grok-deployment-id"]).toBe("deployment-1");
     expect(headers["x-compaction-at"]).toBeUndefined();
-    expect(headers["x-email"]).toBe("u@example.com");
-    expect(headers["x-userid"]).toBe("uid-1");
-    expect(headers["x-authenticateresponse"]).toBeUndefined();
+    expect(headers["x-email"]).toBeUndefined();
+    expect(headers["x-userid"]).toBeUndefined();
   });
 
   it("buildHeaders falls back to top-level email/userId (OAuth mapTokens shape)", () => {
@@ -125,8 +139,9 @@ describe("GrokCliExecutor", () => {
       true
     );
 
-    expect(headers["x-email"]).toBe("top@example.com");
+    expect(headers["x-email"]).toBeUndefined();
     expect(headers["x-userid"]).toBeUndefined();
+    expect(headers["x-grok-user-id"]).toBeUndefined();
   });
 
   it("transformRequest normalizes Responses body like official CLI", () => {
@@ -187,7 +202,6 @@ describe("GrokCliExecutor", () => {
         { type: "message", role: "system", content: "You are Grok" },
         { type: "message", role: "user", content: "hi", id: "msg_server_id" },
         { type: "item_reference", id: "rs_abc" },
-        "rs_should_drop",
       ],
       reasoning_effort: "medium",
     };
@@ -244,7 +258,7 @@ describe("GrokCliExecutor", () => {
     expect(out.input[2]).toEqual({
       type: "function_call_output",
       call_id: "call-custom",
-      output: JSON.stringify([{ type: "input_text", text: "first" }, { type: "input_text", text: "second" }]),
+      output: [{ type: "input_text", text: "first" }, { type: "input_text", text: "second" }],
     });
     expect(out.input.some((item) => item.call_id === "call-function")).toBe(false);
     expect(out.tools[0].parameters).toEqual({
@@ -262,8 +276,6 @@ describe("GrokCliExecutor", () => {
         { type: "function_call_output", call_id: "call-array", output: [1, 2] },
         { type: "function_call", call_id: "call-null", name: "null_tool", arguments: "{}" },
         { type: "function_call_output", call_id: "call-null", output: null },
-        { type: "custom_tool_call", call_id: "call-invalid", input: "missing name" },
-        { type: "custom_tool_call_output", call_id: "call-invalid", output: "orphan" },
       ],
     }, true, { connectionId: "structured-output" });
 
@@ -275,7 +287,7 @@ describe("GrokCliExecutor", () => {
     expect(out.input.some((item) => item.call_id === "call-invalid")).toBe(false);
   });
 
-  it("preserves native Grok encrypted reasoning and item ids", () => {
+  it("preserves native Grok encrypted reasoning while stripping output-only ids", () => {
     const reasoningId = "rs_3e3f6187-892a-96db-893b-904eff019e19";
     const messageId = "msg_3e3f6187-892a-96db-893b-904eff019e19";
     const functionId = "fc_3e3f6187-892a-96db-893b-904eff019e19";
@@ -303,8 +315,8 @@ describe("GrokCliExecutor", () => {
       encrypted_content: "grok-ciphertext",
     });
     expect(out.input[0].internal_chat_message_metadata_passthrough).toBeUndefined();
-    expect(out.input[1].id).toBe(messageId);
-    expect(out.input[2].id).toBe(functionId);
+    expect(out.input[1].id).toBeUndefined();
+    expect(out.input[2].id).toBeUndefined();
   });
 
   it("normalizes official effort aliases", () => {
@@ -319,7 +331,7 @@ describe("GrokCliExecutor", () => {
       input: "hi",
       reasoning: { effort: "max", summary: "detailed" },
     }, true, { connectionId: "effort-conn" });
-    expect(out.reasoning).toEqual({ effort: "xhigh", summary: "detailed" });
+    expect(out.reasoning).toEqual({ effort: "xhigh", summary: "concise" });
   });
 
   it("omits reasoning effort for models that reject it", () => {
@@ -469,8 +481,105 @@ describe("GrokCliExecutor", () => {
     const creds = { connectionId: "retry-conn" };
     executor.transformRequest("grok-build", body, true, creds);
     const firstTurn = executor._currentTurnIdx;
+    const firstReqId = executor._currentReqId;
     executor.transformRequest("grok-build", body, true, creds);
     expect(executor._currentTurnIdx).toBe(firstTurn);
+    expect(executor._currentReqId).toBe(firstReqId);
+  });
+
+  it("returns a local 400 before transport for incompatible history", async () => {
+    executor._agentId = "agent-test";
+    const headersSpy = vi.spyOn(executor, "buildHeaders");
+    const result = await executor.execute({
+      model: "grok-4.5",
+      body: { input: [{ type: "future_semantic_item", payload: true }] },
+      stream: true,
+      credentials: { accessToken: "unused", connectionId: "compat-error" },
+      log: null,
+    });
+
+    expect(headersSpy).not.toHaveBeenCalled();
+    expect(result.response.status).toBe(400);
+    expect(await result.response.json()).toEqual({
+      error: {
+        message: "Unsupported Grok CLI input item type: future_semantic_item",
+        type: "invalid_request_error",
+        param: "input[0]",
+        code: "grok_cli_compatibility_error",
+      },
+    });
+  });
+
+  it("does not reuse a credential agent id for another account", async () => {
+    const invalidBody = { input: [{ type: "future_semantic_item" }] };
+
+    await executor.execute({
+      model: "grok-4.5",
+      body: invalidBody,
+      stream: true,
+      credentials: { connectionId: "account-a", providerSpecificData: { deviceId: "account-a-agent" } },
+    });
+    expect(executor._agentId).toBe("account-a-agent");
+
+    await executor.execute({
+      model: "grok-4.5",
+      body: { input: [{ type: "future_semantic_item" }] },
+      stream: true,
+      credentials: { connectionId: "account-b", providerSpecificData: {} },
+    });
+    expect(executor._agentId).not.toBe("account-a-agent");
+    expect(executor._agentId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+  });
+
+  it("isolates generated agent ids across accounts and retries", async () => {
+    executor.config = {
+      ...executor.config,
+      retry: { ...executor.config.retry, 502: { attempts: 1, delayMs: 0 } },
+    };
+    const seenHeaders = [];
+    let releaseFirst;
+    let markFirstStarted;
+    const firstStarted = new Promise((resolve) => { markFirstStarted = resolve; });
+    const firstGate = new Promise((resolve) => { releaseFirst = resolve; });
+    proxyAwareFetch.mockImplementation(async (_url, options) => {
+      seenHeaders.push(options.headers);
+      if (seenHeaders.length === 1) {
+        markFirstStarted();
+        await firstGate;
+        return new Response("retry", { status: 502 });
+      }
+      return new Response("ok", { status: 200 });
+    });
+
+    const accountA = executor.execute({
+      model: "grok-4.5",
+      body: { input: "account a" },
+      stream: true,
+      credentials: { accessToken: "token-a", connectionId: "account-a" },
+    });
+    await firstStarted;
+    await executor.execute({
+      model: "grok-4.5",
+      body: { input: "account b" },
+      stream: true,
+      credentials: { accessToken: "token-b", connectionId: "account-b" },
+    });
+    releaseFirst();
+    await accountA;
+
+    const ids = seenHeaders.map((headers) => headers["x-grok-agent-id"]);
+    expect(ids).toHaveLength(3);
+    expect(ids[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(ids[0]).not.toBe(ids[1]);
+    expect(ids[2]).toBe(ids[0]);
+  });
+
+  it("throws compatibility errors from direct transforms", () => {
+    expect(() => executor.transformRequest("grok-4.5", {
+      input: [{ type: "function_call", call_id: "missing-name", arguments: "{}" }],
+    }, true, { connectionId: "bad-direct" })).toThrowError(GrokCliCompatibilityError);
   });
 
   it("bounds per-session turn state", () => {
