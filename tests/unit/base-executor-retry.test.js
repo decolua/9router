@@ -23,6 +23,28 @@ const creds = { apiKey: "k" };
 
 beforeEach(() => fetchMock.mockReset());
 
+describe("BaseExecutor.execute — request preparation", () => {
+  it("transforms the request before resolving its URL", async () => {
+    const ex = makeExec({ baseUrl: "https://x/responses" });
+    ex.transformRequest = function transformRequest(model, body) {
+      this.requestPath = body.compact ? "/responses/compact" : "/responses";
+      return body;
+    };
+    ex.buildUrl = function buildUrl() {
+      return `https://x${this.requestPath}`;
+    };
+    fetchMock.mockResolvedValueOnce(res(200));
+
+    await ex.execute({ model: "m", body: { compact: true }, stream: false, credentials: creds });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://x/responses/compact",
+      expect.any(Object),
+      null,
+    );
+  });
+});
+
 describe("BaseExecutor.execute — retry by status (config-driven)", () => {
   it("retries 502 `attempts` times then succeeds", async () => {
     const ex = makeExec({ baseUrl: "https://x/api", retry: { 502: { attempts: 3, delayMs: 0 } } });

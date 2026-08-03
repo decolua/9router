@@ -1,6 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const fetchMock = vi.hoisted(() => vi.fn());
+
+vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
+  proxyAwareFetch: (...args) => fetchMock(...args),
+}));
 
 import { CodexExecutor } from "../../open-sse/executors/codex.js";
+
+beforeEach(() => fetchMock.mockReset());
 
 function normalizeTools(tools) {
   const executor = new CodexExecutor();
@@ -20,6 +28,148 @@ function normalizeTools(tools) {
 }
 
 describe("CodexExecutor tool normalization", () => {
+  it("preserves the official Responses Lite transport contract", () => {
+    const executor = new CodexExecutor();
+    const credentials = {
+      connectionId: "responses-lite",
+      rawHeaders: {
+        "x-openai-internal-codex-responses-lite": "true",
+        "user-agent": "codex_exec/0.144.1",
+        originator: "codex_exec",
+        "x-client-request-id": "request-id",
+        "x-codex-turn-metadata": "turn-metadata",
+        authorization: "Bearer client-secret",
+        cookie: "session=client-secret",
+        "proxy-authorization": "Basic client-secret",
+        "x-api-key": "client-secret",
+        "x-forwarded-for": "203.0.113.1",
+      },
+    };
+    const body = {
+      model: "gpt-5.6-sol",
+      input: [
+        { type: "additional_tools", role: "developer", tools: [{ type: "function", name: "probe", parameters: {} }] },
+        { type: "message", role: "developer", content: [{ type: "input_text", text: "instructions" }] },
+        { type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] },
+      ],
+      reasoning: { effort: "max", summary: "auto" },
+      stream: true,
+    };
+
+    executor.transformRequest("gpt-5.6-sol", body, true, credentials);
+    const headers = executor.buildHeaders(credentials, true);
+
+    expect(headers["x-openai-internal-codex-responses-lite"]).toBe("true");
+    expect(headers["User-Agent"]).toBe("codex_exec/0.144.1");
+    expect(headers["x-client-request-id"]).toBe("request-id");
+    expect(headers["x-codex-turn-metadata"]).toBe("turn-metadata");
+    for (const name of ["authorization", "cookie", "proxy-authorization", "x-api-key", "x-forwarded-for"]) {
+      expect(headers[name]).toBeUndefined();
+    }
+    expect(body.instructions).toBeUndefined();
+    expect(body.parallel_tool_calls).toBe(false);
+    expect(body.input[0].type).toBe("additional_tools");
+    expect(body.reasoning.context).toBe("all_turns");
+  });
+
+  it("disables parallel tool calls required by Responses Lite", () => {
+    const executor = new CodexExecutor();
+    const body = {
+      model: "gpt-5.6-sol",
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] }],
+      parallel_tool_calls: true,
+      reasoning: { effort: "max", summary: "auto" },
+      stream: true,
+    };
+
+    executor.transformRequest("gpt-5.6-sol", body, true, {
+      connectionId: "responses-lite-parallel",
+      rawHeaders: { "x-openai-internal-codex-responses-lite": "true" },
+    });
+
+    expect(body.parallel_tool_calls).toBe(false);
+  });
+
+  it("keeps Responses Lite compact requests unary and compact-only", () => {
+    const executor = new CodexExecutor();
+    const credentials = {
+      connectionId: "responses-lite-compact",
+      rawHeaders: { "x-openai-internal-codex-responses-lite": "true" },
+    };
+    const body = {
+      _compact: true,
+      model: "gpt-5.6-sol",
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] }],
+      parallel_tool_calls: false,
+      reasoning: { effort: "max", summary: "auto", context: "current_turn" },
+      stream: true,
+      store: false,
+      include: ["reasoning.encrypted_content"],
+      client_metadata: { thread_id: "test" },
+    };
+
+    executor.transformRequest("gpt-5.6-sol", body, false, credentials);
+    const headers = executor.buildHeaders(credentials, false);
+
+    expect(executor.buildUrl("gpt-5.6-sol", false)).toBe("https://chatgpt.com/backend-api/codex/responses/compact");
+    executor.transformRequest("gpt-5.6-sol", body, false, credentials);
+    expect(executor.buildUrl("gpt-5.6-sol", false)).toBe("https://chatgpt.com/backend-api/codex/responses/compact");
+    expect(headers["x-openai-internal-codex-responses-lite"]).toBe("true");
+    expect(headers.Accept).toBeUndefined();
+    expect(body.stream).toBeUndefined();
+    expect(body.store).toBeUndefined();
+    expect(body.include).toBeUndefined();
+    expect(body.client_metadata).toBeUndefined();
+    expect(body.parallel_tool_calls).toBe(false);
+    expect(body.reasoning.context).toBe("all_turns");
+  });
+
+  it("routes concurrent compact and standard requests independently", async () => {
+    const executor = new CodexExecutor();
+    const credentials = {
+      apiKey: "test-key",
+      connectionId: "responses-lite-url",
+      rawHeaders: { "x-openai-internal-codex-responses-lite": "true" },
+    };
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+
+    await Promise.all([
+      executor.execute({
+        model: "gpt-5.6-sol",
+        body: { _compact: true, model: "gpt-5.6-sol", input: "compact me" },
+        stream: false,
+        credentials,
+      }),
+      executor.execute({
+        model: "gpt-5.6-sol",
+        body: { model: "gpt-5.6-sol", input: "continue" },
+        stream: true,
+        credentials,
+      }),
+    ]);
+
+    const urlsByInput = Object.fromEntries(fetchMock.mock.calls.map(([url, options]) => {
+      const request = JSON.parse(options.body);
+      return [request.input[0].content[0].text, url];
+    }));
+    expect(urlsByInput).toEqual({
+      "compact me": "https://chatgpt.com/backend-api/codex/responses/compact",
+      continue: "https://chatgpt.com/backend-api/codex/responses",
+    });
+  });
+
+  it("does not forward Responses Lite without the client opt-in header", () => {
+    const executor = new CodexExecutor();
+    const credentials = { connectionId: "standard-responses", rawHeaders: {} };
+    const body = { model: "gpt-5.6-sol", input: "hello" };
+
+    executor.transformRequest("gpt-5.6-sol", body, true, credentials);
+    const headers = executor.buildHeaders(credentials, true);
+
+    expect(headers["x-openai-internal-codex-responses-lite"]).toBeUndefined();
+    expect(body.instructions).toBeTruthy();
+  });
+
   it("preserves Responses text.format for structured outputs", () => {
     const executor = new CodexExecutor();
     const schema = {
