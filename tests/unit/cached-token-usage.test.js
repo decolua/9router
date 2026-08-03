@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { canonicalizeUsage, extractUsage, mergeUsage } from "../../open-sse/utils/usageTracking.js";
 import { calculateCostFromTokens } from "../../open-sse/providers/pricing.js";
 import { toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
+import { extractUsageFromResponse } from "../../open-sse/handlers/chatCore/requestDetail.js";
 
 // Canonical convention (single source of truth for storage + cost):
 //   prompt_tokens             = total input INCLUDING cache read + cache creation
@@ -88,6 +89,19 @@ describe("canonicalizeUsage", () => {
     expect(out.cached_tokens).toBe(0);
     expect(out.cache_creation_input_tokens).toBe(500);
   });
+
+  it("keeps exact zero cost but drops negative provider totals", () => {
+    const out = canonicalizeUsage({
+      prompt_tokens: 1,
+      cost_usd: 0,
+      cost_in_usd: -0.5,
+      cost_in_usd_ticks: -1,
+    });
+
+    expect(out.cost_usd).toBe(0);
+    expect(out.cost_in_usd).toBeUndefined();
+    expect(out.cost_in_usd_ticks).toBeUndefined();
+  });
 });
 
 describe("calculateCostFromTokens (canonical inclusive convention)", () => {
@@ -118,9 +132,45 @@ describe("calculateCostFromTokens (canonical inclusive convention)", () => {
     const cost = calculateCostFromTokens({ prompt_tokens: 100, completion_tokens: 50 }, pricing);
     expect(cost).toBeCloseTo((100 * 3 + 50 * 15) / 1_000_000, 12);
   });
+
+  it("trusts nonnegative provider-reported dollar cost without local pricing", () => {
+    expect(calculateCostFromTokens({ cost_in_usd: 0.123 }, null)).toBe(0.123);
+    expect(calculateCostFromTokens({ cost_usd: 0, prompt_tokens: 100 }, pricing)).toBe(0);
+  });
+
+  it("prefers direct dollars and converts xAI ticks at 1e10 per dollar", () => {
+    expect(calculateCostFromTokens({ cost_usd: 0.2, cost_in_usd: 0.1 }, pricing)).toBe(0.2);
+    expect(calculateCostFromTokens({ cost_in_usd_ticks: 1_230_000_000 }, null)).toBe(0.123);
+  });
+
+  it("rejects negative provider totals and falls back to local pricing", () => {
+    const tokens = { prompt_tokens: 100, completion_tokens: 50, cost_in_usd: -0.5 };
+    expect(calculateCostFromTokens(tokens, pricing))
+      .toBeCloseTo((100 * 3 + 50 * 15) / 1_000_000, 12);
+    expect(calculateCostFromTokens({ cost_in_usd_ticks: -1 }, null)).toBe(0);
+  });
+});
+
+describe("provider-reported exact cost extraction", () => {
+  it.each([
+    [{ usage: { input_tokens: 1, output_tokens: 2, cost_usd: 0 } }, "cost_usd", 0],
+    [{ usage: { prompt_tokens: 1, completion_tokens: 2, cost_in_usd: 0.25 } }, "cost_in_usd", 0.25],
+    [{ usage: { prompt_tokens: 1, completion_tokens: 2, cost_in_usd_ticks: 2_500_000_000 } }, "cost_in_usd_ticks", 2_500_000_000],
+  ])("keeps exact total from non-streaming usage", (response, field, expected) => {
+    expect(extractUsageFromResponse(response)[field]).toBe(expected);
+  });
 });
 
 describe("Anthropic streaming usage (message_start carries cache, message_delta output-only)", () => {
+  it("extracts provider-reported exact dollar cost", () => {
+    const usage = extractUsage({
+      type: "response.completed",
+      response: { usage: { input_tokens: 1, output_tokens: 1, cost_usd: 0.25 } },
+    });
+
+    expect(usage.cost_usd).toBe(0.25);
+  });
+
   it("extractUsage reads input + cache from message_start", () => {
     const u = extractUsage({
       type: "message_start",

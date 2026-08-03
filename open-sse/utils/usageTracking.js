@@ -75,24 +75,24 @@ export function filterUsageForFormat(usage, targetFormat) {
     [FORMATS.CLAUDE]: [
       'input_tokens', 'output_tokens', 
       'cache_read_input_tokens', 'cache_creation_input_tokens',
-      'estimated'
+      'estimated', 'cost_usd', 'cost_in_usd', 'cost_in_usd_ticks'
     ],
     [FORMATS.GEMINI]: [
       'promptTokenCount', 'candidatesTokenCount', 'totalTokenCount',
       'cachedContentTokenCount', 'thoughtsTokenCount',
-      'estimated'
+      'estimated', 'cost_usd', 'cost_in_usd', 'cost_in_usd_ticks'
     ],
     [FORMATS.OPENAI_RESPONSES]: [
       'input_tokens', 'output_tokens',
       'input_tokens_details', 'output_tokens_details',
-      'estimated'
+      'estimated', 'cost_usd', 'cost_in_usd', 'cost_in_usd_ticks'
     ],
     // OpenAI format (default for OPENAI, CODEX, KIRO, etc.)
     default: [
       'prompt_tokens', 'completion_tokens', 'total_tokens',
       'cached_tokens', 'reasoning_tokens',
       'prompt_tokens_details', 'completion_tokens_details',
-      'estimated'
+      'estimated', 'cost_usd', 'cost_in_usd', 'cost_in_usd_ticks'
     ]
   };
 
@@ -123,6 +123,11 @@ export function normalizeUsage(usage) {
     const numeric = Number(value);
     if (Number.isFinite(numeric)) normalized[key] = numeric;
   };
+  const assignNonnegativeNumber = (key, value) => {
+    if (value === undefined || value === null || value === "") return;
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric >= 0) normalized[key] = numeric;
+  };
 
   assignNumber("prompt_tokens", usage?.prompt_tokens);
   assignNumber("completion_tokens", usage?.completion_tokens);
@@ -131,6 +136,9 @@ export function normalizeUsage(usage) {
   assignNumber("cache_creation_input_tokens", usage?.cache_creation_input_tokens);
   assignNumber("cached_tokens", usage?.cached_tokens);
   assignNumber("reasoning_tokens", usage?.reasoning_tokens);
+  assignNonnegativeNumber("cost_usd", usage?.cost_usd);
+  assignNonnegativeNumber("cost_in_usd", usage?.cost_in_usd);
+  assignNonnegativeNumber("cost_in_usd_ticks", usage?.cost_in_usd_ticks);
 
   // Preserve nested details objects for OpenAI format forwarding
   if (usage?.prompt_tokens_details && typeof usage.prompt_tokens_details === "object") {
@@ -202,6 +210,14 @@ export function canonicalizeUsage(usage) {
     cached_tokens: cached,
     cache_creation_input_tokens: cacheCreation,
   };
+  const copyNonnegative = (key) => {
+    if (usage[key] === null || usage[key] === undefined || usage[key] === "") return;
+    const value = Number(usage[key]);
+    if (Number.isFinite(value) && value >= 0) result[key] = value;
+  };
+  copyNonnegative("cost_usd");
+  copyNonnegative("cost_in_usd");
+  copyNonnegative("cost_in_usd_ticks");
   if (reasoning > 0) result.reasoning_tokens = reasoning;
   return result;
 }
@@ -245,7 +261,10 @@ export function extractUsage(chunk) {
       prompt_tokens: u.input_tokens || 0,
       completion_tokens: u.output_tokens || 0,
       cache_read_input_tokens: u.cache_read_input_tokens,
-      cache_creation_input_tokens: u.cache_creation_input_tokens
+      cache_creation_input_tokens: u.cache_creation_input_tokens,
+      cost_usd: u.cost_usd,
+      cost_in_usd: u.cost_in_usd,
+      cost_in_usd_ticks: u.cost_in_usd_ticks
     });
   }
 
@@ -255,7 +274,10 @@ export function extractUsage(chunk) {
       prompt_tokens: chunk.usage.input_tokens || 0,
       completion_tokens: chunk.usage.output_tokens || 0,
       cache_read_input_tokens: chunk.usage.cache_read_input_tokens,
-      cache_creation_input_tokens: chunk.usage.cache_creation_input_tokens
+      cache_creation_input_tokens: chunk.usage.cache_creation_input_tokens,
+      cost_usd: chunk.usage.cost_usd,
+      cost_in_usd: chunk.usage.cost_in_usd,
+      cost_in_usd_ticks: chunk.usage.cost_in_usd_ticks
     });
   }
 
@@ -268,6 +290,9 @@ export function extractUsage(chunk) {
       completion_tokens: usage.output_tokens || usage.completion_tokens || 0,
       cached_tokens: cachedTokens,
       reasoning_tokens: usage.output_tokens_details?.reasoning_tokens,
+      cost_usd: usage.cost_usd,
+      cost_in_usd: usage.cost_in_usd,
+      cost_in_usd_ticks: usage.cost_in_usd_ticks,
       prompt_tokens_details: cachedTokens ? { cached_tokens: cachedTokens } : undefined
     });
   }
@@ -279,6 +304,9 @@ export function extractUsage(chunk) {
       completion_tokens: chunk.usage.completion_tokens || 0,
       cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens || chunk.usage.prompt_cache_hit_tokens,
       reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens,
+      cost_usd: chunk.usage.cost_usd,
+      cost_in_usd: chunk.usage.cost_in_usd,
+      cost_in_usd_ticks: chunk.usage.cost_in_usd_ticks,
       prompt_tokens_details: chunk.usage.prompt_tokens_details,
       completion_tokens_details: chunk.usage.completion_tokens_details
     });
