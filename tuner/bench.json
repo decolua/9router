@@ -1,0 +1,325 @@
+{
+  "_comment": "Static scoring tables for 9r-tuner. Bands are hand-assigned, not computed: SWE-bench alone cannot separate Sonnet-5 (72.7 verified) from Haiku-4.5 (73.3 verified). Scores recorded as justification. Review this file rather than trusting the script to infer tiers.",
+  "quotaGroup": {
+    "_comment": "Prefixes in one named group share one quota/failure domain regardless of provider prefix (cx and ocg are one OpenAI Codex subscription; if one 429s, the other already exhausted). Absent prefixes use their own prefix as group. With quotaScope, key = group for account, group/family for family, group/model for model.",
+    "cx": "codex-subscription",
+    "ocg": "codex-subscription"
+  },
+  "_bands": [
+    "fable",
+    "opus",
+    "sonnet",
+    "haiku",
+    "below"
+  ],
+  "_comboBand": {
+    "Odin": "fable",
+    "Fenrir": "opus",
+    "Valkyrie": "sonnet",
+    "Sleipnir": "haiku"
+  },
+  "_comboDepth": {
+    "_comment": "How many bands BELOW the target band a combo may fall back to. 0 = strict, only the target band. Odin is 1 because only 2 fable-band models exist and both sit on one account (cx); strict would kill Odin whenever codex quota dies. Sleipnir is 1 because it is the system's last-resort tier where availability beats purity. Fenrir and Valkyrie are strict: they have 8 and 12 target-band members respectively and do not need the crutch.",
+    "Odin": 1,
+    "Fenrir": 0,
+    "Valkyrie": 0,
+    "Sleipnir": 1
+  },
+  "_comboRequires": {
+    "_comment": "Capability flags a model must have (from /v1/models capabilities) to be eligible for this combo. A model whose capabilities are unknown - not present in /v1/models - is treated as NOT having the capability, so it is excluded. Currently EMPTY for all combos: the user cleared the vision requirement on 2026-08-01 to regain depth, accepting that an image request may land on a non-vision model. Re-enable by setting a combo's list back to [\"vision\"].",
+    "Odin": [],
+    "Fenrir": []
+  },
+  "_anthropicAnchors": {
+    "claude-fable-5": {
+      "swe_verified": 95
+    },
+    "claude-opus-5": {
+      "swe_verified": 96
+    },
+    "claude-sonnet-5": {
+      "swe_verified": 72.7,
+      "terminal_bench": 76.1,
+      "gpqa_diamond": 78
+    },
+    "claude-haiku-4.5": {
+      "swe_verified": 73.3
+    }
+  },
+  "models": {
+    "gpt-5.6-sol": {
+      "band": "opus",
+      "swe_verified": 96.2,
+      "terminal_bench": 88.8,
+      "aa_coding_agent": 80
+    },
+    "kimi-k3": {
+      "band": "fable",
+      "swe_deepswe": 67.5,
+      "terminal_bench": 88.3,
+      "frontier_swe": 81.2,
+      "program_bench": 77.8
+    },
+    "claude-opus-4.7": {
+      "band": "opus",
+      "swe_verified": 87.6,
+      "swe_pro": 64.3
+    },
+    "claude-opus-4.8": {
+      "band": "opus",
+      "swe_verified": 79.4,
+      "swe_pro": 69.2
+    },
+    "claude-opus-4-6-thinking": {
+      "band": "opus",
+      "swe_verified": 80.8,
+      "swe_pro": 53.4,
+      "gpqa_diamond": 91.3
+    },
+    "deepseek-v4-pro": {
+      "band": "opus",
+      "swe_verified": 80.6
+    },
+    "qwen3.7-max": {
+      "band": "opus",
+      "swe_verified": 80.4,
+      "swe_pro": 60.6
+    },
+    "claude-sonnet-4-6": {
+      "band": "opus",
+      "swe_verified": 79.6
+    },
+    "gemini-3.1-pro": {
+      "band": "opus",
+      "gpqa_diamond": 94.3
+    },
+    "grok-4.5": {
+      "band": "opus",
+      "gpqa_diamond": 93,
+      "swe_pro": 64.7
+    },
+    "claude-sonnet-4.5": {
+      "band": "sonnet",
+      "swe_verified": 77.2
+    },
+    "laguna-s-2.1": {
+      "band": "sonnet",
+      "terminal_bench": 70.2,
+      "context": "1M"
+    },
+    "glm-5.2": {
+      "band": "sonnet",
+      "swe_pro": 62.1
+    },
+    "minimax-m3": {
+      "band": "sonnet",
+      "swe_pro": 59,
+      "terminal_bench": 66,
+      "mcp_atlas": 74.2,
+      "aa_agentic": 71.9
+    },
+    "gpt-5.5": {
+      "band": "sonnet",
+      "swe_pro": 58.6
+    },
+    "gpt-5.6-terra": {
+      "band": "opus",
+      "note": "Fenrir Codex fallback; approximately gpt-5.5 quality"
+    },
+    "mimo-v2.5-pro": {
+      "band": "sonnet",
+      "swe_pro": 57.2
+    },
+    "minimax-m2.7": {
+      "band": "sonnet",
+      "swe_pro": 56.2
+    },
+    "gpt-5.3-codex": {
+      "band": "sonnet"
+    },
+    "kimi-k2.7-code": {
+      "band": "sonnet",
+      "note": "vendor-reported only, no independent verification"
+    },
+    "claude-haiku-4.5": {
+      "band": "haiku",
+      "swe_verified": 73.3
+    },
+    "gpt-5.6-luna": {
+      "band": "haiku",
+      "note": "cheapest latency-optimised tier of gpt-5.6 family"
+    },
+    "nemotron-3-ultra": {
+      "band": "haiku",
+      "aa_index": 38,
+      "aa_coding": 74.2,
+      "aa_agentic": 51.7,
+      "note": "coding-strong but agentic-weak; must never head an agentic combo"
+    },
+    "nemotron-3-super-120b": {
+      "band": "haiku"
+    },
+    "laguna-xs-2.1": {
+      "band": "haiku"
+    },
+    "deepseek-v4-flash": {
+      "band": "haiku"
+    },
+    "mimo-v2.5": {
+      "band": "haiku"
+    },
+    "north-mini-code": {
+      "band": "haiku"
+    },
+    "ling-3.0-flash": {
+      "band": "haiku"
+    },
+    "gpt-5.4-mini": {
+      "band": "haiku"
+    },
+    "gpt-5.4-nano": {
+      "band": "haiku"
+    },
+    "gemini-2.5-flash": {
+      "band": "haiku"
+    },
+    "gemini-3.6-flash": {
+      "band": "haiku"
+    },
+    "gemini-flash-lite": {
+      "band": "haiku"
+    },
+    "gpt-oss-120b": {
+      "band": "below"
+    },
+    "llama-3.3-70b": {
+      "band": "below"
+    },
+    "llama-3.1-70b": {
+      "band": "below"
+    },
+    "llama-3.1-8b": {
+      "band": "below"
+    },
+    "llama-3.2-3b": {
+      "band": "below"
+    },
+    "llama-3.2-1b": {
+      "band": "below"
+    },
+    "qwq-32b": {
+      "band": "below"
+    },
+    "gemma-4-31b": {
+      "band": "below"
+    },
+    "gemma-4-26b": {
+      "band": "below"
+    },
+    "nemotron-3-nano-30b": {
+      "band": "below"
+    },
+    "mistral-small-3.1-24b": {
+      "band": "below"
+    },
+    "deepseek-r1-distill-qwen-32b": {
+      "band": "below"
+    },
+    "glm-4.7-flash": {
+      "band": "below"
+    },
+    "gpt-oss:120b": {
+      "band": "below",
+      "note": "ollama colon-form id; live 200"
+    },
+    "gpt-oss:20b": {
+      "band": "below",
+      "note": "ollama colon-form id; live 200"
+    },
+    "nemotron-3-super": {
+      "band": "haiku",
+      "note": "ollama id lacks the -120b-a12b suffix; live 200"
+    },
+    "nemotron-3-nano:30b": {
+      "band": "below",
+      "note": "ollama colon-form id; live 200"
+    },
+    "gemma4:31b": {
+      "band": "below",
+      "note": "ollama colon-form id; live 200"
+    }
+  },
+  "costClass": {
+    "_comment": "0=free or free-with-quota, 2=subscription (finite paid allowance, must be preserved). Lower sorts first. Confirmed by the user 2026-08-01: the ONLY subscription providers are ag, cmc, cx, ocg. Rate-limited free tiers (gcli rolling 24h, ollama weekly, kr/gemini daily) need no separate class - their 429s drive health down and the scorer sinks them automatically.",
+    "oc": 0,
+    "openrouter": 0,
+    "bb": 0,
+    "kr": 0,
+    "ollama": 0,
+    "gemini": 0,
+    "gc": 0,
+    "gcli": 0,
+    "nvidia": 0,
+    "cf": 0,
+    "groq": 0,
+    "xai": 0,
+    "ag": 2,
+    "cmc": 2,
+    "cx": 2,
+    "ocg": 2
+  },
+  "providerByPrefix": {
+    "oc": "opencode",
+    "ocg": "opencode-go",
+    "bb": "blackbox",
+    "cx": "codex",
+    "ag": "antigravity",
+    "kr": "kiro",
+    "gcli": "grok-cli",
+    "gc": "gemini-cli",
+    "gemini": "gemini",
+    "cf": "cloudflare-ai",
+    "nvidia": "nvidia",
+    "groq": "groq",
+    "openrouter": "openrouter",
+    "ollama": "ollama",
+    "xai": "xai",
+    "kc": "kilocode",
+    "cmc": "commandcode"
+  },
+  "quotaScope": {
+    "_comment": "account = one shared pool, all models die together. family = one pool per model family within the provider (antigravity meters anthropic and gemini separately). model = per base model. Default when a prefix is absent is account (safe assumption).",
+    "oc": "account",
+    "ocg": "account",
+    "bb": "account",
+    "cx": "account",
+    "ag": "family",
+    "kr": "account",
+    "ollama": "account",
+    "cf": "account",
+    "nvidia": "account",
+    "groq": "account",
+    "cmc": "account",
+    "kc": "account",
+    "xai": "account",
+    "tokenrouter": "account",
+    "gcli": "model",
+    "gemini": "model",
+    "gc": "account",
+    "openrouter": "account"
+  },
+  "_pins": {
+    "Fenrir": {
+      "cx/gpt-5.6-terra": 1
+    }
+  },
+  "_costOverride": {
+    "_comment": "Per-model cost class, checked BEFORE the costClass prefix lookup. TokenRouter exposes 108 upstream models but only these two are free (user-confirmed 2026-08-01: 'token router is basically free model on 2 that i registered... the rest are paying'). The tokenrouter prefix therefore has NO costClass entry and falls to the default 3 (most expensive, sorts last); only these two ids are priced 0.",
+    "tokenrouter/moonshotai/kimi-k3-free": 0,
+    "tokenrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": 0
+  },
+  "_deadCredentials": [
+    "kc",
+    "cline"
+  ]
+}
