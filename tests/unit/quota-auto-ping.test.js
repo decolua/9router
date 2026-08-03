@@ -154,6 +154,33 @@ describe("quota auto-ping", () => {
     expect(state.resetCache["codex:codex-1"]).toBe("2026-01-01T13:00:00.000Z");
   });
 
+  it("passes Codex account data and proxy options separately when reading usage", async () => {
+    const providerSpecificData = { chatgptAccountId: "ws-1" };
+    deps.getSettings.mockResolvedValue({ codexAutoPing: { connections: { "codex-1": true } } });
+    deps.getProviderConnections.mockImplementation(async ({ provider }) => (
+      provider === "codex"
+        ? [{ id: "codex-1", provider: "codex", authType: "oauth", accessToken: "token", idToken: "id-token", providerSpecificData }]
+        : []
+    ));
+    deps.resolveConnectionProxyConfig.mockResolvedValue({
+      connectionProxyEnabled: true,
+      connectionProxyUrl: "http://proxy.example:8080",
+    });
+    getCodexUsage.mockResolvedValue({
+      quotas: { session: { used: 1, resetAt: "2026-01-01T13:00:00.000Z" } },
+    });
+
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(getCodexUsage).toHaveBeenCalledWith("token", providerSpecificData, {
+      connectionProxyEnabled: true,
+      connectionProxyUrl: "http://proxy.example:8080",
+      connectionNoProxy: "",
+      vercelRelayUrl: "",
+      strictProxy: false,
+    }, "id-token");
+  });
+
   it("sends Codex ping when session resetAt slides", async () => {
     deps.getSettings.mockResolvedValue({ codexAutoPing: { connections: { "codex-1": true } } });
     deps.getProviderConnections.mockImplementation(async ({ provider }) => (
@@ -282,7 +309,7 @@ describe("quota auto-ping", () => {
     deps.getSettings.mockResolvedValue({ codexAutoPing: { connections: { "codex-1": true } } });
     deps.getProviderConnections.mockImplementation(async ({ provider }) => (
       provider === "codex"
-        ? [{ id: "codex-1", provider: "codex", authType: "oauth", accessToken: "token", providerSpecificData: { workspaceId: "ws-1" } }]
+        ? [{ id: "codex-1", provider: "codex", authType: "oauth", accessToken: "token", idToken: "id-token", providerSpecificData: { workspaceId: "ws-1" } }]
         : []
     ));
     state.resetCache["codex:codex-1"] = "2026-01-01T17:00:00.000Z";
@@ -300,6 +327,7 @@ describe("quota auto-ping", () => {
       credentials: expect.objectContaining({
         accessToken: "token",
         connectionId: "codex-1",
+        idToken: "id-token",
         providerSpecificData: { workspaceId: "ws-1" },
       }),
       body: {

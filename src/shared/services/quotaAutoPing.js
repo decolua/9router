@@ -16,7 +16,7 @@ const CLAUDE_PING_URL = "https://api.anthropic.com/v1/messages?beta=true";
 
 const providerHandlers = {
   claude: {
-    getUsage: getClaudeUsage,
+    getUsage: (accessToken, _providerSpecificData, proxyOptions) => getClaudeUsage(accessToken, proxyOptions),
     sendPing: sendClaudePing,
   },
   codex: {
@@ -155,6 +155,7 @@ async function sendCodexPing(connection, providerConfig, proxyOptions, deps) {
     credentials: {
       accessToken: connection.accessToken,
       connectionId: connection.id,
+      idToken: connection.idToken,
       providerSpecificData: connection.providerSpecificData,
     },
     proxyOptions,
@@ -208,7 +209,7 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
     return;
   }
 
-  const usage = await handler.getUsage(connection.accessToken, proxyOptions);
+  const usage = await handler.getUsage(connection.accessToken, connection.providerSpecificData, proxyOptions, connection.idToken);
   const quotas = usage?.quotas || {};
   const quota = quotas?.[providerConfig.quotaKey];
   const resetAt = quota?.resetAt;
