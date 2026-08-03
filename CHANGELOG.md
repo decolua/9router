@@ -1,3 +1,35 @@
+# v0.5.45 (2026-07-30)
+
+## Features
+- **Providers**: add Poolside (OpenAI-compatible)
+- **Providers**: add api-airforce, baidu, bazaarlink, bluesminds, kilo-gateway, llm7, morph, sambanova, tencent
+- **OAuth**: zed / trae / windsurf providers + harden callback proxies
+- **CLI tools**: set Claude Code max context tokens
+- **Qoder**: PAT auth + refresh model list
+- **Gemini**: Gemini 3.6 Flash tier routing + Gemini 3.5 Flash Lite
+- **Claude**: bump default Opus to `claude-opus-5`
+- **Kiro**: add Claude Opus 5 models
+- **Usage**: Kimi and DeepSeek usage handlers
+- **Usage**: SuperGrok weekly pool via gRPC-web
+
+## Fixes
+- **Refresh**: rotate `refresh_token` between retry attempts
+- **Kiro**: canonicalize tool history and route API keys correctly
+- **Kiro**: normalize dashboard thinking intensity models
+- **Cursor**: stop leaking agent tool errors as text
+- **Gemini**: fill empty tool schemas after `$ref` strip
+- **Antigravity**: strip `stream_options` from non-stream requests
+- **Jina-reader**: recover after transient errors, use JSON POST API
+- **Usage**: record exact embedding tokens
+- **Tunnel**: preserve successor cloudflared PID
+- **Console-log**: initialize capture at server boot + prevent SSE proxy buffering
+- **Dashboard**: count dual-auth, free-tier OAuth and API-key connections correctly
+- **Dashboard**: flex quota rows, thin global scrollbars, no hidden-row overflow
+
+## Docs
+- **i18n**: expand pt-BR translation to 986 terms
+- README: Indonesian translation
+
 # v0.5.40 (2026-07-20)
 
 ## Features
