@@ -19,6 +19,14 @@ for (const entry of REGISTRY) {
 
 const BUILTIN_MODEL_ALIASES = {
   "grok-build": "gcli/grok-build",
+  // AgentRouter models — Hermes strips provider/model prefix, so bare model
+  // names must resolve back to the agentrouter provider.
+  "claude-opus-4-6": "agentrouter/claude-opus-4-6",
+  "claude-opus-4-7": "agentrouter/claude-opus-4-7",
+  "claude-opus-4-8": "agentrouter/claude-opus-4-8",
+  "gpt-5.5": "agentrouter/gpt-5.5",
+  "gpt-5.6": "agentrouter/gpt-5.6",
+  "glm-5.2": "agentrouter/glm-5.2",
 };
 
 /**
