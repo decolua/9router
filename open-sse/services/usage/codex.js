@@ -12,6 +12,28 @@ const CODEX_CONFIG = {
   resetCreditsConsumeUrl: U("codex").resetCreditsConsumeUrl,
 };
 
+const RESET_CREDIT_ARRAY_KEYS = [
+  "credits",
+  "available_credits",
+  "availableCredits",
+  "reset_credits",
+  "resetCredits",
+  "items",
+  "grants",
+];
+
+const RESET_CREDIT_EXPIRY_KEYS = [
+  "expires_at",
+  "expiresAt",
+  "expiration_time",
+  "expirationTime",
+  "expiry",
+  "expiry_at",
+  "expiryAt",
+  "valid_until",
+  "validUntil",
+];
+
 function toIsoDate(value) {
   if (!value) return null;
   const date = value instanceof Date
@@ -23,6 +45,57 @@ function toIsoDate(value) {
 
 function getCodexAccountId(providerSpecificData) {
   return providerSpecificData?.workspaceId || providerSpecificData?.accountId || providerSpecificData?.chatgptAccountId || null;
+}
+
+function firstArrayField(source, keys) {
+  for (const key of keys) {
+    if (Array.isArray(source?.[key])) return source[key];
+  }
+  return [];
+}
+
+function firstParsedResetTime(source, keys) {
+  for (const key of keys) {
+    const parsed = parseResetTime(source?.[key]) || toIsoDate(source?.[key]);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function isAvailableResetCredit(credit) {
+  if (!credit || typeof credit !== "object") return false;
+  if (credit.used_at || credit.consumed_at || credit.redeemed_at) return false;
+  const status = String(credit.status || credit.state || "").toLowerCase();
+  return !["used", "consumed", "redeemed", "expired", "inactive"].includes(status);
+}
+
+export function parseCodexResetCredits(resetCredits) {
+  if (!resetCredits || typeof resetCredits !== "object" || Array.isArray(resetCredits)) {
+    return { availableCount: 0, credits: [] };
+  }
+
+  const credits = firstArrayField(resetCredits, RESET_CREDIT_ARRAY_KEYS)
+    .filter(isAvailableResetCredit)
+    .map((credit, index) => ({
+      id: credit.id || credit.credit_id || credit.reset_credit_id || null,
+      index,
+      status: String(credit.status || credit.state || "available"),
+      grantedAt: toIsoDate(credit.granted_at ?? credit.grantedAt),
+      expiresAt: firstParsedResetTime(credit, RESET_CREDIT_EXPIRY_KEYS),
+      type: credit.type || credit.kind || null,
+    }));
+  const countValue = resetCredits.available_count
+    ?? resetCredits.availableCount
+    ?? resetCredits.count
+    ?? resetCredits.total_available
+    ?? resetCredits.totalAvailable;
+  const count = toFiniteNumber(countValue, Number.NaN);
+  const availableCount = Number.isFinite(count) ? Math.max(0, count) : credits.length;
+
+  return {
+    availableCount,
+    credits: credits.slice(0, availableCount),
+  };
 }
 
 function getCodexRateLimitBody(snapshot) {
@@ -97,7 +170,7 @@ export async function getCodexUsage(accessToken, proxyOptions = null) {
     const data = await response.json();
     const normalRateLimit = data.rate_limit || data.rate_limits || data.rate_limits_by_limit_id?.codex || {};
     const reviewRateLimit = getCodexReviewRateLimit(data);
-    const availableResetCredits = Math.max(0, toFiniteNumber(data.rate_limit_reset_credits?.available_count, 0));
+    const resetCredits = parseCodexResetCredits(data.rate_limit_reset_credits);
     const quotas = {};
 
     appendCodexQuotaWindows(quotas, "", normalRateLimit);
@@ -107,7 +180,7 @@ export async function getCodexUsage(accessToken, proxyOptions = null) {
       plan: data.plan_type || data.summary?.plan || "unknown",
       limitReached: getCodexRateLimitBody(normalRateLimit)?.limit_reached || false,
       reviewLimitReached: getCodexRateLimitBody(reviewRateLimit)?.limit_reached || false,
-      resetCredits: { availableCount: availableResetCredits },
+      resetCredits,
       quotas,
     };
   } catch (error) {
@@ -146,15 +219,7 @@ export async function getCodexRateLimitResetCredits(accessToken, proxyOptions = 
     throw new Error(message);
   }
 
-  const credits = Array.isArray(data?.credits) ? data.credits : [];
-  return {
-    availableCount: Math.max(0, toFiniteNumber(data?.available_count ?? data?.availableCount, 0)),
-    credits: credits.map((credit) => ({
-      status: String(credit?.status || "unknown"),
-      grantedAt: toIsoDate(credit?.granted_at ?? credit?.grantedAt),
-      expiresAt: toIsoDate(credit?.expires_at ?? credit?.expiresAt),
-    })),
-  };
+  return parseCodexResetCredits(data);
 }
 
 // Consume one Codex rate-limit reset credit (irreversible, spends 1 credit)

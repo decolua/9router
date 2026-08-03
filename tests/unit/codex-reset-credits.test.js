@@ -78,16 +78,89 @@ describe("Codex reset credits", () => {
       availableCount: 2,
       credits: [
         {
+          id: null,
+          index: 0,
           status: "available",
           grantedAt: "2026-06-18T00:25:18.000Z",
           expiresAt: "2026-07-18T00:25:18.000Z",
-        },
-        {
-          status: "redeemed",
-          grantedAt: null,
-          expiresAt: null,
+          type: null,
         },
       ],
+    });
+  });
+
+  it("normalizes alternate count, array, and expiry fields while filtering spent credits", async () => {
+    const { parseCodexResetCredits } = await import("../../open-sse/services/usage/codex.js");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const result = parseCodexResetCredits({
+      totalAvailable: "2",
+      availableCredits: [
+        {
+          credit_id: "credit-1",
+          state: "available",
+          grantedAt: "2026-06-18T00:25:18Z",
+          validUntil: 1784334318,
+          kind: "rate-limit",
+        },
+        {
+          reset_credit_id: "credit-spent",
+          status: "available",
+          consumed_at: "2026-06-19T00:25:18Z",
+        },
+        {
+          id: "credit-expired",
+          status: "expired",
+          expiry_at: "2026-07-18T00:25:18Z",
+        },
+        {
+          id: "credit-2",
+          status: "available",
+          expirationTime: "not-a-date",
+        },
+      ],
+    });
+    expect(warn).toHaveBeenCalledOnce();
+    warn.mockRestore();
+
+    expect(result).toEqual({
+      availableCount: 2,
+      credits: [
+        {
+          id: "credit-1",
+          index: 0,
+          status: "available",
+          grantedAt: "2026-06-18T00:25:18.000Z",
+          expiresAt: "2026-07-18T00:25:18.000Z",
+          type: "rate-limit",
+        },
+        {
+          id: "credit-2",
+          index: 1,
+          status: "available",
+          grantedAt: null,
+          expiresAt: null,
+          type: null,
+        },
+      ],
+    });
+  });
+
+  it("derives available count when the provider omits it", async () => {
+    const { parseCodexResetCredits } = await import("../../open-sse/services/usage/codex.js");
+
+    expect(parseCodexResetCredits({
+      grants: [{ id: "credit-1", status: "available", expiry: "2026-07-18T00:25:18Z" }],
+    })).toEqual({
+      availableCount: 1,
+      credits: [{
+        id: "credit-1",
+        index: 0,
+        status: "available",
+        grantedAt: null,
+        expiresAt: "2026-07-18T00:25:18.000Z",
+        type: null,
+      }],
     });
   });
 
