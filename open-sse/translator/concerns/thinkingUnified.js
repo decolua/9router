@@ -2,7 +2,7 @@
 // Config-driven: thinking format/limits come from capabilities.js + registry transport,
 // never hardcoded per-model here. See .docs/thinking/plan.md MATRIX VI-A.
 
-import { getCapabilitiesForModel } from "../../providers/capabilities.js";
+import { getCapabilitiesForModel, supportsThinkingLevel } from "../../providers/capabilities.js";
 import { PROVIDERS } from "../../providers/index.js";
 import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
 
@@ -213,7 +213,7 @@ function stripAll(body) {
 }
 
 // Apply unified thinking config to body in the resolved provider-native format.
-function applyFormat(fmt, body, cfg, caps) {
+function applyFormat(fmt, body, cfg, caps, provider, model) {
   const none = cfg.mode === "none";
   const canDisable = caps.thinkingCanDisable !== false;
   // Model cannot disable thinking → clamp "none" to minimal effort instead.
@@ -223,8 +223,8 @@ function applyFormat(fmt, body, cfg, caps) {
     case "openai": {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
       const level = toLevel(eff);
-      // OpenAI reasoning_effort enum caps at "xhigh" (no "max"); clamp Claude Code's "max".
-      if (level) body.reasoning_effort = level === "max" ? "xhigh" : level;
+      // Clamp max unless target provider/model metadata explicitly supports it.
+      if (level) body.reasoning_effort = level === "max" && !supportsThinkingLevel(provider, model, "max") ? "xhigh" : level;
       break;
     }
     case "claude-adaptive": {
@@ -330,6 +330,6 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
 
   const fmt = resolveFormat(targetFormat, cleanModel, provider);
   stripAll(body);
-  applyFormat(fmt, body, cfg, caps);
+  applyFormat(fmt, body, cfg, caps, provider, cleanModel);
   return body;
 }

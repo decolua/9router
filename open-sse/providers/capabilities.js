@@ -44,6 +44,7 @@ export const DEFAULT_CAPABILITIES = {
   // thinking wire format (only meaningful when reasoning:true). null → derive from transport.format.
   // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|hunyuan|step
   thinkingFormat: null,
+  thinkingLevels: null,      // explicit provider/model levels; null → derive from thinkingFormat
   thinkingCanDisable: true,  // false → model cannot turn thinking off (clamp to min instead of disable)
   thinkingRange: null,       // { min, max } for budget formats; null = no clamp
   // limits (tokens)
@@ -114,8 +115,9 @@ const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true,
 
 // Codex OAuth (ChatGPT backend) — per-model context window reported by upstream
 // (lower than OpenAI API's 1.05M). Sol differs from Terra/Luna. #2720
-const CODEX_GPT_56_SOL_CAPS  = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 372000, maxOutput: 128000 };
-const CODEX_GPT_56_DEFAULT_CAPS = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
+const CODEX_GPT_56_THINKING_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+const CODEX_GPT_56_SOL_CAPS  = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", thinkingLevels: CODEX_GPT_56_THINKING_LEVELS, contextWindow: 372000, maxOutput: 128000 };
+const CODEX_GPT_56_DEFAULT_CAPS = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", thinkingLevels: CODEX_GPT_56_THINKING_LEVELS, contextWindow: 272000, maxOutput: 128000 };
 
 /**
  * Provider-specific capability overrides. Keyed by provider alias/id.
@@ -350,4 +352,9 @@ export function getCapabilitiesForModel(provider, model) {
 
   // 4. Floor
   return { ...DEFAULT_CAPABILITIES };
+}
+
+export function supportsThinkingLevel(provider, model, level) {
+  const levels = getCapabilitiesForModel(provider, model).thinkingLevels;
+  return Array.isArray(levels) && levels.includes(level);
 }

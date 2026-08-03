@@ -33,8 +33,6 @@ const FORMAT_LEVELS = {
 
 // Model-name pattern overrides (glob, first match wins) — more precise than format default.
 const PATTERN_THINKING = [
-  // gpt-5.6-sol accepts max (maps to xhigh on wire); live probe rejected ultra.
-  { pattern: "*gpt-5.6-sol*", levels: ["none", "minimal", "low", "medium", "high", "xhigh", "max"] },
   { pattern: "*codex*", levels: ["low", "medium", "high", "xhigh"] }, // codex cannot disable thinking
 ];
 
@@ -44,7 +42,7 @@ export function getThinkingLevels(provider, model) {
   const caps = getCapabilitiesForModel(provider, model);
   if (!caps.reasoning) return null;
   const hit = PATTERN_THINKING.find((p) => matchPattern(p.pattern, model));
-  let levels = hit?.levels || FORMAT_LEVELS[caps.thinkingFormat] || L.base;
+  let levels = caps.thinkingLevels || hit?.levels || FORMAT_LEVELS[caps.thinkingFormat] || L.base;
   if (caps.thinkingCanDisable === false) levels = levels.filter((l) => l !== "none");
   return levels;
 }
