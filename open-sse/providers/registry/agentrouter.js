@@ -25,7 +25,7 @@ export default {
     format: "claude",
     baseUrl: "https://agentrouter.org/v1/messages",
     validateUrl: "https://agentrouter.org/v1/messages",
-    auth: { combined: true, header: "Authorization", scheme: "bearer" },
+    auth: { combined: true, header: "Authorization", scheme: "bearer", hooks: ["agentrouterWaf"] },
     headers: { ...CLAUDE_CLI_SPOOF_HEADERS },
   },
   models: [

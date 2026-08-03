@@ -37,11 +37,77 @@ function applyAuth(headers, desc, credentials) {
 }
 
 // Provider-specific header quirks kept as small hooks (not pure auth).
+// AgentRouter WAF cookie warmup — Aliyun WAF sets acw_tc/acw_sc__v2 cookies
+// that must accompany API requests or the server returns 401 "unauthorized client".
+const WARMUP_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Accept-Encoding": "gzip, deflate, br",
+  "Connection": "keep-alive",
+  "Upgrade-Insecure-Requests": "1",
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "none",
+  "Sec-Fetch-User": "?1",
+};
+let _arWafCookie = "";
+let _arWafLast = 0;
+let _arWarming = false;
+async function _arWarmup() {
+  if (_arWarming) return;
+  _arWarming = true;
+  const https = await import("node:https");
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const cookie = await new Promise((resolve, reject) => {
+        const req = https.request({
+          hostname: "agentrouter.org", port: 443, path: "/", method: "GET",
+          headers: WARMUP_HEADERS, agent: false, rejectUnauthorized: true, timeout: 10000,
+        }, (res) => {
+          const raw = res.headers["set-cookie"] || [];
+          const cookies = Array.isArray(raw) ? raw : [raw];
+          const waf = [];
+          for (const c of cookies) {
+            const name = c.split("=")[0];
+            if (name === "acw_tc" || name === "acw_sc__v2" || name === "cdn_sec_tc") {
+              waf.push(c.split(";")[0]);
+            }
+          }
+          res.resume();
+          res.on("end", () => resolve(waf));
+        });
+        req.on("error", reject);
+        req.on("timeout", () => { req.destroy(); reject(new Error("timeout")); });
+        req.end();
+      });
+      if (cookie.length) {
+        _arWafCookie = cookie.join("; ");
+        _arWafLast = Date.now();
+        break;
+      }
+    } catch (e) { /* retry */ }
+    if (attempt < 2) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+  }
+  _arWarming = false;
+}
+function _arGetWafCookie() {
+  if (!_arWafCookie || Date.now() - _arWafLast > 180000) _arWarmup();
+  return _arWafCookie;
+}
+// Trigger initial warmup
+_arWarmup();
+
 const HEADER_HOOKS = {
   // Stable device_id from OAuth connection (CLIProxyAPI KimiTokenStorage.DeviceID)
   kimiHeaders: (h, c) => Object.assign(h, buildKimiHeaders(c?.providerSpecificData?.deviceId)),
   clineHeaders: (h, c) => Object.assign(h, buildClineHeaders(c.apiKey || c.accessToken)),
   kilocodeOrg: (h, c) => { if (c.providerSpecificData?.orgId) h["X-Kilocode-OrganizationID"] = c.providerSpecificData.orgId; },
+  // AgentRouter WAF cookie injection
+  agentrouterWaf: (h) => {
+    const cookie = _arGetWafCookie();
+    if (cookie) h["Cookie"] = cookie;
+  },
   claudeOverlay: (h) => {
     const cached = getCachedClaudeHeaders();
     if (!cached) return;
