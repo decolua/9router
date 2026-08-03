@@ -87,6 +87,8 @@ async function flushToDatabase() {
 
           const record = {
             id: item.id,
+            attemptId: item.attemptId || item.id,
+            correlationId: item.correlationId || null,
             provider: item.provider || null,
             model: item.model || null,
             connectionId: item.connectionId || null,
