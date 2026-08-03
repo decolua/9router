@@ -92,6 +92,14 @@ export const QUOTA_AUTOPING_CONFIG = {
   },
 };
 
+// OAuth token keep-alive: refresh access tokens before they expire so idle connections
+// never need re-authorization. Each tick is a no-op unless a token is inside the refresh
+// window its executor defines, so a healthy install makes no upstream calls.
+export const TOKEN_KEEPALIVE_CONFIG = {
+  tickIntervalMs: 300000,               // 5 min — well inside the shortest refreshLeadMs
+  failureCooldownMs: 1800000,           // 30 min before retrying a connection that failed
+};
+
 // Re-export from providers.js for backward compatibility
 export {
   FREE_PROVIDERS,
