@@ -1,13 +1,10 @@
 "use server";
 
 import { NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
-
-const execAsync = promisify(exec);
+import { isCommandAvailable } from "@/lib/cliTools/commandAvailability.js";
 
 const PROVIDER_NAME = "9router";
 
@@ -68,18 +65,12 @@ const DEFAULT_CONFIG = `provider = "deepseek"
 `;
 
 const checkDeepSeekInstalled = async () => {
+    if (await isCommandAvailable("deepseek")) return true;
     try {
-        const isWindows = os.platform() === "win32";
-        const command = isWindows ? "where deepseek" : "which deepseek";
-        await execAsync(command, { windowsHide: true });
+        await fs.access(getDeepSeekConfigPath());
         return true;
     } catch {
-        try {
-            await fs.access(getDeepSeekConfigPath());
-            return true;
-        } catch {
-            return false;
-        }
+        return false;
     }
 };
 

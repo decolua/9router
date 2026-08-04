@@ -1,34 +1,22 @@
 "use server";
 
 import { NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
-
-const execAsync = promisify(exec);
+import { isCommandAvailable } from "@/lib/cliTools/commandAvailability.js";
 
 const getDroidDir = () => path.join(os.homedir(), ".factory");
 const getDroidSettingsPath = () => path.join(getDroidDir(), "settings.json");
 
 // Check if droid CLI is installed (via which/where or config file exists)
 const checkDroidInstalled = async () => {
+  if (await isCommandAvailable("droid")) return true;
   try {
-    const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where droid" : "which droid";
-    const env = isWindows
-      ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }
-      : process.env;
-    await execAsync(command, { windowsHide: true, env });
+    await fs.access(getDroidSettingsPath());
     return true;
   } catch {
-    try {
-      await fs.access(getDroidSettingsPath());
-      return true;
-    } catch {
-      return false;
-    }
+    return false;
   }
 };
 

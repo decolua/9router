@@ -4,11 +4,8 @@ import { NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
-import { exec } from "child_process";
-import { promisify } from "util";
 import { parseTOML, stringifyTOML } from "confbox";
-
-const execAsync = promisify(exec);
+import { isCommandAvailable } from "@/lib/cliTools/commandAvailability.js";
 
 const getJcodeConfigDir = () => path.join(os.homedir(), ".jcode");
 const getConfigPath = () => path.join(getJcodeConfigDir(), "config.toml");
@@ -19,18 +16,12 @@ const getProviderEnvPath = () => {
 };
 
 const checkJcodeInstalled = async () => {
+  if (await isCommandAvailable("jcode")) return true;
   try {
-    const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where jcode" : "which jcode";
-    await execAsync(command, { windowsHide: true });
+    await fs.access(getJcodeConfigDir());
     return true;
   } catch {
-    try {
-      await fs.access(getJcodeConfigDir());
-      return true;
-    } catch {
-      return false;
-    }
+    return false;
   }
 };
 

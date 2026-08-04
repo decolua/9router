@@ -15,6 +15,7 @@ import { GET as deepseekTuiGet } from "../deepseek-tui-settings/route";
 import { GET as jcodeGet } from "../jcode-settings/route";
 import { GET as grokBuildGet } from "../grok-build-settings/route";
 import { GET as devinGet } from "../devin-settings/route";
+import { CLI_STATUS_CONCURRENCY, mapWithConcurrency } from "@/lib/cliTools/statusFanout.js";
 
 const STATUS_GETTERS = {
   claude: claudeGet,
@@ -35,8 +36,10 @@ const STATUS_GETTERS = {
 
 // Batch endpoint: gather all CLI tool statuses in one round-trip
 export async function GET() {
-  const entries = await Promise.all(
-    Object.entries(STATUS_GETTERS).map(async ([toolId, getter]) => {
+  const entries = await mapWithConcurrency(
+    Object.entries(STATUS_GETTERS),
+    CLI_STATUS_CONCURRENCY,
+    async ([toolId, getter]) => {
       try {
         const res = await getter();
         const data = await res.json();
@@ -44,7 +47,7 @@ export async function GET() {
       } catch {
         return [toolId, null];
       }
-    })
+    },
   );
   return NextResponse.json(Object.fromEntries(entries));
 }

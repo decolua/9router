@@ -1,8 +1,6 @@
 "use server";
 
 import { NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
@@ -13,27 +11,21 @@ import {
   parseGrokBuildConfig,
   resetGrokBuildConfig,
 } from "@/lib/grokBuildConfig";
-
-const execAsync = promisify(exec);
+import { isCommandAvailable } from "@/lib/cliTools/commandAvailability.js";
 
 const getGrokDir = () => path.join(os.homedir(), ".grok");
 const getGrokConfigPath = () => path.join(getGrokDir(), "config.toml");
 const getGrokBinPath = () => path.join(getGrokDir(), "bin", "grok");
 
 const checkGrokInstalled = async () => {
-  try {
-    const isWindows = os.platform() === "win32";
-    await execAsync(isWindows ? "where grok" : "which grok", { windowsHide: true });
-    return true;
-  } catch {
-    for (const candidate of [getGrokBinPath(), getGrokConfigPath()]) {
-      try {
-        await fs.access(candidate);
-        return true;
-      } catch { /* try next */ }
-    }
-    return false;
+  if (await isCommandAvailable("grok")) return true;
+  for (const candidate of [getGrokBinPath(), getGrokConfigPath()]) {
+    try {
+      await fs.access(candidate);
+      return true;
+    } catch { /* try next */ }
   }
+  return false;
 };
 
 const readConfigToml = async () => {

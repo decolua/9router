@@ -1,13 +1,10 @@
 "use server";
 
 import { NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
-
-const execAsync = promisify(exec);
+import { getCommandOutput, isCommandAvailable } from "@/lib/cliTools/commandAvailability.js";
 
 // Mirror the executor's resolveDevinBin discovery so the dashboard's status
 // matches what the runtime actually spawns.
@@ -36,14 +33,10 @@ const candidateDevinPaths = () => {
 
 const checkDevinInstalled = async () => {
   // 1. PATH lookup
-  try {
-    const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where devin" : "which devin";
-    await execAsync(command, { windowsHide: true });
+  if (await isCommandAvailable("devin")) {
     return { installed: true, source: "path" };
-  } catch {
-    // fall through to filesystem probes
   }
+
   // 2. Known installer paths
   for (const candidate of candidateDevinPaths()) {
     try {
@@ -55,12 +48,8 @@ const checkDevinInstalled = async () => {
 };
 
 const readDevinVersion = async () => {
-  try {
-    const { stdout } = await execAsync("devin --version", { windowsHide: true });
-    return stdout.trim().split("\n")[0] || null;
-  } catch {
-    return null;
-  }
+  const output = await getCommandOutput("devin", ["--version"]);
+  return output?.split(/\r?\n/)[0] || null;
 };
 
 // GET — install detection only. No config to write: the binary handles its own auth.
