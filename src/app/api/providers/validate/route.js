@@ -6,6 +6,8 @@ import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from
 import { openaiToCommandCodeRequest } from "open-sse/translator/request/openai-to-commandcode.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
 
+const HUGGINGFACE_WHOAMI_URL = "https://huggingface.co/api/whoami-v2";
+
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).
 async function probeWebProvider(provider, apiKey) {
@@ -41,6 +43,21 @@ async function probeWebProvider(provider, apiKey) {
   return res.status !== 401 && res.status !== 403;
 }
 
+async function probeHuggingFaceToken(apiKey) {
+  const res = await fetch(HUGGINGFACE_WHOAMI_URL, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(8000),
+  });
+
+  if (res.ok) return true;
+  if (res.status === 401 || res.status === 403) return false;
+
+  // HuggingFace model/task probes can reject valid fine-grained Inference
+  // Provider tokens. Use whoami-v2 strictly as an auth probe and surface
+  // transient upstream failures separately instead of calling the key invalid.
+  throw new Error(`HuggingFace token validation returned HTTP ${res.status}`);
+}
+
 // Probe a media provider (tts/embedding/stt/image/video) using *Config.
 // Returns true if API key is accepted; null to skip (let default handler decide).
 async function probeMediaProvider(provider, apiKey) {
@@ -50,6 +67,7 @@ async function probeMediaProvider(provider, apiKey) {
   const kinds = p.serviceKinds || ["llm"];
   const isMediaOnly = kinds.every((k) => MEDIA_KINDS.has(k));
   if (!isMediaOnly) return null;
+  if (provider === "huggingface") return await probeHuggingFaceToken(apiKey);
   const cfg = p.ttsConfig || p.sttConfig || p.embeddingConfig || p.imageConfig || p.videoConfig || p.musicConfig;
   // No probe config → best-effort accept (validate at usage time)
   if (!cfg) return true;
