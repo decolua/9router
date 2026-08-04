@@ -3,6 +3,120 @@ import { ProxyAgent, fetch as undiciFetch } from "undici";
 const DEFAULT_TEST_URL = "https://google.com/";
 const DEFAULT_TIMEOUT_MS = 8000;
 
+/**
+ * Parse proxy URL from various formats
+ * Supports:
+ * - ip:port
+ * - ip:port:user:pass
+ * - user:pass@ip:port
+ * - protocol://ip:port
+ * - protocol://user:pass@ip:port
+ * - protocol://ip:port:user:pass
+ */
+function parseProxyUrl(proxyUrl) {
+  const normalizedInput = normalizeString(proxyUrl);
+  if (!normalizedInput) return null;
+
+  // Handle protocol:// prefix
+  let urlStr = normalizedInput;
+  if (urlStr.includes("://")) {
+    urlStr = urlStr.split("://")[1];
+  }
+
+  // Handle user:pass@ip:port format
+  let username = null;
+  let password = null;
+  let hostPort = urlStr;
+
+  if (urlStr.includes("@")) {
+    const [authPart, hostPortPart] = urlStr.split("@");
+    hostPort = hostPortPart;
+
+    if (authPart.includes(":")) {
+      [username, password] = authPart.split(":");
+    } else {
+      username = authPart;
+    }
+  }
+
+  // Handle ip:port:user:pass format (no @)
+  if (hostPort.includes(":") && !hostPort.startsWith("http")) {
+    const parts = hostPort.split(":");
+    if (parts.length === 4) {
+      // ip:port:user:pass format
+      [hostPort, username, password] = parts;
+    } else if (parts.length === 3) {
+      // ip:port:user format (user without password)
+      [hostPort, username] = parts;
+    }
+  }
+
+  // Parse host and port
+  let host = "";
+  let port = "";
+  let protocol = "http"; // default
+
+  if (hostPort.includes("/")) {
+    // Handle path-like formats
+    const url = new URL(`http://${hostPort}`);
+    host = url.hostname;
+    port = url.port;
+    protocol = url.protocol.replace(":", "");
+  } else if (hostPort.includes(":")) {
+    [host, port] = hostPort.split(":");
+  } else {
+    host = hostPort;
+    port = "";
+  }
+
+  // Validate host
+  if (!host || host === "") {
+    return null;
+  }
+
+  // Build proxy URL
+  let parsedProxyUrl = "";
+  if (protocol) {
+    parsedProxyUrl += `${protocol}://`;
+  }
+
+  if (username) {
+    if (password) {
+      parsedProxyUrl += `${username}:${password}@`;
+    } else {
+      parsedProxyUrl += `${username}@`;
+    }
+  }
+
+  parsedProxyUrl += host;
+
+  if (port) {
+    parsedProxyUrl += `:${port}`;
+  }
+
+  return parsedProxyUrl;
+}
+
+/**
+ * Parse multiple proxy URLs from a string (bulk import)
+ * Supports comma-separated list
+ */
+function parseProxyUrls(proxyUrls) {
+  if (!proxyUrls) return [];
+
+  const urls = normalizeString(proxyUrls).split(",");
+  const parsedUrls = [];
+
+  for (const url of urls) {
+    const parsed = parseProxyUrl(url.trim());
+    if (parsed) {
+      parsedUrls.push(parsed);
+    }
+  }
+
+  return parsedUrls;
+}
+
 function getErrorMessage(err) {
   if (!err) return "Unknown error";
   const base = err?.message || String(err);
@@ -31,6 +145,12 @@ export async function testProxyUrl({ proxyUrl, testUrl, timeoutMs } = {}) {
     return { ok: false, status: 400, error: "proxyUrl is required" };
   }
 
+  // Parse proxy URL from various formats
+  const parsedProxyUrl = parseProxyUrl(normalizedProxyUrl);
+  if (!parsedProxyUrl) {
+    return { ok: false, status: 400, error: "Invalid proxy URL format" };
+  }
+
   const normalizedTestUrl = normalizeString(testUrl) || DEFAULT_TEST_URL;
   const timeoutMsRaw = Number(timeoutMs);
   const normalizedTimeoutMs =
@@ -42,7 +162,7 @@ export async function testProxyUrl({ proxyUrl, testUrl, timeoutMs } = {}) {
 
   try {
     try {
-      dispatcher = new ProxyAgent({ uri: normalizedProxyUrl });
+      dispatcher = new ProxyAgent({ uri: parsedProxyUrl });
     } catch (err) {
       return {
         ok: false,
@@ -88,4 +208,24 @@ export async function testProxyUrl({ proxyUrl, testUrl, timeoutMs } = {}) {
       // ignore
     }
   }
+}
+
+/**
+ * Test multiple proxy URLs in bulk
+ * Supports comma-separated list or array of proxy URLs in various formats
+ */
+export async function testProxyUrls({ proxyUrls, testUrl, timeoutMs } = {}) {
+  if (!proxyUrls) {
+    return [];
+  }
+
+  const urls = Array.isArray(proxyUrls) ? proxyUrls : parseProxyUrls(proxyUrls);
+  const results = [];
+
+  for (const url of urls) {
+    const result = await testProxyUrl({ proxyUrl: url, testUrl, timeoutMs });
+    results.push({ proxyUrl: url, ...result });
+  }
+
+  return results;
 }
