@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { execFileSync } from "child_process";
 import {
   getMitmStatus,
   startServer,
@@ -36,6 +37,7 @@ function normalizeMitmRouterBaseUrlInput(input) {
 }
 
 const isWin = process.platform === "win32";
+const ADMIN_CHECK_TIMEOUT_MS = 2000;
 
 function getPassword(provided) {
   return provided || getCachedPassword() || null;
@@ -48,7 +50,11 @@ function requiresSudoPassword(pwd) {
 function checkIsAdmin() {
   if (isWin) {
     try {
-      require("child_process").execSync("fltmc", { windowsHide: true, stdio: "ignore" });
+      execFileSync("fltmc.exe", [], {
+        windowsHide: true,
+        stdio: "ignore",
+        timeout: ADMIN_CHECK_TIMEOUT_MS,
+      });
       return true;
     } catch {
       return false;

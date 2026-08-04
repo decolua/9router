@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  execSync: vi.fn(),
+  execFileSync: vi.fn(),
   getMitmStatus: vi.fn(),
   startServer: vi.fn(),
   stopServer: vi.fn(),
@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("child_process", () => ({
-  execSync: mocks.execSync,
+  execFileSync: mocks.execFileSync,
 }));
 
 vi.mock("next/server", () => ({
@@ -67,7 +67,7 @@ describe("MITM Windows elevation route handling", () => {
     vi.clearAllMocks();
     vi.resetModules();
     setPlatform("win32");
-    mocks.execSync.mockImplementation(() => {
+    mocks.execFileSync.mockImplementation(() => {
       throw new Error("not elevated");
     });
     mocks.getCachedPassword.mockReturnValue(null);
@@ -87,5 +87,21 @@ describe("MITM Windows elevation route handling", () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ success: true, running: true, pid: 1234 });
     expect(mocks.startServer).toHaveBeenCalledWith("sk-test", "", false);
+  });
+
+  it("uses direct bounded fltmc.exe execution for the Windows admin probe", async () => {
+    mocks.execFileSync.mockReturnValue(Buffer.from(""));
+    mocks.getMitmStatus.mockResolvedValue({ running: false, dnsStatus: {} });
+    mocks.getSettings.mockResolvedValue({});
+
+    const { GET } = await import("../../src/app/api/cli-tools/antigravity-mitm/route.js");
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    expect(mocks.execFileSync).toHaveBeenCalledWith(
+      "fltmc.exe",
+      [],
+      expect.objectContaining({ windowsHide: true, stdio: "ignore", timeout: 2000 }),
+    );
   });
 });

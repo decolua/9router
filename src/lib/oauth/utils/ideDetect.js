@@ -1,10 +1,9 @@
 import fs from "fs/promises";
-import { exec } from "child_process";
-import { promisify } from "util";
+import { execFile } from "child_process";
 import path from "path";
 import os from "os";
 
-const execAsync = promisify(exec);
+const IDE_PROBE_TIMEOUT_MS = 2000;
 
 // Install paths per provider per platform — Trae and standard Windsurf IDE locations.
 const IDE_PATHS = {
@@ -37,8 +36,15 @@ async function pathExists(p) {
 
 async function checkBinary(bin) {
   try {
-    const cmd = os.platform() === "win32" ? `where ${bin}` : `which ${bin}`;
-    await execAsync(cmd, { windowsHide: true });
+    const executable = os.platform() === "win32" ? "where.exe" : "which";
+    await new Promise((resolve, reject) => {
+      execFile(
+        executable,
+        [bin],
+        { windowsHide: true, timeout: IDE_PROBE_TIMEOUT_MS, maxBuffer: 64 * 1024 },
+        (error) => (error ? reject(error) : resolve()),
+      );
+    });
     return true;
   } catch { return false; }
 }

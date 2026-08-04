@@ -1,4 +1,4 @@
-const { exec, spawn, execSync } = require("child_process");
+const { spawn, execSync, execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
@@ -80,6 +80,7 @@ function buildRemoveHostsScript(hosts) {
 
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
+const WINDOWS_DNS_FLUSH_TIMEOUT_MS = 5000;
 const HOSTS_FILE = IS_WIN
   ? path.join(process.env.SystemRoot || "C:\\Windows", "System32", "drivers", "etc", "hosts")
   : "/etc/hosts";
@@ -279,7 +280,16 @@ function removeAllDNSEntriesSync() {
     if (next === content) return;
     fs.writeFileSync(HOSTS_FILE, next, "utf8");
     if (IS_WIN) {
-      try { execSync("ipconfig /flushdns", { windowsHide: true, stdio: "ignore" }); } catch { /* ignore */ }
+      // The previous shell form implicitly starts cmd.exe on Windows. Use the
+      // executable directly so shutdown cannot flash a
+      // console window or leave an unbounded shell child behind.
+      try {
+        execFileSync("ipconfig.exe", ["/flushdns"], {
+          windowsHide: true,
+          stdio: "ignore",
+          timeout: WINDOWS_DNS_FLUSH_TIMEOUT_MS,
+        });
+      } catch { /* best effort during shutdown */ }
     } else if (IS_MAC) {
       try { execSync("dscacheutil -flushcache && killall -HUP mDNSResponder", { stdio: "ignore" }); } catch { /* ignore */ }
     } else {
