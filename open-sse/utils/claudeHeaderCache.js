@@ -4,9 +4,16 @@
  * for forwarding to api.anthropic.com, replacing static hardcoded values.
  */
 
+// Identity-only. `anthropic-beta` is deliberately NOT here: it is request-scoped
+// and entitlement-sensitive, not an identity trait. Caching it let one client's
+// flags ride along on every later request — a Claude Code session with
+// `context-1m-2025-08-07` made even a 4-token prompt fail with
+// "Usage credits are required for long context requests." (that beta is
+// pay-as-you-go, so subscription-only accounts are rejected) and it only hit
+// Sonnet, since the flag is Sonnet-specific. Outbound beta flags now come from
+// the provider registry's curated static list instead.
 const CLAUDE_IDENTITY_HEADERS = [
   "user-agent",
-  "anthropic-beta",
   "anthropic-version",
   "anthropic-dangerous-direct-browser-access",
   "x-app",

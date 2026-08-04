@@ -43,20 +43,22 @@ const HEADER_HOOKS = {
   kimiHeaders: (h, c) => Object.assign(h, buildKimiHeaders(c?.providerSpecificData?.deviceId)),
   clineHeaders: (h, c) => Object.assign(h, buildClineHeaders(c.apiKey || c.accessToken)),
   kilocodeOrg: (h, c) => { if (c.providerSpecificData?.orgId) h["X-Kilocode-OrganizationID"] = c.providerSpecificData.orgId; },
+  // Replay a real Claude Code client's IDENTITY headers so OAuth calls look
+  // authentic. Never copies `anthropic-beta` — see claudeHeaderCache.js for why
+  // that leaked entitlements between clients. Treats the cache as read-only: the
+  // previous version wrote merged flags back into the singleton, so beta flags
+  // accumulated forever and survived every later request.
   claudeOverlay: (h) => {
     const cached = getCachedClaudeHeaders();
     if (!cached) return;
+    const overlay = {};
     for (const lcKey of Object.keys(cached)) {
+      if (lcKey === "anthropic-beta") continue; // defensive: never overlay betas
       const titleKey = lcKey.replace(/(^|-)([a-z])/g, (_, sep, ch) => sep + ch.toUpperCase());
-      if (lcKey === "anthropic-beta") {
-        const staticBetaStr = h[titleKey] || h[lcKey] || "";
-        const flags = new Set(staticBetaStr.split(",").map(f => f.trim()).filter(Boolean));
-        for (const f of cached[lcKey].split(",").map(f => f.trim()).filter(Boolean)) flags.add(f);
-        cached[lcKey] = Array.from(flags).join(",");
-      }
       if (titleKey !== lcKey && h[titleKey] !== undefined) delete h[titleKey];
+      overlay[lcKey] = cached[lcKey];
     }
-    Object.assign(h, cached);
+    Object.assign(h, overlay);
   },
 };
 
