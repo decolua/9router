@@ -114,8 +114,8 @@ export async function handleChat(request, clientRawRequest = null) {
     }
 
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    const comboSpecificStrategy = comboStrategies[modelStr];
-    const comboTimeoutMs = comboSpecificStrategy?.timeoutMs || COMBO_MODEL_TIMEOUT_MS || 0;
+    const comboConfig = comboStrategies[modelStr];
+    const comboTimeoutMs = comboConfig?.timeoutMs || COMBO_MODEL_TIMEOUT_MS || 0;
 
     log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit}, timeout: ${comboTimeoutMs || "off"})`);
     return handleComboChat({
