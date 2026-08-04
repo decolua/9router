@@ -68,6 +68,42 @@ function stripStoredItemReferences(body) {
   });
 }
 
+// Strip function_call_output items whose call_id has no matching function_call in input.
+// Prevents Codex 400: "No tool call found for function call output with call_id ..."
+// Orphaned outputs occur when conversation compaction removes original tool calls
+// but leaves their results (e.g., multiple image attachments, compacted tool loops).
+function stripOrphanedToolOutputs(body) {
+  if (!Array.isArray(body.input)) return;
+  const callIds = new Set();
+  let outputCount = 0;
+  for (const item of body.input) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    if (item.type === "function_call" && typeof item.call_id === "string") {
+      callIds.add(item.call_id);
+    }
+    // Chat Completions format: assistant message with embedded tool_calls
+    if (Array.isArray(item.tool_calls)) {
+      for (const tc of item.tool_calls) {
+        if (tc && typeof tc.id === "string") callIds.add(tc.id);
+      }
+    }
+    if (item.type === "function_call_output") outputCount++;
+  }
+  if (outputCount === 0) return;
+  const before = body.input.length;
+  body.input = body.input.filter((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return true;
+    if (item.type === "function_call_output" && typeof item.call_id === "string") {
+      return callIds.has(item.call_id);
+    }
+    return true;
+  });
+  const removed = before - body.input.length;
+  if (removed > 0) {
+    dbg("CODEX", `stripOrphanedToolOutputs | removed ${removed} orphaned function_call_output(s) | call_ids=${callIds.size} outputs=${outputCount}`);
+  }
+}
+
 // Flatten Chat-Completions tool shape into Responses flat format + filter unsupported tools
 function normalizeCodexTools(body) {
   if (!Array.isArray(body.tools)) return;
@@ -408,6 +444,8 @@ export class CodexExecutor extends BaseExecutor {
     convertSystemToDeveloperRole(body);
     // Strip server-generated item IDs (rs_/fc_/resp_/msg_) — Codex /responses can't resolve when store=false
     stripStoredItemReferences(body);
+    // Strip orphaned function_call_output items (no matching function_call) — prevents 400 error
+    stripOrphanedToolOutputs(body);
     // Flatten function tools + drop unsupported types
     normalizeCodexTools(body);
 
