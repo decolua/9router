@@ -48,9 +48,11 @@ export async function refreshAndUpdateCredentials(connection, force = false, pro
   const refreshResult = await executor.refreshCredentials(credentials, console, proxyOptions);
 
   if (!refreshResult) {
-    // Refresh failed but we still have an accessToken — try with existing token
+    // Refresh failed but we still have an accessToken — try with existing token.
+    // refreshFailed distinguishes this from "no refresh was due", which otherwise looks
+    // identical to callers and hid every failed refresh.
     if (connection.accessToken) {
-      return { connection, refreshed: false };
+      return { connection, refreshed: false, refreshFailed: true };
     }
     throw new Error("Failed to refresh credentials. Please re-authorize the connection.");
   }
@@ -75,9 +77,9 @@ export async function refreshAndUpdateCredentials(connection, force = false, pro
     updateData.idToken = refreshResult.idToken;
   }
 
-  if (refreshResult.lastRefreshAt) {
-    updateData.lastRefreshAt = refreshResult.lastRefreshAt;
-  }
+  // Stamp when the refresh happened. Most providers do not return this, and without it a
+  // successful refresh leaves no trace, so "has this ever refreshed?" is unanswerable.
+  updateData.lastRefreshAt = refreshResult.lastRefreshAt || now;
 
   // Update token expiry
   if (refreshResult.expiresIn) {

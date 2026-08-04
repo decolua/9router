@@ -112,6 +112,15 @@ async function runHeavyStartup() {
       .then(({ startQuotaAutoPing }) => startQuotaAutoPing())
       .catch((e) => console.log("[AutoPing] scheduler start failed:", e.message));
   }
+
+  // Always on: without it, a provider with a short-lived access token (xai/grok-cli issues
+  // 6h tokens) expires whenever traffic goes elsewhere for a few hours. The tick only acts
+  // on tokens already inside their refresh window, so an idle install costs nothing.
+  if (settings.tokenKeepAliveEnabled !== false) {
+    import("@/shared/services/tokenKeepAlive")
+      .then(({ startTokenKeepAlive }) => startTokenKeepAlive())
+      .catch((e) => console.log("[KeepAlive] scheduler start failed:", e.message));
+  }
 }
 
 function hasQuotaAutoPingEnabled(settings) {
