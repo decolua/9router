@@ -181,7 +181,7 @@ export default function ProviderLimits() {
           page: String(targetPage),
           pageSize: String(pageSize),
           accountStatus: accountFilter,
-          sort: "priority",
+          sort: sortRequestFromExpiringFirst(expiringFirst),
         });
 
         if (providerFilter !== "all") {
@@ -1015,8 +1015,8 @@ export default function ProviderLimits() {
       {/* Provider cards: 2 columns, compact */}
       {expiringFirst && (
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-          Expiring-first currently reorders accounts inside the current page.
-          Cross-page ordering still follows backend pagination.
+          Expiring-first uses saved token expiry and rate-limit times across
+          pages. Live quota-reset ordering requires a deeper quota refresh pass.
         </div>
       )}
 
