@@ -24,13 +24,14 @@ export function extractRequestConfig(body, stream) {
 export function extractUsageFromResponse(responseBody) {
   if (!responseBody || typeof responseBody !== "object") return null;
 
-  // Claude format
+  // Claude format — thinking tokens are already inside output_tokens
   if (responseBody.usage?.input_tokens !== undefined) {
     return {
       prompt_tokens: responseBody.usage.input_tokens || 0,
       completion_tokens: responseBody.usage.output_tokens || 0,
       cache_read_input_tokens: responseBody.usage.cache_read_input_tokens,
-      cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens
+      cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens,
+      reasoning_tokens: responseBody.usage.output_tokens_details?.thinking_tokens
     };
   }
 
@@ -44,13 +45,15 @@ export function extractUsageFromResponse(responseBody) {
     };
   }
 
-  // Gemini format
+  // Gemini format — thoughts sit outside candidates upstream; fold them in so
+  // completion_tokens stays reasoning-inclusive (see extractUsage in usageTracking.js)
   if (responseBody.usageMetadata) {
+    const thoughts = responseBody.usageMetadata.thoughtsTokenCount || 0;
     return {
       prompt_tokens: responseBody.usageMetadata.promptTokenCount || 0,
-      completion_tokens: responseBody.usageMetadata.candidatesTokenCount || 0,
+      completion_tokens: (responseBody.usageMetadata.candidatesTokenCount || 0) + thoughts,
       cached_tokens: responseBody.usageMetadata.cachedContentTokenCount || 0,
-      reasoning_tokens: responseBody.usageMetadata.thoughtsTokenCount || 0
+      reasoning_tokens: thoughts
     };
   }
 
