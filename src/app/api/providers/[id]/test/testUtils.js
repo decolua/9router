@@ -1,3 +1,4 @@
+import { platform, arch } from "os";
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
@@ -211,8 +212,10 @@ function parseProviderErrorMessage(bodyText, fallback) {
 }
 
 async function probeCloudCodeAssistAccess(connection, accessToken, effectiveProxy = null) {
+  const _p = platform() === "win32" ? "windows" : platform();
+  const _a = arch() === "x64" ? "amd64" : arch();
   const userAgent = connection.provider === "antigravity"
-    ? "google-api-nodejs-client/9.15.1 vscode-antigravity/1.107.0"
+    ? `antigravity/ide/2.1.1 ${_p}/${_a}`
     : "google-api-nodejs-client/9.15.1 gemini-cli/0.34.0";
 
   const res = await fetchWithConnectionProxy(CLOUD_CODE_ASSIST_TEST_URL, {
