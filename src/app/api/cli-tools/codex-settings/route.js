@@ -1,103 +1,149 @@
 "use server";
 
 import { NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
-import fs from "fs/promises";
-import path from "path";
-import os from "os";
+import fs from "node:fs/promises";
+import path from "node:path";
+import os from "node:os";
 import { parseTOML, stringifyTOML } from "confbox";
+import { DATA_DIR } from "@/lib/dataDir.js";
+import { getInstalledCodexClientVersion } from "@/lib/codexNative/clientVersion.js";
+import { CODEX_NATIVE_CONFIG } from "open-sse/config/codexNative.js";
 
-const execAsync = promisify(exec);
+const BRIDGE_SECRET_PATH = path.join(DATA_DIR, "secrets", "codex-bridge-token");
+const BRIDGE_STATE_PATH = path.join(DATA_DIR, "state", "codex-bridge.json");
+const NATIVE_READINESS_PATH = path.join(DATA_DIR, "codex-native", "readiness.json");
 
 const getCodexDir = () => path.join(os.homedir(), ".codex");
 const getCodexConfigPath = () => path.join(getCodexDir(), "config.toml");
 const getCodexAuthPath = () => path.join(getCodexDir(), "auth.json");
 
-// Flatten confbox-parsed TOML into a writable object, preserving nested tables
 const parsedToWritable = (obj) => obj ?? {};
 
-// Set a nested key from a flat dotted path, creating intermediate objects as needed
 const setNestedSection = (obj, dottedKey, value) => {
   const keys = dottedKey.split(".");
-  let cur = obj;
-  for (let i = 0; i < keys.length - 1; i++) {
-    if (cur[keys[i]] == null || typeof cur[keys[i]] !== "object") {
-      cur[keys[i]] = {};
+  let current = obj;
+  for (let index = 0; index < keys.length - 1; index++) {
+    if (current[keys[index]] == null || typeof current[keys[index]] !== "object") {
+      current[keys[index]] = {};
     }
-    cur = cur[keys[i]];
+    current = current[keys[index]];
   }
-  cur[keys[keys.length - 1]] = value;
+  current[keys[keys.length - 1]] = value;
 };
 
-// Delete a nested key from a flat dotted path
+const getNestedSection = (obj, dottedKey) =>
+  dottedKey.split(".").reduce((value, key) => value?.[key], obj);
+
 const deleteNestedSection = (obj, dottedKey) => {
   const keys = dottedKey.split(".");
-  let cur = obj;
-  for (let i = 0; i < keys.length - 1; i++) {
-    cur = cur?.[keys[i]];
-    if (cur == null) return;
+  let current = obj;
+  for (let index = 0; index < keys.length - 1; index++) {
+    current = current?.[keys[index]];
+    if (current == null) return;
   }
-  delete cur[keys[keys.length - 1]];
+  delete current[keys[keys.length - 1]];
 };
 
-// Check if codex CLI is installed (via which/where or config file exists)
-const checkCodexInstalled = async () => {
+async function atomicWrite(filePath, content, mode = 0o600) {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  const temporaryPath = `${filePath}.${process.pid}.tmp`;
+  await fs.writeFile(temporaryPath, content, { mode });
+  await fs.rename(temporaryPath, filePath);
+  try { await fs.chmod(filePath, mode); } catch { /* Windows and restricted filesystems */ }
+}
+
+async function readJson(filePath) {
   try {
-    const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where codex" : "which codex";
-    const env = isWindows
-      ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }
-      : process.env;
-    await execAsync(command, { windowsHide: true, env });
-    return true;
+    return JSON.parse(await fs.readFile(filePath, "utf8"));
   } catch {
-    try {
-      await fs.access(getCodexConfigPath());
-      return true;
-    } catch {
-      return false;
-    }
+    return null;
   }
-};
+}
 
-// Read current config.toml
-const readConfig = async () => {
+async function readConfig() {
   try {
-    const configPath = getCodexConfigPath();
-    const content = await fs.readFile(configPath, "utf-8");
-    return content;
+    return await fs.readFile(getCodexConfigPath(), "utf8");
   } catch (error) {
     if (error.code === "ENOENT") return null;
     throw error;
   }
-};
+}
 
-// Check if config has 9Router settings
-const has9RouterConfig = (config) => {
+function has9RouterConfig(config) {
   if (!config) return false;
-  return config.includes("model_provider = \"9router\"") || config.includes("[model_providers.9router]");
-};
+  return config.includes('model_provider = "9router"')
+    || config.includes('model_provider = "9router_codex"')
+    || config.includes("[model_providers.9router]")
+    || config.includes("[model_providers.9router_codex]");
+}
 
-// GET - Check codex CLI and read current settings
+function normalizeUniversalBaseUrl(baseUrl) {
+  const trimmed = String(baseUrl || "").trim().replace(/\/+$/, "");
+  return trimmed.endsWith("/v1") ? trimmed : `${trimmed}/v1`;
+}
+
+function authConfig() {
+  return {
+    command: "9router",
+    args: ["codex", "auth-token", "--data-dir", DATA_DIR],
+    refresh_interval_ms: 0,
+  };
+}
+
+async function writeBridgeState(parsed, managed) {
+  const existing = await readJson(BRIDGE_STATE_PATH);
+  const previous = existing?.previous || {
+    model: parsed.model ?? null,
+    modelProvider: parsed.model_provider ?? null,
+    subagent: getNestedSection(parsed, "agents.subagent") ?? null,
+  };
+  await atomicWrite(BRIDGE_STATE_PATH, JSON.stringify({
+    version: 1,
+    previous,
+    managed,
+    updatedAt: new Date().toISOString(),
+  }, null, 2));
+}
+
+async function migrateOwnedLegacyAuth(apiKey) {
+  const authPath = getCodexAuthPath();
+  const auth = await readJson(authPath);
+  if (!auth || auth.OPENAI_API_KEY !== apiKey || auth.auth_mode !== "apikey") return false;
+  delete auth.OPENAI_API_KEY;
+  delete auth.auth_mode;
+  if (Object.keys(auth).length === 0) {
+    await fs.unlink(authPath).catch(() => {});
+  } else {
+    await atomicWrite(authPath, JSON.stringify(auth, null, 2));
+  }
+  return true;
+}
+
 export async function GET() {
   try {
-    const isInstalled = await checkCodexInstalled();
-    
-    if (!isInstalled) {
-      return NextResponse.json({
-        installed: false,
-        config: null,
-        message: "Codex CLI is not installed",
-      });
-    }
-
-    const config = await readConfig();
+    const [versionInfo, config, secretConfigured, nativeReadiness] = await Promise.all([
+      getInstalledCodexClientVersion(),
+      readConfig(),
+      fs.access(BRIDGE_SECRET_PATH).then(() => true).catch(() => false),
+      readJson(NATIVE_READINESS_PATH),
+    ]);
+    const parsed = config ? parsedToWritable(parseTOML(config)) : {};
+    const provider = parsed.model_provider || null;
+    const mode = provider === CODEX_NATIVE_CONFIG.providerConfigId
+      ? "native"
+      : (provider === "9router" ? "universal" : null);
 
     return NextResponse.json({
-      installed: true,
+      installed: versionInfo.installed || !!config,
+      codexVersion: versionInfo.version,
+      codexVersionRaw: versionInfo.raw,
+      nativeSupported: nativeReadiness?.supportsWebSockets ?? null,
+      nativeReadiness,
       config,
+      mode,
       has9Router: has9RouterConfig(config),
+      secretConfigured,
+      dataDir: DATA_DIR,
       configPath: getCodexConfigPath(),
     });
   } catch (error) {
@@ -106,67 +152,70 @@ export async function GET() {
   }
 }
 
-// POST - Update 9Router settings (merge with existing config)
 export async function POST(request) {
   try {
-    const { baseUrl, apiKey, model, subagentModel } = await request.json();
-    
+    const {
+      baseUrl,
+      apiKey,
+      model,
+      subagentModel,
+      mode = "universal",
+    } = await request.json();
     if (!baseUrl || !apiKey || !model) {
       return NextResponse.json({ error: "baseUrl, apiKey and model are required" }, { status: 400 });
     }
+    if (!["universal", "native"].includes(mode)) {
+      return NextResponse.json({ error: "mode must be universal or native" }, { status: 400 });
+    }
 
-    const codexDir = getCodexDir();
     const configPath = getCodexConfigPath();
-
-    // Ensure directory exists
-    await fs.mkdir(codexDir, { recursive: true });
-
-    // Read and parse existing config
     let parsed = {};
     try {
-      const existingConfig = await fs.readFile(configPath, "utf-8");
-      parsed = parsedToWritable(parseTOML(existingConfig));
-    } catch { /* No existing config */ }
+      parsed = parsedToWritable(parseTOML(await fs.readFile(configPath, "utf8")));
+    } catch {
+      // First setup.
+    }
 
-    // Update only 9Router related fields (api_key goes to auth.json, not config.toml)
-    parsed.model = model;
-    parsed.model_provider = "9router";
-
-    // Update or create 9router provider section (no api_key - Codex reads from auth.json)
-    // Ensure /v1 suffix is added only once
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    setNestedSection(parsed, "model_providers.9router", {
-      name: "9Router",
-      base_url: normalizedBaseUrl,
-      wire_api: "responses",
-    });
-
-    // Add subagent configuration
+    const universalBaseUrl = normalizeUniversalBaseUrl(baseUrl);
+    const nativeBaseUrl = `${universalBaseUrl}/codex`;
+    const readiness = await readJson(NATIVE_READINESS_PATH);
+    const wsDisabled = /^(1|true|yes|on)$/i.test(process.env.CODEX_NATIVE_WS_DISABLED || "");
+    const supportsWebSockets = !wsDisabled
+      && readiness?.supportsWebSockets === true
+      && readiness?.configuredBaseUrl === nativeBaseUrl;
     const effectiveSubagentModel = subagentModel || model;
-    setNestedSection(parsed, "agents.subagent", {
-      model: effectiveSubagentModel,
+    const provider = mode === "native" ? CODEX_NATIVE_CONFIG.providerConfigId : "9router";
+    const managed = { model, modelProvider: provider, subagent: { model: effectiveSubagentModel } };
+    await writeBridgeState(parsed, managed);
+
+    parsed.model = model;
+    parsed.model_provider = provider;
+    setNestedSection(parsed, "model_providers.9router", {
+      name: "9Router Universal",
+      base_url: universalBaseUrl,
+      wire_api: "responses",
+      auth: authConfig(),
     });
+    setNestedSection(parsed, `model_providers.${CODEX_NATIVE_CONFIG.providerConfigId}`, {
+      name: "9Router Codex Native",
+      base_url: nativeBaseUrl,
+      wire_api: "responses",
+      supports_websockets: supportsWebSockets,
+      auth: authConfig(),
+    });
+    setNestedSection(parsed, "agents.subagent", { model: effectiveSubagentModel });
 
-    // Write merged config
-    const configContent = stringifyTOML(parsed);
-    await fs.writeFile(configPath, configContent);
-
-    // Update auth.json with OPENAI_API_KEY (Codex reads this first)
-    const authPath = getCodexAuthPath();
-    let authData = {};
-    try {
-      const existingAuth = await fs.readFile(authPath, "utf-8");
-      authData = JSON.parse(existingAuth);
-    } catch { /* No existing auth */ }
-    
-    // Force apikey mode (keep existing tokens untouched for ChatGPT login reuse)
-    authData.OPENAI_API_KEY = apiKey;
-    authData.auth_mode = "apikey";
-    await fs.writeFile(authPath, JSON.stringify(authData, null, 2));
+    await atomicWrite(configPath, stringifyTOML(parsed));
+    await atomicWrite(BRIDGE_SECRET_PATH, `${apiKey.trim()}\n`);
+    const migratedLegacyAuth = await migrateOwnedLegacyAuth(apiKey.trim());
 
     return NextResponse.json({
       success: true,
-      message: "Codex settings applied successfully!",
+      mode,
+      migratedLegacyAuth,
+      message: mode === "native"
+        ? "Codex Native pool configured successfully"
+        : "Codex Universal bridge configured successfully",
       configPath,
     });
   } catch (error) {
@@ -175,61 +224,47 @@ export async function POST(request) {
   }
 }
 
-// DELETE - Remove 9Router settings only (keep other settings)
 export async function DELETE() {
   try {
     const configPath = getCodexConfigPath();
-
-    // Read and parse existing config
     let parsed = {};
     try {
-      const existingConfig = await fs.readFile(configPath, "utf-8");
-      parsed = parsedToWritable(parseTOML(existingConfig));
+      parsed = parsedToWritable(parseTOML(await fs.readFile(configPath, "utf8")));
     } catch (error) {
-      if (error.code === "ENOENT") {
-        return NextResponse.json({
-          success: true,
-          message: "No config file to reset",
-        });
-      }
-      throw error;
+      if (error.code !== "ENOENT") throw error;
     }
 
-    // Remove 9Router related root fields only if they point to 9router
-    if (parsed.model_provider === "9router") {
+    const bridgeState = await readJson(BRIDGE_STATE_PATH);
+    const managed = bridgeState?.managed;
+    const previous = bridgeState?.previous;
+
+    if (managed && parsed.model === managed.model && parsed.model_provider === managed.modelProvider) {
+      if (previous?.model == null) delete parsed.model;
+      else parsed.model = previous.model;
+      if (previous?.modelProvider == null) delete parsed.model_provider;
+      else parsed.model_provider = previous.modelProvider;
+    } else if (parsed.model_provider === "9router" || parsed.model_provider === CODEX_NATIVE_CONFIG.providerConfigId) {
       delete parsed.model;
       delete parsed.model_provider;
     }
 
-    // Remove 9router provider section
+    const currentSubagent = getNestedSection(parsed, "agents.subagent");
+    if (managed && JSON.stringify(currentSubagent) === JSON.stringify(managed.subagent)) {
+      if (previous?.subagent == null) deleteNestedSection(parsed, "agents.subagent");
+      else setNestedSection(parsed, "agents.subagent", previous.subagent);
+    }
+
     deleteNestedSection(parsed, "model_providers.9router");
-
-    // Remove subagent configuration
-    deleteNestedSection(parsed, "agents.subagent");
-
-    // Write updated config
-    const configContent = stringifyTOML(parsed);
-    await fs.writeFile(configPath, configContent);
-
-    // Remove OPENAI_API_KEY from auth.json
-    const authPath = getCodexAuthPath();
-    try {
-      const existingAuth = await fs.readFile(authPath, "utf-8");
-      const authData = JSON.parse(existingAuth);
-      delete authData.OPENAI_API_KEY;
-      delete authData.auth_mode;
-
-      // Write back or delete if empty
-      if (Object.keys(authData).length === 0) {
-        await fs.unlink(authPath);
-      } else {
-        await fs.writeFile(authPath, JSON.stringify(authData, null, 2));
-      }
-    } catch { /* No auth file */ }
+    deleteNestedSection(parsed, `model_providers.${CODEX_NATIVE_CONFIG.providerConfigId}`);
+    await atomicWrite(configPath, stringifyTOML(parsed));
+    await Promise.all([
+      fs.unlink(BRIDGE_SECRET_PATH).catch(() => {}),
+      fs.unlink(BRIDGE_STATE_PATH).catch(() => {}),
+    ]);
 
     return NextResponse.json({
       success: true,
-      message: "9Router settings removed successfully",
+      message: "9Router Codex providers removed; previous Codex defaults restored when unchanged",
     });
   } catch (error) {
     console.log("Error resetting codex settings:", error);
