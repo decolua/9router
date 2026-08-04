@@ -159,6 +159,74 @@ Default URLs:
 - Dashboard: `http://localhost:20128/dashboard`
 - OpenAI-compatible API: `http://localhost:20128/v1`
 
+### Nix (Flakes)
+
+The project provides optional Nix flake outputs for users who already use Nix. The flake builds from source.
+
+```bash
+# Latest source from default branch
+nix run github:decolua/9router
+
+# Specific release (uses the flake at that git tag)
+nix run github:decolua/9router/v0.5.45
+
+# Named output
+nix run github:decolua/9router#9router
+
+# Build / develop
+nix build github:decolua/9router
+nix develop github:decolua/9router
+```
+
+The flake exposes `packages.<system>.default`, `packages.<system>.9router`, `apps.<system>.default`, `devShells.<system>.default`, `overlays.default`, `homeModules.default`, and `checks.<system>.smoke` / `checks.<system>.hmModuleStruct`.
+
+Supported platforms: `x86_64-linux`, `aarch64-linux`, `x86_64-darwin`, `aarch64-darwin`.
+
+> **Note:** The Nix build runs in a sandbox with no network access. The `next/font/google` Inter font fetch is neutralized during the Nix build (the font falls back to a system font). The `better-sqlite3` native addon is skipped (`--ignore-scripts`); the app falls back to `sql.js` (pure JavaScript SQLite) at runtime. Both fallbacks are scoped to the Nix derivation only — the Docker and npm build paths are unchanged.
+
+#### Home-Manager
+
+For declarative user-environment management via [Home-Manager](https://nix-community.github.io/home-manager/):
+
+```nix
+# flake.nix (your config)
+inputs.9router.url = "github:decolua/9router";
+
+# home.nix
+{ pkgs, inputs, ... }:
+{
+  imports = [ inputs.9router.homeModules.default ];
+
+  programs."9router" = {
+    enable = true;
+    port = 20128;
+    hostname = "0.0.0.0";
+    dataDir = "~/.9router";
+  };
+}
+```
+
+Or apply the overlay first and let the module pick up the package automatically:
+
+```nix
+nixpkgs.overlays = [ inputs.9router.overlays.default ];
+```
+
+### Devbox
+
+For a reproducible development environment, use Devbox:
+
+```bash
+# Install Devbox first (if not already installed)
+curl -fsSL https://get.jetify.dev/devbox | bash
+
+# Enter the development environment
+devbox shell
+
+# Build the project
+devbox run build
+```
+
 ---
 
 ## Video Guides
