@@ -6,10 +6,12 @@
 // We use the maintained `systray2` fork. The original `systray@1.0.5` package
 // bundles a 2017 x86_64 Go binary whose Mach-O headers are rejected by modern
 // dyld (macOS 14+), so the tray silently fails to register on Apple Silicon.
-const { spawnSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
-const { getRuntimeDir, getRuntimeNodeModules, runNpmInstall, summarizeNpmError } = require("./sqliteRuntime");
+const {
+  getRuntimeNodeModules,
+  installRuntimePackages,
+} = require("./runtimeInstall");
 
 const SYSTRAY_PKG = "systray2";
 const SYSTRAY_VERSION = "2.1.4";
@@ -57,33 +59,6 @@ function chmodSystrayBin({ silent = false } = {}) {
   }
 }
 
-function ensureRuntimeDir() {
-  const dir = getRuntimeDir();
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  const pkgPath = path.join(dir, "package.json");
-  if (!fs.existsSync(pkgPath)) {
-    fs.writeFileSync(pkgPath, JSON.stringify({
-      name: "9router-runtime",
-      version: "1.0.0",
-      private: true
-    }, null, 2));
-  }
-  return dir;
-}
-
-function npmInstall(pkgs, { silent = false } = {}) {
-  const cwd = ensureRuntimeDir();
-  if (!silent) console.log("⏳ Installing system tray (first run)...");
-  const res = runNpmInstall({ cwd, pkgs, extraArgs: ["--no-save"], timeout: 120000 });
-  if (!res.ok && !silent) {
-    const reason = summarizeNpmError(res.stderr);
-    console.warn("⚠️  System tray install failed — tray disabled");
-    console.warn(`   Reason: ${reason}`);
-    console.warn(`   Retry:  cd "${cwd}" && npm install ${pkgs.join(" ")}`);
-  }
-  return res.ok;
-}
-
 // Public: ensure systray2 is installed on macOS/Linux only.
 // Windows skips entirely (uses PowerShell tray).
 function ensureTrayRuntime({ silent = false } = {}) {
@@ -99,7 +74,13 @@ function ensureTrayRuntime({ silent = false } = {}) {
     if (!silent) console.log("✅ System tray ready");
     return { systray: true };
   }
-  const ok = npmInstall([`${SYSTRAY_PKG}@${SYSTRAY_VERSION}`], { silent });
+  const ok = installRuntimePackages([`${SYSTRAY_PKG}@${SYSTRAY_VERSION}`], {
+    silent,
+    timeout: 120000,
+    label: "system tray",
+    failureTitle: "System tray install failed — tray disabled",
+    failureHint: "tray disabled",
+  });
   if (ok) chmodSystrayBin({ silent });
   return { systray: ok && hasSystray() };
 }

@@ -333,6 +333,7 @@
 - Qoder: allow `qmodel_latest` model key (#1638)
 - Providers: restore one-connection guard for compatible/embedding nodes
 - Model-test: route image/STT probes to their real endpoints, harden STT ping; add opencode-go + xiaomi-tokenplan to connection test (#1576, #1628)
+- Runtime: stop lazy installs in `~/.9router/runtime` from pruning sibling packages — SQLite (`better-sqlite3`) and tray (`systray2`) now save to `package.json` instead of `--no-save`, so the second install no longer removes the first (#1605)
 
 ## Improvements
 - Dashboard: reorganize menu actions across sidebar/header/profile
