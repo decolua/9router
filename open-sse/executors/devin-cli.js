@@ -451,15 +451,22 @@ export class DevinCliExecutor extends BaseExecutor {
           if (abortHandler && signal) signal.removeEventListener("abort", abortHandler);
           abortHandler = null;
         };
+        const childHasExited = () => (
+          (child.exitCode !== null && child.exitCode !== undefined)
+          || (child.signalCode !== null && child.signalCode !== undefined)
+        );
         const stopChild = (killSignal = "SIGTERM") => {
           try {
-            if (!child.killed) child.kill(killSignal);
+            // `child.killed` flips as soon as SIGTERM is sent, not when the
+            // child has actually exited. Check terminal state instead so the
+            // scheduled SIGKILL fallback remains reachable.
+            if (!childHasExited()) child.kill(killSignal);
           } catch {
             /* process already gone */
           }
         };
         const scheduleForceKill = () => {
-          if (spawnError || killTimer || child.killed || child.exitCode !== null || child.signalCode !== null) return;
+          if (spawnError || killTimer || childHasExited()) return;
           killTimer = setTimeout(() => stopChild("SIGKILL"), 2000);
           killTimer.unref?.();
         };

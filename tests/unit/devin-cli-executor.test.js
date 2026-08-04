@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import os from "node:os";
 
@@ -131,6 +131,10 @@ async function runExecute(credentials = {}) {
 }
 
 describe("DevinCliExecutor ACP session/new", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("sends session/new with mcpServers as an array", async () => {
     const { child } = await runExecute();
     const writes = child.writes.map((w) => JSON.parse(w.trim()));
@@ -433,5 +437,34 @@ describe("DevinCliExecutor ACP session/new", () => {
     expect(fs.existsSync(scriptPath)).toBe(true);
     expect(fs.readFileSync(scriptPath, "utf8")).toContain("clientTools");
     expect(fs.readFileSync(scriptPath, "utf8")).toContain("DEVIN_MCP_TOOLS");
+  });
+
+  it("force-kills a still-running child after stream cancellation", async () => {
+    vi.useFakeTimers();
+    const child = new EventEmitter();
+    child.stdin = new EventEmitter();
+    child.stdin.destroyed = false;
+    child.stdin.write = () => true;
+    child.stdin.end = () => { child.stdin.destroyed = true; };
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.killed = false;
+    child.exitCode = null;
+    child.signalCode = null;
+    child.kill = vi.fn(() => { child.killed = true; });
+    spawnMock.mockReturnValue(child);
+
+    const exec = new DevinCliExecutor();
+    const { response } = await exec.execute({
+      model: "swe-1.6-fast",
+      body: { messages: [{ role: "user", content: "wait" }] },
+      credentials: {},
+      log: { info() {}, debug() {} },
+    });
+
+    await response.body.cancel("client disconnected");
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(child.kill).toHaveBeenCalledWith("SIGKILL");
   });
 });
