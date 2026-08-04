@@ -4,6 +4,7 @@ import {
   getProviderAlias,
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
+  OPENAI_COMPATIBLE_PREFIX,
 } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
@@ -23,7 +24,69 @@ import REGISTRY from "open-sse/providers/registry/index.js";
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
 // Adding a provider here makes /v1/models prefer the live catalog for it.
+// Keys can be exact provider IDs or prefixes (e.g., "openai-compatible-").
 const LIVE_MODEL_RESOLVERS = {
+  opencode: async (conn) => {
+    // Fetch models from OpenCode's /zen/v1/models endpoint
+    const baseUrl = conn?.providerSpecificData?.baseUrl || "https://opencode.ai";
+    const url = `${baseUrl.replace(/\/$/, "")}/zen/v1/models`;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "x-opencode-client": "desktop",
+        },
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!response.ok) return null;
+      const data = await response.json();
+      const rawModels = parseOpenAIStyleModels(data);
+      const models = rawModels
+        .map((model) => model?.id || model?.name || model?.model)
+        .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
+      return models.length ? { models: models.map((id) => ({ id })) } : null;
+    } catch {
+      return null;
+    }
+  },
+  "openai-compatible-": async (conn) => {
+    // Fetch models from OpenAI-compatible provider node's /models endpoint
+    if (!conn?.apiKey) return null;
+    const baseUrl = typeof conn?.providerSpecificData?.baseUrl === "string"
+      ? conn.providerSpecificData.baseUrl.trim().replace(/\/$/, "")
+      : "";
+    if (!baseUrl) return null;
+    const url = `${baseUrl}/models`;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${conn.apiKey}`,
+          [INTERNAL_MODELS_FETCH_HEADER]: "1",
+        },
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!response.ok) return null;
+      const data = await response.json();
+      const rawModels = parseOpenAIStyleModels(data);
+      const models = rawModels
+        .map((model) => model?.id || model?.name || model?.model)
+        .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
+      return models.length ? { models: models.map((id) => ({ id })) } : null;
+    } catch {
+      return null;
+    }
+  },
   kiro: async (conn) => {
     const result = await resolveKiroModels({
       accessToken: conn.accessToken,
@@ -376,14 +439,27 @@ export async function buildModelsList(kindFilter, options = {}) {
           )
         : providerModels.map((model) => model.id);
 
-      if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
-        rawModelIds = await fetchCompatibleModelIds(conn);
+      // For compatible providers (OpenAI/Anthropic-compatible), DO NOT fetch from upstream.
+      // Only return user-curated models: custom models added via UI + enabledModels if explicitly set.
+      // If neither is set, return empty list (user must curate their model list).
+      if (!isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
+        // Only non-compatible providers with no static models can use live resolvers
+        // (e.g., Kiro returns dynamic -thinking/-agentic variants per account)
       }
 
       // Config-driven live catalog override (e.g. Kiro returns dynamic
       // -thinking/-agentic variants per account). On failure, fall back to
       // whatever rawModelIds already holds.
-      const liveResolver = LIVE_MODEL_RESOLVERS[providerId];
+      // Support both exact providerId match and prefix matches (e.g., "openai-compatible-")
+      let liveResolver = LIVE_MODEL_RESOLVERS[providerId];
+      if (!liveResolver) {
+        for (const [prefix, resolver] of Object.entries(LIVE_MODEL_RESOLVERS)) {
+          if (prefix.endsWith("-") && providerId.startsWith(prefix)) {
+            liveResolver = resolver;
+            break;
+          }
+        }
+      }
       if (liveResolver && !hasExplicitEnabledModels) {
         try {
           const live = await liveResolver(conn);
