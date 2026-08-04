@@ -269,31 +269,13 @@ export const CLI_TOOLS = {
     name: "Amp CLI",
     image: "/providers/amp.png",
     color: "#F97316",
-    description: "Sourcegraph Amp coding assistant CLI",
-    docsUrl: "/docs?section=cli-tools&tool=amp",
+    description: "Amp coding agent — custom API endpoints unsupported",
+    docsUrl: "https://ampcode.com/manual",
     configType: "guide",
-    defaultCommand: "amp",
-    modelAliases: ["g25p", "g25f", "cs45", "g54"],
+    unsupported: true,
     notes: [
-      { type: "info", text: "Use 9Router model aliases to keep Amp shorthand mappings stable across provider updates." },
-      { type: "warning", text: "Suggested shorthand examples: g25p → gemini/gemini-2.5-pro, g25f → gemini/gemini-2.5-flash, cs45 → cc/claude-sonnet-4-5-20250929." },
+      { type: "error", text: "Amp does not support custom OpenAI-compatible base URLs. AMP_URL configures the Amp service, not the model inference endpoint, so Amp cannot connect directly to 9Router." },
     ],
-    guideSteps: [
-      { step: 1, title: "Install Amp", desc: "Install the Amp CLI using the package manager supported by your environment." },
-      { step: 2, title: "API Key", type: "apiKeySelector" },
-      { step: 3, title: "Base URL", value: "{{baseUrl}}", copyable: true },
-      { step: 4, title: "Select Model", type: "modelSelector" },
-      { step: 5, title: "Add Shorthands", desc: "Map Amp shorthand names such as g25p or cs45 to 9Router aliases in your local config." },
-    ],
-    codeBlock: {
-      language: "bash",
-      code: `export OPENAI_API_KEY="{{apiKey}}"
-export OPENAI_BASE_URL="{{baseUrl}}"
-amp --model "{{model}}"
-# Example shorthand aliases you can map locally:
-# g25p -> gemini/gemini-2.5-pro
-# cs45 -> cc/claude-sonnet-4-5-20250929`,
-    },
   },
   qwen: {
     id: "qwen",
