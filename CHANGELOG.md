@@ -1,3 +1,19 @@
+# v0.5.51 (2026-08-04)
+
+## Production stability
+
+- **Provider connections**: Fixed the provider-detail request that sent a literal `${encodeURIComponent(providerId)}` query instead of the provider ID, causing existing accounts to appear as `0 connections`.
+- **Credential safety**: Encrypted credentials that cannot be read are now retained and surfaced as **Re-auth required**. Status updates, exports, and test actions no longer overwrite them with an empty object.
+- **SQLite lifecycle**: Added orderly adapter shutdown/reopen handling, retry behavior for native database locks, and concurrent-access regression coverage.
+- **Windows process ownership**: Removed startup scans/kills of unrelated Node, Next, port-443, tunnel, and tray processes. Launchers now act only on direct children or verified PID/health ownership.
+- **No-shell background work**: Replaced recurring Windows shell probes (`cmd.exe`/`where`, `npm.cmd`, `ipconfig`, `fltmc`) with direct executable invocations, bounded timeouts, caching, and single-flight guards.
+- **Tunnel, tray, and workers**: Serialized Tailscale login/Funnel, Cloudflare enable, Headroom proxy, Mux, and tray lifecycle paths; stale PID records and delayed cleanup can no longer target a recycled process.
+
+## Validation notes
+
+- Production dashboard and CLI bundles build successfully on Windows.
+- The full legacy test suite still contains unrelated pre-existing failures (including live-provider expectations and an unavailable optional `better-sqlite3` binding); focused regressions for this release pass.
+
 # v0.5.50 (2026-08-04)
 
 ## Fixes & Enhancements
