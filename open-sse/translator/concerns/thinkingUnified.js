@@ -286,6 +286,9 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       // Z.ai ignores thinking.disabled → must use enable_thinking:false to turn off.
       if (none && canDisable) { body.enable_thinking = false; delete body.thinking; break; }
       body.thinking = { type: "enabled" };
+      // Z.ai GLM supports high/max reasoning_effort when thinking is enabled.
+      const level = toLevel(eff);
+      if (level) body.reasoning_effort = level === "xhigh" || level === "max" ? "max" : "high";
       break;
     }
     case "qwen": {
