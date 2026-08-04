@@ -220,6 +220,25 @@ export class KiroExecutor extends BaseExecutor {
     super("kiro", PROVIDERS.kiro);
   }
 
+  // Kiro splits its errors into a human `message` plus a machine `reason`, and the
+  // reason is the only part that says which allowance ran out — a spent monthly quota
+  // is `402 {"message":"You have reached the limit.","reason":"MONTHLY_REQUEST_COUNT"}`.
+  // Default parsing keeps only `message`, so the reason never reached the cooldown
+  // rules and a month-long outage was treated as a generic 2 min 402.
+  parseError(response, bodyText) {
+    if (bodyText) {
+      try {
+        const json = JSON.parse(bodyText);
+        const message = json?.message || json?.error || "";
+        const reason = typeof json?.reason === "string" ? json.reason : "";
+        if (message && reason) {
+          return { status: response.status, message: `${message} (${reason})` };
+        }
+      } catch { /* fall through to default */ }
+    }
+    return super.parseError(response, bodyText);
+  }
+
   buildHeaders(credentials, stream = true, url = "") {
     const headers = {
       ...this.config.headers,

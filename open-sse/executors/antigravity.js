@@ -5,6 +5,7 @@ import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX 
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { parseGoogleQuotaReset } from "../utils/googleQuota.js";
 import { cleanJSONSchemaForAntigravity } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
 
@@ -121,6 +122,24 @@ export class AntigravityExecutor extends BaseExecutor {
     const forceNonStream = isImageModel(model);
     const action = (stream && !forceNonStream) ? "streamGenerateContent?alt=sse" : "generateContent";
     return `${baseUrl}/v1internal:${action}`;
+  }
+
+  // cloudcode-pa reports exactly when an exhausted quota returns — a real 429 carries
+  // `quotaResetTimeStamp` up to ~150h out. Surface it as resetsAtMs so the model lock
+  // lasts that long instead of expiring on the blind backoff ladder and failing again.
+  // Quotas are per model here, so only the model that ran dry gets locked.
+  parseError(response, bodyText) {
+    if (response.status === 429 && bodyText) {
+      const { resetsAtMs } = parseGoogleQuotaReset(bodyText);
+      if (resetsAtMs) {
+        let message = bodyText;
+        try {
+          message = JSON.parse(bodyText)?.error?.message || bodyText;
+        } catch { /* keep raw body */ }
+        return { status: 429, message, resetsAtMs };
+      }
+    }
+    return super.parseError(response, bodyText);
   }
 
   // sessionId comes from transformRequest output; base.execute runs transformRequest before
