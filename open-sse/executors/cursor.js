@@ -7,7 +7,8 @@ import {
   wrapConnectRPCFrame,
   decodeMessage,
   parseConnectRPCFrame,
-  extractTextFromResponse
+  extractTextFromResponse,
+  encodeMcpTools
 } from "../utils/cursorProtobuf.js";
 import { buildCursorHeaders } from "../utils/cursorChecksum.js";
 import { estimateUsage } from "../utils/usageTracking.js";
@@ -70,14 +71,20 @@ function textFromContent(content) {
     .join("\n");
 }
 
-function isAgentTextRequest(body) {
-  // Many compatible clients always attach their built-in tool schemas, even
-  // for a normal text turn. Cursor's retired ChatService rejects those
-  // requests; AgentService can still answer the text turn, so ignore schemas
-  // here. A real tool-call/result conversation is kept on the legacy path
-  // until its AgentService tool protocol is implemented.
-  return Array.isArray(body?.messages) && body.messages.every((message) => {
-    if (message?.tool_calls?.length || message?.role === "tool") return false;
+function hasMessages(body) {
+  // Any non-empty message list routes to AgentService. Its tool protocol is
+  // now implemented (encodeMcpTools / decodeMcpArgs / decodeAgentValue), so
+  // tool-call/result conversations are handled here instead of the legacy
+  // ChatService path. isAgentCapableRequest exposes the tool/context coverage
+  // for tests — text turns and tool conversations both route to AgentService.
+  return Array.isArray(body?.messages) && body.messages.length > 0;
+}
+
+function isAgentCapableRequest(body) {
+  if (!body || !Array.isArray(body?.messages) || body.messages.length === 0) return false;
+  return body.messages.every((message) => {
+    if (message?.role === "tool") return true;
+    if (message?.tool_calls?.length) return true;
     return typeof message?.content === "string"
       || Array.isArray(message?.content) && message.content.every((part) => part?.type === "text");
   });
@@ -95,7 +102,7 @@ function encodeHistoryMessage(message) {
   return agentMessage(1, agentMessage(1, agentMessage(1, text)));
 }
 
-function buildAgentRunFrame(messages, model) {
+function buildAgentRunFrame(messages, model, tools) {
   const system = messages
     .filter((message) => message?.role === "system")
     .map((message) => textFromContent(message.content))
@@ -124,11 +131,13 @@ function buildAgentRunFrame(messages, model) {
   );
   const conversationAction = agentMessage(1, userAction);
   const requestedModel = concatBuffers(agentString(1, model), agentBool(7, true));
+  const mcpTools = tools && tools.length ? encodeMcpTools(tools) : null;
   const runRequest = concatBuffers(
     // An empty ConversationStateStructure starts a fresh local agent session.
     agentMessage(1, new Uint8Array()),
     agentMessage(2, conversationAction),
     ...(system ? [agentString(8, system)] : []),
+    ...(mcpTools ? [agentMessage(4, mcpTools)] : []),
     agentMessage(9, requestedModel),
   );
 
@@ -493,7 +502,7 @@ export class CursorExecutor extends BaseExecutor {
     let session;
     try {
       session = this.openAgentHttp2Stream(url, headers, requestController.signal);
-      session.write(buildAgentRunFrame(body.messages || [], model));
+      session.write(buildAgentRunFrame(body.messages || [], model, body.tools || []));
     } catch (error) {
       throw new Error(`Cursor AgentService request failed: ${error.message}`);
     }
@@ -664,7 +673,7 @@ export class CursorExecutor extends BaseExecutor {
   }
 
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
-    if (isAgentTextRequest(body)) {
+    if (hasMessages(body)) {
       try {
         return await this.executeAgent({ model, body, stream, credentials, signal });
       } catch (error) {
@@ -1110,4 +1119,5 @@ export class CursorExecutor extends BaseExecutor {
   }
 }
 
+export { isAgentCapableRequest, buildAgentRunFrame };
 export default CursorExecutor;

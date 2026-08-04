@@ -15,5 +15,8 @@ export default {
     baseUrl: "http://localhost:11434/api/chat",
     format: "ollama",
   },
+  // Ollama cold-start (model loading) can take 120s+ for 7B models.
+  // Default FETCH_CONNECT_TIMEOUT_MS (60s) is too short.
+  timeoutMs: 180000,
   serviceKinds: ["llm"],
 };

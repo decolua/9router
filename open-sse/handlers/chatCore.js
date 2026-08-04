@@ -10,6 +10,7 @@ import { getModelTargetFormat, getModelStrip, getModelUpstreamId, getModelType, 
 import { PROVIDERS } from "../config/providers.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
+import { BILLING_FALLBACK_MODELS, BILLING_FALLBACK_PROVIDER } from "../config/billingFallback.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
@@ -361,6 +362,30 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       }
     } catch (e) {
       log?.warn?.("TOKEN", `${provider.toUpperCase()} | refresh threw: ${e.message}`);
+    }
+  }
+
+  // Handle 402 (payment_required / billing error) — retry with the local
+  // free-tier ollama provider, using the config-mapped model from
+  // open-sse/config/billingFallback.js (never hardcode models in handlers).
+  if (!providerResponse.ok && providerResponse.status === HTTP_STATUS.PAYMENT_REQUIRED) {
+    const fallbackModel = BILLING_FALLBACK_MODELS[model];
+    if (!fallbackModel) {
+      log?.warn?.("BILLING", `${provider}/${model} billing error (402) — no fallback model mapped, skipping ${BILLING_FALLBACK_PROVIDER} retry`);
+    } else {
+      log?.warn?.("BILLING", `${provider}/${model} billing error (402 Insufficient Balance), trying ${BILLING_FALLBACK_PROVIDER} fallback model ${fallbackModel}`);
+      if (log?.line) log.line(reqTag, "💰", `Billing error for ${provider}/${model} → retrying with ${BILLING_FALLBACK_PROVIDER} ${fallbackModel}`);
+      try {
+        const fallbackExecutor = getExecutor(BILLING_FALLBACK_PROVIDER);
+        if (fallbackExecutor) {
+          const fallbackResult = await fallbackExecutor.execute({ model: fallbackModel, body: translatedBody, stream, credentials: {}, signal: streamController.signal, log, proxyOptions });
+          if (fallbackResult.response.ok) {
+            providerResponse = fallbackResult.response;
+            providerUrl = fallbackResult.url;
+            providerResponseFormat = fallbackResult.responseFormat || targetFormat;
+          }
+        }
+      } catch { log?.warn?.("BILLING", `${BILLING_FALLBACK_PROVIDER} fallback failed`); }
     }
   }
 

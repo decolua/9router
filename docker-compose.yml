@@ -3,6 +3,8 @@ services:
     image: decolua/9router:latest
     container_name: 9router
     restart: always
+    mem_limit: 1g   # 2026-08-03: cap RAM
+    mem_reservation: 256m
     ports:
       - "20128:20128"
     volumes:
@@ -22,6 +24,7 @@ services:
     image: ghcr.io/chopratejas/headroom:latest
     container_name: headroom
     restart: always
+    mem_limit: 512m   # 2026-08-03: cap RAM (sebelumnya 626MB di-swap!)
     ports:
       - "8787:8787"
 

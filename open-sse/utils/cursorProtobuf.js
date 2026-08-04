@@ -11,6 +11,7 @@ const log = (tag, ...args) => DEBUG && console.log(`[PROTOBUF:${tag}]`, ...args)
 const textDecoder = new TextDecoder();
 
 const PROTOBUF_SCHEMA_VERSION = "1.1.3";
+const PROVIDER_NAME = "9router";
 
 // ==================== SCHEMAS ====================
 
@@ -216,6 +217,18 @@ export function encodeField(fieldNum, wireType, value) {
     
     const lengthBytes = encodeVarint(dataBytes.length);
     return concatArrays(tagBytes, lengthBytes, dataBytes);
+  }
+
+  if (wireType === WIRE_TYPE.FIXED64) {
+    const dataBytes = value instanceof Uint8Array ? value : typeof Buffer !== "undefined" && Buffer.isBuffer(value) ? new Uint8Array(value) : null;
+    if (!dataBytes) throw new TypeError("encodeField: FIXED64 requires a Uint8Array/Buffer payload (8 bytes)");
+    return concatArrays(tagBytes, dataBytes);
+  }
+
+  if (wireType === WIRE_TYPE.FIXED32) {
+    const dataBytes = value instanceof Uint8Array ? value : typeof Buffer !== "undefined" && Buffer.isBuffer(value) ? new Uint8Array(value) : null;
+    if (!dataBytes) throw new TypeError("encodeField: FIXED32 requires a Uint8Array/Buffer payload (4 bytes)");
+    return concatArrays(tagBytes, dataBytes);
   }
 
   return new Uint8Array(0);
@@ -885,6 +898,163 @@ export function extractTextFromResponse(payload) {
       decodeError: err.message
     };
   }
+}
+
+// ==================== AGENT SERVICE HELPERS ====================
+
+export function encodeAgentValue(val) {
+  if (val === null || val === undefined) {
+    return Buffer.from(encodeField(1, 0, 0));
+  }
+  if (typeof val === "boolean") {
+    return Buffer.from(encodeField(4, 0, val ? 1 : 0));
+  }
+  if (typeof val === "number") {
+    const buf = new ArrayBuffer(8);
+    new DataView(buf).setFloat64(0, val, true);
+    return Buffer.from(encodeField(2, 1, new Uint8Array(buf)));
+  }
+  if (typeof val === "string") {
+    const strBuf = Buffer.from(val, "utf8");
+    return Buffer.from(encodeField(3, 2, strBuf));
+  }
+  if (Array.isArray(val)) {
+    const items = val.map(v => Buffer.from(encodeAgentValue(v)));
+    const listBuf = Buffer.concat(items.map(item => Buffer.from(encodeField(1, 2, item))));
+    return Buffer.from(encodeField(6, 2, listBuf));
+  }
+  if (typeof val === "object") {
+    const entries = Object.entries(val).map(([k, v]) => {
+      const keyField = Buffer.from(encodeField(1, 2, Buffer.from(k, "utf8")));
+      const valField = Buffer.from(encodeField(2, 2, encodeAgentValue(v)));
+      return Buffer.from(encodeField(1, 2, Buffer.concat([keyField, valField])));
+    });
+    const structBuf = Buffer.concat(entries);
+    return Buffer.from(encodeField(5, 2, structBuf));
+  }
+  return Buffer.from(encodeField(1, 0, 0));
+}
+
+// Decode a google.protobuf.Struct payload (field 5 of an agent value) into a
+// plain object. Note: decodeMcpArgs' args (field 2) use the repeated-Entry
+// shape directly, NOT a wrapped Struct — they are decoded inline there.
+function decodeStructFields(buf) {
+  const structFields = decodeMessage(buf);
+  const obj = {};
+  if (structFields.has(1)) {
+    for (const entry of structFields.get(1)) {
+      const entryFields = decodeMessage(entry.value);
+      const key = entryFields.has(1) ? new TextDecoder().decode(entryFields.get(1)[0].value) : "";
+      const val = entryFields.has(2) ? decodeAgentValue(entryFields.get(2)[0].value) : null;
+      obj[key] = val;
+    }
+  }
+  return obj;
+}
+
+export function decodeAgentValue(buf) {
+  const fields = decodeMessage(buf);
+  if (fields.has(1)) return null;
+  if (fields.has(4)) return fields.get(4)[0].value !== 0;
+  if (fields.has(2)) {
+    if (fields.get(2)[0].value instanceof Uint8Array) {
+      const buf = fields.get(2)[0].value;
+      return new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getFloat64(0, true);
+    }
+    return fields.get(2)[0].value;
+  }
+  if (fields.has(3)) {
+    const raw = fields.get(3)[0].value;
+    return typeof raw === "string" ? raw : new TextDecoder().decode(raw);
+  }
+  if (fields.has(5)) {
+    return decodeStructFields(fields.get(5)[0].value);
+  }
+  if (fields.has(6)) {
+    const listFields = decodeMessage(fields.get(6)[0].value);
+    if (listFields.has(1)) {
+      return listFields.get(1).map(item => decodeAgentValue(item.value));
+    }
+    return [];
+  }
+  return null;
+}
+
+function extractToolFuncName(tool) {
+  if (tool.function) {
+    const fn = tool.function;
+    return { name: fn.name || "", description: fn.description || "", parameters: fn.parameters || {} };
+  }
+  return { name: tool.name || "", description: tool.description || "", inputSchema: tool.inputSchema || {} };
+}
+
+export function encodeMcpToolDefinition(tool) {
+  const { name, description, parameters, inputSchema } = extractToolFuncName(tool);
+  const schema = parameters || inputSchema || {};
+  const nameField = Buffer.from(encodeField(1, 2, Buffer.from(name, "utf8")));
+  const descField = description ? Buffer.from(encodeField(2, 2, Buffer.from(description, "utf8"))) : null;
+  const schemaField = Buffer.from(encodeField(3, 2, encodeAgentValue(schema)));
+  const providerField = Buffer.from(encodeField(4, 2, Buffer.from(PROVIDER_NAME, "utf8")));
+  const toolNameField = Buffer.from(encodeField(5, 2, Buffer.from(name, "utf8")));
+  return Buffer.concat([nameField, descField, schemaField, providerField, toolNameField].filter(Boolean));
+}
+
+export function encodeMcpTools(tools) {
+  if (!tools || tools.length === 0) return Buffer.alloc(0);
+  const defs = tools.map(t => Buffer.from(encodeField(1, 2, encodeMcpToolDefinition(t))));
+  return Buffer.concat(defs);
+}
+
+export function decodeMcpArgs(buf) {
+  const fields = decodeMessage(buf);
+  const result = { name: "", toolName: "", toolCallId: "", args: {} };
+  if (fields.has(1)) result.name = new TextDecoder().decode(fields.get(1)[0].value);
+  if (fields.has(5)) result.toolName = new TextDecoder().decode(fields.get(5)[0].value);
+  if (fields.has(3)) result.toolCallId = new TextDecoder().decode(fields.get(3)[0].value);
+  if (fields.has(2)) {
+    for (const entry of fields.get(2)) {
+      const entryFields = decodeMessage(entry.value);
+      const key = entryFields.has(1) ? new TextDecoder().decode(entryFields.get(1)[0].value) : "";
+      const val = entryFields.has(2) ? decodeAgentValue(entryFields.get(2)[0].value) : null;
+      result.args[key] = val;
+    }
+  }
+  return result;
+}
+
+export function encodeMcpResultSuccess({ textItems, imageItems, isError } = {}) {
+  const parts = [];
+  if (textItems) {
+    for (const t of textItems) {
+      const textContent = Buffer.from(encodeField(1, 2, Buffer.from(t, "utf8")));
+      const textItem = Buffer.from(encodeField(1, 2, textContent));
+      parts.push(Buffer.from(encodeField(1, 2, textItem)));
+    }
+  }
+  if (imageItems) {
+    for (const img of imageItems) {
+      const dataField = Buffer.from(encodeField(1, 2, Buffer.from(img.data)));
+      const mimeField = Buffer.from(encodeField(2, 2, Buffer.from(img.mimeType, "utf8")));
+      const imgContent = Buffer.concat([dataField, mimeField]);
+      const imgItem = Buffer.from(encodeField(2, 2, imgContent));
+      parts.push(Buffer.from(encodeField(1, 2, imgItem)));
+    }
+  }
+  const contentField = Buffer.concat(parts);
+  const isErrorField = Buffer.from(encodeField(2, 0, isError ? 1 : 0));
+  const successInner = Buffer.concat([contentField, isErrorField]);
+  return Buffer.from(encodeField(1, 2, successInner));
+}
+
+export function encodeMcpResultError(message) {
+  const msgField = Buffer.from(encodeField(1, 2, Buffer.from(message, "utf8")));
+  const errInner = msgField;
+  return Buffer.from(encodeField(2, 2, errInner));
+}
+
+export function encodeMcpResultToolNotFound(toolName) {
+  const nameField = Buffer.from(encodeField(1, 2, Buffer.from(toolName, "utf8")));
+  return Buffer.from(encodeField(5, 2, nameField));
 }
 
 // ==================== EXPORTS ====================
