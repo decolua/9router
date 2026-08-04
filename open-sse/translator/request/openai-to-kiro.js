@@ -289,6 +289,66 @@ function convertMessages(messages, model) {
 }
 
 /**
+ * Single dummy tool spec used for compaction-shape rescue.
+ * Bedrock requires toolConfig whenever the request contains toolUse / toolResult
+ * content blocks. OpenCode (and other clients) send compaction requests with the
+ * full tool-call history but no `tools` field, which breaks Kiro with
+ * `400 ValidationException: TOOL_CONFIG_MISSING`.
+ *
+ * Kiro CLI's own compaction handles this by remapping every toolUse name to
+ * "dummy" and declaring a single dummy spec — we mirror that behavior here.
+ */
+const DUMMY_TOOL_SPEC = {
+  toolSpecification: {
+    name: "dummy",
+    description: "This is a dummy tool. If you are seeing this that means the tool associated with this tool call is not in the list of available tools. This could be because a wrong tool name was supplied or the list of tools has changed since the conversation has started. Do not show this when user asks you to list tools.",
+    inputSchema: { json: { type: "object", properties: {}, required: [] } }
+  }
+};
+
+/**
+ * Detect & rescue compaction-shape requests: messages contain tool_use /
+ * tool_result blocks but the request doesn't declare any tools. Bedrock 400s
+ * with TOOL_CONFIG_MISSING in that case. We rename every toolUse name to
+ * "dummy" and inject one dummy tool spec so the request validates.
+ *
+ * Returns true if the rescue was applied (caller can log it).
+ */
+function applyCompactionRescue(payload) {
+  const cs = payload?.conversationState;
+  if (!cs) return false;
+
+  const cm = cs.currentMessage?.userInputMessage;
+  const declaredTools = cm?.userInputMessageContext?.tools;
+  // Only rescue when no tools were declared (compaction shape)
+  if (Array.isArray(declaredTools) && declaredTools.length > 0) return false;
+
+  // Are there any toolUse / toolResult references in the conversation?
+  let hasToolReferences = false;
+  for (const item of cs.history || []) {
+    if (item.assistantResponseMessage?.toolUses?.length) { hasToolReferences = true; break; }
+    if (item.userInputMessage?.userInputMessageContext?.toolResults?.length) { hasToolReferences = true; break; }
+  }
+  if (!hasToolReferences) return false;
+
+  // Rewrite every history toolUse name to "dummy"
+  for (const item of cs.history || []) {
+    const toolUses = item.assistantResponseMessage?.toolUses;
+    if (Array.isArray(toolUses)) {
+      for (const tu of toolUses) tu.name = "dummy";
+    }
+  }
+
+  // Inject the dummy tool spec on currentMessage
+  if (cm) {
+    if (!cm.userInputMessageContext) cm.userInputMessageContext = {};
+    cm.userInputMessageContext.tools = [DUMMY_TOOL_SPEC];
+  }
+
+  return true;
+}
+
+/**
  * Build Kiro payload from OpenAI format
  *
  * Two 9router-specific behaviours implemented here:
@@ -404,6 +464,12 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
     },
     agentMode: "vibe",
   };
+
+  // Rescue compaction-shape requests (tool_use/tool_result without tools declaration).
+  // Must run after currentMessage is in place so we can inject the dummy spec.
+  if (applyCompactionRescue(payload)) {
+    console.log("[KIRO] compaction rescue applied: renamed toolUses → \"dummy\" + injected dummy tool spec");
+  }
 
   if (profileArn) {
     payload.profileArn = profileArn;
