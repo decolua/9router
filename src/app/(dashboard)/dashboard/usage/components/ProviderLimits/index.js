@@ -5,6 +5,7 @@ import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
 import Toggle from "@/shared/components/Toggle";
 import Tooltip from "@/shared/components/Tooltip";
+import Badge from "@/shared/components/Badge";
 import {
   parseQuotaData,
   calculatePercentage,
@@ -1028,6 +1029,8 @@ export default function ProviderLimits() {
           // Use table layout for all providers
           const isInactive = conn.isActive === false;
           const isCodex = conn.provider === "codex";
+          const plan = typeof quota?.plan === "string" ? quota.plan.trim() : "";
+          const codexPlan = isCodex && plan && plan.toLowerCase() !== "unknown" ? plan : "";
           const resetCreditCount = getCodexResetCreditCount(quota);
           const isResettingLimit = resettingLimitId === conn.id;
           const rowBusy = deletingId === conn.id || togglingId === conn.id || isResettingLimit;
@@ -1059,6 +1062,11 @@ export default function ProviderLimits() {
                       <h3 className="text-sm font-semibold text-text-primary capitalize truncate">
                         {conn.provider}
                       </h3>
+                      {codexPlan && (
+                        <Badge variant="primary" size="sm" className="capitalize">
+                          {codexPlan}
+                        </Badge>
+                      )}
                       {getConnectionLabel(conn) ? (
                         <p className="text-xs text-text-muted truncate">
                           {getConnectionLabel(conn)}
