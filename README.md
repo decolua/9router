@@ -285,6 +285,32 @@ Default URLs:
         <b>Kilo Code</b>
       </td>
     </tr>
+    <tr>
+      <td align="center" width="120">
+        <img src="./public/providers/opendesign.png" width="60" alt="OpenDesign"/><br/>
+        <b>OpenDesign</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/jcode.png" width="60" alt="jcode"/><br/>
+        <b>jcode</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/grok-cli.png" width="60" alt="Grok Build"/><br/>
+        <b>Grok Build</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/devin-cli.png" width="60" alt="Devin CLI"/><br/>
+        <b>Devin CLI</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/deepseek-tui.png" width="60" alt="DeepSeek TUI"/><br/>
+        <b>DeepSeek TUI</b>
+      </td>
+      <td align="center" width="120">
+        <img src="./public/providers/qwen.png" width="60" alt="Qwen Code"/><br/>
+        <b>Qwen Code</b>
+      </td>
+    </tr>
   </table>
 </div>
 
