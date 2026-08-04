@@ -37,6 +37,7 @@ export const QWEN_CONFIG = { ...PROVIDER_OAUTH["qwen"] };
 // flow — we accept that and surface it to the user as "re-login" instead
 // of attempting to silently rotate.
 export const QODER_CONFIG = { ...PROVIDER_OAUTH["qoder"] };
+export const QODERWORK_CN_CONFIG = { ...PROVIDER_OAUTH["qoderwork-cn"] };
 
 // iFlow OAuth Configuration (Authorization Code)
 export const IFLOW_CONFIG = { ...PROVIDER_OAUTH["iflow"] };

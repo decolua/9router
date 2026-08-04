@@ -35,6 +35,7 @@ const executors = {
   github: new GithubExecutor(),
   iflow: new IFlowExecutor(),
   qoder: new QoderExecutor(),
+  "qoderwork-cn": new QoderExecutor("qoderwork-cn"),
   kiro: new KiroExecutor(),
   kimchi: new KimchiExecutor(),
   codex: new CodexExecutor(),
