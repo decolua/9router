@@ -161,9 +161,9 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
 // Translate response chunk: target -> openai -> source
 export function translateResponse(targetFormat, sourceFormat, chunk, state) {
   ensureInitialized();
-  // If same format, return as-is
+  // If same format, return as-is (skip null flush chunks)
   if (sourceFormat === targetFormat) {
-    return [chunk];
+    return chunk != null ? [chunk] : [];
   }
 
   let results = [chunk];
