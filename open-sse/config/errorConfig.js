@@ -64,6 +64,8 @@ export const ERROR_RULES = [
   { text: "rate limit",               backoff: true },
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },
+  { text: "quota is not enough",      cooldownMs: 24 * 60 * 60 * 1000 }, // AgentRouter: balance exhausted — long lock
+  { text: "insufficient balance",     cooldownMs: 24 * 60 * 60 * 1000 }, // generic balance-exhausted
   { text: "capacity",                 backoff: true },
   { text: "overloaded",               backoff: true },
 
