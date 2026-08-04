@@ -16,7 +16,7 @@ const KIND_ENDPOINT = {
 
 const TTS_VOICES_API = new Set(["elevenlabs", "edge-tts", "deepgram", "inworld", "local-device", "minimax", "minimax-cn"]);
 
-export function buildInfo({ alias, providerId, model, kind, providerInfo }) {
+function buildInfo({ alias, providerId, model, kind, providerInfo }) {
   const out = {
     id: `${alias}/${model.id}`,
     name: model.name || model.id,
