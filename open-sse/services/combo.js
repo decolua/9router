@@ -344,7 +344,7 @@ async function inspectToolStreamForFallback(response) {
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, comboTimeoutMs = 0 }) {
   // Apply rotation strategy if enabled
   let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
 
@@ -369,7 +369,21 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
-      const result = await handleSingleModel(body, modelStr);
+      let resultPromise = handleSingleModel(body, modelStr);
+
+      if (comboTimeoutMs > 0) {
+        resultPromise = Promise.race([
+          resultPromise,
+          new Promise((_, reject) =>
+            setTimeout(() => reject(Object.assign(
+              new Error(`Combo timeout after ${comboTimeoutMs}ms`),
+              { isComboTimeout: true }
+            )), comboTimeoutMs)
+          ),
+        ]);
+      }
+
+      const result = await resultPromise;
       
       // Success (2xx) - return response
       if (result.ok) {
@@ -433,10 +447,17 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       if (!lastStatus) lastStatus = result.status;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
-      // Catch unexpected exceptions to ensure fallback continues
-      lastError = error.message || String(error);
-      if (!lastStatus) lastStatus = 500;
-      log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
+      // Catch unexpected exceptions to ensure fallback continues.
+      // When the combo model timeout fires, skip setting lastError so the
+      // "all models failed" message stays accurate (lastError stays on the
+      // most recent genuine failure, not the synthetic timeout).
+      if (error.isComboTimeout) {
+        log.warn("COMBO", `Model ${modelStr} timed out after ${comboTimeoutMs}ms, falling to next`);
+      } else {
+        lastError = error.message || String(error);
+        if (!lastStatus) lastStatus = 500;
+        log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
+      }
     }
   }
 

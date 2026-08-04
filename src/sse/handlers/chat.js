@@ -16,7 +16,7 @@ import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
 import { errorResponse, unavailableResponse, authErrorResponse } from "open-sse/utils/error.js";
 import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
-import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import { HTTP_STATUS, COMBO_MODEL_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import { isRequestReplayBufferError } from "open-sse/services/accountFallback.js";
 import * as log from "../utils/logger.js";
@@ -114,7 +114,10 @@ export async function handleChat(request, clientRawRequest = null) {
     }
 
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+    const comboSpecificStrategy = comboStrategies[modelStr];
+    const comboTimeoutMs = comboSpecificStrategy?.timeoutMs || COMBO_MODEL_TIMEOUT_MS || 0;
+
+    log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit}, timeout: ${comboTimeoutMs || "off"})`);
     return handleComboChat({
       body,
       models: comboModels,
@@ -122,7 +125,8 @@ export async function handleChat(request, clientRawRequest = null) {
       log,
       comboName: modelStr,
       comboStrategy,
-      comboStickyLimit
+      comboStickyLimit,
+      comboTimeoutMs,
     });
   }
 
