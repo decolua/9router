@@ -26,7 +26,17 @@ describe("Windows launcher lifecycle", () => {
 
   it("uses an explicit, bounded tray hand-off without cmd.exe", () => {
     expect(source).toContain("function waitForPortRelease(port, timeoutMs = 15000)");
+    expect(source).toContain("function spawnBackgroundTray(port)");
+    expect(source).toContain("bgProcess = await spawnBackgroundTray(port)");
+    expect(source).not.toContain("const bgProcess = spawn(");
     expect(source).toContain('"--takeover"');
     expect(source).not.toMatch(/shell\s*:\s*true/);
+  });
+
+  it("does not trust a recycled service PID file during shutdown", () => {
+    expect(source).toContain("function stopVerifiedMitmByPidFile()");
+    expect(source).toContain("function verifyMitmPid(pid)");
+    expect(source).not.toContain("killTunnelByPidFile");
+    expect(source).not.toContain("killProxyByPidFile");
   });
 });

@@ -256,8 +256,7 @@ function killTray() {
   if (!instance) return Promise.resolve();
 
   if (wasWin) {
-    try { instance.kill(); } catch (e) {}
-    return Promise.resolve();
+    try { return Promise.resolve(instance.kill()); } catch (e) { return Promise.resolve(); }
   }
 
   // Unix: get the Go tray child process handle.

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const { spawn, spawnSync, execSync } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
@@ -219,6 +219,92 @@ function taskkill(pid, { force = false, tree = true, timeout = 3000 } = {}) {
   });
 }
 
+function readPidFile(pidFile) {
+  try {
+    const pid = Number.parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10);
+    return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+function removePidFile(pidFile) {
+  try { fs.unlinkSync(pidFile); } catch { /* best effort */ }
+}
+
+function isPidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// A PID file alone is not ownership proof: Windows can recycle a PID between
+// launches.  MITM exposes a local health endpoint that includes its live PID,
+// so only that response authorizes this launcher to stop the process.
+function verifyMitmPid(pid) {
+  return new Promise((resolve) => {
+    let body = "";
+    const request = https.get({
+      hostname: "127.0.0.1",
+      port: 443,
+      path: "/_mitm_health",
+      rejectUnauthorized: false,
+      timeout: 1000,
+      agent: false,
+    }, (response) => {
+      response.on("data", (chunk) => { body = `${body}${chunk}`.slice(0, 4096); });
+      response.on("end", () => {
+        try {
+          resolve(response.statusCode === 200 && JSON.parse(body).pid === pid ? "owned" : "different");
+        } catch {
+          resolve("different");
+        }
+      });
+    });
+    request.once("error", () => resolve("unreachable"));
+    request.once("timeout", () => { request.destroy(); resolve("unreachable"); });
+  });
+}
+
+async function stopVerifiedMitmByPidFile() {
+  const pidFile = path.join(getAppDataDir(), "mitm", ".mitm.pid");
+  const pid = readPidFile(pidFile);
+  if (!pid) return false;
+  if (!isPidAlive(pid)) {
+    removePidFile(pidFile);
+    return false;
+  }
+
+  const ownership = await verifyMitmPid(pid);
+  if (ownership === "different") {
+    // The process either ended or is no longer this 9router MITM instance.
+    // Retire only the stale marker; never terminate an unverified PID.
+    removePidFile(pidFile);
+    return false;
+  }
+  if (ownership !== "owned") {
+    // Keep an ambiguous marker for the owning server to reconcile later.
+    console.warn(`[9router] Refusing to stop unverified MITM PID ${pid}.`);
+    return false;
+  }
+
+  try {
+    if (process.platform === "win32") {
+      const result = taskkill(pid, { timeout: 3000 });
+      if (result.status !== 0) return false;
+    } else {
+      process.kill(pid, "SIGTERM");
+    }
+    removePidFile(pidFile);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Probe the router itself rather than killing whatever happens to own a port.
 // This avoids terminating unrelated local apps and avoids cmd/PowerShell at
 // every launcher start.
@@ -261,74 +347,6 @@ async function waitForPortRelease(port, timeoutMs = 15000) {
     await delay(150);
   } while (Date.now() < deadline);
   return status;
-}
-
-// Kill PID from file (best-effort, removes file after)
-function killByPidFile(pidFile) {
-  try {
-    if (!fs.existsSync(pidFile)) return;
-    const pid = parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10);
-    if (!pid) return;
-    try {
-      if (process.platform === "win32") {
-        taskkill(pid, { force: true });
-      } else {
-        process.kill(pid, "SIGKILL");
-      }
-    } catch { }
-    try { fs.unlinkSync(pidFile); } catch { }
-  } catch { }
-}
-
-// Kill tunnel processes (cloudflared/tailscale) by their PID files
-function killTunnelByPidFile() {
-  const tunnelDir = path.join(getAppDataDir(), "tunnel");
-  killByPidFile(path.join(tunnelDir, "cloudflared.pid"));
-  killByPidFile(path.join(tunnelDir, "tailscale.pid"));
-}
-
-
-// Sleep helper using SharedArrayBuffer wait (sync, no busy-loop)
-function sleepSync(ms) {
-  try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch { /* ignore */ }
-}
-
-// Wait until process dies or timeout reached
-function waitForExit(pid, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try { process.kill(pid, 0); } catch { return true; }
-    sleepSync(100);
-  }
-  return false;
-}
-
-// Kill MIT server by PID file (runs privileged, needs special handling)
-// Sends SIGTERM first so MIT can clean up host entries before dying.
-function killProxyByPidFile() {
-  try {
-    const pidFile = path.join(getAppDataDir(), "mitm", ".mitm.pid");
-    if (!fs.existsSync(pidFile)) return;
-    const pid = parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10);
-    if (!pid) return;
-
-    if (process.platform === "win32") {
-      // Graceful first (lets server cleanup hosts), then force
-      try { taskkill(pid, { timeout: 2000 }); } catch { }
-      if (!waitForExit(pid, 1500)) {
-        try { taskkill(pid, { force: true }); } catch { }
-      }
-    } else {
-      // SIGTERM via cached sudo token first
-      try { execSync(`sudo -n kill -TERM ${pid} 2>/dev/null`, { stdio: "ignore", timeout: 2000 }); }
-      catch { try { process.kill(pid, "SIGTERM"); } catch { } }
-      if (!waitForExit(pid, 1500)) {
-        try { execSync(`sudo -n kill -9 ${pid} 2>/dev/null`, { stdio: "ignore", timeout: 2000 }); }
-        catch { try { process.kill(pid, "SIGKILL"); } catch { } }
-      }
-    }
-    try { fs.unlinkSync(pidFile); } catch { }
-  } catch { }
 }
 
 // Detect if running in restricted environment (Codespaces, Docker)
@@ -413,6 +431,53 @@ function openBrowser(url) {
   } catch {
     console.log(`Open browser manually: ${url}`);
   }
+}
+
+// The hand-off launcher is the one intentionally detached child in this file.
+// Do not tear down the foreground server until Windows has confirmed that the
+// background launcher was actually created; otherwise an async ENOENT/error
+// leaves the user with neither a tray process nor a running server.
+function spawnBackgroundTray(port) {
+  return new Promise((resolve, reject) => {
+    let child;
+    let settled = false;
+    const finish = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      callback(value);
+    };
+
+    try {
+      child = spawn(process.execPath, [
+        "--dns-result-order=ipv4first",
+        __filename,
+        "--tray",
+        "--skip-update",
+        "--takeover",
+        "-p",
+        port.toString(),
+      ], {
+        // This one deliberate hand-off needs to outlive the interactive
+        // terminal. The server itself remains non-detached; windowsHide keeps
+        // this launcher from creating a visible console window.
+        detached: true,
+        stdio: "ignore",
+        windowsHide: true,
+        env: { ...process.env },
+      });
+    } catch (error) {
+      reject(error);
+      return;
+    }
+
+    const onError = (error) => finish(reject, error);
+    child.once("error", onError);
+    child.once("spawn", () => {
+      child.removeListener("error", onError);
+      child.unref();
+      finish(resolve, child);
+    });
+  });
 }
 
 // Find standalone server (bundled in bin/app for published package).
@@ -548,30 +613,74 @@ function startServer(updatePromise) {
 
   let server = spawnServer();
 
-  // Cleanup function - force kill server process
+  // The launcher only owns this direct child. Tunnel and Tailscale PID files
+  // are written by separate service managers, so treating their bare PIDs as
+  // ours can kill a recycled, unrelated Windows process. The server receives
+  // a bounded graceful shutdown and cleans up the tunnel it spawned itself.
   let isCleaningUp = false;
+  let cleanupPromise = null;
+
+  function stopOwnedServer(child) {
+    return new Promise((resolve) => {
+      if (!child?.pid || (child.exitCode !== null && child.exitCode !== undefined)) {
+        resolve();
+        return;
+      }
+
+      let finished = false;
+      let forceTimer = null;
+      let finalTimer = null;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        if (forceTimer) clearTimeout(forceTimer);
+        if (finalTimer) clearTimeout(finalTimer);
+        resolve();
+      };
+
+      child.once("close", finish);
+      child.once("error", finish);
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        finish();
+        return;
+      }
+
+      // Do not use child.killed here: Node marks it immediately after a kill
+      // request on Windows, before the OS process has actually exited.
+      forceTimer = setTimeout(() => {
+        if (child.exitCode === null || child.exitCode === undefined) {
+          try { child.kill("SIGKILL"); } catch { /* already exited */ }
+        }
+        finalTimer = setTimeout(finish, 250);
+      }, 2000);
+    });
+  }
+
   function cleanup() {
-    if (isCleaningUp) return;
+    if (cleanupPromise) return cleanupPromise;
     isCleaningUp = true;
     if (restartTimer) {
       clearTimeout(restartTimer);
       restartTimer = null;
     }
+
+    const shutdowns = [stopOwnedServer(server), stopVerifiedMitmByPidFile()];
     try {
-      // Kill tray if running
-      try {
-        const { killTray } = require("./src/cli/tray/tray");
-        killTray();
-      } catch (e) { }
-      // Kill MIT server (privileged process) via PID file
-      killProxyByPidFile();
-      // Kill cloudflared/tailscale via PID file (only this app's tunnel)
-      killTunnelByPidFile();
-      // Kill server process directly
-      if (server.pid) {
-        server.kill("SIGKILL");
-      }
-    } catch (e) { }
+      const { killTray } = require("./src/cli/tray/tray");
+      shutdowns.push(Promise.resolve(killTray()));
+    } catch { /* tray is optional */ }
+
+    cleanupPromise = Promise.allSettled(shutdowns).then(() => undefined);
+    return cleanupPromise;
+  }
+
+  function exitAfterCleanup(code) {
+    // Every cleanup operation is bounded (server: 2.25s, MITM health: 1s,
+    // Windows tray: 750ms). Awaiting it prevents a tray hand-off from racing
+    // a still-running foreground server, but cannot hang the terminal.
+    void cleanup().finally(() => process.exit(code));
   }
 
   // A launcher exception cannot safely continue with a half-owned child tree.
@@ -582,8 +691,7 @@ function startServer(updatePromise) {
     if (isShuttingDown) return;
     isShuttingDown = true;
     console.error("Fatal launcher error:", err?.stack || err?.message || err);
-    cleanup();
-    setTimeout(() => process.exit(1), 100);
+    exitAfterCleanup(1);
   };
   process.on("uncaughtException", handleFatal);
   process.on("unhandledRejection", handleFatal);
@@ -593,20 +701,17 @@ function startServer(updatePromise) {
     if (isShuttingDown) return;
     isShuttingDown = true;
     console.log("\nExiting...");
-    cleanup();
-    setTimeout(() => process.exit(0), 100);
+    exitAfterCleanup(0);
   });
   process.on("SIGTERM", () => {
     if (isShuttingDown) return;
     isShuttingDown = true;
-    cleanup();
-    setTimeout(() => process.exit(0), 100);
+    exitAfterCleanup(0);
   });
   process.on("SIGHUP", () => {
     if (isShuttingDown) return;
     isShuttingDown = true;
-    cleanup();
-    setTimeout(() => process.exit(0), 100);
+    exitAfterCleanup(0);
   });
 
   // Initialize tray icon (runs alongside TUI)
@@ -710,23 +815,26 @@ function startServer(updatePromise) {
           // Windows/Linux: spawn detached bgProcess (systray works fine in child)
           console.log(`\n⏳ Starting background process... (tray icon will appear in ~3s)`);
 
-          const bgProcess = spawn(process.execPath, ["--dns-result-order=ipv4first", __filename, "--tray", "--skip-update", "--takeover", "-p", port.toString()], {
-            // This one deliberate hand-off needs to outlive the interactive
-            // terminal. The server itself remains non-detached; windowsHide
-            // keeps the hand-off process from creating a visible console.
-            detached: true,
-            stdio: "ignore",
-            windowsHide: true,
-            env: { ...process.env }
-          });
-          bgProcess.unref();
+          let bgProcess;
+          try {
+            bgProcess = await spawnBackgroundTray(port);
+          } catch (error) {
+            // Keep the foreground router alive if Windows cannot create the
+            // replacement launcher. Losing the tray is recoverable; losing
+            // the active router is not.
+            console.error(`Could not start background process: ${error.message}`);
+            continue;
+          }
 
           console.log(`🔔 9Router is now running in background (PID: ${bgProcess.pid})`);
           console.log(`   Server: http://${displayHost}:${port}`);
           console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
 
-          // cleanup() kills server so bgProcess can claim the port fresh
-          cleanup();
+          // cleanup() kills server so bgProcess can claim the port fresh.
+          // `spawnBackgroundTray` already confirmed creation, so no async
+          // ENOENT race can leave the user without a running router.
+          isShuttingDown = true;
+          void cleanup();
           process.exit(0);
         } else if (choice === "exit") {
           isShuttingDown = true;
