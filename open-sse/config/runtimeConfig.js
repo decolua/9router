@@ -67,6 +67,19 @@ export const DEFAULT_MIN_TOKENS = 32000;
 
 export const TOKEN_SAVER_HEADER = "x-9router-token-saver";
 
+export const ROUTE_ATTRIBUTION = {
+  maxTokenLength: 160,
+  maxAttempts: 32,
+  headers: {
+    requestedModel: "X-9Router-Requested-Model",
+    routePath: "X-9Router-Route-Path",
+    resolvedProvider: "X-9Router-Resolved-Provider",
+    resolvedModel: "X-9Router-Resolved-Model",
+    fallbackCount: "X-9Router-Fallback-Count",
+    attemptedModels: "X-9Router-Attempted-Models",
+  },
+};
+
 // Retry config for 429 responses (legacy - kept for backward compatibility)
 export const RETRY_CONFIG = {
   maxAttempts: 2,

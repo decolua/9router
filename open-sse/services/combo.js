@@ -6,6 +6,7 @@ import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
+import { annotateComboResponse } from "./routeAttribution.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -382,7 +383,11 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
           }
         }
         log.info("COMBO", `Model ${modelStr} succeeded`);
-        return result;
+        return annotateComboResponse({
+          comboName: comboName || body?.model,
+          selectedModel: modelStr,
+          attemptedModels: rotatedModels.slice(0, i + 1),
+        }, result);
       }
 
       // Extract error info from response
