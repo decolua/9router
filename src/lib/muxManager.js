@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
-import { spawn, execSync } from "child_process";
+import { spawn, execFileSync, execSync } from "child_process";
 import { DATA_DIR } from "./dataDir.js";
 
 const CONFIG_FILE = path.join(DATA_DIR, "mux-settings.json");
@@ -28,6 +28,15 @@ let muxProcess = null;
 let lastCpuTime = null;
 let lastSampleTime = null;
 let lastSystemCpu = null;
+let lastProcessCpu = 0;
+
+// The Mux dashboard polls this module every few seconds.  Keep expensive
+// process probes and `npm prefix -g` lookups bounded so a status page cannot
+// continually create helper processes on Windows.
+const MUX_ENTRY_TTL_MS = 30_000;
+const PROCESS_STATS_TTL_MS = 10_000;
+let muxEntryCache = { value: undefined, fetchedAt: 0 };
+let processStatsCache = { pid: null, value: null, fetchedAt: 0 };
 
 // Global install state
 export let installStatus = {
@@ -38,6 +47,56 @@ export let installStatus = {
 };
 
 let installProcess = null; // Reference to active clone/build process for cancellation
+let installAttempt = 0;
+let muxStartPromise = null;
+
+function quoteForLog(arg) {
+  const value = String(arg);
+  return /\s/.test(value) ? JSON.stringify(value) : value;
+}
+
+function npmInvocation() {
+  // npm.cmd requires cmd.exe on Windows.  Invoke npm's JavaScript entry with
+  // this Node runtime instead, which keeps the launch shell-free.  The env
+  // override is also useful for packaged/custom Node installations.
+  const candidates = [
+    process.env.NINEROUTER_NPM_CLI,
+    path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
+  ].filter(Boolean);
+  const npmCli = candidates.find((candidate) => fs.existsSync(candidate));
+  if (npmCli) {
+    return { command: process.execPath, prefixArgs: [npmCli], shell: false };
+  }
+
+  // A normal Node installation always has npm-cli.js above.  Retain this
+  // hidden fallback for unusual embedders rather than making Mux unusable.
+  return process.platform === "win32"
+    ? { command: "npm.cmd", prefixArgs: [], shell: true }
+    : { command: "npm", prefixArgs: [], shell: false };
+}
+
+function runNpmSync(args, options = {}) {
+  const invocation = npmInvocation();
+  return execFileSync(invocation.command, [...invocation.prefixArgs, ...args], {
+    windowsHide: true,
+    shell: invocation.shell,
+    ...options,
+  });
+}
+
+function getInstallInvocation(command, args) {
+  if (command !== "npm") return { command, args, shell: false };
+  const invocation = npmInvocation();
+  return {
+    command: invocation.command,
+    args: [...invocation.prefixArgs, ...args],
+    shell: invocation.shell,
+  };
+}
+
+function invalidateMuxEntryCache() {
+  muxEntryCache = { value: undefined, fetchedAt: 0 };
+}
 
 // Helper to load settings
 export function loadMuxConfig() {
@@ -103,6 +162,30 @@ function isPidRunning(pid) {
   }
 }
 
+function terminateMuxPid(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return;
+  if (process.platform === "win32") {
+    try {
+      execFileSync("taskkill.exe", ["/PID", String(pid), "/T", "/F"], {
+        stdio: "ignore",
+        windowsHide: true,
+        timeout: 5000,
+      });
+      console.log(`[MuxManager] Stopped Mux process tree with PID ${pid}`);
+    } catch { /* already stopped or inaccessible */ }
+    return;
+  }
+
+  try {
+    process.kill(pid, "SIGTERM");
+    console.log(`[MuxManager] Stopped Mux process with PID ${pid}`);
+  } catch {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch { /* ignore */ }
+  }
+}
+
 // Get system CPU usage
 function getSystemCpuUsage() {
   const cpus = os.cpus();
@@ -131,12 +214,21 @@ function getSystemCpuPercent() {
 
 // Get process resource stats (CPU time and memory)
 function getProcessStats(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return { cpuSeconds: 0, cpuPercent: 0, memoryBytes: 0 };
+  }
   try {
     if (process.platform === "win32") {
-      const { execSync } = require("child_process");
-      const cmd = `powershell -NoProfile -NonInteractive -WindowStyle Hidden -Command "(Get-Process -Id ${pid}).CPU.ToString() + ',' + (Get-Process -Id ${pid}).WorkingSet64.ToString()"`;
-      const output = execSync(cmd, { encoding: 'utf8', windowsHide: true });
-      const parts = output.trim().split(',');
+      const script = `$process = Get-Process -Id ${pid} -ErrorAction Stop; \"$($process.CPU),$($process.WorkingSet64)\"`;
+      const output = execFileSync("powershell.exe", [
+        "-NoProfile",
+        "-NonInteractive",
+        "-WindowStyle",
+        "Hidden",
+        "-Command",
+        script,
+      ], { encoding: "utf8", windowsHide: true, timeout: 2000 });
+      const parts = output.trim().split(",");
       if (parts.length === 2) {
         return {
           cpuSeconds: parseFloat(parts[0]),
@@ -144,9 +236,8 @@ function getProcessStats(pid) {
         };
       }
     } else {
-      const { execSync } = require("child_process");
-      const output = execSync(`ps -p ${pid} -o %cpu,rss`, { encoding: 'utf8' });
-      const lines = output.trim().split('\n');
+      const output = execSync(`ps -p ${pid} -o %cpu,rss`, { encoding: "utf8" });
+      const lines = output.trim().split("\n");
       if (lines.length > 1) {
         const parts = lines[1].trim().split(/\s+/);
         if (parts.length >= 2) {
@@ -159,6 +250,21 @@ function getProcessStats(pid) {
     }
   } catch { /* ignore */ }
   return { cpuSeconds: 0, cpuPercent: 0, memoryBytes: 0 };
+}
+
+function getCachedProcessStats(pid) {
+  const now = Date.now();
+  if (
+    processStatsCache.pid === pid
+    && processStatsCache.value
+    && now - processStatsCache.fetchedAt < PROCESS_STATS_TTL_MS
+  ) {
+    return { value: processStatsCache.value, fresh: false };
+  }
+
+  const value = getProcessStats(pid);
+  processStatsCache = { pid, value, fetchedAt: now };
+  return { value, fresh: true };
 }
 
 // Check Mux running state
@@ -177,19 +283,10 @@ export function isMuxRunning() {
 export function stopMux() {
   const savedPid = loadPid();
   if (savedPid) {
-    try {
-      process.kill(savedPid, "SIGTERM");
-      console.log(`[MuxManager] Stopped Mux process with PID ${savedPid}`);
-    } catch {
-      try {
-        process.kill(savedPid, "SIGKILL");
-      } catch { /* ignore */ }
-    }
+    terminateMuxPid(savedPid);
   }
   if (muxProcess) {
-    try {
-      muxProcess.kill("SIGKILL");
-    } catch { /* ignore */ }
+    if (muxProcess.pid && muxProcess.pid !== savedPid) terminateMuxPid(muxProcess.pid);
     muxProcess = null;
   }
   clearPid();
@@ -198,27 +295,49 @@ export function stopMux() {
 
 // Resolve the globally installed mux CLI entry point
 export function getMuxGlobalEntry() {
+  if (
+    muxEntryCache.value !== undefined
+    && Date.now() - muxEntryCache.fetchedAt < MUX_ENTRY_TTL_MS
+  ) {
+    return muxEntryCache.value;
+  }
+
+  let entry = null;
   try {
     // Find where npm installs global packages
-    const globalPrefix = execSync("npm prefix -g", { encoding: "utf8" }).trim();
+    const globalPrefix = runNpmSync(["prefix", "-g"], { encoding: "utf8", timeout: 5000 }).trim();
     // On Windows: C:\Users\User\AppData\Roaming\npm\node_modules\mux\dist\cli\index.js
     const winEntry = path.join(globalPrefix, "node_modules", "mux", "dist", "cli", "index.js");
     if (fs.existsSync(winEntry)) {
-      return { fullPath: winEntry, cwd: path.dirname(path.dirname(path.dirname(winEntry))) };
-    }
-    // On Unix: /usr/local/lib/node_modules/mux/dist/cli/index.js
-    const unixEntry = path.join(globalPrefix, "lib", "node_modules", "mux", "dist", "cli", "index.js");
-    if (fs.existsSync(unixEntry)) {
-      return { fullPath: unixEntry, cwd: path.dirname(path.dirname(path.dirname(unixEntry))) };
+      entry = { fullPath: winEntry, cwd: path.dirname(path.dirname(path.dirname(winEntry))) };
+    } else {
+      // On Unix: /usr/local/lib/node_modules/mux/dist/cli/index.js
+      const unixEntry = path.join(globalPrefix, "lib", "node_modules", "mux", "dist", "cli", "index.js");
+      if (fs.existsSync(unixEntry)) {
+        entry = { fullPath: unixEntry, cwd: path.dirname(path.dirname(path.dirname(unixEntry))) };
+      }
     }
   } catch (e) {
     console.error("[MuxManager] Could not resolve npm global prefix:", e.message);
   }
-  return null;
+  muxEntryCache = { value: entry, fetchedAt: Date.now() };
+  return entry;
 }
 
 // Start Mux process using globally installed mux CLI
 export async function startMux() {
+  if (muxStartPromise) return muxStartPromise;
+
+  const start = startMuxInternal();
+  muxStartPromise = start;
+  try {
+    return await start;
+  } finally {
+    if (muxStartPromise === start) muxStartPromise = null;
+  }
+}
+
+async function startMuxInternal() {
   if (isMuxRunning()) {
     return { success: true, message: "Mux is already running" };
   }
@@ -250,14 +369,44 @@ export async function startMux() {
     args.push("--auth-token", config.authToken);
   }
 
-  console.log(`[MuxManager] Starting Mux: node ${args.join(" ")}`);
+  console.log(`[MuxManager] Starting Mux: ${process.execPath} ${args.join(" ")}`);
 
-  const child = spawn("node", args, {
+  const child = spawn(process.execPath, args, {
     cwd: entry.cwd,
     detached: true,
     stdio: "ignore",
     windowsHide: true,
   });
+
+  let exited = false;
+  const clearChildState = () => {
+    if (muxProcess === child) muxProcess = null;
+    if (child.pid && loadPid() === child.pid) clearPid();
+  };
+
+  child.on("error", (error) => {
+    console.error(`[MuxManager] Mux process error: ${error.message}`);
+    clearChildState();
+  });
+  child.on("exit", () => {
+    exited = true;
+    clearChildState();
+  });
+
+  try {
+    await new Promise((resolve, reject) => {
+      child.once("spawn", resolve);
+      child.once("error", reject);
+    });
+  } catch (error) {
+    clearChildState();
+    return { success: false, message: `Could not start Mux: ${error.message}` };
+  }
+
+  if (exited || !child.pid || !isPidRunning(child.pid)) {
+    clearChildState();
+    return { success: false, message: "Mux exited before it could start" };
+  }
 
   child.unref();
   muxProcess = child;
@@ -319,19 +468,24 @@ export function getStats() {
   let processMemory = 0;
 
   if (pid) {
-    const pStats = getProcessStats(pid);
+    const { value: pStats, fresh } = getCachedProcessStats(pid);
     processMemory = pStats.memoryBytes;
     
     if (process.platform === "win32") {
-      const now = Date.now();
-      if (lastCpuTime !== null && lastSampleTime !== null) {
-        const timeDiff = (now - lastSampleTime) / 1000;
-        const cpuDiff = pStats.cpuSeconds - lastCpuTime;
-        const cores = os.cpus().length;
-        processCpu = Math.round(Math.min(100, Math.max(0, ((cpuDiff / timeDiff) / cores) * 100)));
+      if (fresh) {
+        const now = Date.now();
+        if (lastCpuTime !== null && lastSampleTime !== null) {
+          const timeDiff = (now - lastSampleTime) / 1000;
+          const cpuDiff = pStats.cpuSeconds - lastCpuTime;
+          const cores = os.cpus().length;
+          if (timeDiff > 0) {
+            lastProcessCpu = Math.round(Math.min(100, Math.max(0, ((cpuDiff / timeDiff) / cores) * 100)));
+          }
+        }
+        lastCpuTime = pStats.cpuSeconds;
+        lastSampleTime = now;
       }
-      lastCpuTime = pStats.cpuSeconds;
-      lastSampleTime = now;
+      processCpu = lastProcessCpu;
     } else {
       processCpu = pStats.cpuPercent || 0;
     }
@@ -366,20 +520,27 @@ export function getStats() {
 // Run command and pipe output to install log
 function runInstallCmd(command, args, cwd) {
   return new Promise((resolve, reject) => {
-    const escapedArgs = args.map((arg) => {
-      if (typeof arg !== "string") return arg;
-      if (arg.includes(" ") && !arg.startsWith('"') && !arg.endsWith('"')) {
-        return `"${arg}"`;
-      }
-      return arg;
+    const invocation = getInstallInvocation(command, args);
+    installStatus.log.push(`> ${command} ${args.map(quoteForLog).join(" ")}`);
+    const proc = spawn(invocation.command, invocation.args, {
+      cwd,
+      shell: invocation.shell,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
     });
-
-    installStatus.log.push(`> ${command} ${escapedArgs.join(" ")}`);
-    const proc = spawn(command, escapedArgs, { cwd, shell: true });
     installProcess = proc;
+    let settled = false;
+
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      if (installProcess === proc) installProcess = null;
+      if (error) reject(error);
+      else resolve();
+    };
 
     // stdout — plain output
-    proc.stdout.on("data", (data) => {
+    proc.stdout?.on("data", (data) => {
       const lines = data.toString().split("\n");
       for (const line of lines) {
         const clean = line.trim();
@@ -388,7 +549,7 @@ function runInstallCmd(command, args, cwd) {
     });
 
     // stderr — npm sends ALL its output here (progress, warnings, errors)
-    proc.stderr.on("data", (data) => {
+    proc.stderr?.on("data", (data) => {
       const lines = data.toString().split("\n");
       for (const line of lines) {
         const clean = line.trim();
@@ -415,27 +576,37 @@ function runInstallCmd(command, args, cwd) {
       }
     });
 
+    proc.on("error", (error) => {
+      console.error(`[MuxManager] Install command could not start: ${error.message}`);
+      finish(error);
+    });
+
     proc.on("close", (code) => {
-      installProcess = null;
-      if (code === 0) resolve();
-      else reject(new Error(`Command failed with exit code ${code}`));
+      if (code === 0) finish();
+      else finish(new Error(`Command failed with exit code ${code}`));
     });
   });
 }
 
 // Cancel current Mux installation
 export function cancelInstall() {
-  if (installProcess) {
+  const processToCancel = installProcess;
+  installAttempt += 1;
+  if (processToCancel) {
     try {
-      installProcess.kill("SIGKILL");
+      if (process.platform === "win32" && processToCancel.pid) {
+        // Kill only the known npm process tree.  The old image-name kill could
+        // terminate unrelated Bun work on the user's machine.
+        execFileSync("taskkill.exe", ["/PID", String(processToCancel.pid), "/T", "/F"], {
+          stdio: "ignore",
+          windowsHide: true,
+          timeout: 5000,
+        });
+      } else {
+        processToCancel.kill("SIGKILL");
+      }
     } catch { /* ignore */ }
-    installProcess = null;
-  }
-  // Clear any zombie bun processes holding file locks on Windows
-  if (process.platform === "win32") {
-    try {
-      execSync("taskkill /F /IM bun.exe", { stdio: "ignore" });
-    } catch { /* ignore */ }
+    if (installProcess === processToCancel) installProcess = null;
   }
   installStatus.state = "idle";
   installStatus.progress = 0;
@@ -447,6 +618,7 @@ export function cancelInstall() {
 export function deleteMux() {
   stopMux();
   clearPid();
+  invalidateMuxEntryCache();
 
   installStatus.state = "idle";
   installStatus.progress = 0;
@@ -455,7 +627,10 @@ export function deleteMux() {
 
   // Run npm uninstall -g mux in background (non-blocking)
   try {
-    execSync("npm uninstall -g mux --ignore-scripts", { stdio: "ignore" });
+    runNpmSync(["uninstall", "-g", "mux", "--ignore-scripts"], {
+      stdio: "ignore",
+      timeout: 60_000,
+    });
     console.log("[MuxManager] Uninstalled mux globally via npm");
   } catch (e) {
     console.error("[MuxManager] npm uninstall failed (may already be removed):", e.message);
@@ -470,6 +645,8 @@ export async function installMux() {
     return { success: false, message: "Installation is already in progress" };
   }
 
+  const attempt = ++installAttempt;
+
   installStatus.state = "installing_dependencies";
   installStatus.progress = 10;
   installStatus.log = [
@@ -483,7 +660,7 @@ export async function installMux() {
     // Heartbeat: append a dot every 3s so the terminal shows life during silent npm download
     let dots = 0;
     const heartbeat = setInterval(() => {
-      if (installStatus.state !== "installing_dependencies") {
+      if (attempt !== installAttempt || installStatus.state !== "installing_dependencies") {
         clearInterval(heartbeat);
         return;
       }
@@ -504,6 +681,10 @@ export async function installMux() {
         os.homedir()
       );
 
+      if (attempt !== installAttempt) {
+        clearInterval(heartbeat);
+        return;
+      }
       clearInterval(heartbeat);
       installStatus.progress = 85;
       installStatus.log.push("✓ Packages installed. Injecting 9Router provider config...");
@@ -515,11 +696,13 @@ export async function installMux() {
         console.error("Failed to inject 9Router config:", e);
       }
 
+      invalidateMuxEntryCache();
       installStatus.state = "completed";
       installStatus.progress = 100;
       installStatus.log.push("✓ Mux installed successfully! Click 'Start Mux' to launch.");
     } catch (err) {
       clearInterval(heartbeat);
+      if (attempt !== installAttempt) return;
       console.error(err);
       installStatus.state = "failed";
       installStatus.error = err.message;
