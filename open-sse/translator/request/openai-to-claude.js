@@ -188,6 +188,9 @@ Respond ONLY with the JSON object, no other text.`);
   }
 
   // Thinking is normalized centrally by applyThinking (thinkingUnified.js) after translation.
+  if (body.thinking) {
+    result.thinking = body.thinking;
+  }
 
   // Attach toolNameMap to result for response translation
   if (toolNameMap.size > 0) {

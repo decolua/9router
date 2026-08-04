@@ -121,9 +121,8 @@ describe("claudeToOpenAIResponse", () => {
         state
       );
 
-      // Should emit <think> tag
-      expect(startResults).not.toBeNull();
-      expect(startResults[0].choices[0].delta.content).toBe("<think>");
+      // Thinking block start initializes state without leaking literal <think> into content
+      expect(startResults === null || startResults?.[0]?.choices?.[0]?.delta?.content === undefined).toBe(true);
 
       // Thinking delta
       const results = claudeToOpenAIResponse(

@@ -443,6 +443,7 @@ exports[`GOLDEN response stream: OpenAI-Responses (codex) → OpenAI > text + re
       {
         "delta": {
           "content": "Hello",
+          "role": "assistant",
         },
         "finish_reason": null,
         "index": 0,

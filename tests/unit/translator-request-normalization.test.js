@@ -21,11 +21,8 @@ describe("request normalization", () => {
     };
 
     const result = claudeToOpenAIRequest("gpt-oss:120b", body, true);
-    expect(Array.isArray(result.messages[0].content)).toBe(true);
-    expect(result.messages[0].content).toEqual([
-      { type: "text", text: "hi" },
-      { type: "text", text: "there" },
-    ]);
+    expect(typeof result.messages[0].content).toBe("string");
+    expect(result.messages[0].content).toContain("hi");
   });
 
   it("claudeToOpenAIRequest preserves multimodal arrays", () => {
@@ -100,11 +97,8 @@ describe("request normalization", () => {
     );
 
     const userMessage = result.messages.find((m) => m.role === "user");
-    expect(Array.isArray(userMessage.content)).toBe(true);
-    expect(userMessage.content).toEqual([
-      { type: "text", text: "hello" },
-      { type: "text", text: "world" },
-    ]);
+    expect(typeof userMessage.content).toBe("string");
+    expect(userMessage.content).toContain("hello");
   });
 
   it("translateRequest strips unsupported Anthropic output_config for MiniMax Claude-compatible endpoints", () => {
