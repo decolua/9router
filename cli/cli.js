@@ -744,6 +744,11 @@ function startServer(updatePromise) {
     // Resolve parallel update check (already running); don't block server start on it.
     const latestVersion = await latestVersionPromise;
     // Start tray icon alongside TUI
+    if (!process.stdin.isTTY) {
+      if (!noBrowser) openBrowser(url);
+      console.log(`\n🚀 9Router v${pkg.version} running at http://${displayHost}:${port}`);
+      return;
+    }
     initTrayIcon();
 
     try {
