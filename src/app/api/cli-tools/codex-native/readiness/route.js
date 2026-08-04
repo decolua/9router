@@ -213,8 +213,3 @@ export async function POST(request) {
   await atomicWrite(STATE_FILE, JSON.stringify(result, null, 2));
   return Response.json(result, { status: result.models.ok ? 200 : 503 });
 }
-
-export const __test__ = {
-  providerBaseUrl,
-  wsUrl,
-};
