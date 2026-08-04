@@ -535,6 +535,8 @@ export function parseQuotaData(provider, data) {
               name,
               used: quota.used || 0,
               total: quota.total || 0,
+              remaining: quota.remaining !== undefined ? quota.remaining : undefined,
+              unlimited: quota.unlimited || false,
               resetAt: quota.resetAt || null,
             });
           });

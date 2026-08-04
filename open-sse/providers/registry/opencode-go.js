@@ -38,4 +38,8 @@ export default {
     { id: "qwen3.7-plus", name: "Qwen 3.7 Plus", targetFormat: "claude" },
     { id: "qwen3.6-plus", name: "Qwen 3.6 Plus", targetFormat: "claude" },
   ],
+  features: {
+    usage: true,
+    usageApikey: true,
+  },
 };
