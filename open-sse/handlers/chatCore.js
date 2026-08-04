@@ -1,4 +1,4 @@
-import { detectFormat, getTargetFormat, resolveTransport } from "../services/provider.js";
+import { detectFormat, getTargetFormat, resolveTransport, resolveDynamicTargetFormat } from "../services/provider.js";
 import { translateRequest } from "../translator/index.js";
 import { stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
@@ -78,7 +78,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (bypassResponse) return bypassResponse;
 
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
-  const modelTargetFormat = getModelTargetFormat(alias, model);
+  // Static per-model targetFormat first (explicit registry entries win), then the
+  // provider's runtime name-pattern hook for catalogs that outrun the static list.
+  const modelTargetFormat = getModelTargetFormat(alias, model)
+    || resolveDynamicTargetFormat(provider, model);
   // Multi-endpoint providers: pick transport matching sourceFormat → zero translation
   const runtimeTransport = resolveTransport(provider, sourceFormat);
   const targetFormat = modelTargetFormat || runtimeTransport?.format || getTargetFormat(provider, credentials);

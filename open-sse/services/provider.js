@@ -152,6 +152,24 @@ export function resolveTransport(provider, sourceFormat) {
   return transports.find(t => t.format === sourceFormat) || null;
 }
 
+// Per-model target format resolved at request time from the model NAME.
+// For providers that serve different wire formats per model AND whose live model
+// catalog outruns their static models[] list, a static per-entry `targetFormat`
+// silently misses the newcomers (github/Copilot: claude-* go to the Anthropic-native
+// /v1/messages shim, and the catalog ships claude-* variants well before the registry
+// lists them). Providers opt in by exporting transport.resolveTargetFormat(model).
+// Returns null when the provider has no hook or the model isn't special-cased.
+export function resolveDynamicTargetFormat(provider, model) {
+  const fn = PROVIDERS[provider]?.resolveTargetFormat;
+  if (typeof fn !== "function") return null;
+  try {
+    return fn(model) || null;
+  } catch {
+    // Registry data must never be able to break routing.
+    return null;
+  }
+}
+
 // Check if last message is from user
 export function isLastMessageFromUser(body) {
   const messages = body.messages || body.contents;
