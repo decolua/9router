@@ -144,6 +144,16 @@ const APIKEY_PROVIDERS = {
 
 const ALL_PROVIDERS = { ...OAUTH_PROVIDERS, ...APIKEY_PROVIDERS };
 
+const AUTO_PING_SETTINGS_KEYS = {
+  claude: "claudeAutoPing",
+  codex: "codexAutoPing",
+};
+
+const AUTO_PING_DESCRIPTIONS = {
+  claude: "sends a tiny request when the 5h quota resets",
+  codex: "starts the next 5h window with a tiny gpt-5.5 request",
+};
+
 /**
  * Get auth type for provider
  * @param {string} providerId - Provider ID
@@ -165,6 +175,65 @@ function countConnectionsByProvider(connections) {
     counts[providerId] = (counts[providerId] || 0) + 1;
   });
   return counts;
+}
+
+function supportsConnectionAutoPing(connection, providerId) {
+  return Boolean(AUTO_PING_SETTINGS_KEYS[providerId]) && connection?.authType === "oauth";
+}
+
+function isConnectionAutoPingOn(settings, providerId, connectionId) {
+  const settingsKey = AUTO_PING_SETTINGS_KEYS[providerId];
+  return settings?.[settingsKey]?.connections?.[connectionId] === true;
+}
+
+function buildConnectionHeader(name, status, providerId, connection, data = {}) {
+  const lines = [`Connection: ${name}`, `Status: ${status}`];
+
+  if (supportsConnectionAutoPing(connection, providerId)) {
+    if (data.settingsError) {
+      lines.push(`Auto-ping: ${COLORS.dim}unknown (${data.settingsError})${COLORS.reset}`);
+    } else {
+      const on = isConnectionAutoPingOn(data.settings, providerId, connection.id);
+      lines.push(`Auto-ping: ${on ? "ON" : "OFF"} ${COLORS.dim}(${AUTO_PING_DESCRIPTIONS[providerId]})${COLORS.reset}`);
+    }
+  }
+
+  return lines.join("\n");
+}
+
+async function toggleConnectionAutoPing(connection, providerId, settings = null) {
+  const settingsKey = AUTO_PING_SETTINGS_KEYS[providerId];
+  if (!settingsKey) return;
+
+  let currentSettings = settings;
+  if (!currentSettings) {
+    const settingsRes = await api.getSettings();
+    if (!settingsRes.success) {
+      showStatus(`Failed to load settings: ${settingsRes.error}`, "error");
+      await pause();
+      return;
+    }
+    currentSettings = settingsRes.data || {};
+  }
+
+  const currentCfg = currentSettings[settingsKey] || {};
+  const currentConnections = currentCfg.connections || {};
+  const next = currentConnections[connection.id] !== true;
+  const nextCfg = {
+    ...currentCfg,
+    connections: {
+      ...currentConnections,
+      [connection.id]: next,
+    },
+  };
+
+  const result = await api.updateSettings({ [settingsKey]: nextCfg });
+  if (result.success) {
+    showStatus(`Auto-ping ${next ? "enabled" : "disabled"}`, "success");
+  } else {
+    showStatus(`Failed to update auto-ping: ${result.error}`, "error");
+  }
+  await pause();
 }
 
 /**
@@ -326,62 +395,81 @@ async function showConnectionActions(connection, providerId, breadcrumb = []) {
   const name = connection.name || connection.email || connection.displayName || "Unnamed";
   const status = connection.testStatus === "active" ? "✓ Active" : 
                  connection.testStatus === "error" ? "✗ Error" : "? Unknown";
-  
+  const autoPingSupported = supportsConnectionAutoPing(connection, providerId);
+  const items = [
+    ...(autoPingSupported ? [{
+      label: (data) => {
+        if (data?.settingsError) return "Auto-ping: unavailable → retry";
+        const on = isConnectionAutoPingOn(data?.settings, providerId, connection.id);
+        return `Auto-ping: ${on ? "ON" : "OFF"} → toggle`;
+      },
+      action: async (data) => {
+        await toggleConnectionAutoPing(connection, providerId, data?.settingsError ? null : (data?.settings || null));
+        return true;
+      }
+    }] : []),
+    {
+      label: "Rename Connection",
+      action: async () => {
+        const newName = await prompt(`New name (current: ${name}): `);
+        if (newName && newName.trim()) {
+          showStatus("Renaming connection...", "info");
+          const result = await api.updateConnection(connection.id, { name: newName.trim() });
+          if (result.success) {
+            showStatus("Connection renamed!", "success");
+            connection.name = newName.trim();
+          } else {
+            showStatus(`Rename failed: ${result.error}`, "error");
+          }
+          await pause();
+        }
+        return true;
+      }
+    },
+    {
+      label: "Test Connection",
+      action: async () => {
+        showStatus("Testing connection...", "info");
+        const result = await api.testConnection(connection.id);
+        if (result.success) {
+          showStatus("Connection is working!", "success");
+        } else {
+          showStatus(`Test failed: ${result.error}`, "error");
+        }
+        await pause();
+        return true;
+      }
+    },
+    {
+      label: "Delete Connection",
+      action: async () => {
+        const confirmed = await confirm(`Delete connection "${name}"?`);
+        if (confirmed) {
+          const result = await api.deleteConnection(connection.id);
+          if (result.success) {
+            showStatus("Connection deleted!", "success");
+          } else {
+            showStatus(`Delete failed: ${result.error}`, "error");
+          }
+          await pause();
+          return false; // Exit menu after delete
+        }
+        return true;
+      }
+    }
+  ];
+
   await showMenuWithBack({
     title: `🔌 ${name}`,
     breadcrumb: [...breadcrumb, name],
-    headerContent: `Connection: ${name}\nStatus: ${status}`,
-    items: [
-      {
-        label: "Rename Connection",
-        action: async () => {
-          const newName = await prompt(`New name (current: ${name}): `);
-          if (newName && newName.trim()) {
-            showStatus("Renaming connection...", "info");
-            const result = await api.updateConnection(connection.id, { name: newName.trim() });
-            if (result.success) {
-              showStatus("Connection renamed!", "success");
-              connection.name = newName.trim();
-            } else {
-              showStatus(`Rename failed: ${result.error}`, "error");
-            }
-            await pause();
-          }
-          return true;
-        }
-      },
-      {
-        label: "Test Connection",
-        action: async () => {
-          showStatus("Testing connection...", "info");
-          const result = await api.testConnection(connection.id);
-          if (result.success) {
-            showStatus("Connection is working!", "success");
-          } else {
-            showStatus(`Test failed: ${result.error}`, "error");
-          }
-          await pause();
-          return true;
-        }
-      },
-      {
-        label: "Delete Connection",
-        action: async () => {
-          const confirmed = await confirm(`Delete connection "${name}"?`);
-          if (confirmed) {
-            const result = await api.deleteConnection(connection.id);
-            if (result.success) {
-              showStatus("Connection deleted!", "success");
-            } else {
-              showStatus(`Delete failed: ${result.error}`, "error");
-            }
-            await pause();
-            return false; // Exit menu after delete
-          }
-          return true;
-        }
-      }
-    ]
+    headerContent: (data) => buildConnectionHeader(name, status, providerId, connection, data),
+    refresh: async () => {
+      if (!autoPingSupported) return {};
+      const settingsRes = await api.getSettings();
+      if (!settingsRes.success) return { settings: {}, settingsError: settingsRes.error || "settings unavailable" };
+      return { settings: settingsRes.data || {} };
+    },
+    items
   });
 }
 
