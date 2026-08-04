@@ -1,4 +1,5 @@
 import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 
 /**
  * Build OpenAI-compatible error response body
@@ -94,15 +95,39 @@ export async function parseUpstreamError(response, executor = null) {
   }
 
   let message = "";
+  let providerName = null;
+  let invalidUrlEmpty = false;
   try {
     const json = JSON.parse(bodyText);
     message = json.error?.message || json.message || json.error || bodyText;
+    providerName = json.error?.metadata?.provider_name || null;
+    // OpenRouter's internal "Stealth" upstream returns a malformed message
+    // like "Invalid URL: " with the URL value left empty (the upstream's
+    // url field in OpenRouter's routing table is unset). Detect the
+    // signature so we can surface a friendlier hint to the user instead of
+    // the opaque 502 + empty message they would otherwise see.
+    if (typeof message === "string") {
+      const m = /^Invalid URL:\s*(.*)$/.exec(message);
+      if (m) invalidUrlEmpty = m[1].trim() === "";
+    }
   } catch {
     message = bodyText;
   }
 
   const messageStr = typeof message === "string" ? message : JSON.stringify(message);
-  const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
+  let finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
+
+  // Annotate OpenRouter "Stealth" (or any upstream whose routing table has an
+  // empty url field) with a hint explaining the failure mode. The 9router
+  // OpenRouterExecutor now sets `provider.allow_fallbacks = true` on retries;
+  // this annotation gives the user a legible reason when no alternate upstream
+  // is configured upstream of 9router.
+  if ((providerName || invalidUrlEmpty) && (response.status === HTTP_STATUS.BAD_GATEWAY || response.status === HTTP_STATUS.SERVER_ERROR)) {
+    const hint = providerName
+      ? `OpenRouter upstream "${providerName}" returned an invalid routing URL — its endpoint is misconfigured on OpenRouter's side`
+      : "Upstream returned an invalid (empty) routing URL";
+    finalMessage = `${finalMessage} — ${hint}. Try a different model, or set \`provider: { allow_fallbacks: true }\` to opt into OpenRouter's automatic upstream fallback.`;
+  }
 
   return { statusCode: response.status, message: finalMessage };
 }
