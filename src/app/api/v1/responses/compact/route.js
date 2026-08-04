@@ -19,8 +19,6 @@ export async function OPTIONS(request) {
   if (reqHeaders) headers["Access-Control-Allow-Headers"] = reqHeaders;
   return new Response(null, { headers });
 }
-  });
-}
 
 /**
  * POST /v1/responses/compact - Compact conversation context

@@ -12,8 +12,6 @@ export async function OPTIONS(request) {
   if (reqHeaders) headers["Access-Control-Allow-Headers"] = reqHeaders;
   return new Response(null, { headers });
 }
-  });
-}
 
 /**
  * POST /v1/web/fetch - Web URL fetch/extract endpoint

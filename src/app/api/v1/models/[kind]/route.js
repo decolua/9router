@@ -18,8 +18,6 @@ export async function OPTIONS(request) {
   const reqHeaders = request?.headers?.get("Access-Control-Request-Headers");
   if (reqHeaders) headers["Access-Control-Allow-Headers"] = reqHeaders;
   return new Response(null, { headers });
-},
-  });
 }
 
 /**

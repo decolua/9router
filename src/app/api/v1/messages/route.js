@@ -25,8 +25,6 @@ export async function OPTIONS(request) {
   if (reqHeaders) headers["Access-Control-Allow-Headers"] = reqHeaders;
   return new Response(null, { headers });
 }
-  });
-}
 
 /**
  * POST /v1/messages - Claude format (auto convert via handleChat)
