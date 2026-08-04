@@ -6,6 +6,7 @@ import elevenlabs, { fetchElevenLabsVoices } from "./elevenlabs.js";
 import openai from "./openai.js";
 import openrouter from "./openrouter.js";
 import gemini, { fetchGeminiVoices } from "./gemini.js";
+import selfhostedTts from "./selfhostedTts.js";
 import { FORMAT_HANDLERS } from "./genericFormats.js";
 import { parseModelVoice } from "./_base.js";
 
@@ -18,6 +19,7 @@ const SPECIAL_ADAPTERS = {
   openai,
   openrouter,
   gemini,
+  "selfhosted-tts": selfhostedTts,
 };
 
 export function getTtsAdapter(provider) {
