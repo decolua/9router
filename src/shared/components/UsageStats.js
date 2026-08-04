@@ -200,6 +200,42 @@ const PERIODS = [
   { value: "60d", label: "60D" },
 ];
 
+// Keep this calculation outside component render hooks. It is intentionally a
+// small pure helper because the component can return early while stats are
+// unavailable; placing useMemo after that return violated the Rules of Hooks.
+function buildProvidersWithModels(providers, stats) {
+  const usedModelMap = {};
+  if (stats?.byModel) {
+    Object.values(stats.byModel).forEach((item) => {
+      const pKey = item.provider?.toLowerCase();
+      if (!pKey) return;
+      if (!usedModelMap[pKey]) usedModelMap[pKey] = new Set();
+      if (item.rawModel) usedModelMap[pKey].add(item.rawModel);
+    });
+  }
+
+  return providers.map((provider) => {
+    const pKey = provider.provider?.toLowerCase();
+    const config = AI_PROVIDERS[pKey] || AI_PROVIDERS[provider.provider] || {};
+    const staticModels = (config.models || []).map((model) => (typeof model === "string" ? model : model.id)).filter(Boolean);
+    const usedModels = usedModelMap[pKey] ? Array.from(usedModelMap[pKey]) : [];
+    let models = Array.from(new Set([...usedModels, ...staticModels]));
+
+    if (models.length === 0) {
+      if (pKey === "antigravity") models = ["gemini-2.5-flash", "gemini-3-flash", "claude-sonnet-4-6"];
+      else if (pKey === "codex") models = ["gpt-5.4", "gpt-5.4-mini", "gpt-4o"];
+      else if (pKey === "groq") models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
+      else if (pKey === "cerebras") models = ["llama-3.3-70b", "llama3.1-8b"];
+      else if (pKey === "mistral") models = ["codestral-latest", "mistral-large-latest"];
+      else if (pKey === "deepseek") models = ["deepseek-chat", "deepseek-coder"];
+      else if (pKey === "openrouter") models = ["auto", "free"];
+      else if (pKey === "opencode") models = ["deepseek-v4-flash-free"];
+    }
+
+    return { ...provider, models: models.slice(0, 6) };
+  });
+}
+
 export default function UsageStats({ period: periodProp, setPeriod: setPeriodProp, hidePeriodSelector = false } = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -441,52 +477,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     </div>
   );
 
-  // Map all models per active provider (combining static registry models + recorded usage)
-  const providersWithModels = useMemo(() => {
-    const usedModelMap = {};
-    if (stats?.byModel) {
-      Object.values(stats.byModel).forEach((item) => {
-        const pKey = item.provider?.toLowerCase();
-        if (!pKey) return;
-        if (!usedModelMap[pKey]) usedModelMap[pKey] = new Set();
-        if (item.rawModel) usedModelMap[pKey].add(item.rawModel);
-      });
-    }
-
-    return providers.map((p) => {
-      const pKey = p.provider?.toLowerCase();
-      const config = AI_PROVIDERS[pKey] || AI_PROVIDERS[p.provider] || {};
-
-      // Get all static registered models for this provider
-      const staticModels = (config.models || []).map((m) => (typeof m === "string" ? m : m.id)).filter(Boolean);
-
-      // Get all used models for this provider
-      const usedModels = usedModelMap[pKey] ? Array.from(usedModelMap[pKey]) : [];
-
-      // Combine unique model names
-      const allModelSet = new Set([...usedModels, ...staticModels]);
-      let models = Array.from(allModelSet);
-
-      // Default fallbacks if empty
-      if (models.length === 0) {
-        if (pKey === "antigravity") models = ["gemini-2.5-flash", "gemini-3-flash", "claude-sonnet-4-6"];
-        else if (pKey === "codex") models = ["gpt-5.4", "gpt-5.4-mini", "gpt-4o"];
-        else if (pKey === "groq") models = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
-        else if (pKey === "cerebras") models = ["llama-3.3-70b", "llama3.1-8b"];
-        else if (pKey === "mistral") models = ["codestral-latest", "mistral-large-latest"];
-        else if (pKey === "deepseek") models = ["deepseek-chat", "deepseek-coder"];
-        else if (pKey === "openrouter") models = ["auto", "free"];
-        else if (pKey === "opencode") models = ["deepseek-v4-flash-free"];
-      }
-
-      // Limit to max 6 models per provider for clean UI spacing
-      if (models.length > 6) {
-        models = models.slice(0, 6);
-      }
-
-      return { ...p, models };
-    });
-  }, [providers, stats?.byModel]);
+  const providersWithModels = buildProvidersWithModels(providers, stats);
 
   return (
     <div className="flex min-w-0 flex-col gap-6">

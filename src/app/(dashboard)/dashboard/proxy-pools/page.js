@@ -865,7 +865,7 @@ export default function ProxyPoolsPage() {
             <div className="mt-2 pt-2 border-t border-orange-500/10 text-xs text-text-muted">
               <p className="font-medium text-text-main mb-1">How to generate your API Token:</p>
               <ol className="list-decimal pl-4 space-y-0.5">
-                <li>Go to <b>My Profile</b> → <b>API Tokens</b> → <b>Create Token</b></li>
+                <li>Go to <b>&quot;My Profile&quot;</b> → <b>API Tokens</b> → <b>Create Token</b></li>
                 <li>Scroll down to <b>Custom Token</b> and click <b>Get started</b></li>
                 <li>Under <b>Permissions</b>: Account | Workers Scripts | Edit</li>
                 <li>Under <b>Account Resources</b>: Include | Account | <i>Your Account Name</i></li>
@@ -885,7 +885,7 @@ export default function ProxyPoolsPage() {
             value={cloudflareForm.apiToken}
             onChange={(e) => setCloudflareForm((prev) => ({ ...prev, apiToken: e.target.value }))}
             placeholder="your-cloudflare-api-token"
-            hint={<>Requires "Workers Scripts: Edit" permission. <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Get token →</a></>}
+            hint={<>Requires &quot;Workers Scripts: Edit&quot; permission. <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Get token →</a></>}
             type="password"
           />
           <Input

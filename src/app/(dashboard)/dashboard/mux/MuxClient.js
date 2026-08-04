@@ -429,7 +429,7 @@ export default function MuxClient() {
             </Card>
             <Card title="9Router Provider" subtitle="Local LLM Routing" icon="hub" className="bg-[#0c0e17] border border-zinc-800">
               <p className="text-xs text-zinc-400 mt-2">
-                Automatically routes Mux requests back through 9Router's LLM endpoints, utilizing custom models, keys, and quotas.
+                Automatically routes Mux requests back through 9Router&apos;s LLM endpoints, utilizing custom models, keys, and quotas.
               </p>
             </Card>
 
