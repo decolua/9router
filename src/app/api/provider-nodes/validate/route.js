@@ -105,6 +105,34 @@ export async function POST(request) {
       });
     }
 
+    // Custom Video Validation — xAI-style async job endpoint.
+    // We can't run a real generation (billable job), so probe POST {base}/generations
+    // with an empty body: a 401/403 means the key is bad; any other status (400/422
+    // for missing params, or 2xx) means the endpoint is reachable and the key is authorized.
+    if (type === "custom-video") {
+      let normalizedBase = baseUrl.trim().replace(/\/$/, "");
+      normalizedBase = normalizedBase.replace(/\/(generations|edits|extensions)$/, "");
+      const probeRes = await fetchWithTimeout(`${normalizedBase}/generations`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({})
+      });
+      if (probeRes.status === 401 || probeRes.status === 403) {
+        return NextResponse.json({ valid: false, error: "API key unauthorized" });
+      }
+      if (probeRes.status === 404) {
+        return NextResponse.json({ valid: false, error: "/generations endpoint not found - check Base URL" });
+      }
+      if (probeRes.status >= 500) {
+        return NextResponse.json({ valid: false, error: "Server error - try again later" });
+      }
+      // Reachable + authorized (params likely rejected, which is expected for an empty probe body)
+      return NextResponse.json({ valid: true, method: "generations-probe" });
+    }
+
     // Anthropic Compatible Validation
     if (type === "anthropic-compatible") {
       let normalizedBase = baseUrl.trim().replace(/\/$/, "");
