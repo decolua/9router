@@ -119,6 +119,12 @@ describe("applyThinking per provider format", () => {
     expect(out.enable_thinking).toBe(true);
     expect(out.thinking_budget).toBe(8192);
   });
+  it("OpenAI-compatible Qwen passthrough keeps standard reasoning_effort", () => {
+    const out = apply("openai", "qwen3.7-plus", { reasoning_effort: "medium" }, "openai-compatible-chat-limitrouter");
+    expect(out.reasoning_effort).toBe("medium");
+    expect(out.enable_thinking).toBeUndefined();
+    expect(out.thinking_budget).toBeUndefined();
+  });
   it("QwQ cannot disable → clamp minimal", () => {
     const out = apply("openai", "qwq-32b", { reasoning_effort: "none" }, "qwen");
     expect(out.enable_thinking).toBe(true);
