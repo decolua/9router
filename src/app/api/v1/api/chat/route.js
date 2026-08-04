@@ -20,8 +20,6 @@ export async function OPTIONS(request) {
   if (reqHeaders) headers["Access-Control-Allow-Headers"] = reqHeaders;
   return new Response(null, { headers });
 }
-  });
-}
 
 export async function POST(request) {
   await ensureInitialized();
