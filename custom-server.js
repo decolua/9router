@@ -2,6 +2,15 @@ const http = require("http");
 const crypto = require("crypto");
 const { attachCodexNativeGateway } = require("./server/codexNativeGateway.cjs");
 
+// Renaming next-server process to a unique name while keeping "next-server"
+// in the name for backward compatibility with existing process-matching whitelists.
+process.title = "9router next-server";
+Object.defineProperty(process, "title", {
+  get: () => "9router next-server",
+  set: () => {},
+  configurable: true
+});
+
 const origCreate = http.createServer.bind(http);
 process.env.CODEX_NATIVE_INTERNAL_SECRET ||= crypto.randomBytes(32).toString("hex");
 
