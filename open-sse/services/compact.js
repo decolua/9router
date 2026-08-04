@@ -49,7 +49,15 @@ export async function handleComboChat({ body, models, handleSingleModel, log }) 
 
     // Success or client error - return response
     if (result.ok || result.status < 500) {
-      return result;
+      const newHeaders = new Headers(result.headers);
+      newHeaders.set("x-9router-combo", "true");
+      newHeaders.set("x-9router-model", modelStr);
+
+      return new Response(result.body, {
+        status: result.status,
+        statusText: result.statusText,
+        headers: newHeaders,
+      });
     }
 
     // 5xx error - try next model
@@ -64,7 +72,11 @@ export async function handleComboChat({ body, models, handleSingleModel, log }) 
     JSON.stringify({ error: lastError || "All combo models unavailable" }),
     { 
       status: 503, 
-      headers: { "Content-Type": "application/json" }
+      headers: { 
+        "Content-Type": "application/json",
+        "x-9router-combo": "true",
+        "x-9router-model": "failed"
+      }
     }
   );
 }
