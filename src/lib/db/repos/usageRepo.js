@@ -346,6 +346,33 @@ export async function saveRequestUsage(entry) {
   }
 }
 
+export async function getDailyConnectionUsage(connectionId, now = new Date()) {
+  if (!connectionId) {
+    return { requests: 0, tokens: 0, resetAt: null };
+  }
+
+  const current = now instanceof Date ? now : new Date(now);
+  const startOfDay = new Date(current);
+  startOfDay.setHours(0, 0, 0, 0);
+  const nextDay = new Date(startOfDay);
+  nextDay.setDate(nextDay.getDate() + 1);
+
+  const db = await getAdapter();
+  const row = db.get(
+    `SELECT COUNT(*) AS requests,
+            COALESCE(SUM(promptTokens + completionTokens), 0) AS tokens
+       FROM usageHistory
+      WHERE timestamp >= ? AND timestamp < ? AND connectionId = ?`,
+    [startOfDay.toISOString(), nextDay.toISOString(), String(connectionId)],
+  );
+
+  return {
+    requests: Number(row?.requests) || 0,
+    tokens: Number(row?.tokens) || 0,
+    resetAt: nextDay.toISOString(),
+  };
+}
+
 export async function getUsageHistory(filter = {}) {
   const db = await getAdapter();
   const conds = [];
