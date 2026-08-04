@@ -264,6 +264,25 @@ describe("DefaultExecutor.buildHeaders() — claude provider cold start (no cach
   });
 });
 
+describe("DefaultExecutor.buildHeaders() — Anthropic header dedupe", () => {
+  let DefaultExecutor;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const mod = await import("open-sse/executors/default.js");
+    DefaultExecutor = mod.DefaultExecutor || mod.default;
+  });
+
+  it("does not send duplicate anthropic-version variants for the Anthropic provider", () => {
+    const executor = new DefaultExecutor("anthropic");
+    const headers = executor.buildHeaders({ apiKey: "sk-test" }, true);
+
+    expect(headers["Anthropic-Version"]).toBeUndefined();
+    expect(headers["anthropic-version"]).toBe("2023-06-01");
+    expect(headers["anthropic-version"]).not.toContain(",");
+  });
+});
+
 // ─── anthropic-compatible header stripping ────────────────────────────────────
 
 describe("DefaultExecutor.buildHeaders() — anthropic-compatible stripping", () => {
