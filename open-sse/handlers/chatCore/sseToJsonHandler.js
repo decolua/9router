@@ -4,6 +4,7 @@ import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
+import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -32,6 +33,76 @@ function pickAssistantMessageForChatCompletion(output) {
   }
   const last = messages[messages.length - 1];
   return { msgItem: last, textContent: textFromResponsesMessageItem(last) };
+}
+
+/**
+ * Convert an OpenAI Chat Completions JSON body into the Responses API shape.
+ * Inlined here (not imported from nonStreamingHandler.js) to avoid a circular
+ * import. Mirrors openAICompletionToResponses in nonStreamingHandler.js.
+ */
+function extractCustomToolInput(argumentsValue) {
+  const argumentsText = typeof argumentsValue === "string" ? argumentsValue : JSON.stringify(argumentsValue || {});
+  try {
+    const parsed = JSON.parse(argumentsText);
+    if (parsed && typeof parsed === "object" && typeof parsed.input === "string") return parsed.input;
+  } catch { /* raw freeform input */ }
+  return argumentsText;
+}
+
+function chatCompletionToResponses(responseBody, customToolNames = null) {
+  const choice = responseBody?.choices?.[0];
+  if (!choice) return responseBody;
+
+  const message = choice.message || {};
+  const output = [];
+
+  const reasoning = message.reasoning_content || message.reasoning;
+  if (typeof reasoning === "string" && reasoning.length > 0) {
+    output.push({
+      type: RESPONSES_ITEM.REASONING,
+      summary: [{ type: RESPONSES_ITEM.SUMMARY_TEXT, text: reasoning }],
+    });
+  }
+
+  const text = typeof message.content === "string" ? message.content : "";
+  if (text.length > 0) {
+    output.push({
+      type: RESPONSES_ITEM.MESSAGE,
+      role: ROLE.ASSISTANT,
+      content: [{ type: RESPONSES_ITEM.OUTPUT_TEXT, text, annotations: [] }],
+    });
+  }
+
+  for (const tc of message.tool_calls || []) {
+    const fn = tc.function || {};
+    const custom = customToolNames?.has(fn.name);
+    output.push({
+      type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
+      id: `${custom ? "ctc" : "fc"}_${tc.id || ""}`,
+      call_id: tc.id || "",
+      name: fn.name || "",
+      ...(custom
+        ? { input: extractCustomToolInput(fn.arguments) }
+        : { arguments: typeof fn.arguments === "string" ? fn.arguments : JSON.stringify(fn.arguments || {}) }),
+    });
+  }
+
+  const usage = responseBody.usage || {};
+  return {
+    id: `resp_${responseBody.id || ""}`.replace(/^resp_chatcmpl-/, "resp_"),
+    object: "response",
+    created_at: responseBody.created || Math.floor(Date.now() / 1000),
+    model: responseBody.model || "unknown",
+    status: "completed",
+    background: false,
+    error: null,
+    output,
+    usage: {
+      input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
+      output_tokens: usage.completion_tokens || usage.output_tokens || 0,
+      total_tokens: usage.total_tokens || (usage.prompt_tokens || 0) + (usage.completion_tokens || 0),
+    },
+  };
 }
 
 /**
@@ -108,7 +179,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, trackDone, appendLog, reqTag, log }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, customToolNames, trackDone, appendLog, reqTag, log }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -122,7 +193,10 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
   };
 
   // Codex/Responses API SSE path
-  const isCodexResponsesApi = isResponsesProvider(provider) || sourceFormat === FORMATS.OPENAI_RESPONSES;
+  // Branch on the UPSTREAM format (targetFormat = format we spoke to the provider in),
+  // not the client format: a Responses-API client behind a chat-native forced-streaming
+  // provider still receives chat SSE chunks, which must go through the standard path.
+  const isCodexResponsesApi = isResponsesProvider(provider) || targetFormat === FORMATS.OPENAI_RESPONSES;
   if (isCodexResponsesApi) {
     try {
       const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
@@ -241,7 +315,17 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       }
     }
 
-    return { success: true, response: new Response(JSON.stringify(parsed), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+    // A Responses-format client (e.g. Codex) forced this provider to stream,
+    // but wants JSON back. parseSSEToOpenAIResponse yields a Chat Completions
+    // body; convert it to the Responses `output` shape so tool_calls are not
+    // lost on the non-streaming return path. Inlined (not imported from
+    // nonStreamingHandler.js) to avoid a circular import: nonStreamingHandler
+    // already imports parseSSEToOpenAIResponse from this module.
+    const finalBody = sourceFormat === FORMATS.OPENAI_RESPONSES
+      ? chatCompletionToResponses(parsed, customToolNames)
+      : parsed;
+
+    return { success: true, response: new Response(JSON.stringify(finalBody), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {
     console.error("[ChatCore] Chat Completions SSE→JSON failed:", err);
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
