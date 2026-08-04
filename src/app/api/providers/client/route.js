@@ -3,6 +3,14 @@ import { getProviderConnections } from "@/lib/localDb";
 import { backfillCodexEmails } from "@/lib/oauth/providers";
 import { USAGE_APIKEY_PROVIDERS, USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 
+// Quota Tracker is backed by mutable local SQLite data. Never let Next.js or
+// an intermediary reuse a response that was produced before an OAuth account
+// was added or re-authorized.
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+const NO_STORE_HEADERS = { "Cache-Control": "no-store, max-age=0" };
+
 const SAFE_FIELDS = [
   "id", "provider", "authType", "name", "email", "displayName",
   "priority", "globalPriority", "isActive", "defaultModel",
@@ -111,7 +119,13 @@ function sortConnections(connections, sort) {
 
 export async function GET(request) {
   try {
-    await backfillCodexEmails();
+    // Email backfill is cosmetic. A transient OAuth/SQLite failure here must
+    // not make the quota list look empty when usable connections still exist.
+    try {
+      await backfillCodexEmails();
+    } catch (error) {
+      console.warn("Quota connection email backfill failed:", error?.message || error);
+    }
 
     const { searchParams } = new URL(request.url);
     const provider = searchParams.get("provider") || "all";
@@ -154,7 +168,7 @@ export async function GET(request) {
         eligibleConnections: eligibleConnections.length,
         providerFilteredConnections: providerFilteredConnections.length,
       },
-    });
+    }, { headers: NO_STORE_HEADERS });
   } catch (error) {
     console.error("Error fetching providers for client:", error);
     return NextResponse.json(

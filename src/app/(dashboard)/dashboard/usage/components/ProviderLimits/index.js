@@ -138,6 +138,7 @@ export default function ProviderLimits() {
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [countdown, setCountdown] = useState(60);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
+  const [connectionsError, setConnectionsError] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
   const [resettingLimitId, setResettingLimitId] = useState(null);
@@ -190,8 +191,12 @@ export default function ProviderLimits() {
 
         const response = await fetch(
           `/api/providers/client?${params.toString()}`,
+          { cache: "no-store" },
         );
-        if (!response.ok) throw new Error("Failed to fetch connections");
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.details || body.error || "Failed to fetch connections");
+        }
 
         const data = await response.json();
         const connectionList = data.connections || [];
@@ -203,13 +208,13 @@ export default function ProviderLimits() {
         setPagination(nextPagination);
         setTotals(nextTotals);
         setPage(getPaginationPageValue(data.pagination, targetPage));
+        setConnectionsError(null);
         return connectionList;
       } catch (error) {
         console.error("Error fetching connections:", error);
-        setConnections([]);
-        setProviderOptions([]);
-        setPagination({ page: 1, pageSize, total: 0, totalPages: 1 });
-        setTotals({ eligibleConnections: 0, providerFilteredConnections: 0 });
+        // Keep a previously loaded list on transient failures. Clearing it
+        // changed a loading error into the misleading "No Providers" state.
+        setConnectionsError(error.message || "Failed to load quota accounts");
         return [];
       }
     },
@@ -756,6 +761,31 @@ export default function ProviderLimits() {
   const connectionsPageSummary = getConnectionsPaginationSummary(pagination);
   const isCustomPageSize = !ACCOUNT_PAGE_SIZE_OPTIONS.includes(pageSize);
   const pageSizeLabel = getPageSizeLabel(pageSize, isCustomPageSize);
+
+  if (!connectionsLoading && connectionsError && connections.length === 0) {
+    return (
+      <Card padding="lg">
+        <div className="text-center py-12">
+          <span className="material-symbols-outlined text-[64px] text-warning opacity-60">
+            error_outline
+          </span>
+          <h3 className="mt-4 text-lg font-semibold text-text-primary">
+            Unable to Load Quota Accounts
+          </h3>
+          <p className="mt-2 text-sm text-text-muted max-w-md mx-auto">
+            {connectionsError}
+          </p>
+          <button
+            type="button"
+            onClick={() => fetchConnections(page)}
+            className="mt-5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
+          >
+            Retry
+          </button>
+        </div>
+      </Card>
+    );
+  }
 
   if (!connectionsLoading && !hasEligibleConnections) {
     return (

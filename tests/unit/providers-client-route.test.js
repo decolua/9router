@@ -179,4 +179,23 @@ describe("providers client route", () => {
       details: "database unavailable",
     });
   });
+
+  it("keeps quota connections available when Codex email backfill fails", async () => {
+    mocks.backfillCodexEmails.mockRejectedValue(new Error("temporary backfill failure"));
+    mocks.getProviderConnections.mockResolvedValue([
+      {
+        id: "codex-connection",
+        provider: "codex",
+        authType: "oauth",
+        name: "Codex",
+        isActive: true,
+      },
+    ]);
+
+    const response = await GET(request("/api/providers/client"));
+
+    expect(response.status).toBe(200);
+    expect(response.body.totals.eligibleConnections).toBe(1);
+    expect(response.body.connections.map((connection) => connection.id)).toEqual(["codex-connection"]);
+  });
 });
