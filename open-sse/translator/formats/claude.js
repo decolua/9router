@@ -24,11 +24,23 @@ export function hasValidContent(msg) {
   return false;
 }
 
+function extractOrphanToolText(content) {
+  if (typeof content === "string") return content;
+  const blocks = Array.isArray(content) ? content : [content];
+  return blocks
+    .flatMap((block) => {
+      if (typeof block === "string") return [block];
+      return block?.type === CLAUDE_BLOCK.TEXT && typeof block.text === "string" ? [block.text] : [];
+    })
+    .join("\n");
+}
+
 // Fix tool_use/tool_result ordering for Claude API
 // 1. Assistant message with tool_use: remove text AFTER tool_use (Claude doesn't allow)
 // 2. Merge consecutive same-role messages
+// 3. Reconcile tool_result blocks against the immediately previous tool_use message
 export function fixToolUseOrdering(messages) {
-  if (messages.length <= 1) return messages;
+  if (messages.length === 0) return messages;
 
   // Pass 1: Fix assistant messages with tool_use - remove text after tool_use
   for (const msg of messages) {
@@ -78,6 +90,48 @@ export function fixToolUseOrdering(messages) {
       const content = Array.isArray(msg.content) ? msg.content : [{ type: CLAUDE_BLOCK.TEXT, text: msg.content }];
       merged.push({ role: msg.role, content: [...content] });
     }
+  }
+
+  // Claude accepts tool_result only for a tool_use in the immediately previous
+  // assistant message. Compacted cross-model history can retain an output after
+  // dropping its call; keep that output as user text instead of sending an
+  // invalid structured reference or discarding useful context.
+  for (let i = 0; i < merged.length; i++) {
+    const msg = merged[i];
+    if (msg.role !== ROLE.USER || !Array.isArray(msg.content)) continue;
+
+    const previous = merged[i - 1];
+    const validIds = new Set(
+      previous?.role === ROLE.ASSISTANT && Array.isArray(previous.content)
+        ? previous.content
+          .filter((block) => block.type === CLAUDE_BLOCK.TOOL_USE && block.id)
+          .map((block) => block.id)
+        : []
+    );
+    const pairedById = new Map();
+    const otherContent = [];
+
+    for (const block of msg.content) {
+      if (block.type !== CLAUDE_BLOCK.TOOL_RESULT) {
+        otherContent.push(block);
+        continue;
+      }
+      if (validIds.has(block.tool_use_id) && !pairedById.has(block.tool_use_id)) {
+        pairedById.set(block.tool_use_id, block);
+        continue;
+      }
+
+      const text = extractOrphanToolText(block.content);
+      otherContent.push({
+        type: CLAUDE_BLOCK.TEXT,
+        text: `[Unpaired tool result ${block.tool_use_id || "unknown"}]${text ? `\n${text}` : ""}`,
+      });
+    }
+
+    const pairedResults = [...validIds].map((id) =>
+      pairedById.get(id) || { type: CLAUDE_BLOCK.TOOL_RESULT, tool_use_id: id, content: "" }
+    );
+    msg.content = [...pairedResults, ...otherContent];
   }
 
   return merged;
