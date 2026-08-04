@@ -1,6 +1,6 @@
 const fs = require("fs");
 const crypto = require("crypto");
-const { exec } = require("child_process");
+const { exec, execFile } = require("child_process");
 const { execWithPassword, isSudoAvailable } = require("../dns/dnsConfig.js");
 const { runElevatedPowerShell, quotePs } = require("../winElevated.js");
 const { log, err } = require("../logger");
@@ -37,6 +37,7 @@ function getCertFingerprint(certPath) {
 }
 
 let certTrustCache = { path: null, fingerprint: null, trusted: false, timestamp: 0, mtimeMs: 0 };
+let certTrustCheckInFlight = { key: null, promise: null };
 const CERT_TRUST_CACHE_TTL_MS = 300000; // 5 minutes TTL
 
 /**
@@ -63,13 +64,27 @@ async function checkCertInstalled(certPath) {
     return certTrustCache.trusted;
   }
 
-  let trusted = false;
-  if (IS_WIN) trusted = await checkCertInstalledWindows(fingerprint);
-  else if (IS_MAC) trusted = await checkCertInstalledMac(certPath);
-  else trusted = await checkCertInstalledLinux();
+  const key = `${certPath}|${fingerprint}|${mtimeMs}`;
+  if (certTrustCheckInFlight.key === key && certTrustCheckInFlight.promise) {
+    return certTrustCheckInFlight.promise;
+  }
 
-  certTrustCache = { path: certPath, fingerprint, trusted, timestamp: now, mtimeMs };
-  return trusted;
+  const probe = (async () => {
+    let trusted = false;
+    if (IS_WIN) trusted = await checkCertInstalledWindows(fingerprint);
+    else if (IS_MAC) trusted = await checkCertInstalledMac(certPath);
+    else trusted = await checkCertInstalledLinux();
+    certTrustCache = { path: certPath, fingerprint, trusted, timestamp: Date.now(), mtimeMs };
+    return trusted;
+  })();
+  certTrustCheckInFlight = { key, promise: probe };
+  try {
+    return await probe;
+  } finally {
+    if (certTrustCheckInFlight.promise === probe) {
+      certTrustCheckInFlight = { key: null, promise: null };
+    }
+  }
 }
 
 function checkCertInstalledMac(certPath) {
@@ -94,7 +109,7 @@ function checkCertInstalledMac(certPath) {
 
 function checkCertInstalledWindows(fingerprint) {
   return new Promise((resolve) => {
-    exec(`certutil -store Root ${fingerprint}`, { windowsHide: true, stdio: "ignore" }, (error) => {
+    execFile("certutil.exe", ["-store", "Root", fingerprint], { windowsHide: true, stdio: "ignore" }, (error) => {
       resolve(!error);
     });
   });

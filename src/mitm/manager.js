@@ -1,4 +1,4 @@
-const { exec, spawn, execSync } = require("child_process");
+const { exec, execFile, execFileSync, spawn, execSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -97,19 +97,40 @@ const SERVER_PATH = ensureRuntimeServer(resolveBundledServerPath());
 const ENCRYPT_ALGO = "aes-256-gcm";
 const ENCRYPT_SALT = "9router-mitm-pwd";
 
+function getWindowsListeningPortPid(port) {
+  const output = execFileSync("netstat.exe", ["-ano"], {
+    encoding: "utf8",
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  const line = output.split(/\r?\n/).find((entry) => {
+    const fields = entry.trim().split(/\s+/);
+    if (fields.length < 5 || !fields.includes("LISTENING")) return false;
+    const localAddress = fields[1] || "";
+    const separator = localAddress.lastIndexOf(":");
+    return separator >= 0 && Number(localAddress.slice(separator + 1)) === port;
+  });
+  if (!line) return null;
+  const fields = line.trim().split(/\s+/);
+  const pid = Number(fields.at(-1));
+  return Number.isInteger(pid) && pid > 4 ? pid : null;
+}
+
+function getWindowsProcessName(pid) {
+  const output = execFileSync("tasklist.exe", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+    encoding: "utf8",
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  const match = output.match(/"([^"]+)"/);
+  return match ? match[1].replace(/\.exe$/i, "") : null;
+}
+
 function getProcessUsingPort443() {
   try {
     if (IS_WIN) {
-      const out = execSync(`netstat -ano | findstr :443`, { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
-      const lines = out.split(/\r?\n/).filter(l => l.includes("LISTENING"));
-      if (lines.length === 0) return null;
-      const parts = lines[0].trim().split(/\s+/);
-      const pid = parseInt(parts[parts.length - 1], 10);
-      if (pid && pid > 4) {
-        const tasklistResult = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
-        const processMatch = tasklistResult.match(/"([^"]+)"/);
-        if (processMatch) return processMatch[1].replace(".exe", "");
-      }
+      const pid = getWindowsListeningPortPid(MITM_PORT);
+      return pid ? getWindowsProcessName(pid) : null;
     } else {
       const result = execSync(`${LSOF_BIN} -i :443`, { encoding: "utf8", windowsHide: true });
       const lines = result.trim().split("\n");
@@ -138,8 +159,10 @@ function isProcessAlive(pid) {
 
 function killProcess(pid, force = false, sudoPassword = null) {
   if (IS_WIN) {
-    const flag = force ? "/F " : "";
-    exec(`taskkill ${flag}/PID ${pid}`, { windowsHide: true }, () => { });
+    const args = [];
+    if (force) args.push("/F");
+    args.push("/T", "/PID", String(pid));
+    spawn("taskkill.exe", args, { windowsHide: true, stdio: "ignore" }).once("error", () => {});
   } else {
     const sig = force ? "SIGKILL" : "SIGTERM";
     const cmd = `pkill -${sig} -P ${pid} 2>/dev/null; kill -${sig} ${pid} 2>/dev/null`;
@@ -291,16 +314,9 @@ function getPort443Owner(sudoPassword) {
 
     if (IS_WIN) {
       try {
-        const out = execSync(`netstat -ano | findstr :443`, { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
-        const lines = out.split(/\r?\n/).filter(l => l.includes("LISTENING"));
-        if (lines.length === 0) return resolve(null);
-        const parts = lines[0].trim().split(/\s+/);
-        const pid = parseInt(parts[parts.length - 1], 10);
-        if (!pid || pid <= 4) return resolve(null);
-        exec(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { windowsHide: true, stdio: ["ignore", "pipe", "ignore"] }, (e2, out2) => {
-          const m = out2?.match(/"([^"]+)"/);
-          resolve({ pid, name: m ? m[1] : "unknown" });
-        });
+        const pid = getWindowsListeningPortPid(MITM_PORT);
+        if (!pid) return resolve(null);
+        resolve({ pid, name: getWindowsProcessName(pid) || "unknown" });
       } catch {
         resolve(null);
       }
@@ -486,7 +502,10 @@ async function killPort443Owner(owner, sudoPassword) {
   if (!owner || !owner.pid) return;
   if (IS_WIN) {
     try {
-      execSync(`powershell -NonInteractive -WindowStyle Hidden -Command "Stop-Process -Id ${owner.pid} -Force -ErrorAction SilentlyContinue"`, { windowsHide: true });
+      execFileSync("taskkill.exe", ["/F", "/T", "/PID", String(owner.pid)], {
+        windowsHide: true,
+        stdio: "ignore",
+      });
     } catch { /* best effort */ }
   } else {
     try {
@@ -702,7 +721,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
   } else if (IS_WIN) {
     const rootCAPath = path.join(MITM_DIR, "rootCA.crt");
     if (fs.existsSync(rootCAPath)) {
-      exec(`setx NODE_EXTRA_CA_CERTS "${rootCAPath}"`, { windowsHide: true }, (e) => {
+      execFile("setx.exe", ["NODE_EXTRA_CA_CERTS", rootCAPath], { windowsHide: true }, (e) => {
         if (e) log(`[setx] Failed to set NODE_EXTRA_CA_CERTS: ${e.message}`);
         else log(`[setx] NODE_EXTRA_CA_CERTS set for current user`);
       });
@@ -808,7 +827,7 @@ async function stopServer(sudoPassword) {
         const filtered = content.split(/\r?\n/).filter(l => !allHosts.some(h => l.includes(h))).join("\r\n");
         const next = filtered.replace(/[\r\n\s]+$/g, "") + "\r\n";
         if (next !== content) fs.writeFileSync(hostsFile, next, "utf8");
-        try { require("child_process").execSync("ipconfig /flushdns", { windowsHide: true, stdio: "ignore" }); } catch { /* ignore */ }
+        try { execFileSync("ipconfig.exe", ["/flushdns"], { windowsHide: true, stdio: "ignore" }); } catch { /* ignore */ }
         log("🌐 DNS: ✅ all tool hosts removed");
       } else {
         const hostsList = allHosts.map(quotePs).join(",");
@@ -836,7 +855,7 @@ async function stopServer(sudoPassword) {
       else log(`[launchctl] NODE_EXTRA_CA_CERTS unset`);
     });
   } else if (IS_WIN) {
-    exec(`reg delete HKCU\\Environment /F /V NODE_EXTRA_CA_CERTS`, { windowsHide: true }, (e) => {
+    execFile("reg.exe", ["delete", "HKCU\\Environment", "/F", "/V", "NODE_EXTRA_CA_CERTS"], { windowsHide: true }, (e) => {
       if (e) log(`[reg] Failed to unset NODE_EXTRA_CA_CERTS: ${e.message}`);
       else log(`[reg] NODE_EXTRA_CA_CERTS unset`);
     });

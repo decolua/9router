@@ -63,12 +63,20 @@ function summarizeNpmError(stderr = "") {
 
 function runNpmInstall({ cwd, pkgs, extraArgs = [], timeout = 180000 }) {
   const args = ["install", ...pkgs, "--no-audit", "--no-fund", "--prefer-online", ...extraArgs];
-  const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
-  const res = spawnSync(npmCmd, args, {
+  // npm.cmd requires a cmd.exe shell and caused a visible console on Windows
+  // whenever runtime dependencies were checked. Invoke npm's JS entry through
+  // the active Node executable instead.
+  const windowsNpmCli = path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
+  const configuredNpmCli = process.env.NINEROUTER_NPM_CLI;
+  const npmCli = configuredNpmCli || (process.platform === "win32" ? windowsNpmCli : null);
+  const useDirectNpm = !!npmCli && fs.existsSync(npmCli);
+  const command = useDirectNpm ? process.execPath : "npm";
+  const commandArgs = useDirectNpm ? [npmCli, ...args] : args;
+  const res = spawnSync(command, commandArgs, {
     cwd,
     stdio: ["ignore", "pipe", "pipe"],
     timeout,
-    shell: process.platform === "win32",
+    windowsHide: true,
     encoding: "utf8",
   });
   return { ok: res.status === 0, code: res.status, stderr: res.stderr || "", stdout: res.stdout || "" };

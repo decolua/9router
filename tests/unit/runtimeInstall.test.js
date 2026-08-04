@@ -67,6 +67,7 @@ beforeEach(() => {
 
   process.env.DATA_DIR = dataDir;
   process.env.FAKE_NPM_LOG = logPath;
+  process.env.NINEROUTER_NPM_CLI = path.join(fakeNpmDir, "npm");
   process.env.PATH = `${fakeNpmDir}${path.delimiter}${process.env.PATH}`;
 });
 
@@ -74,6 +75,7 @@ afterEach(() => {
   process.env.PATH = originalPath;
   delete process.env.DATA_DIR;
   delete process.env.FAKE_NPM_LOG;
+  delete process.env.NINEROUTER_NPM_CLI;
   vi.restoreAllMocks();
   fs.rmSync(fakeNpmDir, { recursive: true, force: true });
   fs.rmSync(dataDir, { recursive: true, force: true });

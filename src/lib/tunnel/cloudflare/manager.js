@@ -9,6 +9,7 @@ import { getSettings, updateSettings } from "@/lib/localDb";
 const svc = {
   cancelToken: { cancelled: false },
   spawnInProgress: false,
+  enablePromise: null,
   lastRestartAt: 0,
   activeLocalPort: null,
 };
@@ -32,13 +33,34 @@ function throwIfCancelled(token) {
   if (token.cancelled) throw new Error("tunnel cancelled");
 }
 
-export async function enableTunnel(localPort = 20128) {
+export function enableTunnel(localPort = 20128) {
+  // A dashboard click, startup, and watchdog recovery can race. They must
+  // share one cloudflared lifecycle instead of killing and respawning each
+  // other's child process.
+  if (svc.enablePromise) {
+    if (!svc.cancelToken.cancelled && svc.activeLocalPort === localPort) {
+      return svc.enablePromise;
+    }
+    // A disable may have cancelled the previous operation. Let it release its
+    // child/PID state before a new explicit enable takes ownership.
+    return svc.enablePromise.catch(() => undefined).then(() => enableTunnel(localPort));
+  }
+
   console.log(`[Tunnel] enable start (port=${localPort})`);
   svc.cancelToken = { cancelled: false };
   svc.activeLocalPort = localPort;
   svc.spawnInProgress = true;
   const token = svc.cancelToken;
 
+  const attempt = enableTunnelImpl(localPort, token);
+  svc.enablePromise = attempt;
+  attempt.finally(() => {
+    if (svc.enablePromise === attempt) svc.enablePromise = null;
+  }).catch(() => {});
+  return attempt;
+}
+
+async function enableTunnelImpl(localPort, token) {
   try {
     if (isCloudflaredRunning()) {
       const existing = loadState();
@@ -68,7 +90,9 @@ export async function enableTunnel(localPort = 20128) {
       if (token.cancelled) return;
       console.log(`[Tunnel] url updated: ${url}`);
       await registerTunnelUrl(shortId, url);
+      if (token.cancelled) return;
       saveState({ shortId, tunnelUrl: url });
+      if (token.cancelled) return;
       await updateSettings({ tunnelEnabled: true, tunnelUrl: url });
     };
 
@@ -84,8 +108,11 @@ export async function enableTunnel(localPort = 20128) {
 
     const publicUrl = `https://r${shortId}.abc-tunnel.us`;
     await registerTunnelUrl(shortId, tunnelUrl);
+    throwIfCancelled(token);
     saveState({ shortId, tunnelUrl });
+    throwIfCancelled(token);
     await updateSettings({ tunnelEnabled: true, tunnelUrl });
+    throwIfCancelled(token);
     console.log(`[Tunnel] registered shortId=${shortId} publicUrl=${publicUrl}`);
 
     // Verify publicUrl first (worker route is reliable; direct *.trycloudflare.com DNS may lag)
