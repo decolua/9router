@@ -23,6 +23,7 @@ import {
   getSafePagination,
   getSafeTotals,
   shouldResetPage,
+  sortRequestFromExpiringFirst,
   getPaginationPageValue,
   getProviderOptions,
   reconcileConnectionsPage,
