@@ -47,6 +47,51 @@ describe("GOLDEN request: OpenAI → Claude", () => {
     const out = translateRequest(FORMATS.OPENAI, FORMATS.CLAUDE, "claude-opus-4-6", body, true, { apiKey: "sk-x" }, "anthropic");
     expect(clean(out)).toMatchSnapshot();
   });
+
+  // Regression: an unlevelled thinking intent (client asked to think without
+  // naming a level — Cherry Studio's Auto effort) used to reach the wire as
+  // output_config.effort:"auto", which Anthropic rejects with 400
+  // invalid_reasoning_effort ("supported values: [low medium high xhigh max]").
+  it("unlevelled thinking intent → a real effort level, never the literal auto", () => {
+    for (const body of [
+      { messages: [{ role: "user", content: "hi" }], thinking: { type: "enabled" } },
+      { messages: [{ role: "user", content: "hi" }], thinking: { type: "adaptive" } },
+      { messages: [{ role: "user", content: "hi" }], reasoning_effort: "auto" },
+    ]) {
+      const out = translateRequest(FORMATS.OPENAI, FORMATS.CLAUDE, "claude-opus-4-6", body, true, { apiKey: "sk-x" }, "github");
+      expect(out.thinking).toEqual({ type: "adaptive" });
+      expect(["low", "medium", "high", "xhigh", "max"]).toContain(out.output_config.effort);
+    }
+  });
+
+  // A model-name suffix reaches the same branch via parseSuffix → mode:"auto".
+  it("model(auto) suffix does not put auto on the wire", () => {
+    const body = { messages: [{ role: "user", content: "hi" }] };
+    const out = translateRequest(FORMATS.OPENAI, FORMATS.CLAUDE, "claude-opus-4-6(auto)", body, true, { apiKey: "sk-x" }, "github");
+    expect(out.output_config.effort).not.toBe("auto");
+  });
+
+  // Same class as "auto": a unified level with no value in Anthropic's enum.
+  // "minimal" comes from OpenAI-style clients and from tiny thinking budgets.
+  it("minimal effort maps into Anthropic's enum instead of 400ing", () => {
+    for (const body of [
+      { messages: [{ role: "user", content: "hi" }], reasoning_effort: "minimal" },
+      { messages: [{ role: "user", content: "hi" }], thinking: { type: "enabled", budget_tokens: 512 } },
+    ]) {
+      const out = translateRequest(FORMATS.OPENAI, FORMATS.CLAUDE, "claude-opus-4-6", body, true, { apiKey: "sk-x" }, "github");
+      expect(["low", "medium", "high", "xhigh", "max"]).toContain(out.output_config.effort);
+    }
+  });
+
+  // Concrete levels must still pass through untouched — the mapping only rewrites
+  // values Anthropic has no enum entry for.
+  it("concrete levels reach the wire unchanged", () => {
+    for (const [asked, expected] of [["low", "low"], ["medium", "medium"], ["high", "high"], ["max", "max"]]) {
+      const body = { messages: [{ role: "user", content: "hi" }], reasoning_effort: asked };
+      const out = translateRequest(FORMATS.OPENAI, FORMATS.CLAUDE, "claude-opus-4-6", body, true, { apiKey: "sk-x" }, "github");
+      expect(out.output_config.effort, asked).toBe(expected);
+    }
+  });
 });
 
 describe("GOLDEN request: OpenAI → Gemini", () => {
