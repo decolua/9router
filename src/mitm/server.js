@@ -336,6 +336,15 @@ const server = https.createServer(sslOptions, async (req, res) => {
       return passthrough(req, res, bodyBuffer);
     }
 
+    // Antigravity chat endpoints already have a native Gemini-compatible route at
+    // /v1beta/models/[...path]. Intercepting them here and piping OpenAI SSE back to
+    // the Google client breaks the SDK parser (proto/textproto expects Gemini SSE / JSON,
+    // not OpenAI chat-completions chunks). Keep MITM for DNS/TLS passthrough, but let the
+    // upstream Gemini route handle request/response translation.
+    if (tool === "antigravity") {
+      return passthrough(req, res, bodyBuffer);
+    }
+
     return handlers[tool].intercept(req, res, bodyBuffer, mappedModel, passthrough);
   } catch (e) {
     err(`Unhandled error: ${e.message}`);
