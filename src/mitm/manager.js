@@ -100,12 +100,13 @@ const ENCRYPT_SALT = "9router-mitm-pwd";
 function getProcessUsingPort443() {
   try {
     if (IS_WIN) {
-      const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command ` +
-        `"$c = Get-NetTCPConnection -LocalPort 443 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; if ($c) { $c.OwningProcess } else { 0 }"`;
-      const pidStr = execSync(psCmd, { encoding: "utf8", windowsHide: true }).trim();
-      const pid = parseInt(pidStr, 10);
+      const out = execSync(`netstat -ano | findstr :443`, { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
+      const lines = out.split(/\r?\n/).filter(l => l.includes("LISTENING"));
+      if (lines.length === 0) return null;
+      const parts = lines[0].trim().split(/\s+/);
+      const pid = parseInt(parts[parts.length - 1], 10);
       if (pid && pid > 4) {
-        const tasklistResult = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { encoding: "utf8", windowsHide: true });
+        const tasklistResult = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
         const processMatch = tasklistResult.match(/"([^"]+)"/);
         if (processMatch) return processMatch[1].replace(".exe", "");
       }
@@ -284,20 +285,25 @@ function checkPort443Free() {
 }
 
 function getPort443Owner(sudoPassword) {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
+    const status = await checkPort443Free().catch(() => "free");
+    if (status === "free") return resolve(null);
+
     if (IS_WIN) {
-      const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command "` +
-        `$c = Get-NetTCPConnection -LocalPort 443 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; ` +
-        `if ($c) { $c.OwningProcess } else { 0 }"`;    
-      exec(psCmd, { windowsHide: true }, (err, stdout) => {
-        if (err) return resolve(null);
-        const pid = parseInt(stdout.trim(), 10);
+      try {
+        const out = execSync(`netstat -ano | findstr :443`, { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "ignore"] });
+        const lines = out.split(/\r?\n/).filter(l => l.includes("LISTENING"));
+        if (lines.length === 0) return resolve(null);
+        const parts = lines[0].trim().split(/\s+/);
+        const pid = parseInt(parts[parts.length - 1], 10);
         if (!pid || pid <= 4) return resolve(null);
-        exec(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { windowsHide: true }, (e2, out2) => {
+        exec(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { windowsHide: true, stdio: ["ignore", "pipe", "ignore"] }, (e2, out2) => {
           const m = out2?.match(/"([^"]+)"/);
           resolve({ pid, name: m ? m[1] : "unknown" });
         });
-      });
+      } catch {
+        resolve(null);
+      }
     } else {
       // Only find process actually LISTENING on TCP port 443
       exec(`${LSOF_BIN} -nP -iTCP:443 -sTCP:LISTEN -t`, { windowsHide: true }, (err, stdout) => {

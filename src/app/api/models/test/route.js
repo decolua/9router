@@ -16,7 +16,11 @@ export async function POST(request) {
       targetModel = `${alias}/${targetModel}`;
     }
 
-    const result = await pingModelByKind(targetModel, kind || "llm");
+    const host = request.headers.get("host") || `127.0.0.1:${process.env.PORT || 20127}`;
+    const protocol = request.headers.get("x-forwarded-proto") || "http";
+    const baseUrl = `${protocol}://${host}`;
+
+    const result = await pingModelByKind(targetModel, kind || "llm", baseUrl);
     return NextResponse.json(result);
   } catch (err) {
     return NextResponse.json({ ok: false, error: err.message }, { status: 500 });

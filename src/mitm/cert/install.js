@@ -36,13 +36,40 @@ function getCertFingerprint(certPath) {
   return crypto.createHash("sha1").update(der).digest("hex").toUpperCase().match(/.{2}/g).join(":");
 }
 
+let certTrustCache = { path: null, fingerprint: null, trusted: false, timestamp: 0, mtimeMs: 0 };
+const CERT_TRUST_CACHE_TTL_MS = 300000; // 5 minutes TTL
+
 /**
  * Check if certificate is already installed in system store
  */
 async function checkCertInstalled(certPath) {
-  if (IS_WIN) return checkCertInstalledWindows(certPath);
-  if (IS_MAC) return checkCertInstalledMac(certPath);
-  return checkCertInstalledLinux();
+  let fingerprint;
+  let mtimeMs = 0;
+  try {
+    const stat = fs.statSync(certPath);
+    mtimeMs = stat.mtimeMs;
+    fingerprint = getCertFingerprint(certPath).replace(/:/g, "");
+  } catch {
+    return false;
+  }
+
+  const now = Date.now();
+  if (
+    certTrustCache.path === certPath &&
+    certTrustCache.fingerprint === fingerprint &&
+    certTrustCache.mtimeMs === mtimeMs &&
+    now - certTrustCache.timestamp < CERT_TRUST_CACHE_TTL_MS
+  ) {
+    return certTrustCache.trusted;
+  }
+
+  let trusted = false;
+  if (IS_WIN) trusted = await checkCertInstalledWindows(fingerprint);
+  else if (IS_MAC) trusted = await checkCertInstalledMac(certPath);
+  else trusted = await checkCertInstalledLinux();
+
+  certTrustCache = { path: certPath, fingerprint, trusted, timestamp: now, mtimeMs };
+  return trusted;
 }
 
 function checkCertInstalledMac(certPath) {
@@ -65,16 +92,9 @@ function checkCertInstalledMac(certPath) {
   });
 }
 
-function checkCertInstalledWindows(certPath) {
+function checkCertInstalledWindows(fingerprint) {
   return new Promise((resolve) => {
-    // Check by SHA1 fingerprint — detects stale cert with same CN but different key
-    let fingerprint;
-    try {
-      fingerprint = getCertFingerprint(certPath).replace(/:/g, "");
-    } catch {
-      return resolve(false);
-    }
-    exec(`certutil -store Root ${fingerprint}`, { windowsHide: true }, (error) => {
+    exec(`certutil -store Root ${fingerprint}`, { windowsHide: true, stdio: "ignore" }, (error) => {
       resolve(!error);
     });
   });

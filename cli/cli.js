@@ -237,8 +237,8 @@ function killCloudflaredByAppPort(appPort) {
   const pids = [];
   try {
     if (process.platform === "win32") {
-      const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command "Get-WmiObject Win32_Process -Filter 'Name=\\"cloudflared.exe\\"' | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation"`;
-      const output = execSync(psCmd, { encoding: "utf8", windowsHide: true, timeout: 5000 });
+      const psCmd = `powershell -NoProfile -NonInteractive -WindowStyle Hidden -Command "Get-CimInstance Win32_Process -Filter \\"Name='cloudflared.exe'\\" | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation"`;
+      const output = execSync(psCmd, { encoding: "utf8", windowsHide: true, stdio: ["ignore", "pipe", "ignore"], timeout: 5000 });
       const lines = output.split("\n").slice(1).filter(l => l.trim());
       lines.forEach(line => {
         if (portMatchers.some(m => line.includes(m))) {
@@ -279,10 +279,11 @@ function killAllAppProcesses(appPort) {
       if (platform === "win32") {
         // Windows: use WMI to get full CommandLine (tasklist /V doesn't include it)
         try {
-          const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command "Get-WmiObject Win32_Process -Filter 'Name=\\"node.exe\\"' | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation"`;
+          const psCmd = `powershell -NoProfile -NonInteractive -WindowStyle Hidden -Command "Get-CimInstance Win32_Process -Filter \\"Name='node.exe'\\" | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation"`;
           const output = execSync(psCmd, {
             encoding: "utf8",
             windowsHide: true,
+            stdio: ["ignore", "pipe", "ignore"],
             timeout: 5000
           });
           const lines = output.split("\n").slice(1).filter(l => l.trim());
