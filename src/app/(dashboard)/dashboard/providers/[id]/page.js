@@ -1497,14 +1497,44 @@ export default function ProviderDetailPage() {
               {connections.length > 0 && (
                 <>
                   {selectedConnectionIds.length > 0 && (
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      icon="delete"
-                      onClick={handleBulkDelete}
-                    >
-                      Delete Selected ({selectedConnectionIds.length})
-                    </Button>
+                    <>
+                      {selectedConnections.some((c) => c.isActive !== false) && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          icon="block"
+                          onClick={() => {
+                            const ids = [...selectedConnectionIds];
+                            ids.forEach((id) => handleUpdateConnectionStatus(id, false));
+                            setSelectedConnectionIds([]);
+                          }}
+                        >
+                          Disable Selected ({selectedConnectionIds.length})
+                        </Button>
+                      )}
+                      {selectedConnections.some((c) => c.isActive === false) && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          icon="check_circle"
+                          onClick={() => {
+                            const ids = [...selectedConnectionIds];
+                            ids.forEach((id) => handleUpdateConnectionStatus(id, true));
+                            setSelectedConnectionIds([]);
+                          }}
+                        >
+                          Enable Selected ({selectedConnectionIds.length})
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        icon="delete"
+                        onClick={handleBulkDelete}
+                      >
+                        Delete Selected ({selectedConnectionIds.length})
+                      </Button>
+                    </>
                   )}
                   <Button
                     size="sm"
