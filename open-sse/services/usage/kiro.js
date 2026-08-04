@@ -3,7 +3,7 @@
  */
 
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
-import { resolveDefaultProfileArn } from "../../config/kiroConstants.js";
+import { resolveDefaultProfileArn, resolveKiroRegion, resolveKiroControlPlaneHost, KIRO_DEFAULT_REGION } from "../../config/kiroConstants.js";
 import { U, parseResetTime } from "./shared.js";
 
 /**
@@ -72,12 +72,20 @@ export async function getKiroUsage(accessToken, providerSpecificData, proxyOptio
     resourceType: "AGENTIC_REQUEST",
   });
 
+  // Region-aware usage hosts. us-east-1 keeps the historical codewhisperer/q
+  // hosts from the registry; other regions (IdC accounts) use the regional
+  // Amazon Q host so the GetUsageLimits call isn't rejected with 403.
+  const isDefaultRegion = resolveKiroRegion(providerSpecificData?.region) === KIRO_DEFAULT_REGION;
+  const cwHost = isDefaultRegion ? U("kiro").cwHost : resolveKiroControlPlaneHost(providerSpecificData?.region);
+  const qHost = isDefaultRegion ? U("kiro").qHost : resolveKiroControlPlaneHost(providerSpecificData?.region);
+  const limitsPath = U("kiro").limitsPath;
+
   // For compatibility, try multiple known Kiro usage endpoints
   const attempts = [
     {
       name: "codewhisperer-get",
       run: async () => proxyAwareFetch(
-        `${U("kiro").cwHost}${U("kiro").limitsPath}?${getUsageParams.toString()}`,
+        `${cwHost}${limitsPath}?${getUsageParams.toString()}`,
         {
           method: "GET",
           headers: {
@@ -94,7 +102,7 @@ export async function getKiroUsage(accessToken, providerSpecificData, proxyOptio
     },
     {
       name: "codewhisperer-post",
-      run: async () => proxyAwareFetch(U("kiro").cwHost, {
+      run: async () => proxyAwareFetch(cwHost, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${accessToken}`,
@@ -119,7 +127,7 @@ export async function getKiroUsage(accessToken, providerSpecificData, proxyOptio
           ...(profileArn ? { profileArn } : {}),
           resourceType: "AGENTIC_REQUEST",
         });
-        return proxyAwareFetch(`${U("kiro").qHost}${U("kiro").limitsPath}?${params}`, {
+        return proxyAwareFetch(`${qHost}${limitsPath}?${params}`, {
           method: "GET",
           headers: {
             "Authorization": `Bearer ${accessToken}`,

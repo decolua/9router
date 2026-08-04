@@ -50,10 +50,17 @@ function extractEmailFromAccessToken(accessToken) {
   return payload.email || payload.preferred_username || payload.sub || undefined;
 }
 
-export async function fetchKiroProfileArn(accessToken) {
+export async function fetchKiroProfileArn(accessToken, region) {
   if (!accessToken) return null;
+  // IdC accounts homed outside us-east-1 only expose their CodeWhisperer profile
+  // via the regional Amazon Q host; us-east-1 returns an empty profile list for
+  // them. Default to the historical us-east-1 codewhisperer host.
+  const normalizedRegion = typeof region === "string" && region.trim() ? region.trim() : "us-east-1";
+  const host = normalizedRegion === "us-east-1"
+    ? "https://codewhisperer.us-east-1.amazonaws.com"
+    : `https://q.${normalizedRegion}.amazonaws.com`;
   try {
-    const response = await fetch("https://codewhisperer.us-east-1.amazonaws.com/ListAvailableProfiles", {
+    const response = await fetch(`${host}/ListAvailableProfiles`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
