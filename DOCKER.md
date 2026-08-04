@@ -10,7 +10,7 @@ Run 9Router in a container. Published image: [`decolua/9router`](https://hub.doc
 
 ```bash
 docker run -d \
-  -p 20128:20128 \
+  -p 127.0.0.1:20128:20128 \
   -v "$HOME/.9router:/app/data" \
   -e DATA_DIR=/app/data \
   --name 9router \
@@ -54,7 +54,7 @@ Container path: `/app/data/db/data.sqlite`
 
 ```bash
 docker run -d \
-  -p 20128:20128 \
+  -p 127.0.0.1:20128:20128 \
   -v "$HOME/.9router:/app/data" \
   -e DATA_DIR=/app/data \
   -e PORT=20128 \
@@ -166,7 +166,7 @@ docker rm -f 9router
 ```bash
 cd app && docker build -t 9router .
 
-docker run --rm -p 20128:20128 \
+docker run --rm -p 127.0.0.1:20128:20128 \
   -v "$HOME/.9router:/app/data" \
   -e DATA_DIR=/app/data \
   9router
