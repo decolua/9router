@@ -64,7 +64,7 @@ function countMessageChars(message) {
   return countValueChars(content);
 }
 
-export function estimateAnthropicInputTokens(body = {}) {
+function estimateAnthropicInputTokens(body = {}) {
   const messages = Array.isArray(body.messages) ? body.messages : [];
   let totalChars = countValueChars(body.system) + countValueChars(body.tools);
 
