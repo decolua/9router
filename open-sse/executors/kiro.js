@@ -323,7 +323,11 @@ export class KiroExecutor extends BaseExecutor {
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     const baseUrls = this.getOrderedBaseUrls(credentials);
-    return baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;
+    const url = baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;
+    // Stash the target URL so transformRequest (called next in the base loop,
+    // without a url arg) can shape the wire body per-surface.
+    this._currentTargetUrl = url;
+    return url;
   }
 
   // Retry only endpoint/auth-surface failures. Payload-invalid HTTP 400 must be
@@ -335,6 +339,17 @@ export class KiroExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
+    // The Kiro IDE gateway (runtime.*.kiro.dev) rejects a top-level `systemPrompt`
+    // field with 400 REQUEST_BODY_INVALID, breaking every -thinking / -agentic
+    // variant (and any Claude request carrying a `system`). The CodeWhisperer /
+    // Amazon Q surfaces (*.amazonaws.com) accept it. The translator always
+    // duplicates the same prompt into the current message content (contentPrefix),
+    // so dropping the top-level field for the kiro.dev surface preserves behaviour.
+    const url = this._currentTargetUrl || "";
+    if (url.includes(".kiro.dev") && body && typeof body === "object" && body.systemPrompt !== undefined) {
+      const { systemPrompt, ...rest } = body;
+      return rest;
+    }
     return body;
   }
 
