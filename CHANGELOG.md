@@ -498,3 +498,8 @@ Consolidated 189 Pull Requests from upstream `decolua/9router` across AI provide
 
 ## Breaking Changes
 - Tunnel public URL changed — old tunnel links no longer work, please reconnect to get the new URL
+# v0.5.51 (2026-08-04)
+
+## Fixes
+- **Windows runtime**: retain Antigravity's popup/process-loop fixes and prevent SQLite lock fallback from overwriting live data.
+- **Usage**: preserve concurrent requests that share the same millisecond timestamp.
