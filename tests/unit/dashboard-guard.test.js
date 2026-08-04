@@ -188,6 +188,57 @@ describe("dashboard guard public LLM API access", () => {
   });
 });
 
+describe("dashboard guard always-protected auto-import routes", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+    mocks.validateApiKey.mockResolvedValue(false);
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+  });
+
+  it("allows local auto-import without JWT when requireLogin=false", async () => {
+    const response = await proxy(request("/api/oauth/cursor/auto-import", {
+      host: "localhost:20128",
+      origin: "http://localhost:20128",
+      realIp: "127.0.0.1",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+
+  it("allows local kiro auto-import without JWT when requireLogin=false", async () => {
+    const response = await proxy(request("/api/oauth/kiro/auto-import", {
+      host: "localhost:20128",
+      origin: "http://localhost:20128",
+      realIp: "127.0.0.1",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+
+  it("blocks local auto-import without JWT when requireLogin=true", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+
+    const response = await proxy(request("/api/oauth/cursor/auto-import", {
+      host: "localhost:20128",
+      origin: "http://localhost:20128",
+      realIp: "127.0.0.1",
+    }));
+
+    // local-only gate (403) fires before the always-protected gate (401)
+    expect([401, 403]).toContain(response.status);
+  });
+
+  it("blocks remote auto-import even when requireLogin=false", async () => {
+    const response = await proxy(request("/api/oauth/cursor/auto-import", {
+      host: "router.example.com",
+    }));
+
+    expect([401, 403]).toContain(response.status);
+  });
+});
+
 describe("dashboard guard local-only access", () => {
   beforeEach(() => {
     vi.clearAllMocks();
