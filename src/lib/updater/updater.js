@@ -47,6 +47,30 @@ const state = {
   logTail: [],
 };
 
+// `npm.cmd` / `npx.cmd` require cmd.exe when spawned directly on Windows. That
+// creates a console host and can briefly flash even when this updater itself is
+// detached. Run the JavaScript entrypoint with the current Node runtime instead.
+function resolvePackageManager(command, args) {
+  if (process.platform !== "win32") return { command, args };
+
+  const base = path.basename(command).toLowerCase().replace(/\.cmd$/, "");
+  if (base !== "npm" && base !== "npx") return { command, args };
+
+  const cliName = `${base}-cli.js`;
+  const npmBinDir = process.env.npm_execpath ? path.dirname(process.env.npm_execpath) : null;
+  const candidates = [
+    base === "npm" ? process.env.npm_execpath : npmBinDir ? path.join(npmBinDir, cliName) : null,
+    path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", cliName),
+  ].filter(Boolean);
+  const cli = candidates.find((candidate) => fs.existsSync(candidate));
+
+  if (!cli) {
+    throw new Error(`Cannot locate ${cliName} next to ${process.execPath}`);
+  }
+
+  return { command: process.execPath, args: [cli, ...args] };
+}
+
 function pushLog(line) {
   const trimmed = line.replace(/\r?\n$/, "");
   if (!trimmed) return;
@@ -80,11 +104,15 @@ const server = http.createServer((req, res) => {
 server.on("error", (e) => {
   state.error = `status server error: ${e.message}`;
   persistStatus();
+  finalize(false, null, state.error);
 });
 
 server.listen(port, "127.0.0.1", () => {
   persistStatus();
-  waitForAppExit().then(runInstall);
+  waitForAppExit().then(runInstall).catch((error) => {
+    pushLog(`[updater] wait error: ${error.message}`);
+    finalize(false, null, error.message);
+  });
 });
 
 // Check if app port is still being listened on (= app server still alive)
@@ -129,37 +157,20 @@ function sleep(ms) {
 }
 
 function runInstall() {
+  if (state.done) return;
   state.attempt += 1;
   setPhase("installing");
   pushLog(`[updater] attempt ${state.attempt}/${maxRetries} — npm i -g ${packageName} --prefer-online`);
 
-  const isWin = process.platform === "win32";
-  const cmd = isWin ? "npm.cmd" : "npm";
   const args = ["i", "-g", packageName, "--prefer-online"];
+  let settled = false;
 
-  const child = spawn(cmd, args, {
-    stdio: ["ignore", "pipe", "pipe"],
-    windowsHide: true,
-    shell: isWin,
-  });
+  const finishAttempt = (code, spawnError) => {
+    if (settled || state.done) return;
+    settled = true;
 
-  child.stdout.on("data", (buf) => {
-    buf.toString().split(/\r?\n/).forEach(pushLog);
-    persistStatus();
-  });
-  child.stderr.on("data", (buf) => {
-    buf.toString().split(/\r?\n/).forEach(pushLog);
-    persistStatus();
-  });
-
-  child.on("error", (e) => {
-    pushLog(`[updater] spawn error: ${e.message}`);
-    finalize(false, null, e.message);
-  });
-
-  child.on("close", (code) => {
-    pushLog(`[updater] npm exited with code ${code}`);
-    if (code === 0) {
+    if (spawnError) pushLog(`[updater] spawn error: ${spawnError.message}`);
+    if (!spawnError && code === 0) {
       finalize(true, code, null);
       return;
     }
@@ -168,16 +179,59 @@ function runInstall() {
       setTimeout(runInstall, retryDelayMs);
       return;
     }
-    finalize(false, code, `Install failed after ${maxRetries} attempts`);
+    finalize(
+      false,
+      code,
+      spawnError?.message || `Install failed after ${maxRetries} attempts`
+    );
+  };
+
+  let child;
+  try {
+    const invocation = resolvePackageManager(process.platform === "win32" ? "npm.cmd" : "npm", args);
+    child = spawn(invocation.command, invocation.args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+      shell: false,
+    });
+  } catch (error) {
+    finishAttempt(null, error);
+    return;
+  }
+
+  const logOutput = (buf) => {
+    buf.toString().split(/\r?\n/).forEach(pushLog);
+    persistStatus();
+  };
+  child.stdout?.on("data", logOutput);
+  child.stderr?.on("data", logOutput);
+  child.stdout?.on("error", (error) => pushLog(`[updater] stdout error: ${error.message}`));
+  child.stderr?.on("error", (error) => pushLog(`[updater] stderr error: ${error.message}`));
+  child.on("error", (error) => finishAttempt(null, error));
+  child.on("close", (code) => {
+    pushLog(`[updater] npm exited with code ${code}`);
+    finishAttempt(code, null);
   });
 }
 
 function openBrowser(url) {
-  const platform = process.platform;
-  const cmd = platform === "darwin" ? `open "${url}"`
-    : platform === "win32" ? `start "" "${url}"`
-    : `xdg-open "${url}"`;
-  try { spawn(cmd, { shell: true, detached: true, stdio: "ignore" }).unref(); } catch { /* ignore */ }
+  const command = process.platform === "darwin"
+    ? "open"
+    : process.platform === "win32"
+      ? "explorer.exe"
+      : "xdg-open";
+  try {
+    const child = spawn(command, [url], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+      shell: false,
+    });
+    child.on("error", (error) => pushLog(`[updater] browser open failed: ${error.message}`));
+    child.unref();
+  } catch (error) {
+    pushLog(`[updater] browser open failed: ${error.message}`);
+  }
 }
 
 // Wait until app port is listening (server alive again), then open dashboard
@@ -201,25 +255,27 @@ function relaunchApp() {
   if (!cmd) return;
   let args = [];
   try { args = JSON.parse(process.env.UPDATER_RELAUNCH_ARGS || "[]"); } catch { /* noop */ }
-  const isWin = process.platform === "win32";
   try {
-    const child = spawn(cmd, args, {
+    const invocation = resolvePackageManager(cmd, args);
+    const child = spawn(invocation.command, invocation.args, {
       detached: true,
       stdio: "ignore",
       windowsHide: true,
-      shell: isWin,
+      shell: false,
       env: { ...process.env, UPDATER_RELAUNCH: "", UPDATER_RELAUNCH_CMD: "", UPDATER_RELAUNCH_ARGS: "" },
     });
+    child.on("error", (error) => pushLog(`[updater] relaunch failed: ${error.message}`));
     child.unref();
     pushLog(`[updater] relaunched: ${cmd} ${args.join(" ")} (pid=${child.pid})`);
     // Wait for new app to come up, then auto-open browser so user sees the result
-    waitForAppAndOpenBrowser();
+    waitForAppAndOpenBrowser().catch((error) => pushLog(`[updater] relaunch wait failed: ${error.message}`));
   } catch (e) {
     pushLog(`[updater] relaunch failed: ${e.message}`);
   }
 }
 
 function finalize(success, exitCode, error) {
+  if (state.done) return;
   state.done = true;
   state.success = success;
   state.exitCode = exitCode;
