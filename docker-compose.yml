@@ -16,17 +16,7 @@ services:
       PORT: "20128"
       HOSTNAME: "0.0.0.0"
       NODE_ENV: production
-      HEADROOM_URL: http://headroom:8787
-    depends_on:
-      - headroom
-
-  headroom:
-    image: ghcr.io/chopratejas/headroom:latest
-    container_name: headroom
-    restart: always
-    mem_limit: 512m   # 2026-08-03: cap RAM (sebelumnya 626MB di-swap!)
-    ports:
-      - "8787:8787"
+      # HEADROOM_URL removed — headroom service optional, run 9Router standalone
 
 volumes:
   9router-data:
