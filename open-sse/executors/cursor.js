@@ -183,7 +183,23 @@ function visibleComposerContentFromThinking(thinking) {
   const endTag = "</think>";
   const endIdx = thinking.lastIndexOf(endTag);
   if (endIdx < 0) return "";
-  return thinking.slice(endIdx + endTag.length).trimStart();
+  let visible = thinking.slice(endIdx + endTag.length).trimStart();
+  // Strip Composer protocol markers that wrap the final visible answer.
+  // Cursor's Composer protobuf sometimes prefixes the visible suffix with
+  // sentinel tags like `<｜final｜>` (full-width pipes) or `<|final|>` (ASCII)
+  // and may close them with a matching `<｜/final｜>` / `<|/final|>`.
+  // These are protocol-internal and must not leak to OpenAI-compatible clients.
+  const openMarker = /^\s*<[｜|]\s*final\s*[｜|]>\s*/i;
+  const closeMarker = /\s*<[｜|]\s*\/\s*final\s*[｜|]>\s*$/i;
+  if (openMarker.test(visible)) {
+    visible = visible.replace(openMarker, "");
+  } else if (/^\s*<(?![｜|/])/.test(visible) || /^\s*<[｜|][^>]*$/.test(visible)) {
+    // A streaming chunk delivered a partial opening marker like `<` or `<｜fin`.
+    // Wait for more data before emitting anything to avoid leaking the marker.
+    return "";
+  }
+  visible = visible.replace(closeMarker, "").trim();
+  return visible;
 }
 
 function decompressPayload(payload, flags) {
