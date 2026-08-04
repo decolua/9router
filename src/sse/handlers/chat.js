@@ -18,6 +18,7 @@ import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
+import { isRequestReplayBufferError } from "open-sse/services/accountFallback.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
@@ -191,9 +192,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
+  let requestReplayConnectionId = null;
+  let requestReplayAttempted = false;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = requestReplayConnectionId
+      ? await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId: requestReplayConnectionId })
+      : await getProviderCredentials(provider, excludeConnectionIds, model);
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -267,6 +272,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     });
 
     if (result.success) return result.response;
+
+    if (!requestReplayAttempted && isRequestReplayBufferError(result.status, result.error)) {
+      requestReplayAttempted = true;
+      requestReplayConnectionId = credentials.connectionId;
+      log.warn("RETRY", `ACC:${credentials.connectionName} replaying once after upstream request-buffer overflow`);
+      continue;
+    }
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
