@@ -705,38 +705,69 @@ function ensureDaemon() {
  * On Windows, AuthURL comes from `status --json` (not stdout) — must poll status.
  */
 const LOGIN_TIMEOUT_MS = 15000;
+const LOGIN_AUTH_SESSION_TIMEOUT_MS = 5 * 60 * 1000;
 const LOGIN_STATUS_POLL_MS = 1000;
+const LOGIN_AUTH_STATUS_POLL_MS = 5000;
 const MAX_LOGIN_OUTPUT_BYTES = 64 * 1024;
-let activeLoginPromise = null;
+let activeLoginSession = null;
+const forceKillTimers = new WeakMap();
 
 function terminateManagedChild(child, reason) {
-  if (!child || child.exitCode !== null || child.killed) return;
-  console.warn(`[Tailscale] terminating login process (${reason})`);
+  if (!child || (child.exitCode !== null && child.exitCode !== undefined)) return;
+  if (forceKillTimers.has(child)) return;
+  console.warn(`[Tailscale] terminating managed process (${reason})`);
   try { child.kill("SIGTERM"); } catch { /* process already gone */ }
 
   // On Windows child.kill maps to TerminateProcess. The fallback is still
   // direct Node process control — never taskkill/cmd.exe.
   const forceKill = setTimeout(() => {
-    if (child.exitCode === null && !child.killed) {
+    if (child.exitCode === null || child.exitCode === undefined) {
       try { child.kill("SIGKILL"); } catch { /* process already gone */ }
     }
   }, 2000);
+  forceKillTimers.set(child, forceKill);
+  child.once?.("exit", () => {
+    clearTimeout(forceKill);
+    forceKillTimers.delete(child);
+  });
   if (forceKill.unref) forceKill.unref();
 }
 
+/** Cancel an in-browser login and reap its still-owned `tailscale up` child. */
+export function cancelTailscaleLogin(reason = "Tailscale login cancelled") {
+  const session = activeLoginSession;
+  if (!session?.cancel) return false;
+  session.cancel(reason);
+  return true;
+}
+
 export function startLogin(hostname) {
-  if (activeLoginPromise) return activeLoginPromise;
+  if (activeLoginSession) {
+    // A retry while browser OAuth is pending must reuse the one owned `up`
+    // child, rather than starting another detached process.
+    if (activeLoginSession.authUrl) return Promise.resolve({ authUrl: activeLoginSession.authUrl });
+    return activeLoginSession.promise;
+  }
 
   const bin = getTailscaleBin();
   if (!bin) return Promise.reject(new Error("Tailscale not installed"));
   if (isTailscaleLoggedIn()) return Promise.resolve({ alreadyLoggedIn: true });
+
+  const session = {
+    authUrl: null,
+    child: null,
+    promise: null,
+    cancel: null,
+  };
+  activeLoginSession = session;
 
   const promise = new Promise((resolve, reject) => {
     // Ensure daemon is running (best-effort, no sudo). A concurrent caller
     // receives this same login promise rather than starting another `up`.
     ensureDaemon();
 
-    let settled = false;
+    let responseSettled = false;
+    let closed = false;
     let child;
     let output = "";
     let timeout;
@@ -753,38 +784,68 @@ export function startLogin(hostname) {
       clearTimeout(statusPollTimer);
     };
 
-    const settle = ({ result, error, terminate = false }) => {
-      if (settled) return;
-      settled = true;
+    const resolveOnce = (result) => {
+      if (responseSettled) return;
+      responseSettled = true;
+      resolve(result);
+    };
+
+    const rejectOnce = (error) => {
+      if (responseSettled) return;
+      responseSettled = true;
+      reject(error);
+    };
+
+    const closeSession = ({ reason, error, terminate = false }) => {
+      if (closed) return;
+      closed = true;
       cleanup();
-      if (terminate) terminateManagedChild(child, error?.message || "login timeout");
-      if (result?.authUrl && child?.exitCode === null && !child.killed) child.unref();
-      if (error) reject(error);
-      else resolve(result);
+      if (terminate) terminateManagedChild(child, reason);
+      if (error) rejectOnce(error);
+      if (activeLoginSession === session) activeLoginSession = null;
+    };
+
+    const confirmLogin = () => {
+      if (closed) return;
+      resolveOnce({ alreadyLoggedIn: true });
+      // `tailscale up` normally exits after success. Reap it if it has not,
+      // so a completed login cannot leave a detached process behind.
+      closeSession({ reason: "login confirmed", terminate: true });
     };
 
     const finishWithUrl = (url, source) => {
-      if (!url || settled) return;
-      console.log(`[Tailscale] login authUrl detected (${source})`);
-      settle({ result: { authUrl: url } });
+      if (!url || closed) return false;
+      if (!session.authUrl) {
+        session.authUrl = url;
+        console.log(`[Tailscale] login authUrl detected (${source})`);
+        resolveOnce({ authUrl: url });
+        if (child?.exitCode === null && !child.killed) child.unref();
+        clearTimeout(timeout);
+        // Browser OAuth needs longer than the short daemon/AuthURL discovery
+        // phase. Keep exactly one owned session for this bounded window.
+        timeout = setTimeout(() => {
+          closeSession({ reason: "browser login session timed out", terminate: true });
+        }, LOGIN_AUTH_SESSION_TIMEOUT_MS);
+      }
+      return true;
     };
 
     const scheduleStatusPoll = () => {
-      if (!settled) statusPollTimer = setTimeout(() => { void pollStatus(); }, LOGIN_STATUS_POLL_MS);
+      if (!closed) {
+        const delay = session.authUrl ? LOGIN_AUTH_STATUS_POLL_MS : LOGIN_STATUS_POLL_MS;
+        statusPollTimer = setTimeout(() => { void pollStatus(); }, delay);
+      }
     };
 
     const pollStatus = async () => {
-      if (settled || statusPollInFlight) return;
+      if (closed || statusPollInFlight) return;
       statusPollInFlight = true;
       try {
         const status = await getTailscaleBackendStatus({ force: true });
-        if (settled) return;
-        if (status?.AuthURL) {
-          finishWithUrl(status.AuthURL, "status");
-          return;
-        }
+        if (closed) return;
+        if (status?.AuthURL) finishWithUrl(status.AuthURL, "status");
         if (isBackendLoggedIn(status)) {
-          settle({ result: { alreadyLoggedIn: true } });
+          confirmLogin();
         }
       } catch {
         // The bounded poll below retries while the daemon publishes AuthURL.
@@ -802,8 +863,9 @@ export function startLogin(hostname) {
         detached: true,
         windowsHide: true,
       });
+      session.child = child;
     } catch (error) {
-      settle({ error });
+      closeSession({ reason: "login spawn error", error, terminate: true });
       return;
     }
 
@@ -816,11 +878,11 @@ export function startLogin(hostname) {
 
     child.on("error", (error) => {
       console.error(`[Tailscale] login spawn error: ${error.message}`);
-      settle({ error, terminate: true });
+      closeSession({ reason: "login spawn error", error, terminate: true });
     });
 
     child.on("exit", (code) => {
-      if (settled) return;
+      if (closed) return;
       console.log(`[Tailscale] login exit code=${code}`);
       const url = parseAuthUrl(output);
       if (url) finishWithUrl(url, "exit");
@@ -831,25 +893,59 @@ export function startLogin(hostname) {
     timeout = setTimeout(() => {
       const url = parseAuthUrl(output);
       if (url) finishWithUrl(url, "timeout-output");
-      else settle({
+      else closeSession({
+        reason: "tailscale up timed out without auth URL",
         error: new Error("tailscale up timed out without auth URL"),
         terminate: true,
       });
     }, LOGIN_TIMEOUT_MS);
 
+    session.cancel = (reason) => {
+      closeSession({
+        reason,
+        error: responseSettled ? null : new Error(reason),
+        terminate: true,
+      });
+    };
     void pollStatus();
   });
 
-  activeLoginPromise = promise;
-  // Do not let the housekeeping branch create an unhandled rejection.
+  session.promise = promise;
+  // The caller normally awaits this, but keeping a no-op rejection handler
+  // prevents an abandoned route invocation from becoming an unhandled error.
+  promise.catch(() => {});
+  return promise;
+}
+
+let activeFunnelOperation = null;
+
+/** Start tailscale funnel for the given port. Concurrent recovery callers share one child. */
+export function startFunnel(port) {
+  if (activeFunnelOperation) return activeFunnelOperation.promise;
+
+  const operation = {
+    port,
+    child: null,
+    cancelled: false,
+    abort: null,
+    promise: null,
+  };
+  operation.cancel = (reason) => {
+    operation.cancelled = true;
+    if (operation.abort) operation.abort(reason);
+    else terminateManagedChild(operation.child, reason);
+  };
+
+  const promise = startFunnelImpl(port, operation);
+  operation.promise = promise;
+  activeFunnelOperation = operation;
   promise.finally(() => {
-    if (activeLoginPromise === promise) activeLoginPromise = null;
+    if (activeFunnelOperation === operation) activeFunnelOperation = null;
   }).catch(() => {});
   return promise;
 }
 
-/** Start tailscale funnel for the given port */
-export async function startFunnel(port) {
+async function startFunnelImpl(port, operation) {
   const bin = getTailscaleBin();
   if (!bin) throw new Error("Tailscale not installed");
 
@@ -857,25 +953,41 @@ export async function startFunnel(port) {
   try {
     await runTailscale(bin, tsArgs("funnel", "--bg", "reset"), { timeout: 5000 });
   } catch { /* no previous funnel is fine */ }
+  if (operation.cancelled) throw new Error("tailscale funnel cancelled");
   invalidateStatusCache();
 
   return new Promise((resolve, reject) => {
+    if (operation.cancelled) {
+      reject(new Error("tailscale funnel cancelled"));
+      return;
+    }
     const child = spawn(bin, tsArgs("funnel", "--bg", `${port}`), {
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true
     });
+    operation.child = child;
 
     let resolved = false;
     let urlResolutionPromise = null;
     let output = "";
+    let timeout;
+    let abort;
 
     const settle = ({ result, error }) => {
       if (resolved) return;
       resolved = true;
       clearTimeout(timeout);
+      if (operation.abort === abort) operation.abort = null;
       if (error) reject(error);
       else resolve(result);
     };
+
+    abort = (reason) => {
+      if (resolved) return;
+      terminateManagedChild(child, reason);
+      settle({ error: new Error("tailscale funnel cancelled") });
+    };
+    operation.abort = abort;
 
     // Always resolve via Self.DNSName to get the real hostname (avoids -1 suffix from conflicts).
     // Only one status lookup can be active, even if stdout and exit arrive together.
@@ -909,7 +1021,7 @@ export async function startFunnel(port) {
       });
     };
 
-    const timeout = setTimeout(() => {
+    timeout = setTimeout(() => {
       void (async () => {
         const found = await resolveUrl({ force: true, fallback: true });
         if (!found) {
@@ -981,6 +1093,9 @@ export async function provisionCert(hostname) {
 
 /** Stop tailscale funnel */
 export async function stopFunnel() {
+  // A disable/reset may arrive while watchdog recovery is still creating a
+  // funnel. Cancel that operation first so it cannot spawn after this reset.
+  activeFunnelOperation?.cancel("funnel stopped");
   const bin = getTailscaleBin();
   if (!bin) return;
   try {

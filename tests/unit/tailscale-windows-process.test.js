@@ -143,6 +143,50 @@ describe("Windows Tailscale process controls", () => {
     await vi.advanceTimersByTimeAsync(15000);
     await expect(first).rejects.toThrow("tailscale up timed out without auth URL");
     expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(child.kill).toHaveBeenCalledWith("SIGKILL");
+  });
+
+  it("retains one owned browser-login session until explicit cancellation", async () => {
+    vi.useFakeTimers();
+    const child = makeChild();
+    mocks.spawn.mockReturnValue(child);
+    mocks.execFile.mockImplementation(() => ({}));
+
+    const { startLogin, cancelTailscaleLogin } = await import("../../src/lib/tunnel/tailscale/tailscale.js");
+    const first = startLogin("router");
+    child.stdout.emit("data", "Visit https://login.tailscale.com/a/abc123");
+
+    await expect(first).resolves.toEqual({ authUrl: "https://login.tailscale.com/a/abc123" });
+    await expect(startLogin("router-again")).resolves.toEqual({ authUrl: "https://login.tailscale.com/a/abc123" });
+    expect(mocks.spawn).toHaveBeenCalledTimes(1);
+    expect(child.unref).toHaveBeenCalledTimes(1);
+
+    expect(cancelTailscaleLogin("user cancelled login")).toBe(true);
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
+    expect(cancelTailscaleLogin()).toBe(false);
+  });
+
+  it("coalesces concurrent funnel recovery and cancels it before reset", async () => {
+    const child = makeChild();
+    mocks.spawn.mockReturnValue(child);
+    mocks.execFile.mockImplementation((file, args, options, callback) => {
+      callback(null, "", "");
+      return {};
+    });
+
+    const { startFunnel, stopFunnel } = await import("../../src/lib/tunnel/tailscale/tailscale.js");
+    const first = startFunnel(20128);
+    const second = startFunnel(20128);
+
+    expect(second).toBe(first);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mocks.spawn).toHaveBeenCalledTimes(1);
+
+    await stopFunnel();
+    await expect(first).rejects.toThrow("tailscale funnel cancelled");
+    expect(child.kill).toHaveBeenCalledWith("SIGTERM");
   });
 
   it("uses the cached backend status for the Windows check route without Unix probes", async () => {

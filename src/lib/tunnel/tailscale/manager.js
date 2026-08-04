@@ -1,5 +1,5 @@
 import { loadState, generateShortId } from "../shared/state.js";
-import { startFunnel, stopFunnel, isTailscaleRunning, isTailscaleRunningStrict, isTailscaleLoggedIn, isTailscaleLoggedInStrict, startLogin, startDaemonWithPassword, provisionCert } from "./tailscale.js";
+import { startFunnel, stopFunnel, isTailscaleRunning, isTailscaleRunningStrict, isTailscaleLoggedIn, isTailscaleLoggedInStrict, startLogin, startDaemonWithPassword, provisionCert, cancelTailscaleLogin } from "./tailscale.js";
 import { waitForHealth } from "./healthCheck.js";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { getCachedPassword, loadEncryptedPassword, initDbHooks } from "@/mitm/manager";
@@ -121,6 +121,7 @@ async function enableTailscaleImpl(localPort = 20128) {
 export async function disableTailscale() {
   console.log("[Tailscale] disable");
   svc.cancelToken.cancelled = true;
+  cancelTailscaleLogin("Tailscale disabled");
   await stopFunnel();
   await updateSettings({ tailscaleEnabled: false, tailscaleUrl: "" });
   return { success: true };
