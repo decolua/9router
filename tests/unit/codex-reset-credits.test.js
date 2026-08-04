@@ -9,6 +9,13 @@ const mocks = vi.hoisted(() => ({
   consumeCodexRateLimitResetCredit: vi.fn(),
 }));
 
+function idTokenFor(accountId) {
+  const payload = Buffer.from(JSON.stringify({
+    "https://api.openai.com/auth": { chatgpt_account_id: accountId },
+  })).toString("base64url");
+  return `header.${payload}.signature`;
+}
+
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
   proxyAwareFetch: mocks.proxyAwareFetch,
 }));
@@ -91,6 +98,76 @@ describe("Codex reset credits", () => {
     });
   });
 
+  it("selects the highest-priority ChatGPT account when consuming a reset credit", async () => {
+    mocks.proxyAwareFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ code: "reset", windows_reset: 1 }),
+    });
+    const { consumeCodexRateLimitResetCredit } = await import("../../open-sse/services/usage/codex.js");
+    const proxyOptions = { strictProxy: false };
+    const cases = [
+      [{ workspaceId: "workspace", chatgptAccountId: "chatgpt", accountId: "legacy" }, "workspace"],
+      [{ chatgptAccountId: "chatgpt", accountId: "legacy" }, "chatgpt"],
+      [{ accountId: "legacy" }, "legacy"],
+    ];
+
+    for (const [providerSpecificData, expectedAccountId] of cases) {
+      await consumeCodexRateLimitResetCredit("token", "redeem-1", proxyOptions, providerSpecificData);
+
+      expect(mocks.proxyAwareFetch).toHaveBeenLastCalledWith(
+        expect.stringContaining("/rate-limit-reset-credits/consume"),
+        expect.objectContaining({
+          method: "POST",
+          headers: expect.objectContaining({
+            Authorization: "Bearer token",
+            "ChatGPT-Account-ID": expectedAccountId,
+            "Content-Type": "application/json",
+          }),
+          body: JSON.stringify({ redeem_request_id: "redeem-1" }),
+        }),
+        proxyOptions,
+      );
+    }
+  });
+
+  it("does not consume a reset credit without a ChatGPT account id", async () => {
+    const { consumeCodexRateLimitResetCredit } = await import("../../open-sse/services/usage/codex.js");
+
+    await expect(consumeCodexRateLimitResetCredit(
+      "token",
+      "redeem-1",
+      { strictProxy: false },
+      { email: "user@example.com" },
+    )).rejects.toThrow("ChatGPT account ID");
+    expect(mocks.proxyAwareFetch).not.toHaveBeenCalled();
+  });
+
+  it("uses the id token account when consuming for legacy provider data", async () => {
+    mocks.proxyAwareFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ code: "reset", windows_reset: 1 }),
+    });
+    const { consumeCodexRateLimitResetCredit } = await import("../../open-sse/services/usage/codex.js");
+
+    await consumeCodexRateLimitResetCredit(
+      "token",
+      "redeem-1",
+      { strictProxy: false },
+      {},
+      idTokenFor("legacy_ws"),
+    );
+
+    expect(mocks.proxyAwareFetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({ "ChatGPT-Account-ID": "legacy_ws" }),
+      }),
+      { strictProxy: false },
+    );
+  });
+
   it("GET refreshes OAuth credentials before returning reset credit details", async () => {
     const connection = {
       id: "conn_1",
@@ -99,6 +176,7 @@ describe("Codex reset credits", () => {
       accessToken: "old-token",
       refreshToken: "refresh-token",
       providerSpecificData: { workspaceId: "acct_123" },
+      idToken: "id-token",
     };
     const refreshedConnection = { ...connection, accessToken: "new-token" };
     const resetCredits = {
@@ -126,6 +204,7 @@ describe("Codex reset credits", () => {
       "new-token",
       expect.objectContaining({ connectionProxyEnabled: true, connectionProxyUrl: "http://proxy.local", strictProxy: false }),
       { workspaceId: "acct_123" },
+      "id-token",
     );
   });
 
@@ -158,16 +237,22 @@ describe("Codex reset credits", () => {
     expect(await response.json()).toEqual(resetCredits);
     expect(mocks.refreshAndUpdateCredentials).toHaveBeenNthCalledWith(1, connection, false, expect.any(Object));
     expect(mocks.refreshAndUpdateCredentials).toHaveBeenNthCalledWith(2, refreshedConnection, true, expect.any(Object));
-    expect(mocks.getCodexRateLimitResetCredits).toHaveBeenNthCalledWith(2, "forced-token", expect.any(Object), {});
+    expect(mocks.getCodexRateLimitResetCredits).toHaveBeenNthCalledWith(2, "forced-token", expect.any(Object), {}, undefined);
   });
 
-  it("POST returns 409 when there are no reset credits to consume", async () => {
+  it("POST threads provider account data into reset credit consumption", async () => {
+    const providerSpecificData = {
+      workspaceId: "workspace",
+      chatgptAccountId: "chatgpt",
+      accountId: "legacy",
+    };
     mocks.getProviderConnectionById.mockResolvedValue({
       id: "conn_1",
       provider: "codex",
       authType: "access_token",
       accessToken: "token",
-      providerSpecificData: {},
+      providerSpecificData,
+      idToken: "id-token",
     });
     mocks.consumeCodexRateLimitResetCredit.mockResolvedValue({
       ok: false,
@@ -193,6 +278,8 @@ describe("Codex reset credits", () => {
       "token",
       expect.any(String),
       expect.objectContaining({ strictProxy: false }),
+      providerSpecificData,
+      "id-token",
     );
   });
 });
