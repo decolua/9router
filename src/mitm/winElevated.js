@@ -41,7 +41,7 @@ function runElevatedPowerShell(script) {
   if (isAdmin()) {
     return new Promise((resolve, reject) => {
       exec(
-        `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${encoded}`,
+        `powershell -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -EncodedCommand ${encoded}`,
         { windowsHide: true },
         (error, stdout, stderr) => {
           if (error) reject(new Error(stderr || error.message));
@@ -53,7 +53,7 @@ function runElevatedPowerShell(script) {
 
   // Not admin — wrap with Start-Process -Verb RunAs (UAC popup)
   const wrapper = `
-    $proc = Start-Process powershell -ArgumentList @(
+    $proc = Start-Process powershell -WindowStyle Hidden -ArgumentList @(
       '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
       '-WindowStyle','Hidden','-EncodedCommand','${encoded}'
     ) -Verb RunAs -Wait -PassThru -WindowStyle Hidden;
@@ -62,7 +62,7 @@ function runElevatedPowerShell(script) {
 
   return new Promise((resolve, reject) => {
     exec(
-      `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ${quotePs(wrapper)}`,
+      `powershell -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -Command ${quotePs(wrapper)}`,
       { windowsHide: true },
       (error, stdout, stderr) => {
         if (error) {

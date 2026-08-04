@@ -447,8 +447,8 @@ async function installTailscaleWindows(log) {
   await new Promise((resolve, reject) => {
     const args = `'/i','${msiPath}','TS_NOLAUNCH=true','/quiet','/norestart'`;
     const child = spawn("powershell", [
-      "-NoProfile", "-NonInteractive", "-Command",
-      `Start-Process msiexec -ArgumentList ${args} -Verb RunAs -Wait`
+      "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command",
+      `Start-Process msiexec -WindowStyle Hidden -ArgumentList ${args} -Verb RunAs -Wait`
     ], { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     child.stderr.on("data", (d) => { const l = d.toString().trim(); if (l) log(l); });
     child.on("close", (c) => {

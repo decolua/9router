@@ -1,3 +1,10 @@
+# v0.5.50 (2026-08-04)
+
+## Fixes & Enhancements
+- **Windows Process Management**: Fixed terminal window popup bug on Windows by enforcing `-WindowStyle Hidden` and `{ windowsHide: true }` across all background processes, elevation scripts (`winElevated.js`), process stats (`muxManager.js`), and Tailscale installers.
+- **Provider Test Model**: Restored and fixed "Test Model" functionality in Provider management UI and `/api/models/test` route. Added provider alias resolution and targeting for Antigravity, Gemini, Vertex, Claude, OpenAI, OpenCode, Kiro, Grok, etc.
+- **Consolidated Release**: Merged 189 upstream PRs and fixed CORS syntax, registry conflicts, and Next.js App Router exports.
+
 # Maintainer Production Release (2026-08-04)
 
 Consolidated 189 Pull Requests from upstream `decolua/9router` across AI providers, OAuth refresh managers, SSE streaming protocols, tool schema converters, max_tokens translators, and proxy layers. Fully stabilized codebase with 0 build errors, 0 lint errors, and 100% verified production bundle.

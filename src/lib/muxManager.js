@@ -134,7 +134,7 @@ function getProcessStats(pid) {
   try {
     if (process.platform === "win32") {
       const { execSync } = require("child_process");
-      const cmd = `powershell -NoProfile -NonInteractive -Command "(Get-Process -Id ${pid}).CPU.ToString() + ',' + (Get-Process -Id ${pid}).WorkingSet64.ToString()"`;
+      const cmd = `powershell -NoProfile -NonInteractive -WindowStyle Hidden -Command "(Get-Process -Id ${pid}).CPU.ToString() + ',' + (Get-Process -Id ${pid}).WorkingSet64.ToString()"`;
       const output = execSync(cmd, { encoding: 'utf8', windowsHide: true });
       const parts = output.trim().split(',');
       if (parts.length === 2) {
