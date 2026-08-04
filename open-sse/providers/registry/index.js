@@ -12,6 +12,7 @@ import p9 from "./brave-search.js";
 import p10 from "./byteplus.js";
 import p11 from "./cartesia.js";
 import p12 from "./cerebras.js";
+import p12b from "./charm-hyper.js";
 import p13 from "./chutes.js";
 import p14 from "./claude.js";
 import p15 from "./cline.js";
@@ -133,6 +134,7 @@ export default [
   p10,
   p11,
   p12,
+  p12b,
   p13,
   p14,
   p15,
