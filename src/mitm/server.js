@@ -5,15 +5,13 @@ const fs = require("fs");
 const path = require("path");
 const dns = require("dns");
 const { promisify } = require("util");
-const { execSync } = require("child_process");
 const { log, err, dumpRequest, createResponseDumper, clearDumpDir } = require("./logger");
-const { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, MODEL_NO_MAP, getToolForHost, extractModel } = require("./config");
+const { IS_DEV, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, MODEL_NO_MAP, getToolForHost, extractModel } = require("./config");
 const { DATA_DIR, MITM_DIR } = require("./paths");
 const { generateCert, getCertForDomain } = require("./cert/generate");
 const { getMitmAlias } = require("./dbReader");
 const { applyAntigravityIdeVersionOverride } = require("./antigravityIdeVersion");
 const LOCAL_PORT = 443;
-const IS_WIN = process.platform === "win32";
 const ENABLE_FILE_LOG = IS_DEV;
 
 // Clear stale dump files on every MITM start (prevents unbounded disk usage)
@@ -353,43 +351,9 @@ const server = https.createServer(sslOptions, async (req, res) => {
   }
 });
 
-// Kill only processes LISTENING on LOCAL_PORT (not outbound connections)
-function killPort(port) {
-  try {
-    let pidList = [];
-    if (IS_WIN) {
-      const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command ` +
-        `"Get-NetTCPConnection -LocalPort ${port} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess"`;
-      const out = execSync(psCmd, { encoding: "utf-8", windowsHide: true }).trim();
-      if (!out) return;
-      pidList = out.split(/\r?\n/).map(s => s.trim()).filter(p => p && Number(p) !== process.pid && Number(p) > 4);
-    } else {
-      const out = execSync(`${LSOF_BIN} -nP -iTCP:${port} -sTCP:LISTEN -t`, { encoding: "utf-8", windowsHide: true }).trim();
-      if (!out) return;
-      pidList = out.split("\n").filter(p => p && Number(p) !== process.pid);
-    }
-    if (pidList.length === 0) return;
-    pidList.forEach(pid => {
-      try {
-        if (IS_WIN) execSync(`taskkill /F /PID ${pid}`, { windowsHide: true });
-        else process.kill(Number(pid), "SIGKILL");
-      } catch (e) {
-        err(`Failed to kill PID ${pid}: ${e.message}`);
-      }
-    });
-    log(`Killed ${pidList.length} process(es) on port ${port}`);
-  } catch (e) {
-    if (e.status !== 1) throw e;
-  }
-}
 
-try {
-  killPort(LOCAL_PORT);
-} catch (e) {
-  err(`Cannot kill process on port ${LOCAL_PORT}: ${e.message}`);
-  process.exit(1);
-}
-
+// Port ownership is resolved by the manager before this server starts. Never
+// kill an arbitrary listener here: it may belong to another application.
 server.listen(LOCAL_PORT, () => log(`🚀 Server ready on :${LOCAL_PORT}`));
 
 server.on("error", (e) => {

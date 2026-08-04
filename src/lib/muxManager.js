@@ -68,11 +68,18 @@ function npmInvocation() {
     return { command: process.execPath, prefixArgs: [npmCli], shell: false };
   }
 
-  // A normal Node installation always has npm-cli.js above.  Retain this
-  // hidden fallback for unusual embedders rather than making Mux unusable.
-  return process.platform === "win32"
-    ? { command: "npm.cmd", prefixArgs: [], shell: true }
-    : { command: "npm", prefixArgs: [], shell: false };
+  // A normal Node installation always has npm-cli.js above.  On Windows a
+  // fallback to npm.cmd implicitly creates cmd.exe, which is exactly the
+  // console-flash failure this manager must avoid.  Fail with an actionable
+  // error instead of silently taking that unsafe path.
+  if (process.platform === "win32") {
+    const error = new Error(
+      "npm-cli.js was not found next to the current Node runtime; refusing to launch npm.cmd through cmd.exe"
+    );
+    error.code = "NPM_CLI_NOT_FOUND";
+    throw error;
+  }
+  return { command: "npm", prefixArgs: [], shell: false };
 }
 
 function runNpmSync(args, options = {}) {

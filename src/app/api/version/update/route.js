@@ -10,12 +10,18 @@ export async function POST() {
   }
 
   try {
-    // Kill sibling processes (cloudflared, MITM, stray next-server) to release file locks on Windows
+    // Stop only verified services owned by this 9router data directory.
     await killAppProcesses();
   } catch { /* best effort */ }
 
-  // Schedule detached updater then exit current server process
-  spawnUpdaterAndExit();
+  // Do not terminate the app unless the detached updater actually starts.
+  const updaterStarted = await spawnUpdaterAndExit();
+  if (!updaterStarted) {
+    return NextResponse.json(
+      { success: false, message: "Updater could not start; 9router is still running." },
+      { status: 500 }
+    );
+  }
 
   return NextResponse.json({ success: true, message: "Updater started. This app will exit shortly." });
 }

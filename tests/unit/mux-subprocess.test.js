@@ -48,6 +48,14 @@ afterEach(() => {
 });
 
 describe("Mux subprocess handling", () => {
+  it("never falls back to npm.cmd through cmd.exe on Windows", () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), "..", "src", "lib", "muxManager.js"), "utf8");
+
+    expect(source).not.toContain('command: "npm.cmd"');
+    expect(source).not.toContain("shell: true");
+    expect(source).toContain("NPM_CLI_NOT_FOUND");
+  });
+
   it("uses npm's Node entry directly and caches repeated global-entry probes", async () => {
     const { getMuxGlobalEntry, deleteMux } = await import("@/lib/muxManager.js");
 
