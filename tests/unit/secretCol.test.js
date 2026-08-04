@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { encryptSecretJson, decryptSecretJson } from "../../src/lib/db/helpers/secretCol.js";
+import { encryptSecretJson, decryptSecretJson, decryptSecretJsonStrict, SecretDecryptionError } from "../../src/lib/db/helpers/secretCol.js";
 
 describe("secretCol", () => {
   it("round-trips a JSON value through encryption", () => {
@@ -21,5 +21,12 @@ describe("secretCol", () => {
     expect(decryptSecretJson(null, { a: 1 })).toEqual({ a: 1 });
     expect(decryptSecretJson("not json", { a: 1 })).toEqual({ a: 1 });
     expect(decryptSecretJson("enc1:garbage", { a: 1 })).toEqual({ a: 1 });
+  });
+
+  it("fails closed for unreadable encrypted connection data", () => {
+    expect(() => decryptSecretJsonStrict("enc1:garbage", { a: 1 }))
+      .toThrow(SecretDecryptionError);
+    expect(() => decryptSecretJsonStrict("not json", { a: 1 }))
+      .toThrow(SecretDecryptionError);
   });
 });

@@ -119,7 +119,9 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     ? "active"  // Cooldown expired u2192 treat as active
     : connection.testStatus;
 
-  const getStatusVariant = () => getConnectionStatusVariant(connection.isActive, effectiveStatus);
+  const getStatusVariant = () => connection.needsReauth
+    ? "error"
+    : getConnectionStatusVariant(connection.isActive, effectiveStatus);
 
   const getOneByOneVariant = () => {
     if (!oneByOneStatus) return "default";
@@ -168,7 +170,9 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
           )}
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
             <Badge variant={getStatusVariant()} size="sm" dot>
-              {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
+              {connection.needsReauth
+                ? "Re-auth required"
+                : (connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown"))}
             </Badge>
             <Badge variant="default" size="sm">
               {authLabel}
@@ -187,6 +191,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             {connection.lastError && connection.isActive !== false && (
               <span className="max-w-full truncate text-xs text-red-500 sm:max-w-[300px]" title={connection.lastError}>
                 {connection.lastError}
+              </span>
+            )}
+            {connection.needsReauth && (
+              <span className="max-w-full text-xs text-red-500">
+                Credentials are unavailable. Add a new connection to re-authenticate.
               </span>
             )}
             <span className="text-xs text-text-muted">#{connection.priority}</span>
@@ -297,6 +306,7 @@ ConnectionRow.propTypes = {
     }),
     modelLockUntil: PropTypes.string,
     testStatus: PropTypes.string,
+    needsReauth: PropTypes.bool,
     isActive: PropTypes.bool,
     lastError: PropTypes.string,
     priority: PropTypes.number,

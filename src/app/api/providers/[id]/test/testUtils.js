@@ -1,5 +1,6 @@
 import { platform, arch } from "os";
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import { hasUsableConnectionCredentials } from "@/lib/db/helpers/connectionCredentials";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomVideoProvider } from "@/shared/constants/providers";
@@ -889,6 +890,14 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
 export async function testSingleConnection(id) {
   const connection = await getProviderConnectionById(id);
   if (!connection) return { valid: false, error: "Connection not found", latencyMs: 0, testedAt: new Date().toISOString() };
+  if (!hasUsableConnectionCredentials(connection)) {
+    return {
+      valid: false,
+      error: "Credentials are unavailable. Add a new connection to re-authenticate.",
+      latencyMs: 0,
+      testedAt: new Date().toISOString(),
+    };
+  }
 
   const effectiveProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
 

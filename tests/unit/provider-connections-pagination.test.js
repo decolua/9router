@@ -4,12 +4,12 @@
 // src/app/(dashboard)/dashboard/providers/[id]/page.js, the structural test fails.
 
 import fs from "node:fs";
-import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect, beforeAll } from "vitest";
 import { CONNECTIONS_PER_PAGE, CONNECTIONS_MAX_PAGE_SIZE, computeConnectionPagination } from "../../src/app/(dashboard)/dashboard/providers/[id]/connectionsPagination.js";
 
-const PAGE_PATH = path.resolve(
-  "src/app/(dashboard)/dashboard/providers/[id]/page.js",
+const PAGE_PATH = fileURLToPath(
+  new URL("../../src/app/(dashboard)/dashboard/providers/[id]/page.js", import.meta.url),
 );
 
 describe("provider connections pagination — utility math (10/page)", () => {
@@ -168,6 +168,11 @@ describe("provider connections pagination — page.js structural guard", () => {
 
   it("imports the Pagination component from @/shared/components", () => {
     expect(source).toMatch(/import\s+\{[^}]*\bPagination\b[^}]*\}\s+from\s+["']@\/shared\/components["']/);
+  });
+
+  it("interpolates the provider ID when fetching its connections", () => {
+    expect(source).toContain('fetch(`/api/providers?provider=${encodeURIComponent(providerId)}`');
+    expect(source).not.toContain('fetch("/api/providers?provider=${encodeURIComponent(providerId)}"');
   });
 
   it("imports the shared pagination utility (single source of truth)", () => {

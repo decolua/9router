@@ -4,6 +4,15 @@ const ENCRYPT_ALGO = "aes-256-gcm";
 const ENCRYPT_SALT = "9router-conn-secret";
 const ENC_PREFIX = "enc1:";
 
+export class SecretDecryptionError extends Error {
+  constructor(cause) {
+    super("Stored connection data could not be read");
+    this.name = "SecretDecryptionError";
+    this.code = "SECRET_DECRYPTION_FAILED";
+    this.cause = cause;
+  }
+}
+
 function deriveKey() {
   if (process.env.DB_ENCRYPTION_KEY) {
     return crypto.createHash("sha256").update(process.env.DB_ENCRYPTION_KEY).digest();
@@ -51,5 +60,28 @@ export function decryptSecretJson(stored, fallback = null) {
     return JSON.parse(stored);
   } catch {
     return fallback;
+  }
+}
+
+/**
+ * Strict variant for connection rows. An encrypted value that cannot be read
+ * must not silently turn into an empty object: a later status-only update
+ * would then write that empty object back and permanently erase its tokens.
+ * Legacy plaintext JSON remains supported when valid; malformed storage also
+ * fails closed because it may contain the only recoverable credential bytes.
+ */
+export function decryptSecretJsonStrict(stored, fallback = null) {
+  if (stored == null) return fallback;
+  if (typeof stored === "string" && stored.startsWith(ENC_PREFIX)) {
+    try {
+      return JSON.parse(decrypt(stored));
+    } catch (error) {
+      throw new SecretDecryptionError(error);
+    }
+  }
+  try {
+    return JSON.parse(stored);
+  } catch (error) {
+    throw new SecretDecryptionError(error);
   }
 }

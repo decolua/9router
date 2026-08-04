@@ -1,7 +1,7 @@
 // Public API barrel — all DB functions
-import { getAdapter } from "./driver.js";
+import { closeAdapter, getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
-import { decryptSecretJson, encryptSecretJson } from "./helpers/secretCol.js";
+import { decryptSecretJsonStrict, encryptSecretJson } from "./helpers/secretCol.js";
 
 // Settings
 export {
@@ -77,7 +77,26 @@ export async function exportDb() {
 
   const out = {
     settings: await exportSettings(),
-    providerConnections: db.all(`SELECT * FROM providerConnections`).map((r) => ({ ...decryptSecretJson(r.data, {}), id: r.id, provider: r.provider, authType: r.authType, name: r.name, email: r.email, priority: r.priority, isActive: r.isActive === 1, createdAt: r.createdAt, updatedAt: r.updatedAt })),
+    providerConnections: db.all(`SELECT * FROM providerConnections`).map((r) => {
+      try {
+        return {
+          ...decryptSecretJsonStrict(r.data, {}),
+          id: r.id,
+          provider: r.provider,
+          authType: r.authType,
+          name: r.name,
+          email: r.email,
+          priority: r.priority,
+          isActive: r.isActive === 1,
+          createdAt: r.createdAt,
+          updatedAt: r.updatedAt,
+        };
+      } catch (error) {
+        // An export must never silently convert unreadable ciphertext into an
+        // empty connection payload that could overwrite the original on import.
+        throw new Error(`Cannot export connection ${r.id}: encrypted credentials are unreadable`);
+      }
+    }),
     providerNodes: db.all(`SELECT * FROM providerNodes`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, type: r.type, name: r.name, createdAt: r.createdAt, updatedAt: r.updatedAt })),
     proxyPools: db.all(`SELECT * FROM proxyPools`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, isActive: r.isActive === 1, testStatus: r.testStatus, createdAt: r.createdAt, updatedAt: r.updatedAt })),
     apiKeys: db.all(`SELECT * FROM apiKeys`).map((r) => ({ id: r.id, key: r.key, name: r.name, machineId: r.machineId, isActive: r.isActive === 1, createdAt: r.createdAt })),
@@ -235,3 +254,6 @@ export async function importDb(payload) {
 export async function initDb() {
   await getAdapter();
 }
+
+// Used by controlled embedding runtimes and tests to release SQLite locks.
+export { closeAdapter };

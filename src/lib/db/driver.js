@@ -1,8 +1,9 @@
 import { ensureDirs, DATA_FILE } from "./paths.js";
 
 // Use global to survive Next.js dev hot-reload (module state resets on reload)
-if (!global._dbAdapter) global._dbAdapter = { instance: null, initPromise: null, logged: false };
+if (!global._dbAdapter) global._dbAdapter = { instance: null, initPromise: null, closePromise: null, logged: false };
 const state = global._dbAdapter;
+if (!Object.hasOwn(state, "closePromise")) state.closePromise = null;
 
 const NATIVE_OPEN_RETRIES = 3;
 const NATIVE_OPEN_RETRY_MS = 200;
@@ -96,6 +97,9 @@ async function initAdapter() {
 }
 
 export async function getAdapter() {
+  // A shutdown can be requested by a test or an embedding runtime. Do not
+  // hand out an adapter that is in the middle of being closed.
+  if (state.closePromise) await state.closePromise;
   if (state.instance) return state.instance;
   if (!state.initPromise) {
     state.initPromise = initAdapter().then((a) => { state.instance = a; return a; }).catch((error) => {
@@ -109,4 +113,28 @@ export async function getAdapter() {
 export function getAdapterSync() {
   if (!state.instance) throw new Error("[DB] adapter not initialized — await getAdapter() first");
   return state.instance;
+}
+
+// Close deterministically for controlled shutdowns and test isolation. The
+// adapter implementations checkpoint/flush their own pending state before
+// closing, so releasing it here also releases the SQLite file lock.
+export async function closeAdapter() {
+  if (state.closePromise) return state.closePromise;
+
+  state.closePromise = (async () => {
+    let adapter = state.instance;
+    if (!adapter && state.initPromise) {
+      try { adapter = await state.initPromise; } catch {}
+    }
+
+    // Clear singleton state before invoking close so a subsequent caller
+    // creates a fresh adapter rather than obtaining a closed one.
+    if (state.instance === adapter) state.instance = null;
+    state.initPromise = null;
+    if (adapter?.close) await adapter.close();
+  })().finally(() => {
+    state.closePromise = null;
+  });
+
+  return state.closePromise;
 }
