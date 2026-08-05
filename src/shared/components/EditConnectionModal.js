@@ -22,6 +22,8 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [managementKey, setManagementKey] = useState("");
+  const [managementKeyTouched, setManagementKeyTouched] = useState(false);
   const [region, setRegion] = useState("");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -47,6 +49,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       }
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
         setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
+      }
+      if (connection.provider === "tokenrouter") {
+        setManagementKey(connection.providerSpecificData?.managementKey || "");
       }
       // Load region for providers that support it (e.g. xiaomi-tokenplan)
       const providerCfg = AI_PROVIDERS?.[connection.provider];
@@ -167,6 +172,18 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (isCloudflareAi) {
         updates.providerSpecificData = { accountId: cloudflareData.accountId };
       }
+      if (connection.provider === "tokenrouter") {
+        // The client route never exposes the stored management key, so the
+        // field starts blank. Only change the stored key when the user
+        // actually typed in the field: a non-empty value sets it, an empty
+        // submission clears it. Untouched field → leave the stored key alone.
+        if (managementKeyTouched) {
+          updates.providerSpecificData = {
+            ...(connection.providerSpecificData || {}),
+            managementKey: managementKey.trim() || null,
+          };
+        }
+      }
       // Persist updated region for region-aware providers
       if (providerRegions && region) {
         updates.providerSpecificData = buildRegionSpecificData();
@@ -271,6 +288,22 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
             onChange={(e) => setRegion(e.target.value)}
             options={providerRegions.map((r) => ({ value: r.id, label: r.label }))}
           />
+        )}
+
+        {connection.provider === "tokenrouter" && (
+          <>
+            <Input
+              label="Management Key (optional)"
+              type="password"
+              value={managementKey}
+              onChange={(e) => { setManagementKey(e.target.value); setManagementKeyTouched(true); }}
+              placeholder="sk-..."
+              hint="Used by the Quota Tracker to show per-key usage and account balance. Leave blank to clear."
+            />
+            <p className="text-xs text-text-muted">
+              Optional. Get it from the TokenRouter dashboard (Settings → Management Key). The stored key is never shown; type a new one to replace it, or leave blank and save to remove it.
+            </p>
+          </>
         )}
 
         {!isCompatible && !isAzure && !isCloudflareAi && (
