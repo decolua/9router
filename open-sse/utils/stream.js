@@ -44,6 +44,7 @@ export function createSSEStream(options = {}) {
     provider = null,
     reqLogger = null,
     toolNameMap = null,
+    customToolNames = null,
     model = null,
     connectionId = null,
     body = null,
@@ -57,7 +58,9 @@ export function createSSEStream(options = {}) {
   // Per-stream decoder with stream:true to correctly handle multi-byte chars split across chunks
   const decoder = new TextDecoder("utf-8", { fatal: false });
 
-  const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap, model } : null;
+  const state = mode === STREAM_MODE.TRANSLATE
+    ? { ...initState(sourceFormat), provider, toolNameMap, customToolNames: new Set(customToolNames || []), model }
+    : null;
 
   let totalContentLength = 0;
   let accumulatedContent = "";
@@ -464,7 +467,7 @@ export function createSSEStream(options = {}) {
   });
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -472,6 +475,7 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     provider,
     reqLogger,
     toolNameMap,
+    customToolNames,
     model,
     connectionId,
     body,
