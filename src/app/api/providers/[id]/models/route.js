@@ -338,6 +338,7 @@ const PROVIDER_MODELS_CONFIG = {
               name: m.name,
               upstreamModelId: m.upstreamModelId,
               contextLength: m.contextLength,
+              maxOutputTokens: m.maxOutputTokens,
               rateMultiplier: m.rateMultiplier,
               capabilities: m.capabilities,
               description: m.description
