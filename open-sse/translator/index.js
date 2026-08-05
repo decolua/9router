@@ -62,8 +62,13 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // Always ensure tool_calls have id (some providers require it)
   ensureToolCallIds(result);
   
-  // Fix missing tool responses (insert empty tool_result if needed)
-  fixMissingToolResponses(result);
+  // Kiro performs stricter source-aware reconciliation after session replay.
+  // The generic helper inserts OpenAI `role: tool` messages, which a direct
+  // Claude→Kiro translator cannot consume and which cannot repair partial
+  // parallel tool results.
+  if (targetFormat !== FORMATS.KIRO) {
+    fixMissingToolResponses(result);
+  }
 
   // Capture thinking intent from the original (pre-translation) body, before any
   // format conversion strips/renames the fields. Applied after translation.
@@ -253,8 +258,10 @@ export function initState(sourceFormat) {
       funcArgsBuf: {},
       funcNames: {},
       funcCallIds: {},
+      funcItemAdded: {},
       funcArgsDone: {},
       funcItemDone: {},
+      customToolNames: new Set(),
       completedSent: false
     };
   }

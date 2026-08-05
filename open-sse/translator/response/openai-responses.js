@@ -258,24 +258,43 @@ function closeMessage(state, emit, idx) {
   }
 }
 
+function isCustomTool(state, name) {
+  return !!name && state.customToolNames?.has(name);
+}
+
+function extractCustomToolInput(argumentsText) {
+  if (typeof argumentsText !== "string") return "";
+  try {
+    const parsed = JSON.parse(argumentsText);
+    if (parsed && typeof parsed === "object" && typeof parsed.input === "string") return parsed.input;
+  } catch { /* incomplete or raw freeform input */ }
+  return argumentsText;
+}
+
 function emitToolCall(state, emit, tc) {
   const tcIdx = tc.index ?? 0;
   const newCallId = tc.id;
   const funcName = tc.function?.name;
 
   if (funcName) state.funcNames[tcIdx] = funcName;
+  if (newCallId) state.funcCallIds[tcIdx] = newCallId;
 
-  if (!state.funcCallIds[tcIdx] && newCallId) {
-    state.funcCallIds[tcIdx] = newCallId;
-    
+  // Some compatible providers split the call id and function name across
+  // chunks. Wait for both before deciding whether this is a custom tool;
+  // otherwise an `exec` call can be irreversibly announced as function_call.
+  const callId = state.funcCallIds[tcIdx];
+  if (!state.funcItemAdded[tcIdx] && callId && state.funcNames[tcIdx]) {
+    state.funcItemAdded[tcIdx] = true;
+    const custom = isCustomTool(state, state.funcNames[tcIdx]);
+
     emit("response.output_item.added", {
       type: "response.output_item.added",
       output_index: tcIdx,
       item: {
-        id: `fc_${newCallId}`,
-        type: RESPONSES_ITEM.FUNCTION_CALL,
-        arguments: "",
-        call_id: newCallId,
+        id: `${custom ? "ctc" : "fc"}_${callId}`,
+        type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
+        ...(custom ? { input: "" } : { arguments: "" }),
+        call_id: callId,
         name: state.funcNames[tcIdx] || ""
       }
     });
@@ -285,7 +304,7 @@ function emitToolCall(state, emit, tc) {
 
   if (tc.function?.arguments) {
     const refCallId = state.funcCallIds[tcIdx] || newCallId;
-    if (refCallId) {
+    if (state.funcItemAdded[tcIdx] && refCallId && !isCustomTool(state, state.funcNames[tcIdx])) {
       emit("response.function_call_arguments.delta", {
         type: "response.function_call_arguments.delta",
         item_id: `fc_${refCallId}`,
@@ -293,6 +312,9 @@ function emitToolCall(state, emit, tc) {
         delta: tc.function.arguments
       });
     }
+    // Custom input is emitted once at close, after the Chat JSON wrapper can be
+    // parsed and unwrapped. Streaming the raw JSON fragments would expose
+    // {"input":"..."} instead of the freeform program Codex expects.
     state.funcArgsBuf[tcIdx] += tc.function.arguments;
   }
 }
@@ -301,21 +323,38 @@ function closeToolCall(state, emit, idx) {
   const callId = state.funcCallIds[idx];
   if (callId && !state.funcItemDone[idx]) {
     const args = state.funcArgsBuf[idx] || "{}";
-    
-    emit("response.function_call_arguments.done", {
-      type: "response.function_call_arguments.done",
-      item_id: `fc_${callId}`,
-      output_index: parseInt(idx),
-      arguments: args
-    });
+    const custom = isCustomTool(state, state.funcNames[idx]);
+
+    if (custom) {
+      const input = extractCustomToolInput(args);
+      emit("response.custom_tool_call_input.delta", {
+        type: "response.custom_tool_call_input.delta",
+        item_id: `ctc_${callId}`,
+        output_index: parseInt(idx),
+        delta: input
+      });
+      emit("response.custom_tool_call_input.done", {
+        type: "response.custom_tool_call_input.done",
+        item_id: `ctc_${callId}`,
+        output_index: parseInt(idx),
+        input
+      });
+    } else {
+      emit("response.function_call_arguments.done", {
+        type: "response.function_call_arguments.done",
+        item_id: `fc_${callId}`,
+        output_index: parseInt(idx),
+        arguments: args
+      });
+    }
 
     emit("response.output_item.done", {
       type: "response.output_item.done",
       output_index: parseInt(idx),
       item: {
-        id: `fc_${callId}`,
-        type: RESPONSES_ITEM.FUNCTION_CALL,
-        arguments: args,
+        id: `${custom ? "ctc" : "fc"}_${callId}`,
+        type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
+        ...(custom ? { input: extractCustomToolInput(args) } : { arguments: args }),
         call_id: callId,
         name: state.funcNames[idx] || ""
       }
