@@ -241,9 +241,44 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     flush() { dbg(tag, `upstream EOF | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); }
   });
 
+  // A stream that delivers ZERO bytes to the client is never a legitimate
+  // completion — even an empty answer emits a role delta, a finish_reason and
+  // [DONE]. Without this guard that case reaches the caller as HTTP 200 with an
+  // empty body: no content, no error, nothing to branch on. Anything checking
+  // status codes reads it as success.
+  //
+  // Seen in production on 2026-08-05: a Claude account whose OAuth had expired
+  // stayed isActive, requests routed to it, and callers got 200/0 bytes while
+  // observability recorded "success" with "[Empty streaming response]".
+  //
+  // The status line is already committed by the time we know — headers go out
+  // before the first chunk — so the honest remedy is an in-band error frame. It
+  // fires ONLY on a completely empty stream, so a normal response never sees it.
+  let outBytes = 0;
+  const emptyStreamGuard = new TransformStream({
+    transform(chunk, controller) {
+      outBytes += chunk?.byteLength || chunk?.length || 0;
+      controller.enqueue(chunk);
+    },
+    flush(controller) {
+      if (outBytes > 0) return;
+      dbg(tag, `EMPTY STREAM — upstream chunks=${chunkCount} bytes=${totalBytes}; emitting error frame`);
+      const payload = JSON.stringify({
+        error: {
+          message: "Upstream returned an empty stream — no content was produced. " +
+                   "The provider connection may be unauthenticated or unavailable.",
+          type: "upstream_empty_response",
+          code: "empty_stream"
+        }
+      });
+      controller.enqueue(new TextEncoder().encode(`data: ${payload}\n\ndata: [DONE]\n\n`));
+    }
+  });
+
   const transformedBody = providerResponse.body
     .pipeThrough(upstreamTap)
-    .pipeThrough(transformStream);
+    .pipeThrough(transformStream)
+    .pipeThrough(emptyStreamGuard);
 
   return createDisconnectAwareStream(
     { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
