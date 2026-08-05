@@ -1,3 +1,24 @@
+# Unreleased
+
+## Features
+- **Providers**: add Self-hosted STT / TTS / Embedding — point 9Router at your own
+  OpenAI-compatible speech and embedding servers (whisper.cpp, faster-whisper,
+  Kokoro-FastAPI, llama-server, vLLM, Infinity). Unlike the named cloud providers
+  these read `baseUrl` per connection, so one provider can front several machines
+
+## Fixes
+- **TTS**: a bare self-hosted model name is the MODEL, not the voice — `kokoro`
+  was parsed as a voice against a default model, 404ing or synthesising with the
+  wrong one
+- **Embeddings**: self-hosted embeddings no longer fall back to `api.openai.com`
+  when a connection has no `baseUrl` — that silently sent the input text and API
+  key to OpenAI under a provider named "Self-hosted"
+- **Embeddings**: an adapter that rejects a misconfigured connection now returns
+  400 with the reason instead of escaping the handler uncaught
+- **Embeddings**: bound the upstream fetch with `FETCH_CONNECT_TIMEOUT_MS` — an
+  endpoint that drops packets never returns headers, so the request previously
+  hung indefinitely
+
 # v0.5.45 (2026-07-30)
 
 ## Features

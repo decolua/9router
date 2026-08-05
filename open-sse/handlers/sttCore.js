@@ -170,8 +170,16 @@ export async function handleSttCore({ provider, model, formData, credentials, st
   const file = formData.get("file");
   if (!file) return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing required field: file");
 
-  const cfg = sttConfig;
+  let cfg = sttConfig;
   if (!cfg) return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Provider '${provider}' does not support STT`);
+
+  // Per-connection endpoint override. Registry entries carry a fixed baseUrl,
+  // which is right for a named cloud service but useless for a self-hosted one
+  // whose address only the operator knows. Opt-in: absent unless the connection
+  // sets it, so cloud providers are untouched. Mirrors the custom embedding
+  // providers, which already resolve baseUrl the same way.
+  const overrideUrl = credentials?.providerSpecificData?.baseUrl;
+  if (overrideUrl) cfg = { ...cfg, baseUrl: String(overrideUrl).replace(/\/+$/, "") };
 
   const token = cfg.authType === "none" ? null : (credentials?.apiKey || credentials?.accessToken);
   if (cfg.authType !== "none" && !token) {
