@@ -164,7 +164,6 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         'gemini-3.6-flash-high',
         'gemini-3.6-flash-medium',
         'gemini-3.6-flash-low',
-        'gemini-3-flash-agent',
         'gemini-3.5-flash-low',
         'gemini-3.5-flash-extra-low',
         'gemini-pro-agent',
@@ -172,10 +171,8 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         'claude-sonnet-4-6',
         'claude-opus-4-6-thinking',
         'gpt-oss-120b-medium',
-        'gemini-3-flash',
         // Image generation models
         'gemini-3.1-flash-image',
-        'gemini-3-pro-image',
       ];
 
       for (const [modelKey, info] of Object.entries(data.models)) {
