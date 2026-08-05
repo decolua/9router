@@ -19,6 +19,57 @@ const CODEX_SOURCE_TO_TARGET = {
   [FORMATS.GEMINI_CLI]: FORMATS.ANTIGRAVITY,
 };
 
+function isSemanticEvent(event) {
+  if (!event || typeof event !== "object" || event.error || event.response?.error) return false;
+  const type = String(event.type || "").toLowerCase();
+  if (type.includes("failed") || type.includes("error") || type.includes("incomplete")) return false;
+  return (Array.isArray(event.choices) && event.choices.length > 0)
+    || (Array.isArray(event.candidates) && event.candidates.length > 0)
+    || Boolean(event.delta || event.message || event.content)
+    || /^(response\.(created|in_progress|output_)|message_start|content_block_(start|delta)|message_delta)/.test(type);
+}
+
+function streamFailure(message) {
+  return {
+    success: false,
+    status: 502,
+    error: message,
+    scope: "stream",
+    failureScope: "stream",
+    response: new Response(JSON.stringify({ error: { message } }), {
+      status: 502,
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  };
+}
+
+async function hasSemanticSSEEvent(body, timeoutMs) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let timeoutId;
+  const timer = new Promise((resolve) => { timeoutId = setTimeout(() => resolve({ timeout: true }), timeoutMs); });
+
+  try {
+    while (buffer.length < 64 * 1024) {
+      const result = await Promise.race([reader.read(), timer]);
+      if (result.timeout || result.done) return false;
+      buffer += decoder.decode(result.value, { stream: true });
+      for (const line of buffer.split(/\r?\n/).slice(0, -1)) {
+        const data = (line.startsWith("data:") ? line.slice(5) : line).trim();
+        if (!data || data === "[DONE]" || data.startsWith(":")) continue;
+        try {
+          if (isSemanticEvent(JSON.parse(data))) return true;
+        } catch { /* keep reading until a complete semantic event */ }
+      }
+    }
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+    reader.cancel().catch(() => {});
+  }
+}
+
 /**
  * Determine which SSE transform stream to use based on provider/format.
  */
@@ -44,14 +95,6 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
 export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, streamController, onStreamComplete, streamDetailId, pxpipe, reqTag, log }) {
-  if (onRequestSuccess) {
-    Promise.resolve()
-      .then(onRequestSuccess)
-      .catch(err => {
-        console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
-      });
-  }
-
   // When upstream returns HTML/text instead of SSE (e.g. Cloudflare 5xx error
   // page), piping it through the SSE transform stream causes Next.js
   // "failed to pipe response" and crashes the chat router. Read the body,
@@ -79,12 +122,41 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     };
   }
 
+  if (upstreamContentType.includes('application/json')) {
+    const jsonText = await providerResponse.text().catch(() => '');
+    let json;
+    try { json = JSON.parse(jsonText); } catch { /* handled below */ }
+    if (!json || json.error) {
+      const message = json?.error?.message || "Upstream returned malformed JSON while streaming";
+      return streamFailure(message);
+    }
+    if (!isSemanticEvent(json)) return streamFailure("Upstream returned non-completion JSON while streaming");
+    providerResponse = new Response(`data: ${jsonText}\n\ndata: [DONE]\n\n`, { headers: { 'Content-Type': 'text/event-stream' } });
+  }
+
+  if (!providerResponse.body) {
+    return streamFailure("Upstream stream has no body");
+  }
+
+  const [validationBody, responseBody] = providerResponse.body.tee();
+  const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
+  if (!await hasSemanticSSEEvent(validationBody, stallTimeoutMs)) {
+    streamController?.handleError?.(new Error("upstream stream ended before a valid event"));
+    return streamFailure("Upstream stream ended before a valid event");
+  }
+  providerResponse = new Response(responseBody, { status: providerResponse.status, statusText: providerResponse.statusText, headers: providerResponse.headers });
+
+  if (onRequestSuccess) {
+    Promise.resolve().then(onRequestSuccess).catch(err => {
+      console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
+    });
+  }
+
   const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey });
 
   // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event
   const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
   const onAbortTerminal = isResponsesPassthrough ? buildAbortedResponsesTerminalBytes : null;
-  const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
   const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
 
   saveRequestDetail(buildRequestDetail({
@@ -96,7 +168,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     providerResponse: "[Streaming - raw response not captured]",
     response: { content: "[Streaming in progress...]", thinking: null, type: "streaming" },
     pxpipe,
-    status: "success"
+    status: "streaming"
   }, { id: streamDetailId })).catch(err => {
     console.error("[RequestDetail] Failed to save streaming request:", err.message);
   });
@@ -113,12 +185,13 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, pxpipe, reqTag, log }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
-  const onStreamComplete = (contentObj, usage, ttftAt) => {
+  const onStreamComplete = (contentObj, usage, ttftAt, outcome = {}) => {
     const latency = {
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime
     };
-    const safeContent = contentObj?.content || "[Empty streaming response]";
+    const terminalSeen = outcome.terminalSeen === true;
+    const safeContent = contentObj?.content || (terminalSeen ? "[Empty streaming response]" : "[Incomplete streaming response]");
     const safeThinking = contentObj?.thinking || null;
 
     saveRequestDetail(buildRequestDetail({
@@ -130,7 +203,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       providerResponse: safeContent,
       response: { content: safeContent, thinking: safeThinking, type: "streaming" },
       pxpipe,
-      status: "success"
+      status: terminalSeen ? "success" : "error"
     }, { id: streamDetailId })).catch(err => {
       console.error("[RequestDetail] Failed to update streaming content:", err.message);
     });

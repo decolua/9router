@@ -71,6 +71,8 @@ vi.mock("../../open-sse/rtk/index.js", () => ({
 vi.mock("../../open-sse/rtk/headroom.js", () => ({
   compressWithHeadroom: vi.fn(async () => null),
   formatHeadroomLog: vi.fn(() => ""),
+  formatHeadroomSizeLog: vi.fn(() => ""),
+  isHeadroomPhantomSavings: vi.fn(() => false),
 }));
 
 vi.mock("../../open-sse/providers/capabilities.js", () => ({
@@ -149,5 +151,19 @@ describe("forceStream provider config", () => {
 
     expect(executeMock).toHaveBeenCalledTimes(1);
     expect(executeMock.mock.calls[0][0].stream).toBe(true);
+  });
+
+  it("passes strict proxy mode to the executor", async () => {
+    const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
+    const options = makeOptions(true);
+    options.credentials.providerSpecificData = {
+      connectionProxyEnabled: true,
+      connectionProxyUrl: "http://proxy.test:8080",
+      strictProxy: true,
+    };
+
+    await handleChatCore(options);
+
+    expect(executeMock.mock.calls[0][0].proxyOptions.strictProxy).toBe(true);
   });
 });

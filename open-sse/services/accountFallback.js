@@ -1,4 +1,24 @@
-import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
+import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS, MAX_RATE_LIMIT_COOLDOWN_MS } from "../config/errorConfig.js";
+
+const MODEL_UNAVAILABLE_TTL_MS = 10 * 60 * 1000;
+const unavailableModels = new Map();
+
+const modelKey = (provider, model) => `${provider}/${model}`;
+
+export function markModelUnavailable(provider, model, ttlMs = MODEL_UNAVAILABLE_TTL_MS) {
+  if (provider && model) unavailableModels.set(modelKey(provider, model), Date.now() + ttlMs);
+}
+
+export function getModelUnavailableUntil(provider, model) {
+  const key = modelKey(provider, model);
+  const until = unavailableModels.get(key) || 0;
+  if (until <= Date.now()) unavailableModels.delete(key);
+  return until > Date.now() ? until : 0;
+}
+
+export function isModelUnavailable(provider, model) {
+  return getModelUnavailableUntil(provider, model) > 0;
+}
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
@@ -47,6 +67,51 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
 
   // Default: transient cooldown for any unmatched error
   return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
+}
+
+/** Classify whether a failure belongs to the request, model, provider, proxy, or credential. */
+export function classifyAccountFailure(status, errorText, metadata = {}) {
+  const structured = [metadata.providerErrorCode, metadata.providerErrorType, metadata.providerReason]
+    .filter(Boolean).join(" ").toLowerCase();
+  const text = typeof errorText === "string" ? errorText.toLowerCase() : JSON.stringify(errorText || "").toLowerCase();
+  let scope = "unknown";
+
+  if (metadata.failureScope === "stream") scope = "stream";
+  else if (metadata.failureScope === "network") scope = "network";
+  else if (/invalid_api_key|authentication|unauthenticated|revoked|insufficient_permissions|permission_denied/.test(structured)) scope = "credential";
+  else if (/modelerror|model_not_found|model_not_supported|unsupported_model/.test(structured)) scope = "model";
+  else if (/invalid_request|malformed_request|bad_request/.test(structured)) scope = "request";
+  else if (/model_capacity_exhausted|capacity|overloaded|service_unavailable/.test(structured)) scope = "provider";
+  else if (/account_quota|usage_limit_reached|quota_exhausted/.test(structured)) scope = "account_quota";
+  else if (/econnreset|econnrefused|etimedout|enotfound|und_err|fetch_failed/.test(structured)) scope = "network";
+  else if (/proxy/.test(structured)) scope = "proxy";
+  else if (metadata.resetsAtMs > Date.now() && /quota|usage limit|rate limit/.test(text)) scope = "account_quota";
+  else if (/proxy required|proxy failed/.test(text)) scope = "proxy";
+  else if (/connect timeout|fetch failed|econnreset|econnrefused|etimedout|enotfound/.test(text)) scope = "network";
+  else if (status === 401) scope = "credential";
+  else if (status === 400) scope = "request";
+  else if (status === 404 || status === 406) scope = "model";
+  else if (status === 429 || status >= 500) scope = "provider";
+  else if (/invalid_request|improperly formed|malformed request/.test(text)) scope = "request";
+  else if (/model_not_found|model_not_supported/.test(text)) scope = "model";
+  else if (/invalid_api_key|invalid api key/.test(text)) scope = "credential";
+  else if (/capacity|overloaded/.test(text)) scope = "provider";
+  else if (/quota exceeded|usage_limit_reached/.test(text)) scope = "account_quota";
+
+  const persistAccountLock = scope === "credential" || scope === "account_quota";
+  const preciseCooldownMs = metadata.resetsAtMs > Date.now()
+    ? metadata.resetsAtMs - Date.now()
+    : metadata.retryAfterMs;
+  return {
+    scope,
+    retryNextAccount: persistAccountLock,
+    persistAccountLock,
+    allowComboFallback: scope !== "request",
+    cooldownMs: scope === "account_quota" && preciseCooldownMs > 0
+      ? Math.min(preciseCooldownMs, MAX_RATE_LIMIT_COOLDOWN_MS)
+      : undefined,
+    reasonCode: metadata.providerErrorCode || metadata.providerReason,
+  };
 }
 
 /**

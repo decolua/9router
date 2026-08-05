@@ -73,6 +73,7 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
+  let upstreamTerminalSeen = false;
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -103,6 +104,11 @@ export function createSSEStream(options = {}) {
         if (mode === STREAM_MODE.PASSTHROUGH) {
           let output;
           let injectedUsage = false;
+
+          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") {
+            upstreamTerminalSeen = true;
+            streamDoneSent = true;
+          }
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
@@ -168,6 +174,7 @@ export function createSSEStream(options = {}) {
               }
 
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
+              if (isFinishChunk) upstreamTerminalSeen = true;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
                 parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
@@ -219,11 +226,13 @@ export function createSSEStream(options = {}) {
 
         if (isOpenAIResponsesStream && isOpenAIResponsesTerminalEvent(openAIResponsesEventName, parsed)) {
           openAIResponsesTerminalSeen = true;
+          upstreamTerminalSeen = true;
         }
 
         // For Ollama: done=true is the final chunk with finish_reason/usage, must translate
         // For other formats: done=true is the [DONE] sentinel, skip
         if (parsed && parsed.done && targetFormat !== FORMATS.OLLAMA) {
+          upstreamTerminalSeen = true;
           // Synthesize response.failed if the Responses stream never sent a terminal event
           if (keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
             const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
@@ -241,6 +250,12 @@ export function createSSEStream(options = {}) {
           streamDoneSent = true;
           if (keepsOpenAIResponsesFormat) openAIResponsesDoneSent = true;
           continue;
+        }
+
+        if (parsed?.type === "message_stop"
+          || parsed?.choices?.some(choice => choice?.finish_reason)
+          || parsed?.candidates?.some(candidate => candidate?.finishReason)) {
+          upstreamTerminalSeen = true;
         }
 
         // Claude format - content
@@ -361,7 +376,7 @@ export function createSSEStream(options = {}) {
           if (hasValidUsage(usage)) {
             logUsage(provider, usage, model, connectionId, apiKey);
           } else {
-            appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
+            appendRequestLog({ model, provider, connectionId, tokens: null, status: upstreamTerminalSeen ? "200 OK" : "STREAM INCOMPLETE" }).catch(() => { });
           }
           
           // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
@@ -380,7 +395,7 @@ export function createSSEStream(options = {}) {
             onStreamComplete({
               content: accumulatedContent,
               thinking: accumulatedThinking
-            }, usage, ttftAt);
+            }, usage, ttftAt, { terminalSeen: upstreamTerminalSeen });
           }
           return;
         }
@@ -450,14 +465,14 @@ export function createSSEStream(options = {}) {
         if (hasValidUsage(state?.usage)) {
           logUsage(state.provider || targetFormat, state.usage, model, connectionId, apiKey);
         } else {
-          appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
+          appendRequestLog({ model, provider, connectionId, tokens: null, status: upstreamTerminalSeen ? "200 OK" : "STREAM INCOMPLETE" }).catch(() => { });
         }
         
         if (onStreamComplete) {
           onStreamComplete({
             content: accumulatedContent,
             thinking: accumulatedThinking
-          }, state?.usage, ttftAt);
+          }, state?.usage, ttftAt, { terminalSeen: upstreamTerminalSeen });
         }
       } catch (error) {
         console.log("Error in flush:", error);

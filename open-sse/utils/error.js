@@ -1,5 +1,12 @@
 import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
 
+function parseRetryAfterMs(value) {
+  if (!value) return undefined;
+  if (/^\d+(\.\d+)?$/.test(value)) return Number(value) * 1000;
+  const at = Date.parse(value);
+  return Number.isFinite(at) && at > Date.now() ? at - Date.now() : undefined;
+}
+
 /**
  * Build OpenAI-compatible error response body
  * @param {number} statusCode - HTTP status code
@@ -62,22 +69,37 @@ export async function parseUpstreamError(response, executor = null) {
   } catch {
     bodyText = "";
   }
+  const headerRetryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"));
 
   // Let executor-specific parser extract provider-specific fields (e.g. codex resetsAtMs)
   if (executor && typeof executor.parseError === "function") {
     try {
       const parsed = executor.parseError(response, bodyText);
       if (parsed && typeof parsed === "object") {
+        let json = {};
+        try { json = JSON.parse(bodyText); } catch { /* non-JSON provider error */ }
         const msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
-        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs };
+        return {
+          statusCode: parsed.status || response.status,
+          message: msg,
+          resetsAtMs: parsed.resetsAtMs,
+          providerErrorCode: parsed.providerErrorCode || parsed.code || json.error?.code || json.code,
+          providerErrorType: parsed.providerErrorType || parsed.type || json.error?.type || json.type,
+          providerReason: parsed.providerReason || parsed.reason || json.error?.reason || json.reason,
+          retryAfterMs: parsed.retryAfterMs || headerRetryAfterMs,
+        };
       }
     } catch { /* fall through to default parsing */ }
   }
 
   let message = "";
+  let providerErrorCode, providerErrorType, providerReason;
   try {
     const json = JSON.parse(bodyText);
     message = json.error?.message || json.message || json.error || bodyText;
+    providerErrorCode = json.error?.code || json.code;
+    providerErrorType = json.error?.type || json.type;
+    providerReason = json.error?.reason || json.error?.details?.find(detail => detail?.reason)?.reason || json.reason;
   } catch {
     message = bodyText;
   }
@@ -85,7 +107,7 @@ export async function parseUpstreamError(response, executor = null) {
   const messageStr = typeof message === "string" ? message : JSON.stringify(message);
   const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
 
-  return { statusCode: response.status, message: finalMessage };
+  return { statusCode: response.status, message: finalMessage, providerErrorCode, providerErrorType, providerReason, retryAfterMs: headerRetryAfterMs };
 }
 
 /**
@@ -95,12 +117,13 @@ export async function parseUpstreamError(response, executor = null) {
  * @param {number} [resetsAtMs] - Optional precise cooldown expiry (ms epoch) for provider-specific quota errors
  * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number }}
  */
-export function createErrorResult(statusCode, message, resetsAtMs) {
+export function createErrorResult(statusCode, message, metadata = {}) {
+  if (typeof metadata === "number") metadata = { resetsAtMs: metadata };
   return {
     success: false,
     status: statusCode,
     error: message,
-    resetsAtMs,
+    ...metadata,
     response: errorResponse(statusCode, message)
   };
 }

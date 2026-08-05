@@ -2,7 +2,7 @@
  * Shared combo (model combo) handling with fallback support
  */
 
-import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
+import { checkFallbackError, classifyAccountFailure, formatRetryAfter, isModelUnavailable } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
@@ -248,6 +248,13 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
+    const slash = modelStr.indexOf("/");
+    if (slash > 0 && isModelUnavailable(modelStr.slice(0, slash), modelStr.slice(slash + 1))) {
+      lastError = `Model ${modelStr} is temporarily unavailable`;
+      lastStatus ||= 503;
+      log.warn("COMBO", `Skipping cached unavailable model ${modelStr}`);
+      continue;
+    }
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
@@ -281,9 +288,10 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       }
 
       // Check if should fallback to next model
-      const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
+      const { allowComboFallback } = classifyAccountFailure(result.status, errorText);
+      const { cooldownMs } = checkFallbackError(result.status, errorText);
 
-      if (!shouldFallback) {
+      if (!allowComboFallback) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
         return result;
       }
