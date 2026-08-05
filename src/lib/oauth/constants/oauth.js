@@ -28,9 +28,6 @@ export const CODEX_CONFIG = { ...PROVIDER_OAUTH["codex"] };
 // clientId/clientSecret from GOOGLE_OAUTH_CLIENT (shared.js) — not stored in registry
 export const GEMINI_CONFIG = { ...GOOGLE_OAUTH_CLIENT, ...PROVIDER_OAUTH["gemini-cli"] };
 
-// Qwen OAuth Configuration (Device Code Flow with PKCE)
-export const QWEN_CONFIG = { ...PROVIDER_OAUTH["qwen"] };
-
 // Qoder OAuth Configuration (Device Token Flow with PKCE).
 // Device tokens are long-lived (~30 days for access, ~360 for refresh).
 // The upstream refresh endpoint at center.qoder.sh returns 403 for our
@@ -206,7 +203,6 @@ export const PROVIDERS = {
   CLAUDE: "claude",
   CODEX: "codex",
   GEMINI: "gemini-cli",
-  QWEN: "qwen",
   QODER: "qoder",
   IFLOW: "iflow",
   ANTIGRAVITY: "antigravity",
