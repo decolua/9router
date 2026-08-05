@@ -5,7 +5,7 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
-import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select } from "@/shared/components";
+import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, ComboTestModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
@@ -18,6 +18,7 @@ export default function CombosPage() {
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingCombo, setEditingCombo] = useState(null);
+  const [testingCombo, setTestingCombo] = useState(null);
   const [activeProviders, setActiveProviders] = useState([]);
   const [comboStrategies, setComboStrategies] = useState({});
   const { getCaps } = useModelCaps();
@@ -188,11 +189,22 @@ export default function CombosPage() {
               onCopy={copy}
               onEdit={() => setEditingCombo(combo)}
               onDelete={() => handleDelete(combo.id)}
+              onTest={() => setTestingCombo(combo)}
               strategy={comboStrategies[combo.name] || {}}
               onSetStrategy={(patch) => handleSetComboStrategy(combo.name, patch)}
             />
           ))}
         </div>
+      )}
+
+      {/* Combo Test Modal */}
+      {testingCombo && (
+        <ComboTestModal
+          isOpen={!!testingCombo}
+          combo={testingCombo}
+          onClose={() => setTestingCombo(null)}
+          strategy={comboStrategies[testingCombo.name] || {}}
+        />
       )}
 
       {/* Create Modal - Use key to force remount and reset state */}
@@ -202,6 +214,7 @@ export default function CombosPage() {
           isOpen={showCreateModal}
           onClose={() => setShowCreateModal(false)}
           onSave={handleCreate}
+          onTestDraft={(draft) => setTestingCombo(draft)}
           activeProviders={activeProviders}
         />
       )}
@@ -213,6 +226,7 @@ export default function CombosPage() {
           combo={editingCombo}
           onClose={() => setEditingCombo(null)}
           onSave={(data) => handleUpdate(editingCombo.id, data)}
+          onTestDraft={(draft) => setTestingCombo(draft)}
           activeProviders={activeProviders}
         />
       )}
@@ -236,7 +250,7 @@ const STRATEGY_OPTIONS = [
   { value: "fusion", label: "Fusion — panel + judge" },
 ];
 
-function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
+function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdit, onDelete, onTest, strategy = {}, onSetStrategy }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
@@ -304,7 +318,15 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-1 sm:flex">
+          <div className="grid grid-cols-4 gap-1 sm:flex">
+            <button
+              onClick={onTest}
+              className="flex flex-col items-center rounded px-2 py-1 text-primary transition-colors hover:bg-primary/10"
+              title="Test Run Combo"
+            >
+              <span className="material-symbols-outlined text-[18px]">play_circle</span>
+              <span className="text-[10px] leading-tight font-medium">Test</span>
+            </button>
             <button
               onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
               className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
@@ -449,7 +471,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
   );
 }
 
-function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }) {
+function ComboFormModal({ isOpen, combo, onClose, onSave, onTestDraft, activeProviders, kindFilter = null }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
@@ -622,6 +644,18 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
             <Button onClick={onClose} variant="ghost" fullWidth size="sm">
               Cancel
             </Button>
+            {onTestDraft && models.length > 0 && (
+              <Button
+                type="button"
+                onClick={() => onTestDraft({ id: combo?.id, name: name || "Draft Combo", models, kind: kindFilter || "llm" })}
+                variant="outline"
+                fullWidth
+                size="sm"
+                icon="play_circle"
+              >
+                Test Run
+              </Button>
+            )}
             <Button
               onClick={handleSave}
               fullWidth
