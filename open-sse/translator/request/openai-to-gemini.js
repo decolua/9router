@@ -42,6 +42,33 @@ function normalizeGeminiContents(contents) {
     if (last?.role === c.role) last.parts.push(...c.parts);
     else out.push({ ...c, parts: [...c.parts] });
   }
+
+  // Gemini / Vertex AI strictly require that the last turn in contents is a "user" turn.
+  // Requests ending with a model turn return HTTP 400 ("Requests ending with a model turn are not supported.").
+  if (out.length > 0 && out.at(-1).role === GEMINI_ROLE.MODEL) {
+    const lastTurn = out.at(-1);
+    const functionCalls = lastTurn.parts.filter(p => p?.functionCall);
+
+    if (functionCalls.length > 0) {
+      const functionResponses = functionCalls.map(p => ({
+        functionResponse: {
+          ...(p.functionCall.id ? { id: p.functionCall.id } : {}),
+          name: p.functionCall.name,
+          response: { result: "No response provided" }
+        }
+      }));
+      out.push({
+        role: GEMINI_ROLE.USER,
+        parts: functionResponses
+      });
+    } else {
+      out.push({
+        role: GEMINI_ROLE.USER,
+        parts: [{ text: "Continue" }]
+      });
+    }
+  }
+
   return out;
 }
 
