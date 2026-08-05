@@ -1,12 +1,67 @@
-# Unreleased
+# v0.5.50 (2026-08-05)
 
 ## Features
+- **Providers**: add TokenRouter (300+ models via OpenAI-compatible gateway) with
+  exact per-model pricing for 110 models and `reasoning_effort` thinking config
 - **Providers**: add Self-hosted STT / TTS / Embedding — point 9Router at your own
   OpenAI-compatible speech and embedding servers (whisper.cpp, faster-whisper,
   Kokoro-FastAPI, llama-server, vLLM, Infinity). Unlike the named cloud providers
   these read `baseUrl` per connection, so one provider can front several machines
+- **Combos**: default-enable vision/audio capacity adapter (auto-routes to a
+  vision/audio-capable model when the target lacks that capability, falling back
+  to `oc/mimo-v2.5-free`), wired into chat handler routing
+- **Endpoint**: auto-provision a "Default Key" for first-time users so `/v1`
+  works without a manual dashboard step
+- **Codex**: support GPT-5.6 Max/Ultra reasoning-level overrides (cx/ routes only)
+- **Qoder**: support PAT (Personal Access Token) connections end-to-end, alongside
+  OAuth device flow
+- **CLI tools**: add OpenDesign (manalkaff/opendesign) support
+- **Headroom**: report effective payload savings (tool schema/history bytes broken
+  out, byte-savings % reflects actual outbound reduction)
+- **Ollama**: Cloud quota tracker (session + weekly) + proactive background OAuth
+  token refresh scheduler for all providers
 
 ## Fixes
+- **Providers**: remove Qwen (OAuth flow stopped working reliably)
+- **Passthrough**: detect codex-tui/Codex Desktop as native Codex client — they
+  were falling through to the translator and losing fields like `reasoning.summary`
+- **OAuth**: scope antigravity header fixes to loadCodeAssist/onboardUser only
+- **OAuth**: keep `open` external in the build so xAI/Grok token refresh works on
+  Windows
+- **OAuth**: declare missing `searchParams` in register-session handler (was a
+  500 instead of JSON on error)
+- **DB**: `ENABLE_REQUEST_LOGS` env var now overrides the UI setting correctly;
+  observability defaults to off (opt-in)
+- **Translator**: preserve Codex Responses Lite tool use across chat-native
+  OpenAI-compatible providers
+- **Translator**: don't drop image-only user messages in `prepareClaudeRequest`
+- **Translator**: drop JSON Schema keywords Gemini rejects (`uniqueItems`,
+  `contains`, `multipleOf`, `unevaluatedProperties`, `unevaluatedItems`,
+  `contentSchema`)
+- **Claude**: remove global header cache that leaked one client's identity
+  headers onto another client/account sharing the server; gate `anthropic-beta`
+  by model instead
+- **Antigravity**: drop retired Gemini 3.0 quota tiers, show Gemini 3.6 Flash
+  usage bars
+- **Cloudflare AI**: declare API key authentication (dashboard showed "No
+  connections" despite an active key)
+- **GitHub Copilot**: hold monthly-exhausted accounts until UTC month reset
+  instead of only cooling down 120s
+- **CodeBuddy**: dodge Tencent CN content filter, add usage tracking, normalize
+  codebuddy-intl messages
+- **Usage**: stop losing cached prompt tokens in the forced-SSE→JSON path
+- **Grok CLI**: display the public subscription tier from the OAuth token claim
+- **Providers**: count apikey connections for Ollama free-tier card; free-tier/
+  apikey providers without `authModes` now default to apikey (were treated
+  oauth-only)
+- **Build**: include static/public assets in standalone output (login page hung
+  on 404s when run via PM2)
+- **Server**: support IntelliJ IDEA OpenAI-compatible clients over HTTP (h2c
+  upgrade handling)
+- **Auth**: redirect already-logged-in sessions away from `/login`
+- **CLI tools**: enable Apply button for dynamic OpenAI/Anthropic-compatible
+  provider connections
+- **CLI**: include complete API artifacts in the CLI package
 - **TTS**: a bare self-hosted model name is the MODEL, not the voice — `kokoro`
   was parsed as a voice against a default model, 404ing or synthesising with the
   wrong one
@@ -18,6 +73,9 @@
 - **Embeddings**: bound the upstream fetch with `FETCH_CONNECT_TIMEOUT_MS` — an
   endpoint that drops packets never returns headers, so the request previously
   hung indefinitely
+
+## Docs
+- **i18n**: fix port typo, add RTK Token Saver feature descriptions
 
 # v0.5.45 (2026-07-30)
 
