@@ -1,6 +1,11 @@
 export const CODEX_NATIVE_CONFIG = Object.freeze({
   providerId: "codex",
   providerConfigId: "9router_codex",
+  // Codex Desktop can expose a non-executable WindowsApps shim instead of a
+  // usable `codex --version` command. This is the oldest catalog version
+  // currently accepted by the upstream and is only used when no version is
+  // supplied by the client or detected locally.
+  fallbackClientVersion: "0.100.0",
   upstreamHttpBaseUrl: "https://chatgpt.com/backend-api/codex",
   upstreamWebSocketUrl: "wss://chatgpt.com/backend-api/codex/responses",
   catalogTtlMs: 15 * 60 * 1000,

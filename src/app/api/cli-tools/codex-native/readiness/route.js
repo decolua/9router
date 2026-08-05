@@ -135,7 +135,12 @@ export async function POST(request) {
   const localBaseUrl = `${origin}/v1/codex`;
   const configuredBase = providerBaseUrl(input.baseUrl || await configuredProviderBaseUrl() || localBaseUrl);
   const installedVersion = await getInstalledCodexClientVersion({ forceRefresh: true });
-  const clientVersion = String(input.clientVersion || installedVersion.version || "").trim();
+  const clientVersion = String(
+    input.clientVersion
+      || installedVersion.version
+      || CODEX_NATIVE_CONFIG.fallbackClientVersion
+      || ""
+  ).trim();
   let apiKey;
   try {
     apiKey = String(input.apiKey || await fs.readFile(SECRET_FILE, "utf8")).trim();

@@ -1,5 +1,6 @@
 import { getCodexNativeCatalog, getCodexNativeDefaultModel } from "@/lib/codexNative/catalog.js";
 import { getInstalledCodexClientVersion } from "@/lib/codexNative/clientVersion.js";
+import { CODEX_NATIVE_CONFIG } from "open-sse/config/codexNative.js";
 import {
   getCodexNativeMetrics,
   getCodexNativePoolSnapshot,
@@ -14,12 +15,9 @@ export async function GET(request) {
     const installedVersion = requestedVersion
       ? null
       : await getInstalledCodexClientVersion({ forceRefresh });
-    const clientVersion = requestedVersion || installedVersion?.version;
-    if (!clientVersion) {
-      return Response.json({
-        error: "Codex client version could not be detected; install Codex CLI or provide client_version",
-      }, { status: 503 });
-    }
+    const clientVersion = requestedVersion
+      || installedVersion?.version
+      || CODEX_NATIVE_CONFIG.fallbackClientVersion;
     const catalog = await getCodexNativeCatalog({ forceRefresh, clientVersion });
     const accounts = forceRefresh
       ? await refreshCodexNativePoolUsage({ clientVersion })

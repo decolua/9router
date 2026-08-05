@@ -27,6 +27,16 @@ vi.mock("@/lib/codexNative/clientVersion.js", () => ({
 vi.mock("@/lib/codexNative/catalog.js", () => ({
   getMostRecentCodexClientVersion: vi.fn(async () => "0.145.0"),
 }));
+vi.mock("open-sse/config/codexNative.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    CODEX_NATIVE_CONFIG: {
+      ...actual.CODEX_NATIVE_CONFIG,
+      fallbackClientVersion: "0.100.0",
+    },
+  };
+});
 
 describe("Codex Native process-internal lease API", () => {
   beforeEach(() => {
@@ -89,6 +99,31 @@ describe("Codex Native process-internal lease API", () => {
     expect(JSON.stringify(payload)).not.toContain("client-key");
     expect(mocks.acquire).toHaveBeenCalledWith(expect.objectContaining({
       clientVersion: "0.146.0",
+    }));
+  });
+
+  it("uses the compatible catalog version when the local Codex command is unavailable", async () => {
+    const { getInstalledCodexClientVersion } = await import("@/lib/codexNative/clientVersion.js");
+    const { getMostRecentCodexClientVersion } = await import("@/lib/codexNative/catalog.js");
+    getInstalledCodexClientVersion.mockResolvedValueOnce({ installed: false, version: null });
+    getMostRecentCodexClientVersion.mockResolvedValueOnce(null);
+
+    const { POST } = await import("@/app/api/internal/codex-native/lease/[action]/route.js");
+    const response = await POST(new Request("http://router/api/internal/codex-native/lease/acquire", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-9r-internal-secret": "process-secret",
+        "x-9r-real-ip": "127.0.0.1",
+      },
+      body: JSON.stringify({ requestHeaders: {} }),
+    }), { params: Promise.resolve({ action: "acquire" }) });
+
+    expect(response.status).toBe(200);
+    const payload = await response.json();
+    expect(payload.upstreamHeaders["x-codex-client-version"]).toBe("0.100.0");
+    expect(mocks.acquire).toHaveBeenCalledWith(expect.objectContaining({
+      clientVersion: "0.100.0",
     }));
   });
 });

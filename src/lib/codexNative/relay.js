@@ -55,7 +55,9 @@ async function resolveCodexClientVersion(request) {
   const requestVersion = codexClientVersionFromRequest(request);
   if (requestVersion) return requestVersion;
   const installed = await getInstalledCodexClientVersion();
-  return installed.version || await getMostRecentCodexClientVersion();
+  return installed.version
+    || await getMostRecentCodexClientVersion()
+    || CODEX_NATIVE_CONFIG.fallbackClientVersion;
 }
 
 export function isCodexSemanticEvent(event) {
@@ -199,6 +201,9 @@ export async function relayCodexNativeHttp(request, {
     }
 
     const headers = sanitizeCodexNativeRequestHeaders(request.headers, lease.credentials);
+    if (!headers.has("x-codex-client-version")) {
+      headers.set("x-codex-client-version", clientVersion);
+    }
     let upstream;
     try {
       upstream = await proxyAwareFetch(upstreamUrl(path), {

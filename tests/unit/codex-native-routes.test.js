@@ -25,6 +25,16 @@ vi.mock("@/lib/codexNative/clientAuth.js", () => ({
   validateCodexNativeClient: vi.fn(async () => ({ ok: true })),
   codexNativeAuthError: vi.fn(),
 }));
+vi.mock("open-sse/config/codexNative.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    CODEX_NATIVE_CONFIG: {
+      ...actual.CODEX_NATIVE_CONFIG,
+      fallbackClientVersion: "0.100.0",
+    },
+  };
+});
 
 describe("Codex Native routes", () => {
   beforeEach(() => {
@@ -96,6 +106,19 @@ describe("Codex Native routes", () => {
       models: [{ slug: "gpt-native", eligibleAccountCount: 0 }],
       catalog: { clientVersion: "0.146.0" },
     });
+  });
+
+  it("uses the compatible catalog version when Codex Desktop cannot run codex --version", async () => {
+    mocks.detectVersion.mockResolvedValueOnce({ installed: false, version: null, raw: null });
+    const { GET } = await import("@/app/api/cli-tools/codex-native/models/route.js");
+    const response = await GET(new Request("http://localhost/api/cli-tools/codex-native/models"));
+
+    expect(response.status).toBe(200);
+    expect(mocks.getCatalog).toHaveBeenCalledWith({
+      forceRefresh: false,
+      clientVersion: "0.100.0",
+    });
+    expect(mocks.getPoolSnapshot).toHaveBeenCalledWith({ clientVersion: "0.100.0" });
   });
 
   it.each([

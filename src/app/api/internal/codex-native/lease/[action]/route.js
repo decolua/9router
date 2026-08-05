@@ -13,6 +13,7 @@ import { sanitizeCodexNativeRequestHeaders, headersToObject } from "@/lib/codexN
 import { validateCodexNativeClient } from "@/lib/codexNative/clientAuth.js";
 import { getInstalledCodexClientVersion } from "@/lib/codexNative/clientVersion.js";
 import { getMostRecentCodexClientVersion } from "@/lib/codexNative/catalog.js";
+import { CODEX_NATIVE_CONFIG } from "open-sse/config/codexNative.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -54,7 +55,8 @@ export async function POST(request, context) {
       : await getInstalledCodexClientVersion();
     const clientVersion = payload.clientVersion
       || installedVersion?.version
-      || await getMostRecentCodexClientVersion();
+      || await getMostRecentCodexClientVersion()
+      || CODEX_NATIVE_CONFIG.fallbackClientVersion;
     const routed = await acquireCodexNativeLease({
       headers: payload.requestHeaders || {},
       body: payload.body || {},
@@ -74,6 +76,9 @@ export async function POST(request, context) {
       payload.requestHeaders || {},
       lease.credentials
     );
+    if (!upstreamHeaders.has("x-codex-client-version")) {
+      upstreamHeaders.set("x-codex-client-version", clientVersion);
+    }
     return Response.json({
       leaseId: lease.id,
       connectionId: lease.connectionId,
