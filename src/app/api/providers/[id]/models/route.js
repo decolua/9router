@@ -3,6 +3,7 @@ import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, refreshCodexToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
+import { parseVertexSaJson, refreshVertexToken } from "open-sse/services/tokenRefresh.js";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
@@ -47,6 +48,28 @@ const parseGeminiCliModels = (data) => {
   }
 
   return [];
+};
+
+const parseVertexModels = (data) => {
+  const items = data?.publisherModels || data?.models || data?.data || [];
+  if (!Array.isArray(items)) return [];
+
+  const results = [];
+  for (const item of items) {
+    const fullName = item?.name || item?.id || item?.model || "";
+    if (!fullName) continue;
+
+    const id = fullName.replace(/^publishers\/google\/models\//, "").replace(/^models\//, "");
+    if (!id || id.includes("__probe__")) continue;
+
+    const displayName = item?.displayName || item?.versionId || id;
+    results.push({
+      id,
+      name: displayName,
+    });
+  }
+
+  return results;
 };
 
 const appendCodexReviewModels = (models) => models.flatMap((model) => {
@@ -257,6 +280,70 @@ const PROVIDER_MODELS_CONFIG = {
   nvidia: createOpenAIModelsConfig("https://integrate.api.nvidia.com/v1/models"),
   assemblyai: createOpenAIModelsConfig("https://api.assemblyai.com/v1/models"),
   "vercel-ai-gateway": createOpenAIModelsConfig("https://ai-gateway.vercel.sh/v1/models"),
+  vertex: {
+    customResolver: async (connection) => {
+      const saJson = parseVertexSaJson(connection.apiKey);
+      const projectId = saJson?.project_id || connection.providerSpecificData?.projectId || connection.projectId;
+      const location = connection.providerSpecificData?.location || connection.providerSpecificData?.region || "us-central1";
+      const proxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+
+      let url;
+      let headers = { "Content-Type": "application/json" };
+
+      if (saJson) {
+        const tokenRes = await refreshVertexToken(saJson);
+        if (!tokenRes?.accessToken) {
+          return { error: "Failed to mint token from Service Account JSON", status: 401 };
+        }
+        headers["Authorization"] = `Bearer ${tokenRes.accessToken}`;
+        url = projectId
+          ? `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models`
+          : `https://aiplatform.googleapis.com/v1/publishers/google/models`;
+      } else if (connection.accessToken) {
+        headers["Authorization"] = `Bearer ${connection.accessToken}`;
+        url = projectId
+          ? `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models`
+          : `https://aiplatform.googleapis.com/v1/publishers/google/models`;
+      } else if (connection.apiKey) {
+        url = location && location !== "global"
+          ? `https://${location}-aiplatform.googleapis.com/v1/publishers/google/models?key=${connection.apiKey}`
+          : `https://aiplatform.googleapis.com/v1/publishers/google/models?key=${connection.apiKey}`;
+      } else {
+        return { error: "No API key or Service Account provided", status: 401 };
+      }
+
+      try {
+        const res = await fetchWithConnectionProxy(url, { headers }, proxy);
+        if (!res.ok) {
+          const errorText = await res.text().catch(() => "");
+          console.log("Error fetching Vertex AI models:", errorText);
+          return {
+            models: getStaticProviderModels("vertex"),
+            warning: `Failed to fetch Vertex models (${res.status}); using static catalog.`,
+          };
+        }
+
+        const data = await res.json().catch(() => ({}));
+        const models = parseVertexModels(data);
+
+        if (models.length > 0) {
+          return { models };
+        }
+      } catch (err) {
+        console.log("Failed to fetch Vertex AI models:", err.message);
+      }
+
+      return {
+        models: getStaticProviderModels("vertex"),
+        warning: "Vertex AI returned no models; using static catalog.",
+      };
+    }
+  },
+  "vertex-partner": {
+    customResolver: async (connection) => {
+      return { models: getStaticProviderModels("vertex-partner") };
+    }
+  },
   kimchi: {
     customResolver: async (connection) => {
       const result = await resolveKimchiModels({
