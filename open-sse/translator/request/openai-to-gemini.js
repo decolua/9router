@@ -39,8 +39,22 @@ function normalizeGeminiContents(contents) {
   for (const c of contents || []) {
     if (!c?.role || !Array.isArray(c.parts) || c.parts.length === 0) continue;
     const last = out.at(-1);
-    if (last?.role === c.role) last.parts.push(...c.parts);
-    else out.push({ ...c, parts: [...c.parts] });
+    if (last?.role === c.role) {
+      const lastHasFnResp = last.parts.some(p => p?.functionResponse);
+      const currHasFnResp = c.parts.some(p => p?.functionResponse);
+      const lastHasText = last.parts.some(p => p?.text);
+      const currHasText = c.parts.some(p => p?.text);
+
+      // Vertex AI / Gemini requires functionResponse parts to be in their own user turn.
+      // Do not merge user functionResponse turn with user text turn.
+      if (c.role === GEMINI_ROLE.USER && ((lastHasFnResp && currHasText) || (lastHasText && currHasFnResp))) {
+        out.push({ ...c, parts: [...c.parts] });
+      } else {
+        last.parts.push(...c.parts);
+      }
+    } else {
+      out.push({ ...c, parts: [...c.parts] });
+    }
   }
 
   // Gemini / Vertex AI strictly require that the last turn in contents is a "user" turn.

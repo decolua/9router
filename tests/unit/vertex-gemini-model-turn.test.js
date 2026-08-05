@@ -49,7 +49,7 @@ describe("OpenAI → Gemini / Vertex requests ending with model turn", () => {
     expect(lastTurn.role).toBe("user");
     expect(lastTurn.parts[0].functionResponse).toBeDefined();
     expect(lastTurn.parts[0].functionResponse.name).toBe("get_weather");
-    expect(lastTurn.parts[0].functionResponse.response.result).toBe("No response provided");
+    expect(lastTurn.parts[0].functionResponse.response.result).toEqual({ result: "[No response received]" });
     // Vertex post-processing strips `id`
     expect(lastTurn.parts[0].functionResponse.id).toBeUndefined();
   });

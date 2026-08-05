@@ -121,6 +121,7 @@ export function hasToolResults(msg, toolCallIds) {
 export function fixMissingToolResponses(body) {
   if (!body.messages || !Array.isArray(body.messages)) return body;
 
+  const isClaudeFormat = body.messages.some(m => Array.isArray(m?.content) && m.content.some(c => c?.type === "tool_use" || c?.type === "tool_result")) || !!body.system;
   const newMessages = [];
 
   for (let i = 0; i < body.messages.length; i++) {
@@ -134,15 +135,25 @@ export function fixMissingToolResponses(body) {
     if (toolCallIds.length === 0) continue;
 
     // Check if next message has tool_result
-    if (nextMsg && !hasToolResults(nextMsg, toolCallIds)) {
+    if (!nextMsg || !hasToolResults(nextMsg, toolCallIds)) {
       // Insert tool responses for each tool_call
       for (const id of toolCallIds) {
-        // OpenAI format: role = "tool"
-        newMessages.push({
-          role: "tool",
-          tool_call_id: id,
-          content: ""
-        });
+        if (isClaudeFormat) {
+          newMessages.push({
+            role: "user",
+            content: [{
+              type: "tool_result",
+              tool_use_id: id,
+              content: "[No response received]"
+            }]
+          });
+        } else {
+          newMessages.push({
+            role: "tool",
+            tool_call_id: id,
+            content: "[No response received]"
+          });
+        }
       }
     }
   }
