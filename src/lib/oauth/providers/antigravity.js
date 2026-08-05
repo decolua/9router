@@ -39,13 +39,10 @@ const antigravity = {
     return await response.json();
   },
   postExchange: async (tokens) => {
-    // Numeric enums matching Antigravity binary ClientMetadata
     const loadHeaders = {
       "Authorization": `Bearer ${tokens.access_token}`,
       "Content-Type": "application/json",
       "User-Agent": ANTIGRAVITY_CONFIG.loadCodeAssistUserAgent,
-      "X-Goog-Api-Client": ANTIGRAVITY_CONFIG.loadCodeAssistApiClient,
-      "Client-Metadata": ANTIGRAVITY_CONFIG.loadCodeAssistClientMetadata,
       "x-request-source": "local",
     };
     const metadata = getOAuthClientMetadata();
