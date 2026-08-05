@@ -25,9 +25,17 @@ function messagePayload(body) {
 
 function captureSizeSnapshot(body) {
   const messages = messagePayload(body);
+  const toolHistory = messages?.filter((message) =>
+    message?.role === "tool"
+    || message?.role === "function"
+    || message?.tool_calls?.length
+    || message?.content?.some?.((part) => part?.type === "tool_use" || part?.type === "tool_result")
+  ) || [];
   return {
     bodyBytes: jsonBytes(body),
     messageBytes: messages ? jsonBytes(messages) : 0,
+    toolSchemaBytes: jsonBytes(body?.tools || []),
+    toolHistoryBytes: jsonBytes(toolHistory),
   };
 }
 
@@ -336,7 +344,10 @@ export function formatHeadroomSizeLog(diagnostics) {
   const before = diagnostics?.before;
   const after = diagnostics?.after;
   if (!before || !after) return "";
-  return `body=${before.bodyBytes}B→${after.bodyBytes}B messages=${before.messageBytes}B→${after.messageBytes}B`;
+  const effective = before.bodyBytes > 0
+    ? (((before.bodyBytes - after.bodyBytes) / before.bodyBytes) * 100).toFixed(1)
+    : "0.0";
+  return `body=${before.bodyBytes}B→${after.bodyBytes}B messages=${before.messageBytes}B→${after.messageBytes}B tools=${before.toolSchemaBytes || 0}B→${after.toolSchemaBytes || 0}B toolHistory=${before.toolHistoryBytes || 0}B→${after.toolHistoryBytes || 0}B effective=${effective}%`;
 }
 
 export function isHeadroomPhantomSavings(stats, diagnostics, minShrinkRatio = 0.05) {
