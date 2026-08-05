@@ -108,17 +108,22 @@ describe("Codex Native routes", () => {
     });
   });
 
-  it("uses the compatible catalog version when Codex Desktop cannot run codex --version", async () => {
-    mocks.detectVersion.mockResolvedValueOnce({ installed: false, version: null, raw: null });
+  it("uses the Codex Desktop cached version when codex --version cannot run", async () => {
+    mocks.detectVersion.mockResolvedValueOnce({
+      installed: false,
+      version: "0.147.0",
+      raw: null,
+      source: "desktop-cache",
+    });
     const { GET } = await import("@/app/api/cli-tools/codex-native/models/route.js");
     const response = await GET(new Request("http://localhost/api/cli-tools/codex-native/models"));
 
     expect(response.status).toBe(200);
     expect(mocks.getCatalog).toHaveBeenCalledWith({
       forceRefresh: false,
-      clientVersion: "0.100.0",
+      clientVersion: "0.147.0",
     });
-    expect(mocks.getPoolSnapshot).toHaveBeenCalledWith({ clientVersion: "0.100.0" });
+    expect(mocks.getPoolSnapshot).toHaveBeenCalledWith({ clientVersion: "0.147.0" });
   });
 
   it.each([
