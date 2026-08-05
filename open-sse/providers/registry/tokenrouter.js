@@ -15,10 +15,14 @@ export default {
     },
   },
   category: "apikey",
+  thinkingConfig: {
+    options: ["low", "medium", "high", "xhigh", "max"],
+    defaultMode: "high",
+  },
   transport: {
     baseUrl: "https://api.tokenrouter.com/v1/chat/completions",
     validateUrl: "https://api.tokenrouter.com/v1/models",
-    thinkingFormat: "openai",
+    thinkingFormat: "tokenrouter",
   },
   // Seed snapshot dari live /v1/models (120 entri). Catalogue terbaru
   // di-fetch via modelsFetcher; id lain tetap diterima via passthroughModels.

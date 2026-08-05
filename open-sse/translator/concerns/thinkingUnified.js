@@ -302,6 +302,15 @@ function applyFormat(fmt, body, cfg, caps) {
       if (level) body.reasoning_effort = level === "xhigh" || level === "max" ? "high" : level;
       break;
     }
+    case "tokenrouter": {
+      // TokenRouter's reasoning_effort enum is low/medium/high/xhigh/max — it rejects
+      // "none"/"auto" with a 400 and supports "max" natively (no clamp like openai).
+      // "none" → omit the field so the upstream default applies; pass levels through.
+      if (none || eff.mode === "auto") break;
+      const level = toLevel(eff);
+      if (level) body.reasoning_effort = level;
+      break;
+    }
     case "kiro":
       // Kiro thinking handled via system-tag injection in openai-to-kiro.js; no body field here.
       break;
