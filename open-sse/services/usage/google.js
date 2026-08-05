@@ -68,7 +68,7 @@ export async function getGeminiUsage(accessToken, providerSpecificData, proxyOpt
         if (!bucket.modelId || bucket.remainingFraction == null) continue;
 
         const remainingFraction = Number(bucket.remainingFraction) || 0;
-        const total = 1000; // Normalized base, matches antigravity convention
+        const total = 100; // AIDUMAX_ANTIGRAVITY_WINDOWS_V2
         const remaining = Math.round(total * remainingFraction);
         const used = Math.max(0, total - remaining);
 
@@ -159,49 +159,47 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
 
     // Parse model quotas (inspired by vscode-antigravity-cockpit)
     if (data.models) {
-      // Filter only recommended/important models (must match PROVIDER_MODELS ag ids)
-      const importantModels = [
-        'gemini-3.6-flash-high',
-        'gemini-3.6-flash-medium',
-        'gemini-3.6-flash-low',
-        'gemini-3.5-flash-low',
-        'gemini-3.5-flash-extra-low',
-        'gemini-pro-agent',
-        'gemini-3.1-pro-low',
-        'claude-sonnet-4-6',
-        'claude-opus-4-6-thinking',
-        'gpt-oss-120b-medium',
-        // Image generation models
-        'gemini-3.1-flash-image',
-      ];
+      // Antigravity v2 Quota Windows: Instead of mapping redundant models,
+      // aggregate them into 4 shared quota buckets (gemini/3p x 5h/weekly),
+      // reflecting how Google actually enforces the limits per period.
+      const geminiPrefixes = ["gemini-"];
+      const thirdPartyPrefixes = ["claude-", "gpt-oss-"];
+      
+      const buckets = {
+        "gemini-models": { minFraction: 1, resetAt: null, displayName: "Gemini Models", found: false },
+        "claude-gpt-models": { minFraction: 1, resetAt: null, displayName: "Claude and GPT Models", found: false }
+      };
 
       for (const [modelKey, info] of Object.entries(data.models)) {
-        // Skip models without quota info
-        if (!info.quotaInfo) {
-          continue;
+        if (!info || !info.quotaInfo || info.isInternal) continue;
+        
+        const remainingFraction = Number(info.quotaInfo.remainingFraction) || 0;
+        const resetAt = parseResetTime(info.quotaInfo.resetTime);
+        
+        const isGemini = geminiPrefixes.some(p => modelKey.startsWith(p));
+        const is3p = thirdPartyPrefixes.some(p => modelKey.startsWith(p));
+        const targetB = isGemini ? buckets["gemini-models"] : (is3p ? buckets["claude-gpt-models"] : null);
+        
+        if (targetB) {
+          targetB.found = true;
+          if (remainingFraction < targetB.minFraction) targetB.minFraction = remainingFraction;
+          if (!targetB.resetAt) targetB.resetAt = resetAt;
         }
-
-        // Skip internal models and non-important models
-        if (info.isInternal || !importantModels.includes(modelKey)) {
-          continue;
-        }
-
-        const remainingFraction = info.quotaInfo.remainingFraction || 0;
-        const remainingPercentage = remainingFraction * 100;
-
-        // Convert percentage to used/total for UI compatibility
-        const total = 1000; // Normalized base
-        const remaining = Math.round(total * remainingFraction);
+      }
+      
+      for (const [key, b] of Object.entries(buckets)) {
+        if (!b.found) continue;
+        const total = 100;
+        const remaining = Math.round(total * b.minFraction);
         const used = total - remaining;
-
-        // Use modelKey as key (matches PROVIDER_MODELS id)
-        quotas[modelKey] = {
+        
+        quotas[key] = {
           used,
           total,
-          resetAt: parseResetTime(info.quotaInfo.resetTime),
-          remainingPercentage,
+          resetAt: b.resetAt,
+          remainingPercentage: b.minFraction * 100,
           unlimited: false,
-          displayName: info.displayName || modelKey,
+          displayName: b.displayName,
         };
       }
     }
