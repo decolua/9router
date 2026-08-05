@@ -32,6 +32,8 @@ import { SSE_DONE } from "../utils/sseConstants.js";
 import { FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import {
   QODER_CHAT_URL_ENCODED,
+  QODER_CHAT_BASE_ALT,
+  QODER_CHAT_SIG_PATH,
   QODER_JOB_TOKEN_EXCHANGE_URL,
   QODER_USERINFO_URL,
   QODER_MODEL_MAP,
@@ -433,7 +435,13 @@ export class QoderExecutor extends BaseExecutor {
     super("qoder", PROVIDERS.qoder);
   }
 
-  buildUrl() {
+  buildUrl(credentials) {
+    // Job-token (jt-...) traffic must hit api2.qoder.sh — api3 rejects jt-
+    // with "Login expired" (403). Device tokens (dt-...) stay on api3.
+    const raw = credentials?.apiKey || credentials?.accessToken;
+    if (typeof raw === "string" && !raw.startsWith("pt-") && (raw.startsWith("jt-") || (credentials?.accessToken || "").startsWith("jt-"))) {
+      return `${QODER_CHAT_BASE_ALT}/algo${QODER_CHAT_SIG_PATH}?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1`;
+    }
     return QODER_CHAT_URL_ENCODED;
   }
 
@@ -443,8 +451,6 @@ export class QoderExecutor extends BaseExecutor {
   //   - COSY headers built from the *encoded* body bytes
   //   - response stream re-wrapped from {statusCodeValue, body} to OpenAI SSE
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
-    const url = this.buildUrl();
-
     // PAT (pt-...) → exchange for short-lived job token + resolve userId so
     // downstream COSY signing + catalog fetch work. Device tokens (dt-...) and
     // job tokens (jt-...) skip this and are used directly.
@@ -469,10 +475,11 @@ export class QoderExecutor extends BaseExecutor {
           JSON.stringify({ error: { message: `qoder PAT exchange failed: ${err.message}` } }),
           { status: 401, headers: { "Content-Type": "application/json" } },
         );
-        return { response: fakeResp, url, headers: {}, transformedBody: body };
+        return { response: fakeResp, url: this.buildUrl(credentials), headers: {}, transformedBody: body };
       }
     }
 
+    const url = this.buildUrl(credentials);
     const psd = credentials?.providerSpecificData || {};
     if (!psd.userId) {
       // No user id → no way to sign. Surface a 401 so the dashboard nudges
