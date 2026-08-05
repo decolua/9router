@@ -1,13 +1,14 @@
 "use client";
 
 import Card from "./Card";
+import { fmtCost } from "@/shared/utils/currency";
 
 // Only show fields user actually cares about
 const FIELD_SCHEMA = {
   mode:             { label: "Mode",       format: (v) => v },
   defaultModel:     { label: "Model",      format: (v) => v, mono: true },
   baseUrl:          { label: "Endpoint",   format: (v) => v, isLink: true, mono: true },
-  costPerQuery:     { label: "Cost / call", format: (v) => v === 0 ? "Free" : `$${v.toFixed(4)}` },
+  costPerQuery:     { label: "Cost / call", format: (v) => v === 0 ? "Free" : fmtCost(v, 4) },
   pricingUrl:       { label: "Pricing",    format: () => "View pricing", isLink: true },
   freeTier:         { label: "Free tier",  format: (v) => v },
   freeMonthlyQuota: { label: "Free quota",  format: (v) => v === 0 ? "—" : v >= 999999 ? "Unlimited" : `${v.toLocaleString()} / mo` },

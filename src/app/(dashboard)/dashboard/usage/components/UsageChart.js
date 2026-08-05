@@ -13,6 +13,7 @@ import {
   Legend,
 } from "recharts";
 import Card from "@/shared/components/Card";
+import { fmtCost } from "@/shared/utils/currency";
 
 const fmtTokens = (n) => {
   if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -20,7 +21,7 @@ const fmtTokens = (n) => {
   return String(n || 0);
 };
 
-const fmtCost = (n) => `$${(n || 0).toFixed(4)}`;
+const fmtChartCost = (n) => fmtCost(n, 4);
 
 export default function UsageChart({ period = "7d" }) {
   const [data, setData] = useState([]);
@@ -94,7 +95,7 @@ export default function UsageChart({ period = "7d" }) {
               tick={{ fontSize: 10, fill: "currentColor", fillOpacity: 0.5 }}
               tickLine={false}
               axisLine={false}
-              tickFormatter={viewMode === "tokens" ? fmtTokens : fmtCost}
+              tickFormatter={viewMode === "tokens" ? fmtTokens : fmtChartCost}
               width={50}
             />
             <Tooltip
@@ -105,7 +106,7 @@ export default function UsageChart({ period = "7d" }) {
                 fontSize: "12px",
               }}
               formatter={(value, name) =>
-                name === "tokens" ? [fmtTokens(value), "Tokens"] : [fmtCost(value), "Cost"]
+                name === "tokens" ? [fmtTokens(value), "Tokens"] : [fmtChartCost(value), "Cost"]
               }
             />
             {viewMode === "tokens" ? (
