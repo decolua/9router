@@ -197,6 +197,19 @@ export async function proxy(request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  if (request.method === "OPTIONS" && isPublicLlmApi(pathname)) {
+    const reqHeaders = request.headers.get("access-control-request-headers");
+    return new NextResponse(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": reqHeaders || "*",
+        "Access-Control-Max-Age": "86400",
+      },
+    });
+  }
+
   if (isPublicLlmApi(pathname)) {
     if (await canAccessPublicLlmApi(request)) return NextResponse.next();
     return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
