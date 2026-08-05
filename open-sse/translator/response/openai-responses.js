@@ -516,8 +516,17 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     return null;
   }
 
-  // Reasoning summary delta → emit as reasoning_content for client thinking display
-  if (eventType === "response.reasoning_summary_text.delta") {
+  // Reasoning delta → emit as reasoning_content for client thinking display.
+  // Two shapes exist in the Responses API:
+  //   - response.reasoning_summary_text.delta : short summary (o-series, some proxies)
+  //   - response.reasoning_text.delta         : full reasoning text (Grok CLI,
+  //     gpt-oss, others). Grok CLI streams ONLY reasoning_text.delta — handling
+  //     just the summary event dropped its entire reasoning, so the model lost
+  //     its chain-of-thought and behaved noticeably worse.
+  if (
+    eventType === "response.reasoning_summary_text.delta" ||
+    eventType === "response.reasoning_text.delta"
+  ) {
     const delta = data.delta || "";
     if (!delta) return null;
     return buildChunk(

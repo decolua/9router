@@ -3,6 +3,7 @@ import { FORMATS } from "../formats.js";
 import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK } from "../schema/index.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
+import { splitThinkTags, flushThinkTags } from "../concerns/thinkTag.js";
 
 // Legacy "proxy_" prefix used by older request translators. Response strips it
 // defensively so tool names from such turns resolve back (e.g. proxy_Read → Read
@@ -65,6 +66,53 @@ function stopTextBlock(state, results) {
     index: state.textBlockIndex
   });
   state.textBlockStarted = false;
+}
+
+// Emit a thinking (reasoning) delta, opening the thinking block on first use.
+// Closes any open text block first — Claude requires blocks not to interleave.
+function emitThinking(text, state, results) {
+  if (!text) return;
+  stopTextBlock(state, results);
+
+  if (!state.thinkingBlockStarted) {
+    state.thinkingBlockIndex = state.nextBlockIndex++;
+    state.thinkingBlockStarted = true;
+    results.push({
+      type: "content_block_start",
+      index: state.thinkingBlockIndex,
+      content_block: { type: CLAUDE_BLOCK.THINKING, thinking: "" }
+    });
+  }
+
+  results.push({
+    type: "content_block_delta",
+    index: state.thinkingBlockIndex,
+    delta: { type: "thinking_delta", thinking: text }
+  });
+}
+
+// Emit a normal text delta, opening the text block on first use.
+// Closes any open thinking block first.
+function emitText(text, state, results) {
+  if (!text) return;
+  stopThinkingBlock(state, results);
+
+  if (!state.textBlockStarted) {
+    state.textBlockIndex = state.nextBlockIndex++;
+    state.textBlockStarted = true;
+    state.textBlockClosed = false;
+    results.push({
+      type: "content_block_start",
+      index: state.textBlockIndex,
+      content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+    });
+  }
+
+  results.push({
+    type: "content_block_delta",
+    index: state.textBlockIndex,
+    delta: { type: "text_delta", text }
+  });
 }
 
 // Convert OpenAI stream chunk to Claude format
@@ -136,47 +184,19 @@ export function openaiToClaudeResponse(chunk, state) {
   }
 
   // Handle reasoning (thinking) across vendor shapes - GLM/DeepSeek/Qwen/MiniMax/etc.
+  // (separate reasoning_content / reasoning / reasoning_details field).
   const reasoningContent = extractReasoningText(delta);
   if (reasoningContent) {
-    stopTextBlock(state, results);
-
-    if (!state.thinkingBlockStarted) {
-      state.thinkingBlockIndex = state.nextBlockIndex++;
-      state.thinkingBlockStarted = true;
-      results.push({
-        type: "content_block_start",
-        index: state.thinkingBlockIndex,
-        content_block: { type: CLAUDE_BLOCK.THINKING, thinking: "" }
-      });
-    }
-
-    results.push({
-      type: "content_block_delta",
-      index: state.thinkingBlockIndex,
-      delta: { type: "thinking_delta", thinking: reasoningContent }
-    });
+    emitThinking(reasoningContent, state, results);
   }
 
-  // Handle regular content
+  // Handle regular content. Some OpenAI-compatible upstreams inline reasoning as
+  // <think>…</think> inside content instead of a separate field — split it out
+  // so it becomes a proper Claude thinking block (streaming-safe across chunks).
   if (delta?.content) {
-    stopThinkingBlock(state, results);
-
-    if (!state.textBlockStarted) {
-      state.textBlockIndex = state.nextBlockIndex++;
-      state.textBlockStarted = true;
-      state.textBlockClosed = false;
-      results.push({
-        type: "content_block_start",
-        index: state.textBlockIndex,
-        content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
-      });
-    }
-
-    results.push({
-      type: "content_block_delta",
-      index: state.textBlockIndex,
-      delta: { type: "text_delta", text: delta.content }
-    });
+    const { reasoning, text } = splitThinkTags(delta.content, state);
+    emitThinking(reasoning, state, results);
+    emitText(text, state, results);
   }
 
   // Tool calls
