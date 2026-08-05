@@ -7,7 +7,6 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
 import { buildDisciplineLock } from "open-sse/utils/disciplineLock.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
