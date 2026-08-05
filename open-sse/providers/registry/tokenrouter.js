@@ -1,8 +1,8 @@
 export default {
   id: "tokenrouter",
-  alias: "tokenrouter",
-  aliases: ["tr"],
-  uiAlias: "tokenrouter",
+  alias: "tr",
+  aliases: ["tokenrouter"],
+  uiAlias: "tr",
   display: {
     name: "TokenRouter",
     icon: "hub",
