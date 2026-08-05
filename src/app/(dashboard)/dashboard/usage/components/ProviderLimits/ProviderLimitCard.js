@@ -150,14 +150,17 @@ export default function ProviderLimitCard({
         <div className="space-y-4">
           {quotas.map((quota, index) => {
             // For Antigravity, use remainingPercentage if available, otherwise calculate
-            const percentage =
-              quota.remainingPercentage !== undefined
-                ? Math.round(((quota.total - quota.used) / quota.total) * 100)
+            const percentage = quota.remainingPercentage !== undefined 
+                ? Math.round(quota.remainingPercentage) 
                 : calculatePercentage(quota.used, quota.total);
             const unlimited = quota.total === 0 || quota.total === null;
+            
+            // Format percentage display for percentage-based quotas (100 total)
+            const isPercentageQuota = quota.total === 100;
 
             return (
               <QuotaProgressBar
+                isPercentageQuota={isPercentageQuota}
                 key={`${quota.name}-${index}`}
                 label={quota.name}
                 used={quota.used}
