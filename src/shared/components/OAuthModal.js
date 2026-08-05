@@ -198,12 +198,19 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     //    sent via POST body so the private key never lands in URL/query logs.
     const regBody = { state: authData.state };
     if (authData.codeVerifier) regBody.codeVerifier = authData.codeVerifier;
-    await fetch(`/api/oauth/${providerId}/register-session`, {
+    if (authData.systemId) regBody.systemId = authData.systemId;
+    if (authData.authUrl) regBody.authUrl = authData.authUrl;
+    const regRes = await fetch(`/api/oauth/${providerId}/register-session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(regBody),
     });
+    const regData = await regRes.json().catch(() => ({}));
+    if (!regRes.ok || regData.success === false) {
+      throw new Error(regData.error || "Failed to register OAuth session");
+    }
     // 4. Open popup; proxy auto-exchanges on callback, modal polls poll-status.
+    // Named window reuses the same tab on StrictMode double-start.
     setAuthData({ ...authData, proxyProvider: providerId });
     setStep("waiting");
     popupRef.current = window.open(authData.authUrl, "oauth_popup", "width=600,height=700");
@@ -683,25 +690,27 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   return (
     <Modal isOpen={isOpen} title={modalTitle} onClose={handleClose} size="lg">
       <div className="flex flex-col gap-4">
-        {/* Trae/Windsurf: browser OAuth (proxy) + paste-token fallback */}
+        {/* Proxy OAuth (trae/windsurf/zed): browser callback; paste-token only when configured */}
         {PROXY_OAUTH_PROVIDERS.has(provider) && (step === "waiting" || step === "input" || step === "error") && (
           <>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => { setAuthMode("browser"); setError(null); setStep("waiting"); startOAuthFlow(); }}
-                className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${authMode === "browser" ? "border-primary bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"}`}
-              >
-                🌐 Sign in with browser
-              </button>
-              <button
-                type="button"
-                onClick={() => { setAuthMode("paste-token"); setError(null); setStep("input"); }}
-                className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${authMode === "paste-token" ? "border-primary bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"}`}
-              >
-                🔑 Paste token
-              </button>
-            </div>
+            {PASTE_TOKEN_PROVIDERS[provider] && (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setAuthMode("browser"); setError(null); setStep("waiting"); startOAuthFlow(); }}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${authMode === "browser" ? "border-primary bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"}`}
+                >
+                  🌐 Sign in with browser
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setAuthMode("paste-token"); setError(null); setStep("input"); }}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${authMode === "paste-token" ? "border-primary bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"}`}
+                >
+                  🔑 Paste token
+                </button>
+              </div>
+            )}
 
             {authMode === "browser" && (
               <>
@@ -731,7 +740,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               </>
             )}
 
-            {authMode === "paste-token" && (
+            {authMode === "paste-token" && PASTE_TOKEN_PROVIDERS[provider] && (
               <div className="space-y-3">
                 {ideStatus && !ideStatus.installed && (
                   <div className={`px-3 py-2 rounded-lg text-sm ${PASTE_TOKEN_PROVIDERS[provider].ideOptional ? "bg-blue-500/10 text-blue-700 dark:text-blue-300" : "bg-yellow-500/10 text-yellow-700 dark:text-yellow-300"}`}>

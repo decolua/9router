@@ -11,6 +11,7 @@ import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
+import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -304,6 +305,41 @@ const PROVIDER_MODELS_CONFIG = {
         models: getStaticProviderModels("cursor"),
         warning: "Cursor returned no live models; falling back to static catalog.",
       };
+    },
+  },
+  zed: {
+    customResolver: async (connection) => {
+      let warning;
+      try {
+        const result = await resolveZedModels({
+          accessToken: connection.accessToken,
+          providerSpecificData: connection.providerSpecificData || {},
+        }, { forceRefresh: true });
+        if (result?.models?.length) {
+          return {
+            models: result.models.map((m) => ({
+              id: m.id,
+              name: m.name || m.id,
+              contextLength: m.contextLength,
+              maxOutputTokens: m.maxOutputTokens,
+              capabilities: {
+                ...(m.supportsTools ? { tools: true } : {}),
+                ...(m.supportsImages ? { vision: true } : {}),
+                ...(m.supportsThinking ? { thinking: true } : {}),
+              },
+              provider: m.provider,
+              supportsThinking: m.supportsThinking,
+              supportedEffortLevels: m.supportedEffortLevels,
+            })),
+            ...(result.defaultModel ? { defaultModel: result.defaultModel } : {}),
+          };
+        }
+        warning = result?.warning || "Zed returned no models.";
+      } catch (error) {
+        warning = `Failed to fetch Zed models: ${error.message}`;
+        console.log("Failed to fetch Zed models:", error.message);
+      }
+      return { models: [], warning };
     },
   },
 

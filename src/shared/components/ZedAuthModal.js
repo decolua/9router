@@ -49,12 +49,39 @@ export default function ZedAuthModal({ isOpen, onSuccess, onClose }) {
   }, [isOpen]);
 
   const handleImportToken = async () => {
-    if (!userId.trim()) {
+    let uid = userId.trim();
+    let token = accessToken.trim();
+
+    // Allow pasting "user_id access_token" or a callback URL into the token field.
+    if ((!uid || !token) && token) {
+      try {
+        const url = new URL(token.startsWith("http") || token.startsWith("/") ? token : `http://127.0.0.1/?${token.replace(/^\?/, "")}`, "http://127.0.0.1");
+        uid = uid || url.searchParams.get("user_id") || "";
+        token = url.searchParams.get("access_token") || token;
+      } catch {
+        /* ignore */
+      }
+    }
+    if (!uid && token.includes(" ")) {
+      const idx = token.indexOf(" ");
+      uid = token.slice(0, idx).trim();
+      token = token.slice(idx + 1).trim();
+    }
+
+    if (!uid) {
       setError("Please enter a user ID");
       return;
     }
-    if (!accessToken.trim()) {
+    if (!token) {
       setError("Please enter an access token");
+      return;
+    }
+
+    // Encrypted native-app callback tokens need the RSA private key — reject clearly.
+    if (token.includes("==") && token.length > 200 && !token.trimStart().startsWith("{")) {
+      setError(
+        "That looks like an encrypted browser-callback token. Use “Sign in with browser”, or paste the plain Zed access token (Authorization: \"{user_id} {access_token}\").",
+      );
       return;
     }
 
@@ -66,8 +93,8 @@ export default function ZedAuthModal({ isOpen, onSuccess, onClose }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: userId.trim(),
-          accessToken: accessToken.trim(),
+          userId: uid,
+          accessToken: token,
         }),
       });
 
@@ -163,10 +190,14 @@ export default function ZedAuthModal({ isOpen, onSuccess, onClose }) {
               <textarea
                 value={accessToken}
                 onChange={(e) => setAccessToken(e.target.value)}
-                placeholder='{"version":2,"id":"client_token_…","token":"…"}'
+                placeholder='Plain token, JSON keyring blob, or "user_id access_token"'
                 rows={3}
                 className="w-full px-3 py-2 text-sm font-mono border border-border rounded-lg bg-background focus:outline-none focus:border-primary resize-none"
               />
+              <p className="text-xs text-text-muted mt-1">
+                Plain access token from Zed (not the encrypted browser-callback URL).
+                You can also paste <code className="text-[11px]">user_id access_token</code> into this field.
+              </p>
             </div>
 
             {error && (
@@ -179,12 +210,12 @@ export default function ZedAuthModal({ isOpen, onSuccess, onClose }) {
               <Button
                 onClick={handleImportToken}
                 fullWidth
-                disabled={importing || !userId.trim() || !accessToken.trim()}
+                disabled={importing || (!userId.trim() && !accessToken.trim())}
               >
                 {importing ? "Importing..." : "Import Credentials"}
               </Button>
               <Button onClick={onClose} variant="ghost" fullWidth>
-                Cancel
+                Back
               </Button>
             </div>
           </>

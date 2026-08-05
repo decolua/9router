@@ -186,16 +186,24 @@ export const WINDSURF_CONFIG = {
   oauthTimeoutMs: 600_000,
 };
 
+import {
+  ZED_WEB_BASE_URL,
+  ZED_CLOUD_BASE_URL,
+  ZED_LLM_BASE_URL,
+  ZED_DEFAULT_NATIVE_APP_PORT,
+  ZED_OAUTH_TIMEOUT_MS,
+} from "open-sse/config/zedConstants.js";
+
 // Zed hosted LLM aggregator — RSA keypair native-app auth (NOT OAuth).
 // Client generates ephemeral RSA-2048 keypair; user signs in at zed.dev/native_app_signin;
 // Zed redirects to local callback with access_token RSA-encrypted against our public key.
 // See open-sse/shared/zedAuth.js for the keypair/decrypt helpers.
 export const ZED_HOSTED_CONFIG = {
-  webBaseUrl: "https://zed.dev",
-  cloudBaseUrl: "https://cloud.zed.dev",
-  llmBaseUrl: "https://cloud.zed.dev",
-  defaultNativeAppPort: 58443,
-  oauthTimeoutMs: 600_000,
+  webBaseUrl: ZED_WEB_BASE_URL,
+  cloudBaseUrl: ZED_CLOUD_BASE_URL,
+  llmBaseUrl: ZED_LLM_BASE_URL,
+  defaultNativeAppPort: ZED_DEFAULT_NATIVE_APP_PORT,
+  oauthTimeoutMs: ZED_OAUTH_TIMEOUT_MS,
 };
 
 // OAuth timeout (5 minutes)

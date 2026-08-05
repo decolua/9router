@@ -33,6 +33,8 @@ import {
   registerZedSession,
   getZedSessionStatus,
   clearZedSession,
+  peekZedAuthReuse,
+  saveZedAuthDraft,
 } from "@/lib/oauth/utils/server";
 import { detectIdeInstalled } from "@/lib/oauth/utils/ideDetect";
 import { ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
@@ -96,10 +98,40 @@ export async function GET(request, { params }) {
       searchParams.forEach((value, key) => { if (!reservedParams.has(key)) meta[key] = value; });
       // Zed: derive native_app_port from the local callback URL so the RSA keypair
       // is bound to the port the proxy is actually listening on.
+      // Reuse in-flight auth on StrictMode double-/authorize so the popup's public
+      // key still matches the session private key at callback time.
       if (provider === "zed") {
         try { const p = new URL(redirectUri).port; if (p) meta.nativeAppPort = p; } catch { /* ignore */ }
+        const reuse = peekZedAuthReuse();
+        if (reuse) {
+          return NextResponse.json({
+            authUrl: reuse.authUrl,
+            state: reuse.state,
+            codeVerifier: reuse.codeVerifier,
+            systemId: reuse.systemId,
+            redirectUri: reuse.redirectUri || redirectUri,
+            flowType: reuse.flowType || "authorization_code",
+            callbackPath: reuse.callbackPath || "/",
+          });
+        }
       }
       const authData = await generateAuthData(provider, redirectUri, Object.keys(meta).length ? meta : undefined);
+      if (provider === "zed") {
+        if (!saveZedAuthDraft(authData)) {
+          const winner = peekZedAuthReuse();
+          if (winner) {
+            return NextResponse.json({
+              authUrl: winner.authUrl,
+              state: winner.state,
+              codeVerifier: winner.codeVerifier,
+              systemId: winner.systemId,
+              redirectUri: winner.redirectUri || redirectUri,
+              flowType: winner.flowType || "authorization_code",
+              callbackPath: winner.callbackPath || "/",
+            });
+          }
+        }
+      }
       return NextResponse.json(authData);
     }
 
@@ -252,14 +284,22 @@ export async function POST(request, { params }) {
     }
 
     if (action === "register-session") {
-      // Register proxy session out of URL query (state) + body (codeVerifier).
+      // Register proxy session from body (preferred) or URL query (state).
       // Zed's codeVerifier encodes the RSA private key — must stay out of URL/logs.
-      const state = searchParams.get("state") || body?.state;
+      const { searchParams } = new URL(request.url);
+      const state = body?.state || searchParams.get("state");
       if (!state) return NextResponse.json({ error: "Missing state" }, { status: 400 });
       let ok = false;
       if (provider === "trae") ok = registerTraeSession({ state });
       else if (provider === "windsurf") ok = registerWindsurfSession({ state });
-      else if (provider === "zed") ok = registerZedSession({ state, codeVerifier: body?.codeVerifier });
+      else if (provider === "zed") {
+        ok = registerZedSession({
+          state,
+          codeVerifier: body?.codeVerifier,
+          systemId: body?.systemId,
+          authUrl: body?.authUrl,
+        });
+      }
       else return NextResponse.json({ error: "register-session only supported for trae/windsurf/zed" }, { status: 400 });
       return NextResponse.json({ success: ok });
     }
@@ -293,6 +333,51 @@ export async function POST(request, { params }) {
               email: connection.email,
               displayName: connection.displayName,
             }
+          });
+        } catch (err) {
+          return NextResponse.json({ error: err.message }, { status: 500 });
+        }
+      }
+
+      // Zed: pasted callback URL (?user_id=&access_token=) decrypted with session private key.
+      if (provider === "zed") {
+        const token = typeof code === "string" ? code.trim() : "";
+        if (!token) {
+          return NextResponse.json({ error: "Missing Zed callback URL" }, { status: 400 });
+        }
+        const session = getZedSessionStatus(state) || getZedSessionStatus();
+        const verifier = codeVerifier || session?.codeVerifier;
+        if (!verifier) {
+          return NextResponse.json(
+            { error: "Missing Zed session key; restart Sign in with browser, then paste the callback URL" },
+            { status: 400 },
+          );
+        }
+        try {
+          const tokenData = await exchangeTokens(
+            "zed",
+            token,
+            null,
+            verifier,
+            state || session?.state,
+            { systemId: session?.systemId || body?.systemId },
+          );
+          const connection = await createProviderConnection({
+            provider: "zed",
+            authType: "oauth",
+            ...tokenData,
+            testStatus: "active",
+          });
+          if (session?.state) clearZedSession(session.state);
+          stopZedProxy();
+          return NextResponse.json({
+            success: true,
+            connection: {
+              id: connection.id,
+              provider: connection.provider,
+              email: connection.email,
+              displayName: connection.displayName,
+            },
           });
         } catch (err) {
           return NextResponse.json({ error: err.message }, { status: 500 });
