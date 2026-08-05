@@ -18,6 +18,18 @@ export default {
     },
   },
   category: "freeTier",
+  regions: [
+    { id: "us-central1", label: "us-central1 (Iowa)" },
+    { id: "us-east4", label: "us-east4 (Northern Virginia)" },
+    { id: "us-west1", label: "us-west1 (Oregon)" },
+    { id: "europe-west1", label: "europe-west1 (Belgium)" },
+    { id: "europe-west4", label: "europe-west4 (Netherlands)" },
+    { id: "asia-east1", label: "asia-east1 (Taiwan)" },
+    { id: "asia-northeast1", label: "asia-northeast1 (Tokyo)" },
+    { id: "asia-southeast1", label: "asia-southeast1 (Singapore)" },
+    { id: "global", label: "global (Global)" },
+  ],
+  defaultRegion: "us-central1",
   transport: {
     baseUrl: "https://aiplatform.googleapis.com",
     format: "vertex",

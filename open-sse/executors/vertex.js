@@ -91,15 +91,17 @@ export class VertexExecutor extends BaseExecutor {
           "Add quota_project_id to your ADC JSON or set providerSpecificData.projectId."
         );
       }
-      const location = credentials?.providerSpecificData?.location || "us-central1";
+      const location = credentials?.providerSpecificData?.location || credentials?.providerSpecificData?.region || "us-central1";
       let url = `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${model}:${action}`;
       if (stream) url += "?alt=sse";
       return url;
     }
 
-    // Raw API key: use global publishers endpoint with ?key= param
-    // ?alt=sse is required for proper SSE streaming (matches every other Gemini executor)
-    let url = `https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:${action}`;
+    // Raw API key: use global or regional publishers endpoint with ?key= param
+    const location = credentials?.providerSpecificData?.location || credentials?.providerSpecificData?.region;
+    let url = location && location !== "global"
+      ? `https://${location}-aiplatform.googleapis.com/v1/publishers/google/models/${model}:${action}`
+      : `https://aiplatform.googleapis.com/v1/publishers/google/models/${model}:${action}`;
     if (stream) url += "?alt=sse";
     if (rawKey) url += stream ? `&key=${rawKey}` : `?key=${rawKey}`;
     return url;
