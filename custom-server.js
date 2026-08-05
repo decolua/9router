@@ -65,7 +65,53 @@ http.createServer = (...args) => {
   server.once("listening", () => {
     startBackgroundTokenRefreshFromCustomServer();
   });
+  const origEmit = server.emit;
+  // JBR 25 sends h2c upgrades that the HTTP/1.1 server would otherwise close.
+  server.emit = function (event, ...eventArgs) {
+    const [req, socket, head] = eventArgs;
+    if (event !== "upgrade" || String(req.headers.upgrade || "").toLowerCase() !== "h2c") {
+      return origEmit.call(this, event, ...eventArgs);
+    }
+
+    const contentLength = Number(req.headers["content-length"] || 0);
+    if (!Number.isSafeInteger(contentLength) || contentLength < 0) {
+      socket.destroy();
+      return true;
+    }
+    const chunks = [head];
+    let received = head.length;
+    const serve = () => {
+      // Replay the upgraded request through the existing HTTP/1.1 handler.
+      const replay = new http.IncomingMessage(socket);
+      Object.assign(replay, { method: req.method, url: req.url, headers: req.headers, complete: true });
+      if (received) replay.push(Buffer.concat(chunks, received).subarray(0, contentLength));
+      replay.push(null);
+      const res = new http.ServerResponse(replay);
+      res.shouldKeepAlive = false;
+      res.assignSocket(socket);
+      res.once("finish", () => socket.end());
+      Promise.resolve().then(() => wrapped(replay, res)).catch((error) => {
+        console.error("Failed to downgrade h2c request", error);
+        socket.destroy();
+      });
+    };
+    if (received >= contentLength) serve();
+    else {
+      socket.on("data", function readBody(chunk) {
+        chunks.push(chunk);
+        received += chunk.length;
+        if (received < contentLength) return;
+        socket.off("data", readBody);
+        serve();
+      });
+      socket.resume();
+    }
+    delete req.headers.upgrade;
+    delete req.headers["http2-settings"];
+    req.headers.connection = "close";
+    return true;
+  };
   return server;
 };
 
-require("./server.js");
+if (require.main === module) require("./server.js");
