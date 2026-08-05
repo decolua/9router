@@ -180,12 +180,12 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
           }
 
           // Check if there are actual tool responses in the next messages
-          const hasActualResponses = toolCallIds.some(fid => toolResponses[fid]);
+          const hasActualResponses = toolCallIds.some(fid => toolResponses[fid] !== undefined);
 
           if (hasActualResponses) {
             const toolParts = [];
             for (const fid of toolCallIds) {
-              if (!toolResponses[fid]) continue;
+              if (toolResponses[fid] === undefined) continue;
 
               let name = tcID2Name[fid];
               if (!name) {
