@@ -34,10 +34,16 @@ import {
 const FETCH_TIMEOUT_MS = 15_000;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1h, same as the Kiro catalog
 
+const PAT_PREFIX = "pt-";
+
 // PAT → job-token cache: a job token is short-lived (24h), so we keep it per
 // PAT and re-exchange once it is within 5 minutes of expiry.
 const PAT_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 const PAT_DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
+
+export function isQoderPat(token) {
+  return typeof token === "string" && token.startsWith(PAT_PREFIX);
+}
 
 /** @type {Map<string, { accessToken: string, userId: string, expiresAt: number }>} */
 const patJobCache = new Map();
@@ -139,7 +145,7 @@ async function resolvePatCredential(pat, proxyOptions = null, signal = null) {
  */
 export async function resolveQoderCredentials(credentials, proxyOptions = null, signal = null) {
   const raw = credentials?.apiKey || credentials?.accessToken;
-  if (typeof raw === "string" && raw.startsWith("pt-")) {
+  if (isQoderPat(raw)) {
     const resolved = await resolvePatCredential(raw, proxyOptions, signal);
     return {
       ...credentials,
