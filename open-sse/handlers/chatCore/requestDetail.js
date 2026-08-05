@@ -75,8 +75,11 @@ export function buildRequestDetail(base, overrides = {}) {
   };
 }
 
-// Build the "done" summary: duration, ttft, in/out tokens with cache breakdown
-export function formatDoneLine({ usage, latency }) {
+// Build the "done" summary: duration, ttft, in/out tokens with cache breakdown,
+// plus route identity (provider/model), metered kiro credits, and session id.
+// This console line is the only per-request record that reaches log aggregation,
+// so the appended fields are what let dashboards slice usage per model/session.
+export function formatDoneLine({ usage, latency, provider, model, sessionId }) {
   const u = usage || {};
   const inTok = u.prompt_tokens ?? u.input_tokens ?? 0;
   const outTok = u.completion_tokens ?? u.output_tokens ?? 0;
@@ -90,7 +93,11 @@ export function formatDoneLine({ usage, latency }) {
     inStr += ` (CACHE ${parts.join(" ")})`;
   }
   const ttftStr = latency?.ttft ? ` · TTFT ${latency.ttft}ms` : "";
-  return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
+  let line = `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
+  if (model) line += ` · ${provider ? `${provider}/${model}` : model}`;
+  if (Number.isFinite(u.kiro_credits)) line += ` · ${Number(u.kiro_credits.toFixed(4))}cr`;
+  if (sessionId) line += ` · sid:${sessionId}`;
+  return line;
 }
 
 export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE", silent = false }) {
