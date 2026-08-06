@@ -190,10 +190,12 @@ export function openaiToClaudeResponse(chunk, state) {
         stopTextBlock(state, results);
 
         const toolBlockIndex = state.nextBlockIndex++;
-        state.toolCalls.set(idx, { id: tc.id, name: tc.function?.name || "", blockIndex: toolBlockIndex });
+        const providerToolName = tc.function?.name || "";
+        const originalToolName = state.toolNameMap?.get(providerToolName) || providerToolName;
+        state.toolCalls.set(idx, { id: tc.id, name: originalToolName, blockIndex: toolBlockIndex });
 
         // Strip prefix from tool name for response
-        let toolName = tc.function?.name || "";
+        let toolName = originalToolName;
         if (toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
           toolName = toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
         }

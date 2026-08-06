@@ -8,6 +8,7 @@ import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
+import { normalizeOpenAIToolNames } from "../translator/concerns/toolCall.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
@@ -183,6 +184,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     delete translatedBody._customToolNames;
     translatedBody.model = stripThinkingSuffix(upstreamModel);
     stripContinuityFields(translatedBody);
+  }
+
+  const toolNameMaxLength = PROVIDERS[provider]?.quirks?.toolNameMaxLength || (targetFormat === FORMATS.OPENAI ? 64 : null);
+  if (toolNameMaxLength && targetFormat === FORMATS.OPENAI) {
+    const aliases = normalizeOpenAIToolNames(translatedBody, toolNameMaxLength);
+    if (aliases.size) toolNameMap = new Map([...(toolNameMap || []), ...aliases]);
   }
 
   // Dedupe duplicate built-in tools when equivalent MCP tools are present (Claude clients only).

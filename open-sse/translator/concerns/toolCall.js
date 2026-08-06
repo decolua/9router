@@ -1,4 +1,121 @@
+import { createHash } from "node:crypto";
+
 // Tool call helper functions for translator
+
+/**
+ * Normalizes OpenAI function/tool names to satisfy provider naming constraints.
+ * (OpenAI specification requirement: ^[a-zA-Z0-9_-]{1,64}$)
+ *
+ * - Replaces unsupported characters with underscores.
+ * - Truncates names that exceed max length (default 64).
+ * - Appends a deterministic SHA-256 hash suffix to avoid collisions.
+ * - Supports OpenAI tool definitions (tool.function.name) and Claude/raw tool definitions (tool.name).
+ * - Supports tool calls in messages (tool_calls[].function.name, content[type="tool_use"].name, role="tool").
+ * - Returns a map of normalized names back to their original names.
+ */
+export function normalizeOpenAIToolNames(body, maxLength = 64) {
+  const aliases = new Map();
+  if (!body || typeof body !== "object") return aliases;
+
+  const alias = (name) => {
+    if (!name || typeof name !== "string") return name;
+
+    const safe = name.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const changed = safe !== name || safe.length > maxLength;
+
+    const shortened = changed
+      ? `${safe.slice(0, maxLength - 13)}_${createHash("sha256")
+          .update(name)
+          .digest("hex")
+          .slice(0, 12)}`
+      : safe;
+
+    if (shortened !== name) {
+      aliases.set(shortened, name);
+    }
+    return shortened;
+  };
+
+  // Normalize tool definitions (both OpenAI and Claude/raw formats)
+  if (Array.isArray(body.tools)) {
+    for (const tool of body.tools) {
+      if (tool?.function?.name) {
+        tool.function.name = alias(tool.function.name);
+      }
+      if (tool?.name && typeof tool.name === "string") {
+        tool.name = alias(tool.name);
+      }
+    }
+  }
+
+  // Normalize explicit tool choice
+  if (body.tool_choice) {
+    if (body.tool_choice.function?.name) {
+      body.tool_choice.function.name = alias(body.tool_choice.function.name);
+    }
+    if (typeof body.tool_choice.name === "string") {
+      body.tool_choice.name = alias(body.tool_choice.name);
+    }
+  }
+
+  // Normalize tool calls & tool results in conversation history
+  if (Array.isArray(body.messages)) {
+    for (const message of body.messages) {
+      if (!message || typeof message !== "object") continue;
+
+      if (Array.isArray(message.tool_calls)) {
+        for (const call of message.tool_calls) {
+          if (call?.function?.name) {
+            call.function.name = alias(call.function.name);
+          }
+        }
+      }
+
+      if (Array.isArray(message.content)) {
+        for (const block of message.content) {
+          if (block?.type === "tool_use" && block.name) {
+            block.name = alias(block.name);
+          }
+        }
+      }
+
+      if (message.role === "tool" && message.name) {
+        message.name = alias(message.name);
+      }
+    }
+  }
+
+  return aliases;
+}
+
+/**
+ * Restores original OpenAI tool/function names from their normalized aliases.
+ */
+export function restoreOpenAIToolNames(body, aliases) {
+  if (!aliases || typeof aliases !== "object" || !aliases.size) return false;
+
+  let changed = false;
+
+  const restoreCalls = (calls) => {
+    if (!Array.isArray(calls)) return;
+    for (const call of calls) {
+      const name = call?.function?.name;
+      if (name && aliases.has(name)) {
+        call.function.name = aliases.get(name);
+        changed = true;
+      }
+    }
+  };
+
+  if (Array.isArray(body?.choices)) {
+    for (const choice of body.choices) {
+      restoreCalls(choice?.delta?.tool_calls);
+      restoreCalls(choice?.message?.tool_calls);
+    }
+  }
+
+  return changed;
+}
 
 // Anthropic tool_use.id must match: ^[a-zA-Z0-9_-]+$
 const TOOL_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
