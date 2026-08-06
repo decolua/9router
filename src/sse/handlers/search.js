@@ -114,6 +114,23 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
     log.info("ROUTING", `Provider: ${providerId}`);
   }
 
+  // SSRF guard: Only forward a whitelist of safe options from provider_options.
+  // The raw object used to be forwarded unvalidated, allowing a client to
+  // override `baseUrl` and exfiltrate credentials to an attacker-controlled
+  // SearXNG instance (https://github.com/decolua/9router/issues/3049).
+  const safeProviderOptions = {};
+  if (body.provider_options && typeof body.provider_options === "object" && !Array.isArray(body.provider_options)) {
+    const SAFE_KEYS = [
+      "safesearch", "categories", "engines", "format",
+      "pageno", "image_proxy", "autocomplete", "theme",
+    ];
+    for (const key of SAFE_KEYS) {
+      if (key in body.provider_options) {
+        safeProviderOptions[key] = body.provider_options[key];
+      }
+    }
+  }
+
   // Sanitized body forwarded to core
   const coreBody = {
     query: query.trim(),
@@ -126,7 +143,7 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
     offset: body.offset,
     domain_filter: body.domain_filter,
     content_options: body.content_options,
-    provider_options: body.provider_options
+    provider_options: safeProviderOptions
   };
 
   // No-auth providers (e.g. searxng) bypass credential lookup
