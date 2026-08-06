@@ -78,9 +78,23 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
   const modelTargetFormat = getModelTargetFormat(alias, model);
-  // Multi-endpoint providers: pick transport matching sourceFormat → zero translation
-  const runtimeTransport = resolveTransport(provider, sourceFormat);
-  const targetFormat = modelTargetFormat || runtimeTransport?.format || getTargetFormat(provider, credentials);
+  // Multi-endpoint providers: pick transport matching sourceFormat → zero translation.
+  // Kimi API-key connections speak OpenAI Chat Completions against the platform
+  // endpoint (api.moonshot.cn / platform.kimi.ai), NOT the Kimi Code subscription
+  // endpoint (api.kimi.com/coding) — pick the apikey transport when present. The
+  // platform API is OpenAI-compatible only, so a Claude-format client is translated
+  // to OpenAI too (issue #2881).
+  const transportOverrides = (provider === "kimi" && credentials?.authType === "apikey")
+    ? { openai: "openai-apikey", claude: "openai-apikey", "openai-responses": "openai-apikey" }
+    : null;
+  const effectiveSourceFormat = transportOverrides?.[sourceFormat] || sourceFormat;
+  const runtimeTransport = resolveTransport(provider, effectiveSourceFormat) || resolveTransport(provider, sourceFormat);
+  // The apikey transports carry format tags like "openai-apikey" that are only
+  // lookup keys, not real output formats — normalize for targetFormat.
+  const transportFormat = runtimeTransport?.format?.replace(/-apikey$/, "") || null;
+  // For apikey connections the transport format IS the target format (the body
+  // is translated to what the endpoint speaks — OpenAI for Moonshot).
+  const targetFormat = modelTargetFormat || transportFormat || getTargetFormat(provider, credentials);
   if (runtimeTransport && credentials) credentials.runtimeTransport = runtimeTransport;
   const stripList = getModelStrip(alias, model);
   const upstreamModel = getModelUpstreamId(alias, model);

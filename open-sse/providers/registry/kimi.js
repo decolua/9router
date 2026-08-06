@@ -52,6 +52,14 @@ export default {
       headers: { ...CLAUDE_API_HEADERS },
       auth: { combined: true, header: "x-api-key", scheme: "raw", hooks: ["kimiHeaders"] },
     },
+    // API-key (platform) endpoints — api.moonshot.cn is the platform API base
+    // (CN); intl platform keys also work there. Issue #2881: apikey auth must
+    // NOT hit the Kimi Code subscription endpoint.
+    {
+      format: "openai-apikey",
+      baseUrl: "https://api.moonshot.cn/v1/chat/completions",
+      auth: { combined: true, header: "Authorization", scheme: "bearer" },
+    },
   ],
   models: [
     // Flagship K3 — platform.kimi.ai id `kimi-k3`, Kimi Code OAuth id `k3` (up to 1M)
