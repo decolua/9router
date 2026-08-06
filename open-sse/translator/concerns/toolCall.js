@@ -268,3 +268,37 @@ export function fixMissingToolResponses(body) {
   return body;
 }
 
+
+// NVIDIA-specific deterministic ID: prefer short 9-hex identifier for upstream
+export function nvidiaToolCallId(id) {
+  if (!id || typeof id !== 'string') return id;
+  // Accept already-short alphanumeric IDs (9 chars)
+  if (/^[a-zA-Z0-9]{9}$/.test(id)) return id;
+  return createHash('sha256').update(id).digest('hex').slice(0, 9);
+}
+
+// Normalize tool call IDs specifically for NVIDIA provider
+export function normalizeNvidiaToolCallIds(body) {
+  if (!body || !Array.isArray(body.messages)) return body;
+  for (const msg of body.messages) {
+    // OpenAI format: tool_calls array on assistant
+    for (const tc of msg?.tool_calls || []) {
+      if (tc && tc.id) tc.id = nvidiaToolCallId(tc.id);
+    }
+    // Tool message id
+    if (msg && msg.tool_call_id) msg.tool_call_id = nvidiaToolCallId(msg.tool_call_id);
+    // Claude format: tool_use blocks
+    if (Array.isArray(msg.content)) {
+      for (const block of msg.content) {
+        if (!block || typeof block !== 'object') continue;
+        if ((block.type === 'tool_use' || block.type === 'tool_result') && block.id) {
+          block.id = nvidiaToolCallId(block.id);
+        }
+        if (block.type === 'tool_result' && block.tool_use_id) {
+          block.tool_use_id = nvidiaToolCallId(block.tool_use_id);
+        }
+      }
+    }
+  }
+  return body;
+}
