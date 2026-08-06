@@ -40,11 +40,6 @@ const REFRESH_PROFILES = {
     url: () => OAUTH_ENDPOINTS.anthropic.token,
     dedupKey: "claude",
   },
-  qwen: {
-    url: () => OAUTH_ENDPOINTS.qwen.token,
-    dedupKey: "qwen",
-    parse: (tokens) => tokens.resource_url ? { providerSpecificData: { resourceUrl: tokens.resource_url } } : {},
-  },
   iflow: {
     url: () => OAUTH_ENDPOINTS.iflow.token,
     dedupKey: "iflow",
@@ -189,11 +184,6 @@ export async function refreshGoogleToken(refreshToken, clientId, clientSecret, l
     return null;
   }
   }, log);
-}
-
-// Qwen: form body + clientId, surfaces resource_url. Delegate to refreshAccessToken("qwen", ...).
-export async function refreshQwenToken(refreshToken, log) {
-  return refreshAccessToken("qwen", refreshToken, {}, log);
 }
 
 export function classifyOAuthRefreshError(errorText = "", status = 0) {
