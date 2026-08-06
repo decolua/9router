@@ -16,9 +16,11 @@ import { createHash } from "node:crypto";
 export function normalizeOpenAIToolNames(body, maxLength = 64) {
   const aliases = new Map();
   if (!body || typeof body !== "object") return aliases;
+  const memo = new Map();
 
   const alias = (name) => {
     if (!name || typeof name !== "string") return name;
+    if (memo.has(name)) return memo.get(name);
 
     const safe = name.replace(/[^a-zA-Z0-9_-]/g, "_");
     const changed = safe !== name || safe.length > maxLength;
@@ -33,6 +35,7 @@ export function normalizeOpenAIToolNames(body, maxLength = 64) {
     if (shortened !== name) {
       aliases.set(shortened, name);
     }
+    memo.set(name, shortened);
     return shortened;
   };
 
@@ -270,11 +273,15 @@ export function fixMissingToolResponses(body) {
 
 
 // NVIDIA-specific deterministic ID: prefer short 9-hex identifier for upstream
+const nvidiaIdCache = new Map();
 export function nvidiaToolCallId(id) {
   if (!id || typeof id !== 'string') return id;
   // Accept already-short alphanumeric IDs (9 chars)
   if (/^[a-zA-Z0-9]{9}$/.test(id)) return id;
-  return createHash('sha256').update(id).digest('hex').slice(0, 9);
+  if (nvidiaIdCache.has(id)) return nvidiaIdCache.get(id);
+  const hashed = createHash('sha256').update(id).digest('hex').slice(0, 9);
+  nvidiaIdCache.set(id, hashed);
+  return hashed;
 }
 
 // Normalize tool call IDs specifically for NVIDIA provider
