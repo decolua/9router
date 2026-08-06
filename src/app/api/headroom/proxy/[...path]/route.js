@@ -52,7 +52,7 @@ function forwardedHeaders(request, target) {
 function rewriteDashboardHtml(html) {
   return html
     .replace(
-      /fetch\('(?=\/(?:stats|health|stats-history|transformations\/feed))/g,
+      /fetch\('(?=\/(?:stats|health|stats-history|settings|transformations\/feed))/g,
       `fetch('${DASHBOARD_PREFIX}`,
     )
     // Static assets and internal links (e.g. src="/dashboard/static/htmx.min.js",
