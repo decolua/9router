@@ -74,6 +74,8 @@ export class DefaultExecutor extends BaseExecutor {
     if (transformed && typeof transformed === "object") {
       const toolNameMaxLength = this.config.quirks?.toolNameMaxLength || 64;
       normalizeOpenAIToolNames(transformed, toolNameMaxLength);
+      // NVIDIA-specific: normalize tool_call IDs to a compact deterministic ID that NVIDIA accepts
+      if (this.provider === "nvidia") normalizeNvidiaToolCallIds(transformed);
 
       // quirk: some openai-compatible providers reject Anthropic's client_metadata field
       if (this.config.quirks?.dropClientMetadata) {
