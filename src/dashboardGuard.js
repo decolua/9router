@@ -141,8 +141,16 @@ async function canAccessPublicLlmApi(request) {
 
 async function canAccessLocalOnlyRoute(request) {
   if (await hasValidCliToken(request)) return true;
-  // Browser on host: loopback Host + Origin (blocks tunnel/CSRF) + auth (JWT or requireLogin=false)
-  if (isLocalRequest(request) && await isAuthenticated(request)) return true;
+  // Browser on host: loopback Host + Origin (blocks tunnel/CSRF). When
+  // password auth is disabled, allow the JWT-less browser directly instead
+  // of demanding the CLI token (issue #2916). Non-browser calls from other
+  // hosts still need the CLI token.
+  const settings = await loadSettings();
+  const loginDisabled = settings && settings.requireLogin === false;
+  if (isLocalRequest(request)) {
+    if (loginDisabled) return true;
+    return await isAuthenticated(request);
+  }
   return false;
 }
 

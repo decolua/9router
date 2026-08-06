@@ -248,6 +248,17 @@ describe("dashboard guard local-only access", () => {
     expect(response.status).toBe(403);
   });
 
+  it("allows local-only route on loopback when requireLogin=false (JWT-less browser)", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+
+    const response = await proxy(request("/api/headroom/start", {
+      host: "localhost:20128",
+      origin: "http://localhost:20128",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+
   it("allows local-only route with valid CLI token", async () => {
     const response = await proxy(request("/api/mcp/filesystem/sse", {
       host: "router.example.com",
