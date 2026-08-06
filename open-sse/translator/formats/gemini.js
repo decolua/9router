@@ -33,6 +33,13 @@ export const UNSUPPORTED_SCHEMA_CONSTRAINTS = [
   "gap", "padding", "strokeColor", "strokeThickness", "textColor"
 ];
 
+// Non-schema stray keys sometimes left by sloppy converters at a schema node
+// (e.g. `value: "object"` next to `type`/`properties`). They are never valid
+// JSON Schema keywords, but they ARE valid property names inside a name-map, so
+// they must only be stripped at schema nodes, never in `properties` maps
+// (issue #2902).
+const STRAY_SCHEMA_KEYS = new Set(["value"]);
+
 // Default safety settings
 export const DEFAULT_SAFETY_SETTINGS = [
   { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "OFF" },
@@ -159,6 +166,14 @@ function removeUnsupportedKeywords(obj, keywords) {
 
   for (const key of Object.keys(obj)) {
     if (key === "properties") continue; // handled above
+    // Strip stray non-schema keys (e.g. `value`) only at real schema nodes —
+    // a node is a schema when it has type/properties/items; inside a property
+    // name-map `value` is a legitimate user parameter name (issue #2902/#2884).
+    const isSchemaNode = obj.type !== undefined || obj.properties !== undefined || obj.items !== undefined;
+    if (isSchemaNode && STRAY_SCHEMA_KEYS.has(key)) {
+      delete obj[key];
+      continue;
+    }
     if (keywords.includes(key) || key.startsWith("x-")) {
       delete obj[key];
       continue;

@@ -32,7 +32,23 @@ describe("cleanJSONSchemaForAntigravity schema-node walking (#2884)", () => {
     expect(out.properties.body).toEqual({ type: "string" });
   });
 
-  it("still strips unsupported keywords from real schema nodes", () => {
+  it("strips stray value:'object' sibling at a schema node but keeps a legit 'value' param (#2902)", () => {
+    const bad = {
+      type: "object",
+      properties: {
+        param2: { type: "object", value: "object", properties: { x: { type: "number" } } },
+      },
+    };
+    const cleanedBad = cleanJSONSchemaForAntigravity(JSON.parse(JSON.stringify(bad)));
+    expect(cleanedBad.properties.param2.value).toBeUndefined();
+    expect(cleanedBad.properties.param2.properties.x.type).toBe("number");
+
+    const good = { type: "object", properties: { value: { type: "string" }, a: { type: "number" } } };
+    const cleanedGood = cleanJSONSchemaForAntigravity(JSON.parse(JSON.stringify(good)));
+    expect(cleanedGood.properties.value.type).toBe("string");
+  });
+
+  it("strips unsupported keywords from nested schema nodes", () => {
     const schema = {
       type: "object",
       properties: {
