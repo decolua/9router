@@ -14,6 +14,8 @@ import { parseResetTime, toFiniteNumber } from "./shared.js";
 import { buildKimiHeaders } from "../../config/appConstants.js";
 
 const USAGE_URL = "https://api.kimi.com/coding/v1/usages";
+// Platform (API-key) usage endpoint
+const USAGE_URL_APIKEY = "https://api.moonshot.cn/v1/usage";
 
 const PLAN_LEVELS = {
   LEVEL_BASIC: "Moderato",
@@ -122,7 +124,7 @@ export async function getKimiUsage(
 
   try {
     const response = await proxyAwareFetch(
-      USAGE_URL,
+      useApiKey ? USAGE_URL_APIKEY : USAGE_URL,
       {
         method: "GET",
         headers: {
