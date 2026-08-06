@@ -230,9 +230,9 @@ function buildCliPackage() {
   // Windows EBUSY during global CLI updates. node:sqlite (Node ≥22.5) is also
   // available as a no-install middle tier.
   console.log("3️⃣ b Configuring SQLite drivers...");
-  function ensureModuleInBundle(pkg) {
+  function ensureModuleInBundle(pkg, requiredFiles = []) {
     const dest = path.join(cliAppDir, "node_modules", pkg);
-    if (fs.existsSync(dest)) {
+    if (fs.existsSync(dest) && requiredFiles.every((file) => fs.existsSync(path.join(dest, file)))) {
       console.log(`✅ ${pkg} already bundled`);
       return;
     }
@@ -245,11 +245,16 @@ function buildCliPackage() {
       console.warn(`⚠️  ${pkg} not found locally — bundle will rely on node:sqlite or runtime install`);
       return;
     }
+    fs.rmSync(dest, { recursive: true, force: true });
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     copyRecursive(src, dest);
+    const missing = requiredFiles.filter((file) => !fs.existsSync(path.join(dest, file)));
+    if (missing.length > 0) {
+      throw new Error(`Incomplete ${pkg} bundle; missing: ${missing.join(", ")}`);
+    }
     console.log(`✅ Bundled ${pkg}`);
   }
-  ensureModuleInBundle("sql.js");
+  ensureModuleInBundle("sql.js", ["dist/sql-wasm.wasm"]);
   // `open` is external (see serverExternalPackages in next.config.mjs), so it must exist in
   // the bundle's node_modules or every importer throws MODULE_NOT_FOUND at runtime. Output
   // tracing normally copies it; this is the same belt-and-braces guard used for sql.js.
