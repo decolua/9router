@@ -187,6 +187,7 @@ npm start
 - Codex CLI ✅
 - Continue ✅
 - RooCode ✅
+- OpenDesign ✅
 
 详情见 [Cursor 集成指南](integration/cursor.md)。
 
