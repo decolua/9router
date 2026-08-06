@@ -13,7 +13,7 @@ import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 const CLAUDE_OAUTH_TOOL_PREFIX = "";
 
 // Convert OpenAI request to Claude format
-export function openaiToClaudeRequest(model, body, stream) {
+export function openaiToClaudeRequest(model, body, stream, credentials, provider = null) {
   // Tool name mapping for Claude OAuth (capitalizedName → originalName)
   const toolNameMap = new Map();
   // Cap max_tokens at the model's real output ceiling (e.g. Opus 4.8 = 128000),
@@ -129,16 +129,21 @@ Respond ONLY with the JSON object, no other text.`);
     }
   }
 
-  // System with Claude Code prompt and cache_control
+  // System with Claude Code prompt and cache_control (only for official Anthropic/Claude providers)
+  const isOfficialAnthropic = provider === "anthropic" || provider === "claude";
   const claudeCodePrompt = { type: CLAUDE_BLOCK.TEXT, text: CLAUDE_SYSTEM_PROMPT };
 
   if (systemParts.length > 0) {
     const systemText = systemParts.join("\n");
-    result.system = [
-      claudeCodePrompt,
+    const systemBlocks = [
       { type: CLAUDE_BLOCK.TEXT, text: systemText, cache_control: { type: "ephemeral", ttl: "1h" } }
     ];
-  } else {
+    // Only inject CLAUDE_SYSTEM_PROMPT for official Anthropic/Claude providers
+    if (isOfficialAnthropic) {
+      systemBlocks.unshift(claudeCodePrompt);
+    }
+    result.system = systemBlocks;
+  } else if (isOfficialAnthropic) {
     result.system = [claudeCodePrompt];
   }
 
@@ -270,6 +275,18 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
       const text = typeof msg.content === "string" ? msg.content : extractTextContent(msg.content, "\n");
       if (text) {
         blocks.push({ type: CLAUDE_BLOCK.TEXT, text });
+      }
+    }
+
+    // Handle reasoning_content at message level (OpenAI format) - convert to thinking block
+    // This should be added as the first block for assistant messages
+    if (msg.reasoning_content) {
+      const reasoningText = typeof msg.reasoning_content === "string" 
+        ? msg.reasoning_content 
+        : JSON.stringify(msg.reasoning_content);
+      if (reasoningText) {
+        // Insert at the beginning of blocks
+        blocks.unshift({ type: CLAUDE_BLOCK.THINKING, thinking: reasoningText });
       }
     }
 
