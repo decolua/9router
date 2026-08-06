@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -55,6 +55,8 @@ export default function CombosPage() {
   const { getCaps } = useModelCaps();
   const [confirmState, setConfirmState] = useState(null);
   const { copied, copy } = useCopyToClipboard();
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef(null);
 
   useEffect(() => {
     fetchData();
@@ -184,6 +186,65 @@ export default function CombosPage() {
     }
   };
 
+  const handleExport = async () => {
+    try {
+      const res = await fetch("/api/combos/export");
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "combos-export.json";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.log("Error exporting combos:", error);
+    }
+  };
+
+  const handleImportFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      setConfirmState({
+        title: "Import Combos",
+        message: `This will replace all ${combos.length} existing combo(s) with ${data.combos?.length || 0} combo(s) from this file. Are you sure?`,
+        onConfirm: async () => {
+          setConfirmState(null);
+          setImporting(true);
+          try {
+            const res = await fetch("/api/combos/import", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: text,
+            });
+            if (res.ok) {
+              await fetchData();
+            } else {
+              const err = await res.json();
+              alert(err.error || "Failed to import combos");
+            }
+          } catch (err) {
+            console.log("Error importing combos:", err);
+            alert("Failed to import combos");
+          } finally {
+            setImporting(false);
+          }
+        },
+      });
+    } catch (error) {
+      console.log("Error reading import file:", error);
+      alert("Invalid JSON file");
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col gap-6">
@@ -207,9 +268,24 @@ export default function CombosPage() {
             <li><span className="font-medium text-text-main">Fusion</span> — queries all models in parallel, then a judge synthesizes one answer. Best quality, but costs the most: every request bills all panel models + the judge (N+1 calls)</li>
           </ul>
         </div>
-        <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto whitespace-nowrap">
-          Create Combo
-        </Button>
+        <div className="flex gap-2 w-full sm:w-auto">
+          <Button variant="secondary" size="sm" iconRight="download" onClick={handleExport} className="flex-1 sm:flex-none">
+            Export
+          </Button>
+          <Button variant="secondary" size="sm" iconRight="upload" loading={importing} onClick={() => fileInputRef.current?.click()} className="flex-1 sm:flex-none">
+            Import
+          </Button>
+          <Button icon="add" size="sm" onClick={() => setShowCreateModal(true)} className="flex-1 sm:flex-none whitespace-nowrap">
+            Create
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            onChange={handleImportFile}
+            className="hidden"
+          />
+        </div>
       </div>
 
       {/* Combos List */}
