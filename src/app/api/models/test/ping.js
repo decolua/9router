@@ -1,6 +1,7 @@
 import { getApiKeys } from "@/lib/localDb";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
+import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 
 const CLI_TOKEN_SALT = "9r-cli-auth";
 
@@ -130,6 +131,15 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     return { ok: true, latencyMs, error: null, status: res.status };
   }
 
+  const [providerId, modelId] = String(model).split("/");
+  const caps = getCapabilitiesForModel(providerId, modelId || model);
+  // Reasoning models (o1/gpt-5/gemini-thinking/glm-5/kimi-k3/...) spend their
+  // first tokens on chain-of-thought: a 16-token probe returns an empty
+  // completion (finish_reason "length"), so the Test button false-negatives.
+  // Give them a budget large enough to finish thinking; keep the small probe
+  // for plain models so the check stays cheap and fast.
+  const maxTokens = caps.reasoning ? 1024 : 16;
+
   const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
     method: "POST",
     headers,
@@ -137,7 +147,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       model,
       // Claude-on-Copilot returns empty choices at max_tokens:1 (budget is spent
       // before a content token emits), so a 1-token probe yields a false negative.
-      max_tokens: 16,
+      max_tokens: maxTokens,
       stream: false,
       messages: [{ role: "user", content: "hi" }],
     }),
