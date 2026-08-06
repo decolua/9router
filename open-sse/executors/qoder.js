@@ -340,6 +340,87 @@ function wrapQoderSSE(response, model) {
   });
 }
 
+/**
+ * Peek at the first SSE event from a Qoder response to detect upstream errors
+ * that Qoder wraps inside an HTTP 200 SSE envelope ({statusCodeValue, body}).
+ * Returns a proper HTTP error Response when found, so downstream fallback
+ * logic (combo.js, chat.js) can trigger. For success, passes through to
+ * wrapQoderSSE transparently.
+ */
+async function unwrapQoderEnvelope(response, model) {
+  if (!response.ok || !response.body) {
+    return response;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  const { done, value } = await reader.read();
+  if (done) {
+    return new Response(
+      JSON.stringify({ error: { message: `[qoder] empty response` } }),
+      { status: 502, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  const text = decoder.decode(value, { stream: true });
+
+  let errorStatus = null;
+  let errorMsg = "";
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) continue;
+    const jsonStr = trimmed.slice(5).trim();
+    if (jsonStr === "[DONE]") break;
+    try {
+      const envelope = JSON.parse(jsonStr);
+      const statusVal = typeof envelope.statusCodeValue === "number" ? envelope.statusCodeValue : 200;
+      if (statusVal !== 200) {
+        errorStatus = statusVal >= 400 ? statusVal : 502;
+        errorMsg = typeof envelope.body === "string" ? envelope.body : `upstream status ${statusVal}`;
+      }
+    } catch {
+      // Malformed JSON — treat as non-error; wrapQoderSSE will handle it
+    }
+    break;
+  }
+
+  if (errorStatus) {
+    reader.cancel();
+    return new Response(
+      JSON.stringify({ error: { message: `[qoder error ${errorStatus}: ${truncate(errorMsg, 200)}]` } }),
+      { status: errorStatus, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  // Re-create stream with first chunk prepended so wrapQoderSSE can process it
+  const restStream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(value);
+    },
+    pull(controller) {
+      return reader.read().then(({ done, value }) => {
+        if (done) { controller.close(); return; }
+        controller.enqueue(value);
+      });
+    },
+    cancel() {
+      reader.cancel();
+    },
+  });
+
+  const newResp = new Response(restStream, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+    },
+  });
+
+  return wrapQoderSSE(newResp, model);
+}
+
 export class QoderExecutor extends BaseExecutor {
   constructor() {
     super("qoder", PROVIDERS.qoder);
@@ -472,8 +553,11 @@ export class QoderExecutor extends BaseExecutor {
       return { response, url, headers, transformedBody: payload };
     }
 
-    const wrapped = wrapQoderSSE(response, `qoder/${qoderKey}`);
-    return { response: wrapped, url, headers, transformedBody: payload };
+    // Qoder wraps upstream errors inside an HTTP 200 SSE envelope
+    // ({statusCodeValue}). Peek at the first event to detect this and return
+    // a proper HTTP error so combo/account fallback logic can trigger.
+    const unwrapped = await unwrapQoderEnvelope(response, `qoder/${qoderKey}`);
+    return { response: unwrapped, url, headers, transformedBody: payload };
   }
 
   // Qoder device tokens don't refresh through OAuth — the upstream returns
@@ -495,5 +579,6 @@ export default QoderExecutor;
 export const __test__ = {
   normalizeMessages,
   wrapQoderSSE,
+  unwrapQoderEnvelope,
   buildQoderRequestBody,
 };
