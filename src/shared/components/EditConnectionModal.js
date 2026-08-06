@@ -4,10 +4,10 @@ import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import Modal from "@/shared/components/Modal";
 import Input from "@/shared/components/Input";
+import Select from "@/shared/components/Select";
 import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
-import Select from "@/shared/components/Select";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
@@ -23,6 +23,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
   const [region, setRegion] = useState("");
+  const [vertexData, setVertexData] = useState({ location: "global", reasoningEffort: "high" });
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [validating, setValidating] = useState(false);
@@ -54,6 +55,12 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         const savedRegion = connection.providerSpecificData?.region || providerCfg.defaultRegion || providerCfg.regions[0]?.id || "";
         setRegion(savedRegion);
       }
+      if ((connection.provider === "vertex" || connection.provider === "vertex-partner") && connection.providerSpecificData) {
+        setVertexData({
+          location: connection.providerSpecificData.location || "global",
+          reasoningEffort: connection.providerSpecificData.reasoningEffort || "high",
+        });
+      }
       setTestResult(null);
       setValidationResult(null);
     }
@@ -62,6 +69,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
+  const isVertex = connection?.provider === "vertex" || connection?.provider === "vertex-partner";
   const isCompatible = connection
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
@@ -102,6 +110,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           ...(isAzure ? { providerSpecificData: azureData } : {}),
           ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
           ...(providerRegions ? { providerSpecificData: buildRegionSpecificData() } : {}),
+          ...(isVertex ? { providerSpecificData: vertexData } : {}),
         }),
       });
       const data = await res.json();
@@ -137,6 +146,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
                 ...(isAzure ? { providerSpecificData: azureData } : {}),
                 ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
                 ...(providerRegions ? { providerSpecificData: buildRegionSpecificData() } : {}),
+                ...(isVertex ? { providerSpecificData: vertexData } : {}),
               }),
             });
             const data = await res.json();
@@ -155,7 +165,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         }
       }
       
-      // Add Azure-specific data if this is an Azure connection
+      // Add provider-specific data
       if (isAzure) {
         updates.providerSpecificData = {
           azureEndpoint: azureData.azureEndpoint,
@@ -170,6 +180,12 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       // Persist updated region for region-aware providers
       if (providerRegions && region) {
         updates.providerSpecificData = buildRegionSpecificData();
+      }
+      if (isVertex) {
+        updates.providerSpecificData = {
+          location: vertexData.location || "global",
+          reasoningEffort: vertexData.reasoningEffort || "high",
+        };
       }
       
       await onSave(updates);
@@ -273,7 +289,43 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           />
         )}
 
-        {!isCompatible && !isAzure && !isCloudflareAi && (
+        {isVertex && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">Vertex AI Configuration</h3>
+            <div className="flex flex-col gap-3">
+              <Select
+                label="Location"
+                value={vertexData.location}
+                onChange={(e) => setVertexData({ ...vertexData, location: e.target.value })}
+                options={[
+                  { value: "global", label: "global (recommended for Gemini 3.x)" },
+                  { value: "us-central1", label: "us-central1" },
+                  { value: "us-east4", label: "us-east4" },
+                  { value: "europe-west1", label: "europe-west1" },
+                  { value: "europe-west4", label: "europe-west4" },
+                  { value: "asia-east1", label: "asia-east1" },
+                  { value: "asia-northeast1", label: "asia-northeast1" },
+                ]}
+              />
+              <Select
+                label="Reasoning Effort (default)"
+                value={vertexData.reasoningEffort}
+                onChange={(e) => setVertexData({ ...vertexData, reasoningEffort: e.target.value })}
+                options={[
+                  { value: "high", label: "high (32k tokens — default for Pro)" },
+                  { value: "medium", label: "medium (8k tokens)" },
+                  { value: "low", label: "low (1k tokens)" },
+                  { value: "", label: "none (let model decide)" },
+                ]}
+              />
+              <p className="text-xs text-text-muted">
+                Location <code>global</code> is required for Gemini 3.1 Pro Preview.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {!isCompatible && !isAzure && !isCloudflareAi && !isVertex && (
           <div className="flex items-center gap-3">
             <Button onClick={handleTest} variant="secondary" disabled={testing}>
               {testing ? "Testing..." : "Test Connection"}
@@ -313,4 +365,3 @@ EditConnectionModal.propTypes = {
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
 };
-

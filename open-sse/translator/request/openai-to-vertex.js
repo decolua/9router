@@ -36,6 +36,27 @@ function postProcessForVertex(body) {
 
 export function openaiToVertexRequest(model, body, stream, credentials) {
   const gemini = openaiToGeminiRequest(model, body, stream, credentials);
+
+  // Map reasoning_effort → thinkingConfig
+  // Priority: request body > providerSpecificData (set in UI) > none
+  const effort = body.reasoning_effort || credentials?.providerSpecificData?.reasoningEffort;
+  if (effort) {
+    const budgetMap = { low: 1024, medium: 8192, high: 32768 };
+    const budget = budgetMap[effort] || 32768;
+    gemini.generationConfig.thinkingConfig = {
+      thinkingBudget: budget,
+      include_thoughts: true
+    };
+  }
+
+  // Map Claude thinking.budget_tokens → Gemini thinkingConfig
+  if (body.thinking?.type === "enabled" && body.thinking.budget_tokens) {
+    gemini.generationConfig.thinkingConfig = {
+      thinkingBudget: body.thinking.budget_tokens,
+      include_thoughts: true
+    };
+  }
+
   return postProcessForVertex(gemini);
 }
 

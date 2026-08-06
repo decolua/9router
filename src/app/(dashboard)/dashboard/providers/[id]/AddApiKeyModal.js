@@ -20,6 +20,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
+  const isVertex = provider === "vertex" || provider === "vertex-partner";
   const providerRegions = AI_PROVIDERS?.[provider]?.regions || null;
   const defaultRegion = AI_PROVIDERS?.[provider]?.defaultRegion || providerRegions?.[0]?.id || "";
 
@@ -38,6 +39,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [vertexData, setVertexData] = useState({ location: "global", reasoningEffort: "high" });
   const [region, setRegion] = useState(defaultRegion);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
@@ -66,6 +68,12 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     }
     if (isCloudflareAi) {
       return { accountId: cloudflareData.accountId };
+    }
+    if (isVertex) {
+      return {
+        location: vertexData.location || "global",
+        reasoningEffort: vertexData.reasoningEffort || "high",
+      };
     }
     if (providerRegions && region) {
       return { region };
@@ -330,6 +338,41 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             <p className="text-xs text-text-muted mt-2">
               Find your Account ID in the right sidebar of <a href="https://dash.cloudflare.com" target="_blank" rel="noopener noreferrer" className="text-primary underline">dash.cloudflare.com</a>
             </p>
+          </div>
+        )}
+        {isVertex && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">Vertex AI Configuration</h3>
+            <div className="flex flex-col gap-3">
+              <Select
+                label="Location"
+                value={vertexData.location}
+                onChange={(e) => setVertexData({ ...vertexData, location: e.target.value })}
+                options={[
+                  { value: "global", label: "global (recommended for Gemini 3.x)" },
+                  { value: "us-central1", label: "us-central1" },
+                  { value: "us-east4", label: "us-east4" },
+                  { value: "europe-west1", label: "europe-west1" },
+                  { value: "europe-west4", label: "europe-west4" },
+                  { value: "asia-east1", label: "asia-east1" },
+                  { value: "asia-northeast1", label: "asia-northeast1" },
+                ]}
+              />
+              <Select
+                label="Reasoning Effort (default)"
+                value={vertexData.reasoningEffort}
+                onChange={(e) => setVertexData({ ...vertexData, reasoningEffort: e.target.value })}
+                options={[
+                  { value: "high", label: "high (32k tokens — default for Pro)" },
+                  { value: "medium", label: "medium (8k tokens)" },
+                  { value: "low", label: "low (1k tokens)" },
+                  { value: "", label: "none (let model decide)" },
+                ]}
+              />
+              <p className="text-xs text-text-muted">
+                Location <code>global</code> is required for Gemini 3.1 Pro Preview. Reasoning effort sets the default <code>thinkingBudget</code>; clients can override per-request via <code>reasoning_effort</code>.
+              </p>
+            </div>
           </div>
         )}
         {isAzure && (
