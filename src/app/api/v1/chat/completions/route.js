@@ -1,5 +1,6 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
+import { rateLimit } from "@/lib/rate-limit.js";
 
 let initialized = false;
 
@@ -26,10 +27,34 @@ export async function OPTIONS() {
   });
 }
 
-export async function POST(request) {  
+export async function POST(request) {
+  // Rate limiting
+  const rl = rateLimit(request);
+  if (!rl.allowed) {
+    return new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
+      status: 429,
+      headers: {
+        "Content-Type": "application/json",
+        ...rl.headers,
+      },
+    });
+  }
+
   // Fallback to local handling
   await ensureInitialized();
-  
-  return await handleChat(request);
+
+  const response = await handleChat(request);
+
+  // Add rate limit headers to response
+  const newHeaders = new Headers(response.headers);
+  for (const [key, value] of Object.entries(rl.headers)) {
+    newHeaders.set(key, value);
+  }
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: newHeaders,
+  });
 }
 
