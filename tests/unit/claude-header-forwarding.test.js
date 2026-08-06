@@ -137,6 +137,67 @@ describe("DefaultExecutor.buildHeaders() — anthropic-compatible stripping", ()
     expect(betaVal).not.toContain("claude-code-20250219");
   });
 
+  it("keeps Claude identity headers for claude-cli profile on non-Anthropic host", () => {
+    const executor = new DefaultExecutor("anthropic-compatible-custom");
+    const headers = executor.buildHeaders(
+      {
+        apiKey: "key",
+        providerSpecificData: {
+          baseUrl: "https://myproxy.example.com/v1",
+          clientIdentityProfile: "claude-cli",
+        },
+      },
+      true
+    );
+
+    expect(headers["X-App"]).toBe("cli");
+    expect(headers["Anthropic-Beta"]).toContain("claude-code-20250219");
+    expect(headers["Authorization"]).toBe("Bearer key");
+    expect(headers["x-api-key"]).toBe("key");
+  });
+
+  it("keeps custom Claude identity headers on non-Anthropic host", () => {
+    const executor = new DefaultExecutor("anthropic-compatible-custom");
+    const headers = executor.buildHeaders(
+      {
+        apiKey: "key",
+        providerSpecificData: {
+          baseUrl: "https://myproxy.example.com/v1",
+          clientIdentityProfile: "custom",
+          clientIdentityHeaders: {
+            "X-App": "cli",
+            "Anthropic-Beta": "claude-code-20250219",
+          },
+        },
+      },
+      false
+    );
+
+    expect(headers["X-App"]).toBe("cli");
+    expect(headers["Anthropic-Beta"]).toBe("claude-code-20250219");
+  });
+
+  it("keeps auth headers ahead of custom identity headers", () => {
+    const executor = new DefaultExecutor("openai-compatible-custom");
+    const headers = executor.buildHeaders(
+      {
+        apiKey: "real-key",
+        providerSpecificData: {
+          baseUrl: "https://openai-compatible.example.com/v1",
+          clientIdentityProfile: "custom",
+          clientIdentityHeaders: {
+            Authorization: "Bearer fake-key",
+            "User-Agent": "custom/1.0",
+          },
+        },
+      },
+      false
+    );
+
+    expect(headers["Authorization"]).toBe("Bearer real-key");
+    expect(headers["User-Agent"]).toBe("custom/1.0");
+  });
+
   it("keeps other beta flags intact after stripping", () => {
     const executor = new DefaultExecutor("anthropic-compatible-custom");
     // The static CLAUDE_API_HEADERS used by anthropic-compatible providers include

@@ -12,6 +12,12 @@ import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import {
+  CODEX_FORWARD_HEADER_ALLOWLIST,
+  CODEX_RESPONSES_LITE_HEADER,
+  CODEX_RESPONSES_LITE_HEADER_VALUE,
+  CODEX_RESPONSES_LITE_INPUT_TYPES,
+} from "../config/codexConstants.js";
 
 // SSE error patterns inside 200-OK bodies. Some retry same account first; capacity rotates accounts.
 const CODEX_SSE_RETRY_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
@@ -42,8 +48,100 @@ const CODEX_PASSTHROUGH_TOOL_TYPES = new Set(["custom"]);
 const RESPONSES_API_ALLOWLIST = new Set([
   "model", "input", "instructions", "tools", "tool_choice", "stream", "store",
   "reasoning", "service_tier", "include", "prompt_cache_key", "client_metadata",
-  "text"
+  "text", "parallel_tool_calls"
 ]);
+
+const RESPONSES_LITE_INPUT_TYPES = new Set(CODEX_RESPONSES_LITE_INPUT_TYPES);
+
+function getHeaderValue(rawHeaders, name) {
+  if (!rawHeaders) return null;
+  if (typeof rawHeaders.get === "function") return rawHeaders.get(name);
+  const entry = Object.entries(rawHeaders).find(([key]) => key.toLowerCase() === name);
+  return entry?.[1] ?? null;
+}
+
+export function isCodexResponsesLiteRequest(rawHeaders) {
+  const value = getHeaderValue(rawHeaders, CODEX_RESPONSES_LITE_HEADER);
+  return typeof value === "string"
+    && value.trim().toLowerCase() === CODEX_RESPONSES_LITE_HEADER_VALUE;
+}
+
+export function hasCodexResponsesLitePayload(body) {
+  if (Array.isArray(body?.input) && body.input.some((item) =>
+    item?.type === "additional_tools" || typeof item?.namespace === "string"
+  )) return true;
+  return Array.isArray(body?.tools) && body.tools.some((tool) => tool?.type === "namespace");
+}
+
+export function stripRejectedCodexInputNamespaces(body) {
+  if (!Array.isArray(body?.input)) return false;
+  let stripped = false;
+  for (const item of body.input) {
+    if (!item || typeof item !== "object" || Array.isArray(item) || !("namespace" in item)) continue;
+    delete item.namespace;
+    stripped = true;
+  }
+  return stripped;
+}
+
+function isRejectedCodexInputNamespace(status, errorText) {
+  return Number(status) === 400
+    && /unknown parameter:\s*['"]input\[\d+\]\.namespace['"]/i.test(String(errorText || ""));
+}
+export function applyCodexForwardHeaders(headers, rawHeaders, responsesLite = false) {
+  for (const name of CODEX_FORWARD_HEADER_ALLOWLIST) {
+    if (name === CODEX_RESPONSES_LITE_HEADER && (responsesLite || isCodexResponsesLiteRequest(rawHeaders))) {
+      headers[name] = CODEX_RESPONSES_LITE_HEADER_VALUE;
+    }
+  }
+  return headers;
+}
+
+function isMessageItem(item) {
+  return item?.type === "message" || (!item?.type && typeof item?.role === "string");
+}
+
+export function normalizeCodexInputItems(body, { responsesLite = false } = {}) {
+  if (!Array.isArray(body.input)) return;
+  for (const item of body.input) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    if (!isMessageItem(item)) {
+      if (responsesLite && item.type && RESPONSES_LITE_INPUT_TYPES.has(item.type)) continue;
+      continue;
+    }
+    if (!item.type) item.type = "message";
+    if (typeof item.content === "string") {
+      const type = item.role === "assistant" ? "output_text" : "input_text";
+      item.content = [{ type, text: item.content }];
+    }
+  }
+}
+
+export function hasResponsesLiteInstructions(body) {
+  if (!Array.isArray(body.input)) return false;
+  return body.input.some((item) => {
+    if (!isMessageItem(item) || !["developer", "system"].includes(item.role)) return false;
+    if (typeof item.content === "string") return item.content.trim().length > 0;
+    return Array.isArray(item.content) && item.content.some((part) =>
+      typeof part?.text === "string" && part.text.trim().length > 0
+    );
+  });
+}
+
+function ensureResponsesLiteInstructions(body) {
+  const instructions = typeof body.instructions === "string" && body.instructions.trim()
+    ? body.instructions
+    : CODEX_DEFAULT_INSTRUCTIONS;
+  if (!hasResponsesLiteInstructions(body)) {
+    const additionalToolsIndex = body.input.findIndex((item) => item?.type === "additional_tools");
+    const insertAt = additionalToolsIndex >= 0 ? additionalToolsIndex + 1 : 0;
+    body.input.splice(insertAt, 0, {
+      type: "message", role: "developer",
+      content: [{ type: "input_text", text: instructions }],
+    });
+  }
+  delete body.instructions;
+}
 
 // Convert role=system → role=developer in body.input (keeps content in cacheable prefix)
 function convertSystemToDeveloperRole(body) {
@@ -125,9 +223,12 @@ function resolveCacheSessionId(body, credentials) {
   });
 }
 
-function normalizeReasoningEffort(model, value) {
+function normalizeReasoningEffort(model, value, responsesLite = false) {
   const supportedLevels = getThinkingLevels("codex", model);
   if (supportedLevels?.includes(value)) return value;
+  // Responses-Lite forwards "max" to the upstream verbatim; only the classic
+  // Responses path downgrades it to the highest level Codex actually accepts.
+  if (value === "max" && responsesLite) return value;
   if (value === "ultra" && supportedLevels?.includes("max")) return "max";
   if (value === "max" || value === "ultra") return "xhigh";
   return value;
@@ -193,6 +294,7 @@ export class CodexExecutor extends BaseExecutor {
   constructor() {
     super("codex", PROVIDERS.codex);
     this._currentSessionId = null;
+    this._responsesLite = false;
   }
 
   /**
@@ -201,6 +303,7 @@ export class CodexExecutor extends BaseExecutor {
    */
   buildHeaders(credentials, stream = true) {
     const headers = super.buildHeaders(credentials, stream);
+    applyCodexForwardHeaders(headers, credentials?.rawHeaders, this._responsesLite);
     headers["session_id"] = this._currentSessionId || credentials?.connectionId || "default";
     // Identify client type to Codex backend (matches official codex CLI)
     if (!headers["originator"]) headers["originator"] = "codex_cli_rs";
@@ -272,8 +375,18 @@ export class CodexExecutor extends BaseExecutor {
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
     const { attempts, delayMs } = resolveRetryEntry(retryConfig[503]);
     let attempt = 0;
+    let namespaceSchemaRetried = false;
     while (true) {
       const result = await super.execute(args);
+      if (!namespaceSchemaRetried && result.response?.status === 400) {
+        const errorText = await result.response.clone().text();
+        if (isRejectedCodexInputNamespace(result.response.status, errorText)
+            && stripRejectedCodexInputNamespaces(args.body)) {
+          namespaceSchemaRetried = true;
+          args.log?.warn?.("CODEX", "Upstream rejected input namespace; retrying once without history namespace fields");
+          continue;
+        }
+      }
       const peek = await this._peekSseTransientError(result.response);
       if (!peek.matched) {
         // Replace body with re-assembled stream (prefix bytes already read + rest)
@@ -393,6 +506,8 @@ export class CodexExecutor extends BaseExecutor {
   transformRequest(model, body, stream, credentials) {
     this._isCompact = !!body._compact;
     delete body._compact;
+    const responsesLite = isCodexResponsesLiteRequest(credentials?.rawHeaders) || hasCodexResponsesLitePayload(body);
+    this._responsesLite = responsesLite;
     // Resolve conversation-stable session_id (priority: body → assistant-text → workspace → machine)
     this._currentSessionId = resolveCacheSessionId(body, credentials);
     // Convert string input to array format (Codex API requires input as array)
@@ -404,6 +519,8 @@ export class CodexExecutor extends BaseExecutor {
       body.input = [{ type: "message", role: "user", content: [{ type: "input_text", text: "..." }] }];
     }
 
+    normalizeCodexInputItems(body, { responsesLite });
+
     // Keep system prompts in body.input as role=developer so they stay in the cacheable prefix
     convertSystemToDeveloperRole(body);
     // Strip server-generated item IDs (rs_/fc_/resp_/msg_) — Codex /responses can't resolve when store=false
@@ -414,8 +531,9 @@ export class CodexExecutor extends BaseExecutor {
     // Ensure streaming is enabled (Codex API requires it)
     body.stream = true;
 
-    // If no instructions provided, inject default Codex instructions
-    if (!body.instructions || body.instructions.trim() === "") {
+    if (responsesLite) {
+      ensureResponsesLiteInstructions(body);
+    } else if (!body.instructions || body.instructions.trim() === "") {
       body.instructions = CODEX_DEFAULT_INSTRUCTIONS;
     }
 
@@ -432,7 +550,7 @@ export class CodexExecutor extends BaseExecutor {
 
     // Extract thinking level from model name suffix
     // e.g., gpt-5.3-codex-high → high, gpt-5.3-codex → medium (default)
-    const effortLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+    const effortLevels = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
     let modelEffort = null;
     for (const level of effortLevels) {
       if (body.model.endsWith(`-${level}`)) {
@@ -445,12 +563,13 @@ export class CodexExecutor extends BaseExecutor {
 
     // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
     if (!body.reasoning) {
-      const effort = normalizeReasoningEffort(body.model, body.reasoning_effort || modelEffort || 'low');
+      const effort = normalizeReasoningEffort(body.model, body.reasoning_effort || modelEffort || 'low', responsesLite);
       body.reasoning = { effort, summary: "auto" };
     } else {
-      body.reasoning.effort = normalizeReasoningEffort(body.model, body.reasoning.effort);
+      body.reasoning.effort = normalizeReasoningEffort(body.model, body.reasoning.effort, responsesLite);
       if (!body.reasoning.summary) body.reasoning.summary = "auto";
     }
+    if (responsesLite) body.reasoning.context = "all_turns";
     delete body.reasoning_effort;
 
     // Include reasoning encrypted content (required by Codex backend for reasoning models)

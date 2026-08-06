@@ -18,6 +18,9 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
+import { CODEX_MODELS_BASE_INSTRUCTIONS } from "open-sse/config/codexConstants.js";
+import { mergeClientIdentityHeaders } from "open-sse/shared/clientIdentityHeaders.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -163,7 +166,7 @@ function inferKindFromUnknownModelId(modelId) {
   return LLM_KIND;
 }
 
-async function fetchCompatibleModelIds(connection) {
+export async function fetchCompatibleModelIds(connection) {
   if (!connection?.apiKey) return [];
 
   const baseUrl = typeof connection?.providerSpecificData?.baseUrl === "string"
@@ -173,24 +176,33 @@ async function fetchCompatibleModelIds(connection) {
   if (!baseUrl) return [];
 
   let url = `${baseUrl}/models`;
-  const headers = {
+  const baseHeaders = {
     "Content-Type": "application/json",
   };
+  let authHeaders = {};
 
   if (isOpenAICompatibleProvider(connection.provider)) {
-    headers.Authorization = `Bearer ${connection.apiKey}`;
+    authHeaders = { Authorization: `Bearer ${connection.apiKey}` };
   } else if (isAnthropicCompatibleProvider(connection.provider)) {
     if (url.endsWith("/messages/models")) {
       url = url.slice(0, -9);
     } else if (url.endsWith("/messages")) {
       url = `${url.slice(0, -9)}/models`;
     }
-    headers["x-api-key"] = connection.apiKey;
-    headers["anthropic-version"] = "2023-06-01";
-    headers.Authorization = `Bearer ${connection.apiKey}`;
+    authHeaders = {
+      "x-api-key": connection.apiKey,
+      "anthropic-version": "2023-06-01",
+      Authorization: `Bearer ${connection.apiKey}`,
+    };
   } else {
     return [];
   }
+
+  const headers = mergeClientIdentityHeaders(
+    baseHeaders,
+    connection.providerSpecificData || {},
+    authHeaders,
+  );
 
   try {
     const controller = new AbortController();
@@ -537,12 +549,101 @@ export async function OPTIONS() {
  * GET /v1/models - OpenAI compatible models list (LLM/chat models only by default).
  * For other capabilities use /v1/models/{kind} (image, tts, stt, embedding, image-to-text, web).
  */
+export function isCodexModelsRequest(request) {
+  if (!request?.url || typeof request.headers?.get !== "function") return false;
+  const clientVersion = new URL(request.url).searchParams.get("client_version");
+  const userAgent = request.headers.get("user-agent") || "";
+  return Boolean(clientVersion) && /\bcodex(?:[_ -](?:desktop|cli_rs|cli|exec))?\b/i.test(userAgent);
+}
+
+const CODEX_REASONING_DESCRIPTIONS = Object.freeze({
+  none: "No reasoning",
+  minimal: "Minimal reasoning",
+  low: "Fast responses with lighter reasoning",
+  medium: "Balanced reasoning for everyday tasks",
+  high: "Greater reasoning depth for complex tasks",
+  xhigh: "Extra high reasoning depth",
+  max: "Maximum reasoning depth",
+});
+
+function codexModelIdentity(model) {
+  const slug = typeof model?.id === "string" ? model.id.trim() : "";
+  if (!slug) return null;
+  const separator = slug.indexOf("/");
+  return {
+    slug,
+    provider: separator > 0 ? slug.slice(0, separator) : String(model.owned_by || "combo"),
+    modelId: separator > 0 ? slug.slice(separator + 1) : slug,
+  };
+}
+
+export function buildCodexModelInfo(model, priority = 0) {
+  const identity = codexModelIdentity(model);
+  if (!identity) return null;
+
+  const capabilities = getCapabilitiesForModel(identity.provider, identity.modelId);
+  const reasoningLevels = getThinkingLevels(identity.provider, identity.modelId) || [];
+  const defaultReasoningLevel = reasoningLevels.includes("medium")
+    ? "medium"
+    : reasoningLevels.find((level) => level !== "none") || null;
+  const isGpt56 = /^gpt-5\.6-(?:sol|terra|luna)(?:$|-)/i.test(identity.modelId);
+
+  return {
+    slug: identity.slug,
+    display_name: identity.slug,
+    description: model.owned_by === "combo"
+      ? "9Router combo model"
+      : `9Router model via ${model.owned_by || identity.provider}`,
+    default_reasoning_level: defaultReasoningLevel,
+    supported_reasoning_levels: reasoningLevels.map((effort) => ({
+      effort,
+      description: CODEX_REASONING_DESCRIPTIONS[effort] || effort,
+    })),
+    shell_type: "shell_command",
+    visibility: "list",
+    supported_in_api: true,
+    priority,
+    upgrade: null,
+    base_instructions: CODEX_MODELS_BASE_INSTRUCTIONS,
+    supports_reasoning_summaries: capabilities.reasoning,
+    default_reasoning_summary: isGpt56 ? "none" : "auto",
+    support_verbosity: isGpt56,
+    default_verbosity: isGpt56 ? "low" : null,
+    apply_patch_tool_type: isGpt56 ? "freeform" : null,
+    web_search_tool_type: capabilities.search ? "text_and_image" : "text",
+    truncation_policy: { mode: "tokens", limit: 10000 },
+    supports_parallel_tool_calls: capabilities.tools,
+    supports_image_detail_original: isGpt56,
+    context_window: capabilities.contextWindow || null,
+    max_context_window: capabilities.contextWindow || null,
+    effective_context_window_percent: 95,
+    experimental_supported_tools: [],
+    input_modalities: capabilities.vision ? ["text", "image"] : ["text"],
+    supports_search_tool: capabilities.search,
+    use_responses_lite: isGpt56,
+    tool_mode: isGpt56 ? "code_mode_only" : null,
+    multi_agent_version: isGpt56 ? "v2" : null,
+  };
+}
+
+export function buildCompatibleModelsResponse(data, { includeCodexCatalog = false } = {}) {
+  if (includeCodexCatalog) {
+    return {
+      models: data
+        .map((model, index) => buildCodexModelInfo(model, index))
+        .filter(Boolean),
+    };
+  }
+  return { object: "list", data };
+}
 export async function GET(request) {
   try {
     // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
     const data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
-    return Response.json({ object: "list", data }, {
+    return Response.json(buildCompatibleModelsResponse(data, {
+      includeCodexCatalog: isCodexModelsRequest(request),
+    }), {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
   } catch (error) {

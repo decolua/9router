@@ -8,7 +8,7 @@ import { planBulkAdd } from "@/shared/utils/bulkAdd";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
-export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, authType, authHint, website, proxyPools, error, existingNames, onSave, onBulkDone, onClose }) {
+export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, providerNode, authType, authHint, website, proxyPools, error, existingNames, onSave, onBulkDone, onClose }) {
   const NONE_PROXY_POOL_VALUE = "__none__";
   const isOllamaLocal = provider === "ollama-local";
   const isCookie = authType === "cookie";
@@ -53,6 +53,16 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const [bulkResult, setBulkResult] = useState(null); // { success, failed }
 
   const buildProviderSpecificData = () => {
+    if (isCompatible && providerNode) {
+      return {
+        prefix: providerNode.prefix,
+        ...(providerNode.apiType ? { apiType: providerNode.apiType } : {}),
+        baseUrl: providerNode.baseUrl,
+        nodeName: providerNode.name,
+        clientIdentityProfile: providerNode.clientIdentityProfile || "default",
+        clientIdentityHeaders: providerNode.clientIdentityHeaders || {},
+      };
+    }
     if (isOllamaLocal && formData.ollamaHostUrl.trim()) {
       return { baseUrl: formData.ollamaHostUrl.trim() };
     }
@@ -74,12 +84,21 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   };
 
   const handleValidate = async () => {
+    if (isCompatible && !formData.defaultModel.trim()) {
+      setValidationResult("failed");
+      return;
+    }
     setValidating(true);
     try {
       const res = await fetch("/api/providers/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, apiKey: formData.apiKey, providerSpecificData: buildProviderSpecificData() }),
+        body: JSON.stringify({
+          provider,
+          apiKey: formData.apiKey,
+          defaultModel: isCompatible ? formData.defaultModel.trim() : undefined,
+          providerSpecificData: buildProviderSpecificData(),
+        }),
       });
       const data = await res.json();
       setValidationResult(data.valid ? "success" : "failed");
@@ -108,7 +127,12 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         const res = await fetch("/api/providers/validate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, apiKey: formData.apiKey, providerSpecificData: buildProviderSpecificData() }),
+          body: JSON.stringify({
+            provider,
+            apiKey: formData.apiKey,
+            defaultModel: isCompatible ? formData.defaultModel.trim() : undefined,
+            providerSpecificData: buildProviderSpecificData(),
+          }),
         });
         const data = await res.json();
         isValid = !!data.valid;
@@ -412,6 +436,14 @@ AddApiKeyModal.propTypes = {
   providerName: PropTypes.string,
   isCompatible: PropTypes.bool,
   isAnthropic: PropTypes.bool,
+  providerNode: PropTypes.shape({
+    name: PropTypes.string,
+    prefix: PropTypes.string,
+    apiType: PropTypes.string,
+    baseUrl: PropTypes.string,
+    clientIdentityProfile: PropTypes.string,
+    clientIdentityHeaders: PropTypes.object,
+  }),
   authType: PropTypes.string,
   authHint: PropTypes.string,
   website: PropTypes.string,

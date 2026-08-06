@@ -14,6 +14,57 @@ const SETTINGS_RESPONSE_HEADERS = {
 // Secrets must never be mass-assigned from request body (CWE-915)
 const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
 
+const SKIP_RULE_KINDS = new Set(["connect_timeout", "network"]);
+const SKIP_RULE_ACTIONS = new Set(["retry", "skip"]);
+
+// Validate maxTransportAttempts + providerSkipRules when present in the PATCH body.
+// Returns an error string (→ 400) or null when valid / absent.
+function validateSkipRuleSettings(body) {
+  if (Object.prototype.hasOwnProperty.call(body, "maxTransportAttempts")) {
+    const n = body.maxTransportAttempts;
+    if (!Number.isInteger(n) || n < 1 || n > 5) return "maxTransportAttempts must be an integer 1-5";
+  }
+  if (!Object.prototype.hasOwnProperty.call(body, "providerSkipRules")) return null;
+
+  const rules = body.providerSkipRules;
+  if (!Array.isArray(rules)) return "providerSkipRules must be an array";
+  if (rules.length > 100) return "providerSkipRules cannot exceed 100 rules";
+
+  for (let i = 0; i < rules.length; i++) {
+    const r = rules[i];
+    const at = `providerSkipRules[${i}]`;
+    if (!r || typeof r !== "object") return `${at} must be an object`;
+    if (typeof r.provider !== "string" || !r.provider.trim() || r.provider.length > 128) {
+      return `${at}.provider must be a non-empty string ≤128 chars`;
+    }
+    if (!SKIP_RULE_ACTIONS.has(r.action)) return `${at}.action must be "retry" or "skip"`;
+    const m = r.match;
+    if (!m || typeof m !== "object") return `${at}.match is required`;
+    // Match may carry any combination of kind|status|contains; at least one is
+    // required, and every present condition must be valid (AND semantics at runtime).
+    const present = ["kind", "status", "contains"].filter(k => m[k] != null && m[k] !== "");
+    if (present.length < 1) return `${at}.match must have at least one of kind|status|contains`;
+    if (m.kind != null && !SKIP_RULE_KINDS.has(m.kind)) return `${at}.match.kind invalid`;
+    if (m.status != null && (!Number.isInteger(m.status) || m.status < 100 || m.status > 599)) {
+      return `${at}.match.status must be an integer 100-599`;
+    }
+    if (m.contains != null && m.contains !== "" && (typeof m.contains !== "string" || m.contains.length > 200)) {
+      return `${at}.match.contains must be a string ≤200 chars`;
+    }
+    if (r.headerTimeoutMs != null) {
+      if (m.kind !== "connect_timeout") return `${at}.headerTimeoutMs only allowed when match.kind is "connect_timeout"`;
+      if (!Number.isInteger(r.headerTimeoutMs) || r.headerTimeoutMs < 1000 || r.headerTimeoutMs > 120000) {
+        return `${at}.headerTimeoutMs must be an integer 1000-120000`;
+      }
+    }
+    if (r.sweep != null) {
+      if (typeof r.sweep !== "boolean") return `${at}.sweep must be a boolean`;
+      if (r.sweep === true && r.action !== "skip") return `${at}.sweep is only allowed when action is "skip"`;
+    }
+  }
+  return null;
+}
+
 export async function GET() {
   try {
     const settings = await getSettings();
@@ -74,6 +125,12 @@ export async function PATCH(request) {
       if (!body.oidcClientSecret || !String(body.oidcClientSecret).trim()) {
         delete body.oidcClientSecret;
       }
+    }
+
+    // Validate skip-rules feature settings (reject invalid rather than mass-assign blindly)
+    const skipRulesError = validateSkipRuleSettings(body);
+    if (skipRulesError) {
+      return NextResponse.json({ error: skipRulesError }, { status: 400 });
     }
 
     const settings = await updateSettings(body);
