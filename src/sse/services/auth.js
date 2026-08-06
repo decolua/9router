@@ -226,17 +226,23 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const githubResetAtMs = githubMonthlyResetMs(status, errorText, provider);
 
   // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
+  // Classify first: a request-scoped failure (fallback:false, e.g.
+  // context_length_exceeded) is a property of the body, not of the account, so it
+  // must win over any provider-supplied reset hint riding along on the same
+  // response — otherwise the precise-cooldown branches would lock a healthy
+  // account for a request that no account could serve.
+  const classified = checkFallbackError(status, errorText, backoffLevel);
   let shouldFallback, cooldownMs, newBackoffLevel;
-  if (githubResetAtMs) {
+  if (classified.shouldFallback && githubResetAtMs) {
     shouldFallback = true;
     cooldownMs = githubResetAtMs - Date.now();
     newBackoffLevel = 0;
-  } else if (resetsAtMs && resetsAtMs > Date.now()) {
+  } else if (classified.shouldFallback && resetsAtMs && resetsAtMs > Date.now()) {
     shouldFallback = true;
     cooldownMs = Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
     newBackoffLevel = 0;
   } else {
-    ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));
+    ({ shouldFallback, cooldownMs, newBackoffLevel } = classified);
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
