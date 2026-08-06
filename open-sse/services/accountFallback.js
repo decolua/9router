@@ -13,6 +13,48 @@ export function getQuotaCooldown(backoffLevel = 0) {
 }
 
 /**
+ * Parse retry time from error message or JSON body
+ * Handles Google CloudCode formats:
+ *  - "quotaResetTimeStamp": "2026-08-10T03:36:51Z"
+ *  - "retryDelay": "347406.131768759s"
+ *  - "Resets in 96h30m6s", "reset after 2h7m23s", "try again after 1h30m"
+ */
+export function parseRetryFromErrorMessage(errorText) {
+  if (!errorText) return null;
+  const str = typeof errorText === "string" ? errorText : JSON.stringify(errorText);
+
+  // 1. Check for explicit ISO timestamp in metadata: "quotaResetTimeStamp": "2026-08-10T03:36:51Z"
+  const tsMatch = str.match(/quotaResetTimeStamp["\s:]+["']?([^"'\s}]+)/i);
+  if (tsMatch && tsMatch[1]) {
+    const ts = new Date(tsMatch[1]).getTime();
+    if (!isNaN(ts) && ts > Date.now()) {
+      return ts - Date.now();
+    }
+  }
+
+  // 2. Check for retryDelay in seconds: "retryDelay": "347406.131768759s"
+  const secMatch = str.match(/retryDelay["\s:]+["']?(\d+(?:\.\d+)?)s?/i);
+  if (secMatch && secMatch[1]) {
+    const secs = parseFloat(secMatch[1]);
+    if (!isNaN(secs) && secs > 0) {
+      return Math.round(secs * 1000);
+    }
+  }
+
+  // 3. Check text durations: "Resets in 96h30m6s", "reset after 2h7m", "try again after 1h"
+  const match = str.match(/(?:resets? in|reset after|try again after|in)\s*(\d+h)?(\d+m)?(\d+(?:\.\d+)?s)?/i);
+  if (match && (match[1] || match[2] || match[3])) {
+    let totalMs = 0;
+    if (match[1]) totalMs += parseInt(match[1], 10) * 3600 * 1000;
+    if (match[2]) totalMs += parseInt(match[2], 10) * 60 * 1000;
+    if (match[3]) totalMs += Math.round(parseFloat(match[3]) * 1000);
+    return totalMs > 0 ? totalMs : null;
+  }
+
+  return null;
+}
+
+/**
  * Check if error should trigger account fallback (switch to next account)
  * Config-driven: matches ERROR_RULES top-to-bottom (text rules first, then status)
  * @param {number} status - HTTP status code
@@ -24,6 +66,13 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
   const lowerError = errorText
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
+
+  // Provider-reported reset time (e.g. "try again after 2h7m23s") takes precedence over fixed backoff
+  const parsedMs = parseRetryFromErrorMessage(errorText);
+  if (parsedMs) {
+    const cappedMs = Math.min(parsedMs, 24 * 60 * 60 * 1000);
+    return { shouldFallback: true, cooldownMs: cappedMs, newBackoffLevel: Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel) };
+  }
 
   for (const rule of ERROR_RULES) {
     // Text-based rule: match substring in error message
@@ -102,11 +151,11 @@ export function formatRetryAfter(rateLimitedUntil) {
   return `reset after ${parts.join(" ")}`;
 }
 
-/** Prefix for model lock flat fields on connection record */
-export const MODEL_LOCK_PREFIX = "modelLock_";
-
-/** Special key used when no model is known (account-level lock) */
-export const MODEL_LOCK_ALL = `${MODEL_LOCK_PREFIX}__all`;
+/** Strip provider prefix if present (e.g. "antigravity/claude-opus-4-6" -> "claude-opus-4-6") */
+export function normalizeModelLockName(model) {
+  if (!model) return null;
+  return model.replace(/^[^/]+\//, "");
+}
 
 /** Build the flat field key for a model lock */
 export function getModelLockKey(model) {
@@ -115,11 +164,21 @@ export function getModelLockKey(model) {
 
 /**
  * Check if a model lock on a connection is still active.
- * Reads flat field `modelLock_${model}` (or `modelLock___all` when model=null).
+ * Reads flat field `modelLock_${model}`, normalized key, or `modelLock___all`.
  */
 export function isModelLockActive(connection, model) {
-  const key = getModelLockKey(model);
-  const expiry = connection[key] || connection[MODEL_LOCK_ALL];
+  if (!connection) return false;
+  if (connection[MODEL_LOCK_ALL]) {
+    const allExpiry = connection[MODEL_LOCK_ALL];
+    if (allExpiry && new Date(allExpiry).getTime() > Date.now()) return true;
+  }
+  if (!model) return false;
+
+  const rawKey = getModelLockKey(model);
+  const normModel = normalizeModelLockName(model);
+  const normKey = getModelLockKey(normModel);
+
+  const expiry = connection[rawKey] || connection[normKey];
   if (!expiry) return false;
   return new Date(expiry).getTime() > Date.now();
 }
@@ -143,10 +202,21 @@ export function getEarliestModelLockUntil(connection) {
 
 /**
  * Build update object to set a model lock on a connection.
+ * Sets both raw and normalized model lock keys.
  */
 export function buildModelLockUpdate(model, cooldownMs) {
-  const key = getModelLockKey(model);
-  return { [key]: new Date(Date.now() + cooldownMs).toISOString() };
+  const isoStr = new Date(Date.now() + cooldownMs).toISOString();
+  if (!model) return { [MODEL_LOCK_ALL]: isoStr };
+
+  const rawKey = getModelLockKey(model);
+  const normModel = normalizeModelLockName(model);
+  const normKey = getModelLockKey(normModel);
+
+  const update = { [rawKey]: isoStr };
+  if (normKey !== rawKey) {
+    update[normKey] = isoStr;
+  }
+  return update;
 }
 
 /**
