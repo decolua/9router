@@ -318,6 +318,10 @@
     "tokenrouter/moonshotai/kimi-k3-free": 0,
     "tokenrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": 0
   },
+  "_bottomPrefixes": {
+    "_comment": "Providers that always sort last in every combo regardless of score/health. These are duplicate deepseek accounts (cmc, ocg) we keep for backup but should never burn quota while other providers work.",
+    "prefixes": ["cmc", "ocg"]
+  },
   "_deadCredentials": [
     "kc",
     "cline"

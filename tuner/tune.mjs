@@ -389,7 +389,16 @@ async function main() {
     });
     const capped = capPerPool(sorted, bench, MAX_PER_POOL);
     const ordered = interleaveByProvider(capped, (id) => `${bandRank(id)}|${cost(bench, id)}`, bench);
-    const desired = capPerPool(applyPins(ordered, bench._pins?.[row.name], pool, bench), bench, MAX_PER_POOL);
+    // Bottom-prefix providers (cmc, ocg) always sort last — duplicate deepseek
+    // accounts we keep for backup but must never burn quota while others work.
+    // Applied AFTER interleave because interleave can re-promote them mid-pack.
+    // Split+concat is deterministic; Array.sort with a two-value comparator is not.
+    const bottomPrefixes = bench._bottomPrefixes?.prefixes ?? [];
+    const isBottom = (id) => bottomPrefixes.some((p) => id.startsWith(`${p}/`));
+    const top = ordered.filter((id) => !isBottom(id));
+    const bottom = ordered.filter(isBottom);
+    const bottomLast = top.concat(bottom);
+    const desired = capPerPool(applyPins(bottomLast, bench._pins?.[row.name], pool, bench), bench, MAX_PER_POOL);
 
     const current = JSON.parse(row.models);
     const changed = JSON.stringify(desired) !== JSON.stringify(current);
