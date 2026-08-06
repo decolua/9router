@@ -4,6 +4,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { dbg } from "../utils/debugLog.js";
 import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
 import { resolveOpenAICompatibleApiType } from "../services/provider.js";
+import { mergeInboundClientIdentityHeaders } from "../utils/clientIdentityHeaders.js";
 
 /**
  * BaseExecutor - Base class for provider executors
@@ -70,6 +71,11 @@ export class BaseExecutor {
 
     if (stream) {
       headers["Accept"] = "text/event-stream";
+    }
+
+    // Selective passthrough of client identity headers (opt-in per provider)
+    if (this.config?.preserveClientIdentity) {
+      mergeInboundClientIdentityHeaders(headers, credentials);
     }
 
     return headers;

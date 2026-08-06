@@ -5,6 +5,7 @@ import { resolveOpenAICompatibleApiType } from "../services/provider.js";
 import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../shared/clineAuth.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { mergeInboundClientIdentityHeaders } from "../utils/clientIdentityHeaders.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 
@@ -154,7 +155,7 @@ export class DefaultExecutor extends BaseExecutor {
     for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);
     applyAuth(headers, desc, credentials);
 
-    if (this.provider === "claude" && model) {
+    if (this.provider === "claude" && model && !this.config.preserveClientIdentity) {
       headers["Anthropic-Beta"] = selectAnthropicBeta(model);
     }
 
@@ -162,7 +163,7 @@ export class DefaultExecutor extends BaseExecutor {
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
       const isOfficialAnthropic = baseUrl === "" || baseUrl.includes("api.anthropic.com");
-      if (!isOfficialAnthropic) {
+      if (!isOfficialAnthropic && !this.config.preserveClientIdentity) {
         // Some third-party Anthropic-compatible gateways require Bearer auth in
         // addition to x-api-key. Send both (x-api-key already set above) so
         // gateways that read either header succeed.
@@ -189,6 +190,11 @@ export class DefaultExecutor extends BaseExecutor {
           }
         }
       }
+    }
+
+    // Selective passthrough of client identity headers (opt-in per provider)
+    if (this.config.preserveClientIdentity) {
+      mergeInboundClientIdentityHeaders(headers, credentials);
     }
 
     if (stream) headers["Accept"] = "text/event-stream";
