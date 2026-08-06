@@ -267,6 +267,39 @@ describe("Kiro conversation canonicalizer", () => {
     expect(JSON.stringify(specification.inputSchema.json)).not.toContain('"required":[]');
   });
 
+  it("flattens top-level schema combinators rejected by Kiro", () => {
+    const { specs } = normalizeKiroToolSpecs([tool("dynamic_tool", {
+      oneOf: [
+        {
+          type: "object",
+          properties: {
+            path: { type: "string" },
+            patch: { type: "string" },
+          },
+          required: ["path"],
+        },
+        {
+          type: "object",
+          properties: {
+            path: { type: "string" },
+            line: { type: "integer" },
+          },
+          required: ["path", "line"],
+        },
+      ],
+    })]);
+
+    expect(specs[0].toolSpecification.inputSchema.json).toEqual({
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        patch: { type: "string" },
+        line: { type: "integer" },
+      },
+      required: ["path"],
+    });
+  });
+
   it("does not mutate the source conversation or tool definitions", () => {
     const sourceTools = [tool("first")];
     const sourceHistory = [
