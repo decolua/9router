@@ -399,6 +399,8 @@
   "Dismiss notification": "关闭通知",
   "Display Name": "显示名称",
   "Display language": "显示语言",
+  "Regional currency": "地区货币",
+  "Show costs in local currency (¥/NT$/₩/₫); off → $": "按本地货币显示成本（¥/NT$/₩/₫）；关闭则显示 $",
   "Docs": "文档",
   "Documentation": "文档",
   "Domain:": "域名：",

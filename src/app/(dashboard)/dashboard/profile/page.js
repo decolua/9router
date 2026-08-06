@@ -9,6 +9,7 @@ import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
 import { LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
 import { LOCALE_FLAGS } from "@/shared/constants/locales";
+import { isRegionalCurrencyEnabled } from "@/shared/utils/currency";
 
 function getLocaleFromCookie() {
   if (typeof document === "undefined") return "en";
@@ -22,6 +23,7 @@ function getLocaleFromCookie() {
 export default function ProfilePage() {
   const { theme, setTheme, isDark } = useTheme();
   const [locale, setLocale] = useState("en");
+  const [regional, setRegional] = useState(true);
   const [langOpen, setLangOpen] = useState(false);
   const [shutdownOpen, setShutdownOpen] = useState(false);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
@@ -60,7 +62,16 @@ export default function ProfilePage() {
 
   useEffect(() => {
     setLocale(getLocaleFromCookie());
+    setRegional(isRegionalCurrencyEnabled());
   }, [langOpen]);
+
+  const toggleCurrency = () => {
+    const next = !isRegionalCurrencyEnabled();
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("useRegionalCurrency", next ? "1" : "0");
+    }
+    setRegional(next);
+  };
 
   useEffect(() => {
     fetch("/api/settings")
@@ -668,6 +679,13 @@ export default function ProfilePage() {
             <span className="text-sm text-text-muted">Display language</span>
             <span className="text-2xl">{LOCALE_FLAGS[locale] || "🌐"}</span>
           </button>
+          <div className="flex items-center justify-between gap-4 mt-3 p-3 rounded-lg bg-bg border border-border">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">Regional currency</p>
+              <p className="text-xs text-text-muted">Show costs in local currency (¥/NT$/₩/₫); off → $</p>
+            </div>
+            <Toggle checked={regional} onChange={toggleCurrency} />
+          </div>
         </Card>
 
         {/* Security */}
