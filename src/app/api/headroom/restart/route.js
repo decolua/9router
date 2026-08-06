@@ -26,6 +26,7 @@ export async function POST() {
       port,
       codeAware: settings.headroomCodeAware === true,
       kompress: settings.headroomKompress !== false,
+      lossless: settings.headroomLossless === true,
     });
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
