@@ -7,7 +7,7 @@ import { buildClineHeaders } from "../shared/clineAuth.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
-import { normalizeOpenAIToolNames } from "../translator/concerns/toolCall.js";
+import { normalizeOpenAIToolNames, normalizeNvidiaToolCallIds } from "../translator/concerns/toolCall.js";
 
 // Auth header descriptors — derived from registry transport.auth, fallback to hardcoded defaults.
 const BEARER = { combined: true, header: "Authorization", scheme: "bearer" };
