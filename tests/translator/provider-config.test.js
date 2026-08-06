@@ -55,4 +55,14 @@ describe("Provider configuration and fallback", () => {
     expect(out.model).toBe("reasonix-v1");
     expect(out.messages).toBeDefined();
   });
+
+  it("should translate OpenAI to JoyCode format correctly", () => {
+    const body = {
+      messages: [{ role: "user", content: "Hello JoyCode" }],
+      model: "joycode-v1",
+    };
+    const out = translateRequest(FORMATS.OPENAI, FORMATS.OPENAI, "joycode-v1", body, true, { apiKey: "test" }, "joycode");
+    expect(out.model).toBe("joycode-v1");
+    expect(out.messages).toBeDefined();
+  });
 });

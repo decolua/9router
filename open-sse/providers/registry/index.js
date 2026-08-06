@@ -117,6 +117,7 @@ import p113 from "./morph.js";
 import p120 from "./trae.js";
 import p121 from "./reasonix.js";
 import p122 from "./ovh.js";
+import p123 from "./joycode.js";
 import p115 from "./poolside.js";
 import p116 from "./tokenrouter.js";
 import p117 from "./selfhosted-stt.js";
@@ -245,4 +246,5 @@ export default [
   p120,
   p121,
   p122,
+  p123,
 ];

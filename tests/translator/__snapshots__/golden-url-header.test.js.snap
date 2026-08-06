@@ -748,6 +748,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > hyperbolic → heade
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > joycode → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > kilo-gateway → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1634,6 +1653,13 @@ exports[`GOLDEN buildUrl (default executor providers) > hyperbolic → url (stre
 {
   "nonStream": "https://api.hyperbolic.xyz/v1/chat/completions",
   "stream": "https://api.hyperbolic.xyz/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > joycode → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.joycode.jd.com/v1/chat/completions",
+  "stream": "https://api.joycode.jd.com/v1/chat/completions",
 }
 `;
 
