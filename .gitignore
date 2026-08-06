@@ -1,7 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/node_modules
+**/node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -11,16 +11,16 @@
 !.yarn/versions
 
 # testing
-/coverage
+**/coverage
 
 # next.js
-/.next/
+**/.next/
 /.next-cli-build/
 /out/
 cli/.build-home/
 product
 # production
-/build
+**/build
 .idea/
 
 # misc
@@ -86,3 +86,6 @@ graphify-out/*
 .codegraph/
 .PR/
 .next-analyze/*
+
+# local tool state
+.serena/
