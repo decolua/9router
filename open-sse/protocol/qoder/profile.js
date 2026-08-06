@@ -11,6 +11,8 @@ import {
   QODER_QUOTA_USAGE_URL,
   QODER_OPENAPI_BASE,
   QODER_CHAT_BASE,
+  QODER_CHAT_BASE_ALT,
+  QODER_CHAT_SIG_PATH,
   QODER_CENTER_BASE,
   QODER_LOGIN_URL,
   QODER_DEVICE_TOKEN_URL,
@@ -31,7 +33,9 @@ import {
  * @property {string} chatBase
  * @property {string} [centerBase]
  * @property {string} chatUrl
+ * @property {string} [jobChatUrl] - chat URL for jt-* tokens
  * @property {string} modelListUrl
+ * @property {string} [jobModelListUrl] - model-list URL for jt-* tokens
  * @property {string} quotaUrl
  * @property {string} deviceTokenUrl
  * @property {string} [quotaUserAgent] - User-Agent required by quota requests
@@ -57,6 +61,8 @@ import {
 
 /** Device-token refresh lives on openapi (not center). */
 const INTL_DEVICE_REFRESH_URL = `${QODER_OPENAPI_BASE}/api/v1/deviceToken/refresh`;
+const INTL_JOB_CHAT_URL = `${QODER_CHAT_BASE_ALT}/algo${QODER_CHAT_SIG_PATH}?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1`;
+const INTL_JOB_MODEL_LIST_URL = `${QODER_CHAT_BASE_ALT}/algo/api/v2/model/list`;
 
 /** @type {QoderProfile} */
 export const INTL_PROFILE = {
@@ -65,7 +71,9 @@ export const INTL_PROFILE = {
   chatBase: QODER_CHAT_BASE,
   centerBase: QODER_CENTER_BASE,
   chatUrl: QODER_CHAT_URL_ENCODED,
+  jobChatUrl: INTL_JOB_CHAT_URL,
   modelListUrl: QODER_MODEL_LIST_URL,
+  jobModelListUrl: INTL_JOB_MODEL_LIST_URL,
   quotaUrl: QODER_QUOTA_USAGE_URL,
   deviceTokenUrl: QODER_DEVICE_TOKEN_URL,
   userInfoUrl: QODER_USERINFO_URL,

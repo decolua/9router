@@ -15,13 +15,17 @@ export default {
     },
   },
   category: "apikey",
+  thinkingConfig: {
+    options: ["low", "medium", "high", "xhigh", "max"],
+    defaultMode: "high",
+  },
   transport: {
     baseUrl: "https://api.tokenrouter.com/v1/chat/completions",
     validateUrl: "https://api.tokenrouter.com/v1/models",
-    thinkingFormat: "openai",
+    thinkingFormat: "tokenrouter",
   },
-  // Seed snapshot dari live /v1/models (118 entri, 2026-07-31). Catalogue terbaru
-  // di-fetch via modelsFetcher; id lain tetap diterima via passthroughModels.
+  // Seed snapshot from live /v1/models (120 entries). Latest catalogue is
+  // fetched via modelsFetcher; other ids still accepted via passthroughModels.
   models: [
     { id: "MiniMax-Hailuo-2.3", name: "Minimax Hailuo 2.3", kind: "video" },
     { id: "MiniMax-M3", name: "Minimax M3" },
@@ -46,6 +50,7 @@ export default {
     { id: "claude-opus-4-8-m-aws", name: "Claude Opus 4 8 M Aws" },
     { id: "deepseek/deepseek-v3.2", name: "Deepseek V3.2" },
     { id: "deepseek/deepseek-v4-flash", name: "Deepseek V4 Flash" },
+    { id: "deepseek/deepseek-v4-flash-0731", name: "Deepseek V4 Flash 0731" },
     { id: "deepseek/deepseek-v4-pro", name: "Deepseek V4 Pro" },
     { id: "ex/gpt-5.4", name: "Gpt 5.4" },
     { id: "google/gemini-2.5-flash-image", name: "Gemini 2.5 Flash Image" },
@@ -113,6 +118,7 @@ export default {
     { id: "qwen/qwen3.6-plus", name: "Qwen3.6 Plus" },
     { id: "qwen/qwen3.7-max", name: "Qwen3.7 Max" },
     { id: "qwen/qwen3.7-plus", name: "Qwen3.7 Plus" },
+    { id: "qwen/qwen3.8-max", name: "Qwen3.8 Max" },
     { id: "qwen3.5-omni-plus", name: "Qwen3.5 Omni Plus" },
     { id: "qwen3.6-flash", name: "Qwen3.6 Flash" },
     { id: "sakana/fugu-ultra", name: "Fugu Ultra" },

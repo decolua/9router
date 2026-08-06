@@ -1,10 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { parseDurationMs, parseGoogleQuotaReset } from "../../open-sse/utils/googleQuota.js";
 import { checkFallbackError } from "../../open-sse/services/accountFallback.js";
 import { BACKOFF_CONFIG, COOLDOWN_MS, MAX_RATE_LIMIT_COOLDOWN_MS } from "../../open-sse/config/errorConfig.js";
 import { AntigravityExecutor } from "../../open-sse/executors/antigravity.js";
 import { GeminiCLIExecutor } from "../../open-sse/executors/gemini-cli.js";
 import { KiroExecutor } from "../../open-sse/executors/kiro.js";
+import { DefaultExecutor } from "../../open-sse/executors/default.js";
 
 // Verbatim 429 body captured from cloudcode-pa.googleapis.com via the antigravity executor.
 const AG_QUOTA_BODY = JSON.stringify({
@@ -103,6 +104,22 @@ describe("gemini-cli executor parseError", () => {
     const out = new GeminiCLIExecutor().parseError({ status: 429 }, AG_QUOTA_BODY);
     expect(out.retryAfter).toBe("539420.179078308s");
     expect(out.resetsAtMs).toBe(Date.parse("2026-08-08T17:54:07Z"));
+  });
+});
+
+describe("default executor parseError", () => {
+  it("converts MiniMax retry_after_ms into an absolute reset", () => {
+    const now = Date.parse("2026-08-06T00:00:00Z");
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    try {
+      const out = new DefaultExecutor("minimax").parseError(
+        { status: 429 },
+        JSON.stringify({ error: { message: "rate limited", retry_after_ms: 30_000 } }),
+      );
+      expect(out.resetsAtMs).toBe(now + 30_000);
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });
 

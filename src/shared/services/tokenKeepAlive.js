@@ -65,7 +65,7 @@ async function recordFailure(deps, connection, reason, state) {
   console.warn(`[KeepAlive] ${describe(connection)}: refresh failed: ${reason}`);
 }
 
-export async function keepConnectionAlive(connection, deps, state = g) {
+export async function keepConnectionAlive(connection, deps = createDefaultDeps(), state = g, force = false) {
   if (!isRefreshable(connection)) return { skipped: "not-refreshable" };
   if (shouldSkipAfterFailure(state, connection.id)) return { skipped: "failure-cooldown" };
 
@@ -74,7 +74,7 @@ export async function keepConnectionAlive(connection, deps, state = g) {
 
   let result;
   try {
-    result = await deps.refreshAndUpdateCredentials(connection, false, proxyOptions);
+    result = await deps.refreshAndUpdateCredentials(connection, force, proxyOptions);
   } catch (e) {
     await recordFailure(deps, connection, e.message, state);
     return { failed: true };

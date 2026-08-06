@@ -1,10 +1,5 @@
-import { platform, arch } from "os";
 import { ANTIGRAVITY_IDE_BASE_URL, ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_OAUTH_CLIENT } from "../shared.js";
 
-// Inline IDE User-Agent (cannot import from appConstants — circular dependency)
-const _p = platform() === "win32" ? "windows" : platform();
-const _a = arch() === "x64" ? "amd64" : arch();
-const AG_IDE_UA = `antigravity/ide/2.1.1 ${_p}/${_a}`;
 export default {
   id: "antigravity",
   priority: 20,
@@ -24,13 +19,10 @@ export default {
   category: "oauth",
   serviceKinds: ["llm", "image"],
   transport: {
-    baseUrls: [
-      ANTIGRAVITY_IDE_BASE_URL,
-      "https://cloudcode-pa.googleapis.com"
-    ],
+    baseUrls: [ANTIGRAVITY_IDE_BASE_URL],
     format: "antigravity",
     headers: {
-      "User-Agent": AG_IDE_UA,
+      "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
     },
     retry: {
       "429": {
@@ -84,7 +76,7 @@ export default {
     apiVersion: "v1internal",
     loadCodeAssistEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
     onboardUserEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
-    loadCodeAssistUserAgent: AG_IDE_UA,
+    loadCodeAssistUserAgent: ANTIGRAVITY_IDE_USER_AGENT,
     refreshLeadMs: 300000,
   },
   features: {

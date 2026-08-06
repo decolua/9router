@@ -67,7 +67,9 @@ async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null, pr
   const creds = cosyCredsFromConnection(credentials);
   if (!creds.userId || !creds.authToken) return null;
   const p = resolveProfile(profile);
-  const modelListUrl = p.modelListUrl;
+  const modelListUrl = String(creds.authToken).startsWith("jt-") && p.jobModelListUrl
+    ? p.jobModelListUrl
+    : p.modelListUrl;
 
   const headers = {
     Accept: "application/json",

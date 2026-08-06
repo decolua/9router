@@ -22,7 +22,7 @@ const navItems = [
   { href: "/dashboard/providers", label: "Providers", icon: "dns" },
   { href: "/dashboard/model-access", label: "Model Access", icon: "rule" },
   // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
-  { href: "/dashboard/combos", label: "Combos", icon: "layers" },
+  { href: "/dashboard/combos", label: "Combo & Vision Adapter", icon: "layers" },
   { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
   { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
   { href: "/dashboard/token-saver", label: "Token Saver", icon: "savings" },

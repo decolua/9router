@@ -169,15 +169,32 @@ export function detectRequiredCapabilities(body) {
   const required = new Set();
   if (!body || typeof body !== "object") return required;
 
+  const addByMime = (mime) => {
+    if (typeof mime !== "string") return;
+    if (mime.startsWith("image/")) required.add("vision");
+    else if (mime === "application/pdf") required.add("pdf");
+    else if (mime.startsWith("audio/")) required.add("audioInput");
+    else if (mime.startsWith("video/")) required.add("videoInput");
+  };
+
   const scanBlock = (b) => {
     if (!b || typeof b !== "object") return;
     const t = b.type;
     if (t === "image_url" || t === "image" || t === "input_image") required.add("vision");
-    if (t === "file" || t === "document" || t === "input_file") required.add("pdf");
+    if (t === "input_audio" || t === "audio_url" || t === "audio") required.add("audioInput");
+    if (t === "input_video" || t === "video_url" || t === "video") required.add("videoInput");
+    if (t === "file" || t === "document" || t === "input_file") {
+      // Infer modality from embedded mime when available; fall back to pdf for generic files.
+      let fmime = null;
+      if (b.input_audio?.format) fmime = `audio/${b.input_audio.format}`;
+      else if (b.file?.file_data) fmime = String(b.file.file_data).match(/^data:([^;,]+)/)?.[1];
+      else if (b.source?.media_type) fmime = b.source.media_type;
+      else if (b.source?.data) fmime = String(b.source.data).match(/^data:([^;,]+)/)?.[1];
+      if (fmime) addByMime(fmime);
+      else required.add("pdf");
+    }
     // gemini parts: inlineData/fileData carry a mime
-    const mime = b.inlineData?.mimeType || b.fileData?.mimeType;
-    if (typeof mime === "string" && mime.startsWith("image/")) required.add("vision");
-    if (mime === "application/pdf") required.add("pdf");
+    addByMime(b.inlineData?.mimeType || b.fileData?.mimeType);
   };
 
   const scanContent = (content) => {

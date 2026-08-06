@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { compressWithHeadroom, formatHeadroomLog } from "../../open-sse/rtk/headroom.js";
+import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog } from "../../open-sse/rtk/headroom.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -224,5 +224,12 @@ describe("formatHeadroomLog", () => {
   it("formats reported token deltas without implying provider billing savings", () => {
     expect(formatHeadroomLog({ tokens_before: 100, tokens_after: 25, tokens_saved: 75 }))
       .toBe("reported token delta=75 before=100 after=25 (75.0%)");
+  });
+
+  it("reports effective payload, tool-schema, and tool-history sizes", () => {
+    expect(formatHeadroomSizeLog({
+      before: { bodyBytes: 1000, messageBytes: 800, toolSchemaBytes: 100, toolHistoryBytes: 500 },
+      after: { bodyBytes: 900, messageBytes: 700, toolSchemaBytes: 100, toolHistoryBytes: 400 },
+    })).toContain("tools=100B→100B toolHistory=500B→400B effective=10.0%");
   });
 });

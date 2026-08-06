@@ -4,6 +4,7 @@ const authMocks = vi.hoisted(() => ({
   clearAccountError: vi.fn(),
   getProviderCredentials: vi.fn(),
   markAccountUnavailable: vi.fn(),
+  resolveClientApiKey: vi.fn(async () => ({ apiKey: null, valid: true })),
 }));
 const dispatchMocks = vi.hoisted(() => ({ handleChatCore: vi.fn() }));
 const modelMocks = vi.hoisted(() => ({ getComboModels: vi.fn(), getModelInfo: vi.fn() }));
@@ -19,11 +20,12 @@ vi.mock("@/sse/services/auth.js", () => ({
   clearAccountError: authMocks.clearAccountError,
   extractApiKey: () => null,
   getProviderCredentials: authMocks.getProviderCredentials,
-  isValidApiKey: vi.fn(async () => true),
   markAccountUnavailable: authMocks.markAccountUnavailable,
+  resolveClientApiKey: authMocks.resolveClientApiKey,
 }));
 vi.mock("open-sse/handlers/chatCore.js", () => dispatchMocks);
 vi.mock("open-sse/services/combo.js", () => ({
+  detectRequiredCapabilities: vi.fn(() => []),
   handleComboChat: vi.fn(),
   handleFusionChat: vi.fn(),
 }));
@@ -63,12 +65,12 @@ function success() {
   };
 }
 
-function request() {
+function request(model = "codex/gpt-5.6-sol") {
   return new Request("http://localhost/v1/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "codex/gpt-5.6-sol",
+      model,
       messages: [{ role: "user", content: "hello" }],
     }),
   });
@@ -124,5 +126,30 @@ describe("chat request replay", () => {
     expect(response.status).toBe(507);
     expect(dispatchMocks.handleChatCore).toHaveBeenCalledTimes(2);
     expect(authMocks.markAccountUnavailable).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses a connection default model for upstream routing and account state", async () => {
+    modelMocks.getModelInfo.mockResolvedValue({ provider: "codex", model: "auto" });
+    authMocks.getProviderCredentials.mockResolvedValue({
+      ...credentials("account-a"),
+      defaultModel: "gpt-5.6-sol",
+    });
+    dispatchMocks.handleChatCore.mockImplementation(async (options) => {
+      await options.onRequestSuccess();
+      return success();
+    });
+
+    const response = await handleChat(request("auto"));
+
+    expect(dispatchMocks.handleChatCore).toHaveBeenCalledWith(expect.objectContaining({
+      body: expect.objectContaining({ model: "codex/gpt-5.6-sol" }),
+      modelInfo: { provider: "codex", model: "gpt-5.6-sol" },
+    }));
+    expect(authMocks.clearAccountError).toHaveBeenCalledWith(
+      "account-a",
+      expect.any(Object),
+      "gpt-5.6-sol",
+    );
+    expect(response.headers.get("X-9Router-Resolved-Model")).toBe("gpt-5.6-sol");
   });
 });

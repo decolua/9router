@@ -8,6 +8,9 @@
 export const QODER_OPENAPI_BASE = "https://openapi.qoder.sh";
 export const QODER_CENTER_BASE = "https://center.qoder.sh";
 export const QODER_CHAT_BASE = "https://api3.qoder.sh";
+// Job-token (jt-...) traffic is rejected by api3 with "Login expired" (403);
+// the official qodercli serves it from api2 instead.
+export const QODER_CHAT_BASE_ALT = "https://api2.qoder.sh";
 
 export const QODER_LOGIN_URL = "https://qoder.com/device/selectAccounts";
 

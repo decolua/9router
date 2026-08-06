@@ -19,6 +19,9 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
 
 import { isQoderPat, resolvePatCredential, clearPatCache } from "../../open-sse/protocol/qoder/pat.js";
 import { INTL_PROFILE, CN_WORK_PROFILE } from "../../open-sse/protocol/qoder/profile.js";
+import { chat } from "../../open-sse/protocol/qoder/chat.js";
+import { resolveQoderModels, clearQoderCatalog } from "../../open-sse/protocol/qoder/catalog.js";
+import { resolveQoderCredentials } from "../../open-sse/services/qoderModels.js";
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -49,6 +52,7 @@ const callsTo = (fragment) =>
 beforeEach(() => {
   fetchMock.mockReset();
   clearPatCache();
+  clearQoderCatalog();
 });
 
 describe("isQoderPat", () => {
@@ -212,5 +216,69 @@ describe("profile-driven PAT endpoints", () => {
     expect(intl.accessToken).toBe("jt-intl");
     expect(cn.accessToken).toBe("jt-cn");
     expect(callsTo("/jobToken/exchange")).toHaveLength(2);
+  });
+
+  it("keeps the service compatibility resolver and selects the connection profile", async () => {
+    stubExchange({ token: "jt-cn", userId: "uid-cn" });
+
+    const resolved = await resolveQoderCredentials({
+      provider: "qoderwork-cn",
+      apiKey: "pt-secret",
+      providerSpecificData: { machineId: "machine-1" },
+    });
+
+    expect(resolved).toMatchObject({
+      provider: "qoderwork-cn",
+      accessToken: "jt-cn",
+      apiKey: undefined,
+      providerSpecificData: {
+        authMethod: "pat",
+        userId: "uid-cn",
+        machineId: "machine-1",
+      },
+    });
+    expect(String(callsTo("/jobToken/exchange")[0][0])).toBe(CN_WORK_PROFILE.jobTokenExchangeUrl);
+  });
+});
+
+describe("job-token routing", () => {
+  const credentials = {
+    accessToken: "jt-live",
+    providerSpecificData: {
+      userId: "uid-1",
+      machineId: "machine-1",
+      machineToken: "machine-1",
+    },
+  };
+
+  it("routes intl chat through api2 because api3 rejects jt-* tokens", async () => {
+    const fetchImpl = vi.fn(async () => new Response("data: [DONE]\n\n", {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    }));
+
+    const result = await chat({
+      model: "qmodel_latest",
+      body: { messages: [{ role: "user", content: "hello" }] },
+      credentials,
+      profile: "intl",
+      modelConfig: { key: "qmodel_latest" },
+      fetchImpl,
+    });
+
+    expect(result.url).toBe(INTL_PROFILE.jobChatUrl);
+    expect(fetchImpl).toHaveBeenCalledWith(INTL_PROFILE.jobChatUrl, expect.any(Object));
+  });
+
+  it("routes intl model-list requests through api2 for jt-* tokens", async () => {
+    fetchMock.mockResolvedValue(json({ chat: [] }));
+
+    await resolveQoderModels(credentials, { profile: "intl", forceRefresh: true });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      INTL_PROFILE.jobModelListUrl,
+      expect.objectContaining({ method: "GET" }),
+      null,
+    );
   });
 });

@@ -1,6 +1,6 @@
 {
   "name": "9router-app",
-  "version": "0.5.51",
+  "version": "0.5.50",
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
@@ -10,6 +10,8 @@
     "build": "next build --webpack && node scripts/prepare-native-standalone.cjs",
     "lint": "eslint .",
     "start": "node native-server.cjs",
+    "postbuild": "node scripts/copy-standalone-assets.mjs",
+    "postbuild:bun": "node scripts/copy-standalone-assets.mjs",
     "dev:bun": "bun --bun next dev --webpack --port 20127",
     "build:bun": "bun --bun next build --webpack && node scripts/prepare-native-standalone.cjs",
     "start:bun": "bun ./native-server.cjs",

@@ -1,52 +1,88 @@
-# v0.5.51 (2026-08-04)
+# v0.5.50 (2026-08-05)
+
+## Features
+- **Providers**: add TokenRouter (300+ models via OpenAI-compatible gateway) with
+  exact per-model pricing for 110 models and `reasoning_effort` thinking config
+- **Providers**: add Self-hosted STT / TTS / Embedding — point 9Router at your own
+  OpenAI-compatible speech and embedding servers (whisper.cpp, faster-whisper,
+  Kokoro-FastAPI, llama-server, vLLM, Infinity). Unlike the named cloud providers
+  these read `baseUrl` per connection, so one provider can front several machines
+- **Combos**: default-enable vision/audio capacity adapter (auto-routes to a
+  vision/audio-capable model when the target lacks that capability, falling back
+  to `oc/mimo-v2.5-free`), wired into chat handler routing
+- **Endpoint**: auto-provision a "Default Key" for first-time users so `/v1`
+  works without a manual dashboard step
+- **Codex**: support GPT-5.6 Max/Ultra reasoning-level overrides (cx/ routes only)
+- **Qoder**: support PAT (Personal Access Token) connections end-to-end, alongside
+  OAuth device flow
+- **CLI tools**: add OpenDesign (manalkaff/opendesign) support
+- **Headroom**: report effective payload savings (tool schema/history bytes broken
+  out, byte-savings % reflects actual outbound reduction)
+- **Ollama**: Cloud quota tracker (session + weekly) + proactive background OAuth
+  token refresh scheduler for all providers
+
+## Fixes
+- **Providers**: remove Qwen (OAuth flow stopped working reliably)
+- **Passthrough**: detect codex-tui/Codex Desktop as native Codex client — they
+  were falling through to the translator and losing fields like `reasoning.summary`
+- **OAuth**: scope antigravity header fixes to loadCodeAssist/onboardUser only
+- **OAuth**: keep `open` external in the build so xAI/Grok token refresh works on
+  Windows
+- **OAuth**: declare missing `searchParams` in register-session handler (was a
+  500 instead of JSON on error)
+- **DB**: `ENABLE_REQUEST_LOGS` env var now overrides the UI setting correctly;
+  observability defaults to off (opt-in)
+- **Translator**: preserve Codex Responses Lite tool use across chat-native
+  OpenAI-compatible providers
+- **Translator**: don't drop image-only user messages in `prepareClaudeRequest`
+- **Translator**: drop JSON Schema keywords Gemini rejects (`uniqueItems`,
+  `contains`, `multipleOf`, `unevaluatedProperties`, `unevaluatedItems`,
+  `contentSchema`)
+- **Claude**: remove global header cache that leaked one client's identity
+  headers onto another client/account sharing the server; gate `anthropic-beta`
+  by model instead
+- **Antigravity**: drop retired Gemini 3.0 quota tiers, show Gemini 3.6 Flash
+  usage bars
+- **Cloudflare AI**: declare API key authentication (dashboard showed "No
+  connections" despite an active key)
+- **GitHub Copilot**: hold monthly-exhausted accounts until UTC month reset
+  instead of only cooling down 120s
+- **CodeBuddy**: dodge Tencent CN content filter, add usage tracking, normalize
+  codebuddy-intl messages
+- **Usage**: stop losing cached prompt tokens in the forced-SSE→JSON path
+- **Grok CLI**: display the public subscription tier from the OAuth token claim
+- **Providers**: count apikey connections for Ollama free-tier card; free-tier/
+  apikey providers without `authModes` now default to apikey (were treated
+  oauth-only)
+- **Build**: include static/public assets in standalone output (login page hung
+  on 404s when run via PM2)
+- **Server**: support IntelliJ IDEA OpenAI-compatible clients over HTTP (h2c
+  upgrade handling)
+- **Auth**: redirect already-logged-in sessions away from `/login`
+- **CLI tools**: enable Apply button for dynamic OpenAI/Anthropic-compatible
+  provider connections
+- **CLI**: include complete API artifacts in the CLI package
+- **TTS**: a bare self-hosted model name is the MODEL, not the voice — `kokoro`
+  was parsed as a voice against a default model, 404ing or synthesising with the
+  wrong one
+- **Embeddings**: self-hosted embeddings no longer fall back to `api.openai.com`
+  when a connection has no `baseUrl` — that silently sent the input text and API
+  key to OpenAI under a provider named "Self-hosted"
+- **Embeddings**: an adapter that rejects a misconfigured connection now returns
+  400 with the reason instead of escaping the handler uncaught
+- **Embeddings**: bound the upstream fetch with `FETCH_CONNECT_TIMEOUT_MS` — an
+  endpoint that drops packets never returns headers, so the request previously
+  hung indefinitely
 
 ## Production stability
+- **Provider connections**: send the encoded provider ID correctly, retain unreadable encrypted credentials as **Re-auth required**, and restore provider-aware Test Model routing instead of reporting valid accounts as disconnected.
+- **DB and usage**: shut down and reopen SQLite adapters cleanly, retry native lock contention without overwriting live data, and preserve concurrent usage records created in the same millisecond.
+- **Windows processes**: hide background and elevated windows, stop broad process scans/kills, restrict cleanup to owned or verified processes, and serialize tunnel, tray, and worker lifecycles.
+- **Background work**: use direct executable probes with bounded timeouts, caching, and single-flight guards instead of recurring shell processes.
+- **Codex reliability**: retain native transport and SSE handling, recover unreadable encrypted history safely, and bind usage/quota calls to the selected ChatGPT account.
 
-- **Provider connections**: Fixed the provider-detail request that sent a literal `${encodeURIComponent(providerId)}` query instead of the provider ID, causing existing accounts to appear as `0 connections`.
-- **Credential safety**: Encrypted credentials that cannot be read are now retained and surfaced as **Re-auth required**. Status updates, exports, and test actions no longer overwrite them with an empty object.
-- **SQLite lifecycle**: Added orderly adapter shutdown/reopen handling, retry behavior for native database locks, and concurrent-access regression coverage.
-- **Windows process ownership**: Removed startup scans/kills of unrelated Node, Next, port-443, tunnel, and tray processes. Launchers now act only on direct children or verified PID/health ownership.
-- **No-shell background work**: Replaced recurring Windows shell probes (`cmd.exe`/`where`, `npm.cmd`, `ipconfig`, `fltmc`) with direct executable invocations, bounded timeouts, caching, and single-flight guards.
-- **Tunnel, tray, and workers**: Serialized Tailscale login/Funnel, Cloudflare enable, Headroom proxy, Mux, and tray lifecycle paths; stale PID records and delayed cleanup can no longer target a recycled process.
-
-## Validation notes
-
-- Production dashboard and CLI bundles build successfully on Windows.
-- The full legacy test suite still contains unrelated pre-existing failures (including live-provider expectations and an unavailable optional `better-sqlite3` binding); focused regressions for this release pass.
-
-# v0.5.50 (2026-08-04)
-
-## Fixes & Enhancements
-- **Windows Process Management**: Fixed terminal window popup bug on Windows by enforcing `-WindowStyle Hidden` and `{ windowsHide: true }` across all background processes, elevation scripts (`winElevated.js`), process stats (`muxManager.js`), and Tailscale installers.
-- **Provider Test Model**: Restored and fixed "Test Model" functionality in Provider management UI and `/api/models/test` route. Added provider alias resolution and targeting for Antigravity, Gemini, Vertex, Claude, OpenAI, OpenCode, Kiro, Grok, etc.
-- **Consolidated Release**: Merged 189 upstream PRs and fixed CORS syntax, registry conflicts, and Next.js App Router exports.
-
-# Maintainer Production Release (2026-08-04)
-
-Consolidated 189 Pull Requests from upstream `decolua/9router` across AI providers, OAuth refresh managers, SSE streaming protocols, tool schema converters, max_tokens translators, and proxy layers. Fully stabilized codebase with 0 build errors, 0 lint errors, and 100% verified production bundle.
-
-## Provider & Model Enhancements
-- **Antigravity**: Fixed resource exhaustion issue by updating User-Agent, headers, and inlineData image handling (#3000, #1958). Added Gemini 3.6 Flash usage bars in quota tracker (#2992).
-- **Gemini & Vertex**: Dropped unsupported JSON Schema keywords for Gemini (#3018). Fixed Gemma 4 thinking replay (#2480). Fixed connection-level proxy for embedding requests (#1701).
-- **Claude & Anthropic**: Fixed `anthropic-beta` header leakage across requests (#3023). Aligned CLI fingerprint and session headers (#2849). Resolved claude-adaptive auto-intent 400 errors (#2927). Preserved image-only user messages in `prepareClaudeRequest` (#2986). Decloaked tool names in claude→claude streaming passthrough (#2392). Reconciled compacted tool results (#2663).
-- **OpenAI & Responses & Codex**: Added transparent native provider transport (#2943). Supported GPT-5.6 Max and Ultra overrides (#2988). Recovered invalid encrypted history (#2667). Bound usage and quota calls to ChatGPT accounts (#1819). Fixed IntelliJ IDEA OpenAI clients over HTTP (#3002).
-- **OpenCode & Kiro**: Added OpenCode model resolution and quota tracking (#2786, #2153). Unblocked Kiro `-thinking`/`-agentic` modes by dropping top-level systemPrompt (#2911). Supported IAM Identity Center accounts outside us-east-1 (#2009). Fixed token validation via social refresh endpoint (#1388).
-- **XAI & Grok**: Exposed current Grok models and bare routing (#2439). Added daily request usage stats (#2724). Resolved Grok token refresh external open handling on Windows (#3011).
-
-## Protocol, Streaming & Translator Fixes
-- **OAuth & Auth**: Implemented background token keep-alive for idle connections (#3013). Fixed searchParams ReferenceError in OAuth POST handler (#2966). Accepted valid `x-api-key` header when Authorization header is present (#2926).
-- **Tool Schemas**: Preserved required fields in tool schemas during translation (#1383). Preserved Responses Lite tools across Chat providers (#2983).
-- **Streaming & SSE**: Fixed cached token loss in forced SSE→JSON path (#3020). Preserved terminal stream content for Ollama (#2801). Resolved Codex SSE translation edge cases (#1717).
-- **max_tokens & Structured Outputs**: Normalized `max_tokens` to `max_completion_tokens` for GPT-5/o-series (#2134, #2691, #664, #1828). Carried Structured Output across Chat ⇄ Responses hops (#2783).
-- **Proxy & MITM**: Added undici connection pooling to prevent proxy connection exhaustion (#2997). Exempted OPTIONS preflight requests from auth on `/v1/*` paths (#3025). Replaced `net session` with `fltmc` for Windows admin check (#2291).
-
-## Maintainer Stabilization Fixes
-- Fixed OPTIONS CORS preflight handler syntax across all v1 API routes.
-- Resolved duplicate `p116` registry identifier conflict between TokenRouter and QoderWork CN.
-- Fixed duplicate import and variable declaration collisions in `models/route.js` and `chat.js`.
-- Moved non-HTTP method helper `GET_DEFAULTS` to `/api/pricing/defaults/route.js`.
-- Cleaned up invalid root `app/layout.tsx` file from broken PR commit.
-- Added missing `deleteModelAliasesByProvider` to `localDb.js` exports.
+## Docs
+- **i18n**: fix port typo, add RTK Token Saver feature descriptions
 
 # v0.5.45 (2026-07-30)
 
@@ -514,8 +550,3 @@ Consolidated 189 Pull Requests from upstream `decolua/9router` across AI provide
 
 ## Breaking Changes
 - Tunnel public URL changed — old tunnel links no longer work, please reconnect to get the new URL
-# v0.5.51 (2026-08-04)
-
-## Fixes
-- **Windows runtime**: retain Antigravity's popup/process-loop fixes and prevent SQLite lock fallback from overwriting live data.
-- **Usage**: preserve concurrent requests that share the same millisecond timestamp.

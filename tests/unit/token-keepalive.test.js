@@ -81,6 +81,16 @@ describe("token keep-alive", () => {
     expect(deps.refreshAndUpdateCredentials).toHaveBeenCalledWith(conn, false, expect.objectContaining({ strictProxy: false }));
   });
 
+  it("allows the background scheduler to force a due connection refresh", async () => {
+    const conn = oauthConn();
+    await keepConnectionAlive(conn, deps, state, true);
+    expect(deps.refreshAndUpdateCredentials).toHaveBeenCalledWith(
+      conn,
+      true,
+      expect.objectContaining({ strictProxy: false }),
+    );
+  });
+
   it("reports a refresh and clears any previous failure", async () => {
     const conn = oauthConn();
     state.failureCache[conn.id] = Date.now() - 3600000; // old enough to retry

@@ -1,6 +1,8 @@
 const http = require("http");
 const crypto = require("crypto");
 const { attachCodexNativeGateway } = require("./server/codexNativeGateway.cjs");
+const path = require("path");
+const { pathToFileURL } = require("url");
 
 // Renaming next-server process to a unique name while keeping "next-server"
 // in the name for backward compatibility with existing process-matching whitelists.
@@ -27,6 +29,39 @@ function skipClaimedUpgrade(server, gateway) {
   server.once = function once(event, listener) {
     return originalOnce(event, event === "upgrade" ? wrap(listener) : listener);
   };
+}
+
+let backgroundRefreshStarted = false;
+
+function startBackgroundTokenRefreshFromCustomServer() {
+  if (backgroundRefreshStarted) return;
+  backgroundRefreshStarted = true;
+  // Prefer source path (repo / standalone that still has src). Fail-open if missing
+  // — initializeApp also starts the same scheduler when the Next app boots.
+  const modPath = path.join(__dirname, "src", "sse", "services", "backgroundTokenRefresh.js");
+  import(pathToFileURL(modPath).href)
+    .then((m) => {
+      try {
+        m.startBackgroundTokenRefresh();
+      } catch (e) {
+        console.error("[BackgroundTokenRefresh] start failed:", e && e.message ? e.message : e);
+      }
+      const stop = () => {
+        try {
+          m.stopBackgroundTokenRefresh();
+        } catch {
+          /* ignore */
+        }
+      };
+      process.once("SIGINT", stop);
+      process.once("SIGTERM", stop);
+    })
+    .catch((e) => {
+      // Expected in published CLI standalone (src/ not on disk). App bootstrap covers it.
+      if (process.env.DEBUG_BACKGROUND_TOKEN_REFRESH) {
+        console.error("[BackgroundTokenRefresh] import failed:", e && e.message ? e.message : e);
+      }
+    });
 }
 
 // Wrap Next standalone HTTP server: derive client IP from the TCP socket
@@ -58,7 +93,56 @@ http.createServer = (...args) => {
     secret: process.env.CODEX_NATIVE_INTERNAL_SECRET,
   });
   skipClaimedUpgrade(server, gateway);
+  server.once("listening", () => {
+    startBackgroundTokenRefreshFromCustomServer();
+  });
+  const origEmit = server.emit;
+  // JBR 25 sends h2c upgrades that the HTTP/1.1 server would otherwise close.
+  server.emit = function (event, ...eventArgs) {
+    const [req, socket, head] = eventArgs;
+    if (event !== "upgrade" || String(req.headers.upgrade || "").toLowerCase() !== "h2c") {
+      return origEmit.call(this, event, ...eventArgs);
+    }
+
+    const contentLength = Number(req.headers["content-length"] || 0);
+    if (!Number.isSafeInteger(contentLength) || contentLength < 0) {
+      socket.destroy();
+      return true;
+    }
+    const chunks = [head];
+    let received = head.length;
+    const serve = () => {
+      // Replay the upgraded request through the existing HTTP/1.1 handler.
+      const replay = new http.IncomingMessage(socket);
+      Object.assign(replay, { method: req.method, url: req.url, headers: req.headers, complete: true });
+      if (received) replay.push(Buffer.concat(chunks, received).subarray(0, contentLength));
+      replay.push(null);
+      const res = new http.ServerResponse(replay);
+      res.shouldKeepAlive = false;
+      res.assignSocket(socket);
+      res.once("finish", () => socket.end());
+      Promise.resolve().then(() => wrapped(replay, res)).catch((error) => {
+        console.error("Failed to downgrade h2c request", error);
+        socket.destroy();
+      });
+    };
+    if (received >= contentLength) serve();
+    else {
+      socket.on("data", function readBody(chunk) {
+        chunks.push(chunk);
+        received += chunk.length;
+        if (received < contentLength) return;
+        socket.off("data", readBody);
+        serve();
+      });
+      socket.resume();
+    }
+    delete req.headers.upgrade;
+    delete req.headers["http2-settings"];
+    req.headers.connection = "close";
+    return true;
+  };
   return server;
 };
 
-require("./server.js");
+if (require.main === module) require("./server.js");

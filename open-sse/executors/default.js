@@ -1,10 +1,9 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
-import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
+import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE, selectAnthropicBeta } from "../providers/shared.js";
 import { resolveOpenAICompatibleApiType } from "../services/provider.js";
 import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../shared/clineAuth.js";
-import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams, applyParamRenames } from "../translator/concerns/paramSupport.js";
@@ -43,23 +42,6 @@ const HEADER_HOOKS = {
   kimiHeaders: (h, c) => Object.assign(h, buildKimiHeaders(c?.providerSpecificData?.deviceId)),
   clineHeaders: (h, c) => Object.assign(h, buildClineHeaders(c.apiKey || c.accessToken)),
   kilocodeOrg: (h, c) => { if (c.providerSpecificData?.orgId) h["X-Kilocode-OrganizationID"] = c.providerSpecificData.orgId; },
-  // Replay a real Claude Code client's IDENTITY headers so OAuth calls look
-  // authentic. Never copies `anthropic-beta` — see claudeHeaderCache.js for why
-  // that leaked entitlements between clients. Treats the cache as read-only: the
-  // previous version wrote merged flags back into the singleton, so beta flags
-  // accumulated forever and survived every later request.
-  claudeOverlay: (h) => {
-    const cached = getCachedClaudeHeaders();
-    if (!cached) return;
-    const overlay = {};
-    for (const lcKey of Object.keys(cached)) {
-      if (lcKey === "anthropic-beta") continue; // defensive: never overlay betas
-      const titleKey = lcKey.replace(/(^|-)([a-z])/g, (_, sep, ch) => sep + ch.toUpperCase());
-      if (titleKey !== lcKey && h[titleKey] !== undefined) delete h[titleKey];
-      overlay[lcKey] = cached[lcKey];
-    }
-    Object.assign(h, overlay);
-  },
 };
 
 // Config-driven OAuth refresh grants — derived from registry oauth.refresh.
@@ -109,9 +91,17 @@ export class DefaultExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body) {
-    const transformed = this.applyJsonSchemaFallback(body);
+    let transformed = this.applyJsonSchemaFallback(body);
 
     if (transformed && typeof transformed === "object") {
+      transformed = { ...transformed };
+      if (this.requiresMaxCompletionTokens(model) && transformed.max_tokens !== undefined) {
+        transformed.max_completion_tokens = transformed.max_tokens;
+        delete transformed.max_tokens;
+      }
+      if (!this.supportsTemperature(model) && transformed.temperature !== undefined) {
+        delete transformed.temperature;
+      }
       // quirk: some openai-compatible providers reject Anthropic's client_metadata field
       if (this.config.quirks?.dropClientMetadata) {
         delete transformed.client_metadata;
@@ -153,10 +143,10 @@ export class DefaultExecutor extends BaseExecutor {
       try {
         const json = JSON.parse(bodyText);
         const err = json?.error || json;
+        const now = Date.now();
         const retryAfter = err?.retryAfter;
         if (retryAfter) {
           const ms = new Date(retryAfter).getTime();
-          const now = Date.now();
           if (ms > now) {
             return { status: 429, message: err.message || bodyText, resetsAtMs: ms };
           }
@@ -218,16 +208,20 @@ export class DefaultExecutor extends BaseExecutor {
     return BEARER;
   }
 
-  buildHeaders(credentials, stream = true) {
+  buildHeaders(credentials, stream = true, url, model) {
     const rt = credentials?.runtimeTransport;
     const headers = { "Content-Type": "application/json", ...(rt ? rt.headers : this.config.headers) };
     const desc = rt?.auth || AUTH_DESCRIPTORS[this.provider] || this.resolveAuthDescriptor();
-    // Hooks run BEFORE auth so dynamic overlays (claude cached headers) can't clobber the token.
+    // Hooks run BEFORE auth so dynamic overlays can't clobber the token.
     for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);
     applyAuth(headers, desc, credentials);
     if (this.provider === "claude" && credentials?._clientSessionId) {
       delete headers["x-claude-code-session-id"];
       headers["X-Claude-Code-Session-Id"] = credentials._clientSessionId;
+    }
+
+    if (this.provider === "claude" && model) {
+      headers["Anthropic-Beta"] = selectAnthropicBeta(model);
     }
 
     // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
@@ -285,7 +279,6 @@ export class DefaultExecutor extends BaseExecutor {
     const refreshers = {
       claude: () => this.refreshFromGrant(credentials, proxyOptions),
       codex: () => this.refreshFromGrant(credentials, proxyOptions),
-      qwen: () => this.refreshWithForm(OAUTH_ENDPOINTS.qwen.token, { grant_type: "refresh_token", refresh_token: credentials.refreshToken, client_id: PROVIDERS.qwen.clientId }, proxyOptions),
       iflow: () => this.refreshIflow(credentials.refreshToken, proxyOptions),
       gemini: () => this.refreshFromGrant(credentials, proxyOptions),
       kiro: () => this.refreshKiro(credentials.refreshToken, proxyOptions),
@@ -405,20 +398,6 @@ export class DefaultExecutor extends BaseExecutor {
   // Some models (like gpt-5.4) don't support the temperature parameter
   supportsTemperature(model) {
     return !/gpt-5\.4/i.test(model);
-  }
-
-  transformRequest(model, body, stream, credentials) {
-    const transformed = { ...body };
-    // Translate max_tokens → max_completion_tokens for models that require it
-    if (this.requiresMaxCompletionTokens(model) && transformed.max_tokens !== undefined) {
-      transformed.max_completion_tokens = transformed.max_tokens;
-      delete transformed.max_tokens;
-    }
-    // Strip temperature for models that don't support it
-    if (!this.supportsTemperature(model) && transformed.temperature !== undefined) {
-      delete transformed.temperature;
-    }
-    return transformed;
   }
 }
 

@@ -35,7 +35,7 @@ export async function chat({
   includeBusiness = false,
 }) {
   const p = resolveProfile(profile);
-  const url = p.chatUrl;
+  let url = p.chatUrl;
 
   // PAT (pt-...) can't sign COSY: exchange it for a short-lived job token and
   // resolve the uid the signature needs. Device tokens (dt-...) and job tokens
@@ -71,6 +71,10 @@ export async function chat({
       );
       return { response: fakeResp, url, headers: {}, transformedBody: body };
     }
+  }
+
+  if (String(credentials?.accessToken || "").startsWith("jt-") && p.jobChatUrl) {
+    url = p.jobChatUrl;
   }
 
   const psd = credentials?.providerSpecificData || {};
