@@ -37,11 +37,30 @@ import {
 } from "../concerns/kiroConversation.js";
 
 /**
+ * Convert system prompt to user message with instructions tags (for Kiro compatibility).
+ * Kiro's CodeWhisperer endpoint rejects top-level systemPrompt field.
+ */
+function systemToUserMessage(system) {
+  if (!system) return null;
+  let text = "";
+  if (typeof system === "string") {
+    text = system;
+  } else if (Array.isArray(system)) {
+    text = system.map(s => s?.text || "").filter(Boolean).join("\n");
+  }
+  if (!text.trim()) return null;
+  return {
+    role: ROLE.USER,
+    content: `<instructions>\n${text}\n</instructions>`
+  };
+}
+
+/**
  * Convert Claude messages to Kiro history + currentMessage.
  * Kiro requires alternating user/assistant turns; consecutive same-role
  * messages are merged.
  */
-function convertClaudeMessagesToKiro(messages, model) {
+function convertClaudeMessagesToKiro(messages, model, system) {
   const history = [];
   let currentMessage = null;
 
@@ -75,6 +94,17 @@ function convertClaudeMessagesToKiro(messages, model) {
       pendingAssistantContent = [];
     }
   };
+
+  // Handle system prompt first - convert to user message with instructions
+  const systemMsg = systemToUserMessage(system);
+  if (systemMsg) {
+    history.push({
+      userInputMessage: {
+        content: systemMsg.content,
+        modelId: model
+      }
+    });
+  }
 
   for (const msg of messages) {
     const role = msg.role;
@@ -231,7 +261,7 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   const usesNativeGptEffort = usesKiroNativeGptEffort(thinkingBody, upstreamModel);
 
   const { specs: toolSpecs, nameMap } = normalizeKiroToolSpecs(tools);
-  const { history, currentMessage } = convertClaudeMessagesToKiro(messages, upstreamModel);
+  const { history, currentMessage } = convertClaudeMessagesToKiro(messages, upstreamModel, body.system);
 
   // api_key / idc / external_idp must never use the shared default ARN (belongs
   // to another account → 403 "bearer token invalid"); OAuth/social fall back to it.
@@ -242,6 +272,7 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     ? (credentials?.providerSpecificData?.profileArn || "")
     : (credentials?.providerSpecificData?.profileArn || resolveDefaultProfileArn(authMethod));
 
+  // System prompt is now included in history as user message with <instructions> tags
   // Kiro CLI/KAS sends system prompt as top-level `systemPrompt`. Keep a
   // content fallback too because the CodeWhisperer surface does not always
   // enforce top-level systemPrompt for direct calls.
@@ -251,11 +282,7 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     systemPromptParts.push(buildThinkingSystemPrefix(thinkingBudget));
   }
   if (agentic) systemPromptParts.push(KIRO_AGENTIC_SYSTEM_PROMPT);
-  const systemInstruction = extractClaudeSystemText(body.system);
-  if (systemInstruction) systemPromptParts.push(systemInstruction);
-  const systemPrompt = systemPromptParts.filter(Boolean).join("\n\n");
-  const currentTimeContext = `[Context: Current time is ${timestamp}]`;
-  const contentPrefix = [systemPrompt, currentTimeContext].filter(Boolean).join("\n\n");
+  const contentPrefix = systemPromptParts.filter(Boolean).join("\n\n");
 
   const sessionIdentity = resolveSessionIdentity({
     headers: credentials?.rawHeaders,
@@ -274,9 +301,9 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     conversationId,
     connectionId: credentials?.connectionId,
     modelId: upstreamModel,
-    systemPrompt,
+    systemPrompt: "",
     contentPrefix,
-    currentContentPrefix: currentTimeContext,
+    currentContentPrefix: "",
     history,
     currentMessage,
   });
@@ -315,7 +342,8 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   };
 
   if (profileArn) payload.profileArn = profileArn;
-  if (systemPrompt) payload.systemPrompt = systemPrompt;
+  // systemPrompt removed - Kiro CodeWhisperer endpoint rejects it
+  // System prompt is now included in history as user message with <instructions> tags
   if (additionalModelRequestFields) {
     payload.additionalModelRequestFields = additionalModelRequestFields;
   }
