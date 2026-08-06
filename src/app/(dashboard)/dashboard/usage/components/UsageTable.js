@@ -204,7 +204,7 @@ export default function UsageTable({
                     </div>
                   </td>
                   {renderSummaryCells(group)}
-                  <ValueCells item={group.summary} viewMode={viewMode} isSummary />
+                  <ValueCells key={`valcells-${viewMode}`} item={group.summary} viewMode={viewMode} isSummary />
                 </tr>
                 {/* Detail rows */}
                 {expanded.has(group.groupKey) && group.items.map((item) => (
@@ -213,7 +213,7 @@ export default function UsageTable({
                     className="group-detail hover:bg-bg-subtle/20 transition-colors"
                   >
                     {renderDetailCells(item)}
-                    <ValueCells item={item} viewMode={viewMode} />
+                    <ValueCells key={`valcells-${viewMode}`} item={item} viewMode={viewMode} />
                   </tr>
                 ))}
               </Fragment>

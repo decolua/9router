@@ -204,14 +204,24 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const sortBy = searchParams.get("sortBy") || "rawModel";
-  const sortOrder = searchParams.get("sortOrder") || "asc";
+  // Sort state initialized from URL, reset when viewMode changes
+  const [sortBy, setSortBy] = useState(() => searchParams.get("sortBy") || "rawModel");
+  const [sortOrder, setSortOrder] = useState(() => searchParams.get("sortOrder") || "asc");
 
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
   const [tableView, setTableView] = useState("model");
   const [viewMode, setViewMode] = useState("costs");
+  const switchViewMode = useCallback((mode) => {
+    setViewMode(mode);
+    setSortBy("rawModel");
+    setSortOrder("asc");
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("sortBy");
+    params.delete("sortOrder");
+    router.replace(`?${params.toString()}`, { scroll: false });
+  }, [searchParams, router]);
   const [providers, setProviders] = useState([]);
   const [periodLocal, setPeriodLocal] = useState("today");
   const isInitialLoad = useRef(true);
@@ -308,8 +318,13 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const toggleSort = useCallback((tableType, field) => {
     const params = new URLSearchParams(searchParams.toString());
     if (params.get("sortBy") === field) {
-      params.set("sortOrder", params.get("sortOrder") === "asc" ? "desc" : "asc");
+      const nextOrder = params.get("sortOrder") === "asc" ? "desc" : "asc";
+      setSortBy(field);
+      setSortOrder(nextOrder);
+      params.set("sortOrder", nextOrder);
     } else {
+      setSortBy(field);
+      setSortOrder("asc");
       params.set("sortBy", field);
       params.set("sortOrder", "asc");
     }
@@ -498,13 +513,13 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           </select>
           <div className="grid grid-cols-2 items-center gap-1 rounded-lg border border-border bg-bg-subtle p-1 sm:flex">
             <button
-              onClick={() => setViewMode("costs")}
+              onClick={() => switchViewMode("costs")}
               className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "costs" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
             >
               Costs
             </button>
             <button
-              onClick={() => setViewMode("tokens")}
+              onClick={() => switchViewMode("tokens")}
               className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "tokens" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
             >
               Tokens
