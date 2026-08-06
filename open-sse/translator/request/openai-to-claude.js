@@ -290,6 +290,20 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
       }
     }
 
+    // Handle reasoning_content from OpenAI format
+    if (msg.reasoning_content) {
+      const reasoningText = typeof msg.reasoning_content === "string"
+        ? msg.reasoning_content
+        : JSON.stringify(msg.reasoning_content);
+      if (reasoningText) {
+        // Add reasoning_content as a thinking block
+        blocks.push({
+          type: CLAUDE_BLOCK.THINKING,
+          thinking: reasoningText
+        });
+      }
+    }
+
     if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
       for (const tc of msg.tool_calls) {
         if (tc.type === OPENAI_BLOCK.FUNCTION) {
