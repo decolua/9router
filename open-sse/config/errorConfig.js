@@ -76,7 +76,14 @@ export const ERROR_RULES = [
   { text: "context_length_exceeded",  fallback: false },
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
-  { text: "improperly formed request", cooldownMs: COOLDOWN.long },
+  // A malformed body is a property of the REQUEST, not of the account: every
+  // account rejects the identical payload the same way. Cooling accounts down for
+  // it took 12 Kiro connections out of rotation in 18s (39 of 44 rows carried
+  // errorCode 400) and burned one upstream call per account for a guaranteed
+  // failure. Same reasoning as context_length_exceeded above.
+  { text: "improperly formed request", fallback: false },
+  { text: "request_body_invalid", fallback: false },
+  { text: "invalid_request_error", fallback: false },
   { text: "rate limit",               backoff: true },
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },
