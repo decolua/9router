@@ -4,6 +4,11 @@ import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787";
 
+// "true"/"1"/"yes"/"on" (case-insensitive) → true; anything else → false.
+function envTruthy(value) {
+  return typeof value === "string" && ["true", "1", "yes", "on"].includes(value.trim().toLowerCase());
+}
+
 const DEFAULT_SETTINGS = {
   cloudEnabled: false,
   tunnelEnabled: false,
@@ -24,7 +29,6 @@ const DEFAULT_SETTINGS = {
     videoInput: { enabled: false, roundRobin: false, models: [] },
   },
   requireLogin: true,
-  requireApiKey: true,
   tunnelDashboardAccess: true,
   authMode: "password",
   oidcIssuerUrl: "",
@@ -56,6 +60,13 @@ const DEFAULT_SETTINGS = {
   pxpipeTimeoutMs: 15000,
 };
 
+// Env-provided defaults are resolved at merge time so REQUIRE_API_KEY set
+// after import (tests, container entrypoint ordering) is still honored, while
+// a stored dashboard setting always wins over the env default.
+function defaultRequireApiKey() {
+  return envTruthy(process.env.REQUIRE_API_KEY);
+}
+
 async function readRaw() {
   const db = await getAdapter();
   const row = db.get(`SELECT data FROM settings WHERE id = 1`);
@@ -77,6 +88,9 @@ function mergeWithDefaults(raw) {
         merged[key] = defVal;
       }
     }
+  }
+  if (merged.requireApiKey === undefined) {
+    merged.requireApiKey = defaultRequireApiKey();
   }
   return merged;
 }
