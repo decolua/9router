@@ -67,8 +67,12 @@ describe("antigravity computeRetryDelay hook (D3)", () => {
     expect(out.request.tools[0].functionDeclarations.map(fn => fn.name)).toEqual(["read_file"]);
   });
 
-  it("registry uses the daily IDE cloudcode host and user agent", () => {
-    expect(antigravity.transport.baseUrls).toEqual(["https://daily-cloudcode-pa.googleapis.com"]);
+  it("registry prefers the sandbox IDE cloudcode host with legacy fallbacks", () => {
+    expect(antigravity.transport.baseUrls).toEqual([
+      "https://daily-cloudcode-pa.sandbox.googleapis.com",
+      "https://daily-cloudcode-pa.googleapis.com",
+      "https://cloudcode-pa.googleapis.com",
+    ]);
     expect(antigravity.transport.headers["User-Agent"]).toBe("antigravity/ide/2.1.1 darwin/arm64");
   });
 
@@ -79,8 +83,8 @@ describe("antigravity computeRetryDelay hook (D3)", () => {
     expect(h["Content-Type"]).toBe("application/json");
     expect(h["Authorization"]).toBe("Bearer tok");
     expect(h).not.toHaveProperty("X-Machine-Session-Id");
-    expect(h).not.toHaveProperty("x-request-source");
-    expect(h).not.toHaveProperty("Accept");
+    expect(h["x-request-source"]).toBe("local");
+    expect(h["Accept"]).toBe("text/event-stream");
   });
 
   it("transforms chat requests with official IDE requestId shape and 64000 token cap", () => {
