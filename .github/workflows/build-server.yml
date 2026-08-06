@@ -1,0 +1,46 @@
+name: Build 9Router standalone server
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/cache-stats-regional-currency
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build standalone server
+        run: |
+          NEXT_DIST_DIR=.next-cli-build npm run build          
+
+      - name: Prepare app/server structure + package as tar.gz
+        run: |
+          set -euo pipefail
+          STANDALONE=".next-cli-build/standalone"
+          rm -rf app-server && mkdir -p app-server
+          cp -r "$STANDALONE"/. app-server/
+          cp custom-server.js app-server/
+          npm pack node-forge@latest --pack-destination /tmp 2>/dev/null
+          mkdir -p app-server/node_modules/node-forge
+          tar xzf /tmp/node-forge-*.tgz -C app-server/node_modules/node-forge --strip-components=1
+          tar czf 9router-server.tar.gz -C app-server .
+          ls -la 9router-server.tar.gz          
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 9router-server
+          path: 9router-server.tar.gz
+          if-no-files-found: error
