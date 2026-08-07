@@ -256,5 +256,23 @@ export async function proxy(request) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
+  // If user has an active session and visits /login, redirect to /dashboard
+  // (prevents the login page from showing to already-authenticated users)
+  if (pathname === "/login") {
+    let requireLogin = true;
+    try {
+      const settings = await loadSettings();
+      if (settings) requireLogin = settings.requireLogin !== false;
+    } catch {}
+    if (requireLogin) {
+      const token = request.cookies.get("auth_token")?.value;
+      if (token && await verifyDashboardAuthToken(token)) {
+        return NextResponse.redirect(new URL("/dashboard", request.url));
+      }
+    } else {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+  }
+
   return NextResponse.next();
 }

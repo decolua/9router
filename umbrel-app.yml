@@ -1,0 +1,30 @@
+name: 9router
+version: "0.5.50"
+description: "9Router — Local AI routing gateway. One OpenAI-compatible endpoint routes traffic across 40+ upstream providers with format translation, model-combo fallback, multi-account, and OAuth/usage tracking."
+website: https://github.com/decolua/9router
+submittable: true
+tips:
+  github:
+  - decolua
+support: https://github.com/decolua/9router/issues
+gallery:
+  - 1.jpg
+  - 2.jpg
+  - 3.jpg
+release:
+  date: "2026-08-05"
+  version: "0.5.50"
+container:
+  tungstenFabric: false
+  monorepo: false
+  anyArchitecture: false
+  buildTime: "30 minutes"
+  startTimeout: 60
+  restart: on-failure
+  uid: 1000
+  gid: 1000
+  build:
+    image: ""
+    dockerfile: ""
+    runners: []
+    prereqs: []
