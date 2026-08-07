@@ -48,6 +48,9 @@ function request(pathname, headers = {}) {
 describe("dashboard guard public LLM API access", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.DEPLOYMENT_MODE;
+    delete process.env.BASE_URL;
+    delete process.env.NEXT_PUBLIC_BASE_URL;
     mocks.getSettings.mockResolvedValue({ requireLogin: true });
     mocks.validateApiKey.mockResolvedValue(false);
     mocks.getConsistentMachineId.mockResolvedValue("cli-token");
@@ -191,6 +194,9 @@ describe("dashboard guard public LLM API access", () => {
 describe("dashboard guard local-only access", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env.DEPLOYMENT_MODE;
+    delete process.env.BASE_URL;
+    delete process.env.NEXT_PUBLIC_BASE_URL;
     mocks.getSettings.mockResolvedValue({ requireLogin: true });
     mocks.validateApiKey.mockResolvedValue(false);
     mocks.getConsistentMachineId.mockResolvedValue("cli-token");
@@ -255,6 +261,55 @@ describe("dashboard guard local-only access", () => {
     }));
 
     expect(response).toBe(mocks.nextResponse);
+  });
+});
+
+describe("dashboard guard hosted mode", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.DEPLOYMENT_MODE = "hosted";
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    mocks.validateApiKey.mockResolvedValue(false);
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+  });
+
+  afterEach(() => {
+    delete process.env.DEPLOYMENT_MODE;
+  });
+
+  it("requires API key on loopback when hosted", async () => {
+    const response = await proxy(request("/v1/chat/completions", {
+      host: "localhost:20128",
+      "x-9r-real-ip": "127.0.0.1",
+    }));
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe("API key required for remote API access");
+  });
+
+  it("allows /v1 with API key when hosted", async () => {
+    mocks.validateApiKey.mockResolvedValue(true);
+
+    const response = await proxy(request("/v1/models", {
+      host: "localhost:20128",
+      "x-9r-real-ip": "127.0.0.1",
+      authorization: "Bearer sk-valid",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.validateApiKey).toHaveBeenCalledWith("sk-valid");
+  });
+
+  it("blocks local-only routes even with CLI token when hosted", async () => {
+    const response = await proxy(request("/api/oauth/cursor/auto-import", {
+      host: "localhost:20128",
+      "x-9r-real-ip": "127.0.0.1",
+      "x-9r-cli-token": "cli-token",
+    }));
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe("Local only: CLI token required");
   });
 });
 

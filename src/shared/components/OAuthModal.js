@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { isHostedBrowser } from "@/shared/utils/deploymentMode";
 
 // Providers using the dynamic-port local callback proxy.
 // Browser OAuth: popup → auto callback → auto exchange → poll-status.
@@ -293,8 +294,12 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
       // Authorization code flow - build redirect URI (some providers require fixed ports)
       const appPort = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
+      const hosted = isHostedBrowser();
       let redirectUri;
-      if (provider === "codex") {
+      if (hosted) {
+        // Public callback on this origin (no loopback proxy).
+        redirectUri = `${window.location.origin}/callback`;
+      } else if (provider === "codex") {
         redirectUri = "http://localhost:1455/auth/callback";
       } else if (provider === "xai") {
         redirectUri = "http://127.0.0.1:56121/callback";
@@ -313,9 +318,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       if (!res.ok) throw new Error(data.error);
 
       // Codex: start proxy with server-side session (auto-exchange) + fallback to channels
+      // Hosted: skip loopback proxies (they bind 127.0.0.1 on the server, not the user's browser).
       let codexProxyActive = false;
       let codexServerSide = false;
-      if (provider === "codex") {
+      if (provider === "codex" && !hosted) {
         try {
           const proxyUrl = new URL(`/api/oauth/codex/start-proxy`, window.location.origin);
           proxyUrl.searchParams.set("app_port", appPort);
@@ -334,7 +340,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       // xAI: same fixed-port server-side proxy pattern as codex (port 56121)
       let xaiProxyActive = false;
       let xaiServerSide = false;
-      if (provider === "xai") {
+      if (provider === "xai" && !hosted) {
         try {
           const proxyUrl = new URL(`/api/oauth/xai/start-proxy`, window.location.origin);
           proxyUrl.searchParams.set("app_port", appPort);
