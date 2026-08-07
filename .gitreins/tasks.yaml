@@ -10,8 +10,9 @@ tasks:
   - With FEDERATION_MODE unset, fresh standalone boot has zero schema/behavior drift
     vs baseline
   - Config tests + migration tests land under tests/federation/
-  status: pending
+  status: complete
   created_at: '2026-08-07T07:15:55.860733+00:00'
+  completed_at: '2026-08-07T14:49:35.583196+00:00'
 - id: fed-002
   title: Replication service + routes (snapshot/delta/verify/status; edgeClient pull+poll;
     federation_version stamping on writes)
