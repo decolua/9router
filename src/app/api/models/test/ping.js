@@ -135,9 +135,10 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     headers,
     body: JSON.stringify({
       model,
-      // Claude-on-Copilot returns empty choices at max_tokens:1 (budget is spent
-      // before a content token emits), so a 1-token probe yields a false negative.
-      max_tokens: 16,
+      // Use higher max_tokens for reasoning models to avoid empty choices
+      // Reasoning models (e.g., deepseek-reasoner, deepseek-v4-pro, claude-opus-4, o1)
+      // spend budget on thinking before emitting content tokens.
+      max_tokens: /reasoner|reasoning|thinking|o1|opus-4|pro-max/.test(model) ? 256 : 16,
       stream: false,
       messages: [{ role: "user", content: "hi" }],
     }),
