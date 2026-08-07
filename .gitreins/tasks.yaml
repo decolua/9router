@@ -52,8 +52,9 @@ tasks:
     -> catch up deltas -> LINKED; edges never self-promote'
   - Failover tests land under tests/federation/ (outage flip, degraded serving, drain,
     fencing)
-  status: pending
+  status: complete
   created_at: '2026-08-07T07:16:02.463032+00:00'
+  completed_at: '2026-08-07T17:48:17.151333+00:00'
 - id: fed-005
   title: Frontend + UX (FederationStatus banner, degraded-mode dashboard headers,
     edge config page, i18n)
