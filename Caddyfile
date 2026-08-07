@@ -1,0 +1,3 @@
+:80 {
+    reverse_proxy 9router:20128
+}

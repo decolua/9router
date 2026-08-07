@@ -1,0 +1,30 @@
+services:
+  9router:
+    build:
+      context: .
+      target: dev
+    image: ghcr.io/${GITHUB_REPOSITORY:-decolua/9router}:dev
+    container_name: 9router-dev
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      NODE_ENV: development
+      DEBUG: "app:*"
+    ports:
+      - "20128:20128"
+      - "9229:9229"
+    networks:
+      - frontend
+      - backend
+
+  caddy:
+    profiles:
+      - disabled
+  prometheus:
+    profiles:
+      - disabled
+  grafana:
+    profiles:
+      - disabled

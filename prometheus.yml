@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "9router"
+    static_configs:
+      - targets: ["9router:20128"]
+    metrics_path: "/api/metrics"
+    scrape_interval: 10s
