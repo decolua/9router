@@ -218,13 +218,16 @@ export function resetComboRotation(comboName) {
  * @returns {string[]|null} Array of models or null if not a combo
  */
 export function getComboModelsFromData(modelStr, combosData) {
-  // Don't check if it's in provider/model format
-  if (modelStr.includes("/")) return null;
-  
+  // Resolve combo by full name first, then by basename (part after the last
+  // slash) so client configs like `provider/combo-name` still hit the combo
+  // instead of forwarding the raw string to the upstream provider.
+  const baseName = modelStr.includes("/") ? modelStr.split("/").pop() : null;
+
   // Handle both array and object formats
   const combos = Array.isArray(combosData) ? combosData : (combosData?.combos || []);
-  
-  const combo = combos.find(c => c.name === modelStr);
+
+  const combo = combos.find(c => c.name === modelStr) ||
+    (baseName ? combos.find(c => c.name === baseName) : null);
   if (combo && combo.models && combo.models.length > 0) {
     return combo.models;
   }
