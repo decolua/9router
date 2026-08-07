@@ -10,7 +10,7 @@ import { LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
 
 const RATES = {
   en: { sym: "$", rate: 1 },
-  "zh-CN": { sym: "¥", rate: 7.2 },
+  "zh-CN": { sym: "￥", rate: 7.2 },
   "zh-TW": { sym: "NT$", rate: 31.5 },
   ja: { sym: "¥", rate: 155 },
   ko: { sym: "₩", rate: 1350 },
