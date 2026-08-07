@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
+import { isHostedBrowser } from "@/shared/utils/deploymentMode";
 
 /**
  * Cursor Auth Modal
@@ -18,6 +19,14 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
   const [windowsManual, setWindowsManual] = useState(false);
 
   const runAutoDetect = async () => {
+    if (isHostedBrowser()) {
+      setAutoDetecting(false);
+      setAutoDetected(false);
+      setWindowsManual(false);
+      setError("Auto-import is local-only. Paste Access Token + Machine ID, or run 9Router locally.");
+      return;
+    }
+
     setAutoDetecting(true);
     setError(null);
     setAutoDetected(false);

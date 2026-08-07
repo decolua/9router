@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "path";
 import os from "os";
+import { isHosted } from "@/shared/utils/deploymentMode";
 
 const APP_NAME = "9router";
 
@@ -27,6 +28,12 @@ export function getDataDir() {
     return configured;
   } catch (e) {
     if (e?.code === "EACCES" || e?.code === "EPERM") {
+      // Hosted: never fall back to ephemeral ~/.9router
+      if (isHosted()) {
+        throw new Error(
+          `[DATA_DIR] '${configured}' is not writable and DEPLOYMENT_MODE is hosted. Use a persistent volume.`
+        );
+      }
       console.warn(`[DATA_DIR] '${configured}' not writable → fallback ~/.${APP_NAME}`);
       return defaultDir();
     }
