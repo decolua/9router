@@ -24,7 +24,7 @@ const DEFAULT_SETTINGS = {
     videoInput: { enabled: false, roundRobin: false, models: [] },
   },
   requireLogin: true,
-  requireApiKey: true,
+  requireApiKey: process.env.REQUIRE_API_KEY === "true" || false,
   tunnelDashboardAccess: true,
   authMode: "password",
   oidcIssuerUrl: "",
