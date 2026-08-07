@@ -37,8 +37,9 @@ tasks:
     works
   - X-Forwarded-For stripping boundary preserved (custom-server.js IP derivation untouched)
   - Proxy tests + standalone no-op tests land under tests/federation/
-  status: pending
+  status: complete
   created_at: '2026-08-07T07:15:55.977118+00:00'
+  completed_at: '2026-08-07T16:45:38.120006+00:00'
 - id: fed-004
   title: Failover state machine + write queue (LINKED/DEGRADED/RECOVERING, heartbeat
     with jittered threshold, pendingWrites repo, replay drain, fencing)
