@@ -1,6 +1,25 @@
 # Unreleased
 
 ## Features
+- **Federation (docs, Docker, end-to-end)**: the federation feature is now
+  deployable and documented end to end. `docs/FEDERATION.md` covers the
+  deployment topologies (single central + N edges, per-datacenter edges,
+  edge-only degraded serving), the full env matrix (every `FEDERATION_*`
+  var plus `DATA_DIR`/`PORT`/`JWT_SECRET`/`API_KEY_SECRET` sharing policy
+  and `FEDERATION_TOKEN` setup), and a failover runbook (outage detection,
+  degraded serving, recovery/reconcile, fencing, troubleshooting
+  SCHEMA_BLOCKED + auth 401s). `docker-compose.federation.yml` runs a
+  central + 2 edge instances with per-instance volumes and a shared
+  federation network; `Dockerfile.federation` ships the `src/` tree + `@/`
+  alias the federation runtime modules need (Next file tracing does not
+  follow custom-server.js's dynamic imports). A standalone lifecycle proof
+  (`tests/federation/e2e.mjs`, runnable with `node
+  tests/federation/e2e.mjs`) spawns 3 real instances and proves:
+  standalone boot → LINKED (heartbeat + replication) → kill central →
+  DEGRADED (replica serving + queued writes) → restart central →
+  RECOVERING → replay drain + delta catch-up → LINKED → writes reconcile.
+  Standalone mode is unchanged (no-op).
+  Env: none new (all `FEDERATION_*` vars were added in FED-001..FED-005).
 - **Federation (status banner + config page)**: edge instances now show a
   `FederationStatus` banner on every dashboard page (LINKED green /
   DEGRADED red / RECOVERING blue + "behind N revisions" when the local
