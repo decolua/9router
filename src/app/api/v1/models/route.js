@@ -5,7 +5,7 @@ import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getSettings, validateApiKey } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -538,13 +538,39 @@ export async function OPTIONS() {
 }
 
 /**
+ * Extract API key from request (Bearer, x-api-key, x-goog-api-key, or query param).
+ */
+function extractApiKey(request) {
+  const authHeader = request.headers.get("Authorization");
+  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
+  const apiKeyHeader = request.headers.get("x-api-key");
+  if (apiKeyHeader) return apiKeyHeader;
+  const googleApiKeyHeader = request.headers.get("x-goog-api-key");
+  if (googleApiKeyHeader) return googleApiKeyHeader;
+  return request.nextUrl.searchParams?.get("key") || null;
+}
+
+/**
  * GET /v1/models - OpenAI compatible models list (LLM/chat models only by default).
  * For other capabilities use /v1/models/{kind} (image, tts, stt, embedding, image-to-text, web).
  */
 export async function GET(request) {
   try {
-    // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
+    // Enforce API key if requireApiKey is enabled (skip for internal cross-instance fetches)
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
+    if (!skipDynamicFetch) {
+      const settings = await getSettings();
+      if (settings?.requireApiKey) {
+        const apiKey = extractApiKey(request);
+        if (!apiKey) {
+          return Response.json({ error: { message: "API key required", type: "authentication_error" } }, { status: 401 });
+        }
+        const valid = await validateApiKey(apiKey);
+        if (!valid) {
+          return Response.json({ error: { message: "Invalid API key", type: "authentication_error" } }, { status: 401 });
+        }
+      }
+    }
     const data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
