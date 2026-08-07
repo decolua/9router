@@ -764,7 +764,7 @@ function mcpSessionKey(instanceId, state) {
   return `${instanceId}::${state}`;
 }
 
-function registerMcpSession({ instanceId, state, codeVerifier, redirectUri, resource, clientId }) {
+export function registerMcpSession({ instanceId, state, codeVerifier, redirectUri, resource, clientId }) {
   if (!instanceId || !state || !codeVerifier || !redirectUri || !clientId) return false;
   mcpPendingExchanges.set(mcpSessionKey(instanceId, state), {
     codeVerifier,
