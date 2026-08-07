@@ -23,10 +23,24 @@
 // split-brain guard: after a central restart the old token is dead, so a
 // zombie edge cannot apply writes against a lease it no longer holds.
 import { randomUUID } from "node:crypto";
-import { getAdapter } from "../db/driver.js";
+import { getAdapter, getAdapterSync } from "../db/driver.js";
 import { latestVersion } from "../db/migrations/index.js";
 import { buildSnapshot, buildDelta, computeWatermark } from "./replication.js";
-import { isCentral, isStandalone, getEdgeId } from "./config.js";
+import { getEdgeState } from "./state.js";
+import {
+  getMode,
+  isCentral,
+  isStandalone,
+  isEdge,
+  getEdgeId,
+  getCentralUrl,
+  getToken,
+  getSyncIntervalMs,
+  getHeartbeatIntervalMs,
+  getOutageThresholdMs,
+  getQueueMax,
+  getReplayBatchSize,
+} from "./config.js";
 
 // Lease TTL: how long a fencing token stays valid after issuance. Heartbeats
 // renew it, so a healthy edge never sees a stale token; a restarted central
@@ -113,16 +127,110 @@ export async function handleVerify(request) {
 // Diagnostics: role, edgeId, lastAppliedRevision, schemaVersion, watermark.
 // (Spec §6.1 mentions a JWT/API_KEY_SECRET mismatch warning here — kept
 // simple per FED-002 scope: role + schemaVersion + revision.)
+//
+// FED-005: role now reports 'edge' when the instance is an edge (previously
+// it only ever said 'central'/'standalone'), and the payload carries
+// last_state (LINKED/DEGRADED/RECOVERING from federation_meta) + revisionLag
+// (maxVersion - lastAppliedRevision, clamped ≥ 0) so the dashboard banner
+// can render state + lag from one call.
 export async function handleStatus() {
-  const db = await getAdapter();
-  const meta = db.get(`SELECT role, edgeId, lastAppliedRevision, schemaVersion FROM federation_meta WHERE id = 1`);
-  return {
-    role: isCentral() ? "central" : "standalone",
+  // Preserve the pre-FED-005 behavior: the guarded diagnostics endpoint
+  // initializes the DB adapter if needed (a fresh boot may not have touched
+  // it yet). buildLocalStatusPayload then reads it synchronously.
+  try {
+    await getAdapter();
+  } catch {
+    // DB unavailable — the payload builder degrades to defaults.
+  }
+  return buildLocalStatusPayload();
+}
+
+// Build the LOCAL federation status payload (FED-005). This is the single
+// source of truth for the dashboard banner + config page: it reads only
+// local state (federation_meta + env config) and NEVER exposes central
+// secrets (no token, no lease, no fencing material, no central URL beyond
+// the edge's own configured FEDERATION_CENTRAL_URL).
+//
+// Role reporting: 'central' when isCentral(), 'edge' when isEdge(),
+// 'standalone' otherwise. last_state is only meaningful for edges (the
+// failover state machine only runs there); for central/standalone it is
+// omitted so the payload stays honest about what the state means.
+export function buildLocalStatusPayload() {
+  const db = getAdapterSyncSafe();
+  const meta = db
+    ? db.get(`SELECT role, edgeId, lastAppliedRevision, schemaVersion FROM federation_meta WHERE id = 1`)
+    : null;
+  const maxVersion = db ? computeWatermark(db) : 0;
+  const lastAppliedRevision = meta?.lastAppliedRevision ?? 0;
+  const role = isCentral() ? "central" : isEdge() ? "edge" : "standalone";
+  const payload = {
+    role,
+    mode: getMode(),
     edgeId: meta?.edgeId || getEdgeId(),
-    lastAppliedRevision: meta?.lastAppliedRevision ?? 0,
+    lastAppliedRevision,
     schemaVersion: latestVersion(),
-    maxVersion: computeWatermark(db),
+    maxVersion,
+    revisionLag: Math.max(0, maxVersion - lastAppliedRevision),
   };
+  if (isEdge()) {
+    payload.last_state = db ? getEdgeState(db) : "linked";
+  }
+  return payload;
+}
+
+// Build the read-only CONFIG surface for the edge federation config page
+// (FED-005, spec §3.5). Local env-derived values only — the token is
+// reported as a boolean (configured yes/no), never its value. The central
+// URL is the edge's OWN configured FEDERATION_CENTRAL_URL (the address the
+// edge proxies to); it is not a central secret. Standalone/central get the
+// same shape with mode-appropriate fields (central URL omitted for
+// non-edges — it is meaningless there).
+export function buildConfigStatusPayload() {
+  const payload = {
+    mode: getMode(),
+    edgeId: getEdgeId(),
+    tokenConfigured: !!getToken(),
+    syncIntervalMs: getSyncIntervalMs(),
+    heartbeatIntervalMs: getHeartbeatIntervalMs(),
+    outageThresholdMs: getOutageThresholdMs(),
+    queueMax: getQueueMax(),
+    replayBatchSize: getReplayBatchSize(),
+  };
+  if (isEdge()) {
+    payload.centralUrl = getCentralUrl();
+  }
+  return payload;
+}
+
+// GET /api/federation/local-status
+// Token-less LOCAL status for the edge's OWN dashboard (FED-005, spec
+// §3.5: "token never reaches browser JS"). Serves the same payload as
+// /api/federation/status but is deliberately NOT wrapped in
+// withFederationAuth — it reads only local state and never exposes
+// central secrets (see buildLocalStatusPayload). Standalone mode returns
+// the same shape (role 'standalone', no last_state) so the banner can
+// render nothing without a 401/403.
+export async function handleLocalStatus() {
+  return buildLocalStatusPayload();
+}
+
+// GET /api/federation/config-status
+// Token-less read-only config surface for the edge federation config page
+// (FED-005). Local env values only; the token is a boolean. Never exposes
+// the token value or any central data.
+export async function handleConfigStatus() {
+  return buildConfigStatusPayload();
+}
+
+// Synchronous adapter access for payload builders. Returns null when the
+// DB is unavailable (fresh boot, driver failure) — payload builders must
+// degrade gracefully (defaults) instead of throwing.
+function getAdapterSyncSafe() {
+  try {
+    return getAdapterSync();
+  } catch {
+    return null;
+  }
 }
 
 // ─── Replay (FED-004) ────────────────────────────────────────────────────

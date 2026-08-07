@@ -63,6 +63,19 @@ export function isMutatingDashboardApi(method, url) {
   return MUTATING_API_PREFIXES.some((p) => path === p || path.startsWith(p + "/"));
 }
 
+// True when the path is a dashboard API path (any method) — the forward-set
+// prefixes. FED-005 uses this to tag DEGRADED-mode dashboard READ responses
+// with X-Federation-State: degraded (spec §3.5): reads on these paths
+// resolve from the local replica while degraded, and the response must say
+// so. /v1/* and everything else (static assets, page navigations,
+// /api/federation/*) are excluded — the header is a dashboard-data signal,
+// not a transport signal.
+export function isDashboardApiPath(url) {
+  const path = String(url || "").split("?")[0];
+  if (path === "/v1" || path.startsWith("/v1/")) return false;
+  return MUTATING_API_PREFIXES.some((p) => path === p || path.startsWith(p + "/"));
+}
+
 // ─── Header plumbing ─────────────────────────────────────────────────────
 
 // Headers that describe the transport hop and must NOT be replayed upstream

@@ -39,6 +39,10 @@ function loadFederationProxy() {
 //   - isMutatingDashboardApi: the DEGRADED intercept set (forward-set minus
 //     /v1 — /v1 traffic is served from the local replica through the
 //     unchanged chat pipeline).
+//   - shouldTagDegraded/tagDegraded (FED-005): while DEGRADED, dashboard
+//     READ responses that fall through to local handlers carry
+//     X-Federation-State: degraded (spec §3.5). The decision + header
+//     mutation live in headers.js (testable); this file only calls them.
 let failoverFns = null;
 let failoverLoadPromise = null;
 function loadFederationFailover() {
@@ -46,16 +50,21 @@ function loadFederationFailover() {
     const failoverPath = path.join(__dirname, "src", "lib", "federation", "failover.js");
     const queuePath = path.join(__dirname, "src", "lib", "federation", "queue.js");
     const proxyPath = path.join(__dirname, "src", "lib", "federation", "proxy.js");
+    const headersPath = path.join(__dirname, "src", "lib", "federation", "headers.js");
     failoverLoadPromise = Promise.all([
       import(pathToFileURL(failoverPath).href),
       import(pathToFileURL(queuePath).href),
       import(pathToFileURL(proxyPath).href),
+      import(pathToFileURL(headersPath).href),
     ])
-      .then(([f, q, p]) => {
+      .then(([f, q, p, h]) => {
         failoverFns = {
           flipToDegraded: f.flipToDegraded,
           handleDegradedWrite: q.handleDegradedWrite,
           isMutatingDashboardApi: p.isMutatingDashboardApi,
+          isDashboardApiPath: p.isDashboardApiPath,
+          shouldTagDegraded: h.shouldTagDegraded,
+          tagDegraded: h.tagDegraded,
         };
       })
       .catch((e) => {
@@ -104,6 +113,38 @@ function getEdgeStateFromDb() {
     if (!getEdgeState) return null;
     return getDbAdapter().then((db) => (db ? getEdgeState(db) : null));
   });
+}
+
+// FED-005: while the edge is DEGRADED, responses that fall through to the
+// local handler (dashboard reads, /v1 from the replica) carry
+// X-Federation-State: degraded (spec §3.5). Thin: hooks writeHead/setHeader
+// once so the header lands on whatever the local handler produces. The
+// decision (state === 'degraded') is made by the caller; the header mutation
+// lives in headers.js (testable). Never overwrites an existing value — the
+// queued-write path (queue.js) sets its own headers first.
+function tagDegradedResponse(res) {
+  if (!res || res.__fedTagged) return;
+  res.__fedTagged = true;
+  const origWriteHead = res.writeHead.bind(res);
+  const origSetHeader = res.setHeader.bind(res);
+  res.writeHead = (statusCode, statusMessage, headers) => {
+    // Normalize the 2-arg form writeHead(status, headersObj).
+    if (typeof statusMessage === "object" && statusMessage !== null) {
+      headers = statusMessage;
+      statusMessage = undefined;
+    }
+    if (headers && typeof headers === "object" && failoverFns) {
+      failoverFns.tagDegraded(headers);
+    }
+    if (statusMessage === undefined) return origWriteHead(statusCode, headers);
+    return origWriteHead(statusCode, statusMessage, headers);
+  };
+  res.setHeader = (name, value) => {
+    if (failoverFns && !res.getHeader("x-federation-state")) {
+      origSetHeader.call(res, "X-Federation-State", "degraded");
+    }
+    return origSetHeader(name, value);
+  };
 }
 
 function startBackgroundTokenRefreshFromCustomServer() {
@@ -171,48 +212,60 @@ http.createServer = (...args) => {
     // thin branch only. Gated on FEDERATION_MODE=edge so standalone/central
     // requests never pay the state read (zero drift).
     const isEdgeMode = String(process.env.FEDERATION_MODE || "").trim().toLowerCase() === "edge";
-    const degradedIntercept = failoverFns && isEdgeMode
-      ? getEdgeStateFromDb().then((state) => {
-          if (state === "degraded" && failoverFns.isMutatingDashboardApi(req.method, req.url)) {
-            return getDbAdapter().then((db) => {
-              if (db) {
-                failoverFns.handleDegradedWrite(req, res, db);
-                return true; // handled — do not fall through
-              }
-              return false; // DB unavailable → fall through (never crash)
-            });
+    // FED-005: the edge state is read once per request and drives both the
+    // DEGRADED write-queue intercept (FED-004) and the DEGRADED read-header
+    // tag. Resolves to null when not edge mode / failover not loaded.
+    const edgeStatePromise = failoverFns && isEdgeMode ? getEdgeStateFromDb() : Promise.resolve(null);
+    const degradedIntercept = edgeStatePromise.then((state) => {
+      if (state === "degraded" && failoverFns.isMutatingDashboardApi(req.method, req.url)) {
+        return getDbAdapter().then((db) => {
+          if (db) {
+            failoverFns.handleDegradedWrite(req, res, db);
+            return true; // handled — do not fall through
           }
-          return false;
-        })
-      : Promise.resolve(false);
+          return false; // DB unavailable → fall through (never crash)
+        });
+      }
+      return false;
+    });
 
     return degradedIntercept.then((handled) => {
       if (handled) return;
-      if (proxyRequestFn) {
-        return proxyRequestFn(req, res, {
-          onUpstreamFailure: () => {
-            if (failoverFns) return failoverFns.flipToDegraded();
-            return null;
-          },
-        })
-          .then((proxied) => {
-            if (proxied) return;
-            return handler(req, res);
+      return edgeStatePromise.then((state) => {
+        // FED-005: while DEGRADED, dashboard API reads that fall through to
+        // the local replica carry X-Federation-State: degraded (spec §3.5).
+        // Decision here (state + path); the header mutation is a thin
+        // writeHead/setHeader hook (tagDegradedResponse) that never
+        // overwrites an existing value (the queued-write path sets its own).
+        if (failoverFns && isEdgeMode && failoverFns.shouldTagDegraded(state) && failoverFns.isDashboardApiPath(req.url)) {
+          tagDegradedResponse(res);
+        }
+        if (proxyRequestFn) {
+          return proxyRequestFn(req, res, {
+            onUpstreamFailure: () => {
+              if (failoverFns) return failoverFns.flipToDegraded();
+              return null;
+            },
           })
-          .catch((err) => {
-            // Defensive: an unexpected proxy failure must never crash the
-            // server. If nothing was written yet, fall through to the local
-            // handler; otherwise close the response.
-            console.error("[federation] edge proxy error:", err && err.message ? err.message : err);
-            if (!res.headersSent) return handler(req, res);
-            try {
-              res.destroy();
-            } catch {
-              /* already closed */
-            }
-          });
-      }
-      return handler(req, res);
+            .then((proxied) => {
+              if (proxied) return;
+              return handler(req, res);
+            })
+            .catch((err) => {
+              // Defensive: an unexpected proxy failure must never crash the
+              // server. If nothing was written yet, fall through to the local
+              // handler; otherwise close the response.
+              console.error("[federation] edge proxy error:", err && err.message ? err.message : err);
+              if (!res.headersSent) return handler(req, res);
+              try {
+                res.destroy();
+              } catch {
+                /* already closed */
+              }
+            });
+        }
+        return handler(req, res);
+      });
     });
   };
   const server = origCreate(...rest, wrapped);

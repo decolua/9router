@@ -1,6 +1,21 @@
 # Unreleased
 
 ## Features
+- **Federation (status banner + config page)**: edge instances now show a
+  `FederationStatus` banner on every dashboard page (LINKED green /
+  DEGRADED red / RECOVERING blue + "behind N revisions" when the local
+  replica lags the central watermark). The banner reads a new token-less
+  local status endpoint (`/api/federation/local-status`) so the
+  `FEDERATION_TOKEN` never reaches browser JS. While an edge is DEGRADED,
+  dashboard API read responses carry `X-Federation-State: degraded` (the
+  queued-write responses already carried it + `X-Federation-Queued-Write-Id`).
+  A new read-only Federation config page (`/dashboard/federation`, linked
+  from the header menu) shows mode, central URL (edge only), edge ID,
+  sync/heartbeat/outage/queue settings, and token status (configured
+  yes/no — the token value is never displayed). Standalone mode is
+  unchanged (banner and page render nothing / show "Federation not
+  enabled").
+  Env: none new (reads existing `FEDERATION_*` vars).
 - **Federation (failover + write queue)**: edge instances now run a failover
   state machine (LINKED → DEGRADED → RECOVERING → LINKED, persisted in
   `federation_meta.last_state`). A heartbeat (`GET /api/federation/verify`)
