@@ -41,5 +41,27 @@ export function normalizeProviderSpecificData(provider, body = {}, providerSpeci
     if (baseUrl) next.baseUrl = baseUrl;
   }
 
+  // NVIDIA multi-service provider (LLM + TTS + Embedding)
+  if (provider === "nvidia") {
+    if (!next.ttsConfig) {
+      next.ttsConfig = {
+        baseUrl: "https://integrate.api.nvidia.com/v1/audio/speech",
+        authType: "apikey",
+        authHeader: "bearer",
+        format: "nvidia-tts",
+      };
+    }
+    if (!next.embeddingConfig) {
+      next.embeddingConfig = {
+        baseUrl: "https://integrate.api.nvidia.com/v1/embeddings",
+        authType: "apikey",
+        authHeader: "bearer",
+      };
+    }
+    if (!next.serviceKinds) {
+      next.serviceKinds = ["llm", "tts", "embedding"];
+    }
+  }
+
   return Object.keys(next).length > 0 ? next : null;
 }
