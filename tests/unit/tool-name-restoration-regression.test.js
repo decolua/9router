@@ -209,4 +209,104 @@ describe("Tool name restoration regression tests (End-to-End & Passthrough)", ()
     const parsed = JSON.parse(bodyText);
     expect(parsed.choices[0].message.tool_calls[0].function.name).toBe(longName1);
   });
+
+  it("Test 8 — Stream chunking: JSON event split across multiple stream chunks", async () => {
+    const reqBody = { tools: [{ type: "function", function: { name: longName1 } }] };
+    const map = normalizeOpenAIToolNames(reqBody, 64);
+    const alias1 = reqBody.tools[0].function.name;
+
+    const passthroughStream = createPassthroughStreamWithLogger("nvidia", null, "test-model", "conn1", reqBody, null, null, map);
+    const writer = passthroughStream.writable.getWriter();
+    const reader = passthroughStream.readable.getReader();
+
+    const readPromise = (async () => {
+      let text = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += new TextDecoder().decode(value);
+      }
+      return text;
+    })();
+
+    const fullEvent = `data: ${JSON.stringify({
+      id: "chatcmpl-split",
+      choices: [{ delta: { tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: alias1, arguments: '{"arg":1}' } }] } }]
+    })}\n\ndata: [DONE]\n\n`;
+
+    // Split event across 3 partial chunks
+    const chunk1 = fullEvent.slice(0, 20);
+    const chunk2 = fullEvent.slice(20, 60);
+    const chunk3 = fullEvent.slice(60);
+
+    await writer.write(new TextEncoder().encode(chunk1));
+    await writer.write(new TextEncoder().encode(chunk2));
+    await writer.write(new TextEncoder().encode(chunk3));
+    await writer.close();
+
+    const output = await readPromise;
+    expect(output).toContain(longName1);
+    expect(output).not.toContain(alias1);
+    expect(output).toContain("data: [DONE]");
+  });
+
+  it("Test 9 — Multiple SSE events in a single stream chunk", async () => {
+    const reqBody = { tools: [{ type: "function", function: { name: longName1 } }] };
+    const map = normalizeOpenAIToolNames(reqBody, 64);
+    const alias1 = reqBody.tools[0].function.name;
+
+    const passthroughStream = createPassthroughStreamWithLogger("nvidia", null, "test-model", "conn1", reqBody, null, null, map);
+    const writer = passthroughStream.writable.getWriter();
+    const reader = passthroughStream.readable.getReader();
+
+    const readPromise = (async () => {
+      let text = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += new TextDecoder().decode(value);
+      }
+      return text;
+    })();
+
+    const event1 = `data: ${JSON.stringify({ choices: [{ delta: { content: "Hello " } }] })}\n\n`;
+    const event2 = `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "c1", type: "function", function: { name: alias1 } }] } }] })}\n\n`;
+    const event3 = `data: [DONE]\n\n`;
+
+    // Write all 3 events in 1 chunk
+    await writer.write(new TextEncoder().encode(event1 + event2 + event3));
+    await writer.close();
+
+    const output = await readPromise;
+    expect(output).toContain("Hello ");
+    expect(output).toContain(longName1);
+    expect(output).not.toContain(alias1);
+    expect(output).toContain("data: [DONE]");
+  });
+
+  it("Test 10 — Non-JSON passthrough content & SSE comments remain unchanged", async () => {
+    const passthroughStream = createPassthroughStreamWithLogger("nvidia", null, "test-model", "conn1", {}, null, null, new Map());
+    const writer = passthroughStream.writable.getWriter();
+    const reader = passthroughStream.readable.getReader();
+
+    const readPromise = (async () => {
+      let text = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += new TextDecoder().decode(value);
+      }
+      return text;
+    })();
+
+    const sseComment = `: ping comment\n\n`;
+    const keepAlive = `: keep-alive\n\n`;
+
+    await writer.write(new TextEncoder().encode(sseComment + keepAlive));
+    await writer.close();
+
+    const output = await readPromise;
+    expect(output).toContain(": ping comment");
+    expect(output).toContain(": keep-alive");
+  });
 });
