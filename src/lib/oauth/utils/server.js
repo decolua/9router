@@ -754,4 +754,47 @@ export function stopZedProxy() {
   if (zedProxyServer) { zedProxyServer.close(); zedProxyServer = null; }
   zedProxyPort = null;
 }
+// MCP gateway OAuth pending sessions (server-side exchange + dashboard poll).
+// Keyed by instanceId + state; used by /api/mcp-gateway/oauth/[id]/[action].
+// ───────────────────────────────────────────────────────────────────────────
+
+const mcpPendingExchanges = new Map();
+
+function mcpSessionKey(instanceId, state) {
+  return `${instanceId}::${state}`;
+}
+
+function registerMcpSession({ instanceId, state, codeVerifier, redirectUri, resource, clientId }) {
+  if (!instanceId || !state || !codeVerifier || !redirectUri || !clientId) return false;
+  mcpPendingExchanges.set(mcpSessionKey(instanceId, state), {
+    codeVerifier,
+    clientId,
+    redirectUri,
+    resource,
+    scope: undefined,
+    status: "pending",
+    error: undefined,
+    tokens: undefined,
+    createdAt: Date.now(),
+  });
+  return true;
+}
+
+export function getMcpSessionStatus(instanceId, state) {
+  return mcpPendingExchanges.get(mcpSessionKey(instanceId, state)) || null;
+}
+
+export function completeMcpSession(instanceId, state, result) {
+  const key = mcpSessionKey(instanceId, state);
+  const session = mcpPendingExchanges.get(key);
+  if (!session) return false;
+  if (result.status !== undefined) session.status = result.status;
+  if (result.error !== undefined) session.error = result.error;
+  if (result.tokens !== undefined) session.tokens = result.tokens;
+  return true;
+}
+
+export function clearMcpSession(instanceId, state) {
+  mcpPendingExchanges.delete(mcpSessionKey(instanceId, state));
+}
 

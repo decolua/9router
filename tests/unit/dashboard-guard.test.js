@@ -258,6 +258,28 @@ describe("dashboard guard local-only access", () => {
   });
 });
 
+describe("dashboard guard MCP CIMD client-metadata", () => {
+  beforeEach(() => {
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+  });
+
+  it("allows client-metadata document publicly (AS fetches it server-side)", async () => {
+    const response = await proxy(request("/api/mcp-gateway/oauth/abc-123/client-metadata", {
+      host: "router.example.com",
+    }));
+    expect(response).toBe(mocks.nextResponse);
+  });
+
+  it("still protects sibling oauth actions (authorize) without auth", async () => {
+    const response = await proxy(request("/api/mcp-gateway/oauth/abc-123/authorize", {
+      host: "router.example.com",
+    }));
+    expect(response.status).toBe(401);
+  });
+});
+
 describe("dashboard guard helpers", () => {
   it("extracts bearer API keys before x-api-key", () => {
     const apiRequest = request("/v1/chat/completions", {
