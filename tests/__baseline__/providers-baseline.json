@@ -686,6 +686,11 @@
     "validateUrl": "https://api.studio.nebius.ai/v1/models",
     "format": "openai"
   },
+  "novita": {
+    "baseUrl": "https://api.novita.ai/openai/v1/chat/completions",
+    "validateUrl": "https://api.novita.ai/openai/v1/models",
+    "format": "openai"
+  },
   "nvidia": {
     "baseUrl": "https://integrate.api.nvidia.com/v1/chat/completions",
     "validateUrl": "https://integrate.api.nvidia.com/v1/models",

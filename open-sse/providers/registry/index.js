@@ -63,6 +63,7 @@ import p60 from "./mistral.js";
 import p61 from "./mmf.js";
 import p62 from "./nanobanana.js";
 import p63 from "./nebius.js";
+import p120 from "./novita.js";
 import p64 from "./nvidia.js";
 import p65 from "./ollama-local.js";
 import p66 from "./ollama.js";
@@ -185,6 +186,7 @@ export default [
   p61,
   p62,
   p63,
+  p120,
   p64,
   p65,
   p66,
