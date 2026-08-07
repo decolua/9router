@@ -99,8 +99,12 @@ async function createMigratedDb(factoryName = "better-sqlite3") {
   const db = await factory.create(file);
   const { default: m001 } = await import("@/lib/db/migrations/001-initial.js");
   const { default: m002 } = await import("@/lib/db/migrations/002-federation.js");
+  const { default: m003 } = await import("@/lib/db/migrations/003-federation-state.js");
+  const { default: m004 } = await import("@/lib/db/migrations/004-federation-fencing.js");
   m001.up(db);
   m002.up(db);
+  m003.up(db);
+  m004.up(db);
   return db;
 }
 

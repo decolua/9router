@@ -51,6 +51,18 @@ export function shouldForward(method, url) {
   return MUTATING_API_PREFIXES.some((p) => path === p || path.startsWith(p + "/"));
 }
 
+// True when the request is a mutating dashboard API call (the forward-set
+// minus /v1). FED-004's DEGRADED-mode write queue intercepts exactly this
+// set: /v1 traffic is served from the local replica through the unchanged
+// chat pipeline, while dashboard writes are queued.
+export function isMutatingDashboardApi(method, url) {
+  const m = String(method || "GET").toUpperCase();
+  const path = String(url || "").split("?")[0];
+  if (path === "/v1" || path.startsWith("/v1/")) return false;
+  if (!MUTATING_METHODS.has(m)) return false;
+  return MUTATING_API_PREFIXES.some((p) => path === p || path.startsWith(p + "/"));
+}
+
 // ─── Header plumbing ─────────────────────────────────────────────────────
 
 // Headers that describe the transport hop and must NOT be replayed upstream
@@ -226,6 +238,12 @@ function defaultTransport(req, base, headers) {
 // a fake transport or a real local node:http server pair. `getState`
 // defaults to the real federation_meta read (via the DB driver); tests
 // inject a stub.
+//
+// FED-004: `onUpstreamFailure` is invoked when the upstream request fails
+// (connection error/timeout) while the edge is LINKED — the failover state
+// machine flips to DEGRADED immediately on a proxy-side 502/timeout (spec
+// §3.4). It is injected (not imported) so proxy.js never depends on
+// failover.js (no circular import; failover depends on proxy's exports).
 export async function proxyRequest(req, res, options = {}) {
   const {
     transport = null,
@@ -233,6 +251,7 @@ export async function proxyRequest(req, res, options = {}) {
     centralUrl = null,
     token = null,
     log = console,
+    onUpstreamFailure = null,
   } = options;
 
   if (!isEdge()) return false; // standalone/central: no-op pass-through
@@ -270,6 +289,16 @@ export async function proxyRequest(req, res, options = {}) {
       : await defaultTransport(req, base, headers);
   } catch (err) {
     log.error(`[federation] edge proxy: upstream request failed: ${err.message}`);
+    // FED-004: a proxy-side upstream failure (502/timeout) while LINKED
+    // flips the edge to DEGRADED immediately (spec §3.4). Fire-and-forget —
+    // the flip must not block the 502 response.
+    if (onUpstreamFailure) {
+      try {
+        Promise.resolve(onUpstreamFailure(err)).catch((e) => log.error(`[federation] onUpstreamFailure hook failed: ${e?.message || e}`));
+      } catch (e) {
+        log.error(`[federation] onUpstreamFailure hook failed: ${e?.message || e}`);
+      }
+    }
     if (!res.headersSent) {
       try {
         res.writeHead(502, { "Content-Type": "application/json" });

@@ -1,6 +1,27 @@
 # Unreleased
 
 ## Features
+- **Federation (failover + write queue)**: edge instances now run a failover
+  state machine (LINKED → DEGRADED → RECOVERING → LINKED, persisted in
+  `federation_meta.last_state`). A heartbeat (`GET /api/federation/verify`)
+  every `FEDERATION_HEARTBEAT_INTERVAL_MS` flips the edge to DEGRADED after
+  consecutive failures spanning `FEDERATION_OUTAGE_THRESHOLD_MS` (with ±20%
+  jitter + bounded reconnect backoff); a proxy-side 502/timeout flips
+  immediately. While DEGRADED, `/v1` traffic is served from the local replica
+  through the unchanged chat pipeline and mutating dashboard API calls are
+  queued to `pendingWrites` (idempotency-key dedupe, cap
+  `FEDERATION_QUEUE_MAX` → 503 when full), responding with
+  `X-Federation-State: degraded` + `X-Federation-Queued-Write-Id`. On
+  recovery the queue drains to central in batches
+  (`FEDERATION_REPLAY_BATCH_SIZE`) through a fenced `POST
+  /api/federation/replay` (stale fencing tokens rejected 409, idempotency
+  keys never double-applied), deltas catch up, and the edge returns to
+  LINKED. Edges never self-promote. Edge replication pulls now send the
+  `FEDERATION_TOKEN` Bearer header (previously missing). Standalone mode is
+  unchanged (no-op).
+  Env: `FEDERATION_MODE=edge`, `FEDERATION_HEARTBEAT_INTERVAL_MS`,
+  `FEDERATION_OUTAGE_THRESHOLD_MS`, `FEDERATION_QUEUE_MAX`,
+  `FEDERATION_REPLAY_BATCH_SIZE`.
 - **Federation (edge proxy + role guard)**: LINKED edge instances now proxy
   `/v1/*` traffic and mutating dashboard API calls to the central instance
   with a dedicated `FEDERATION_TOKEN` (Bearer auth), preserving SSE

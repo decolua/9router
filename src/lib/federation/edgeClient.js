@@ -18,11 +18,13 @@
 // Once the edge is upgraded (new migration lands), the next poll resumes
 // from the same lastAppliedRevision.
 //
-// Auth is out of scope (FED-003): fetch() calls carry no Authorization
-// header yet.
+// Auth (FED-004): fetch() calls carry `Authorization: Bearer
+// <FEDERATION_TOKEN>` + `x-federation-edge-id` — FED-003's roleGuard.js
+// guards ALL federation routes with the token in non-standalone modes, so
+// unauthenticated pulls would 401 in a real edge deployment.
 import { getAdapter } from "../db/driver.js";
 import { latestVersion } from "../db/migrations/index.js";
-import { isStandalone, isEdge, getCentralUrl, getEdgeId, getSyncIntervalMs } from "./config.js";
+import { isStandalone, isEdge, getCentralUrl, getEdgeId, getSyncIntervalMs, getToken } from "./config.js";
 import { applyRevisionBatch, readLastAppliedRevision, SchemaBlockedError } from "./replication.js";
 
 const FETCH_TIMEOUT_MS = 15000;
@@ -122,7 +124,13 @@ async function fetchJson(fetchImpl, url) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetchImpl(url, { signal: controller.signal, headers: { "x-federation-edge-id": getEdgeId() } });
+    const res = await fetchImpl(url, {
+      signal: controller.signal,
+      headers: {
+        authorization: `Bearer ${getToken() || ""}`,
+        "x-federation-edge-id": getEdgeId(),
+      },
+    });
     if (!res.ok) {
       throw new Error(`GET ${url} → HTTP ${res.status}`);
     }
