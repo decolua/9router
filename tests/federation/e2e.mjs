@@ -455,7 +455,11 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error("[e2e] fatal:", err);
-  process.exitCode = 1;
-});
+// Only run when executed directly — importing this file (e.g. for
+// inspection/linting/analysis) must not spawn child processes (NR-GAP-003).
+if (process.argv[1] && path.basename(process.argv[1]) === "e2e.mjs") {
+  main().catch((err) => {
+    console.error("[e2e] fatal:", err);
+    process.exitCode = 1;
+  });
+}

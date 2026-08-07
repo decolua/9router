@@ -53,6 +53,7 @@ docs/*
 !docs/ARCHITECTURE.md
 !docs/FEDERATION.md
 !docs/specs/
+!docs/*.md
 test/*
 open-sse/test/*
 RM.vn.md
