@@ -32,4 +32,6 @@ paths = [
   '''docs/''',
   '''.*\.spec\.md$''',
   '''.*\.md$''',
+  '''tests/unit/embeddings.cloud.test.js''',
+  '''tests/unit/xai-video-core.test.js''',
 ]

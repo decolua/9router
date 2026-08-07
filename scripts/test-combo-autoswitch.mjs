@@ -2,7 +2,7 @@
 // Sends text / image / search requests to a combo and reports which member ran.
 //   node scripts/test-combo-autoswitch.mjs
 const BASE = process.env.BASE_URL || "http://localhost:20127";
-const KEY = process.env.API_KEY || "sk-test-placeholder-key-not-a-real-secret";
+const KEY = process.env.API_KEY || "test-placeholder-key-not-a-real-secret";
 const COMBO = process.env.COMBO || "haha";
 
 // 16x16 PNG (valid image so vision providers accept it).
