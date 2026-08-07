@@ -29,6 +29,7 @@ const PUBLIC_API_PATHS = [
   "/api/auth/oidc",
   "/api/version",
   "/api/settings/require-login",
+  "/api/headroom/extras",  // Headroom extras status — no auth needed (#2965)
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
@@ -141,6 +142,9 @@ async function canAccessPublicLlmApi(request) {
 
 async function canAccessLocalOnlyRoute(request) {
   if (await hasValidCliToken(request)) return true;
+  // When requireLogin is disabled, allow local browser access to headroom routes (#2916)
+  const settings = await loadSettings();
+  if (settings && settings.requireLogin === false && isLocalRequest(request)) return true;
   // Browser on host: loopback Host + Origin (blocks tunnel/CSRF) + auth (JWT or requireLogin=false)
   if (isLocalRequest(request) && await isAuthenticated(request)) return true;
   return false;
