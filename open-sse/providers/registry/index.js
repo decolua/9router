@@ -112,6 +112,7 @@ import p110 from "./llm7.js";
 import p111 from "./sambanova.js";
 import p112 from "./tencent.js";
 import p113 from "./morph.js";
+import p120 from "./meta.js";
 // import p114 from "./devin-cli.js";
 // import p104 from "./windsurf.js";
 import p115 from "./poolside.js";
@@ -239,4 +240,5 @@ export default [
   p117,
   p118,
   p119,
+  p120,
 ];
