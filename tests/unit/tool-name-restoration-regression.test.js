@@ -161,4 +161,52 @@ describe("Tool name restoration regression tests (End-to-End & Passthrough)", ()
     expect(restoredAgain).toBe(false);
     expect(providerResponse.choices[0].message.tool_calls[0].function.name).toBe(longName1);
   });
+
+  it("Test 7 — handleNonStreamingResponse restores tool names on JSON response", async () => {
+    const { handleNonStreamingResponse } = await import("../../open-sse/handlers/chatCore/nonStreamingHandler.js");
+
+    const reqBody = {
+      tools: [{ type: "function", function: { name: longName1 } }]
+    };
+    const map = normalizeOpenAIToolNames(reqBody, 64);
+    const alias = reqBody.tools[0].function.name;
+
+    const mockResponseObj = {
+      id: "chatcmpl-1",
+      choices: [
+        {
+          index: 0,
+          message: {
+            role: "assistant",
+            tool_calls: [
+              { id: "call-1", type: "function", function: { name: alias, arguments: "{}" } }
+            ]
+          },
+          finish_reason: "tool_calls"
+        }
+      ]
+    };
+
+    const mockProviderResponse = new Response(JSON.stringify(mockResponseObj), {
+      headers: { "Content-Type": "application/json" }
+    });
+
+    const result = await handleNonStreamingResponse({
+      providerResponse: mockProviderResponse,
+      provider: "nvidia",
+      model: "meta/llama-3.1-8b-instruct",
+      sourceFormat: "openai",
+      targetFormat: "openai",
+      body: reqBody,
+      stream: false,
+      toolNameMap: map,
+      reqLogger: { logProviderResponse: () => {}, logConvertedResponse: () => {} },
+      trackDone: () => {},
+      appendLog: () => {}
+    });
+
+    const bodyText = await result.response.text();
+    const parsed = JSON.parse(bodyText);
+    expect(parsed.choices[0].message.tool_calls[0].function.name).toBe(longName1);
+  });
 });
