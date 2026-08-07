@@ -9,11 +9,16 @@
 import { LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
 
 const RATES = {
+  en: { sym: "$", rate: 1 },
   "zh-CN": { sym: "¥", rate: 7.2 },
   "zh-TW": { sym: "NT$", rate: 31.5 },
   ja: { sym: "¥", rate: 155 },
   ko: { sym: "₩", rate: 1350 },
   vi: { sym: "₫", rate: 25000 },
+  "pt-BR": { sym: "R$", rate: 5.5 },
+  "pt-PT": { sym: "€", rate: 0.92 },
+  es: { sym: "€", rate: 0.92 },
+  de: { sym: "€", rate: 0.92 },
 };
 
 function getLocaleFromCookie() {
