@@ -43,18 +43,28 @@ export async function POST(request) {
   // Fallback to local handling
   await ensureInitialized();
 
-  const response = await handleChat(request);
+  try {
+    const response = await handleChat(request);
 
-  // Add rate limit headers to response
-  const newHeaders = new Headers(response.headers);
-  for (const [key, value] of Object.entries(rl.headers)) {
-    newHeaders.set(key, value);
+    // Add rate limit headers to response
+    const newHeaders = new Headers(response.headers);
+    for (const [key, value] of Object.entries(rl.headers)) {
+      newHeaders.set(key, value);
+    }
+
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: newHeaders,
+    });
+  } catch (error) {
+    console.error("[Chat] POST handler error:", error);
+    return new Response(JSON.stringify({
+      error: { message: error?.message || "Internal server error", type: "server_error" }
+    }), {
+      status: 500,
+      headers: { "Content-Type": "application/json", ...rl.headers },
+    });
   }
-
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: newHeaders,
-  });
 }
 
