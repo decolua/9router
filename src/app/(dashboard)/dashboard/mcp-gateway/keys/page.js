@@ -320,7 +320,11 @@ function GrantsModal({ keyId, allInstances, onClose, onSave }) {
       try {
         const r = await fetch(`/api/mcp-gateway/keys/${keyId}`);
         const body = await r.json();
-        setGrants(new Set(parseStringArray(body.grants)));
+        const raw = body.grants;
+        const normalized = Array.isArray(raw)
+          ? raw.map((g) => (typeof g === "string" ? g : g?.instanceId)).filter(Boolean)
+          : [];
+        setGrants(new Set(normalized));
       } catch {
         setGrants(new Set());
       } finally {
