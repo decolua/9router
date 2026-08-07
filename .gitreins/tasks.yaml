@@ -64,8 +64,9 @@ tasks:
     never claim central commitment'
   - Edge federation config page (mode/central URL/token) + i18n strings
   - Component render + API header tests land under tests/federation/
-  status: pending
+  status: complete
   created_at: '2026-08-07T07:16:02.545934+00:00'
+  completed_at: '2026-08-07T18:13:11.681735+00:00'
 - id: fed-006
   title: Docs, Docker, end-to-end (docs/FEDERATION.md, docker-compose central+2 edges,
     e2e.mjs, CHANGELOG)
