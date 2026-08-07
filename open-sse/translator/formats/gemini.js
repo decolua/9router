@@ -135,25 +135,27 @@ export function generateProjectId() {
 
 // Helper: Remove unsupported keywords recursively from object/array
 // Also strips all vendor extension fields (x- prefixed) not supported by Gemini
-function removeUnsupportedKeywords(obj, keywords) {
+function removeUnsupportedKeywords(obj, keywords, isSchema = true) {
   if (!obj || typeof obj !== "object") return;
 
   if (Array.isArray(obj)) {
     for (const item of obj) {
-      removeUnsupportedKeywords(item, keywords);
+      removeUnsupportedKeywords(item, keywords, isSchema);
     }
     return;
   }
 
   for (const key of Object.keys(obj)) {
-    if (keywords.includes(key) || key.startsWith("x-")) {
+    if (isSchema && (keywords.includes(key) || key.startsWith("x-"))) {
       delete obj[key];
       continue;
     }
 
     const value = obj[key];
     if (value && typeof value === "object") {
-      removeUnsupportedKeywords(value, keywords);
+      // `properties` contains user-defined names, not schema keywords. Its
+      // values resume the schema tree one level below the name map.
+      removeUnsupportedKeywords(value, keywords, isSchema ? key !== "properties" : true);
     }
   }
 }
@@ -302,10 +304,18 @@ function flattenTypeArrays(obj) {
 }
 
 // Infer missing type=object when properties exist (Gemini requires explicit type)
-function ensureObjectType(obj) {
+function ensureObjectType(obj, isSchema = true) {
   if (!obj || typeof obj !== "object") return;
-  if (obj.properties && !obj.type) obj.type = "object";
-  for (const v of Object.values(obj)) if (v && typeof v === "object") ensureObjectType(v);
+  if (isSchema && obj.properties && !obj.type) obj.type = "object";
+  if (Array.isArray(obj)) {
+    for (const item of obj) ensureObjectType(item, isSchema);
+    return;
+  }
+  for (const [key, value] of Object.entries(obj)) {
+    if (value && typeof value === "object") {
+      ensureObjectType(value, isSchema ? key !== "properties" : true);
+    }
+  }
 }
 
 // Clean JSON Schema for Antigravity API compatibility - removes unsupported keywords recursively
@@ -396,4 +406,3 @@ export function cleanJSONSchemaForAntigravity(schema) {
 
   return cleaned;
 }
-
