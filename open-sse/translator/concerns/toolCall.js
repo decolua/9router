@@ -272,21 +272,19 @@ export function fixMissingToolResponses(body) {
 }
 
 
-// NVIDIA-specific deterministic ID: prefer short 9-hex identifier for upstream
-const nvidiaIdCache = new Map();
+// Endpoint/provider compatibility constraint observed by 9router for certain NVIDIA endpoints:
+// prefer compact 9-hex deterministic identifier for upstream compatibility
 export function nvidiaToolCallId(id) {
   if (!id || typeof id !== 'string') return id;
   // Accept already-short alphanumeric IDs (9 chars)
   if (/^[a-zA-Z0-9]{9}$/.test(id)) return id;
-  if (nvidiaIdCache.has(id)) return nvidiaIdCache.get(id);
-  const hashed = createHash('sha256').update(id).digest('hex').slice(0, 9);
-  nvidiaIdCache.set(id, hashed);
-  return hashed;
+  return createHash('sha256').update(id).digest('hex').slice(0, 9);
 }
 
 // Normalize tool call IDs specifically for NVIDIA provider
 export function normalizeNvidiaToolCallIds(body) {
   if (!body || !Array.isArray(body.messages)) return body;
+  ensureToolCallIds(body);
   for (const msg of body.messages) {
     // OpenAI format: tool_calls array on assistant
     for (const tc of msg?.tool_calls || []) {
