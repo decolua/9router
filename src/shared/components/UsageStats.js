@@ -277,8 +277,14 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   }, [period]);
 
   // SSE connection - real-time updates for activeRequests + recentRequests only
+  // Limit to one EventSource per page (prevents busy loop that takes down server #3061)
+  const esRef = useRef(null);
   useEffect(() => {
+    // Prevent duplicate EventSource connections across re-renders
+    if (esRef.current) return;
+
     const es = new EventSource("/api/usage/stream");
+    esRef.current = es;
 
     es.onmessage = (e) => {
       try {
@@ -302,7 +308,10 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
 
     es.onerror = () => setLoading(false);
 
-    return () => es.close();
+    return () => {
+      es.close();
+      esRef.current = null;
+    };
   }, []);
 
   const toggleSort = useCallback((tableType, field) => {

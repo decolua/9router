@@ -1,30 +1,36 @@
+version: "3.8"
+
 services:
   9router:
-    image: decolua/9router:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: 9router:latest
     container_name: 9router
-    restart: always
     ports:
       - "20128:20128"
+    environment:
+      - NODE_ENV=production
+      - PORT=20128
+      - HOSTNAME=0.0.0.0
+      - DATA_DIR=/app/data
+      - NEXT_TELEMETRY_DISABLED=1
+      # Override these in production:
+      # - JWT_SECRET=your-secret-here
+      # - INITIAL_PASSWORD=your-password
+      # - API_KEY_SECRET=your-api-secret
+      # - MACHINE_ID_SALT=your-salt
     volumes:
       - 9router-data:/app/data
-    env_file:
-      - .env
-    environment:
-      DATA_DIR: /app/data
-      PORT: "20128"
-      HOSTNAME: "0.0.0.0"
-      NODE_ENV: production
-      HEADROOM_URL: http://headroom:8787
-    depends_on:
-      - headroom
-
-  headroom:
-    image: ghcr.io/chopratejas/headroom:latest
-    container_name: headroom
-    restart: always
-    ports:
-      - "8787:8787"
+      - 9router-home:/app/data-home
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:20128/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
 volumes:
   9router-data:
-    name: 9router-data
+  9router-home:
