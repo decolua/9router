@@ -29,7 +29,6 @@ export default {
     headers: {
       "Content-Type": "application/json",
       Accept: "application/vnd.amazon.eventstream",
-      "X-Amz-Target": "AmazonCodeWhispererStreamingService.GenerateAssistantResponse",
       "User-Agent": "AWS-SDK-JS/3.0.0 kiro-ide/1.0.0",
       "X-Amz-User-Agent": "aws-sdk-js/3.0.0 kiro-ide/1.0.0",
     },
@@ -43,6 +42,10 @@ export default {
   },
   models: [
     // Opus (added per kiro.dev/changelog/models and kiro.dev/docs/models)
+    { id: "claude-opus-5", name: "Claude Opus 5" },
+    { id: "claude-opus-5-thinking", name: "Claude Opus 5 (Thinking)" },
+    { id: "claude-opus-5-agentic", name: "Claude Opus 5 (Agentic)" },
+    { id: "claude-opus-5-thinking-agentic", name: "Claude Opus 5 (Thinking + Agentic)" },
     { id: "claude-opus-4.8", name: "Claude Opus 4.8" },
     { id: "claude-opus-4.8-thinking", name: "Claude Opus 4.8 (Thinking)" },
     { id: "claude-opus-4.8-agentic", name: "Claude Opus 4.8 (Agentic)" },
