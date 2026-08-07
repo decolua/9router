@@ -1,3 +1,16 @@
+# Unreleased
+
+## Features
+- **Federation (edge proxy + role guard)**: LINKED edge instances now proxy
+  `/v1/*` traffic and mutating dashboard API calls to the central instance
+  with a dedicated `FEDERATION_TOKEN` (Bearer auth), preserving SSE
+  status/headers/chunks with flush + backpressure and propagating client
+  aborts upstream. Dashboard GET reads resolve locally from the replica;
+  DEGRADED state falls through to local handlers. The federation route
+  handlers (`/api/federation/*`) now require the `FEDERATION_TOKEN` Bearer
+  header in non-standalone modes. Standalone mode is unchanged (no-op).
+  Env: `FEDERATION_MODE=edge`, `FEDERATION_CENTRAL_URL`, `FEDERATION_TOKEN`.
+
 # v0.5.50 (2026-08-05)
 
 ## Features

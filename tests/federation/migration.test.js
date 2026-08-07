@@ -18,6 +18,16 @@ import { REPLICATE_TABLES_PHYSICAL } from "@/lib/federation/constants.js";
 
 const FED_COLUMNS = ["federation_version", "updated_at", "deleted"];
 const FED_TABLES = ["federation_meta", "pendingWrites"];
+const FED_META_COLUMNS = [
+  "id",
+  "role",
+  "edgeId",
+  "lastAppliedRevision",
+  "schemaVersion",
+  "leaseOwner",
+  "leaseExpiry",
+  "last_state",
+];
 
 // Baseline physical tables (TABLES minus _meta, which is bootstrap).
 const BASELINE_TABLES = Object.keys(TABLES).filter((t) => t !== "_meta");
@@ -130,6 +140,112 @@ describe("migration 002 idempotency across adapters", () => {
       }
       const tables = db.all(`SELECT name FROM sqlite_master WHERE type='table'`).map((t) => t.name);
       for (const t of FED_TABLES) expect(tables).toContain(t);
+
+      db.close?.();
+    }
+  });
+});
+
+describe("migration 003 idempotency (last_state)", () => {
+  it("adds last_state to federation_meta and re-applies cleanly on every adapter", async () => {
+    const factories = await loadAdapterFactories();
+    expect(factories.length).toBeGreaterThan(0);
+    const { default: m001 } = await import("@/lib/db/migrations/001-initial.js");
+    const { default: m002 } = await import("@/lib/db/migrations/002-federation.js");
+    const { default: m003 } = await import("@/lib/db/migrations/003-federation-state.js");
+
+    for (const factory of factories) {
+      const file = path.join(tempDir, `m003-${factory.name.replace(":", "-")}.sqlite`);
+      const db = await factory.create(file);
+
+      m001.up(db);
+      m002.up(db);
+
+      // First apply
+      expect(() => m003.up(db)).not.toThrow();
+      const cols = columnNames(db, "federation_meta");
+      for (const c of FED_META_COLUMNS) expect(cols).toContain(c);
+
+      // Second apply must be a no-op success (guarded ADD COLUMN)
+      expect(() => m003.up(db)).not.toThrow();
+
+      // Seed row survives; last_state defaults to NULL (LINKED by reader)
+      const meta = db.get(`SELECT last_state FROM federation_meta WHERE id = 1`);
+      expect(meta.last_state).toBeNull();
+
+      // last_state is writable (FED-004 will own transitions)
+      db.run(`UPDATE federation_meta SET last_state = 'degraded' WHERE id = 1`);
+      expect(db.get(`SELECT last_state FROM federation_meta WHERE id = 1`).last_state).toBe("degraded");
+
+      db.close?.();
+    }
+  });
+
+  it("full chain 001 → 002 → 003 produces the complete federation schema", async () => {
+    const factories = await loadAdapterFactories();
+    const { default: m001 } = await import("@/lib/db/migrations/001-initial.js");
+    const { default: m002 } = await import("@/lib/db/migrations/002-federation.js");
+    const { default: m003 } = await import("@/lib/db/migrations/003-federation-state.js");
+
+    for (const factory of factories) {
+      const file = path.join(tempDir, `chain3-${factory.name.replace(":", "-")}.sqlite`);
+      const db = await factory.create(file);
+
+      expect(() => m001.up(db)).not.toThrow();
+      expect(() => m002.up(db)).not.toThrow();
+      expect(() => m003.up(db)).not.toThrow();
+
+      const cols = columnNames(db, "federation_meta");
+      expect(cols).toContain("last_state");
+
+      db.close?.();
+    }
+  });
+});
+
+describe("getEdgeState (FED-003 state reader)", () => {
+  it("defaults to LINKED when last_state is NULL/missing", async () => {
+    const factories = await loadAdapterFactories();
+    const { default: m001 } = await import("@/lib/db/migrations/001-initial.js");
+    const { default: m002 } = await import("@/lib/db/migrations/002-federation.js");
+    const { default: m003 } = await import("@/lib/db/migrations/003-federation-state.js");
+    const { getEdgeState } = await import("@/lib/federation/state.js");
+
+    for (const factory of factories) {
+      const file = path.join(tempDir, `state-${factory.name.replace(":", "-")}.sqlite`);
+      const db = await factory.create(file);
+      m001.up(db);
+      m002.up(db);
+      m003.up(db);
+
+      // NULL last_state → LINKED
+      expect(getEdgeState(db)).toBe("linked");
+
+      // Unknown value → LINKED (defensive)
+      db.run(`UPDATE federation_meta SET last_state = 'bogus' WHERE id = 1`);
+      expect(getEdgeState(db)).toBe("linked");
+
+      // Persisted DEGRADED → read back
+      db.run(`UPDATE federation_meta SET last_state = 'degraded' WHERE id = 1`);
+      expect(getEdgeState(db)).toBe("degraded");
+
+      db.close?.();
+    }
+  });
+
+  it("defaults to LINKED when the table/column is absent (pre-003 schema)", async () => {
+    const factories = await loadAdapterFactories();
+    const { default: m001 } = await import("@/lib/db/migrations/001-initial.js");
+    const { default: m002 } = await import("@/lib/db/migrations/002-federation.js");
+    const { getEdgeState } = await import("@/lib/federation/state.js");
+
+    for (const factory of factories) {
+      const file = path.join(tempDir, `state2-${factory.name.replace(":", "-")}.sqlite`);
+      const db = await factory.create(file);
+      m001.up(db);
+      m002.up(db); // no 003 → no last_state column
+
+      expect(getEdgeState(db)).toBe("linked");
 
       db.close?.();
     }

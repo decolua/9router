@@ -6,6 +6,28 @@ const origCreate = http.createServer.bind(http);
 
 let backgroundRefreshStarted = false;
 
+// Federation edge proxy (FED-003): lazily loaded so standalone/central boots
+// never import federation modules (zero drift). In the Docker standalone
+// image src/lib/federation may be absent (Next file tracing does not follow
+// dynamic imports) — the load fails open and requests fall through to local
+// handlers, exactly like the background-token-refresh import above.
+let proxyRequestFn = null;
+let proxyLoadPromise = null;
+function loadFederationProxy() {
+  if (!proxyLoadPromise) {
+    const modPath = path.join(__dirname, "src", "lib", "federation", "proxy.js");
+    proxyLoadPromise = import(pathToFileURL(modPath).href)
+      .then((m) => {
+        proxyRequestFn = m.proxyRequest;
+      })
+      .catch((e) => {
+        console.error("[federation] proxy module load failed:", e && e.message ? e.message : e);
+        proxyLoadPromise = null; // allow a later retry
+      });
+  }
+  return proxyLoadPromise;
+}
+
 function startBackgroundTokenRefreshFromCustomServer() {
   if (backgroundRefreshStarted) return;
   backgroundRefreshStarted = true;
@@ -59,11 +81,35 @@ http.createServer = (...args) => {
     delete req.headers["x-9r-via-proxy"];
     req.headers["x-9r-real-ip"] = ip;
     if (viaProxy) req.headers["x-9r-via-proxy"] = "1";
+    // Federation edge proxy (FED-003): LINKED edges forward /v1/* + mutating
+    // dashboard API to the central instance. Falls through to the local Next
+    // handler in every other case (standalone, central, DEGRADED, non-forwarded
+    // paths, dashboard GET reads). The IP derivation above is untouched.
+    if (proxyRequestFn) {
+      return proxyRequestFn(req, res)
+        .then((handled) => {
+          if (handled) return;
+          return handler(req, res);
+        })
+        .catch((err) => {
+          // Defensive: an unexpected proxy failure must never crash the
+          // server. If nothing was written yet, fall through to the local
+          // handler; otherwise close the response.
+          console.error("[federation] edge proxy error:", err && err.message ? err.message : err);
+          if (!res.headersSent) return handler(req, res);
+          try {
+            res.destroy();
+          } catch {
+            /* already closed */
+          }
+        });
+    }
     return handler(req, res);
   };
   const server = origCreate(...rest, wrapped);
   server.once("listening", () => {
     startBackgroundTokenRefreshFromCustomServer();
+    loadFederationProxy();
   });
   const origEmit = server.emit;
   // JBR 25 sends h2c upgrades that the HTTP/1.1 server would otherwise close.
