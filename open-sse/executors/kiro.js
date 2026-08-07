@@ -342,6 +342,12 @@ export class KiroExecutor extends BaseExecutor {
   }
 
   attachIntegrityGate(result, args) {
+    // When kiroStreamingPassthrough is enabled, skip the integrity gate entirely
+    // and forward the raw response directly for true streaming (issue #3041)
+    if (args.credentials?.providerSpecificData?.kiroStreamingPassthrough === true) {
+      return;
+    }
+
     const abortController = new AbortController();
     const maxBytes = envPositiveInt("KIRO_TOOL_CALL_REPAIR_BUFFER_MAX_BYTES", KIRO_REPAIR_BUFFER_MAX_BYTES);
     const legacyTimeout = envPositiveInt("KIRO_TOOL_CALL_REPAIR_TIMEOUT_MS", STREAM_FIRST_CHUNK_TIMEOUT_MS);
