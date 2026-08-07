@@ -1,0 +1,75 @@
+tasks:
+- id: fed-001
+  title: Federation config + schema (env parsing, REPLICATE_TABLES, migration with
+    federation_version/updated_at/deleted on 8 tables + federation_meta + pendingWrites)
+  criteria:
+  - FEDERATION_MODE defaults to standalone; isStandalone/isEdge/isCentral exported
+    and correct
+  - Migration 00NN_federation.js is idempotent across all 4 SQLite adapter backends
+    (re-apply safe)
+  - With FEDERATION_MODE unset, fresh standalone boot has zero schema/behavior drift
+    vs baseline
+  - Config tests + migration tests land under tests/federation/
+  status: pending
+  created_at: '2026-08-07T07:15:55.860733+00:00'
+- id: fed-002
+  title: Replication service + routes (snapshot/delta/verify/status; edgeClient pull+poll;
+    federation_version stamping on writes)
+  criteria:
+  - GET /api/federation/snapshot?since=0 returns full config snapshot via exportDb()
+    shape + version columns
+  - GET /api/federation/delta?since=N returns rows with federation_version>N + tombstones
+    + max_version watermark + schemaVersion
+  - Edge apply is transactional per revision batch and idempotent; unknown migration
+    version -> SCHEMA_BLOCKED pause
+  - Replication tests land under tests/federation/
+  status: pending
+  created_at: '2026-08-07T07:15:55.915879+00:00'
+- id: fed-003
+  title: Edge proxy + role guard (custom-server.js forwarding middleware, roleGuard.js,
+    FEDERATION_TOKEN Bearer auth)
+  criteria:
+  - /v1/chat/completions SSE passthrough proxied to central with auth header, aborts
+    propagated
+  - Mutating dashboard API forwarded to central; DEGRADED fall-through to local handlers
+    works
+  - X-Forwarded-For stripping boundary preserved (custom-server.js IP derivation untouched)
+  - Proxy tests + standalone no-op tests land under tests/federation/
+  status: pending
+  created_at: '2026-08-07T07:15:55.977118+00:00'
+- id: fed-004
+  title: Failover state machine + write queue (LINKED/DEGRADED/RECOVERING, heartbeat
+    with jittered threshold, pendingWrites repo, replay drain, fencing)
+  criteria:
+  - "Edge flips to DEGRADED after outage threshold (with \xB120% jitter) or immediate\
+    \ 502; state persisted in federation_meta.last_state"
+  - DEGRADED serves /v1 from local replica through unchanged chat pipeline; writes
+    queue to pendingWrites with idempotency_key, cap + 503 when full
+  - 'Recovery: heartbeat success -> drain queue (batched, idempotent, 409-stale rejected)
+    -> catch up deltas -> LINKED; edges never self-promote'
+  - Failover tests land under tests/federation/ (outage flip, degraded serving, drain,
+    fencing)
+  status: pending
+  created_at: '2026-08-07T07:16:02.463032+00:00'
+- id: fed-005
+  title: Frontend + UX (FederationStatus banner, degraded-mode dashboard headers,
+    edge config page, i18n)
+  criteria:
+  - FederationStatus banner renders LINKED/DEGRADED/RECOVERING + revision lag
+  - 'Degraded dashboard writes respond with X-Federation-State: degraded + X-Federation-Queued-Write-Id;
+    never claim central commitment'
+  - Edge federation config page (mode/central URL/token) + i18n strings
+  - Component render + API header tests land under tests/federation/
+  status: pending
+  created_at: '2026-08-07T07:16:02.545934+00:00'
+- id: fed-006
+  title: Docs, Docker, end-to-end (docs/FEDERATION.md, docker-compose central+2 edges,
+    e2e.mjs, CHANGELOG)
+  criteria:
+  - docs/FEDERATION.md covers deployment topologies, env matrix, failover runbook
+  - docker-compose example runs central + 2 edge instances
+  - 'tests/federation/e2e.mjs proves: linked -> kill central -> degraded serving ->
+    recover -> reconcile'
+  - Regression baseline (verify-no-regression) green or known-fails only
+  status: pending
+  created_at: '2026-08-07T07:16:02.646392+00:00'
