@@ -107,16 +107,20 @@ export function createSSEStream(options = {}) {
         // Passthrough mode: normalize and forward
         if (mode === STREAM_MODE.PASSTHROUGH) {
 
-          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
+          const isSseData = trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]";
+          const isJsonObj = !isSseData && trimmed.startsWith("{") && trimmed.endsWith("}");
+
+          if (isSseData || isJsonObj) {
             try {
-              const parsed = JSON.parse(trimmed.slice(5).trim());
+              const jsonText = isSseData ? trimmed.slice(5).trim() : trimmed;
+              const parsed = JSON.parse(jsonText);
               const toolNameRestored = restoreOpenAIToolNames(parsed, toolNameMap);
 
               const idFixed = fixInvalidId(parsed);
 
               // Ensure OpenAI-required fields are present on streaming chunks (Letta compat)
               let fieldsInjected = false;
-              if (parsed.choices !== undefined) {
+              if (isSseData && parsed.choices !== undefined) {
                 if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
                 if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
               }
@@ -153,7 +157,7 @@ export function createSSEStream(options = {}) {
                 continue;
               }
 
-              const delta = parsed.choices?.[0]?.delta;
+              const delta = parsed.choices?.[0]?.delta || parsed.choices?.[0]?.message;
               const content = delta?.content;
               const reasoning = delta?.reasoning_content;
               if (content && typeof content === "string") {
@@ -170,20 +174,21 @@ export function createSSEStream(options = {}) {
                 usage = mergeUsage(usage, extracted);
               }
 
+              const prefix = isSseData ? "data: " : "";
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
                 parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
-                output = `data: ${JSON.stringify(parsed)}\n`;
+                output = `${prefix}${JSON.stringify(parsed)}\n`;
                 usage = estimated;
                 injectedUsage = true;
               } else if (isFinishChunk && usage) {
                 const buffered = addBufferToUsage(usage);
                 parsed.usage = filterUsageForFormat(buffered, FORMATS.OPENAI);
-                output = `data: ${JSON.stringify(parsed)}\n`;
+                output = `${prefix}${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               } else if (idFixed || fieldsInjected || toolNameRestored) {
-                output = `data: ${JSON.stringify(parsed)}\n`;
+                output = `${prefix}${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               }
             } catch {
