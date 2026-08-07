@@ -100,6 +100,11 @@ export default function ToolDetailClient({ toolId, machineId }) {
           // still let the user apply so they aren't stuck on a permanently disabled button.
           fallbackModels.push({ id: "model-id", name: `${prefix}/model-id` });
         }
+        // For OpenAI/Anthropic-compatible providers, also add a dummy model
+        // even if testStatus is not active — prevents permanently disabled Apply button (#2994)
+        if (fallbackModels.length === 0 && (conn.providerSpecificData?.baseUrl || conn.providerSpecificData?.prefix)) {
+          fallbackModels.push({ id: "model-id", name: `${prefix}/model-id` });
+        }
         fallbackModels.forEach(m => {
           const modelValue = `${prefix}/${m.id}`;
           if (!seenModels.has(modelValue)) {
