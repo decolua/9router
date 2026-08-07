@@ -50,7 +50,7 @@ describe("OpenCode Go endpoint routing", () => {
 
     for (const model of MESSAGES_MODELS) {
       expect(executor.buildUrl(model)).toBe("https://opencode.ai/zen/go/v1/messages");
-      const headers = executor.buildHeaders({ apiKey: "sk-test" }, false);
+      const headers = executor.buildHeaders({ apiKey: "sk-test" }, false, null, model);
       expect(headers["x-api-key"]).toBe("sk-test");
       expect(headers["anthropic-version"]).toBeDefined();
       expect(headers.Authorization).toBeUndefined();
@@ -62,10 +62,27 @@ describe("OpenCode Go endpoint routing", () => {
 
     for (const model of CHAT_MODELS) {
       expect(executor.buildUrl(model)).toBe("https://opencode.ai/zen/go/v1/chat/completions");
-      const headers = executor.buildHeaders({ apiKey: "sk-test" }, false);
+      const headers = executor.buildHeaders({ apiKey: "sk-test" }, false, null, model);
       expect(headers.Authorization).toBe("Bearer sk-test");
       expect(headers["x-api-key"]).toBeUndefined();
       expect(headers["anthropic-version"]).toBeUndefined();
     }
+  });
+
+  it("does not leak model state between concurrent requests", () => {
+    const executor = new OpenCodeGoExecutor();
+
+    // Simulate interleaved buildUrl and buildHeaders calls for two different models
+    executor.buildUrl("minimax-m3");
+    executor.buildUrl("glm-5.2");
+
+    const headersMinimax = executor.buildHeaders({ apiKey: "sk-test" }, false, null, "minimax-m3");
+    const headersGlm = executor.buildHeaders({ apiKey: "sk-test" }, false, null, "glm-5.2");
+
+    expect(headersMinimax["x-api-key"]).toBe("sk-test");
+    expect(headersMinimax.Authorization).toBeUndefined();
+
+    expect(headersGlm.Authorization).toBe("Bearer sk-test");
+    expect(headersGlm["x-api-key"]).toBeUndefined();
   });
 });
