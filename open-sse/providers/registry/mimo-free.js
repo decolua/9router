@@ -1,8 +1,11 @@
 // Xiaomi ended the free MiMo channel ("MiMo free API service has ended").
-// Hidden until/unless a replacement (OAuth MiMo Platform) is wired.
+// Kept visible as a configurable card so the user can choose whether it shows
+// on the usage topology canvas; by default it is hidden there (service ended),
+// and it carries a deprecation notice. Override the default via the
+// topologyVisibility setting toggle on the providers page.
 export default {
   id: "mimo-free",
-  hidden: true,
+  hidden: false,
   priority: 50,
   hasFree: true,
   alias: "mmf",
@@ -12,7 +15,10 @@ export default {
     icon: "smart_toy",
     color: "#FF6900",
     textIcon: "MF",
+    deprecationNotice:
+      "MiMo free API service has ended. This provider is no longer free. It is hidden from the usage topology by default — enable it via the toggle if you still want it shown.",
   },
+  topologyHiddenByDefault: true,
   category: "free",
   noAuth: true,
   transport: {
