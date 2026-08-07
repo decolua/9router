@@ -29,6 +29,7 @@ const FORMAT_LEVELS = {
   minimax: L.onOff,
   hunyuan: L.base,
   step: L.base,
+  meta: ["minimal", "low", "medium", "high", "xhigh"], // Muse Spark — no disable, no max
 };
 
 const CODEX_GPT_5_6_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];

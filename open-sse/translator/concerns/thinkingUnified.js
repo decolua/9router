@@ -319,6 +319,16 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       if (level) body.reasoning_effort = level;
       break;
     }
+    case "meta": {
+      // Meta Muse Spark reasons by default and rejects "none" (HTTP 400). With
+      // thinkingCanDisable:false the "none" mode is clamped to "minimal" above
+      // (see eff). A literal "none" level (non-UI path) is omitted so the
+      // upstream default applies. No "max" — clamp max/ultra to "xhigh".
+      const level = toLevel(eff);
+      if (level === "none") break;
+      if (level) body.reasoning_effort = normalizeOpenAILevel(level, ["xhigh", "high", "medium", "low", "minimal"]);
+      break;
+    }
     case "kiro":
       // Kiro thinking handled via system-tag injection in openai-to-kiro.js; no body field here.
       break;
