@@ -100,6 +100,8 @@ describe("getUsageForProvider(tokenrouter)", () => {
       used: 0,
       total: 100.019508,
       unlimited: false,
+      unit: "USD",
+      plan: "Pay as you go",
     });
 
     // Unlimited key row: no absolute remaining (null → UI falls back to 100%)
@@ -182,5 +184,29 @@ describe("parseQuotaData(tokenrouter)", () => {
 
     expect(rows[0].remaining).toBe(7.5);
     expect(rows[0].unlimited).toBe(false);
+  });
+
+  it("forwards unit for the account balance (currency) row", () => {
+    const rows = parseQuotaData("tokenrouter", {
+      quotas: {
+        "Account Balance": {
+          used: 0,
+          total: 100.019508,
+          remaining: 100.019508,
+          remainingPercentage: 100,
+          unlimited: false,
+          unit: "USD",
+          plan: "Pay as you go",
+        },
+      },
+    });
+
+    expect(rows[0]).toMatchObject({
+      name: "Account Balance",
+      remaining: 100.019508,
+      unit: "USD",
+      unlimited: false,
+      plan: "Pay as you go",
+    });
   });
 });

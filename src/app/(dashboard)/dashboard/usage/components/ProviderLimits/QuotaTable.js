@@ -128,6 +128,13 @@ export default function QuotaTable({
   const pageStart = sortedQuotas.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const pageEnd = Math.min(page * PAGE_SIZE, sortedQuotas.length);
 
+  // Currency rows (unit:"USD") render a dollar value instead of a percentage.
+  const isCurrency = (quota) => quota.unit === "USD";
+  const formatCurrency = (value) => {
+    const num = Number(value) || 0;
+    return `$${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
   const cellPad = compact ? "py-1 px-1.5" : "py-2 px-3";
   const nameText = compact ? "text-[11px]" : "text-sm";
   const resetPrimary = compact ? "text-[11px]" : "text-sm";
@@ -174,31 +181,46 @@ export default function QuotaTable({
 
               {/* Progress + used/total */}
               <div className={`min-w-0 flex-1 ${compact ? "space-y-1" : "space-y-1.5"}`}>
-                <div className={`${compact ? "h-1" : "h-1.5"} rounded-full overflow-hidden border ${colors.bgLight} ${
-                  quota.remaining === 0 ? "border-black/10 dark:border-white/10" : "border-transparent"
-                }`}>
-                  <div
-                    className={`h-full transition-all duration-300 ${colors.bg}`}
-                    style={{ width: `${Math.min(quota.remaining, 100)}%` }}
-                  />
-                </div>
+                {isCurrency(quota) ? (
+                  <div className={`flex items-center justify-between gap-1 min-w-0 ${compact ? "text-[10px]" : "text-xs"}`}>
+                    <span className="text-text-muted truncate">
+                      {quota.plan ? quota.plan : "Balance"}
+                    </span>
+                    <span className={`font-medium ${colors.text} shrink-0`}>
+                      {formatCurrency(quota.remaining)}
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <div className={`${compact ? "h-1" : "h-1.5"} rounded-full overflow-hidden border ${colors.bgLight} ${
+                      quota.remaining === 0 ? "border-black/10 dark:border-white/10" : "border-transparent"
+                    }`}>
+                      <div
+                        className={`h-full transition-all duration-300 ${colors.bg}`}
+                        style={{ width: `${Math.min(quota.remaining, 100)}%` }}
+                      />
+                    </div>
 
-                <div className={`flex items-center justify-between gap-1 min-w-0 ${compact ? "text-[10px]" : "text-xs"}`}>
-                  <span
-                    className="text-text-muted truncate"
-                    title={`${quota.used.toLocaleString()} / ${quota.total > 0 ? quota.total.toLocaleString() : "∞"}`}
-                  >
-                    {quota.used.toLocaleString()} / {quota.total > 0 ? quota.total.toLocaleString() : "∞"}
-                  </span>
-                  <span className={`font-medium ${colors.text} shrink-0`}>
-                    {quota.remaining}%
-                  </span>
-                </div>
+                    <div className={`flex items-center justify-between gap-1 min-w-0 ${compact ? "text-[10px]" : "text-xs"}`}>
+                      <span
+                        className="text-text-muted truncate"
+                        title={`${quota.used.toLocaleString()} / ${quota.total > 0 ? quota.total.toLocaleString() : "∞"}`}
+                      >
+                        {quota.used.toLocaleString()} / {quota.total > 0 ? quota.total.toLocaleString() : "∞"}
+                      </span>
+                      <span className={`font-medium ${colors.text} shrink-0`}>
+                        {quota.remaining}%
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Reset time */}
               <div className="min-w-0 shrink">
-                {countdown !== "-" || resetDisplay ? (
+                {quota.unlimited ? (
+                  <div className={`${resetPrimary} text-text-muted italic`}>Never expires</div>
+                ) : countdown !== "-" || resetDisplay ? (
                   compact ? (
                     <div
                       className={`${resetPrimary} text-text-primary font-medium truncate`}

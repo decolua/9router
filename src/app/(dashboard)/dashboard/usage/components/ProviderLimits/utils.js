@@ -544,7 +544,8 @@ export function parseQuotaData(provider, data) {
         // `status`/`expiresAt` so QuotaTable can show enable state & expiry.
         // `remaining` is forwarded only when it's a finite number: for unlimited
         // keys it's null, and getRemainingPercentage would round(null) to 0% —
-        // fall back to remainingPercentage (100) instead.
+        // fall back to remainingPercentage (100) instead. The account-balance
+        // row carries unit:"USD" so QuotaTable renders a currency value, not a %.
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([name, quota]) => {
             normalizedQuotas.push({
@@ -556,6 +557,8 @@ export function parseQuotaData(provider, data) {
               unlimited: quota.unlimited !== false,
               resetAt: quota.expiresAt || quota.resetAt || null,
               status: quota.status,
+              unit: quota.unit,
+              plan: quota.plan,
             });
           });
         }

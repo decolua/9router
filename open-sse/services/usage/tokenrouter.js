@@ -98,6 +98,8 @@ export async function getTokenRouterUsage(providerSpecificData = {}, proxyOption
         remainingPercentage: 100,
         unlimited: false,
         wallet: true,
+        unit: "USD",
+        plan: "Pay as you go",
         meta: {
           topUpBalance: formatMoney(topUp),
           voucherEfficientAmount: formatMoney(voucher),
