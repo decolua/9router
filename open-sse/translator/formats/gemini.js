@@ -61,7 +61,7 @@ export function convertOpenAIContentToParts(content) {
           const mimeType = mimePart.split(";")[0];
 
           parts.push({
-            inlineData: { mime_type: mimeType, data: data }
+            inlineData: { mimeType: mimeType, data: data }
           });
         }
       } else if (item.type === OPENAI_BLOCK.IMAGE_URL && item.image_url?.url && (item.image_url.url.startsWith("http://") || item.image_url.url.startsWith("https://"))) {
@@ -72,7 +72,7 @@ export function convertOpenAIContentToParts(content) {
         const format = item.input_audio.format || "wav";
         const mimeType = format === "mp3" ? "audio/mpeg" : `audio/${format}`;
         parts.push({
-          inlineData: { mime_type: mimeType, data: item.input_audio.data }
+          inlineData: { mimeType: mimeType, data: item.input_audio.data }
         });
       } else if (item.type === OPENAI_BLOCK.AUDIO_URL && item.audio_url?.url?.startsWith("data:")) {
         const url = item.audio_url.url;
@@ -82,7 +82,7 @@ export function convertOpenAIContentToParts(content) {
           const data = url.substring(commaIndex + 1);
           const mimeType = mimePart.split(";")[0];
           parts.push({
-            inlineData: { mime_type: mimeType, data: data }
+            inlineData: { mimeType: mimeType, data: data }
           });
         }
       } else if (item.type === OPENAI_BLOCK.FILE && item.file?.file_data?.startsWith("data:")) {
@@ -91,7 +91,7 @@ export function convertOpenAIContentToParts(content) {
         if (commaIndex !== -1) {
           const mimeType = url.substring(5, commaIndex).split(";")[0];
           const data = url.substring(commaIndex + 1);
-          parts.push({ inlineData: { mime_type: mimeType, data: data } });
+          parts.push({ inlineData: { mimeType: mimeType, data: data } });
         }
       }
     }

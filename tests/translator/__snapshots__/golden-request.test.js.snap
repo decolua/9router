@@ -135,7 +135,7 @@ exports[`GOLDEN request: OpenAI → Gemini > full body (system/image/tool/tool_r
         {
           "inlineData": {
             "data": "IMGDATA",
-            "mime_type": "image/png",
+            "mimeType": "image/png",
           },
         },
       ],

@@ -20,7 +20,7 @@ describe("file/document block support", () => {
     ]);
     const inline = parts.find((p) => p.inlineData);
     expect(inline).toBeTruthy();
-    expect(inline.inlineData.mime_type).toBe("application/pdf");
+    expect(inline.inlineData.mimeType).toBe("application/pdf");
     expect(inline.inlineData.data).toBe("JVBERi0xLjE=");
   });
 

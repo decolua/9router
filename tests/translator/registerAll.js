@@ -4,6 +4,7 @@ import "../../open-sse/translator/request/claude-to-openai.js";
 import "../../open-sse/translator/request/openai-to-claude.js";
 import "../../open-sse/translator/request/gemini-to-openai.js";
 import "../../open-sse/translator/request/openai-to-gemini.js";
+import "../../open-sse/translator/request/claude-to-antigravity.js";
 import "../../open-sse/translator/request/openai-to-vertex.js";
 import "../../open-sse/translator/request/antigravity-to-openai.js";
 import "../../open-sse/translator/request/openai-responses.js";
