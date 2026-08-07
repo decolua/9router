@@ -1,0 +1,1 @@
+{"project": "9Router", "namespace": "9router", "version": 2, "last_tick": null, "ticks_total": 0, "ticks_idle": 0, "cooldown_s": 7200, "service_port": null, "service_url": null, "health_endpoint": null, "git_branch": "federation", "git_remote": "origin", "last_commit": null, "updated_at": "2026-08-07 07:05:48.210972"}
