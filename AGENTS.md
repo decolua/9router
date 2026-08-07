@@ -38,7 +38,7 @@ node tests/__baseline__/verify-no-regression.mjs <vitest-json-results>  # regres
 npx eslint .                                                          # lint
 ```
 
-**The suite is NOT all-green by design**: ~938 pass / ~64 fail baseline with a
+**The suite is NOT all-green by design**: ~1673 pass / ~88 fail / ~59 skip baseline with a
 catalogued `tests/__baseline__/known-fails.txt`. Judge regressions with
 `verify-no-regression.mjs`, never a raw run. `real/*.real.test.js` need live
 credentials — skip them.
