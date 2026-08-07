@@ -24,8 +24,9 @@ tasks:
   - Edge apply is transactional per revision batch and idempotent; unknown migration
     version -> SCHEMA_BLOCKED pause
   - Replication tests land under tests/federation/
-  status: pending
+  status: complete
   created_at: '2026-08-07T07:15:55.915879+00:00'
+  completed_at: '2026-08-07T15:58:16.396178+00:00'
 - id: fed-003
   title: Edge proxy + role guard (custom-server.js forwarding middleware, roleGuard.js,
     FEDERATION_TOKEN Bearer auth)
