@@ -373,7 +373,8 @@ export class KiroExecutor extends BaseExecutor {
             maxBytes,
             ttftTimeoutMs,
             stallTimeoutMs,
-            repairEnabled
+            repairEnabled,
+            toolNameMap: args.toolNameMap
           });
           if (abortController.signal.aborted) throw makeAbortError(abortController.signal.reason);
           controller.enqueue(bytes);
@@ -518,6 +519,7 @@ export class KiroExecutor extends BaseExecutor {
     let diagnostics;
     const transformed = this.transformEventStreamToSSE(rawResponse, model, {
       maxToolBytes: Math.max(1, Math.floor(options.maxBytes / 2)),
+      toolNameMap: options.toolNameMap,
       onTerminalState: (value) => {
         diagnostics = value;
       }
@@ -726,7 +728,7 @@ export class KiroExecutor extends BaseExecutor {
             index,
             id: tool.id,
             type: "function",
-            function: { name: tool.name, arguments: "" }
+            function: { name: options.toolNameMap?.get(tool.name) || tool.name, arguments: "" }
           }]
         });
         emitDelta(controller, {

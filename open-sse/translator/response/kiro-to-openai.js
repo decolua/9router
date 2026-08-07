@@ -109,7 +109,7 @@ export function kiroToOpenAIResponse(chunk, state) {
     state.hadToolUse = true;
     const toolUse = data.toolUseEvent || data;
     const toolCallId = toolUse.toolUseId || fallbackToolCallId();
-    const toolName = toolUse.name || "";
+    const toolName = state.toolNameMap?.get(toolUse.name) || toolUse.name || "";
     const toolInput = toolUse.input || {};
 
     const openaiChunk = buildChunk(chunkMeta(state), {
