@@ -23,6 +23,7 @@ function buildProviderEntry(r) {
     id: r.id,
     alias: r.uiAlias || r.alias,
     ...(r.hidden ? { hidden: true } : {}),
+    ...(r.topologyHiddenByDefault ? { topologyHiddenByDefault: true } : {}),
     ...mediaFields,
     ...(r.priority !== undefined ? { priority: r.priority } : {}),
     ...(r.hasFree ? { hasFree: true } : {}),

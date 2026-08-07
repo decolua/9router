@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import PropTypes from "prop-types";
 import {
   Card,
@@ -105,6 +105,7 @@ export default function ProvidersPage() {
     useState(false);
   const [testingMode, setTestingMode] = useState(null);
   const [testResults, setTestResults] = useState(null);
+  const [topologyVisibility, setTopologyVisibility] = useState({});
   const notify = useNotificationStore();
   const searchQuery = useHeaderSearchStore((s) => s.query);
   const registerSearch = useHeaderSearchStore((s) => s.register);
@@ -148,15 +149,20 @@ export default function ProvidersPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [connectionsRes, nodesRes] = await Promise.all([
+        const [connectionsRes, nodesRes, settingsRes] = await Promise.all([
           fetch("/api/providers"),
           fetch("/api/provider-nodes"),
+          fetch("/api/settings", { cache: "no-store" }),
         ]);
         const connectionsData = await connectionsRes.json();
         const nodesData = await nodesRes.json();
         if (connectionsRes.ok)
           setConnections(connectionsData.connections || []);
         if (nodesRes.ok) setProviderNodes(nodesData.nodes || []);
+        if (settingsRes.ok) {
+          const settingsData = await settingsRes.json();
+          setTopologyVisibility(settingsData.topologyVisibility || {});
+        }
       } catch (error) {
         console.log("Error fetching data:", error);
       } finally {
@@ -165,6 +171,24 @@ export default function ProvidersPage() {
     };
     fetchData();
   }, []);
+
+  // Toggle whether a noAuth free provider appears on the usage topology canvas.
+  const handleToggleTopology = useCallback(async (providerId, visible) => {
+    const previous = topologyVisibility;
+    const next = { ...previous, [providerId]: visible };
+    setTopologyVisibility(next);
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topologyVisibility: next }),
+      });
+      if (!response.ok) throw new Error("Failed to update topology visibility");
+    } catch (error) {
+      console.error("Error updating topology visibility:", error);
+      setTopologyVisibility(previous);
+    }
+  }, [topologyVisibility]);
 
   const getProviderStats = (providerId, authType) => {
     const authTypes = Array.isArray(authType) ? authType : [authType];
@@ -502,6 +526,15 @@ export default function ProvidersPage() {
             // Dual-auth (e.g. kiro): count/toggle oauth + apikey/api_key so the
             // card total matches the provider detail page.
             const freeAuthTypes = dualAuthTypes(info, key);
+            // noAuth free providers (opencode, mimo-free) get a topology
+            // visibility toggle instead of an enable/disable switch.
+            const topologySetting = topologyVisibility?.[key];
+            const topologyVisible =
+              topologySetting === false
+                ? false
+                : topologySetting === true
+                  ? true
+                  : !info.topologyHiddenByDefault;
             return (
               <ProviderCard
                 key={key}
@@ -511,6 +544,12 @@ export default function ProvidersPage() {
                 authType="free"
                 onToggle={(active) =>
                   handleToggleProvider(key, freeAuthTypes, active)
+                }
+                topologyVisible={topologyVisible}
+                onToggleTopology={
+                  info.noAuth
+                    ? (visible) => handleToggleTopology(key, visible)
+                    : undefined
                 }
               />
             );
@@ -653,7 +692,7 @@ export default function ProvidersPage() {
   );
 }
 
-function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
+function ProviderCard({ providerId, provider, stats, authType, onToggle, topologyVisible, onToggleTopology }) {
   const { connected, error, errorCode, errorTime, allDisabled } = stats;
   const isNoAuth = !!provider.noAuth;
 
@@ -669,6 +708,13 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
     apikey: "API Key",
     compatible: "Compatible",
   };
+
+  // noAuth free providers have no connections, so they can't be enabled/disabled
+  // in the usual sense. Instead the toggle controls whether they appear on the
+  // usage topology canvas.
+  const hasConnection = stats.total > 0;
+  const topologyToggleable = isNoAuth && typeof onToggleTopology === "function";
+  const topologyOn = topologyVisible !== false;
 
   return (
     <Link href={`/dashboard/providers/${providerId}`} className="group min-w-0">
@@ -721,7 +767,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {stats.total > 0 && (
+            {hasConnection && (
               <div
                 className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
                 onClick={(e) => {
@@ -735,6 +781,27 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
                   checked={!allDisabled}
                   onChange={() => {}}
                   title={allDisabled ? "Enable provider" : "Disable provider"}
+                />
+              </div>
+            )}
+            {topologyToggleable && (
+              <div
+                className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onToggleTopology(!topologyOn);
+                }}
+              >
+                <Toggle
+                  size="sm"
+                  checked={topologyOn}
+                  onChange={() => {}}
+                  title={
+                    topologyOn
+                      ? "Hide from usage topology"
+                      : "Show on usage topology"
+                  }
                 />
               </div>
             )}
