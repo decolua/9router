@@ -44,7 +44,7 @@ export async function PUT(request, context) {
     const { id } = await context.params;
     const body = await request.json();
     if (Array.isArray(body.grants)) {
-      const grants = body.grants;
+      const grants = body.grants.map((g) => (typeof g === "string" ? g : g?.instanceId)).filter(Boolean);
       const toolAllowlists = Array.isArray(body.toolAllowlists) ? body.toolAllowlists : undefined;
       await setGrants(id, grants, toolAllowlists);
     }
