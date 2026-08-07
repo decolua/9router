@@ -1088,6 +1088,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > openai → headers (
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > openmodel → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > openrouter → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1765,6 +1784,13 @@ exports[`GOLDEN buildUrl (default executor providers) > openai → url (stream +
 {
   "nonStream": "https://api.openai.com/v1/chat/completions",
   "stream": "https://api.openai.com/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > openmodel → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.openmodel.ai/v1/chat/completions",
+  "stream": "https://api.openmodel.ai/v1/chat/completions",
 }
 `;
 
