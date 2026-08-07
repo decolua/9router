@@ -2,7 +2,11 @@
 const isNode = typeof process !== "undefined" && process.versions?.node && typeof window === "undefined";
 
 // Check if logging is enabled via environment variable (default: false)
-const LOGGING_ENABLED = typeof process !== "undefined" && process.env?.ENABLE_REQUEST_LOGS === 'true';
+// Check at runtime (not module load time) so ENABLE_REQUEST_LOGS=true
+// takes effect even if env var is set after module import (#2987)
+function isLoggingEnabled() {
+  return typeof process !== "undefined" && process.env?.ENABLE_REQUEST_LOGS === 'true';
+}
 
 let fs = null;
 let path = null;
@@ -10,7 +14,7 @@ let LOGS_DIR = null;
 
 // Lazy load Node.js modules (avoid top-level await)
 async function ensureNodeModules() {
-  if (!isNode || !LOGGING_ENABLED || fs) return;
+  if (!isNode || !isLoggingEnabled() || fs) return;
   try {
     fs = await import("fs");
     path = await import("path");
@@ -116,7 +120,7 @@ function createNoOpLogger() {
  */
 export async function createRequestLogger(sourceFormat, targetFormat, model) {
   // Return no-op logger if logging is disabled
-  if (!LOGGING_ENABLED) {
+  if (!isLoggingEnabled()) {
     return createNoOpLogger();
   }
   

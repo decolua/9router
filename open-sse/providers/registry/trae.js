@@ -16,6 +16,8 @@ export default {
     },
   },
   category: "apikey",
+  authModes: ["apikey", "oauth"],
+  hasOAuth: true,
   transport: {
     baseUrl: "https://api.trae.ai/v1/chat/completions",
     validateUrl: "https://api.trae.ai/v1/models",

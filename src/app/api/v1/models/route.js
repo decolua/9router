@@ -375,7 +375,11 @@ export async function buildModelsList(kindFilter, options = {}) {
           )
         : providerModels.map((model) => model.id);
 
-      if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
+      // For custom providers (OpenAI/Anthropic-compatible), if enabledModels is
+      // configured, always use those — never fetch ALL models from the provider (#3115)
+      if (isCompatibleProvider && hasExplicitEnabledModels && rawModelIds.length > 0) {
+        // Use enabledModels as-is (already set above)
+      } else if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
         rawModelIds = await fetchCompatibleModelIds(conn);
       }
 
