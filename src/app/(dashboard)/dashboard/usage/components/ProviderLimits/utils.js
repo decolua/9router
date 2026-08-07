@@ -305,21 +305,36 @@ export function getQuotaVisibilityKey(quota) {
   return String(quota.modelKey || quota.name || "").trim();
 }
 
-function getProviderHiddenQuotaSet(provider, quotaVisibility) {
-  const hidden = quotaVisibility?.[provider]?.hidden;
-  return new Set(Array.isArray(hidden) ? hidden.map(String) : []);
+/**
+ * Resolve the hidden-quota set for a scope.
+ *
+ * The primary scope key is the connection id so that two connections of the
+ * same provider (e.g. two CodeBuddy CN accounts) hide their rows
+ * independently. We fall back to the legacy provider-scoped key so settings
+ * saved before this change (keyed by provider id) keep working — the provider
+ * fallback still applies to every connection of that provider, but any new
+ * hide/show writes use the connection id and are isolated per account.
+ */
+function getHiddenQuotaSet(scopeKey, quotaVisibility, legacyScopeKey) {
+  const byScope = quotaVisibility?.[scopeKey]?.hidden;
+  if (Array.isArray(byScope)) return new Set(byScope.map(String));
+  if (legacyScopeKey && legacyScopeKey !== scopeKey) {
+    const byLegacy = quotaVisibility?.[legacyScopeKey]?.hidden;
+    if (Array.isArray(byLegacy)) return new Set(byLegacy.map(String));
+  }
+  return new Set();
 }
 
-export function filterQuotasByVisibility(provider, quotas = [], quotaVisibility = {}) {
+export function filterQuotasByVisibility(scopeKey, quotas = [], quotaVisibility = {}, legacyScopeKey) {
   if (!Array.isArray(quotas) || quotas.length === 0) return [];
-  const hidden = getProviderHiddenQuotaSet(provider, quotaVisibility);
+  const hidden = getHiddenQuotaSet(scopeKey, quotaVisibility, legacyScopeKey);
   if (hidden.size === 0) return quotas;
   return quotas.filter((quota) => !hidden.has(getQuotaVisibilityKey(quota)));
 }
 
-export function getHiddenQuotaRows(provider, quotas = [], quotaVisibility = {}) {
+export function getHiddenQuotaRows(scopeKey, quotas = [], quotaVisibility = {}, legacyScopeKey) {
   if (!Array.isArray(quotas) || quotas.length === 0) return [];
-  const hidden = getProviderHiddenQuotaSet(provider, quotaVisibility);
+  const hidden = getHiddenQuotaSet(scopeKey, quotaVisibility, legacyScopeKey);
   if (hidden.size === 0) return [];
   return quotas.filter((quota) => hidden.has(getQuotaVisibilityKey(quota)));
 }

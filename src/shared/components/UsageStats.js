@@ -10,6 +10,16 @@ function isLLMProvider(id) {
   if (!p?.serviceKinds) return true;
   return p.serviceKinds.includes("llm");
 }
+
+// A noAuth free provider is shown on the usage topology canvas unless the user
+// has hidden it via the providers-page toggle, or it defaults hidden (e.g. a
+// terminated service like mimo-free) and hasn't been explicitly shown.
+function isTopologyVisible(p, topologyVisibility) {
+  const setting = topologyVisibility?.[p.id];
+  if (setting === false) return false;
+  if (setting === true) return true;
+  return !p.topologyHiddenByDefault;
+}
 import Badge from "./Badge";
 import Card from "./Card";
 import OverviewCards from "@/app/(dashboard)/dashboard/usage/components/OverviewCards";
@@ -213,6 +223,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const [tableView, setTableView] = useState("model");
   const [viewMode, setViewMode] = useState("costs");
   const [providers, setProviders] = useState([]);
+  const [topologyVisibility, setTopologyVisibility] = useState({});
   const [periodLocal, setPeriodLocal] = useState("today");
   const isInitialLoad = useRef(true);
   const hasLoadedStats = useRef(false);
@@ -225,8 +236,12 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     Promise.all([
       fetch("/api/providers").then((r) => r.ok ? r.json() : null),
       fetch("/api/provider-nodes").then((r) => r.ok ? r.json() : null),
+      fetch("/api/settings", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((s) => s?.topologyVisibility || {}),
     ])
-      .then(([d, nodesData]) => {
+      .then(([d, nodesData, topologyVisibility]) => {
+        setTopologyVisibility(topologyVisibility);
         // Build node name lookup for custom providers
         const nodeNameMap = {};
         for (const node of (nodesData?.nodes || [])) {
@@ -244,7 +259,13 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           nodeName: nodeNameMap[c.provider] || null,
         }));
         const noAuthProviders = Object.values(FREE_PROVIDERS)
-          .filter((p) => p.noAuth && !seen.has(p.id) && isLLMProvider(p.id))
+          .filter((p) =>
+            p.noAuth &&
+            !p.hidden &&
+            !seen.has(p.id) &&
+            isLLMProvider(p.id) &&
+            isTopologyVisible(p, topologyVisibility),
+          )
           .map((p) => ({ provider: p.id, name: p.name }));
         setProviders([...unique, ...noAuthProviders]);
       })
