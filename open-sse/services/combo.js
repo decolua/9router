@@ -584,5 +584,11 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   // 4. Judge analyzes + writes one final answer (streams to client if requested).
   const judgeBody = appendUserTurn(body, buildJudgePrompt(answers));
   log.info("FUSION", `Judging ${answers.length} answers with ${judge}`);
+  
+  // Ensure stream_options is set when streaming to get usage data
+  if (body.stream === true && !judgeBody.stream_options) {
+    judgeBody.stream_options = { include_usage: true };
+  }
+  
   return handleSingleModel(judgeBody, judge);
 }
