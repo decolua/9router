@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnectionById } from "@/models";
+import { getProviderConnectionById, getProviderNodeById, getProviderConnections } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, refreshCodexToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
@@ -442,7 +442,16 @@ const PROVIDER_MODELS_CONFIG = {
 export async function GET(request, { params }) {
   try {
     const { id } = await params;
-    const connection = await getProviderConnectionById(id);
+    let connection = await getProviderConnectionById(id);
+
+    // If not found by connection id, try node id (openai-compatible-* / anthropic-compatible-*)
+    if (!connection && (isOpenAICompatibleProvider(id) || isAnthropicCompatibleProvider(id))) {
+      const node = await getProviderNodeById(id);
+      if (node) {
+        const list = await getProviderConnections({ provider: id });
+        connection = list[0] || null;
+      }
+    }
 
     if (!connection) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
