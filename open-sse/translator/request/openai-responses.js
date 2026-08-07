@@ -31,11 +31,14 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   let currentAssistantMsg = null;
   let pendingToolResults = [];
   let pendingReasoning = "";
+  let pendingReasoningEncrypted = "";
+  const additionalTools = [];
+  const customToolNames = new Set();
 
   const inputItems = normalizeResponsesInput(body.input);
   if (!inputItems) return body;
 
-  // Extract reasoning text from summary[].text or encrypted_content fallback
+  // Extract reasoning text from summary[].text (encrypted_content is continuity-only)
   const extractReasoningText = (item) => {
     if (Array.isArray(item.summary)) {
       const txt = item.summary.map(s => s?.text || "").filter(Boolean).join("\n");
@@ -46,6 +49,13 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       if (txt) return txt;
     }
     return "";
+  };
+
+  const attachPendingReasoning = (msg) => {
+    if (pendingReasoning) msg.reasoning_content = pendingReasoning;
+    if (pendingReasoningEncrypted) msg.encrypted_content = pendingReasoningEncrypted;
+    pendingReasoning = "";
+    pendingReasoningEncrypted = "";
   };
 
   for (const item of inputItems) {
@@ -80,14 +90,15 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         })
         : item.content;
       const msg = { role: item.role, content };
-      // Attach buffered reasoning to assistant turn (required by xiaomi-mimo thinking mode)
-      if (item.role === ROLE.ASSISTANT && pendingReasoning) {
-        msg.reasoning_content = pendingReasoning;
+      // Attach buffered reasoning to assistant turn (required by xiaomi-mimo + store=false continuity)
+      if (item.role === ROLE.ASSISTANT) attachPendingReasoning(msg);
+      else {
+        pendingReasoning = "";
+        pendingReasoningEncrypted = "";
       }
-      pendingReasoning = "";
       result.messages.push(msg);
     }
-    else if (itemType === RESPONSES_ITEM.FUNCTION_CALL) {
+    else if (itemType === RESPONSES_ITEM.FUNCTION_CALL || itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) {
       // Start or append to assistant message with tool_calls
       if (!currentAssistantMsg) {
         currentAssistantMsg = {
@@ -95,23 +106,24 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
           content: null,
           tool_calls: []
         };
-        if (pendingReasoning) {
-          currentAssistantMsg.reasoning_content = pendingReasoning;
-          pendingReasoning = "";
-        }
+        attachPendingReasoning(currentAssistantMsg);
       }
       // Skip items with empty/missing name — Codex/OpenAI reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
+      if (itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) customToolNames.add(item.name);
+      const toolInput = itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL
+        ? { input: typeof item.input === "string" ? item.input : JSON.stringify(item.input ?? "") }
+        : item.arguments;
       currentAssistantMsg.tool_calls.push({
         id: item.call_id,
         type: OPENAI_BLOCK.FUNCTION,
         function: {
           name: item.name,
-          arguments: item.arguments
+          arguments: typeof toolInput === "string" ? toolInput : JSON.stringify(toolInput ?? {})
         }
       });
     }
-    else if (itemType === RESPONSES_ITEM.FUNCTION_CALL_OUTPUT) {
+    else if (itemType === RESPONSES_ITEM.FUNCTION_CALL_OUTPUT || itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL_OUTPUT) {
       // Flush assistant message first if exists
       if (currentAssistantMsg) {
         result.messages.push(currentAssistantMsg);
@@ -131,10 +143,19 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         content: typeof item.output === "string" ? item.output : JSON.stringify(item.output)
       });
     }
+    else if (itemType === RESPONSES_ITEM.ADDITIONAL_TOOLS) {
+      if (Array.isArray(item.tools)) additionalTools.push(...item.tools);
+    }
     else if (itemType === RESPONSES_ITEM.REASONING) {
-      // Buffer reasoning text; attached to next assistant message/function_call
+      // Buffer reasoning text; attached to next assistant message/function_call.
+      // Also stash encrypted_content so a later openai→responses hop can restore
+      // the store=false continuity blob (Grok CLI / Codex multi-turn).
       const txt = extractReasoningText(item);
       if (txt) pendingReasoning = pendingReasoning ? `${pendingReasoning}\n${txt}` : txt;
+      if (typeof item.encrypted_content === "string" && item.encrypted_content) {
+        // Prefer attaching to the next assistant message we create
+        pendingReasoningEncrypted = item.encrypted_content;
+      }
       continue;
     }
   }
@@ -154,15 +175,45 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   // explicit `name` field and cannot be represented as Chat Completions function declarations.
   // Filter them out to avoid sending nameless functionDeclarations to downstream providers
   // such as Gemini, which strictly validates function names.
-  if (body.tools && Array.isArray(body.tools)) {
-    result.tools = body.tools
+  const responseTools = [
+    ...(Array.isArray(body.tools) ? body.tools : []),
+    ...additionalTools,
+  ];
+  if (responseTools.length > 0) {
+    result.tools = responseTools
       .map(tool => {
         // Already in Chat Completions format: { type: "function", function: { name, ... } }
         if (tool.function) return tool;
-        // Responses API function tool: { type: "function", name, description, parameters }
-        // Only convert when a non-empty name is present; skip hosted tools without one.
+        // Responses API function/custom tool: { type, name, description, parameters|format }.
+        // Chat Completions has no freeform custom-tool declaration, so expose custom
+        // tools as functions with one raw `input` string while retaining their names
+        // in translator-only metadata for the response conversion.
         const name = tool.name;
         if (!name || typeof name !== "string" || name.trim() === "") return null;
+        if (tool.type === "custom") {
+          customToolNames.add(name);
+          const formatHint = [tool.format?.syntax, tool.format?.definition].filter(Boolean).join("\n");
+          return {
+            type: OPENAI_BLOCK.FUNCTION,
+            function: {
+              name,
+              description: [String(tool.description || ""), formatHint].filter(Boolean).join("\n\n"),
+              parameters: {
+                type: "object",
+                properties: {
+                  input: {
+                    type: "string",
+                    description: "Raw freeform input for this custom tool"
+                  }
+                },
+                required: ["input"],
+                additionalProperties: false
+              }
+            }
+          };
+        }
+        // Responses API function tool: { type: "function", name, description, parameters }
+        // Only convert when a non-empty name is present; skip hosted tools without one.
         return {
           type: OPENAI_BLOCK.FUNCTION,
           function: {
@@ -175,6 +226,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       })
       .filter(Boolean);
   }
+  if (customToolNames.size > 0) result._customToolNames = [...customToolNames];
 
   // Cleanup Responses API specific fields
   // Map Responses-only max_output_tokens to Chat max_tokens (avoid leaking unknown field upstream)
@@ -188,7 +240,11 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   delete result.include;
   delete result.prompt_cache_key;
   delete result.store;
+  if (typeof result.reasoning?.effort === "string") {
+    result.reasoning_effort = result.reasoning.effort;
+  }
   delete result.reasoning;
+  delete result.client_metadata;
 
   return result;
 }
@@ -200,6 +256,43 @@ function normalizeToolParameters(params) {
   if (!params) return { type: "object", properties: {} };
   if (params.type === "object" && !params.properties) return { ...params, properties: {} };
   return params;
+}
+
+/**
+ * Build a Responses `reasoning` input item from Chat Completions assistant fields.
+ * Preserves encrypted blobs needed by store=false multi-turn (Grok CLI / Codex).
+ * Returns null when the message has nothing useful to re-send.
+ */
+function buildReasoningInputItem(msg) {
+  if (!msg || typeof msg !== "object") return null;
+
+  const encrypted =
+    (typeof msg.encrypted_content === "string" && msg.encrypted_content) ||
+    (typeof msg.reasoning_encrypted_content === "string" && msg.reasoning_encrypted_content) ||
+    (typeof msg.reasoning?.encrypted_content === "string" && msg.reasoning.encrypted_content) ||
+    "";
+
+  let summaryText = "";
+  if (typeof msg.reasoning_content === "string" && msg.reasoning_content.trim()) {
+    summaryText = msg.reasoning_content;
+  } else if (typeof msg.reasoning === "string" && msg.reasoning.trim()) {
+    summaryText = msg.reasoning;
+  } else if (Array.isArray(msg.reasoning_details)) {
+    summaryText = msg.reasoning_details
+      .map((d) => (typeof d?.text === "string" ? d.text : typeof d?.content === "string" ? d.content : ""))
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (!encrypted && !summaryText) return null;
+
+  const item = { type: RESPONSES_ITEM.REASONING };
+  if (summaryText) {
+    item.summary = [{ type: RESPONSES_ITEM.SUMMARY_TEXT, text: summaryText }];
+  }
+  // encrypted_content is the continuity token for store=false backends
+  if (encrypted) item.encrypted_content = encrypted;
+  return item;
 }
 
 /**
@@ -221,17 +314,26 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   const messages = body.messages || [];
 
   for (const msg of messages) {
-    if (msg.role === ROLE.SYSTEM) {
-      // Use first system message as instructions
+    if (msg.role === ROLE.SYSTEM || msg.role === ROLE.DEVELOPER) {
+      // Use the first instruction-bearing message as instructions.
+      // OpenAI recommends role="developer" for GPT-5/Codex as the system-level prompt.
       if (!hasSystemMessage) {
         result.instructions = typeof msg.content === "string" ? msg.content : "";
         hasSystemMessage = true;
       }
-      continue; // Skip system messages in input
+      continue; // Skip instruction messages in input
     }
 
     // Convert user/assistant messages to input items
     if (msg.role === ROLE.USER || msg.role === ROLE.ASSISTANT) {
+      // Multi-turn continuity for store=false Responses backends (Codex / Grok CLI):
+      // re-emit a reasoning item before the assistant message when the chat-format
+      // history carried reasoning text and/or encrypted_content from a prior turn.
+      if (msg.role === ROLE.ASSISTANT) {
+        const reasoningItem = buildReasoningInputItem(msg);
+        if (reasoningItem) result.input.push(reasoningItem);
+      }
+
       const contentType = msg.role === ROLE.USER ? RESPONSES_ITEM.INPUT_TEXT : RESPONSES_ITEM.OUTPUT_TEXT;
       const content = typeof msg.content === "string"
         ? [{ type: contentType, text: msg.content }]
@@ -318,6 +420,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   if (body.top_p !== undefined) result.top_p = body.top_p;
   if (body.reasoning !== undefined) result.reasoning = body.reasoning;
   if (body.reasoning_effort !== undefined) result.reasoning = { effort: body.reasoning_effort, summary: "auto" };
+  if (body.service_tier !== undefined) result.service_tier = body.service_tier;
 
   return result;
 }

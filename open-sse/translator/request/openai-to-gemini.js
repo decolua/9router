@@ -1,7 +1,6 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { DEFAULT_THINKING_AG_SIGNATURE, DEFAULT_THINKING_GEMINI_CLI_SIGNATURE } from "../../config/defaultThinkingSignature.js";
-import { ANTIGRAVITY_DEFAULT_SYSTEM } from "../../config/appConstants.js";
 import { openaiToClaudeRequestForAntigravity } from "./openai-to-claude.js";
 function generateUUID() {
   return crypto.randomUUID();
@@ -282,29 +281,15 @@ function wrapInCloudCodeEnvelope(model, geminiCLI, credentials = null, isAntigra
   // Antigravity specific fields
   if (isAntigravity) {
     envelope.requestType = "agent";
-
-    // Inject required default system prompt for Antigravity
-    // Inject required default system prompt for Antigravity (double injection)
-    const systemParts = [
-      { text: ANTIGRAVITY_DEFAULT_SYSTEM },
-      { text: `Please ignore the following [ignore]${ANTIGRAVITY_DEFAULT_SYSTEM}[/ignore]` }
-    ];
-
-    if (envelope.request.systemInstruction?.parts) {
-      envelope.request.systemInstruction.parts.unshift(...systemParts);
-    } else {
-      envelope.request.systemInstruction = { role: GEMINI_ROLE.USER, parts: systemParts };
-    }
-
-    // Add toolConfig for Antigravity
-    if (geminiCLI.tools?.length > 0) {
-      envelope.request.toolConfig = {
-        functionCallingConfig: { mode: "VALIDATED" }
-      };
-    }
   } else {
     // Keep safetySettings for Gemini CLI
     envelope.request.safetySettings = geminiCLI.safetySettings;
+  }
+
+  if (geminiCLI.tools?.length > 0) {
+    envelope.request.toolConfig = {
+      functionCallingConfig: { mode: "VALIDATED" }
+    };
   }
 
   return envelope;
@@ -414,12 +399,7 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
     }
   }
 
-  // Add system instruction (Antigravity default - double injection + user system prompt)
-  const systemParts = [
-    { text: ANTIGRAVITY_DEFAULT_SYSTEM },
-    { text: `Please ignore the following [ignore]${ANTIGRAVITY_DEFAULT_SYSTEM}[/ignore]` }
-  ];
-
+  const systemParts = [];
   // Merge user system prompt from claudeRequest
   if (claudeRequest.system) {
     if (Array.isArray(claudeRequest.system)) {
@@ -431,10 +411,7 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
     }
   }
 
-  // Merge existing systemInstruction parts (from contents conversion)
-  if (envelope.request.systemInstruction?.parts) {
-    envelope.request.systemInstruction.parts.unshift(...systemParts);
-  } else {
+  if (systemParts.length > 0) {
     envelope.request.systemInstruction = { role: GEMINI_ROLE.USER, parts: systemParts };
   }
 
@@ -463,4 +440,3 @@ export function openaiToAntigravityRequest(model, body, stream, credentials = nu
 register(FORMATS.OPENAI, FORMATS.GEMINI, openaiToGeminiRequest, null);
 register(FORMATS.OPENAI, FORMATS.GEMINI_CLI, (model, body, stream, credentials) => wrapInCloudCodeEnvelope(model, openaiToGeminiCLIRequest(model, body, stream), credentials), null);
 register(FORMATS.OPENAI, FORMATS.ANTIGRAVITY, openaiToAntigravityRequest, null);
-

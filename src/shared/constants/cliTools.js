@@ -8,9 +8,12 @@ export const MITM_TOOLS = {
     description: "Google Antigravity IDE with MITM",
     configType: "mitm",
     mitmDomain: "daily-cloudcode-pa.googleapis.com",
-    modelAliases: ["gemini-3.5-flash-low", "gemini-3-flash-agent", "gemini-3.5-flash-extra-low", "gemini-3.1-pro-low", "gemini-pro-agent", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium", "gemini-3-flash"],
+    modelAliases: ["gemini-3.6-flash-high", "gemini-3.6-flash-medium", "gemini-3.6-flash-low", "gemini-3.5-flash-low", "gemini-3-flash-agent", "gemini-3.5-flash-extra-low", "gemini-3.1-pro-low", "gemini-pro-agent", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium", "gemini-3-flash"],
     defaultModels: [
-      { id: "gemini-3.5-flash-low", name: "Gemini 3.5 Flash (Medium) / Default", alias: "gemini-3.5-flash-low" },
+      { id: "gemini-3.6-flash-high", name: "Gemini 3.6 Flash (High)", alias: "gemini-3.6-flash-high" },
+      { id: "gemini-3.6-flash-medium", name: "Gemini 3.6 Flash (Medium)", alias: "gemini-3.6-flash-medium" },
+      { id: "gemini-3.6-flash-low", name: "Gemini 3.6 Flash (Low)", alias: "gemini-3.6-flash-low" },
+      { id: "gemini-3.5-flash-low", name: "Gemini 3.5 Flash (Medium) / Default", alias: "gemini-3.5-flash-low", mandatory: true },
       { id: "gemini-3-flash-agent", name: "Gemini 3.5 Flash (High)", alias: "gemini-3-flash-agent" },
       { id: "gemini-3.5-flash-extra-low", name: "Gemini 3.5 Flash (Low)", alias: "gemini-3.5-flash-extra-low" },
       { id: "gemini-3.1-pro-low", name: "Gemini 3.1 Pro (Low)", alias: "gemini-3.1-pro-low" },
@@ -56,11 +59,15 @@ export const MITM_TOOLS = {
     configType: "mitm",
     mitmDomain: "q.us-east-1.amazonaws.com",
     defaultModels: [
+      { id: "claude-sonnet-5", name: "Claude Sonnet 5", alias: "claude-sonnet-5" },
       { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5", alias: "claude-sonnet-4.5" },
       { id: "claude-sonnet-4", name: "Claude Sonnet 4", alias: "claude-sonnet-4" },
       { id: "claude-haiku-4.5", name: "Claude Haiku 4.5", alias: "claude-haiku-4.5" },
       { id: "deepseek-3.2", name: "DeepSeek 3.2", alias: "deepseek-3.2" },
       { id: "minimax-m2.1", name: "MiniMax M2.1", alias: "minimax-m2.1" },
+      { id: "gpt-5.6-sol", name: "GPT 5.6 Sol", alias: "gpt-5.6-sol", contextLength: 272000, rateMultiplier: 2.4 },
+      { id: "gpt-5.6-terra", name: "GPT 5.6 Terra", alias: "gpt-5.6-terra", contextLength: 272000, rateMultiplier: 1.2 },
+      { id: "gpt-5.6-luna", name: "GPT 5.6 Luna", alias: "gpt-5.6-luna", contextLength: 272000, rateMultiplier: 0.6 },
       { id: "simple-task", name: "Qwen3 Coder Next", alias: "simple-task" },
     ],
   },
@@ -94,13 +101,15 @@ export const CLI_TOOLS = {
       model: "ANTHROPIC_MODEL",
       opusModel: "ANTHROPIC_DEFAULT_OPUS_MODEL",
       sonnetModel: "ANTHROPIC_DEFAULT_SONNET_MODEL",
+      fableModel: "ANTHROPIC_DEFAULT_FABLE_MODEL",
       haikuModel: "ANTHROPIC_DEFAULT_HAIKU_MODEL",
     },
-    modelAliases: ["default", "sonnet", "opus", "haiku", "opusplan"],
+    modelAliases: ["default", "sonnet", "opus", "fable", "haiku", "opusplan"],
     settingsFile: "~/.claude/settings.json",
     defaultModels: [
-      { id: "opus", name: "Claude Opus", alias: "opus", envKey: "ANTHROPIC_DEFAULT_OPUS_MODEL", defaultValue: "cc/claude-opus-4-6" },
-      { id: "sonnet", name: "Claude Sonnet", alias: "sonnet", envKey: "ANTHROPIC_DEFAULT_SONNET_MODEL", defaultValue: "cc/claude-sonnet-4-6" },
+      { id: "fable", name: "Claude Fable", alias: "fable", envKey: "ANTHROPIC_DEFAULT_FABLE_MODEL", defaultValue: "cc/claude-fable-5" },
+      { id: "opus", name: "Claude Opus", alias: "opus", envKey: "ANTHROPIC_DEFAULT_OPUS_MODEL", defaultValue: "cc/claude-opus-5" },
+      { id: "sonnet", name: "Claude Sonnet", alias: "sonnet", envKey: "ANTHROPIC_DEFAULT_SONNET_MODEL", defaultValue: "cc/claude-sonnet-5" },
       { id: "haiku", name: "Claude Haiku", alias: "haiku", envKey: "ANTHROPIC_DEFAULT_HAIKU_MODEL", defaultValue: "cc/claude-haiku-4-5-20251001" },
     ],
   },
@@ -351,11 +360,100 @@ amp --model "{{model}}"
       },
     ],
     defaultModels: [
-      { id: "claude-opus-4-7", name: "Claude Opus 4.7", alias: "opus", defaultValue: "cc/claude-opus-4-7" },
+      { id: "claude-opus-5", name: "Claude Opus 5", alias: "opus", defaultValue: "cc/claude-opus-5" },
       { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", alias: "sonnet", defaultValue: "cc/claude-sonnet-4-6" },
       { id: "gpt-5.5", name: "GPT 5.5", alias: "gpt5", defaultValue: "cx/gpt-5.5" },
       { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro", alias: "gemini", defaultValue: "gemini/gemini-3.1-pro" },
     ],
+  },
+  "grok-build": {
+    id: "grok-build",
+    name: "Grok Build",
+    image: "/providers/grok-cli.png",
+    color: "#1DA1F2",
+    description: "xAI Grok Build TUI coding agent",
+    configType: "custom",
+    docsUrl: "https://x.ai/cli",
+    defaultCommand: "grok",
+    notes: [
+      {
+        type: "info",
+        text: "Grok Build uses ~/.grok/config.toml. 9Router writes a [model.9router] custom model and sets it as the default.",
+      },
+      {
+        type: "info",
+        text: "After Apply, run grok (or /model 9router) to use the routed model. Switch back anytime with /model grok-build.",
+      },
+      {
+        type: "warning",
+        text: "Config path: Linux/macOS ~/.grok/config.toml • Windows %USERPROFILE%\\.grok\\config.toml",
+      },
+    ],
+  },
+  devin: {
+    id: "devin",
+    name: "Devin CLI",
+    image: "/providers/devin-cli.png",
+    color: "#6366F1",
+    description: "Cognition Devin CLI — local binary called by the Devin CLI provider via ACP/stdio",
+    configType: "guide",
+    installUrl: "https://cli.devin.ai",
+    notes: [
+      { type: "info", text: "This is a local dependency, not a routed CLI. The Devin CLI provider spawns `devin acp --agent-type summarizer` and relays its output." },
+      { type: "warning", text: "Install the Devin CLI and run `devin auth login` — without it, the provider returns a spawn error on first request." },
+    ],
+    guideSteps: [
+      { step: 1, title: "Install Devin CLI", desc: "Install via the official installer at cli.devin.ai.", docsUrl: "https://cli.devin.ai" },
+      { step: 2, title: "Authenticate", desc: "Log in once so the binary stores its own credentials." },
+      { step: 3, title: "Use the provider", desc: "Pick any Devin CLI model under the Providers tab — no API key field needed." },
+    ],
+    codeBlock: {
+      language: "bash",
+      code: `# Install Devin CLI (see https://cli.devin.ai for options)
+devin auth login
+
+# Verify detection (optional)
+devin --version`,
+    },
+  },
+  opendesign: {
+    id: "opendesign",
+    name: "OpenDesign",
+    image: "/providers/opendesign.png",
+    color: "#7C3AED",
+    description: "OpenDesign — claude.ai/design open-sourced! Agent-native design skills pack",
+    docsUrl: "https://github.com/manalkaff/opendesign",
+    configType: "guide",
+    notes: [
+      { type: "info", text: "OpenDesign ships as a plugin/skills pack installed into Claude Code, Cursor, OpenAI Codex, Gemini CLI, or OpenCode. It inherits the host agent's model config, so once your host points at 9Router, /opendesign design sessions route through 9Router automatically — no extra env vars needed." },
+      { type: "info", text: "Invoke with /opendesign <brief>. Covers decks, wireframes, interactive prototypes, design-system extraction, and brand systems, with a verifier subagent that checks output against the brief." },
+    ],
+    guideSteps: [
+      { step: 1, title: "Install the plugin", desc: "Pick your host below and run the matching install command from the matrix." },
+      { step: 2, title: "No config needed", desc: "OpenDesign runs inside your host agent and uses its model config. If the host already routes through 9Router, /opendesign traffic does too." },
+      { step: 3, title: "Start designing", desc: "Invoke OpenDesign from your agent:", value: "/opendesign make a pitch deck for a seed-stage AI company, 10 slides", copyable: true },
+    ],
+    codeBlock: {
+      language: "bash",
+      code: `# Claude Code
+/plugin marketplace add manalkaff/opendesign
+/plugin install opendesign@opendesign
+
+# Cursor
+/add-plugin opendesign
+
+# OpenAI Codex CLI
+/plugins   # search "opendesign" -> Install Plugin
+
+# OpenAI Codex App
+# Plugins sidebar -> OpenDesign (Design section) -> +
+
+# Gemini CLI
+gemini extensions install https://github.com/manalkaff/opendesign
+
+# OpenCode
+# Fetch and follow .opencode/INSTALL.md from the repo`,
+    },
   },
   // HIDDEN: gemini-cli
   // "gemini-cli": {
@@ -391,4 +489,3 @@ export const getProviderModelsForMapping = (providers) => {
   });
   return result;
 };
-

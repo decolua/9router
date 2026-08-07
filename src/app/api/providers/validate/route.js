@@ -4,6 +4,7 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbe
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from "open-sse/config/providers.js";
 import { openaiToCommandCodeRequest } from "open-sse/translator/request/openai-to-commandcode.js";
+import { resolveQoderCredentials, resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
@@ -301,11 +302,12 @@ export async function POST(request) {
         case "minimax":
         case "minimax-cn":
         case "alicode-intl":
+        case "alims-intl":
         case "alicode":
         case "agentrouter": {
           // Use baseUrl from PROVIDERS (DRY); separate openai-format vs claude-format flow
           const cfg = PROVIDERS[provider];
-          const isOpenAiFormat = provider === "glm-cn" || provider === "alicode" || provider === "alicode-intl";
+          const isOpenAiFormat = provider === "glm-cn" || provider === "alicode" || provider === "alicode-intl" || provider === "alims-intl";
 
           if (isOpenAiFormat) {
             const testModel = getDefaultModel(provider);
@@ -380,10 +382,13 @@ export async function POST(request) {
           };
           const headers = {};
           if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
-          const res = await fetch(endpoints[provider], { headers });
+          const res = await fetch(endpoints[provider], { headers, signal: AbortSignal.timeout(8000) });
           // xai returns 400 for bad key, 403 for valid-but-no-credit. Other providers use 401.
           if (provider === "xai") {
             isValid = res.status === 200 || res.status === 403;
+          } else if (provider === "xiaomi-tokenplan") {
+            // /models returns 403 for valid keys lacking list permission; only 401 means invalid
+            isValid = res.status !== 401;
           } else {
             isValid = res.ok;
           }
@@ -573,6 +578,20 @@ export async function POST(request) {
             error = "Invalid session cookie — re-paste __Secure-next-auth.session-token from perplexity.ai";
           } else {
             isValid = true;
+          }
+          break;
+        }
+
+        case "qoder": {
+          // PAT (pt-...) needs the job-token exchange before it can sign
+          // anything — the generic OpenAI-compat probe below can't validate it.
+          try {
+            const resolved = await resolveQoderCredentials({ apiKey, providerSpecificData }, null, AbortSignal.timeout(8000));
+            const result = await resolveQoderModels(resolved, { forceRefresh: true });
+            isValid = !!result?.models?.length;
+          } catch (err) {
+            isValid = false;
+            error = err.message;
           }
           break;
         }

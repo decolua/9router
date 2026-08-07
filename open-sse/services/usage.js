@@ -5,14 +5,17 @@
 import { getGitHubUsage } from "./usage/github.js";
 import { getGeminiUsage, getAntigravityUsage } from "./usage/google.js";
 import { getClaudeUsage } from "./usage/claude.js";
-import { getCodexUsage, consumeCodexRateLimitResetCredit } from "./usage/codex.js";
+import { getCodexUsage, consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits } from "./usage/codex.js";
 
-export { consumeCodexRateLimitResetCredit };
+export { consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits };
 import { getKiroUsage } from "./usage/kiro.js";
 import { getMiniMaxUsage } from "./usage/minimax.js";
-import { getCodeBuddyCnUsage } from "./usage/codebuddy-cn.js";
+import { getCodeBuddyCnUsage, getCodeBuddyIntlUsage } from "./usage/codebuddy-cn.js";
+import { getGrokCliUsage } from "./usage/grok-cli.js";
+import { getKimiUsage } from "./usage/kimi.js";
+import { getDeepseekUsage } from "./usage/deepseek.js";
+import { resolveQoderCredentials } from "./qoderModels.js";
 import {
-  getQwenUsage,
   getIflowUsage,
   getOllamaUsage,
   getGlmUsage,
@@ -33,16 +36,24 @@ const USAGE_HANDLERS = {
   claude: (c) => getClaudeUsage(c.accessToken, c.proxyOptions),
   codex: (c) => getCodexUsage(c.accessToken, c.proxyOptions),
   kiro: (c) => getKiroUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
-  qoder: (c) => getQoderUsage(c.accessToken, c.proxyOptions),
-  qwen: (c) => getQwenUsage(c.accessToken, c.providerSpecificData),
+  qoder: async (c) => {
+    // PAT (pt-...) connections must be exchanged to a job token before the
+    // quota endpoint accepts them.
+    const resolved = await resolveQoderCredentials(c, c.proxyOptions).catch(() => null);
+    return getQoderUsage(resolved?.accessToken || c.accessToken, c.proxyOptions);
+  },
   iflow: (c) => getIflowUsage(c.accessToken),
-  ollama: (c) => getOllamaUsage(c.accessToken),
+  ollama: (c) => getOllamaUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),
   glm: (c) => getGlmUsage(c.apiKey, c.provider, c.proxyOptions),
   "glm-cn": (c) => getGlmUsage(c.apiKey, c.provider, c.proxyOptions),
   minimax: (c) => getMiniMaxUsage(c.apiKey, c.provider, c.proxyOptions),
   "minimax-cn": (c) => getMiniMaxUsage(c.apiKey, c.provider, c.proxyOptions),
   "vercel-ai-gateway": (c) => getVercelAiGatewayUsage(c.apiKey, c.proxyOptions),
   "codebuddy-cn": (c) => getCodeBuddyCnUsage(c.accessToken, c.apiKey, c.providerSpecificData, c.proxyOptions),
+  "codebuddy-intl": (c) => getCodeBuddyIntlUsage(c.accessToken, c.apiKey, c.providerSpecificData, c.proxyOptions),
+  "grok-cli": (c) => getGrokCliUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
+  kimi: (c) => getKimiUsage(c.accessToken, c.apiKey, c.proxyOptions, c.providerSpecificData),
+  deepseek: (c) => getDeepseekUsage(c.apiKey, c.proxyOptions),
 };
 
 export async function getUsageForProvider(connection, proxyOptions = null) {
