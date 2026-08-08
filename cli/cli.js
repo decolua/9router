@@ -296,9 +296,14 @@ function killAllAppProcesses(appPort) {
             // Whitelist: real node process running 9router/cli.js, or next-server.
             // Avoids killing editors/grep/strace/cursor that just have "9router" in cmdline.
             const cmd = line.toLowerCase();
+            const isConfigCmd =
+              cmd.includes("config receive") || cmd.includes("config publish") ||
+              cmd.includes("config status") || cmd.includes("config import") ||
+              cmd.includes("config export") || cmd.includes("config device-name");
             const isAppProcess =
-              (cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("\\9router") || cmd.includes("/9router")))
-              || cmd.includes("next-server");
+              !isConfigCmd &&
+              ((cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("\\9router") || cmd.includes("/9router")))
+              || cmd.includes("next-server"));
             if (isAppProcess) {
               const match = line.match(/^"(\d+)"/);
               if (match && match[1] && match[1] !== process.pid.toString()) {
@@ -322,9 +327,14 @@ function killAllAppProcesses(appPort) {
             // Whitelist: real node process running 9router/cli.js, or next-server.
             // Avoids killing grep/strace/editors/cursor that incidentally match "9router".
             const cmd = line.toLowerCase();
+            const isConfigCmd =
+              cmd.includes("config receive") || cmd.includes("config publish") ||
+              cmd.includes("config status") || cmd.includes("config import") ||
+              cmd.includes("config export") || cmd.includes("config device-name");
             const isAppProcess =
-              (cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("/9router")))
-              || cmd.includes("next-server");
+              !isConfigCmd &&
+              ((cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("/9router")))
+              || cmd.includes("next-server"));
             if (isAppProcess) {
               const parts = line.trim().split(/\s+/);
               const pid = parts[1];
