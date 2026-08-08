@@ -286,8 +286,8 @@ export async function POST(request, { params }) {
     if (action === "register-session") {
       // Register proxy session from body (preferred) or URL query (state).
       // Zed's codeVerifier encodes the RSA private key — must stay out of URL/logs.
-      const { searchParams } = new URL(request.url);
-      const state = body?.state || searchParams.get("state");
+      const searchParams = new URL(request.url).searchParams;
+      const state = searchParams.get("state") || body?.state;
       if (!state) return NextResponse.json({ error: "Missing state" }, { status: 400 });
       let ok = false;
       if (provider === "trae") ok = registerTraeSession({ state });

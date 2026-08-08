@@ -75,7 +75,6 @@ import p72 from "./perplexity.js";
 import p73 from "./perplexity-agent.js";
 import p74 from "./playht.js";
 import p75 from "./qoder.js";
-import p76 from "./qwen.js";
 import p77 from "./recraft.js";
 import p78 from "./runwayml.js";
 import p79 from "./sdwebui.js";
@@ -116,6 +115,10 @@ import p113 from "./morph.js";
 // import p114 from "./devin-cli.js";
 // import p104 from "./windsurf.js";
 import p115 from "./poolside.js";
+import p116 from "./tokenrouter.js";
+import p117 from "./selfhosted-stt.js";
+import p118 from "./selfhosted-tts.js";
+import p119 from "./selfhosted-embedding.js";
 
 export default [
   p0,
@@ -194,7 +197,6 @@ export default [
   p73,
   p74,
   p75,
-  p76,
   p77,
   p78,
   p79,
@@ -233,4 +235,8 @@ export default [
   // p114, // devin-cli — hidden, spawns local agent with shell/fs access
   // p104, // windsurf — hidden, no tool calling
   p115,
+  p116,
+  p117,
+  p118,
+  p119,
 ];
