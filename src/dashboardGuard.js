@@ -37,6 +37,7 @@ const PUBLIC_API_PATHS = [
   "/api/playground",  // Multi-model playground
   "/api/costs",  // Cost tracking
   "/api/cache",  // Semantic cache
+  "/api/free-models",  // Free model discovery
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
