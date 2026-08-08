@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import { TTS_GENERATED_EVENT, MIN_USAGE_REFETCH_MS } from "@/shared/constants/ttsProviders";
 import PropTypes from "prop-types";
 import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal, ConfirmModal } from "@/shared/components";
 
@@ -31,7 +32,9 @@ function CooldownTimer({ until }) {
 CooldownTimer.propTypes = { until: PropTypes.string.isRequired };
 
 // ── ConnectionRow ──────────────────────────────────────────────
-const fmtCredits = (n) => Number(n || 0).toLocaleString("en-US");
+// Locale-default, like every other number in the dashboard — pinning en-US here
+// would render the same credit figure differently than the TTS panel does.
+const fmtCredits = (n) => Number(n || 0).toLocaleString();
 
 // Stale connection errors auto-hide after this long (still dismissible sooner via ×).
 const ERROR_DISPLAY_TTL_MS = 10 * 60 * 1000;
@@ -44,7 +47,6 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
   const [errorIsFresh, setErrorIsFresh] = useState(false); // recent error → show; stale → auto-hide
   const proxyDropdownRef = useRef(null);
 
-  // Recompute error freshness now + every minute so stale errors auto-hide over time.
   useEffect(() => {
     const compute = () => setErrorIsFresh(
       !!connection.lastError && connection.isActive !== false
@@ -52,10 +54,14 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
         && (Date.now() - new Date(connection.lastErrorAt).getTime()) < ERROR_DISPLAY_TTL_MS
     );
     compute();
-    // Only a present error can age into staleness — no error → no timer needed.
-    if (!connection.lastError) return;
-    const t = setInterval(compute, 60000);
-    return () => clearInterval(t);
+    if (!connection.lastError || !connection.lastErrorAt) return;
+    // An error goes stale at exactly one known moment, so schedule that single
+    // transition rather than re-checking every minute for the life of the page —
+    // after the TTL the answer can never change again.
+    const remaining = ERROR_DISPLAY_TTL_MS - (Date.now() - new Date(connection.lastErrorAt).getTime());
+    if (remaining <= 0) return;
+    const t = setTimeout(compute, remaining);
+    return () => clearTimeout(t);
   }, [connection.lastError, connection.lastErrorAt, connection.isActive]);
 
   // Fetch credit/quota for apikey connections (e.g. ElevenLabs characters).
@@ -67,30 +73,40 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
     // Only providers with a usage handler report quotas — skip the rest to avoid dead fetches.
     if (isOAuth || connection.isActive === false || !USAGE_APIKEY_PROVIDERS.includes(connection.provider)) return;
     let cancelled = false;
+    let pending = null;
+    let lastLoadedAt = 0;
     const load = () => {
       if (document.hidden) return; // a hidden tab can wait; onVisible refetches on return
+      lastLoadedAt = Date.now();
       fetch(`/api/usage/${connection.id}`)
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
           if (cancelled || !d?.quotas) return;
           const first = Object.entries(d.quotas)[0];
-          if (first) setUsage({ label: first[0], ...first[1] });
+          if (first) setUsage({ label: first[1]?.displayName || first[0], ...first[1] });
         })
         .catch(() => {});
     };
     load();
-    // visibilitychange covers tab-return (focus would double-fire with it)
-    const onVisible = () => { if (!document.hidden) load(); };
+    // Each row hits the upstream API directly, so a burst of tab-switches must
+    // not become a burst of billable calls for a number that cannot have moved.
+    const onVisible = () => {
+      if (!document.hidden && Date.now() - lastLoadedAt > MIN_USAGE_REFETCH_MS) load();
+    };
     // Refetch shortly after a generation so the provider's counter has updated
     const onGenerated = (e) => {
-      if (!e?.detail?.provider || e.detail.provider === connection.provider) setTimeout(load, 1500);
+      if (!e?.detail?.provider || e.detail.provider === connection.provider) {
+        clearTimeout(pending);
+        pending = setTimeout(load, 1500);
+      }
     };
     document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("tts-generated", onGenerated);
+    window.addEventListener(TTS_GENERATED_EVENT, onGenerated);
     return () => {
       cancelled = true;
+      clearTimeout(pending); // otherwise a generation right before unmount still fires
       document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("tts-generated", onGenerated);
+      window.removeEventListener(TTS_GENERATED_EVENT, onGenerated);
     };
   }, [connection.id, connection.provider, isOAuth, connection.isActive]);
 
@@ -198,7 +214,7 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
                 <div className="h-1.5 w-24 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden shrink-0">
                   <div
                     className={`h-full ${usage.remainingPercentage <= 10 ? "bg-red-500" : usage.remainingPercentage <= 30 ? "bg-amber-500" : "bg-primary"}`}
-                    style={{ width: `${Math.max(0, Math.min(100, usage.remainingPercentage))}%` }}
+                    style={{ width: `${usage.remainingPercentage}%` }}
                   />
                 </div>
               )}

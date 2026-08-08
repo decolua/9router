@@ -4,8 +4,11 @@
 
 const DB_NAME = "9router-tts-history";
 const STORE = "clips";
-const DB_VERSION = 1;
-const MAX_CLIPS = 50; // keep only the most recent N to bound storage
+const DB_VERSION = 2; // v2 adds the `provider` index
+const MAX_CLIPS = 50;
+// A count cap alone is not a storage bound: one PCM clip can be tens of MB, so
+// 50 of them could claim gigabytes of the origin quota. Bound bytes too.
+const MAX_BYTES = 200 * 1024 * 1024;
 
 let dbPromise = null;
 
@@ -18,10 +21,13 @@ function openDb() {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        const store = db.createObjectStore(STORE, { keyPath: "id" });
-        store.createIndex("createdAt", "createdAt");
-      }
+      const store = db.objectStoreNames.contains(STORE)
+        ? req.transaction.objectStore(STORE)
+        : db.createObjectStore(STORE, { keyPath: "id" });
+      // Created conditionally so a v1 database upgrades in place instead of
+      // throwing ConstraintError on the index it already has.
+      if (!store.indexNames.contains("createdAt")) store.createIndex("createdAt", "createdAt");
+      if (!store.indexNames.contains("provider")) store.createIndex("provider", "provider");
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -34,60 +40,68 @@ function getDb() {
   return dbPromise;
 }
 
-// Add a clip, then prune anything beyond MAX_CLIPS (oldest first).
-export async function addTtsClip(clip) {
+// One transaction lifecycle for every operation: `run` issues requests against
+// the store, and if it returns one, its result becomes the resolved value.
+async function withStore(mode, run) {
   const db = await getDb();
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readwrite");
-    const store = tx.objectStore(STORE);
+    const tx = db.transaction(STORE, mode);
+    let out;
+    const req = run(tx.objectStore(STORE));
+    if (req) req.onsuccess = () => { out = req.result; };
+    tx.oncomplete = () => resolve(out);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+// Walk newest → oldest, keeping clips until either bound is crossed; everything
+// older than that point is dropped. One cursor, and audio is never deserialized
+// wholesale the way a getAll() would.
+function prune(store) {
+  const cursorReq = store.index("createdAt").openCursor(null, "prev");
+  let kept = 0;
+  let bytes = 0;
+  cursorReq.onsuccess = () => {
+    const cursor = cursorReq.result;
+    if (!cursor) return;
+    kept += 1;
+    bytes += Number(cursor.value?.size) || 0;
+    if (kept > MAX_CLIPS || bytes > MAX_BYTES) cursor.delete();
+    cursor.continue();
+  };
+}
+
+// Add a clip, then prune anything beyond the caps (oldest first).
+export function addTtsClip(clip) {
+  return withStore("readwrite", (store) => {
     store.put(clip);
-    const keysReq = store.index("createdAt").getAllKeys(); // primary keys in createdAt order (oldest first)
-    keysReq.onsuccess = () => {
-      const keys = keysReq.result || [];
-      const excess = keys.length - MAX_CLIPS;
-      for (let i = 0; i < excess; i++) store.delete(keys[i]);
-    };
-    tx.oncomplete = () => resolve(clip);
-    tx.onerror = () => reject(tx.error);
-  });
+    prune(store);
+  }).then(() => clip);
 }
 
-// All clips, newest first.
-export async function listTtsClips() {
-  const db = await getDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readonly");
-    const req = tx.objectStore(STORE).getAll();
-    req.onsuccess = () => resolve((req.result || []).sort((a, b) => b.createdAt - a.createdAt));
-    req.onerror = () => reject(req.error);
-  });
+// Clips for one provider (or all when omitted), newest first.
+export function listTtsClips(provider) {
+  return withStore("readonly", (store) =>
+    provider ? store.index("provider").getAll(provider) : store.getAll()
+  ).then((clips) => (clips || []).sort((a, b) => b.createdAt - a.createdAt));
 }
 
-export async function deleteTtsClip(id) {
-  const db = await getDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readwrite");
-    tx.objectStore(STORE).delete(id);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+export function deleteTtsClip(id) {
+  return withStore("readwrite", (store) => { store.delete(id); });
 }
 
 // Clear clips, optionally only for one provider.
-export async function clearTtsClips(provider) {
-  const db = await getDb();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, "readwrite");
-    const store = tx.objectStore(STORE);
+export function clearTtsClips(provider) {
+  return withStore("readwrite", (store) => {
     if (!provider) {
       store.clear();
-    } else {
-      const req = store.getAll();
-      req.onsuccess = () => {
-        for (const c of req.result || []) if (c.provider === provider) store.delete(c.id);
-      };
+      return;
     }
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
+    // Keys only — deleting a subset must not deserialize every stored blob.
+    const keysReq = store.index("provider").getAllKeys(provider);
+    keysReq.onsuccess = () => {
+      for (const key of keysReq.result || []) store.delete(key);
+    };
   });
 }

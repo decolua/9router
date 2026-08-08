@@ -11,6 +11,12 @@
 // reflects whether the default-plan account can synthesize the voice via API
 // (verified against the live API — some "default" voices now require a paid plan).
 
+// Voice used when a request names no voice at all (Adam — dominant, firm; free
+// on the default plan). Exported so the adapter and the dashboard's
+// TTS_PROVIDER_CONFIG preselect the same one — otherwise the panel's curl
+// snippet would not reproduce what the server actually synthesizes.
+export const ELEVENLABS_DEFAULT_VOICE_ID = "pNInz6obpgDQGcFmaJgB";
+
 export const ELEVENLABS_DEFAULT_VOICES = [
   { voice_id: "9BWtsMINqrJLrRacOk9x", name: "Aria",      free: false, labels: { gender: "female", accent: "american",      language: "en" } },
   { voice_id: "CwhRBWXzGAHq8TQ4Fs17", name: "Roger",     free: true,  labels: { gender: "male",   accent: "american",      language: "en" } },

@@ -1,7 +1,8 @@
 // ElevenLabs TTS — voice id with optional model_id prefix
 import { Buffer } from "node:buffer";
-import { ELEVENLABS_DEFAULT_VOICES } from "../../config/elevenlabsVoices.js";
-import { ELEVEN_LANGUAGE_CODE_MODELS, ELEVEN_CLASSIC_VOICE_SETTINGS_MODELS } from "../../config/ttsModels.js";
+import { ELEVENLABS_DEFAULT_VOICES, ELEVENLABS_DEFAULT_VOICE_ID } from "../../config/elevenlabsVoices.js";
+import { TTS_MODELS_CONFIG, elevenModel, elevenContainer } from "../../config/ttsModels.js";
+import { parseModelVoice } from "./_base.js";
 
 const VOICES_TTL = 24 * 60 * 60 * 1000;
 // The fallback roster is cached far more briefly than a real listing: it means the
@@ -17,24 +18,31 @@ export async function fetchElevenLabsVoices(apiKey) {
   const cached = _voicesCache.get(apiKey);
   if (cached && now - cached.time < (cached.isFallback ? FALLBACK_TTL : VOICES_TTL)) return cached.voices;
 
+  // The entry is stale (or absent) from here on — drop it so a key that is
+  // rotated away stops occupying the map for the process lifetime.
+  _voicesCache.delete(apiKey);
+  const cacheFallbackRoster = () => {
+    _voicesCache.set(apiKey, { voices: ELEVENLABS_DEFAULT_VOICES, time: now, isFallback: true });
+    return ELEVENLABS_DEFAULT_VOICES;
+  };
+
   let res;
   try {
     res = await fetch("https://api.elevenlabs.io/v1/voices", {
       headers: { "xi-api-key": apiKey, "Content-Type": "application/json" },
     });
   } catch {
-    // Network failure — fall back to curated defaults so the picker still works
-    return ELEVENLABS_DEFAULT_VOICES;
+    // Network failure — fall back to curated defaults so the picker still works.
+    // Cached like the 401 path, so an upstream outage costs one full-timeout
+    // fetch per FALLBACK_TTL rather than one per picker open.
+    return cacheFallbackRoster();
   }
 
   if (!res.ok) {
     // Restricted keys may grant text_to_speech without voices_read (401), and
     // some plans gate voice listing. Fall back to the curated default roster so
     // the integration keeps working instead of presenting an empty picker.
-    if (res.status === 401 || res.status === 403) {
-      _voicesCache.set(apiKey, { voices: ELEVENLABS_DEFAULT_VOICES, time: now, isFallback: true });
-      return ELEVENLABS_DEFAULT_VOICES;
-    }
+    if (res.status === 401 || res.status === 403) return cacheFallbackRoster();
     throw new Error(`ElevenLabs voices fetch failed: ${res.status}`);
   }
 
@@ -45,9 +53,10 @@ export async function fetchElevenLabsVoices(apiKey) {
   return voices;
 }
 
-// Sensible free default so requests without an explicit voice still work (Adam - Dominant, Firm).
-const DEFAULT_VOICE_ID = "pNInz6obpgDQGcFmaJgB";
 const DEFAULT_MODEL_ID = "eleven_flash_v2_5";
+const ELEVEN_MODEL_LIST = TTS_MODELS_CONFIG.elevenlabs.models;
+// Anything under this is a truncated/empty upstream body rather than audio.
+const MIN_AUDIO_BYTES = 1024;
 
 export default {
   async synthesize(text, model, credentials, _responseFormat, opts = {}) {
@@ -59,22 +68,18 @@ export default {
     // Playback rate, clamped to the range the API accepts.
     const speed = typeof opts.speed === "number" ? Math.min(1.2, Math.max(0.7, opts.speed)) : undefined;
     const outputFormat = typeof opts.outputFormat === "string" ? opts.outputFormat.trim() : "";
-    let modelId = DEFAULT_MODEL_ID;
-    let voiceId = "";
 
-    if (model?.includes("/")) {
-      [modelId, voiceId] = model.split("/");           // "modelId/voiceId"
-    } else if (model?.startsWith("eleven_")) {
-      modelId = model;                                  // model only → default voice
-    } else if (model) {
-      voiceId = model;                                  // bare voice id (never starts with "eleven_")
-    }
-
-    if (!voiceId) voiceId = DEFAULT_VOICE_ID;
+    // Shared parser: matches against the known model list (longest prefix wins)
+    // rather than betting on the "eleven_" naming convention, so a future model
+    // id that breaks the convention is not mistaken for a voice id.
+    // The default voice is applied AFTER parsing, not passed in as the parser's
+    // fallback — passing it would make a bare voice id resolve to the default.
+    const { modelId, voiceId: parsedVoiceId } = parseModelVoice(model, DEFAULT_MODEL_ID, "", ELEVEN_MODEL_LIST);
+    const voiceId = parsedVoiceId || ELEVENLABS_DEFAULT_VOICE_ID;
 
     // similarity_boost and speed are documented as unavailable on Eleven v3, which
     // is steered by audio tags and stability instead — sending them there is noise.
-    const classicSettings = ELEVEN_CLASSIC_VOICE_SETTINGS_MODELS.has(modelId);
+    const caps = elevenModel(modelId);
     const query = outputFormat ? `?output_format=${encodeURIComponent(outputFormat)}` : "";
 
     const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}${query}`, {
@@ -85,13 +90,13 @@ export default {
         model_id: modelId,
         voice_settings: {
           stability,
-          ...(classicSettings ? { similarity_boost: 0.75 } : {}),
-          ...(classicSettings && speed !== undefined ? { speed } : {}),
+          ...(caps.classic ? { similarity_boost: 0.75 } : {}),
+          ...(caps.classic && speed !== undefined ? { speed } : {}),
         },
-        // Only models in the allow-list accept language_code; multilingual_v2
+        // Only models that declare langCode accept language_code; multilingual_v2
         // answers 400 unsupported_language, so drop the field rather than fail
         // the whole synthesis over an optional hint.
-        ...(languageCode && ELEVEN_LANGUAGE_CODE_MODELS.has(modelId) ? { language_code: languageCode } : {}),
+        ...(languageCode && caps.langCode ? { language_code: languageCode } : {}),
       }),
     });
     if (!res.ok) {
@@ -106,10 +111,10 @@ export default {
       throw new Error(detail || `ElevenLabs TTS failed: ${res.status}`);
     }
     const buf = await res.arrayBuffer();
-    if (buf.byteLength < 1024) throw new Error("ElevenLabs TTS returned empty audio");
-    // output_format is codec_samplerate[_bitrate]; the container is the codec part,
-    // so the caller labels the bytes correctly instead of always claiming mp3.
-    const format = outputFormat ? outputFormat.split("_")[0] : "mp3";
-    return { base64: Buffer.from(buf).toString("base64"), format };
+    if (buf.byteLength < MIN_AUDIO_BYTES) throw new Error("ElevenLabs TTS returned empty audio");
+    // The container comes from the requested output_format's declared `container`
+    // rather than Content-Type sniffing: the request states the codec exactly, so
+    // labelling from it can't mislabel PCM or µ-law as mp3.
+    return { base64: Buffer.from(buf).toString("base64"), format: elevenContainer(outputFormat) };
   },
 };

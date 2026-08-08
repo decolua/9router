@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useDeferredValue } from "react";
 import { Card, Toggle } from "@/shared/components";
 import { AI_PROVIDERS, getProviderAlias } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import { TTS_PROVIDER_CONFIG } from "@/shared/constants/ttsProviders";
+import { TTS_PROVIDER_CONFIG, TTS_GENERATED_EVENT } from "@/shared/constants/ttsProviders";
 import { translate } from "@/i18n/runtime";
-import { getTtsVoicesForModel, ELEVEN_LANGUAGE_CODE_MODELS, ELEVEN_CLASSIC_VOICE_SETTINGS_MODELS, ELEVEN_OUTPUT_FORMATS } from "open-sse/config/ttsModels.js";
+import { getTtsVoicesForModel, elevenModel, ELEVEN_OUTPUT_FORMATS } from "open-sse/config/ttsModels.js";
 import { GOOGLE_TTS_LANGUAGES } from "open-sse/config/googleTtsLanguages.js";
 import { getRelativeTime } from "@/shared/utils";
 import { Row } from "./exampleShared";
@@ -19,15 +19,6 @@ const DEFAULT_TTS_RESPONSE_EXAMPLE = `// Audio will appear here after running.
   "format": "mp3",
   "audio": "//NExAANaAIIAUAAANNNNNNNN..." // base64 encoded MP3
 }`;
-
-// ElevenLabs max characters per request, by model (from /v1/models maximum_text_length_per_request).
-const ELEVEN_MAX_CHARS = {
-  eleven_v3: 5000,
-  eleven_multilingual_v2: 10000,
-  eleven_flash_v2_5: 40000,
-  eleven_turbo_v2_5: 40000,
-};
-const ELEVEN_DEFAULT_MAX_CHARS = 5000;
 
 // ElevenLabs supported languages (ISO 639-1) for Language Override.
 // Full roster covered by Multilingual v2 / Eleven v3. en + vi first (primary
@@ -76,7 +67,11 @@ const ELEVEN_LANGUAGES = [
 // Each entry is the exact string inserted into the text (English, ElevenLabs
 // format). The chip label is derived by stripping the brackets; the runtime
 // i18n layer translates those English labels (and the group headers) per locale.
+// Labels are derived once here rather than per render: the palette is ~70
+// buttons and re-renders on every keystroke in the textarea.
 const tagLabel = (ins) => ins.replace(/[[\]]/g, "");
+const withLabels = (group) => ({ ...group, tags: group.tags.map((ins) => ({ ins, label: tagLabel(ins) })) });
+
 const ELEVEN_V3_TAG_GROUPS = [
   {
     label: "Emotions",
@@ -106,13 +101,13 @@ const ELEVEN_V3_TAG_GROUPS = [
       "[lip smack]", "[exhale]", "[inhale]",
     ],
   },
-];
+].map(withLabels);
 
 // "Enhance with AI" — a pro voice-director prompt. The model only gets the REAL
 // tag palette (the chips above), so it can't invent invalid tags, and a vibe
 // preset steers the emotional direction for a more captivating performance.
 const ENHANCE_TAG_VOCAB = ELEVEN_V3_TAG_GROUPS
-  .map((g) => `${g.label}: ${g.tags.join(", ")}`)
+  .map((g) => `${g.label}: ${g.tags.map((t) => t.ins).join(", ")}`)
   .join("\n");
 
 // Vibe presets shown next to the Enhance button (label/hint) + the directive
@@ -134,41 +129,73 @@ const ENHANCE_VIBES = [
 
 const vibeById = (id) => ENHANCE_VIBES.find((v) => v.id === id) || ENHANCE_VIBES[0];
 
-const buildEnhancePrompt = (vibeId) => {
-  const vibe = vibeById(vibeId);
-  return [
-    "You are a world-class voice-acting director for ElevenLabs Eleven v3 text-to-speech.",
-    "Direct a captivating, emotionally dynamic performance of the user's text by inserting inline audio tags and natural vocal sounds between the existing words.",
-    "",
-    "TECHNIQUES (apply tastefully, not on every line):",
-    "- Hook first: set an attention-grabbing emotion on the opening line.",
-    "- Contrast & dynamics: never stay flat — let emotion rise, fall and shift.",
-    "- Strategic pauses right before key words or reveals for impact.",
-    "- Vary pacing: speed up for excitement, slow down to add weight.",
-    "- Land the ending with impact.",
-    "",
-    "VOCAL SOUNDS — this is what makes a read feel human, so actually use them:",
-    "- Bracketed body sounds ([gasp], [sighs], [chuckles], [clears throat], [inhale]…) sit between words and are performed, not spoken.",
-    "- Bare sounds (haha, hmm, ahh, oh, uh, eh, mhm) are SPOKEN aloud, so they land as real speech. Put them where a person would genuinely react: before a surprise, mid-realisation, after a joke, on a reluctant admission.",
-    "- Anything longer than one sentence should carry at least two vocal sounds. Match them to the direction below — laughs for playful, breaths and sighs for dramatic or intimate, hesitation sounds for conversational.",
-    "",
-    `DIRECTION: ${vibe.directive}`,
-    "",
-    "ALLOWED TAGS — use ONLY these, copied exactly as written:",
-    ENHANCE_TAG_VOCAB,
-    "",
-    "HARD RULES:",
-    "- Keep every original word and the original language EXACTLY — never translate, reword, reorder or delete the user's words.",
-    "- The only things you may INSERT are entries from the allowed list: bracketed tags, and the bare vocal sounds. Adding a bare sound is expected and does not count as changing the text.",
-    "- Roughly one bracketed emotion or delivery tag per 1–2 sentences, plus vocal sounds wherever they land naturally. Placement quality over quantity.",
-    "- No quotes around the text, no explanations, no markdown.",
-    "",
-    "EXAMPLE",
-    "Input: Wait... you're telling me we actually won?",
-    "Output: [calm] Wait... [gasp] [pausing] [excited] you're telling me we actually won? haha [laughing]",
-    "",
-    "Return ONLY the resulting tagged text.",
-  ].join("\n");
+// Per-clip icon buttons in the history list. Pure data, so the shared button
+// styling isn't written out once per action; `runClipAction` dispatches on key.
+const CLIP_ACTIONS = [
+  { key: "play",     icon: "play_arrow", title: "Play" },
+  { key: "reuse",    icon: "refresh",    title: "Reuse" },
+  { key: "download", icon: "download",   title: "Download" },
+  { key: "delete",   icon: "close",      title: "Delete", danger: true },
+];
+
+// A labelled control with help text underneath — the shape every ElevenLabs
+// settings row shares, so the hint styling lives in one place.
+const SettingRow = ({ label, hint, children }) => (
+  <Row label={label}>
+    <div className="flex flex-col gap-1.5">
+      {children}
+      <span className="text-[11px] text-text-muted">{hint}</span>
+    </div>
+  </Row>
+);
+
+const buildEnhancePrompt = (vibeId) => `You are a world-class voice-acting director for ElevenLabs Eleven v3 text-to-speech.
+Direct a captivating, emotionally dynamic performance of the user's text by inserting inline audio tags and natural vocal sounds between the existing words.
+
+TECHNIQUES (apply tastefully, not on every line):
+- Hook first: set an attention-grabbing emotion on the opening line.
+- Contrast & dynamics: never stay flat — let emotion rise, fall and shift.
+- Strategic pauses right before key words or reveals for impact.
+- Vary pacing: speed up for excitement, slow down to add weight.
+- Land the ending with impact.
+
+VOCAL SOUNDS — this is what makes a read feel human, so actually use them:
+- Bracketed body sounds ([gasp], [sighs], [chuckles], [clears throat], [inhale]…) sit between words and are performed, not spoken.
+- Bare sounds (haha, hmm, ahh, oh, uh, eh, mhm) are SPOKEN aloud, so they land as real speech. Put them where a person would genuinely react: before a surprise, mid-realisation, after a joke, on a reluctant admission.
+- Anything longer than one sentence should carry at least two vocal sounds. Match them to the direction below — laughs for playful, breaths and sighs for dramatic or intimate, hesitation sounds for conversational.
+
+DIRECTION: ${vibeById(vibeId).directive}
+
+ALLOWED TAGS — use ONLY these, copied exactly as written:
+${ENHANCE_TAG_VOCAB}
+
+HARD RULES:
+- Keep every original word and the original language EXACTLY — never translate, reword, reorder or delete the user's words.
+- The only things you may INSERT are entries from the allowed list: bracketed tags, and the bare vocal sounds. Adding a bare sound is expected and does not count as changing the text.
+- Roughly one bracketed emotion or delivery tag per 1–2 sentences, plus vocal sounds wherever they land naturally. Placement quality over quantity.
+- No quotes around the text, no explanations, no markdown.
+
+EXAMPLE
+Input: Wait... you're telling me we actually won?
+Output: [calm] Wait... [gasp] [pausing] [excited] you're telling me we actually won? haha [laughing]
+
+Return ONLY the resulting tagged text.`;
+
+// Model-name scoring for the Enhance rewrite. Regexes are module constants so a
+// sort over a few hundred model ids doesn't rebuild them thousands of times.
+// \b word-boundaries avoid "mini" matching the provider word "geMINI".
+const CHEAP_TIER_RE = /\b(flash|mini|haiku|lite|nano|small|turbo|8b|9b)\b/;
+const COSTLY_TIER_RE = /\b(pro|opus|ultra|max|405b|70b)\b/;
+const UNSTABLE_RE = /(preview|exp|beta)/;
+
+// Pick the cheapest stable model for this lightweight rewrite, by name.
+const scoreModel = (id) => {
+  const m = (id.includes("/") ? id.slice(id.indexOf("/") + 1) : id).toLowerCase();
+  let s = 0;
+  if (CHEAP_TIER_RE.test(m)) s += 3;   // cheap/fast tier
+  if (COSTLY_TIER_RE.test(m)) s -= 3;  // expensive/gated
+  if (UNSTABLE_RE.test(m)) s -= 1;     // unstable/quota-limited
+  return s;
 };
 
 // "Get started with" — one-tap starter scripts (pre-tagged Eleven v3 demos).
@@ -252,12 +279,13 @@ export function TtsExampleCard({ providerId }) {
   const [error, setError]               = useState("");
   const inputRef                        = useRef(null);  // Input textbox (for caret-aware tag insert)
   const caretRef                        = useRef(null);  // Pending caret position after a tag insert
+  const audioRef                        = useRef(null);  // The visible <audio> player
   const [history, setHistory]           = useState([]);  // Generated clips for this provider (from IndexedDB)
 
+  // Indexed by provider, so a page with several TTS providers configured doesn't
+  // deserialize every other provider's audio blobs on each refresh.
   const refreshHistory = () => {
-    listTtsClips()
-      .then((clips) => setHistory(clips.filter((c) => c.provider === providerId)))
-      .catch(() => {});
+    listTtsClips(providerId).then(setHistory).catch(() => {});
   };
   // Load history on mount / provider change
   useEffect(() => { refreshHistory(); }, [providerId]);
@@ -411,14 +439,17 @@ export function TtsExampleCard({ providerId }) {
     return "";
   })();
 
-  // ElevenLabs per-request char limit (credit estimate is just input.length: 1 char ≈ 1 credit)
-  const maxChars = isEleven ? (ELEVEN_MAX_CHARS[selectedModel] || ELEVEN_DEFAULT_MAX_CHARS) : 0;
-  const overLimit = maxChars > 0 && input.length > maxChars;
+  // One capability lookup drives every ElevenLabs-only row, shared with the
+  // adapter so the panel can't offer a knob the server would drop.
+  const caps = elevenModel(selectedModel);
+  // Per-request char limit (credit estimate is just input.length: 1 char ≈ 1 credit)
+  const maxChars = isEleven ? caps.maxChars : Infinity;
+  const overLimit = input.length > maxChars;
   const isElevenV3 = isEleven && selectedModel === "eleven_v3"; // gates the v3-only rows
-  const supportsLangCode = isEleven && ELEVEN_LANGUAGE_CODE_MODELS.has(selectedModel);
+  const supportsLangCode = isEleven && caps.langCode;
   // v3 has no speed/similarity knobs — it is directed with tags and stability.
-  const supportsSpeed = isEleven && ELEVEN_CLASSIC_VOICE_SETTINGS_MODELS.has(selectedModel);
-  const activeVibe = useMemo(() => vibeById(enhanceVibe), [enhanceVibe]);
+  const supportsSpeed = isEleven && caps.classic;
+  const activeVibe = vibeById(enhanceVibe);
 
   const ttsBody = (() => {
     const b = { model: modelFull, input };
@@ -430,10 +461,14 @@ export function TtsExampleCard({ providerId }) {
     if (isEleven && outputFormat) b.output_format = outputFormat;
     return b;
   })();
+  // The snippet embeds the entire input and rewraps a <pre> that can hold 40,000
+  // characters on Flash/Turbo. Deferring it keeps typing responsive — the
+  // snippet catches up once the urgent render is done.
+  const deferredInput = useDeferredValue(input);
   const curlSnippet = `curl -X POST ${endpoint}/v1/audio/speech${responseFormat === "json" ? "?response_format=json" : ""} \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${apiKey || "YOUR_KEY"}" \\
-  -d '${JSON.stringify(ttsBody)}' \\
+  -d '${JSON.stringify({ ...ttsBody, input: deferredInput })}' \\
   ${responseFormat === "json" ? "" : "--output speech.mp3"}`;
 
   // Eleven v3: insert an audio tag at the current caret position (not just append)
@@ -490,23 +525,15 @@ export function TtsExampleCard({ providerId }) {
         setError("Enhance needs an LLM provider — connect one in Providers first.");
         return;
       }
-      // Pick the cheapest stable model for this lightweight rewrite. Score by name:
-      // reward small/fast tiers, penalise pro/preview (often gated or paid).
-      // \b word-boundaries avoid "mini" matching the provider word "geMINI".
-      const namePart = (id) => (id.includes("/") ? id.slice(id.indexOf("/") + 1) : id).toLowerCase();
-      const scoreModel = (id) => {
-        const m = namePart(id);
-        let s = 0;
-        if (/\b(flash|mini|haiku|lite|nano|small|turbo|8b|9b)\b/.test(m)) s += 3; // cheap/fast tier
-        if (/\b(pro|opus|ultra|max|405b|70b)\b/.test(m)) s -= 3;                  // expensive/gated
-        if (/(preview|exp|beta)/.test(m)) s -= 1;                                 // unstable/quota-limited
-        return s;
-      };
       // Best first, then a few alternates. Free tiers meter per model — Gemini's
       // daily allowance is per-model, so a 429 on one candidate says nothing about
       // the next — and a single hard-coded pick turns any transient failure into a
-      // dead button.
-      const candidates = [...ids].sort((a, b) => scoreModel(b) - scoreModel(a)).slice(0, 4);
+      // dead button. Scored once per id, not once per comparison.
+      const candidates = ids
+        .map((id) => ({ id, score: scoreModel(id) }))
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 4)
+        .map((c) => c.id);
 
       let lastStatus = 0;
       let lastError = "";
@@ -570,7 +597,13 @@ export function TtsExampleCard({ providerId }) {
       let audioBlob;
       if (responseFormat === "json") {
         const data = await res.json();
-        setJsonResponse(data); // Store full JSON response
+        // Keep only what the preview renders. The full base64 string is ~1.33×
+        // the audio bytes and the decoded Blob is already held separately, so
+        // retaining it in state would pin two copies for the session.
+        setJsonResponse({
+          format: data.format,
+          audioPreview: data.audio ? `${data.audio.substring(0, 100)}...` : "",
+        });
         const format = data.format || "mp3";
         // Assign the outer binding (no shadowing) so the shared setAudioUrl below
         // and the history entry both see the blob.
@@ -599,7 +632,7 @@ export function TtsExampleCard({ providerId }) {
       } catch { /* history is best-effort; never block playback */ }
 
       // Notify the credit display (ConnectionsCard) that usage changed → auto-refresh
-      window.dispatchEvent(new CustomEvent("tts-generated", { detail: { provider: providerId } }));
+      window.dispatchEvent(new CustomEvent(TTS_GENERATED_EVENT, { detail: { provider: providerId } }));
     } catch (e) {
       setError(e.message || "Network error");
     } finally {
@@ -611,11 +644,13 @@ export function TtsExampleCard({ providerId }) {
   const playClip = (clip) => {
     if (!clip?.blob) return;
     setJsonResponse(null);
-    // One object URL feeds both the visible player and immediate playback (the
-    // player has no autoplay). The audioUrl effect revokes it when replaced.
-    const url = URL.createObjectURL(clip.blob);
-    setAudioUrl(url);
-    new Audio(url).play().catch(() => {});
+    // Point the visible player at the clip and start it, rather than also
+    // building a detached Audio — two elements would decode the same clip twice
+    // and the detached one could not be stopped. The audioUrl effect revokes the
+    // previous object URL when this replaces it.
+    setAudioUrl(URL.createObjectURL(clip.blob));
+    // Start it once React has committed the new src.
+    requestAnimationFrame(() => { audioRef.current?.play().catch(() => {}); });
   };
   const downloadClip = (clip) => {
     const u = URL.createObjectURL(clip.blob);
@@ -634,10 +669,24 @@ export function TtsExampleCard({ providerId }) {
     if (clip.model && config.hasModelSelector) setSelectedModel(clip.model);
     if (typeof clip.stability === "number") setStability(clip.stability);
   };
-  const removeClip = async (id) => { try { await deleteTtsClip(id); refreshHistory(); } catch {} };
+  // Drop the row locally rather than re-reading the whole store for a deletion
+  // whose outcome is already known.
+  const removeClip = async (id) => {
+    try {
+      await deleteTtsClip(id);
+      setHistory((prev) => prev.filter((c) => c.id !== id));
+    } catch { /* leave the row in place if the delete failed */ }
+  };
   const clearHistory = async () => {
     if (!confirm("Clear all audio history for this provider?")) return;
     try { await clearTtsClips(providerId); refreshHistory(); } catch {}
+  };
+
+  const runClipAction = (key, clip) => {
+    if (key === "play") return playClip(clip);
+    if (key === "reuse") return reuseClip(clip);
+    if (key === "download") return downloadClip(clip);
+    return removeClip(clip.id);
   };
 
   return (
@@ -880,8 +929,10 @@ export function TtsExampleCard({ providerId }) {
 
           {/* ElevenLabs stability — Creative / Natural / Robust */}
           {isEleven && (
-            <Row label="Stability">
-              <div className="flex flex-col gap-1.5">
+            <SettingRow
+              label="Stability"
+              hint="Voice expressiveness. Creative follows audio tags most closely; Robust is the steadiest but responds least to them."
+            >
                 <div className="flex flex-wrap gap-1.5">
                   {[
                     { v: 0,   name: "Creative", hint: "Expressive and varied — can even sing" },
@@ -903,17 +954,12 @@ export function TtsExampleCard({ providerId }) {
                     </button>
                   ))}
                 </div>
-                <span className="text-[11px] text-text-muted">
-                  Voice expressiveness. Creative follows audio tags most closely; Robust is the steadiest but responds least to them.
-                </span>
-              </div>
-            </Row>
+            </SettingRow>
           )}
 
           {/* Speed — v3 has no speed control, so only classic models show this */}
           {supportsSpeed && (
-            <Row label="Speed">
-              <div className="flex flex-col gap-1.5">
+            <SettingRow label="Speed" hint="Playback rate, 0.70× to 1.20×. Values far from 1 can affect quality.">
                 <div className="flex items-center gap-2">
                   <input
                     type="range"
@@ -935,17 +981,15 @@ export function TtsExampleCard({ providerId }) {
                     </button>
                   )}
                 </div>
-                <span className="text-[11px] text-text-muted">
-                  Playback rate, 0.70× to 1.20×. Values far from 1 can affect quality.
-                </span>
-              </div>
-            </Row>
+            </SettingRow>
           )}
 
           {/* Audio encoding — ElevenLabs output_format */}
           {isEleven && (
-            <Row label="Audio Quality">
-              <div className="flex flex-col gap-1.5">
+            <SettingRow
+              label="Audio Quality"
+              hint="Higher MP3 bitrates and PCM require a paid plan; µ-law 8 kHz is for telephony."
+            >
                 <select
                   value={outputFormat}
                   onChange={(e) => setOutputFormat(e.target.value)}
@@ -956,17 +1000,15 @@ export function TtsExampleCard({ providerId }) {
                     <option key={f.id} value={f.id}>{f.name}</option>
                   ))}
                 </select>
-                <span className="text-[11px] text-text-muted">
-                  Higher MP3 bitrates and PCM require a paid plan; µ-law 8 kHz is for telephony.
-                </span>
-              </div>
-            </Row>
+            </SettingRow>
           )}
 
           {/* ElevenLabs language override — only for models that accept language_code */}
           {supportsLangCode && (
-            <Row label="Language Override">
-              <div className="flex flex-col gap-1.5">
+            <SettingRow
+              label="Language Override"
+              hint="Off: the model auto-detects the language. On: force the chosen language (best with Eleven v3)."
+            >
                 <div className="flex items-center gap-2 flex-wrap">
                   <Toggle size="sm" checked={langOverride} onChange={setLangOverride} />
                   {langOverride && (
@@ -981,11 +1023,7 @@ export function TtsExampleCard({ providerId }) {
                     </select>
                   )}
                 </div>
-                <span className="text-[11px] text-text-muted">
-                  Off: the model auto-detects the language. On: force the chosen language (best with Eleven v3).
-                </span>
-              </div>
-            </Row>
+            </SettingRow>
           )}
 
           {/* Eleven v3 quick-start presets */}
@@ -1017,13 +1055,13 @@ export function TtsExampleCard({ providerId }) {
                     <div className="flex flex-wrap items-center gap-1.5">
                       {group.tags.map((t) => (
                         <button
-                          key={t}
+                          key={t.ins}
                           type="button"
-                          title={t}
-                          onClick={() => insertTag(t)}
+                          title={t.ins}
+                          onClick={() => insertTag(t.ins)}
                           className="px-2 py-0.5 rounded-full text-[11px] border border-border text-text-muted hover:text-primary hover:border-primary/40 transition-colors"
                         >
-                          {tagLabel(t)}
+                          {t.label}
                         </button>
                       ))}
                     </div>
@@ -1136,7 +1174,7 @@ export function TtsExampleCard({ providerId }) {
                   Download
                 </a>
               </div>
-              <audio controls src={audioUrl} className="w-full" />
+              <audio ref={audioRef} controls src={audioUrl} className="w-full" />
               
               {/* JSON Response (if format is json) */}
               {jsonResponse && (
@@ -1147,7 +1185,7 @@ export function TtsExampleCard({ providerId }) {
                   <pre className="bg-sidebar rounded-lg px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre-wrap break-all">
                     {JSON.stringify({
                       format: jsonResponse.format,
-                      audio: jsonResponse.audio ? `${jsonResponse.audio.substring(0, 100)}...` : ""
+                      audio: jsonResponse.audioPreview
                     }, null, 2)}
                   </pre>
                 </div>
@@ -1183,26 +1221,20 @@ export function TtsExampleCard({ providerId }) {
                       <p className="text-[10px] text-text-muted truncate">
                         {clip.voiceName || clip.voiceId || "—"}
                         {clip.model ? ` · ${clip.model}` : ""}
-                        {` · ${getRelativeTime(new Date(clip.createdAt).toISOString())}`}
+                        {` · ${getRelativeTime(clip.createdAt)}`}
                       </p>
                     </div>
                     <div className="flex items-center gap-0.5 shrink-0">
-                      <button onClick={() => playClip(clip)} title={translate("Play")}
-                        className="p-1 rounded text-text-muted hover:text-primary transition-colors">
-                        <span className="material-symbols-outlined text-[16px]">play_arrow</span>
-                      </button>
-                      <button onClick={() => reuseClip(clip)} title={translate("Reuse")}
-                        className="p-1 rounded text-text-muted hover:text-primary transition-colors">
-                        <span className="material-symbols-outlined text-[16px]">refresh</span>
-                      </button>
-                      <button onClick={() => downloadClip(clip)} title={translate("Download")}
-                        className="p-1 rounded text-text-muted hover:text-primary transition-colors">
-                        <span className="material-symbols-outlined text-[16px]">download</span>
-                      </button>
-                      <button onClick={() => removeClip(clip.id)} title={translate("Delete")}
-                        className="p-1 rounded text-text-muted hover:text-red-500 transition-colors">
-                        <span className="material-symbols-outlined text-[16px]">close</span>
-                      </button>
+                      {CLIP_ACTIONS.map((a) => (
+                        <button
+                          key={a.key}
+                          onClick={() => runClipAction(a.key, clip)}
+                          title={translate(a.title)}
+                          className={`p-1 rounded text-text-muted transition-colors ${a.danger ? "hover:text-red-500" : "hover:text-primary"}`}
+                        >
+                          <span className="material-symbols-outlined text-[16px]">{a.icon}</span>
+                        </button>
+                      ))}
                     </div>
                   </div>
                 ))}

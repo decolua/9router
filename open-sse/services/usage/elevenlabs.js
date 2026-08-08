@@ -3,18 +3,22 @@
  * Uses GET /v1/user/subscription (requires the key's user_read permission).
  */
 
-import { proxyAwareFetch } from "../../utils/proxyFetch.js";
+import { parseResetTime, toFiniteNumber, fetchWithTimeout } from "./shared.js";
 
 const SUBSCRIPTION_URL = "https://api.elevenlabs.io/v1/user/subscription";
+
+// Stable key so per-quota UI preferences survive a plan change; the tier only
+// varies the human-facing label.
+const QUOTA_KEY = "Characters";
 
 export async function getElevenLabsUsage(apiKey, proxyOptions = null) {
   if (!apiKey) return { message: "ElevenLabs API key not available." };
 
   try {
-    const res = await proxyAwareFetch(SUBSCRIPTION_URL, {
+    const res = await fetchWithTimeout(SUBSCRIPTION_URL, {
       method: "GET",
       headers: { "xi-api-key": apiKey, "Content-Type": "application/json" },
-    }, proxyOptions);
+    }, 10000, proxyOptions);
 
     if (res.status === 401) {
       // Restricted keys can lack user_read even though TTS works.
@@ -25,23 +29,21 @@ export async function getElevenLabsUsage(apiKey, proxyOptions = null) {
     }
 
     const d = await res.json();
-    const total = Math.max(0, Number(d.character_limit) || 0);
-    const used = Math.min(Math.max(0, Number(d.character_count) || 0), total || Number.MAX_SAFE_INTEGER);
+    const total = Math.max(0, toFiniteNumber(d.character_limit));
+    const used = Math.max(0, toFiniteNumber(d.character_count));
     const remaining = Math.max(total - used, 0);
-    const resetAt = d.next_character_count_reset_unix
-      ? new Date(Number(d.next_character_count_reset_unix) * 1000).toISOString()
-      : null;
     const tier = String(d.tier || "").trim();
-    const label = tier ? `${tier.charAt(0).toUpperCase()}${tier.slice(1)} characters` : "Characters";
 
     return {
       quotas: {
-        [label]: {
+        [QUOTA_KEY]: {
+          displayName: tier ? `${tier.charAt(0).toUpperCase()}${tier.slice(1)} characters` : QUOTA_KEY,
           used,
           total,
           remaining,
-          remainingPercentage: total > 0 ? Math.max(0, Math.min(100, (remaining / total) * 100)) : 0,
-          resetAt,
+          // `remaining` is already clamped to [0, total], so this needs no further clamping.
+          remainingPercentage: total > 0 ? (remaining / total) * 100 : 0,
+          resetAt: parseResetTime(d.next_character_count_reset_unix),
           unlimited: total === 0,
         },
       },

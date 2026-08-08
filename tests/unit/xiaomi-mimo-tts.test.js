@@ -90,7 +90,7 @@ describe("Xiaomi MiMo TTS", () => {
       provider: "xiaomi-mimo",
       model: "mimo-v2.5-tts/Chloe",
       input: "Hello from MiMo",
-      style: "a calm, warm female voice speaking slowly",
+      options: { style: "a calm, warm female voice speaking slowly" },
       credentials: { apiKey: "test-key" },
       responseFormat: "json",
     });
@@ -124,7 +124,7 @@ describe("Xiaomi MiMo TTS", () => {
       provider: "xiaomi-mimo",
       model: "mimo-v2.5-tts/冰糖",
       input: "Hello from MiMo",
-      language: "English",
+      options: { language: "English" },
       credentials: { apiKey: "test-key" },
       responseFormat: "json",
     });

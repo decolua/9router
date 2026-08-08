@@ -29,7 +29,7 @@ export function getTtsAdapter(provider) {
 }
 
 // Generic config-driven dispatcher (uses ttsConfig.format)
-export async function synthesizeViaConfig(provider, text, model, credentials) {
+export async function synthesizeViaConfig(provider, text, model, credentials, options = {}) {
   const { AI_PROVIDERS } = await import("@/shared/constants/providers");
   const cfg = AI_PROVIDERS[provider]?.ttsConfig;
   if (!cfg) return null;
@@ -41,7 +41,7 @@ export async function synthesizeViaConfig(provider, text, model, credentials) {
   const ttsModels = (PROVIDER_MODELS[provider] || []).filter(m => (m.kind || m.type) === "tts");
   const defaultModel = ttsModels[0]?.id || "";
   const { modelId, voiceId } = parseModelVoice(model, defaultModel, "", ttsModels);
-  return handler({ baseUrl: cfg.baseUrl, apiKey, text, modelId, voiceId });
+  return handler({ baseUrl: cfg.baseUrl, apiKey, text, modelId, voiceId, options });
 }
 
 // Voice fetchers (used by /api/media-providers/tts/voices route)

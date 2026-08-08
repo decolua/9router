@@ -46,9 +46,14 @@ function createTtsResponse(base64Audio, format, responseFormat) {
  * Synthesize text to audio. Provider logic lives in `./ttsProviders/{id}.js`
  * or is dispatched generically via `ttsConfig.format`.
  *
+ * `options` is an opaque bag relayed to the adapter untouched (language, style,
+ * stability, languageCode, speed, outputFormat, …). Keeping it opaque is what
+ * stops this provider-agnostic core from accumulating every provider's request
+ * schema in its own signature.
+ *
  * @returns {Promise<{success, response, status?, error?}>}
  */
-export async function handleTtsCore({ provider, model, input, credentials, responseFormat = "mp3", language, style, stability, languageCode, speed, outputFormat }) {
+export async function handleTtsCore({ provider, model, input, credentials, responseFormat = "mp3", options = {} }) {
   if (!input?.trim()) {
     return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
   }
@@ -57,14 +62,14 @@ export async function handleTtsCore({ provider, model, input, credentials, respo
     // Special-case adapters (google-tts, edge-tts, local-device, elevenlabs, openai, openrouter, gemini, xiaomi-mimo)
     const adapter = getTtsAdapter(provider);
     if (adapter) {
-      const result = await adapter.synthesize(input.trim(), model, credentials, responseFormat, { language, style, stability, languageCode, speed, outputFormat });
+      const result = await adapter.synthesize(input.trim(), model, credentials, responseFormat, options);
       // Adapter may return a full {success, response} (legacy) or {base64, format}
       if (result.success !== undefined) return result;
       return createTtsResponse(result.base64, result.format, responseFormat);
     }
 
     // Generic config-driven (hyperbolic, deepgram, nvidia, huggingface, inworld, cartesia, playht, coqui, tortoise, qwen, ...)
-    const result = await synthesizeViaConfig(provider, input.trim(), model, credentials);
+    const result = await synthesizeViaConfig(provider, input.trim(), model, credentials, options);
     if (result) return createTtsResponse(result.base64, result.format, responseFormat);
 
     return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Provider '${provider}' does not support TTS via this route.`);

@@ -7,13 +7,16 @@ const { proxyAwareFetch } = vi.hoisted(() => ({ proxyAwareFetch: vi.fn() }));
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({ proxyAwareFetch }));
 
 import { handleTtsCore } from "../../open-sse/handlers/ttsCore.js";
-import { ELEVEN_LANGUAGE_CODE_MODELS, TTS_MODELS_CONFIG } from "../../open-sse/config/ttsModels.js";
-import { ELEVENLABS_DEFAULT_VOICES } from "../../open-sse/config/elevenlabsVoices.js";
+import { ELEVEN_MODELS, TTS_MODELS_CONFIG } from "../../open-sse/config/ttsModels.js";
+import { ELEVENLABS_DEFAULT_VOICES, ELEVENLABS_DEFAULT_VOICE_ID } from "../../open-sse/config/elevenlabsVoices.js";
 import { getElevenLabsUsage } from "../../open-sse/services/usage/elevenlabs.js";
 
 const originalFetch = global.fetch;
 const CREDS = { apiKey: "test-key" };
 const VOICE = "pNInz6obpgDQGcFmaJgB";
+// Deliberately NOT the default voice: a bare voice id must survive resolution
+// rather than be replaced by the default.
+const CUSTOM_VOICE = "21m00Tcm4TlvDq8ikWAM";
 
 // Adapter rejects anything under 1KB as empty audio.
 const mockAudio = () =>
@@ -29,8 +32,9 @@ const mockError = (status, detail) =>
 const bodyOf = (call = 0) => JSON.parse(global.fetch.mock.calls[call][1].body);
 const urlOf = (call = 0) => global.fetch.mock.calls[call][0];
 
-const speak = (model, opts = {}) =>
-  handleTtsCore({ provider: "elevenlabs", model, input: "Hello", credentials: CREDS, ...opts });
+// responseFormat is a core-level arg; everything else is an adapter option.
+const speak = (model, { responseFormat, ...options } = {}) =>
+  handleTtsCore({ provider: "elevenlabs", model, input: "Hello", credentials: CREDS, responseFormat, options });
 
 describe("ElevenLabs TTS", () => {
   beforeEach(() => { global.fetch = vi.fn(); });
@@ -44,26 +48,28 @@ describe("ElevenLabs TTS", () => {
       expect(bodyOf().model_id).toBe("eleven_v3");
     });
 
-    it("treats a bare eleven_* value as the model and falls back to the default voice", async () => {
+    it("treats a known model id as the model and falls back to the default voice", async () => {
       mockAudio();
       await speak("eleven_flash_v2_5");
       expect(bodyOf().model_id).toBe("eleven_flash_v2_5");
-      expect(urlOf()).toMatch(/\/v1\/text-to-speech\/\w+$/);
+      expect(urlOf()).toBe(`https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_DEFAULT_VOICE_ID}`);
     });
 
     it("treats any other bare value as a voice id and keeps the default model", async () => {
       mockAudio();
-      await speak(VOICE);
-      expect(urlOf()).toBe(`https://api.elevenlabs.io/v1/text-to-speech/${VOICE}`);
+      await speak(CUSTOM_VOICE);
+      expect(urlOf()).toBe(`https://api.elevenlabs.io/v1/text-to-speech/${CUSTOM_VOICE}`);
       expect(bodyOf().model_id).toBe("eleven_flash_v2_5");
     });
   });
 
   describe("language_code guard", () => {
     // The API answers 400 unsupported_language for multilingual_v2, so the field
-    // must never reach it — see ELEVEN_LANGUAGE_CODE_MODELS.
+    // must never reach it — see the `langCode` flag in ELEVEN_MODELS.
     it("sends language_code for models that accept it", async () => {
-      for (const model of ELEVEN_LANGUAGE_CODE_MODELS) {
+      const langCodeModels = Object.keys(ELEVEN_MODELS).filter((id) => ELEVEN_MODELS[id].langCode);
+      expect(langCodeModels.length).toBeGreaterThan(0);
+      for (const model of langCodeModels) {
         global.fetch = vi.fn();
         mockAudio();
         await speak(`${model}/${VOICE}`, { languageCode: "vi" });

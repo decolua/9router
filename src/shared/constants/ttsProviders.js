@@ -1,3 +1,13 @@
+import { ELEVENLABS_DEFAULT_VOICE_ID } from "open-sse/config/elevenlabsVoices.js";
+
+// Dispatched by the TTS panel after a successful generation; the Providers page
+// listens so credit counters refresh. Shared so the two sides can't drift.
+export const TTS_GENERATED_EVENT = "tts-generated";
+
+// Floor between usage refetches triggered by tab-return. Each one is a live
+// upstream API call, and a quota cannot move while the tab is in the background.
+export const MIN_USAGE_REFETCH_MS = 60 * 1000;
+
 /**
  * TTS Provider Configuration
  * Centralized config for TTS provider UI behavior
@@ -35,7 +45,7 @@ export const TTS_PROVIDER_CONFIG = {
     voiceSource: "api-language", // grouped by language from backend
     modelKey: "elevenlabs-tts-models",
     apiEndpoint: "/api/media-providers/tts/elevenlabs/voices",
-    defaultVoiceId: "pNInz6obpgDQGcFmaJgB", // Adam - Dominant, Firm (free) — default voice
+    defaultVoiceId: ELEVENLABS_DEFAULT_VOICE_ID, // same default the adapter uses server-side
   },
   "edge-tts": {
     hasLanguageDropdown: false,
