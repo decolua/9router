@@ -32,6 +32,9 @@ const PUBLIC_API_PATHS = [
   "/api/headroom/extras",  // Headroom extras status — no auth needed (#2965)
   "/api/metrics",
   "/api/webhooks",  // Webhooks for external integrations
+  "/api/health/providers",  // Provider health monitor
+  "/api/health/check",  // Trigger provider health check
+  "/api/playground",  // Multi-model playground
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
