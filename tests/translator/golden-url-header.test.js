@@ -31,6 +31,10 @@ function sanitize(headers) {
       ? v.replace(/Bearer .+/, "Bearer <TOK>")
           .replace(/sk-test-APIKEY|tok-test-ACCESS/g, "<CRED>")
           .replace(/kimi-\d{10,}/g, "kimi-<TS>")
+          // X-PLATFORM-VERSION embeds process.version — varies per Node runtime
+          // (local v22.22.3 vs CI v22.23.1). Normalize so golden snapshots are
+          // environment-independent.
+          .replace(/^v\d+\.\d+\.\d+$/, "v<VER>")
       : v;
   }
   return out;
