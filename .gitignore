@@ -54,6 +54,7 @@ docs/*
 !docs/FEDERATION.md
 !docs/specs/
 !docs/*.md
+!docs/dogfood/
 test/*
 open-sse/test/*
 RM.vn.md
