@@ -23,6 +23,27 @@
 
 ---
 
+## 🧩 Federation (this fork)
+
+**This fork adds federation** on top of upstream 9router: deploy the same gateway on
+multiple instances across datacenters/hosts and keep them in sync.
+
+- **Edge → central proxying** — edge instances proxy all `/v1/*` traffic and mutating
+  dashboard API calls up to the central instance by default.
+- **SQLite replication** — edges continuously track/replicate central's database, so a
+  central outage leaves edges serving independently; writes during an outage are queued
+  locally and reconciled later (eventual consistency).
+- **One frontend per host** — each instance serves its own `/dashboard`, backed by its
+  local replica or central.
+- **Standalone stays the default** — all federation behavior is inert unless
+  `FEDERATION_MODE` is set (zero behavior change out of the box).
+
+Enable it with the `FEDERATION_*` environment variables (see `.env.example`, lines
+41–51): set `FEDERATION_MODE=central` on the central instance, and
+`FEDERATION_MODE=edge` with `FEDERATION_CENTRAL_URL` + `FEDERATION_TOKEN` on edges.
+
+Full design & config reference: [docs/federation-spec.md](docs/federation-spec.md).
+
 ## 🤔 Why 9Router?
 
 **Stop wasting money, tokens and hitting limits:**
