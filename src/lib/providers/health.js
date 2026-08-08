@@ -3,7 +3,7 @@
  * Checks the health of provider API endpoints by making test requests.
  */
 
-import { PROVIDERS } from "@/open-sse/providers/index.js";
+import { PROVIDERS } from "open-sse/providers/index.js";
 
 export async function getProviderHealth(providerId = null) {
   const providers = providerId

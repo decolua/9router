@@ -1,0 +1,71 @@
+/**
+ * Default rate limit configuration for providers
+ * Community-sourced free tier limits
+ */
+
+export const DEFAULT_RATE_LIMITS = {
+  // Free tiers
+  'nvidia': { rpm: 60, burst: 10 },
+  'cerebras': { rpm: 30, burst: 5 },
+  'groq': { rpm: 30, burst: 10 },
+  'sambanova': { rpm: 20, burst: 5 },
+  'openrouter': { rpm: 20, burst: 5, models: { '*': { rpm: 20 } } }, // free models
+  'ollama': { rpm: 100, burst: 20 },
+  'mistral': { rpm: 60, burst: 10 },
+  'cohere': { rpm: 60, burst: 10 },
+  'together': { rpm: 60, burst: 10 },
+  'fireworks': { rpm: 60, burst: 10 },
+  'deepseek': { rpm: 60, burst: 10 },
+  'siliconflow': { rpm: 60, burst: 10 },
+  'hyperbolic': { rpm: 60, burst: 10 },
+  'nebius': { rpm: 60, burst: 10 },
+  'featherless': { rpm: 60, burst: 10 },
+  'venice': { rpm: 60, burst: 10 },
+  'volcengine-ark': { rpm: 60, burst: 10 },
+  'tokenrouter': { rpm: 60, burst: 10 },
+  
+  // Paid tiers (higher defaults, user-configurable)
+  'openai': { rpm: 500, burst: 50 },
+  'anthropic': { rpm: 100, burst: 20 },
+  'google': { rpm: 300, burst: 30 },
+  'vertex': { rpm: 300, burst: 30 },
+  'vertex-partner': { rpm: 300, burst: 30 },
+  'azure': { rpm: 300, burst: 30 },
+  'mistral': { rpm: 100, burst: 20 },
+  'cohere': { rpm: 100, burst: 20 },
+  'groq': { rpm: 100, burst: 20 },
+  'together': { rpm: 100, burst: 20 },
+  'fireworks': { rpm: 100, burst: 20 },
+  'deepseek': { rpm: 100, burst: 20 },
+  'xai': { rpm: 100, burst: 20 },
+  'perplexity': { rpm: 60, burst: 10 },
+  
+  // OAuth providers (account-specific)
+  'claude': { rpm: 50, burst: 10, perAccount: true },
+  'codex': { rpm: 30, burst: 5, perAccount: true },
+  'github': { rpm: 60, burst: 10, perAccount: true },
+  'kiro': { rpm: 20, burst: 5, perAccount: true },
+  'kimchi': { rpm: 30, burst: 5, perAccount: true },
+  'grok-cli': { rpm: 30, burst: 5, perAccount: true },
+  'grok-web': { rpm: 30, burst: 5, perAccount: true },
+  'opencode': { rpm: 30, burst: 5, perAccount: true },
+  'opencode-go': { rpm: 30, burst: 5, perAccount: true },
+  'cursor': { rpm: 30, burst: 5, perAccount: true },
+  'copilot': { rpm: 60, burst: 10, perAccount: true },
+  'cline': { rpm: 30, burst: 5, perAccount: true },
+  'antigravity': { rpm: 30, burst: 5, perAccount: true },
+  'iflow': { rpm: 30, burst: 5, perAccount: true },
+  'kimi': { rpm: 30, burst: 5, perAccount: true },
+  'qoder': { rpm: 30, burst: 5, perAccount: true },
+  'zed': { rpm: 30, burst: 5, perAccount: true },
+  'windsurf': { rpm: 30, burst: 5, perAccount: true },
+  'trae': { rpm: 30, burst: 5, perAccount: true },
+  'devin-cli': { rpm: 30, burst: 5, perAccount: true },
+  'commandcode': { rpm: 30, burst: 5, perAccount: true },
+  'perplexity-web': { rpm: 30, burst: 5, perAccount: true },
+  'gemini-cli': { rpm: 30, burst: 5, perAccount: true },
+  'xiaomi-tokenplan': { rpm: 30, burst: 5, perAccount: true },
+  'mimo-free': { rpm: 30, burst: 5, perAccount: true },
+  'codebuddy-cn': { rpm: 30, burst: 5, perAccount: true },
+  'codebuddy-intl': { rpm: 30, burst: 5, perAccount: true },
+};

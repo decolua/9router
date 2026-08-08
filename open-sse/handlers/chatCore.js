@@ -29,7 +29,20 @@ import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
-import { recordRequest, recordFallback, recordRTK, recordError, startSystemMetricsCollection } from "../services/metrics.js";
+import { recordRequest, recordFallback, recordRTK, recordError, recordRateLimiter, startSystemMetricsCollection } from "../services/metrics.js";
+import { rateLimiter } from "../services/rateLimiter.js";
+import { getProviderModels } from "../config/providerModels.js";
+
+/**
+ * Rate limit error for combo fallback
+ */
+export class RateLimitError extends Error {
+  constructor(message, details = {}) {
+    super(message);
+    this.name = 'RateLimitError';
+    this.details = details;
+  }
+}
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -58,12 +71,15 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, isComboRequest = false }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   
   // Start system metrics collection (runs once)
   startSystemMetricsCollection(10000);
+  
+  // Initialize rate limiter (runs once)
+  rateLimiter.initialize();
   
   // Stable per-session color so all lines of one CLI conversation share a tag
   const sessionSeed = (() => {
@@ -343,6 +359,46 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Most executors return their registry format. Cursor AgentService is an
   // exception: it is decoded by the executor into OpenAI-compatible output.
   let providerResponseFormat = targetFormat;
+  
+  // Rate limiter check - proactive rate limiting
+  const rateLimitResult = await rateLimiter.acquire(provider, upstreamModel);
+  recordRateLimiter({ 
+    provider, 
+    model: upstreamModel, 
+    tokens: rateLimitResult.bucketState.tokens, 
+    capacity: rateLimitResult.bucketState.capacity,
+    rejected: !rateLimitResult.allowed,
+    retryAfter: rateLimitResult.retryAfter
+  });
+  
+  if (!rateLimitResult.allowed) {
+    log?.warn?.("RATE_LIMIT", `Rate limit exceeded for ${provider}/${upstreamModel}, retry after ${rateLimitResult.retryAfter}s`);
+    // For single-model requests, wait and retry
+    if (!isComboRequest) {
+      await new Promise(r => setTimeout(r, rateLimitResult.retryAfter * 1000));
+      // Retry acquisition
+      const retry = await rateLimiter.acquire(provider, upstreamModel);
+      recordRateLimiter({ 
+        provider, 
+        model: upstreamModel, 
+        tokens: retry.bucketState.tokens, 
+        capacity: retry.bucketState.capacity,
+        rejected: !retry.allowed,
+        retryAfter: retry.retryAfter
+      });
+      if (!retry.allowed) {
+        return createErrorResult(HTTP_STATUS.TOO_MANY_REQUESTS, `Rate limit exceeded for ${provider}/${upstreamModel}`);
+      }
+    } else {
+      // For combo requests, trigger fallback
+      throw new RateLimitError(`Rate limit exceeded for ${provider}/${upstreamModel}`, {
+        retryAfter: rateLimitResult.retryAfter,
+        provider: provider,
+        model: upstreamModel
+      });
+    }
+  }
+  
   try {
     const result = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
     providerResponse = result.response;
