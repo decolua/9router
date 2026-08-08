@@ -36,6 +36,17 @@ const UNIX_TAILSCALE_CANDIDATES = [
   "/snap/bin/tailscale",   // Snap package
 ];
 
+// tailscaled daemon candidates, parallel to the CLI. Covers Apple Silicon
+// (/opt/homebrew) and Intel (/usr/local) Homebrew plus Linux package paths —
+// the previous code hardcoded only the Intel path, so on Apple Silicon the
+// userspace daemon spawn failed (ENOENT) and `tailscale up` timed out.
+const UNIX_TAILSCALED_CANDIDATES = [
+  "/opt/homebrew/bin/tailscaled",
+  "/usr/local/bin/tailscaled",
+  "/usr/sbin/tailscaled",
+  "/usr/bin/tailscaled",
+];
+
 // ─── Cache + background refresh (avoid blocking event loop on dead daemon) ──
 const PROBE_TTL_MS = 10000;
 const PROBE_TIMEOUT_MS = 1500;
@@ -85,6 +96,21 @@ export function getTailscaleBin() {
 
 export function isTailscaleInstalled() {
   return getTailscaleBin() !== null;
+}
+
+/**
+ * Resolve the tailscaled daemon binary. Prefer the daemon sitting next to the
+ * resolved `tailscale` CLI (so Homebrew Apple Silicon/Intel both work), then
+ * known candidate paths, then bare "tailscaled" from PATH as a last resort.
+ */
+export function getTailscaledBin() {
+  const cli = getTailscaleBin();
+  if (cli && !IS_WINDOWS) {
+    const sibling = cli.replace(/tailscale$/, "tailscaled");
+    if (sibling !== cli && fs.existsSync(sibling)) return sibling;
+  }
+  const found = UNIX_TAILSCALED_CANDIDATES.find((p) => fs.existsSync(p));
+  return found || "tailscaled";
 }
 
 /** Build tailscale CLI args with custom socket (no root needed) */
@@ -583,7 +609,7 @@ export async function startDaemonWithPassword(sudoPassword) {
   // Reclaim folder ownership (previous root daemon may have locked it)
   await ensureUserOwnedDir(TAILSCALE_DIR);
 
-  const tailscaledBin = IS_MAC ? "/usr/local/bin/tailscaled" : "tailscaled";
+  const tailscaledBin = IS_WINDOWS ? "tailscaled" : getTailscaledBin();
   const daemonArgs = [
     `--socket=${TAILSCALE_SOCKET}`,
     `--statedir=${TAILSCALE_DIR}`,

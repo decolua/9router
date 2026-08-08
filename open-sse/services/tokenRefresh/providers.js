@@ -266,6 +266,58 @@ export async function refreshCodexToken(refreshToken, log) {
   }, log);
 }
 
+// GapGPT (GapCode, Codex CLI fork). Same PKCE OAuth shape as Codex but its token
+// endpoint lives on gapgpt.app, wants form-encoding, and wraps success payloads as
+// { data: {...} } (like its other /api/v1/* endpoints). Accept flat or wrapped.
+export async function refreshGapgptToken(refreshToken, log) {
+  if (!refreshToken) return null;
+  return dedupRefresh("gapgpt", refreshToken, async () => {
+    try {
+      const tokenUrl = PROVIDER_OAUTH.gapgpt?.tokenUrl || PROVIDERS.gapgpt?.tokenUrl;
+      const response = await fetch(tokenUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: new URLSearchParams({
+          client_id: PROVIDER_OAUTH.gapgpt?.clientId || PROVIDERS.gapgpt?.clientId,
+          grant_type: "refresh_token",
+          refresh_token: refreshToken,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        const failure = classifyOAuthRefreshError(errorText, response.status);
+        if (failure.permanent) {
+          log?.error?.("TOKEN_REFRESH", "GapGPT refresh token invalid. Re-auth required.", { status: response.status, code: failure.code });
+          return { error: "unrecoverable_refresh_error", code: failure.code };
+        }
+        log?.error?.("TOKEN_REFRESH", "Failed to refresh GapGPT token", { status: response.status, error: errorText });
+        return null;
+      }
+
+      const body = await response.json();
+      const tokens = body && typeof body.data === "object" && body.data ? body.data : body;
+      log?.info?.("TOKEN_REFRESH", "Successfully refreshed GapGPT token", {
+        hasNewAccessToken: !!tokens.access_token,
+        hasNewRefreshToken: !!tokens.refresh_token,
+        expiresIn: tokens.expires_in,
+      });
+      return {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || refreshToken,
+        idToken: tokens.id_token,
+        expiresIn: tokens.expires_in,
+      };
+    } catch (error) {
+      log?.error?.("TOKEN_REFRESH", `Network error refreshing GapGPT token: ${error.message}`);
+      return null;
+    }
+  }, log);
+}
+
 async function resolveKiroProfileArnPatch(providerSpecificData, accessToken, refreshedArn) {
   if (providerSpecificData?.profileArn) return {};
   let profileArn = refreshedArn?.trim?.() || null;

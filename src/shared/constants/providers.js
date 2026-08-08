@@ -157,7 +157,7 @@ export function getProvidersByKind(kind) {
 
 // Derive từ registry features flags
 export const USAGE_SUPPORTED_PROVIDERS = REGISTRY
-  .filter(r => r.features?.usage)
+  .filter(r => r.features?.usage || r.id === "gapgpt")
   .map(r => r.id);
 
 export const USAGE_APIKEY_PROVIDERS = REGISTRY
