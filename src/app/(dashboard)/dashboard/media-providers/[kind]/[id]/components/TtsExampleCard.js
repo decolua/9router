@@ -7,7 +7,7 @@ import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { TTS_PROVIDER_CONFIG } from "@/shared/constants/ttsProviders";
 import { translate } from "@/i18n/runtime";
-import { getTtsVoicesForModel, ELEVEN_LANGUAGE_CODE_MODELS } from "open-sse/config/ttsModels.js";
+import { getTtsVoicesForModel, ELEVEN_LANGUAGE_CODE_MODELS, ELEVEN_CLASSIC_VOICE_SETTINGS_MODELS, ELEVEN_OUTPUT_FORMATS } from "open-sse/config/ttsModels.js";
 import { GOOGLE_TTS_LANGUAGES } from "open-sse/config/googleTtsLanguages.js";
 import { getRelativeTime } from "@/shared/utils";
 import { Row } from "./exampleShared";
@@ -238,6 +238,8 @@ export function TtsExampleCard({ providerId }) {
   const [tunnelEndpoint, setTunnelEndpoint] = useState("");
   const [responseFormat, setResponseFormat] = useState("mp3"); // mp3 | json
   const [stability, setStability]       = useState(0.5); // ElevenLabs: 0=Creative, 0.5=Natural, 1=Robust
+  const [speed, setSpeed]               = useState(1);   // ElevenLabs playback rate (classic models only)
+  const [outputFormat, setOutputFormat] = useState("");  // ElevenLabs output_format; empty = provider default
   const [langOverride, setLangOverride] = useState(false); // ElevenLabs language override
   const [langCode, setLangCode]         = useState("vi");
   const [audioUrl, setAudioUrl]         = useState("");
@@ -414,6 +416,8 @@ export function TtsExampleCard({ providerId }) {
   const overLimit = maxChars > 0 && input.length > maxChars;
   const isElevenV3 = isEleven && selectedModel === "eleven_v3"; // gates the v3-only rows
   const supportsLangCode = isEleven && ELEVEN_LANGUAGE_CODE_MODELS.has(selectedModel);
+  // v3 has no speed/similarity knobs — it is directed with tags and stability.
+  const supportsSpeed = isEleven && ELEVEN_CLASSIC_VOICE_SETTINGS_MODELS.has(selectedModel);
   const activeVibe = useMemo(() => vibeById(enhanceVibe), [enhanceVibe]);
 
   const ttsBody = (() => {
@@ -422,6 +426,8 @@ export function TtsExampleCard({ providerId }) {
     if (config.hasStyleInput && style.trim()) b.style = style.trim();
     if (isEleven) b.stability = stability;
     if (supportsLangCode && langOverride && langCode) b.language_code = langCode;
+    if (supportsSpeed && speed !== 1) b.speed = speed;
+    if (isEleven && outputFormat) b.output_format = outputFormat;
     return b;
   })();
   const curlSnippet = `curl -X POST ${endpoint}/v1/audio/speech${responseFormat === "json" ? "?response_format=json" : ""} \\
@@ -898,7 +904,60 @@ export function TtsExampleCard({ providerId }) {
                   ))}
                 </div>
                 <span className="text-[11px] text-text-muted">
-                  Voice expressiveness. Creative is the most expressive, Robust the most stable.
+                  Voice expressiveness. Creative follows audio tags most closely; Robust is the steadiest but responds least to them.
+                </span>
+              </div>
+            </Row>
+          )}
+
+          {/* Speed — v3 has no speed control, so only classic models show this */}
+          {supportsSpeed && (
+            <Row label="Speed">
+              <div className="flex flex-col gap-1.5">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min="0.7"
+                    max="1.2"
+                    step="0.05"
+                    value={speed}
+                    onChange={(e) => setSpeed(Number(e.target.value))}
+                    className="w-40 accent-primary"
+                  />
+                  <span className="text-xs text-text-muted tabular-nums">{speed.toFixed(2)}×</span>
+                  {speed !== 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setSpeed(1)}
+                      className="text-[11px] text-text-muted hover:text-primary transition-colors"
+                    >
+                      {translate("Reset")}
+                    </button>
+                  )}
+                </div>
+                <span className="text-[11px] text-text-muted">
+                  Playback rate, 0.70× to 1.20×. Values far from 1 can affect quality.
+                </span>
+              </div>
+            </Row>
+          )}
+
+          {/* Audio encoding — ElevenLabs output_format */}
+          {isEleven && (
+            <Row label="Audio Quality">
+              <div className="flex flex-col gap-1.5">
+                <select
+                  value={outputFormat}
+                  onChange={(e) => setOutputFormat(e.target.value)}
+                  className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+                >
+                  <option value="">Provider default (MP3 44.1 kHz 128 kbps)</option>
+                  {ELEVEN_OUTPUT_FORMATS.map((f) => (
+                    <option key={f.id} value={f.id}>{f.name}</option>
+                  ))}
+                </select>
+                <span className="text-[11px] text-text-muted">
+                  Higher MP3 bitrates and PCM require a paid plan; µ-law 8 kHz is for telephony.
                 </span>
               </div>
             </Row>

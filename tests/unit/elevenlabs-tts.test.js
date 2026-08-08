@@ -100,6 +100,50 @@ describe("ElevenLabs TTS", () => {
       await speak(`eleven_v3/${VOICE}`, { stability: 0 });
       expect(bodyOf().voice_settings.stability).toBe(0);
     });
+
+    // The docs state speed, similarity and speaker boost are unavailable on v3.
+    it("omits similarity_boost and speed on eleven_v3", async () => {
+      mockAudio();
+      await speak(`eleven_v3/${VOICE}`, { speed: 1.1 });
+      const vs = bodyOf().voice_settings;
+      expect(vs).not.toHaveProperty("similarity_boost");
+      expect(vs).not.toHaveProperty("speed");
+    });
+
+    it("sends similarity_boost and speed on classic models", async () => {
+      mockAudio();
+      await speak(`eleven_multilingual_v2/${VOICE}`, { speed: 1.1 });
+      const vs = bodyOf().voice_settings;
+      expect(vs.similarity_boost).toBe(0.75);
+      expect(vs.speed).toBe(1.1);
+    });
+
+    it("clamps speed to the 0.7–1.2 range the API accepts", async () => {
+      mockAudio();
+      await speak(`eleven_turbo_v2_5/${VOICE}`, { speed: 5 });
+      expect(bodyOf().voice_settings.speed).toBe(1.2);
+
+      global.fetch = vi.fn();
+      mockAudio();
+      await speak(`eleven_turbo_v2_5/${VOICE}`, { speed: 0.1 });
+      expect(bodyOf().voice_settings.speed).toBe(0.7);
+    });
+  });
+
+  describe("output format", () => {
+    it("stays on the provider default when none is requested", async () => {
+      mockAudio();
+      const r = await speak(`eleven_v3/${VOICE}`, { responseFormat: "json" });
+      expect(urlOf()).not.toContain("output_format");
+      expect(JSON.parse(await r.response.text()).format).toBe("mp3");
+    });
+
+    it("passes output_format as a query parameter and labels the audio by codec", async () => {
+      mockAudio();
+      const r = await speak(`eleven_v3/${VOICE}`, { outputFormat: "pcm_16000", responseFormat: "json" });
+      expect(urlOf()).toContain("output_format=pcm_16000");
+      expect(JSON.parse(await r.response.text()).format).toBe("pcm");
+    });
   });
 
   describe("error reporting", () => {

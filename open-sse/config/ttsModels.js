@@ -59,6 +59,27 @@ export const ELEVEN_LANGUAGE_CODE_MODELS = new Set([
   "eleven_turbo_v2_5",
 ]);
 
+// Models that accept the classic voice_settings knobs. Per the docs, "speed,
+// similarity, and Speaker Boost settings are not available for the Eleven v3
+// model" — v3 is directed with audio tags and stability instead.
+export const ELEVEN_CLASSIC_VOICE_SETTINGS_MODELS = new Set([
+  "eleven_multilingual_v2",
+  "eleven_flash_v2_5",
+  "eleven_turbo_v2_5",
+]);
+
+// ElevenLabs output_format values, as codec_samplerate_bitrate. The default is
+// mp3_44100_128; higher mp3 bitrates and PCM need a paid plan, and µ-law exists
+// for telephony (Twilio) rather than listening.
+export const ELEVEN_OUTPUT_FORMATS = [
+  { id: "mp3_44100_128", name: "MP3 128 kbps (default)" },
+  { id: "mp3_44100_192", name: "MP3 192 kbps (Creator+)" },
+  { id: "mp3_22050_32", name: "MP3 32 kbps (smallest)" },
+  { id: "pcm_44100", name: "PCM 44.1 kHz (Pro+)" },
+  { id: "pcm_16000", name: "PCM 16 kHz" },
+  { id: "ulaw_8000", name: "µ-law 8 kHz (telephony)" },
+];
+
 // ── TTS Config (config-driven, single source of truth) ─────────────────────
 export const TTS_MODELS_CONFIG = {
   openai: {

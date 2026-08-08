@@ -78,9 +78,15 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
   const languageCode = typeof body.language_code === "string" ? body.language_code
     : (typeof body.languageCode === "string" ? body.languageCode : undefined);
 
+  // Playback rate (ElevenLabs classic models accept 0.7–1.2).
+  const speed = typeof body.speed === "number" ? body.speed : undefined;
+  // Provider-native audio encoding, e.g. ElevenLabs "mp3_44100_192" or "pcm_16000".
+  const outputFormat = typeof body.output_format === "string" ? body.output_format
+    : (typeof body.outputFormat === "string" ? body.outputFormat : undefined);
+
   // noAuth providers — no credential needed
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
-    const result = await handleTtsCore({ provider, model, input: body.input, responseFormat, language, style, stability, languageCode });
+    const result = await handleTtsCore({ provider, model, input: body.input, responseFormat, language, style, stability, languageCode, speed, outputFormat });
     if (result.success) return result.response;
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "TTS failed");
   }
@@ -105,7 +111,7 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
 
     log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
-    const result = await handleTtsCore({ provider, model, input: body.input, credentials, responseFormat, language, style, stability, languageCode });
+    const result = await handleTtsCore({ provider, model, input: body.input, credentials, responseFormat, language, style, stability, languageCode, speed, outputFormat });
 
     if (result.success) return result.response;
 

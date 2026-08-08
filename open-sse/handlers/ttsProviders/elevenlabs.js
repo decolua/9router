@@ -1,7 +1,7 @@
 // ElevenLabs TTS — voice id with optional model_id prefix
 import { Buffer } from "node:buffer";
 import { ELEVENLABS_DEFAULT_VOICES } from "../../config/elevenlabsVoices.js";
-import { ELEVEN_LANGUAGE_CODE_MODELS } from "../../config/ttsModels.js";
+import { ELEVEN_LANGUAGE_CODE_MODELS, ELEVEN_CLASSIC_VOICE_SETTINGS_MODELS } from "../../config/ttsModels.js";
 
 const VOICES_TTL = 24 * 60 * 60 * 1000;
 // The fallback roster is cached far more briefly than a real listing: it means the
@@ -56,6 +56,9 @@ export default {
     const stability = typeof opts.stability === "number" ? opts.stability : 0.5;
     // Optional language override (ISO 639-1, e.g. "vi"). Empty = model auto-detects.
     const languageCode = typeof opts.languageCode === "string" ? opts.languageCode.trim() : "";
+    // Playback rate, clamped to the range the API accepts.
+    const speed = typeof opts.speed === "number" ? Math.min(1.2, Math.max(0.7, opts.speed)) : undefined;
+    const outputFormat = typeof opts.outputFormat === "string" ? opts.outputFormat.trim() : "";
     let modelId = DEFAULT_MODEL_ID;
     let voiceId = "";
 
@@ -69,13 +72,22 @@ export default {
 
     if (!voiceId) voiceId = DEFAULT_VOICE_ID;
 
-    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+    // similarity_boost and speed are documented as unavailable on Eleven v3, which
+    // is steered by audio tags and stability instead — sending them there is noise.
+    const classicSettings = ELEVEN_CLASSIC_VOICE_SETTINGS_MODELS.has(modelId);
+    const query = outputFormat ? `?output_format=${encodeURIComponent(outputFormat)}` : "";
+
+    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}${query}`, {
       method: "POST",
       headers: { "xi-api-key": credentials.apiKey, "Content-Type": "application/json" },
       body: JSON.stringify({
         text,
         model_id: modelId,
-        voice_settings: { stability, similarity_boost: 0.75 },
+        voice_settings: {
+          stability,
+          ...(classicSettings ? { similarity_boost: 0.75 } : {}),
+          ...(classicSettings && speed !== undefined ? { speed } : {}),
+        },
         // Only models in the allow-list accept language_code; multilingual_v2
         // answers 400 unsupported_language, so drop the field rather than fail
         // the whole synthesis over an optional hint.
@@ -95,6 +107,9 @@ export default {
     }
     const buf = await res.arrayBuffer();
     if (buf.byteLength < 1024) throw new Error("ElevenLabs TTS returned empty audio");
-    return { base64: Buffer.from(buf).toString("base64"), format: "mp3" };
+    // output_format is codec_samplerate[_bitrate]; the container is the codec part,
+    // so the caller labels the bytes correctly instead of always claiming mp3.
+    const format = outputFormat ? outputFormat.split("_")[0] : "mp3";
+    return { base64: Buffer.from(buf).toString("base64"), format };
   },
 };
