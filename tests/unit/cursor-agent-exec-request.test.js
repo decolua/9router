@@ -124,19 +124,45 @@ function decodeMcpResultFrame(frame) {
   };
 }
 
-async function runAgent({ frames, stream, body }) {
+async function runAgent({ frames, stream, body, model = "gpt-5.2", modelCatalog }) {
   const executor = new CursorExecutor();
   const written = stubAgentSession(executor, frames);
   const result = await executor.executeAgent({
-    model: "gpt-5.2",
+    model,
     body: body || { messages: [{ role: "user", content: "hi" }] },
     stream,
     credentials,
+    modelCatalog,
   });
   return { result, written };
 }
 
 describe("CursorExecutor AgentService exec_request handling", () => {
+  it("uses catalog parameters when building a variant Run request", async () => {
+    const { result, written } = await runAgent({
+      frames: [textFrame("ok")],
+      stream: true,
+      model: "cursor-grok-4.5-high",
+      modelCatalog: [{
+        id: "grok-4.5",
+        variants: [{
+          legacySlug: "cursor-grok-4.5-high",
+          parameters: [
+            { id: "effort", value: "high" },
+            { id: "fast", value: "false" },
+          ],
+        }],
+      }],
+    });
+    await result.response.text();
+
+    const clientMessage = decodeMessage(written[0].subarray(5));
+    const runRequest = decodeMessage(clientMessage.get(1)[0].value);
+    const requestedModel = decodeMessage(runRequest.get(9)[0].value);
+    expect(Buffer.from(requestedModel.get(1)[0].value).toString("utf8")).toBe("grok-4.5");
+    expect(requestedModel.get(3)).toHaveLength(2);
+  });
+
   it("acknowledges a request-context exec request without ending the turn", async () => {
     const { result, written } = await runAgent({
       frames: [execRequestFrame(10), textFrame("hello")],

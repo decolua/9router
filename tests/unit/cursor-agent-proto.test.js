@@ -265,6 +265,40 @@ describe("Cursor AgentService executor helpers (cursor.js)", () => {
       expect(run.has(9)).toBe(true); // requested_model
     });
 
+    it("encodes a canonical model and catalog-selected parameters", () => {
+      const frame = unwrap(buildAgentRunFrame(
+        [{ role: "user", content: "hi" }],
+        "cursor-grok-4.5-high",
+        [],
+        {
+          modelId: "grok-4.5",
+          parameters: [
+            { id: "effort", value: "high" },
+            { id: "fast", value: "false" },
+          ],
+          builtInModel: true,
+          isVariantStringRepresentation: false,
+        },
+      ));
+      const run = decodeMessage(decodeMessage(frame).get(1)[0].value);
+      const requested = decodeMessage(run.get(9)[0].value);
+
+      expect(Buffer.from(requested.get(1)[0].value).toString("utf8")).toBe("grok-4.5");
+      expect(requested.get(3)).toHaveLength(2);
+      expect(requested.get(3).map(({ value }) => {
+        const parameter = decodeMessage(value);
+        return [
+          Buffer.from(parameter.get(1)[0].value).toString("utf8"),
+          Buffer.from(parameter.get(2)[0].value).toString("utf8"),
+        ];
+      })).toEqual([
+        ["effort", "high"],
+        ["fast", "false"],
+      ]);
+      expect(requested.get(7)[0].value).toBe(1);
+      expect(requested.has(8)).toBe(false);
+    });
+
     it("encodes mcp_tools (field 4) when tools are provided", () => {
       const tools = [{ function: { name: "get_weather", description: "weather", parameters: { type: "object", properties: { city: { type: "string" } } } } }];
       const frame = unwrap(buildAgentRunFrame([{ role: "user", content: "weather?" }], "gpt-5.2", tools));

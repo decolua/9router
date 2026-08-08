@@ -19,6 +19,7 @@ import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { chatChunkSse, sseChunk } from "../utils/sse.js";
 import { FORMATS } from "../translator/formats.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { resolveCursorModel, resolveCursorModelSelection } from "../services/cursorModels.js";
 import zlib from "zlib";
 import crypto from "crypto";
 
@@ -68,6 +69,38 @@ function concatBuffers(...parts) {
 const agentString = (field, value) => encodeField(field, PROTOBUF_LEN, value);
 const agentMessage = (field, value) => encodeField(field, PROTOBUF_LEN, value);
 const agentBool = (field, value) => encodeField(field, PROTOBUF_VARINT, value ? 1 : 0);
+
+function encodeAgentModelParameter(parameter) {
+  if (!parameter?.id) return null;
+  return agentMessage(3, concatBuffers(
+    agentString(1, parameter.id),
+    agentString(2, parameter.value ?? ""),
+  ));
+}
+
+function encodeRequestedAgentModel(model, selection = null) {
+  const modelId = selection?.modelId || model;
+  const parameters = (selection?.parameters || [])
+    .map(encodeAgentModelParameter)
+    .filter(Boolean);
+  return concatBuffers(
+    agentString(1, modelId),
+    ...(selection?.maxMode === true ? [agentBool(2, true)] : []),
+    ...parameters,
+    agentBool(7, selection?.builtInModel !== false),
+    ...(selection?.isVariantStringRepresentation === true ? [agentBool(8, true)] : []),
+  );
+}
+
+function shouldResolveCursorModel(model) {
+  return typeof model === "string" && (
+    model.startsWith("cursor-")
+    || /(?:^|-)fast(?:-|$)/i.test(model)
+    || /(?:^|-)x?(?:high|medium|low)(?:-|$)/i.test(model)
+    || /(?:^|-)thinking(?:-|$)/i.test(model)
+    || /\[[^\]]+=/.test(model)
+  );
+}
 
 function decodeXmlEntities(value) {
   return String(value || "")
@@ -254,7 +287,7 @@ function encodeHistoryMessage(message) {
   return agentMessage(1, agentMessage(1, agentMessage(1, text)));
 }
 
-export function buildAgentRunFrame(messages, model, tools = []) {
+export function buildAgentRunFrame(messages, model, tools = [], modelSelection = null) {
   const system = messages
     .filter((message) => message?.role === "system")
     .map((message) => textFromContent(message.content))
@@ -285,7 +318,7 @@ export function buildAgentRunFrame(messages, model, tools = []) {
     ...(conversationHistory ? [agentMessage(7, conversationHistory)] : []),
   );
   const conversationAction = agentMessage(1, userAction);
-  const requestedModel = concatBuffers(agentString(1, model), agentBool(7, true));
+  const requestedModel = encodeRequestedAgentModel(model, modelSelection);
   const runRequest = concatBuffers(
     // An empty ConversationStateStructure starts a fresh local agent session.
     agentMessage(1, new Uint8Array()),
@@ -718,7 +751,7 @@ export class CursorExecutor extends BaseExecutor {
     };
   }
 
-  async executeAgent({ model, body, stream, credentials, signal }) {
+  async executeAgent({ model, body, stream, credentials, signal, log, modelCatalog }) {
     const agentEndpoint = PROVIDER_OAUTH.cursor?.agentEndpoint;
     if (!agentEndpoint) throw new Error("Cursor AgentService endpoint is not configured");
 
@@ -764,7 +797,18 @@ export class CursorExecutor extends BaseExecutor {
           + `tools=${body.tools?.length || 0}`
         );
         traceLog(runId, `request=${JSON.stringify({ model, stream, body })}`);
-        const runFrame = buildAgentRunFrame(body.messages || [], model, body.tools || []);
+        const modelSelection = modelCatalog !== undefined
+          ? resolveCursorModelSelection(modelCatalog, model)
+          : shouldResolveCursorModel(model)
+            ? await resolveCursorModel(credentials, model, { signal: requestController.signal, log })
+            : null;
+        if (modelSelection) {
+          debugLog(
+            `[CURSOR AGENT ${runId}] Catalog model=${modelSelection.modelId}, `
+            + `matchedBy=${modelSelection.matchedBy}, params=${modelSelection.parameters?.length || 0}`,
+          );
+        }
+        const runFrame = buildAgentRunFrame(body.messages || [], model, body.tools || [], modelSelection);
         traceLog(runId, `client_frame length=${runFrame.length} base64=${Buffer.from(runFrame).toString("base64")}`);
         session.write(runFrame);
         responseHeaders = await session.responseHeaders;
@@ -1016,7 +1060,7 @@ export class CursorExecutor extends BaseExecutor {
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     if (isAgentTextRequest(body)) {
       try {
-        return await this.executeAgent({ model, body, stream, credentials, signal });
+        return await this.executeAgent({ model, body, stream, credentials, signal, log });
       } catch (error) {
         return {
           response: new Response(JSON.stringify({

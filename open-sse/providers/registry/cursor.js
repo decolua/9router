@@ -44,7 +44,10 @@ export default {
   oauth: {
     apiEndpoint: "https://api2.cursor.sh",
     chatEndpoint: "/aiserver.v1.ChatService/StreamUnifiedChatWithTools",
+    // Retained for callers that still query the AgentService model list.
     modelsEndpoint: "/agent.v1.AgentService/GetUsableModels",
+    // Current Cursor model picker: canonical IDs + parameterized variants.
+    availableModelsEndpoint: "/aiserver.v1.AiService/AvailableModels",
     api3Endpoint: "https://api3.cursor.sh",
     agentEndpoint: "https://agent.api5.cursor.sh",
     agentNonPrivacyEndpoint: "https://agentn.api5.cursor.sh",
