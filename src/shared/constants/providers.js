@@ -6,7 +6,7 @@ const MEDIA_ENTRY_KEYS = [
   "serviceKinds", "ttsConfig", "sttConfig", "embeddingConfig",
   "imageConfig", "imageToTextConfig", "videoConfig", "musicConfig",
   "searchViaChat", "searchConfig", "fetchConfig",
-  "modelsFetcher", "mediaPriority", "hiddenKinds",
+  "modelsFetcher", "modelsFetchers", "mediaPriority", "hiddenKinds",
 ];
 
 // Build provider UI object from registry entry
@@ -64,6 +64,20 @@ export const THINKING_CONFIG = {
 
 export const OAUTH_PROVIDERS = byCategory("oauth");
 export const APIKEY_PROVIDERS = byCategory("apikey");
+
+APIKEY_PROVIDERS.huggingface = {
+  ...APIKEY_PROVIDERS.huggingface,
+  modelsFetchers: {
+    image: {
+      url: "https://huggingface.co/api/models?inference_provider=hf-inference&pipeline_tag=text-to-image&limit=30",
+      type: "huggingface-hub",
+    },
+    stt: {
+      url: "https://huggingface.co/api/models?inference_provider=hf-inference&pipeline_tag=automatic-speech-recognition&limit=30",
+      type: "huggingface-hub",
+    },
+  },
+};
 
 // Web Cookie Providers (use browser session cookie instead of API key)
 export const WEB_COOKIE_PROVIDERS = byCategory("webCookie");
@@ -127,6 +141,13 @@ export function resolveProviderId(aliasOrId) {
 export function getProviderAlias(providerId) {
   const provider = AI_PROVIDERS[providerId];
   return provider?.alias || providerId;
+}
+
+export function getProviderModelsFetcher(providerId, kind) {
+  const provider = AI_PROVIDERS[providerId];
+  if (!provider) return null;
+  if (kind && provider.modelsFetchers?.[kind]) return provider.modelsFetchers[kind];
+  return provider.modelsFetcher || null;
 }
 
 // Alias to ID mapping (for quick lookup)

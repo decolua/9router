@@ -23,4 +23,14 @@ export const FILTERS = {
     (Array.isArray(models) ? models : [])
       .filter((m) => m.id?.startsWith("mimo") || m.name?.toLowerCase().includes("mimo"))
       .map((m) => ({ id: m.id, name: m.name || m.id })),
+
+  "huggingface-hub": (models) =>
+    [...(Array.isArray(models) ? models : [])]
+      .filter((m) => typeof m.id === "string" && m.id.trim())
+      .sort(
+        (a, b) =>
+          (Number(b.downloads) || 0) - (Number(a.downloads) || 0) ||
+          (Number(b.likes) || 0) - (Number(a.likes) || 0)
+      )
+      .map((m) => ({ id: m.id, name: m.name || m.id })),
 };
