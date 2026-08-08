@@ -31,6 +31,7 @@ const PUBLIC_API_PATHS = [
   "/api/settings/require-login",
   "/api/headroom/extras",  // Headroom extras status — no auth needed (#2965)
   "/api/metrics",
+  "/api/webhooks",  // Webhooks for external integrations
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
