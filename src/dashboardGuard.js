@@ -35,6 +35,8 @@ const PUBLIC_API_PATHS = [
   "/api/health/providers",  // Provider health monitor
   "/api/health/check",  // Trigger provider health check
   "/api/playground",  // Multi-model playground
+  "/api/costs",  // Cost tracking
+  "/api/cache",  // Semantic cache
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
