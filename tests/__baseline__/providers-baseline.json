@@ -228,7 +228,7 @@
       "Content-Type": "application/connect+proto",
       "User-Agent": "connect-es/1.6.1"
     },
-    "clientVersion": "3.12.17"
+    "clientVersion": "3.13.25"
   },
   "deepgram": {
     "baseUrl": "https://api.deepgram.com/v1/listen",
