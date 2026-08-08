@@ -506,4 +506,51 @@ describe("proxyRequest — fall-through (acceptance 2/5)", () => {
       await edge.close();
     }
   });
+
+  it("FED-011: authenticated /v1 through a LINKED edge reaches central as the CLIENT key (not the federation token)", async () => {
+    process.env.FEDERATION_MODE = "edge";
+    process.env.FEDERATION_TOKEN = "fed-token-abc"; // central side compares against this
+    vi.resetModules();
+
+    // The central side runs the exact auth resolution the real central /v1
+    // auth layers use (sse/services/auth.js extractApiKey and
+    // dashboardGuard.js both call getRelayedClientApiKey first).
+    const { getRelayedClientApiKey } = await import("@/lib/federation/clientAuth.js");
+    let centralSeen = null;
+    const central = await startCentralServer((req, res) => {
+      const clientKey = getRelayedClientApiKey(req);
+      centralSeen = {
+        auth: req.headers.authorization,
+        relay: req.headers["x-9r-client-authorization"],
+        clientKey,
+      };
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, clientKey }));
+    });
+
+    const edge = await startEdgeServer({
+      getState: () => "linked",
+      centralUrl: `http://127.0.0.1:${central.port}`,
+      token: "fed-token-abc",
+      localHandler: (req, res) => res.end("LOCAL"),
+    });
+
+    try {
+      // The CLI tool points at the edge /v1 with ITS OWN API key.
+      const resp = await httpGet(edge.port, "/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer sk-client-key" },
+        body: '{"model":"m"}',
+      });
+      expect(resp.status).toBe(200);
+      // Central authenticated the END CLIENT, not the edge:
+      expect(centralSeen.clientKey).toBe("sk-client-key");
+      expect(centralSeen.auth).toBe("Bearer fed-token-abc");
+      expect(centralSeen.relay).toBe("Bearer sk-client-key");
+      expect(JSON.parse(resp.body).clientKey).toBe("sk-client-key");
+    } finally {
+      await edge.close();
+      await central.close();
+    }
+  });
 });

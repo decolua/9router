@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSettings, validateApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { getRelayedClientApiKey } from "@/lib/federation/clientAuth.js";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
@@ -124,6 +125,13 @@ function isPublicLlmApi(pathname) {
 }
 
 function extractApiKey(request) {
+  // FED-011: a LINKED edge proxies public LLM API calls with its own
+  // federation token in Authorization and the end client's key in
+  // X-9r-Client-Authorization. When the presented Bearer IS the federation
+  // token, authenticate the end client from the relay header instead.
+  const relayed = getRelayedClientApiKey(request);
+  if (relayed) return relayed;
+
   const authHeader = request.headers.get("Authorization");
   if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
   const apiKeyHeader = request.headers.get("x-api-key");
