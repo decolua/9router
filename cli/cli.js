@@ -67,12 +67,23 @@ const { ensureSqliteRuntime, buildEnvWithRuntime } = require("./hooks/sqliteRunt
 const { ensureTrayRuntime } = require("./hooks/trayRuntime");
 const args = process.argv.slice(2);
 
-// Subcommands (`9router xai video …`) run against an already-running gateway
+// Subcommands run against an already-running gateway / local data dir
 // and bypass the launcher flow (no runtime self-heal, no server spawn).
 if (args[0] === "xai" && args[1] === "video") {
   const { run } = require("./src/cli/commands/xaiVideo");
   run(args.slice(2))
     .then((code) => process.exit(code))
+    .catch((err) => {
+      console.error(`❌ ${err?.message || err}`);
+      process.exit(1);
+    });
+  return;
+}
+
+if (args[0] === "config") {
+  const { run } = require("./src/cli/commands/config");
+  run(args.slice(1))
+    .then((code) => process.exit(code ?? 0))
     .catch((err) => {
       console.error(`❌ ${err?.message || err}`);
       process.exit(1);
@@ -154,6 +165,9 @@ Options:
   -v, --version       Show version
 
 Commands:
+  config export|import|publish|receive|status|device-name
+                      Export/import config or auto-sync via private git repo
+                      (see: ${APP_NAME} config --help)
   xai video --prompt "..." --output video.mp4
                       Generate a Grok Imagine video via the running gateway
                       (see: ${APP_NAME} xai video --help)
