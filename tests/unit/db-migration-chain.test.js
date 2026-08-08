@@ -57,7 +57,14 @@ describe("Schema migrations", () => {
     expect(parseInt(row.value, 10)).toBe(latestVersion());
 
     const settings = db2.get(`SELECT data FROM settings WHERE id=1`);
-    expect(JSON.parse(settings.data)).toEqual({ foo: "bar" });
+    // Migration #1 preserves the row; migration #2 (seed-antigravity-skip-rule)
+    // then augments it — proving the FULL pending chain re-applied, not just #1.
+    const parsed = JSON.parse(settings.data);
+    expect(parsed.foo).toBe("bar"); // existing data preserved
+    expect(parsed.skipRulesSeeded).toBe(true); // migration #2 ran
+    expect(parsed.providerSkipRules).toEqual([
+      { provider: "antigravity", match: { status: 503, contains: "capacity" }, action: "skip", sweep: true },
+    ]);
   });
 
   it("fresh DB + legacy db.json → imports data automatically", async () => {
@@ -73,7 +80,14 @@ describe("Schema migrations", () => {
     const db = await getAdapter();
 
     const settings = db.get(`SELECT data FROM settings WHERE id=1`);
-    expect(JSON.parse(settings.data)).toEqual({ foo: "legacy-value" });
+    // Legacy import now seeds the Antigravity capacity rule (Fix #3) so a direct
+    // upgrade from db.json keeps capacity fail-fast after the hardcode removal.
+    const parsed = JSON.parse(settings.data);
+    expect(parsed.foo).toBe("legacy-value"); // legacy settings preserved
+    expect(parsed.skipRulesSeeded).toBe(true);
+    expect(parsed.providerSkipRules).toEqual([
+      { provider: "antigravity", match: { status: 503, contains: "capacity" }, action: "skip", sweep: true },
+    ]);
 
     const keys = db.all(`SELECT * FROM apiKeys`);
     expect(keys).toHaveLength(1);

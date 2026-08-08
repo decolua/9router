@@ -4,6 +4,7 @@
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
+import { getRoutingMeta } from "./routingMeta.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
 
@@ -305,10 +306,17 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         return result;
       }
 
+      // Fail-fast when the router flagged this failure as such: connect_timeout
+      // (upstream stalled before headers) OR a user skip-rule fired (status/contains/
+      // kind + action:"skip"). Both mean waiting a cooldown just delays the jump to
+      // the next backup model. Read the in-process routing metadata (never serialized).
+      const meta = getRoutingMeta(result);
+      const failFast = meta?.failFast === true || meta?.errorKind === "connect_timeout";
+
       // For transient errors (503/502/504), wait for cooldown before falling through
       // so a briefly-overloaded provider gets a chance to recover rather than being
       // skipped immediately (fixes: combo falls through on transient 503)
-      if (cooldownMs && cooldownMs > 0 && cooldownMs <= 5000 &&
+      if (!failFast && cooldownMs && cooldownMs > 0 && cooldownMs <= 5000 &&
           (result.status === 503 || result.status === 502 || result.status === 504)) {
         log.info("COMBO", `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
         await new Promise(r => setTimeout(r, cooldownMs));

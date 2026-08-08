@@ -37,6 +37,20 @@ describe("antigravity computeRetryDelay hook (D3)", () => {
     expect(await ag.computeRetryDelay(res(503), 1)).toBe(2000);
   });
 
+  it("capacity 503 no longer vetoed at the hook — fail-fast is a skip-rule now", async () => {
+    // The hardcoded capacity veto was removed. In isolation the hook treats a
+    // capacity 503 as a transient error (backoff). Fail-fast is enforced upstream:
+    // the seeded skip-rule resolves attempts=0, so BaseExecutor never calls this hook
+    // for capacity 503. This test locks the hook's post-removal behavior.
+    const r = res(503, {}, {
+      error: {
+        reason: "MODEL_CAPACITY_EXHAUSTED",
+        message: "No capacity available for model claude-opus-4-6-thinking on the server",
+      },
+    });
+    expect(await ag.computeRetryDelay(r, 1)).toBe(2000); // transient backoff, not false
+  });
+
   it("retries Antigravity agent terminated body even when status is not 429", async () => {
     const r = res(500, {}, { error: { message: "Agent execution terminated due to error" } });
     expect(await ag.computeRetryDelay(r, 1)).toBe(2000);

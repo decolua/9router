@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const dbMocks = vi.hoisted(() => ({
   getProviderConnections: vi.fn(),
   updateProviderConnection: vi.fn(),
+  // markAccountUnavailable now falls back to settings when the caller does not
+  // thread request-scoped skip rules through. No rules here -> stock behaviour.
+  getSettings: vi.fn(),
 }));
 
 vi.mock("@/lib/localDb", () => dbMocks);
@@ -20,6 +23,7 @@ const { markAccountUnavailable } = await import("../../src/sse/services/auth.js"
 
 beforeEach(() => {
   vi.clearAllMocks();
+  dbMocks.getSettings.mockResolvedValue({});
   dbMocks.getProviderConnections.mockResolvedValue([{
     id: "github-a",
     provider: "github",
