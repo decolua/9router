@@ -7,6 +7,7 @@ import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
 import { getAppVersion } from "./version.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
+import { seedAntigravityRule } from "./repos/settingsRepo.js";
 
 // Marker file: prevents re-importing legacy JSON when user wipes data.sqlite.
 const MIGRATED_MARKER = path.join(DB_DIR, ".migrated-from-json");
@@ -113,7 +114,13 @@ function importLegacyMain(adapter, data) {
   if (!data || typeof data !== "object") return;
 
   if (data.settings) {
-    adapter.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(data.settings)]);
+    // Seed the default Antigravity capacity skip-rule onto imported legacy settings.
+    // The versioned migration (#2) runs while the DB is still fresh (no settings row
+    // yet) and returns early, so the legacy-JSON path must seed here — otherwise a
+    // direct upgrade from db.json would lose the capacity fail-fast after the hardcode
+    // removal. Uses the SAME helper as migration #2 (idempotent, respects the flag).
+    const settingsToStore = seedAntigravityRule({ ...data.settings });
+    adapter.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(settingsToStore)]);
   }
 
   importWithAssertion(adapter, "providerConnections", data.providerConnections || [], (c) => {

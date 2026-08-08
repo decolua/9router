@@ -1,6 +1,6 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
-import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
+import { formatRetryAfter, checkFallbackError, matchSkipRule, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
@@ -214,13 +214,73 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
  * @param {string} errorText
  * @param {string|null} provider
  * @param {string|null} model - The specific model that triggered the error
- * @returns {{ shouldFallback: boolean, cooldownMs: number }}
+ * @param {number|null} resetsAtMs - Precise cooldown expiry (overrides backoff) if known
+ * @param {string|null} errorKind - Classified error kind from the executor (connect_timeout | network | http_<status>)
+ * @param {Array|null} skipRules - Request-scoped skip-rules captured for THIS attempt. When
+ *   provided, they are authoritative (same rules the transport tier used); when null we fall
+ *   back to reading settings so non-chat callers (image/search/stt/tts) keep working.
+ * @returns {{ shouldFallback: boolean, cooldownMs: number, failFast?: boolean, resweep?: boolean,
+ *   accountRetry?: boolean, retryAttempts?: number, ruleKey?: string }}
+ *   accountRetry:true asks the caller to re-invoke the SAME account. No DB write happens
+ *   on that path: the caller owns the per-request attempt counter, because a durable count
+ *   would leak between unrelated requests.
  */
-export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null) {
-  if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
+export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null, errorKind = null, skipRules = null) {
+  // connect_timeout is always fail-fast: the upstream stalled before returning
+  // headers, so a cooldown wait just delays the jump to the next backup model.
+  const connectTimeoutFailFast = errorKind === "connect_timeout";
+
+  // Match skip-rules using the request-scoped rules when passed (authoritative — the
+  // same set the BaseExecutor retry tier saw). Only read settings as a fallback for
+  // callers that don't thread a policy through. Compute BEFORE the noauth early-return
+  // so a skip signal is not lost for no-auth providers.
+  const effectiveSkipRules = Array.isArray(skipRules)
+    ? skipRules
+    : ((await getSettings()) || {}).providerSkipRules || [];
+  const skipRule = matchSkipRule(provider, { status, errorKind, text: errorText }, effectiveSkipRules);
+  const failFast = skipRule?.action === "skip" || connectTimeoutFailFast;
+  // resweep is a SEPARATE, opt-in signal (rule.sweep:true) — NOT every failFast.
+  // It asks the account loop to re-try the whole pool after exhausting it. Kept
+  // distinct so a plain skip / connect_timeout does NOT trigger a full-pool sweep.
+  const resweep = skipRule?.action === "skip" && skipRule?.sweep === true;
+
+  // A "retry" rule means: call the SAME account again. Return before ANY DB read or
+  // write -- this path must never mark the account unavailable, write a model lock, or
+  // touch backoffLevel, because the account is not the thing that failed. The caller
+  // holds the request-scoped attempt counter and decides whether budget remains; when
+  // it runs out it moves to the next account, still without a DB write. ruleKey lets
+  // the caller keep one counter per (connection, rule) pair. Placed before the noauth
+  // early-return so a no-auth provider retries its virtual connection too.
+  if (skipRule?.action === "retry") {
+    return {
+      shouldFallback: false,
+      cooldownMs: 0,
+      failFast: connectTimeoutFailFast,
+      accountRetry: true,
+      retryAttempts: skipRule.retryAttempts,
+      ruleKey: `${provider || "?"}|${status ?? ""}|${errorKind || ""}`
+    };
+  }
+
+  // No-auth / no-connection: there is a single virtual connection, so we must NOT
+  // ask the account loop to fall back (it would re-select the same virtual connection
+  // forever). Return shouldFallback:false, but still surface the fail-fast
+  // classification so combo can route to the next model without a cooldown wait.
+  if (!connectionId || connectionId === "noauth") {
+    return { shouldFallback: false, cooldownMs: 0, failFast, resweep };
+  }
+
   const connections = await getProviderConnections({ provider });
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
+
+  // A "skip" rule means: transient/busy signal — fall back WITHOUT writing a DB
+  // cooldown lock, so the next request can use this account again immediately.
+  if (skipRule?.action === "skip") {
+    const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
+    log.warn("AUTH", `${connName} skip-rule (${errorKind || status}) for ${model || "unknown model"}; fallback without cooldown`);
+    return { shouldFallback: true, cooldownMs: 0, failFast: true, resweep };
+  }
 
   // GitHub premium-request exhaustion is account-wide until the next UTC month.
   const githubResetAtMs = githubMonthlyResetMs(status, errorText, provider);
@@ -238,7 +298,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   } else {
     ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));
   }
-  if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
+  if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0, failFast: connectTimeoutFailFast };
 
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
   const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
@@ -260,7 +320,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     console.error(`❌ ${provider} [${status}]: ${reason}`);
   }
 
-  return { shouldFallback: true, cooldownMs };
+  return { shouldFallback: true, cooldownMs, failFast: connectTimeoutFailFast };
 }
 
 /**

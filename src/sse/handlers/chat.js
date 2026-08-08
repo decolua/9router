@@ -19,9 +19,15 @@ import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActi
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
+import { resolveProviderHeaderTimeout } from "open-sse/services/accountFallback.js";
+import { setRoutingMeta } from "open-sse/services/routingMeta.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+
+// How many times to re-sweep the whole account pool when a matched skip-rule opts
+// in via sweep:true (momentary capacity/saturation recovery). Not provider-specific.
+const POOL_RESWEEP_RETRIES = 2;
 
 /**
  * Handle chat completion request
@@ -223,9 +229,28 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
+  let lastErrorKind = null;
+  let lastFailFast = false;
+  let lastResweep = false;
+  let poolResweeps = 0;
+  // Request-scoped account-retry budget: how many EXTRA calls each
+  // (connectionId, rule) pair has already consumed. Deliberately a local Map and
+  // never persisted -- a durable counter would leak across unrelated requests and
+  // silently disable the rule for the next caller. Cleared with the request.
+  const accountRetryUsed = new Map();
+
+  // Set while an account-retry rule still has budget on this connection, so the
+  // next getProviderCredentials() call returns the SAME account instead of letting
+  // the selection strategy hand us a different one.
+  let pinnedConnectionId = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(
+      provider,
+      excludeConnectionIds,
+      model,
+      pinnedConnectionId ? { preferredConnectionId: pinnedConnectionId } : {}
+    );
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -233,14 +258,36 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
         log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
-        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        // Carry the fail-fast classification of the last account failure onto the
+        // terminal response so combo can jump to the next model without a cooldown wait.
+        const resp = unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        setRoutingMeta(resp, { errorKind: lastErrorKind, status, failFast: lastFailFast });
+        return resp;
       }
       if (excludeConnectionIds.size === 0) {
         log.warn("AUTH", `No active credentials for provider: ${provider}`);
         return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
       }
+      // Pool resweep: a matched skip-rule with sweep:true asks us to re-try the whole
+      // account pool a few times before giving up (momentary capacity/saturation
+      // recovery). Gated ONLY on the rule's opt-in resweep signal — NOT on failFast
+      // (which fires for every skip / connect_timeout) and NOT hardcoded to any
+      // provider. lastResweep reflects the most recent account failure's rule.
+      if (
+        lastResweep &&
+        poolResweeps < POOL_RESWEEP_RETRIES
+      ) {
+        poolResweeps += 1;
+        log.warn("CHAT", `[${provider}/${model}] pool exhausted with resweep rule; restarting account sweep ${poolResweeps}/${POOL_RESWEEP_RETRIES}`);
+        excludeConnectionIds.clear();
+        continue;
+      }
       log.warn("CHAT", "No more accounts available", { provider });
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+      // Skip-loop terminal: all accounts exhausted. Attach the last failure's
+      // fail-fast signal so combo reads it off THIS response (the object it receives).
+      const resp = errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+      setRoutingMeta(resp, { errorKind: lastErrorKind, status: lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, failFast: lastFailFast });
+      return resp;
     }
 
     // Account selection shown in the unified "▶" line (acc:...)
@@ -259,10 +306,20 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Use shared chatCore
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+    // Request-scoped transport policy (never mutate the cached executor's this.config).
+    const skipRules = chatSettings.providerSkipRules || [];
+    const resolvedHeaderTimeout = resolveProviderHeaderTimeout(provider, skipRules);
+    const requestPolicy = {
+      providerId: provider,
+      maxTransportAttempts: chatSettings.maxTransportAttempts,
+      skipRules,
+      ...(resolvedHeaderTimeout != null ? { headerTimeoutMs: resolvedHeaderTimeout } : {})
+    };
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
+      requestPolicy,
       log,
       clientRawRequest,
       connectionId: credentials.connectionId,
@@ -300,17 +357,79 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     if (result.success) return result.response;
 
-    // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
+    // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise
+    // resetsAtMs). Pass the request-scoped skipRules so the fallback tier matches on the SAME
+    // rules the transport tier used — no second getSettings() read that could drift mid-request.
+    const { shouldFallback, failFast, resweep, accountRetry, retryAttempts, ruleKey } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs, result.errorKind, skipRules);
 
-    if (shouldFallback) {
-      log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
+    // Account-retry rule: call the SAME account again, up to retryAttempts EXTRA
+    // times. This budget is the rule's own and is independent of
+    // maxTransportAttempts, which governs transport/URL-fallback retries inside the
+    // executor. Nothing is written to the DB on this path -- the account is not what
+    // failed. A client abort ends the request instead of consuming budget, and a
+    // request that already streamed bytes is never retried.
+    if (accountRetry) {
+      const aborted = request?.signal?.aborted || result.errorKind === "aborted" || result.status === 499;
+      if (aborted) {
+        log.warn("CHAT", `[${provider}/${model}] client aborted; not retrying account`);
+        setRoutingMeta(result.response, { errorKind: result.errorKind, status: result.status, failFast: !!failFast });
+        return result.response;
+      }
+      // noauth providers expose a single virtual connection whose connectionId is
+      // undefined; key it explicitly so the budget is still counted, and terminate
+      // below instead of excluding an id that would filter nothing.
+      const retryConnKey = credentials.connectionId || "noauth";
+      const key = `${retryConnKey}|${ruleKey}`;
+      const used = accountRetryUsed.get(key) || 0;
+      if (used < retryAttempts) {
+        accountRetryUsed.set(key, used + 1);
+        pinnedConnectionId = credentials.connectionId;
+        log.warn("RETRY", `↻ ACC:${credentials.connectionName} retry ${used + 1}/${retryAttempts} (${result.status}) — same account, no cooldown`);
+        lastError = result.error;
+        lastStatus = result.status;
+        lastErrorKind = result.errorKind || lastErrorKind;
+        continue;
+      }
+      // Budget exhausted. There is no next account for a no-auth provider (one
+      // virtual connection, and its id is undefined so excluding it would filter
+      // nothing) -- return the terminal error and let combo pick the next model.
+      if (!credentials.connectionId) {
+        log.warn("RETRY", `[${provider}/${model}] retry budget spent (${retryAttempts}) on no-auth connection; no further account`);
+        setRoutingMeta(result.response, { errorKind: result.errorKind, status: result.status, failFast: true });
+        return result.response;
+      }
+      // Move to the next account WITHOUT marking this one unavailable -- no
+      // cooldown, no model lock, no backoff, no lastError write.
+      log.warn("RETRY", `⇄ ACC:${credentials.connectionName} retry budget spent (${retryAttempts}) → NEXT ACCOUNT (no cooldown)`);
+      pinnedConnectionId = null;
       excludeConnectionIds.add(credentials.connectionId);
       lastError = result.error;
       lastStatus = result.status;
+      lastErrorKind = result.errorKind || lastErrorKind;
+      lastFailFast = true;
       continue;
     }
 
+    if (shouldFallback) {
+      log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
+      pinnedConnectionId = null;
+      excludeConnectionIds.add(credentials.connectionId);
+      lastError = result.error;
+      lastStatus = result.status;
+      // Preserve the last failure's classification so the terminal response (built
+      // when accounts run out) can signal fail-fast to combo, and resweep to gate
+      // the pool-resweep loop.
+      lastErrorKind = result.errorKind || lastErrorKind;
+      lastFailFast = !!failFast;
+      lastResweep = !!resweep;
+      continue;
+    }
+
+    // Terminal: this account failed but is NOT eligible for fallback (e.g. no-auth
+    // provider, or a non-fallback error). Attach the fail-fast classification onto
+    // the response combo receives so a skip-rule / connect_timeout still skips the
+    // cooldown wait even when there is no next account to try.
+    setRoutingMeta(result.response, { errorKind: result.errorKind, status: result.status, failFast: !!failFast });
     return result.response;
   }
 }

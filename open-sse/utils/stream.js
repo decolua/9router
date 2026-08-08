@@ -22,6 +22,24 @@ const STREAM_MODE = {
   PASSTHROUGH: "passthrough" // No translation, normalize output, extract usage
 };
 
+function getGeminiFamilyParts(chunk) {
+  const parts = chunk?.response?.candidates?.[0]?.content?.parts
+    || chunk?.candidates?.[0]?.content?.parts;
+  return Array.isArray(parts) ? parts : [];
+}
+
+function accumulateGeminiFamilyParts(parts, accumulate) {
+  for (const part of parts) {
+    if (part.text && typeof part.text === "string") {
+      accumulate(part.text, part.thought === true);
+    }
+  }
+}
+
+function hasGeminiFamilyFinishReason(chunk) {
+  return !!(chunk?.response?.candidates?.[0]?.finishReason || chunk?.candidates?.[0]?.finishReason);
+}
+
 /**
  * Create unified SSE transform stream
  * @param {object} options
@@ -75,6 +93,32 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
+  let completionRecorded = false;
+
+  const recordStreamCompletion = (currentUsage) => {
+    if (completionRecorded) return currentUsage;
+    let finalUsage = currentUsage;
+
+    if (!hasValidUsage(finalUsage) && totalContentLength > 0) {
+      finalUsage = estimateUsage(body, totalContentLength, mode === STREAM_MODE.PASSTHROUGH ? FORMATS.OPENAI : sourceFormat);
+    }
+
+    if (hasValidUsage(finalUsage)) {
+      logUsage(mode === STREAM_MODE.TRANSLATE ? (state?.provider || targetFormat) : provider, finalUsage, model, connectionId, apiKey);
+    } else {
+      appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
+    }
+
+    if (onStreamComplete) {
+      onStreamComplete({
+        content: accumulatedContent,
+        thinking: accumulatedThinking
+      }, finalUsage, ttftAt);
+    }
+
+    completionRecorded = true;
+    return finalUsage;
+  };
 
   return new TransformStream({
     transform(chunk, controller) {
@@ -163,6 +207,15 @@ export function createSSEStream(options = {}) {
                 accumulatedThinking += reasoning;
               }
 
+              accumulateGeminiFamilyParts(getGeminiFamilyParts(parsed), (text, isThought) => {
+                totalContentLength += text.length;
+                if (isThought) {
+                  accumulatedThinking += text;
+                } else {
+                  accumulatedContent += text;
+                }
+              });
+
               const extracted = extractUsage(parsed);
               if (extracted) {
                 usage = mergeUsage(usage, extracted);
@@ -183,6 +236,10 @@ export function createSSEStream(options = {}) {
               } else if (idFixed || fieldsInjected) {
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
+              }
+
+              if (isFinishChunk || hasGeminiFamilyFinishReason(parsed)) {
+                usage = recordStreamCompletion(usage);
               }
             } catch {
               // Skip non-JSON data lines silently — don't forward garbage to clients.
@@ -266,24 +323,23 @@ export function createSSEStream(options = {}) {
           accumulatedThinking += parsed.choices[0].delta.reasoning_content;
         }
         
-        // Gemini format
-        if (parsed.candidates?.[0]?.content?.parts) {
-          for (const part of parsed.candidates[0].content.parts) {
-            if (part.text && typeof part.text === "string") {
-              totalContentLength += part.text.length;
-              // Check if this is thinking content
-              if (part.thought === true) {
-                accumulatedThinking += part.text;
-              } else {
-                accumulatedContent += part.text;
-              }
-            }
+        // Gemini-family format (Gemini/Vertex direct and Antigravity wrapped)
+        accumulateGeminiFamilyParts(getGeminiFamilyParts(parsed), (text, isThought) => {
+          totalContentLength += text.length;
+          if (isThought) {
+            accumulatedThinking += text;
+          } else {
+            accumulatedContent += text;
           }
-        }
+        });
 
         // Extract usage
         const extracted = extractUsage(parsed);
         if (extracted) state.usage = mergeUsage(state.usage, extracted); // Keep original usage for logging
+
+        if (hasGeminiFamilyFinishReason(parsed)) {
+          state.usage = recordStreamCompletion(state.usage);
+        }
 
         // Responses same-format passthrough: re-emit with original event framing
         if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {
@@ -359,11 +415,7 @@ export function createSSEStream(options = {}) {
             usage = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
           }
 
-          if (hasValidUsage(usage)) {
-            logUsage(provider, usage, model, connectionId, apiKey);
-          } else {
-            appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
-          }
+          usage = recordStreamCompletion(usage);
           
           // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
           // Some clients (e.g. OpenClaw) expect the OpenAI-style sentinel:
@@ -377,12 +429,6 @@ export function createSSEStream(options = {}) {
             controller.enqueue(sharedEncoder.encode(doneOutput));
           }
 
-          if (onStreamComplete) {
-            onStreamComplete({
-              content: accumulatedContent,
-              thinking: accumulatedThinking
-            }, usage, ttftAt);
-          }
           return;
         }
 
@@ -448,18 +494,7 @@ export function createSSEStream(options = {}) {
           state.usage = estimateUsage(body, totalContentLength, sourceFormat);
         }
 
-        if (hasValidUsage(state?.usage)) {
-          logUsage(state.provider || targetFormat, state.usage, model, connectionId, apiKey);
-        } else {
-          appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
-        }
-        
-        if (onStreamComplete) {
-          onStreamComplete({
-            content: accumulatedContent,
-            thinking: accumulatedThinking
-          }, state?.usage, ttftAt);
-        }
+        state.usage = recordStreamCompletion(state?.usage);
       } catch (error) {
         console.log("Error in flush:", error);
       }

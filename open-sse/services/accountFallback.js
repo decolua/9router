@@ -50,6 +50,120 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
 }
 
 /**
+ * Match a user-configured skip-rule against a failure.
+ *
+ * A rule's `match` may carry any combination of { kind, status, contains }; the
+ * rule matches only when EVERY present condition holds (AND). At least one
+ * condition must be present. Rules are evaluated in ARRAY ORDER — the first rule
+ * (for this provider) whose conditions all match wins. Order is user-controlled
+ * via the settings UI. There is no hardcoded provider default: the legacy
+ * Antigravity capacity skip is now shipped as an ordinary seeded rule
+ * ({ status:503, contains:"capacity", action:"skip" }) the user can edit or delete.
+ *
+ * @param {string} provider   provider id (e.g. "anthropic-compatible-<uuid>", "antigravity")
+ * @param {{status?: number|string, errorKind?: string, text?: string}} failure
+ * @param {Array<{provider, match:{kind?,status?,contains?}, action, headerTimeoutMs?, sweep?}>} skipRules
+ * @returns {{action:"retry"|"skip", headerTimeoutMs?:number, sweep?:boolean}|null}
+ */
+// Minimum for a retry rule's `retryAttempts` (extra calls to the same account).
+// There is no maximum: the user decides how many retries they need, and the
+// abort guard in chat.js terminates the loop immediately on client disconnect
+// regardless of how many budget calls remain.
+export const SKIP_RULE_RETRY_ATTEMPTS_MIN = 1;
+// Rules saved before `retryAttempts` existed default to 1 extra retry.
+export const SKIP_RULE_RETRY_ATTEMPTS_DEFAULT = 1;
+
+/**
+ * Effective extra same-account calls for a retry rule.
+ * Only positive integers are honoured; anything else (absent, 0, negative,
+ * float, string, NaN) falls back to the documented default rather than
+ * silently disabling the rule the user asked for.
+ * @param {object} rule
+ * @returns {number}
+ */
+export function resolveRetryAttempts(rule) {
+  const n = rule?.retryAttempts;
+  if (!Number.isInteger(n) || n < SKIP_RULE_RETRY_ATTEMPTS_MIN) return SKIP_RULE_RETRY_ATTEMPTS_DEFAULT;
+  return n;
+}
+
+export function matchSkipRule(provider, failure = {}, skipRules = []) {
+  const r = findMatchingSkipRule(provider, failure, skipRules);
+  if (!r) return null;
+  const out = { action: r.action };
+  if (r.headerTimeoutMs != null) out.headerTimeoutMs = r.headerTimeoutMs;
+  // `sweep` is only meaningful for skip rules — it asks the account loop to
+  // re-try the whole pool after exhausting it (momentary saturation recovery).
+  if (r.action === "skip" && r.sweep === true) out.sweep = true;
+  // `retryAttempts` is only meaningful for retry rules: it is the number of EXTRA
+  // calls to the SAME account before giving up on it. Resolved here (rather than at
+  // the call site) so every consumer sees the same effective value, including the
+  // backward-compatible default for rules saved before the field existed.
+  if (r.action === "retry") out.retryAttempts = resolveRetryAttempts(r);
+  return out;
+}
+
+/**
+ * Find the FIRST rule (in array order) that matches this failure for `provider`,
+ * and return the rule object itself (not a derived shape) — or null.
+ *
+ * A rule's `match` may carry any combination of { kind, status, contains }; the
+ * rule matches only when EVERY present condition holds (AND). At least one usable
+ * condition must be present (an empty match never matches — avoids skip-all).
+ * Array order is user-controlled via the settings UI (first match wins).
+ *
+ * @param {string} provider
+ * @param {{status?: number|string, errorKind?: string, text?: string}} failure
+ * @param {Array} skipRules
+ * @returns {object|null} the matching rule object, or null
+ */
+export function findMatchingSkipRule(provider, failure = {}, skipRules = []) {
+  const status = failure.status != null ? Number(failure.status) : null;
+  const errorKind = failure.errorKind || null;
+  const text = typeof failure.text === "string" ? failure.text.toLowerCase() : "";
+  const rules = Array.isArray(skipRules) ? skipRules : [];
+
+  const conditionsMatch = (m) => {
+    let has = false;
+    if (m.kind != null) {
+      has = true;
+      if (errorKind == null || m.kind !== errorKind) return false;
+    }
+    if (m.status != null) {
+      has = true;
+      if (status == null || Number(m.status) !== status) return false;
+    }
+    if (m.contains != null && m.contains !== "") {
+      has = true;
+      if (!text.includes(String(m.contains).toLowerCase())) return false;
+    }
+    // A match block with no usable condition never matches (avoids skip-all).
+    return has;
+  };
+
+  for (const r of rules) {
+    if (!r || r.provider !== provider || !r.match || !r.action) continue;
+    if (conditionsMatch(r.match)) return r;
+  }
+  return null;
+}
+
+/**
+ * Resolve the header/connect timeout for a provider from skip-rules.
+ * Scans rules matching this provider with match.kind === "connect_timeout" that
+ * carry a headerTimeoutMs; earlier rule wins. Returns null → caller uses default.
+ */
+export function resolveProviderHeaderTimeout(provider, skipRules = []) {
+  const rules = Array.isArray(skipRules) ? skipRules : [];
+  for (const r of rules) {
+    if (r && r.provider === provider && r.match?.kind === "connect_timeout" && r.headerTimeoutMs != null) {
+      return r.headerTimeoutMs;
+    }
+  }
+  return null;
+}
+
+/**
  * Check if account is currently unavailable (cooldown not expired)
  */
 export function isAccountUnavailable(unavailableUntil) {
