@@ -65,6 +65,7 @@ package-lock.json
 
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
+.github/agents/
 README1.md
 deploy*.sh
 ecosystem.config.*
