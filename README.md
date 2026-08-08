@@ -135,6 +135,11 @@ npm run build
 PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
 ```
 
+`npm run start` boots the standalone server through `custom-server.js` (the
+federation-aware wrapper). Edge nodes additionally set `FEDERATION_MODE=edge`
+(plus `FEDERATION_TOKEN` / `FEDERATION_CENTRAL_URL` — see
+[docs/FEDERATION.md](docs/FEDERATION.md)).
+
 Default URLs:
 
 - Dashboard: `http://localhost:20128/dashboard`

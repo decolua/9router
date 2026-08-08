@@ -259,7 +259,8 @@ a federation image, swap `build:` for `image:`.
 Run the normal production build (`npm run build && PORT=... npm run start`)
 on each instance with the env matrix above. The federation API routes are
 part of the Next app; the edge proxy/failover hooks live in
-`custom-server.js` (the `node custom-server.js` entry).
+`custom-server.js`, which `npm run start` boots in front of the standalone
+server (the Docker CMD runs the same `node custom-server.js` entry).
 
 ### 6.3 TLS
 

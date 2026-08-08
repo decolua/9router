@@ -1,4 +1,10 @@
+// Wrapper marker (FED-014): other entry points (src/instrumentation.js) check
+// this to detect that the federation-aware wrapper is active. Must be set
+// before anything else.
+globalThis.__9ROUTER_CUSTOM_SERVER__ = true;
+
 const http = require("http");
+const fs = require("fs");
 const path = require("path");
 const { pathToFileURL } = require("url");
 
@@ -349,4 +355,33 @@ http.createServer = (...args) => {
   return server;
 };
 
-if (require.main === module) require("./server.js");
+// FED-014: locate the Next standalone server entry. Supports BOTH layouts:
+//   - Docker standalone layout: custom-server.js sits next to server.js
+//     (the Docker CMD `node custom-server.js` runs from the standalone dir).
+//   - Repo layout after `npm run build` (+ postbuild asset copy):
+//     .next/standalone/server.js, while custom-server.js stays at repo root.
+// Returns the resolved absolute path, or null when neither exists. Pure and
+// exported so tests can exercise resolution without booting the server.
+function resolveStandaloneServerPath({ dir } = {}) {
+  const base = dir || __dirname;
+  const dockerLayout = path.join(base, "server.js");
+  if (fs.existsSync(dockerLayout)) return dockerLayout;
+  const repoLayout = path.join(base, ".next", "standalone", "server.js");
+  if (fs.existsSync(repoLayout)) return repoLayout;
+  return null;
+}
+
+module.exports = { resolveStandaloneServerPath };
+
+if (require.main === module) {
+  const serverPath = resolveStandaloneServerPath();
+  if (!serverPath) {
+    console.error(
+      "FATAL: cannot locate the Next standalone server (server.js). " +
+        "Run `npm run build` first (produces .next/standalone/server.js), " +
+        "or run from the Docker standalone layout (custom-server.js next to server.js)."
+    );
+    process.exit(1);
+  }
+  require(serverPath);
+}
