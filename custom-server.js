@@ -147,6 +147,31 @@ function tagDegradedResponse(res) {
   };
 }
 
+// Federation loop starter (FED-013): start the replication (edgeClient) and
+// failover (heartbeat) loops when the server listens, gated on
+// FEDERATION_MODE=edge. Before FED-013 only the e2e harness started them, so
+// real edge deployments never replicated and never recovered from a central
+// outage. Lazily imported like the loaders above — fail-open when
+// src/lib/federation is absent from the deployment image (never crash the
+// listening server). Interval/threshold defaults come from the federation
+// config (FEDERATION_SYNC_INTERVAL_MS / FEDERATION_HEARTBEAT_INTERVAL_MS /
+// FEDERATION_OUTAGE_THRESHOLD_MS); the starter module guards against
+// double-start itself, so this flag is just a cheap short-circuit.
+let federationLoopsStarted = false;
+function startFederationLoopsFromCustomServer() {
+  if (federationLoopsStarted) return;
+  const isEdgeMode = String(process.env.FEDERATION_MODE || "").trim().toLowerCase() === "edge";
+  if (!isEdgeMode) return; // standalone/central: zero drift
+  federationLoopsStarted = true;
+  const modPath = path.join(__dirname, "src", "lib", "federation", "startLoops.js");
+  import(pathToFileURL(modPath).href)
+    .then((m) => m.startFederationLoops())
+    .catch((e) => {
+      console.error("[federation] loop starter load failed:", e && e.message ? e.message : e);
+      federationLoopsStarted = false; // allow a later retry
+    });
+}
+
 function startBackgroundTokenRefreshFromCustomServer() {
   if (backgroundRefreshStarted) return;
   backgroundRefreshStarted = true;
@@ -273,6 +298,7 @@ http.createServer = (...args) => {
     startBackgroundTokenRefreshFromCustomServer();
     loadFederationProxy();
     loadFederationFailover();
+    startFederationLoopsFromCustomServer();
   });
   const origEmit = server.emit;
   // JBR 25 sends h2c upgrades that the HTTP/1.1 server would otherwise close.
