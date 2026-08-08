@@ -18,14 +18,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
+      # NOTE: package-lock.json is gitignored in this repo (see .gitignore
+      # line 66) — use `npm install` (not `npm ci`) and no npm cache, or
+      # setup-node fails with "Dependencies lock file is not found".
       - name: Install root dependencies
-        run: npm ci
+        run: npm install
 
       - name: Install test dependencies (independent ESM package)
         working-directory: tests
-        run: npm ci
+        run: npm install
 
       # The suite is NOT all-green by design (~88 known-fails in
       # tests/__baseline__/known-fails.txt). The regression gate
