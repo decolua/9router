@@ -60,6 +60,24 @@ swiftc -O -parse-as-library -framework AppKit -framework SwiftUI \
 sed "s|<string>0.5.50</string>|<string>$APP_VERSION</string>|" \
   "$SCRIPT_DIR/Info.plist" > "$APP_BUNDLE/Contents/Info.plist"
 
+# App icon (.icns) from the repo's PWA icon asset
+ICON_DIR="$BUILD_DIR/icon-work"
+mkdir -p "$ICON_DIR/AppIcon.iconset"
+sips -s format png --resampleWidth 1024 "$REPO_ROOT/public/icons/icon-512.svg" \
+  --out "$ICON_DIR/AppIcon.iconset/icon_512x512@2x.png" >/dev/null 2>&1 || \
+sips -s format png --resampleWidth 1024 "$REPO_ROOT/public/icons/icon-512.svg" \
+  --out "$ICON_DIR/app-1024.png" >/dev/null
+for px in 16 32 64 128 256 512; do
+  sips -s format png --resampleWidth $px "$ICON_DIR/app-1024.png" \
+    --out "$ICON_DIR/AppIcon.iconset/icon_${px}x${px}.png" >/dev/null 2>&1
+  sips -s format png --resampleWidth $((px * 2)) "$ICON_DIR/app-1024.png" \
+    --out "$ICON_DIR/AppIcon.iconset/icon_${px}x${px}@2x.png" >/dev/null 2>&1
+done
+iconutil -c icns "$ICON_DIR/AppIcon.iconset" -o "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+
+# Menu bar icon — reuse the CLI's existing tray icon asset
+cp "$REPO_ROOT/cli/src/cli/tray/icon.png" "$APP_BUNDLE/Contents/Resources/menubar.png"
+
 # Node runtime — keep bin + lib only (BSD tar: member paths include top dir)
 NODE_TOP="node-v$NODE_VERSION-darwin-arm64"
 mkdir -p "$APP_BUNDLE/Contents/Resources/node"
@@ -96,7 +114,13 @@ echo "==> 6/6 packaging .dmg + .zip"
 DMG="$DIST_DIR/9Router-$APP_VERSION-arm64.dmg"
 ZIP="$DIST_DIR/9Router-$APP_VERSION-arm64.zip"
 rm -f "$DMG" "$ZIP"
-hdiutil create -volname "9Router $APP_VERSION" -srcfolder "$APP_BUNDLE" -ov -format UDZO "$DMG" >/dev/null
+# Staging dir with an Applications symlink so users can drag-to-install.
+STAGE="$BUILD_DIR/dmg-stage"
+rm -rf "$STAGE"
+mkdir -p "$STAGE"
+cp -R "$APP_BUNDLE" "$STAGE/"
+ln -s /Applications "$STAGE/Applications"
+hdiutil create -volname "9Router $APP_VERSION" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
 ditto -c -k --keepParent "$APP_BUNDLE" "$ZIP"
 echo "✅ $DMG"
 echo "✅ $ZIP"

@@ -39,6 +39,11 @@ final class RouterController: ObservableObject {
             self?.refreshHealth()
         }
         refreshHealth()
+        // Launch behaviour: make sure the service is up, then open the dashboard.
+        // Wait for the first health poll so we don't blindly restart a running gateway.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            self?.launchAndOpenDashboard()
+        }
     }
 
     deinit {
@@ -63,6 +68,26 @@ final class RouterController: ObservableObject {
                 }
             }
         }.resume()
+    }
+
+    /// Ensure the gateway is running, then open the dashboard.
+    func launchAndOpenDashboard() {
+        if status.running {
+            openDashboard()
+            return
+        }
+        start()
+        // Wait until /v1/models answers, then open the dashboard (boot can take ~60s).
+        var attempts = 0
+        Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] timer in
+            attempts += 1
+            guard let self else { timer.invalidate(); return }
+            self.refreshHealth()
+            if self.status.running || attempts > 40 {
+                timer.invalidate()
+                if self.status.running { self.openDashboard() }
+            }
+        }
     }
 
     func start() {
@@ -168,8 +193,21 @@ struct NineRouterApp: App {
             .padding(8)
             .frame(width: 220)
         } label: {
-            Image(systemName: "network")
+            if let img = NSImage(named: "menubar") ?? loadMenubarImage() {
+                Image(nsImage: img)
+            } else {
+                Image(systemName: "network")
+            }
         }
         .menuBarExtraStyle(.window)
     }
+}
+
+/// Load the bundled tray icon (menubar.png in Resources).
+private func loadMenubarImage() -> NSImage? {
+    guard let url = Bundle.main.resourceURL?
+        .appendingPathComponent("menubar.png") else { return nil }
+    let img = NSImage(contentsOf: url)
+    img?.size = NSSize(width: 18, height: 18)
+    return img
 }
