@@ -28,7 +28,7 @@ feature** as a clean, mergeable PR back upstream.
 ```bash
 cp .env.example .env
 npm install
-PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev    # dev (port 20127 default via next dev)
+PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev    # dev (port 20128 default via package.json scripts)
 npm run build && PORT=20128 HOSTNAME=0.0.0.0 npm run start            # production
 npm run cli:pack                                                      # CLI launcher package (cli/)
 # Tests (independent ESM package in tests/):
