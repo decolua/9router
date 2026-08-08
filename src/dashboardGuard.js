@@ -29,6 +29,12 @@ const PUBLIC_API_PATHS = [
   "/api/auth/oidc",
   "/api/version",
   "/api/settings/require-login",
+  // Federation API (FED-012): dashboardGuard must NOT 401 before roleGuard
+  // runs — roleGuard (src/lib/federation/roleGuard.js) enforces the
+  // FEDERATION_TOKEN on central-only routes (status/snapshot/delta/verify/
+  // replay); local-status + config-status stay token-less by design
+  // (spec §3.5, FED-005).
+  "/api/federation",
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
