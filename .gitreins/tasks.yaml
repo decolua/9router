@@ -76,5 +76,22 @@ tasks:
   - 'tests/federation/e2e.mjs proves: linked -> kill central -> degraded serving ->
     recover -> reconcile'
   - Regression baseline (verify-no-regression) green or known-fails only
-  status: pending
+  status: complete
   created_at: '2026-08-07T07:16:02.646392+00:00'
+  completed_at: '2026-08-07T14:26:13+00:00'
+- id: fed-012
+  title: Federation API reachable through dashboardGuard (FED-012)
+  criteria:
+  - PUBLIC_API_PATHS in src/dashboardGuard.js contains an /api/federation entry (grep
+    -n '"/api/federation"' src/dashboardGuard.js exits 0)
+  - dashboardGuard proxy() returns NextResponse.next() for /api/federation/status
+    and /api/federation/local-status without cookies or CLI token (tests/unit/dashboard-guard.test.js
+    'dashboard guard federation API access (FED-012)' block passes)
+  - A live central instance (FEDERATION_MODE=central, custom-server.js) serves GET
+    /api/federation/status, /api/federation/local-status, /api/federation/verify and
+    /api/federation/snapshot with HTTP 200 without cookies (verified 2026-08-08)
+  - A request with a wrong FEDERATION_TOKEN to /api/federation/status still returns
+    HTTP 401 (roleGuard intact)
+  status: complete
+  created_at: '2026-08-08T19:28:11.820113+00:00'
+  completed_at: '2026-08-08T19:28:16.452750+00:00'
