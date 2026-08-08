@@ -30,6 +30,7 @@ const PUBLIC_API_PATHS = [
   "/api/version",
   "/api/settings/require-login",
   "/api/headroom/extras",  // Headroom extras status — no auth needed (#2965)
+  "/api/metrics",
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).

@@ -1,4 +1,3 @@
-// RTK port: compress tool_result content in LLM request bodies
 // Injected at the top of translateRequest (before any format translation)
 import { RAW_CAP, MIN_COMPRESS_SIZE } from "./constants.js";
 import { autoDetectFilter } from "./autodetect.js";
@@ -81,7 +80,6 @@ export function compressMessages(body, enabled) {
       }
     }
   } catch (e) {
-    console.warn("[RTK] compressMessages error:", e.message);
     return null;
   }
   return stats;
@@ -111,7 +109,6 @@ function compressKiroFormat(body, enabled) {
       }
     }
   } catch (e) {
-    console.warn("[RTK] compressKiroFormat error:", e.message);
     return null;
   }
   return stats;
@@ -151,5 +148,4 @@ export function formatRtkLog(stats) {
   const saved = stats.bytesBefore - stats.bytesAfter;
   const pct = stats.bytesBefore > 0 ? ((saved / stats.bytesBefore) * 100).toFixed(1) : "0";
   const filters = Array.from(new Set(stats.hits.map(h => h.filter))).join(",");
-  return `[RTK] saved ${saved}B / ${stats.bytesBefore}B (${pct}%) via [${filters}] hits=${stats.hits.length}`;
 }

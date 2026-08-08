@@ -10,6 +10,7 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { recordRequest, recordError } from "../../services/metrics.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -291,6 +292,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     const parsed = parseSSEToOpenAIResponse(sseText, model);
     if (!parsed) {
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      recordError({ provider, model, errorType: 'parse_error', errorCode: 'BAD_GATEWAY' });
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
     }
     responseBody = parsed;
@@ -300,6 +302,8 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     } catch (err) {
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
       console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
+      
+      recordError({ provider, model, errorType: 'parse_error', errorCode: 'BAD_GATEWAY' });
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
     }
   }
@@ -320,6 +324,19 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   appendLog({ tokens: usage, status: "200 OK" });
   saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
+
+  // Record metrics
+  recordRequest({
+    model,
+    provider,
+    status: 'success',
+    format: targetFormat,
+    durationMs: Date.now() - requestStartTime,
+    promptTokens: usage.prompt_tokens,
+    completionTokens: usage.completion_tokens,
+    requestBytes: JSON.stringify(translatedBody || body).length,
+    responseBytes: JSON.stringify(translatedResponse).length
+  });
 
   const translatedResponse = needsTranslation(targetFormat, sourceFormat)
     ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)

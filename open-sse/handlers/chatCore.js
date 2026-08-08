@@ -29,6 +29,7 @@ import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { recordRequest, recordFallback, recordRTK, recordError, startSystemMetricsCollection } from "../services/metrics.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -60,6 +61,10 @@ export function stripContinuityFields(body) {
 export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
+  
+  // Start system metrics collection (runs once)
+  startSystemMetricsCollection(10000);
+  
   // Stable per-session color so all lines of one CLI conversation share a tag
   const sessionSeed = (() => {
     try {
@@ -233,6 +238,15 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const rtkLine = formatRtkLog(rtkStats);
   if (rtkLine) console.log(rtkLine);
 
+  // Record RTK metrics
+  recordRTK({
+    model,
+    provider,
+    ratio: rtkStats ? (rtkStats.bytesBefore > 0 ? (rtkStats.bytesBefore - rtkStats.bytesAfter) / rtkStats.bytesBefore : 0) : 0,
+    filter: rtkStats?.hits?.[0]?.filter,
+    bytesSaved: rtkStats ? rtkStats.bytesBefore - rtkStats.bytesAfter : 0
+  });
+
   // Headroom: optional external proxy compression; fail open if proxy is absent.
   const headroomDiagnostics = {};
   const headroomStats = await compressWithHeadroom(translatedBody, { enabled: tokenSaverEnabled && headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages, diagnostics: headroomDiagnostics });
@@ -351,6 +365,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       status: "error"
     })).catch(() => { });
 
+    // Record error metrics
+    recordError({ 
+      provider, 
+      model, 
+      errorType: error.name || 'execution_error', 
+      errorCode: error.name === "AbortError" ? '499' : '502' 
+    });
+
     if (error.name === "AbortError") {
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
@@ -414,6 +436,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       pxpipe: pxpipeSummary,
       status: "error"
     })).catch(() => { });
+
+    // Record error metrics
+    recordError({ 
+      provider, 
+      model, 
+      errorType: 'provider_error', 
+      errorCode: String(statusCode) 
+    });
 
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     if (log?.errorLine) {
