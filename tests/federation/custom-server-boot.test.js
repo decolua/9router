@@ -107,6 +107,51 @@ describe("custom-server.js boot — spawn smoke", () => {
   });
 });
 
+// ─── FED-017: plain-node runtime graph loads WITHOUT the @/lib alias ─────
+//
+// custom-server.js dynamically imports the federation modules via file://
+// URLs (plain node — no Next bundler, no jsconfig @/* alias). Before
+// FED-017, src/lib/db/paths.js imported "@/lib/dataDir.js", which plain
+// node cannot resolve in the repo layout ("Cannot find package @/lib
+// imported from src/lib/db/paths.js") — the failover/queue/edgeClient
+// chain silently failed to load and the edge never replicated. This test
+// spawns REAL plain node (not vitest, whose resolver maps @/) and asserts
+// every module in the runtime graph imports cleanly.
+
+describe("FED-017 — plain-node runtime graph (no @/ alias)", () => {
+  const MODULES = [
+    "src/lib/db/paths.js",
+    "src/lib/db/driver.js",
+    "src/lib/federation/failover.js",
+    "src/lib/federation/edgeClient.js",
+    "src/lib/federation/queue.js",
+    "src/lib/federation/proxy.js",
+    "src/lib/federation/state.js",
+    "src/lib/federation/headers.js",
+    "src/lib/federation/startLoops.js",
+  ];
+
+  it("every module in the custom-server runtime graph imports under plain node", () => {
+    const importExpr = MODULES.map(
+      (m) => `await import(${JSON.stringify(path.join(REPO_ROOT, m))})`
+    ).join(";");
+    const script = `(async () => { ${importExpr}; })();`;
+    const res = spawnSync(process.execPath, ["--input-type=module", "-e", script], {
+      cwd: REPO_ROOT,
+      env: { ...process.env, DATA_DIR: tempDir },
+      encoding: "utf8",
+      timeout: 20000,
+    });
+    expect(res.status).toBe(0);
+    expect(res.stderr).not.toMatch(/Cannot find package @\/lib/);
+  });
+
+  it("src/lib/db/paths.js has NO remaining @/lib imports (regression anchor)", () => {
+    const src = fs.readFileSync(path.join(REPO_ROOT, "src/lib/db/paths.js"), "utf8");
+    expect(src).not.toMatch(/@\/lib/);
+  });
+});
+
 // ─── Unit: instrumentation.js edge-without-wrapper loud error ────────────
 
 // Mock the side-effecting imports so register() is pure to test:
