@@ -3,6 +3,7 @@ import path from "path";
 import fs from "fs";
 import os from "os";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
+import { shutdownProcess } from "@/lib/shutdown.js";
 
 const KILL_TIMEOUT_MS = 5000;
 const PROCESS_WAIT_MS = 1500;
@@ -196,5 +197,5 @@ export function spawnUpdaterAndExit(packageName = UPDATER_CONFIG.npmPackageName)
     },
   }).unref();
 
-  setTimeout(() => process.exit(0), UPDATER_CONFIG.exitDelayMs);
+  setTimeout(() => shutdownProcess(0), UPDATER_CONFIG.exitDelayMs);
 }
