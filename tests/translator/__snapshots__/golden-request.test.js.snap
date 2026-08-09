@@ -269,9 +269,7 @@ continue",
     "history": [
       {
         "userInputMessage": {
-          "content": "[Context: Current time is <TS>
-
-<instructions>
+          "content": "<instructions>
 You are helpful.
 </instructions>
 

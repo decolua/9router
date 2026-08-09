@@ -9,6 +9,11 @@ import { FORMATS } from "../../open-sse/translator/formats.js";
 const C2K = (body, credentials = null, model = "claude-sonnet-4.5") =>
   translateRequest(FORMATS.CLAUDE, FORMATS.KIRO, model, body, true, credentials, "kiro");
 
+// Thinking/agentic prefix lives in the frozen msg0 (history[0]) for cacheability,
+// not in the top-level systemPrompt (which Kiro rejects with 400 — #2989).
+const historyPrefixOf = (out) =>
+  out.conversationState?.history?.[0]?.userInputMessage?.content || "";
+
 describe("Claude → Kiro (direct route)", () => {
   it("produces a Kiro conversationState payload", () => {
     const out = C2K({ messages: [{ role: "user", content: "hello" }] });
@@ -29,8 +34,10 @@ describe("Claude → Kiro (direct route)", () => {
     expect(first.conversationState.agentContinuationId).toBeTruthy();
     expect(second.conversationState.agentContinuationId).toBe(first.conversationState.agentContinuationId);
     expect(first.conversationState.agentTaskType).toBe("vibe");
-    expect(second.conversationState.history[0].userInputMessage.content).toBe(
-      first.conversationState.currentMessage.userInputMessage.content
+    // msg0 (frozen) must be stable across turns — the prefix in history[0] is
+    // contentPrefix, which doesn't change between turns (#2989 split).
+    expect(first.conversationState.history[0].userInputMessage.content).toBe(
+      second.conversationState.history[0].userInputMessage.content
     );
     expect(second.conversationState.history[0].userInputMessage.modelId).toBe("claude-sonnet-4.5");
     expect(second.conversationState.currentMessage.userInputMessage.content).toContain("second");
@@ -81,7 +88,7 @@ describe("Claude → Kiro (direct route)", () => {
       "kiro"
     );
     // System prompt is now in currentMessage via contentPrefix
-    expect(out.conversationState.currentMessage.userInputMessage.content).toContain("<thinking_mode>enabled</thinking_mode>");
+    expect(historyPrefixOf(out)).toContain("<thinking_mode>enabled</thinking_mode>");
     expect(out.agentMode).toBe("vibe");
   });
 
@@ -94,7 +101,7 @@ describe("Claude → Kiro (direct route)", () => {
     expect(out.additionalModelRequestFields).toBeUndefined();
     expect(out.thinking).toBeUndefined();
     // System prompt with thinking tag is now in currentMessage
-    expect(out.conversationState.currentMessage.userInputMessage.content).toContain("<max_thinking_length>24576</max_thinking_length>");
+    expect(historyPrefixOf(out)).toContain("<max_thinking_length>24576</max_thinking_length>");
   });
 
   it("normalizes an unsupported Kiro intensity suffix while preserving agentic behavior", () => {
@@ -107,7 +114,7 @@ describe("Claude → Kiro (direct route)", () => {
     expect(out.conversationState.currentMessage.userInputMessage.modelId).toBe("claude-sonnet-4.5");
     expect(out.additionalModelRequestFields).toBeUndefined();
     // Agentic system prompt is now in currentMessage
-    expect(out.conversationState.currentMessage.userInputMessage.content).toContain("CHUNKED WRITE PROTOCOL");
+    expect(historyPrefixOf(out)).toContain("CHUNKED WRITE PROTOCOL");
   });
 
   it("maps output_config.effort high to Kiro CLI-style additionalModelRequestFields for effort models", () => {
@@ -122,7 +129,7 @@ describe("Claude → Kiro (direct route)", () => {
     });
     expect(out.thinking).toBeUndefined();
     // Legacy thinking fallback is now in currentMessage
-    expect(out.conversationState.currentMessage.userInputMessage.content).toContain("<max_thinking_length>24576</max_thinking_length>");
+    expect(historyPrefixOf(out)).toContain("<max_thinking_length>24576</max_thinking_length>");
   });
 
   it("maps Claude-format effort to GPT-5.6 reasoning fields without legacy prompt tags", () => {
@@ -148,8 +155,8 @@ describe("Claude → Kiro (direct route)", () => {
 
       expect(out.additionalModelRequestFields).toBeUndefined();
       // Legacy thinking fallback is now in currentMessage
-      expect(out.conversationState.currentMessage.userInputMessage.content).toContain("<thinking_mode>enabled</thinking_mode>");
-      expect(out.conversationState.currentMessage.userInputMessage.content).toContain("<max_thinking_length>");
+      expect(historyPrefixOf(out)).toContain("<thinking_mode>enabled</thinking_mode>");
+      expect(historyPrefixOf(out)).toContain("<max_thinking_length>");
     }
   );
 

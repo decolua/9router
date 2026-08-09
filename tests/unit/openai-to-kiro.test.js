@@ -11,7 +11,19 @@ import { openaiToKiroRequest } from "../../open-sse/translator/request/openai-to
 
 const contentOf = (result) =>
   result.conversationState.currentMessage.userInputMessage.content;
-const systemPromptOf = (result) => result.systemPrompt || "";
+// Thinking/agentic prefix lives in the first history user message (via session
+// replay contentPrefix), NOT at top-level — Kiro upstream rejects top-level
+// systemPrompt with 400 REQUEST_BODY_INVALID (#2989, #3091).
+const systemPromptOf = (result) => {
+  const top = result.systemPrompt || "";
+  if (top) return top;
+  const history = result.conversationState?.history || [];
+  for (const msg of history) {
+    const c = msg?.userInputMessage?.content || "";
+    if (c) return c;
+  }
+  return "";
+};
 
 describe("openaiToKiroRequest", () => {
   describe("basic message conversion", () => {
@@ -569,21 +581,36 @@ describe("openaiToKiroRequest", () => {
     });
 
     it("keeps top-level systemPrompt stable across turns", () => {
+      const credentials = {
+        connectionId: "kiro-account-stable-prefix",
+        rawHeaders: { "x-session-id": "hermes-session-stable-prefix" },
+      };
       const first = openaiToKiroRequest(
         "claude-sonnet-4.6-thinking",
         { messages: [{ role: "user", content: "first" }] },
         true,
-        {}
+        credentials
       );
       const second = openaiToKiroRequest(
         "claude-sonnet-4.6-thinking",
-        { messages: [{ role: "user", content: "second" }] },
+        { messages: [
+          { role: "user", content: "first" },
+          { role: "assistant", content: "ok" },
+          { role: "user", content: "second" },
+        ] },
         true,
-        {}
+        credentials
       );
 
-      expect(first.systemPrompt).toBe(second.systemPrompt);
-      expect(first.systemPrompt).not.toContain("Current time");
+      // Top-level systemPrompt is no longer sent to Kiro upstream (#2989);
+      // verify it is absent but the first history user message (where the
+      // thinking prefix is injected via session replay) stays stable.
+      expect(first.systemPrompt).toBeUndefined();
+      const firstHistoryFirstUser = first.conversationState.history[0]?.userInputMessage?.content || "";
+      const secondHistoryFirstUser = second.conversationState.history[0]?.userInputMessage?.content || "";
+      expect(firstHistoryFirstUser).toBe(secondHistoryFirstUser);
+      expect(firstHistoryFirstUser).toContain("<max_thinking_length>16000</max_thinking_length>");
+      expect(firstHistoryFirstUser).not.toContain("Current time");
       expect(first.conversationState.currentMessage.userInputMessage.content).toContain("Current time");
     });
 
@@ -607,12 +634,18 @@ describe("openaiToKiroRequest", () => {
 
       expect(second.conversationState.conversationId).toBe("hermes-session-openai-replay");
       expect(second.conversationState.agentContinuationId).toBe(first.conversationState.agentContinuationId);
+      // Frozen msg0 is stable across turns. The thinking/agentic prefix lives
+      // in msg0 (contentPrefix), the user turn lives in currentMessage with
+      // fresh currentContentPrefix — they are now distinct (split in #2989 fix).
       expect(second.conversationState.history[0].userInputMessage.content).toBe(
-        first.conversationState.currentMessage.userInputMessage.content
+        first.conversationState.history[0].userInputMessage.content
       );
       expect(second.conversationState.history[0].userInputMessage.modelId).toBe("claude-sonnet-4.6");
       expect(second.conversationState.currentMessage.userInputMessage.content).toContain("Current time");
       expect(second.conversationState.currentMessage.userInputMessage.content).toContain("second turn");
+      expect(second.conversationState.currentMessage.userInputMessage.content).not.toContain(
+        first.conversationState.history[0].userInputMessage.content
+      );
     });
 
     it("does not inject thinking prefix for reasoning_effort none", () => {

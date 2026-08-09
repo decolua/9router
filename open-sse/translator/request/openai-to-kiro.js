@@ -352,7 +352,11 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   }
   const systemPrompt = systemPromptParts.filter(Boolean).join("\n\n");
   const currentTimeContext = `[Context: Current time is ${timestamp}]`;
-  const contentPrefix = [systemPrompt, currentTimeContext].filter(Boolean).join("\n\n");
+  // contentPrefix is frozen into msg0 for cacheability (must be stable across
+  // turns). currentTimeContext is volatile per-turn and belongs in
+  // currentContentPrefix only — joining it into contentPrefix made msg0 carry
+  // a fresh timestamp every turn, defeating session-cache stability (#2989).
+  const contentPrefix = systemPrompt;
 
   const sessionIdentity = resolveSessionIdentity({ headers: credentials?.rawHeaders, body, connectionId: credentials?.connectionId, scope: "kiro" });
   const conversationId = sessionIdentity.sessionId;
@@ -408,7 +412,12 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   if (profileArn) {
     payload.profileArn = profileArn;
   }
-  if (systemPrompt) payload.systemPrompt = systemPrompt;
+  // systemPrompt removed from top-level payload — Kiro CodeWhisperer endpoint
+  // rejects it with 400 REQUEST_BODY_INVALID (#2989, #3091).
+  // The thinking/agentic prefix content is still injected into the first user
+  // message in `history` via session replay (contentPrefix), matching the
+  // claude-to-kiro.js behaviour. Top-level systemPrompt is reserved as a
+  // session-cache key only — never sent to upstream.
   if (additionalModelRequestFields) {
     payload.additionalModelRequestFields = additionalModelRequestFields;
   }
