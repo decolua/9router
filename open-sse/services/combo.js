@@ -217,16 +217,26 @@ export function resetComboRotation(comboName) {
  * @param {Array|Object} combosData - Array of combos or object with combos
  * @returns {string[]|null} Array of models or null if not a combo
  */
-export function getComboModelsFromData(modelStr, combosData) {
-  // Don't check if it's in provider/model format
-  if (modelStr.includes("/")) return null;
-  
+export function getComboModelsFromData(modelStr, arrayOrObject) {
+  if (!modelStr || typeof modelStr !== "string") return null;
+
+  // Combos may be referenced with a provider prefix (e.g. `openrouter/lordx.1` when
+  // the client registers the combo under a provider namespace). Strip it so we can
+  // match the combo by its bare name, and also try the full string as a fallback.
+  const candidates = modelStr.includes("/")
+    ? [modelStr.split("/").pop(), modelStr]
+    : [modelStr];
+
   // Handle both array and object formats
-  const combos = Array.isArray(combosData) ? combosData : (combosData?.combos || []);
-  
-  const combo = combos.find(c => c.name === modelStr);
-  if (combo && combo.models && combo.models.length > 0) {
-    return combo.models;
+  const combos = Array.isArray(arrayOrObject)
+    ? arrayOrObject
+    : (arrayOrObject?.combos || []);
+
+  for (const name of candidates) {
+    const combo = combos.find((c) => c.name === name);
+    if (combo && combo.models && combo.models.length > 0) {
+      return combo.models;
+    }
   }
   return null;
 }
