@@ -156,7 +156,13 @@ function normalizeTurns(history, currentMessage, modelId) {
       ? { userInputMessage: clone(raw.userInputMessage) }
       : { assistantResponseMessage: clone(raw.assistantResponseMessage) };
     const previous = turns[turns.length - 1];
-    if (turn.userInputMessage && previous?.userInputMessage) {
+    // Frozen msg0 carries session-replay state (thinking/agentic prefix +
+    // first user turn) and must never be merged into the current turn —
+    // merging would duplicate the first user content and corrupt the
+    // cacheable prefix (#2989). The flag lives in userInputMessageContext
+    // so it survives JSON-clone.
+    const previousIsFrozen = !!previous?.userInputMessage?.userInputMessageContext?._frozenMsg0;
+    if (turn.userInputMessage && previous?.userInputMessage && !previousIsFrozen) {
       mergeUser(previous.userInputMessage, turn.userInputMessage);
     } else if (turn.assistantResponseMessage && previous?.assistantResponseMessage) {
       mergeAssistant(previous.assistantResponseMessage, turn.assistantResponseMessage);
@@ -170,6 +176,20 @@ function normalizeTurns(history, currentMessage, modelId) {
   }
   if (turns.length === 0 || turns[turns.length - 1]?.assistantResponseMessage) {
     turns.push({ userInputMessage: { content: "continue", modelId } });
+  }
+
+  // Insert a placeholder assistant turn between consecutive user turns so the
+  // conversation stays user→assistant→user alternated (required by Kiro upstream
+  // and validateKiroConversation). Frozen msg0 + currentMessage produces two
+  // consecutive users (#2989), so splice a "..." assistant between them.
+  for (let i = 1; i < turns.length; i++) {
+    const prev = turns[i - 1];
+    const cur = turns[i];
+    if (prev?.userInputMessage && cur?.userInputMessage) {
+      const placeholder = { assistantResponseMessage: { content: "..." } };
+      turns.splice(i, 0, placeholder);
+      i++;
+    }
   }
 
   for (const turn of turns) {

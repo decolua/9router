@@ -422,6 +422,12 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   if (body.reasoning_effort !== undefined) result.reasoning = { effort: body.reasoning_effort, summary: "auto" };
   if (body.service_tier !== undefined) result.service_tier = body.service_tier;
 
+  // Responses API requires reasoning.effort nested, not flat reasoning_effort
+  // Ensure we don't leak flat field when reasoning object exists
+  if (result.reasoning && typeof result.reasoning === "object" && result.reasoning_effort !== undefined) {
+    delete result.reasoning_effort;
+  }
+
   return result;
 }
 

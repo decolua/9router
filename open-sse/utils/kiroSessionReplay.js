@@ -112,8 +112,21 @@ export function applyKiroSessionReplay({
     baseHistory.unshift(clone(sessionStart));
     nextCurrent = prefixUserMessage(baseCurrent, currentContentPrefix, modelId);
   } else {
+    // No existing history: msg0 = contentPrefix + first user turn content.
+    // The thinking/agentic prefix is frozen into msg0 for cacheability
+    // (#2989: top-level systemPrompt removed). The first user content is
+    // also frozen here so it replays verbatim on subsequent turns. The
+    // current turn gets baseCurrent + currentContentPrefix (per-turn
+    // context like the current time).
     sessionStart = prefixUserMessage(baseCurrent, contentPrefix, modelId);
-    nextCurrent = clone(sessionStart);
+    baseHistory.unshift(clone(sessionStart));
+    // Mark msg0 as frozen so normalizeTurns() does not merge it into the
+    // current turn (which would duplicate user content + corrupt msg0).
+    if (baseHistory[0]?.userInputMessage) {
+      baseHistory[0].userInputMessage.userInputMessageContext ||= {};
+      baseHistory[0].userInputMessage.userInputMessageContext._frozenMsg0 = true;
+    }
+    nextCurrent = prefixUserMessage(baseCurrent, currentContentPrefix, modelId);
   }
 
   if (conversationId) {
