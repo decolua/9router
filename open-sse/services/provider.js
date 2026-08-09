@@ -142,14 +142,18 @@ export function getTargetFormat(provider, credentials = null) {
   return config.format || "openai";
 }
 
-// Resolve which transport to use for a provider given the client sourceFormat.
-// Multi-endpoint providers (transport.transports[]) pick the entry matching sourceFormat
-// to avoid lossy translation; falls back to the default transport when no match.
-export function resolveTransport(provider, sourceFormat) {
+// Resolve transport by auth type first, then client source format.
+// This keeps dual-auth providers (e.g. Kimi OAuth/API key) on the correct endpoint.
+export function resolveTransport(provider, sourceFormat, authType) {
   const config = PROVIDERS[provider];
   const transports = config?.transports;
   if (!Array.isArray(transports) || !transports.length) return null;
-  return transports.find(t => t.format === sourceFormat) || null;
+  const exactAuth = transports.filter(t => t.authType && t.authType === authType);
+  const generic = transports.filter(t => !t.authType);
+  return exactAuth.find(t => t.format === sourceFormat)
+    || exactAuth[0]
+    || generic.find(t => t.format === sourceFormat)
+    || null;
 }
 
 // Check if last message is from user
