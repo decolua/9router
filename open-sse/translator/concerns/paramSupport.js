@@ -21,6 +21,9 @@ const STRIP_RULES = [
   // "integer above maximum value, expected <= 32768". Pin an explicit endpoint cap;
   // min() with the model ceiling still applies if a variant's own limit is lower.
   { provider: "volcengine-ark", match: /kimi/i, maxOutputCap: 32768, clampToModelMaxOutput: true },
+  // Groq hard-limits tools at 128; requests exceeding this get a 400
+  // "'tools' : maximum number of items is 128". Truncate to the cap silently.
+  { provider: "groq", truncateTools: 128 },
 ];
 
 // Test a rule's match (regex or predicate) against the model id.
@@ -68,6 +71,11 @@ export function stripUnsupportedParams(provider, model, body) {
         clampNumber(body, "max_tokens", ceiling);
         clampNumber(body, "max_completion_tokens", ceiling);
         clampNumber(body, "max_output_tokens", ceiling);
+      }
+    }
+    if (Number.isFinite(rule.truncateTools) && rule.truncateTools > 0 && Array.isArray(body.tools)) {
+      if (body.tools.length > rule.truncateTools) {
+        body.tools = body.tools.slice(0, rule.truncateTools);
       }
     }
   }

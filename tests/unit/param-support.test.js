@@ -52,4 +52,30 @@ describe("stripUnsupportedParams", () => {
 
     expect(body.max_tokens).toBe(64000);
   });
+
+  it("truncates Groq tools to 128 when exceeding the limit", () => {
+    const body = { tools: Array.from({ length: 150 }, (_, i) => ({ type: "function", function: { name: `tool_${i}` } })) };
+
+    stripUnsupportedParams("groq", "llama-3.3-70b-versatile", body);
+
+    expect(body.tools).toHaveLength(128);
+    expect(body.tools[0].function.name).toBe("tool_0");
+    expect(body.tools[127].function.name).toBe("tool_127");
+  });
+
+  it("preserves Groq tools when under the limit", () => {
+    const body = { tools: Array.from({ length: 50 }, (_, i) => ({ type: "function", function: { name: `tool_${i}` } })) };
+
+    stripUnsupportedParams("groq", "llama-3.3-70b-versatile", body);
+
+    expect(body.tools).toHaveLength(50);
+  });
+
+  it("does not modify tools when no tools present", () => {
+    const body = { messages: [{ role: "user", content: "hi" }] };
+
+    stripUnsupportedParams("groq", "llama-3.3-70b-versatile", body);
+
+    expect(body.tools).toBeUndefined();
+  });
 });
