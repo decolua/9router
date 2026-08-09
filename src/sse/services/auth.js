@@ -1,7 +1,8 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
-import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { MAX_RATE_LIMIT_COOLDOWN_MS, MAX_QUOTA_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { isQuotaExhaustion } from "open-sse/services/quotaState.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
 
@@ -268,8 +269,11 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     cooldownMs = githubResetAtMs - Date.now();
     newBackoffLevel = 0;
   } else if (resetsAtMs && resetsAtMs > Date.now()) {
+    // A hard quota states its own return time and means it; a rolling rate limit
+    // gets the shorter cap so a bad estimate can't sideline an account for days.
+    const cap = isQuotaExhaustion(status, errorText) ? MAX_QUOTA_COOLDOWN_MS : MAX_RATE_LIMIT_COOLDOWN_MS;
     shouldFallback = true;
-    cooldownMs = Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
+    cooldownMs = Math.min(resetsAtMs - Date.now(), cap);
     newBackoffLevel = 0;
   } else {
     ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));
@@ -279,9 +283,15 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
   const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
 
+  // "unavailable" reads as busy — it clears itself once the window passes. A 401
+  // or 403 will not: the account is refused, not throttled, and only an operator
+  // re-authorizing it changes that. "expired" already renders as an error state
+  // in the dashboard, so it distinguishes the two without inventing a status.
+  const refused = Number(status) === 401 || Number(status) === 403;
+
   await updateProviderConnection(connectionId, {
     ...lockUpdate,
-    testStatus: "unavailable",
+    testStatus: refused ? "expired" : "unavailable",
     lastError: reason,
     errorCode: status,
     lastErrorAt: new Date().toISOString(),

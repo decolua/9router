@@ -41,10 +41,20 @@ export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
 // Hard cap for provider-reported rate limit cooldown (e.g. codex resets_at can be 5-6h)
 export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 
+// A daily/weekly quota is not a rolling rate limit: the provider states exactly
+// when it returns, and that can be a week out. Capping such a reset at 30 minutes
+// means re-testing a known-dead account ~300 times before it can possibly work,
+// paying seconds of upstream latency each time — so honour it far longer.
+export const MAX_QUOTA_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+
 // Cooldown durations (ms)
 const COOLDOWN = {
   long: 2 * 60 * 1000,
   short: 5 * 1000,
+  // 403 is a permission decision, not congestion. Nothing about waiting two
+  // minutes changes it — the account needs an operator. Long enough to stop the
+  // retry treadmill, short enough that a re-authorized account returns on its own.
+  forbidden: 30 * 60 * 1000,
 };
 
 /**
@@ -70,7 +80,7 @@ export const ERROR_RULES = [
   // --- Status-based rules (fallback when text doesn't match) ---
   { status: 401, cooldownMs: COOLDOWN.long },
   { status: 402, cooldownMs: COOLDOWN.long },
-  { status: 403, cooldownMs: COOLDOWN.long },
+  { status: 403, cooldownMs: COOLDOWN.forbidden },
   { status: 404, cooldownMs: COOLDOWN.long },
   { status: 429, backoff: true },
 ];

@@ -109,9 +109,58 @@ function buildIdeRequestId({ body, request, credentials, model, requestType }) {
   return `agent/${conversationId}/${Date.now()}/${trajectoryId}/${step}`;
 }
 
+// Google states quota resets three different ways in the same error: an absolute
+// `quotaResetTimeStamp`, and two Go-style durations (`quotaResetDelay`,
+// `retryDelay`) that are either plain seconds ("586679.5s") or h/m/s
+// ("162h57m59.54s"). Any of them beats guessing a backoff window.
+const GO_DURATION_RE = /^\s*(?:(\d+(?:\.\d+)?)h)?(?:(\d+(?:\.\d+)?)m)?(?:(\d+(?:\.\d+)?)s)?\s*$/;
+
+function parseGoDurationMs(value) {
+  if (typeof value !== "string" || !value) return null;
+  const m = value.match(GO_DURATION_RE);
+  if (!m || (!m[1] && !m[2] && !m[3])) return null;
+  const [h, min, s] = [m[1], m[2], m[3]].map((x) => (x ? Number(x) : 0));
+  const ms = (h * 3600 + min * 60 + s) * 1000;
+  return ms > 0 ? ms : null;
+}
+
 export class AntigravityExecutor extends BaseExecutor {
   constructor() {
     super("antigravity", PROVIDERS.antigravity);
+  }
+
+  /**
+   * Pull the quota reset moment out of a 429 so the account is locked until the
+   * quota genuinely returns. Without it a week-long exhaustion is retried on a
+   * generic backoff — every few minutes, several seconds a time, for days.
+   */
+  parseError(response, bodyText) {
+    const base = super.parseError(response, bodyText);
+    if (response.status !== 429 || !bodyText) return base;
+
+    let details;
+    try {
+      details = JSON.parse(bodyText)?.error?.details;
+    } catch {
+      return base;
+    }
+    if (!Array.isArray(details)) return base;
+
+    const now = Date.now();
+    for (const d of details) {
+      const stamp = d?.metadata?.quotaResetTimeStamp;
+      if (stamp) {
+        const at = Date.parse(stamp);
+        if (!Number.isNaN(at) && at > now) return { ...base, resetsAtMs: at };
+      }
+    }
+    for (const d of details) {
+      for (const raw of [d?.metadata?.quotaResetDelay, d?.retryDelay]) {
+        const ms = parseGoDurationMs(raw);
+        if (ms) return { ...base, resetsAtMs: now + ms };
+      }
+    }
+    return base;
   }
 
   buildUrl(model, stream, urlIndex = 0) {
