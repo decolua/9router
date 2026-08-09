@@ -52,4 +52,22 @@ describe("stripUnsupportedParams", () => {
 
     expect(body.max_tokens).toBe(64000);
   });
+
+  it("drops Qwen enable_thinking/thinking_budget for OpenAI-compatible passthrough (#2752)", () => {
+    const body = { enable_thinking: true, thinking_budget: 8192, temperature: 0.5 };
+
+    stripUnsupportedParams("openai-compatible-chat-xyz", "qwen3.7-plus", body);
+
+    expect(body.enable_thinking).toBeUndefined();
+    expect(body.thinking_budget).toBeUndefined();
+    expect(body.temperature).toBe(0.5); // unrelated preserved
+  });
+
+  it("keeps enable_thinking for Qwen-native provider", () => {
+    const body = { enable_thinking: true, thinking_budget: 8192 };
+
+    stripUnsupportedParams("qwen", "qwen3.7-plus", body);
+
+    expect(body.enable_thinking).toBe(true); // preserved for Qwen-native
+  });
 });
