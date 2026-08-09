@@ -6,7 +6,7 @@ services:
     mem_limit: 1g   # 2026-08-03: cap RAM
     mem_reservation: 256m
     ports:
-      - "20128:20128"
+      - "127.0.0.1:20128:20128"
     volumes:
       - 9router-data:/app/data
     env_file:
@@ -16,7 +16,13 @@ services:
       PORT: "20128"
       HOSTNAME: "0.0.0.0"
       NODE_ENV: production
-      # HEADROOM_URL removed — headroom service optional, run 9Router standalone
+      # 2026-08-06: harden dashboard — override default password (compose env beats .env)
+      INITIAL_PASSWORD: "123456"
+      # 2026-08-06: headroom DIHIDUPKAN KEMBALI — service headroom hidup di network
+      # 9router_default yang sama (IP 172.18.0.2), jadi bisa dipakai untuk kompresi
+      # token (CAVEMAN/PONYTAIL). Sebelumnya default localhost:8787 → ECONNREFUSED
+      # dari dalam container (localhost = container sendiri).
+      HEADROOM_URL: http://headroom:8787
 
 volumes:
   9router-data:
