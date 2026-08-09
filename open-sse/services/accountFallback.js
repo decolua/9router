@@ -45,6 +45,10 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     }
   }
 
+  if (status === 400 || status === 422) {
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
+
   // Default: transient cooldown for any unmatched error
   return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
 }
