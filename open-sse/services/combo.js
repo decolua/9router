@@ -58,6 +58,21 @@ function flattenToolHistory(messages) {
     });
 }
 
+// Remove trailing assistant messages so the conversation ends on a user turn.
+// Anthropic/Claude reject requests whose last message is from the assistant
+// ("conversation must end with a user message"). When a client echoes a partial
+// assistant reply into the next request, trim those trailing assistant roles. #2876
+export function trimTrailingAssistant(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return messages;
+  const out = messages.slice();
+  while (out.length > 0 && out[out.length - 1]?.role === "assistant") {
+    out.pop();
+  }
+  // If we stripped everything (all-assistant input), keep at least the last user-ish
+  // msg by falling back to the original so we never send an empty array.
+  return out.length > 0 ? out : messages;
+}
+
 // Reorder combo models by capability fit. Stable; never drops a model (fallback intact).
 // Tier 0: satisfies all hard + all soft. Tier 1: all hard only. Tier 2: rest.
 export function reorderByCapabilities(models, required) {
@@ -536,8 +551,14 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   // Flatten tool turns to prose so panel models keep context without emitting tool_calls.
   if (Array.isArray(panelBody.messages)) {
     panelBody.messages = flattenToolHistory(panelBody.messages);
+    // Claude/Anthropic reject assistant-message prefill ("conversation must end with
+    // a user message"). If the inbound turn ends on an assistant msg (e.g. the client
+    // echoed a partial assistant reply), trim trailing assistant roles so the panel
+    // request terminates on a user turn. #2876
+    panelBody.messages = trimTrailingAssistant(panelBody.messages);
   } else if (Array.isArray(panelBody.input)) {
     panelBody.input = flattenToolHistory(panelBody.input);
+    panelBody.input = trimTrailingAssistant(panelBody.input);
   }
 
   const t0 = Date.now();
