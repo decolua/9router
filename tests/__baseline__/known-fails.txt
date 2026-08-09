@@ -22,3 +22,6 @@ tests/unit/translator-request-normalization.test.js :: request normalization cla
 tests/unit/translator-request-normalization.test.js :: request normalization filterToOpenAIFormat flattens text-only arrays to string
 tests/unit/translator-request-normalization.test.js :: request normalization parseSSELine supports provider raw NDJSON stream lines
 tests/unit/translator-request-normalization.test.js :: request normalization translateRequest keeps /v1/messages Claude->OpenAI text payloads string-safe
+tests/unit/windsurf-executor.test.js :: WindsurfExecutor class > constructor wires config from PROVIDERS.windsurf
+tests/unit/windsurf-executor.test.js :: WindsurfExecutor class > buildUrl returns the GetChatMessage endpoint
+tests/unit/windsurf-executor.test.js :: WindsurfExecutor class > PROVIDERS.windsurf baseUrl is the chat endpoint (registry in sync)
