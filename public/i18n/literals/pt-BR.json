@@ -193,7 +193,7 @@
   "Company": "Empresa",
   "Compress LLM output": "Comprimir saída do LLM",
   "Compress context": "Comprimir contexto",
-  "Compress prompts and outputs to save tokens": "Comprima prompts e saídas para economizar tokens",
+  "Compress prompts and outputs to save tokens": "Comprimir prompts e saídas para economizar tokens",
   "Compress prompts as images": "Comprimir prompts como imagens",
   "Compress prompts via /v1/compress before routing to the model": "Comprimir prompts via /v1/compress antes de rotear para o modelo",
   "Compress tool output": "Comprimir saída da ferramenta",
