@@ -56,13 +56,24 @@ function convertSystemToDeveloperRole(body) {
 }
 
 // Strip server-generated item IDs (rs_/fc_/resp_/msg_) from input — avoids 404 with store=false
-function stripStoredItemReferences(body) {
+export function stripStoredItemReferences(body) {
   if (!Array.isArray(body.input)) return;
   body.input = body.input.filter((item) => {
     if (typeof item === "string" && SERVER_ID_PATTERN.test(item)) return false;
     if (item && typeof item === "object" && !Array.isArray(item)) {
       if (item.type === "item_reference") return false;
       if (typeof item.id === "string" && SERVER_ID_PATTERN.test(item.id)) delete item.id;
+      // Codex /responses rejects replayed tool-call history when function/custom
+      // tool call items carry a client-supplied `id` (it expects server-assigned IDs
+      // and 400s on collisions / unresolvable refs when store=false). Drop the
+      // optional `id` but keep `call_id` so the output can still pair to its call. #2930
+      const TOOL_CALL_TYPES = new Set([
+        "function_call", "function_call_output",
+        "custom_tool_call", "custom_tool_call_output",
+      ]);
+      if (TOOL_CALL_TYPES.has(item.type) && item.id !== undefined) {
+        delete item.id;
+      }
     }
     return true;
   });
