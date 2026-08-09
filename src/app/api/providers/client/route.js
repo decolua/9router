@@ -32,6 +32,12 @@ function maskName(name) {
 function sanitize(c) {
   const safe = {};
   for (const f of SAFE_FIELDS) if (c[f] !== undefined) safe[f] = c[f];
+  if (safe.testStatus === "unavailable") {
+    const hasActiveLock = Object.entries(c).some(([key, value]) =>
+      key.startsWith("modelLock_") && value && new Date(value).getTime() > Date.now()
+    );
+    if (!hasActiveLock) safe.testStatus = "active";
+  }
   if (safe.name) safe.name = maskName(safe.name);
   if (c.providerSpecificData) {
     const psd = {};
