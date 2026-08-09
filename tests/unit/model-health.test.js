@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  DEMOTION_TTL_MS,
   clearModelHealth,
   demoteUnhealthy,
   isModelDemoted,
@@ -35,6 +36,41 @@ describe("model health tracking", () => {
     recordModelFailure("d");
     expect(modelFailureCount("c")).toBe(1);
     expect(modelFailureCount("d")).toBe(1);
+  });
+
+  // A demoted model only clears its run by succeeding, and it can only succeed by
+  // being tried. While a healthy model sits ahead of it in the cascade and keeps
+  // answering, it is never tried — so without a way out it stays demoted forever
+  // on the strength of three failures that may be long over.
+  it("lets a demoted model back after a quiet spell, with no success to clear it", () => {
+    const t0 = Date.now();
+    for (let i = 0; i < 3; i++) recordModelFailure("e", t0);
+    expect(isModelDemoted("e", undefined, t0)).toBe(true);
+
+    const later = t0 + DEMOTION_TTL_MS + 1;
+    expect(isModelDemoted("e", undefined, later)).toBe(false);
+    expect(modelFailureCount("e", later)).toBe(0);
+  });
+
+  it("re-demotes promptly when the model is still broken after its retry", () => {
+    const t0 = Date.now();
+    for (let i = 0; i < 3; i++) recordModelFailure("f", t0);
+
+    // Comes back, gets tried, fails again: the run restarts rather than resuming
+    // at three, so one stale failure can't re-exile it on its own.
+    const later = t0 + DEMOTION_TTL_MS + 1;
+    expect(recordModelFailure("f", later)).toBe(1);
+    expect(isModelDemoted("f", undefined, later)).toBe(false);
+    recordModelFailure("f", later);
+    recordModelFailure("f", later);
+    expect(isModelDemoted("f", undefined, later)).toBe(true);
+  });
+
+  it("keeps a model demoted while failures keep arriving", () => {
+    const t0 = Date.now();
+    for (let i = 0; i < 3; i++) recordModelFailure("g", t0);
+    const nearly = t0 + DEMOTION_TTL_MS - 1;
+    expect(isModelDemoted("g", undefined, nearly)).toBe(true);
   });
 });
 
