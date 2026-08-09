@@ -371,7 +371,48 @@ function resolveStandaloneServerPath({ dir } = {}) {
   return null;
 }
 
-module.exports = { resolveStandaloneServerPath };
+// FED-015: the federation runtime modules an edge needs at boot. Next file
+// tracing does not follow custom-server.js's dynamic imports, so the
+// standalone Docker image ships NONE of these unless the Dockerfile copies
+// them explicitly (Dockerfile.federation ships the whole src/; the plain
+// Dockerfile must copy src/lib/federation + src/lib/db + src/lib/dataDir.js).
+// An edge without them fails open — requests fall through to local handlers
+// with only a console.error, i.e. FEDERATION_MODE=edge is silently inert.
+// Returns the missing module paths (empty when the runtime is complete or
+// the mode is not edge — standalone/central boots are never affected).
+function missingFederationRuntimeModules({ dir, mode } = {}) {
+  const base = dir || __dirname;
+  const resolvedMode =
+    mode === undefined ? process.env.FEDERATION_MODE || "" : String(mode);
+  const isEdgeMode = resolvedMode.trim().toLowerCase() === "edge";
+  if (!isEdgeMode) return [];
+  return [
+    path.join(base, "src", "lib", "federation", "proxy.js"),
+    path.join(base, "src", "lib", "federation", "startLoops.js"),
+    path.join(base, "src", "lib", "db", "driver.js"),
+    path.join(base, "src", "lib", "dataDir.js"),
+  ].filter((p) => !fs.existsSync(p));
+}
+
+// FED-015 boot guard: an edge that cannot load the federation runtime must
+// NOT boot silently inert (task AC: "either runs federation or exits with a
+// clear error — never silent inert"). Loud FATAL + exit(1), mirroring the
+// resolveStandaloneServerPath failure path above.
+function assertFederationRuntimePresent() {
+  const missing = missingFederationRuntimeModules();
+  if (missing.length === 0) return;
+  console.error(
+    "FATAL: FEDERATION_MODE=edge but the federation runtime modules are missing:\n" +
+      missing.map((p) => "  - " + p).join("\n") +
+      "\nAn edge without these fails open and serves local data silently " +
+      "(no proxying, no replication, no DEGRADED write-queue). Ship them in the " +
+      "image (Dockerfile: COPY src/lib/federation src/lib/db src/lib/dataDir.js) " +
+      "or run from a layout that has src/."
+  );
+  process.exit(1);
+}
+
+module.exports = { resolveStandaloneServerPath, missingFederationRuntimeModules };
 
 if (require.main === module) {
   const serverPath = resolveStandaloneServerPath();
@@ -383,5 +424,6 @@ if (require.main === module) {
     );
     process.exit(1);
   }
+  assertFederationRuntimePresent();
   require(serverPath);
 }

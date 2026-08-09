@@ -107,6 +107,93 @@ describe("custom-server.js boot — spawn smoke", () => {
   });
 });
 
+// ─── FED-015: edge boot guard (unit + spawn smoke) ────────────────────────
+//
+// The standalone Docker image ships none of src/lib/federation (Next file
+// tracing does not follow custom-server.js dynamic imports) and only a
+// partial src/lib/db — so FEDERATION_MODE=edge on the plain image used to be
+// silently inert: proxy/failover/queue/state loads failed open and every
+// request fell through to local handlers. The fix: (a) Dockerfile now copies
+// the federation runtime set, and (b) custom-server.js refuses to boot an
+// edge whose runtime modules are missing (loud FATAL + exit 1 — never
+// silent inert). Standalone/central boots are untouched (zero drift).
+
+function missingViaChild(dir, mode) {
+  const script =
+    `const m = require(${JSON.stringify(CUSTOM_SERVER)});` +
+    `process.stdout.write(JSON.stringify(m.missingFederationRuntimeModules({ dir: process.argv[1], mode: process.argv[2] })));`;
+  const out = execFileSync(process.execPath, ["-e", script, dir, mode], { encoding: "utf8" });
+  return JSON.parse(out);
+}
+
+describe("missingFederationRuntimeModules — unit (spawned child)", () => {
+  it("edge mode without src: reports all four runtime modules", () => {
+    expect(missingViaChild(tempDir, "edge")).toEqual([
+      path.join(tempDir, "src", "lib", "federation", "proxy.js"),
+      path.join(tempDir, "src", "lib", "federation", "startLoops.js"),
+      path.join(tempDir, "src", "lib", "db", "driver.js"),
+      path.join(tempDir, "src", "lib", "dataDir.js"),
+    ]);
+  });
+
+  it("edge mode with the runtime present: reports nothing", () => {
+    for (const rel of [
+      "src/lib/federation/proxy.js",
+      "src/lib/federation/startLoops.js",
+      "src/lib/db/driver.js",
+      "src/lib/dataDir.js",
+    ]) {
+      const p = path.join(tempDir, rel);
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, "// stub\n");
+    }
+    expect(missingViaChild(tempDir, "edge")).toEqual([]);
+  });
+
+  it("central / standalone mode without src: reports nothing (zero drift)", () => {
+    expect(missingViaChild(tempDir, "central")).toEqual([]);
+    expect(missingViaChild(tempDir, "standalone")).toEqual([]);
+  });
+});
+
+describe("FED-015 — edge boot guard (spawn smoke)", () => {
+  it("Docker layout + FEDERATION_MODE=edge without src: exits 1 with the FATAL message, server.js never required", () => {
+    fs.copyFileSync(CUSTOM_SERVER, path.join(tempDir, "custom-server.js"));
+    const marker = path.join(tempDir, "required.marker");
+    fs.writeFileSync(
+      path.join(tempDir, "server.js"),
+      `require("fs").writeFileSync(process.env.MARKER_PATH, "required");\n`
+    );
+    const res = spawnSync(process.execPath, ["custom-server.js"], {
+      cwd: tempDir,
+      env: { ...process.env, FEDERATION_MODE: "edge", MARKER_PATH: marker },
+      encoding: "utf8",
+      timeout: 15000,
+    });
+    expect(res.status).toBe(1);
+    expect(res.stderr).toMatch(/FATAL: FEDERATION_MODE=edge but the federation runtime modules are missing/);
+    expect(res.stderr).toMatch(/src\/lib\/federation\/proxy\.js/);
+    expect(fs.existsSync(marker)).toBe(false); // refused to boot — server.js never required
+  });
+
+  it("Docker layout + FEDERATION_MODE=central without src: boots normally (server.js required)", () => {
+    fs.copyFileSync(CUSTOM_SERVER, path.join(tempDir, "custom-server.js"));
+    const marker = path.join(tempDir, "required.marker");
+    fs.writeFileSync(
+      path.join(tempDir, "server.js"),
+      `require("fs").writeFileSync(process.env.MARKER_PATH, "required");\n`
+    );
+    const res = spawnSync(process.execPath, ["custom-server.js"], {
+      cwd: tempDir,
+      env: { ...process.env, FEDERATION_MODE: "central", MARKER_PATH: marker },
+      encoding: "utf8",
+      timeout: 15000,
+    });
+    expect(res.status).toBe(0);
+    expect(fs.existsSync(marker)).toBe(true);
+  });
+});
+
 // ─── FED-017: plain-node runtime graph loads WITHOUT the @/lib alias ─────
 //
 // custom-server.js dynamically imports the federation modules via file://
