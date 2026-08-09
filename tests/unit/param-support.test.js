@@ -52,4 +52,22 @@ describe("stripUnsupportedParams", () => {
 
     expect(body.max_tokens).toBe(64000);
   });
+
+  it("drops reasoning_effort/reasoning for custom OpenAI-compatible providers (#3008)", () => {
+    const body = { reasoning_effort: "medium", reasoning: { effort: "medium" }, temperature: 0.7 };
+
+    stripUnsupportedParams("openai-compatible-responses-b7531984", "gpt-5.6-sol", body);
+
+    expect(body.reasoning_effort).toBeUndefined();
+    expect(body.reasoning).toBeUndefined();
+    expect(body.temperature).toBe(0.7); // unrelated param preserved
+  });
+
+  it("does NOT drop reasoning_effort for real reasoning providers", () => {
+    const body = { reasoning_effort: "high", model: "deepseek-reasoner" };
+
+    stripUnsupportedParams("deepseek", "deepseek-reasoner", body);
+
+    expect(body.reasoning_effort).toBe("high"); // preserved for providers that support it
+  });
 });

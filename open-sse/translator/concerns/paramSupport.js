@@ -21,6 +21,10 @@ const STRIP_RULES = [
   // "integer above maximum value, expected <= 32768". Pin an explicit endpoint cap;
   // min() with the model ceiling still applies if a variant's own limit is lower.
   { provider: "volcengine-ark", match: /kimi/i, maxOutputCap: 32768, clampToModelMaxOutput: true },
+  // Custom OpenAI-compatible providers (Codex App, etc.) reject reasoning_effort /
+  // reasoning — they speak plain OpenAI chat completions without thinking support.
+  // Drop them to avoid HTTP 400 "Unsupported parameter: reasoning_effort". #3008
+  { provider: /openai-compatible|custom/i, drop: ["reasoning_effort", "reasoning"] },
 ];
 
 // Test a rule's match (regex or predicate) against the model id.
@@ -39,7 +43,10 @@ function clampNumber(body, key, ceiling) {
 export function stripUnsupportedParams(provider, model, body) {
   if (!model || !body || typeof body !== "object") return body;
   for (const rule of STRIP_RULES) {
-    if (rule.provider && rule.provider !== provider) continue;
+    if (rule.provider) {
+      const pOk = rule.provider instanceof RegExp ? rule.provider.test(provider) : rule.provider === provider;
+      if (!pOk) continue;
+    }
     if (!matches(rule, model)) continue;
     for (const key of rule.drop || []) {
       if (body[key] !== undefined) delete body[key];
