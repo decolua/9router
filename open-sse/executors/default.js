@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
 import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE, selectAnthropicBeta } from "../providers/shared.js";
@@ -41,6 +42,42 @@ function applyAuth(headers, desc, credentials) {
 // providers may still require max_tokens for models with similar names.
 function usesOpenAIMaxCompletionTokens(model) {
   return /^(?:gpt-5(?:[.-]|$)|o[134](?:[.-]|$))/i.test(model || "");
+}
+
+const OPENAI_TOOL_CALL_ID_MAX_LENGTH = 64;
+const OPENAI_TOOL_CALL_ID_PREFIX_LENGTH = 20;
+
+// OpenAI Chat Completions rejects tool-call IDs longer than 64 characters.
+// Normalize each distinct overlong ID once per request so assistant calls and
+// their tool results always keep the same relationship. A full SHA-256 digest
+// keeps IDs collision-resistant even when their retained prefixes are equal.
+function normalizeOpenAIToolCallIds(body) {
+  if (!Array.isArray(body?.messages)) return body;
+
+  const normalizedIds = new Map();
+  const normalize = (id) => {
+    if (typeof id !== "string" || id.length <= OPENAI_TOOL_CALL_ID_MAX_LENGTH) return id;
+    if (normalizedIds.has(id)) return normalizedIds.get(id);
+
+    const prefix = id.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, OPENAI_TOOL_CALL_ID_PREFIX_LENGTH) || "call";
+    const digest = createHash("sha256").update(id).digest("base64url");
+    const normalized = `${prefix}_${digest}`;
+    normalizedIds.set(id, normalized);
+    return normalized;
+  };
+
+  for (const message of body.messages) {
+    if (message?.role === "assistant" && Array.isArray(message.tool_calls)) {
+      for (const toolCall of message.tool_calls) {
+        if (toolCall && Object.hasOwn(toolCall, "id")) toolCall.id = normalize(toolCall.id);
+      }
+    }
+    if (message?.role === "tool" && Object.hasOwn(message, "tool_call_id")) {
+      message.tool_call_id = normalize(message.tool_call_id);
+    }
+  }
+
+  return body;
 }
 
 // Provider-specific header quirks kept as small hooks (not pure auth).
@@ -96,6 +133,9 @@ export class DefaultExecutor extends BaseExecutor {
           transformed.max_completion_tokens = transformed.max_tokens;
         }
         delete transformed.max_tokens;
+      }
+      if (this.provider === "openai") {
+        normalizeOpenAIToolCallIds(transformed);
       }
       // quirk: some openai-compatible providers reject Anthropic's client_metadata field
       if (this.config.quirks?.dropClientMetadata) {
