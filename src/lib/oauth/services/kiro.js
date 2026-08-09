@@ -15,6 +15,7 @@ import {
  */
 
 const KIRO_AUTH_SERVICE = "https://prod.us-east-1.auth.desktop.kiro.dev";
+const KIRO_API_KEY_VALIDATION_TIMEOUT_MS = 10_000;
 
 export class KiroService {
   /**
@@ -307,6 +308,7 @@ export class KiroService {
     const endpoint = `https://q.${region}.amazonaws.com/ListAvailableModels?${params}`;
     const response = await fetch(endpoint, {
       method: "GET",
+      signal: AbortSignal.timeout(KIRO_API_KEY_VALIDATION_TIMEOUT_MS),
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "TokenType": "API_KEY",

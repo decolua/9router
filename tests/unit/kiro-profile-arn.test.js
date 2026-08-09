@@ -57,6 +57,26 @@ describe("kiro API-key auth (KiroService.validateApiKey)", () => {
     ]);
   });
 
+  it("bounds each official-region API-key validation request", async () => {
+    const timeoutSignals = [new AbortController().signal, new AbortController().signal];
+    const timeoutMock = vi.spyOn(AbortSignal, "timeout")
+      .mockReturnValueOnce(timeoutSignals[0])
+      .mockReturnValueOnce(timeoutSignals[1]);
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockRejectedValueOnce(new Error("first region unavailable"))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ models: [{ modelId: "claude-opus-5" }] }),
+      });
+
+    await new KiroService().validateApiKey("eu-key", "auto");
+
+    expect(timeoutMock).toHaveBeenNthCalledWith(1, 10_000);
+    expect(timeoutMock).toHaveBeenNthCalledWith(2, 10_000);
+    expect(fetchMock.mock.calls[0][1].signal).toBe(timeoutSignals[0]);
+    expect(fetchMock.mock.calls[1][1].signal).toBe(timeoutSignals[1]);
+  });
+
   it("rejects unsupported runtime regions before calling AWS", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
 
