@@ -31,6 +31,8 @@
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
+import { assertPublicUrl } from "../../../src/shared/utils/ssrfGuard.js";
+
 /**
  * Split domain filter into includes / excludes (excludes prefixed with "-").
  * @param {string[]} [domainFilter]
@@ -69,7 +71,15 @@ export function getProviderSetting(params, key) {
  */
 export function resolveBaseUrl(config, params) {
   const override = getProviderSetting(params, "baseUrl");
-  return (override || config.baseUrl).replace(/\/+$/, "");
+  const resolved = (override || config.baseUrl).replace(/\/+$/, "");
+  // SSRF guard: reject client-controlled baseUrl targeting internal/private hosts.
+  // See issue #3049 — residual SSRF via provider_options.baseUrl.
+  try {
+    assertPublicUrl(resolved);
+  } catch (err) {
+    throw new Error(`Invalid baseUrl (SSRF guard): ${err.message}`);
+  }
+  return resolved;
 }
 
 /**
