@@ -15,6 +15,12 @@ import { estimateInputTokens } from "../utils/usageTracking.js";
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
 const HARD_CAPS = new Set(["vision", "pdf", "audioInput", "videoInput"]);
 
+// Statuses that mean "come back later", as opposed to "this request is wrong".
+// Clients and agent loops branch on exactly this distinction.
+function isRetryableStatus(status) {
+  return status === 429 || status === 408 || (status >= 500 && status <= 599);
+}
+
 // Prefixes used when flattening tool turns into plain prose for panel models.
 const TOOL_CALL_PREFIX = "[Called tools: ";
 const TOOL_RESULT_PREFIX = "[Tool result: ";
@@ -303,12 +309,17 @@ async function preflightSseResponse(response) {
  * earlier account's 429 wrote into the map. Without `canServe` (open-sse used
  * standalone, no account layer) the maps stand on their own as before.
  *
+ * The probe answers `null` when it has no opinion — a no-auth free provider with
+ * no per-account state to track, or one with nothing configured. Silence is not
+ * capacity: in that case the maps below are the only thing standing between the
+ * cascade and a round trip it already knows will fail, so they still decide.
+ *
  * @param {string} modelStr - Combo entry, e.g. "ag/gemini-3.1-pro-low"
  * @param {Object} ctx
  * @param {number} [ctx.inputTokens] - Estimated tokens in the request
- * @param {(modelStr: string) => boolean|Promise<boolean>} [ctx.canServe] - Does any
- *   account still have capacity for this model?
- * @returns {Promise<{ reason: string }|null>}
+ * @param {(modelStr: string) => Promise<{serveable: boolean, retryAfter?: string}|null>} [ctx.canServe]
+ *   Account-layer probe: has any account capacity for this model? `null` = no opinion.
+ * @returns {Promise<{ reason: string, retryAfter?: string }|null>}
  */
 export async function shouldSkipModel(modelStr, { inputTokens = 0, canServe = null } = {}) {
   const slash = modelStr.indexOf("/");
@@ -325,13 +336,19 @@ export async function shouldSkipModel(modelStr, { inputTokens = 0, canServe = nu
   }
 
   if (canServe) {
-    let serveable = false;
+    let verdict = null;
     try {
-      serveable = await canServe(modelStr);
+      verdict = await canServe(modelStr);
     } catch {
-      serveable = true; // fail open: never hide a model because the probe broke
+      verdict = null; // probe broke: fall back to local memory rather than guess
     }
-    return serveable ? null : { reason: "no account has capacity for it right now" };
+    if (verdict) {
+      if (verdict.serveable) return null;
+      return {
+        reason: "no account has capacity for it right now",
+        retryAfter: verdict.retryAfter || null,
+      };
+    }
   }
 
   // Quota exhaustion outlives a cooldown by hours — skip rather than spend a
@@ -393,6 +410,10 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
+  // The most recent failure a client should come back from. Kept beside the last
+  // failure so a permanent-looking code from a trailing entry cannot bury the
+  // fact that an earlier one was merely busy.
+  let lastRetryable = null;
   const inputTokens = estimateInputTokens(body);
 
   for (let i = 0; i < rotatedModels.length; i++) {
@@ -404,6 +425,18 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     const skip = await shouldSkipModel(modelStr, { inputTokens, canServe });
     if (skip) {
       log.warn("COMBO", `Skipping ${modelStr}, ${skip.reason}`);
+      if (skip.retryAfter && (!earliestRetryAfter || new Date(skip.retryAfter) < new Date(earliestRetryAfter))) {
+        earliestRetryAfter = skip.retryAfter;
+      }
+      // A skipped entry is still a reason the request failed. Recording it keeps
+      // the all-failed response from degrading to a bare 503 with no detail and
+      // no Retry-After when every entry was skipped rather than tried. A real
+      // attempt's error is more informative, so it overwrites this below.
+      if (!lastError) {
+        lastError = `[${modelStr}] ${skip.reason}`;
+        lastStatus = 503;
+        lastRetryable = { status: lastStatus, error: lastError };
+      }
       continue;
     }
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
@@ -460,8 +493,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         // Bound the ban by the provider's own reset time when it gave one; the
         // default hour is a guess, and a guess should not outlive the fact.
         if (isQuotaExhaustion(result.status, errorText)) {
+          // Only a reset time in the future replaces the default window. A value
+          // that parses to the past — or to an epoch offset, as a bare
+          // `retryAfter: 30` does — would otherwise store an already-expired ban,
+          // which is no ban at all.
           const until = retryAfter ? new Date(retryAfter).getTime() : NaN;
-          const ttlMs = Number.isNaN(until) ? undefined : Math.max(until - Date.now(), 0);
+          const ttlMs = until > Date.now() ? until - Date.now() : undefined;
           markQuotaExhausted(modelStr, Date.now(), ttlMs);
         }
       }
@@ -486,11 +523,13 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       // the client a code from one provider explaining another provider's error.
       lastError = errorText || String(result.status);
       lastStatus = result.status;
+      if (isRetryableStatus(lastStatus)) lastRetryable = { status: lastStatus, error: lastError };
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
       lastError = error.message || String(error);
       lastStatus = error.comboFallbackStatus || 500;
+      if (isRetryableStatus(lastStatus)) lastRetryable = { status: lastStatus, error: lastError };
       // Score throw-class failures too. The returned-Response path records at
       // the status branch above; without this, a model whose failure mode is
       // "HTTP 200 then the stream ends before the first event" (preflight
@@ -505,9 +544,17 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   // Use 503 (Service Unavailable) rather than 406 (Not Acceptable) — 406 implies
   // the request itself is invalid, but here the providers are simply unavailable
   // or have no active credentials. 503 is more accurate and retryable by clients.
-  const allDisabled = lastError && lastError.toLowerCase().includes("no credentials");
-  const status = allDisabled ? 503 : (lastStatus || 503);
-  const msg = lastError || "All combo models unavailable";
+  // Quote a failure the client can act on. A 400 from the last entry ends an
+  // agent loop that a 429 from an earlier one would have survived, so when the
+  // trailing failure looks permanent but an earlier one was transient, the
+  // transient one is reported — status and message together, still one failure.
+  const quoted = (lastRetryable && !isRetryableStatus(lastStatus))
+    ? lastRetryable
+    : { status: lastStatus, error: lastError };
+
+  const allDisabled = quoted.error && quoted.error.toLowerCase().includes("no credentials");
+  const status = allDisabled ? 503 : (quoted.status || 503);
+  const msg = quoted.error || "All combo models unavailable";
 
   if (earliestRetryAfter) {
     const retryHuman = formatRetryAfter(earliestRetryAfter);

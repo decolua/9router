@@ -53,7 +53,7 @@ describe("combo skip filters", () => {
   it("one account's quota error does not ban the model for accounts that still have quota", async () => {
     // canServe reports the provider still has a usable account — which is the
     // whole point: the ban must not outlive the account that earned it.
-    const canServe = () => true;
+    const canServe = () => ({ serveable: true });
 
     await run([AG, DEEPSEEK],
       async (_b, m) => (m === AG ? unavailable(m, 429, "[429]: Quota exceeded for this model") : ok(m)),
@@ -68,7 +68,7 @@ describe("combo skip filters", () => {
 
   it("skips a model only while every account for it is genuinely out", async () => {
     const serveable = new Set([DEEPSEEK]);
-    const canServe = (m) => serveable.has(m);
+    const canServe = (m) => ({ serveable: serveable.has(m), retryAfter: null });
 
     const tried = [];
     await run([AG, DEEPSEEK], async (_b, m) => { tried.push(m); return ok(m); }, { canServe });
@@ -86,7 +86,7 @@ describe("combo skip filters", () => {
       async (_b, m) => (m === AG
         ? unavailable(m, 429, "[429]: Quota exceeded for this model")
         : ok(m)),
-      { canServe: () => true });
+      { canServe: () => ({ serveable: true }) });
 
     expect(isQuotaExhausted(AG)).toBe(false);
   });
@@ -94,7 +94,7 @@ describe("combo skip filters", () => {
   it("a one-off 500 does not sideline the model for later requests", async () => {
     await run([AG, DEEPSEEK],
       async (_b, m) => (m === AG ? unavailable(m, 500, "boom") : ok(m)),
-      { canServe: () => true });
+      { canServe: () => ({ serveable: true }) });
 
     expect(isModelCoolingDown(AG)).toBe(false);
   });
@@ -154,11 +154,46 @@ describe("combo skip filters", () => {
     expect(res.status).toBe(400);
   });
 
+  it("keeps its own memory for providers the account layer has no opinion on", async () => {
+    // No-auth free providers never get an account lock written against them, so
+    // "no opinion" must not read as capacity — the per-model ban is all there is.
+    const canServe = () => null;
+
+    await run([AG, DEEPSEEK],
+      async (_b, m) => (m === AG ? providerError(429, "You exceeded your current quota") : ok(m)),
+      { canServe });
+    expect(isQuotaExhausted(AG)).toBe(true);
+
+    const tried = [];
+    await run([AG, DEEPSEEK], async (_b, m) => { tried.push(m); return ok(m); }, { canServe });
+    expect(tried).not.toContain(AG);
+  });
+
+  it("tells the client when to come back even if every entry was skipped", async () => {
+    const retryAfter = new Date(Date.now() + 600_000).toISOString();
+    const res = await run([AG, DEEPSEEK], async (_b, m) => ok(m),
+      { canServe: () => ({ serveable: false, retryAfter }) });
+
+    expect(res.status).toBe(503);
+    expect(res.headers.get("Retry-After")).toBeTruthy();
+    expect((await res.json()).error.message).toContain(AG);
+  });
+
+  it("does not let a permanent-looking last entry bury a retryable earlier one", async () => {
+    const res = await run(
+      [AG, "gemini/gemini-3.1-pro-preview"],
+      async (_b, m) => (m === AG
+        ? providerError(429, "Rate limit exceeded")
+        : providerError(400, "API key not valid")),
+    );
+    expect(res.status).toBe(429);
+  });
+
   it("answers with a retryable status when the cascade failed for transient reasons", async () => {
     const res = await run(
       [AG, DEEPSEEK],
       async (_b, _m) => unavailable(_m, 429, "[429]: Quota exceeded for this model"),
-      { canServe: () => true },
+      { canServe: () => ({ serveable: true }) },
     );
     expect([429, 503]).toContain(res.status);
   });

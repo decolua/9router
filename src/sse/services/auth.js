@@ -24,26 +24,6 @@ function githubMonthlyResetMs(status, errorText, provider) {
  * @param {Set<string>|string|null} excludeConnectionIds - Connection ID(s) to exclude (for retry with next account)
  * @param {string|null} model - Model name for per-model rate limit filtering
  */
-/**
- * Does any account still have capacity for this provider+model right now?
- *
- * A read-only probe, deliberately free of the selection side effects (mutex,
- * lastUsedAt bookkeeping, round-robin advance) that getProviderCredentials
- * carries. The combo cascade asks this before passing over an entry, so that a
- * single account's rate limit can't hide a provider whose other accounts are idle.
- *
- * @param {string} provider - Provider id or alias
- * @param {string|null} model - Provider-native model name
- * @returns {Promise<boolean>}
- */
-export async function hasServeableAccount(provider, model = null) {
-  const providerId = resolveProviderId(provider);
-  if (FREE_PROVIDERS[providerId]?.noAuth) return true;
-
-  const connections = await getProviderConnections({ provider: providerId, isActive: true });
-  return connections.some((c) => !isModelLockActive(c, model));
-}
-
 export async function getProviderCredentials(provider, excludeConnectionIds = null, model = null, options = {}) {
   // Normalize to Set for consistent handling
   const excludeSet = excludeConnectionIds instanceof Set
@@ -224,6 +204,42 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
   } finally {
     if (resolveMutex) resolveMutex();
   }
+}
+
+/**
+ * Does any account still have capacity for this provider+model right now?
+ *
+ * A read-only probe, deliberately free of the selection side effects (mutex,
+ * lastUsedAt bookkeeping, round-robin advance) that getProviderCredentials
+ * carries. The combo cascade asks before passing over an entry, so a single
+ * account's rate limit can't hide a provider whose other accounts are idle.
+ *
+ * Returns `null` to mean "no opinion", which the cascade reads as "decide for
+ * yourself" rather than as capacity. Two cases have no per-account state worth
+ * consulting: no-auth free providers, which never get a lock written against
+ * them and so would look eternally available, and providers with nothing
+ * configured, which should be attempted so the caller surfaces the real
+ * no-credentials error instead of a silent skip.
+ *
+ * @param {string} provider - Provider id or alias
+ * @param {string|null} model - Provider-native model name
+ * @returns {Promise<{serveable: boolean, retryAfter: string|null}|null>}
+ */
+export async function probeAccountCapacity(provider, model = null) {
+  const providerId = resolveProviderId(provider);
+  if (FREE_PROVIDERS[providerId]?.noAuth) return null;
+
+  const connections = await getProviderConnections({ provider: providerId, isActive: true });
+  if (connections.length === 0) return null;
+
+  if (connections.some((c) => !isModelLockActive(c, model))) {
+    return { serveable: true, retryAfter: null };
+  }
+
+  // Every account is locked — hand back when the first one frees up so the
+  // cascade can still tell the client when to come back.
+  const expiries = connections.map((c) => getEarliestModelLockUntil(c)).filter(Boolean).sort();
+  return { serveable: false, retryAfter: expiries[0] || null };
 }
 
 /**

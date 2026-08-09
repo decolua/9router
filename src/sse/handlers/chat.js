@@ -2,7 +2,7 @@ import "open-sse/index.js";
 
 import {
   getProviderCredentials,
-  hasServeableAccount,
+  probeAccountCapacity,
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
@@ -26,17 +26,29 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 
 /**
- * Does any account still have capacity for this combo entry?
+ * Build the cascade's account-capacity probe for a single request.
  *
  * The cascade asks before passing an entry over, so one account's rate limit can
- * never hide a provider whose other accounts are idle. Unresolvable entries are
- * reported serveable: the cascade should try them and learn from the real answer
- * rather than skip them on a guess.
+ * never hide a provider whose other accounts are idle. An entry that doesn't
+ * resolve to a provider gets `null` — no opinion — and the cascade decides for
+ * itself rather than being told there is capacity.
+ *
+ * Memoized per request: a cascade asks about the same handful of entries, and
+ * each answer costs a model resolution plus a connections query. Nothing here is
+ * cached across requests, so a lock that expires mid-flight is seen immediately.
  */
-async function canServeModel(modelStr) {
-  const { provider, model } = await getModelInfo(modelStr);
-  if (!provider) return true;
-  return hasServeableAccount(provider, model);
+function makeCanServe() {
+  const answers = new Map();
+  return (modelStr) => {
+    if (!answers.has(modelStr)) {
+      answers.set(modelStr, (async () => {
+        const { provider, model } = await getModelInfo(modelStr);
+        if (!provider) return null;
+        return probeAccountCapacity(provider, model);
+      })());
+    }
+    return answers.get(modelStr);
+  };
 }
 
 /**
@@ -145,7 +157,7 @@ export async function handleChat(request, clientRawRequest = null) {
       comboName: modelStr,
       comboStrategy,
       comboStickyLimit,
-      canServe: canServeModel
+      canServe: makeCanServe()
     });
   }
 
@@ -165,7 +177,7 @@ export async function handleChat(request, clientRawRequest = null) {
       log,
       comboName: modelStr,
       comboStrategy: getActiveAdapterStrategy(requiredCapabilities, settings),
-      canServe: canServeModel
+      canServe: makeCanServe()
     });
   }
 
@@ -226,7 +238,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         comboName: modelStr,
         comboStrategy,
         comboStickyLimit,
-        canServe: canServeModel
+        canServe: makeCanServe()
       });
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });
