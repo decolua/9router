@@ -86,4 +86,45 @@ function getToolForHost(host) {
   return null;
 }
 
-module.exports = { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, MODEL_NO_MAP, LOG_BLACKLIST_URL_PARTS, getToolForHost };
+function isBinaryData(buffer) {
+  if (!buffer || buffer.length === 0) return false;
+  const sample = buffer.slice(0, Math.min(100, buffer.length));
+  let nonPrintable = 0;
+  for (let i = 0; i < sample.length; i++) {
+    const byte = sample[i];
+    if (byte < 0x20 && byte !== 0x09 && byte !== 0x0A && byte !== 0x0D) {
+      nonPrintable++;
+    }
+    if (byte > 0x7E) nonPrintable++;
+  }
+  return (nonPrintable / sample.length) > 0.3;
+}
+
+// Extract model from URL path (Gemini), body (OpenAI/Anthropic), or Kiro conversationState.
+function extractModel(url, body) {
+  const urlMatch = url.match(/\/models\/([^/:]+)/);
+  const urlModel = urlMatch?.[1] || null;
+
+  if (isBinaryData(body)) return urlModel;
+
+  try {
+    const parsed = JSON.parse(body.toString());
+    if (parsed.conversationState) {
+      return parsed.conversationState.currentMessage?.userInputMessage?.modelId || null;
+    }
+    const model = urlModel || parsed.model || null;
+    if (String(model).replace(/^models\//, "") === "gemini-3.6-flash-tiered") {
+      const rawLevel = parsed.request?.generationConfig?.thinkingConfig?.thinkingLevel
+        || parsed.generationConfig?.thinkingConfig?.thinkingLevel;
+      const level = ["high", "medium", "low"].includes(String(rawLevel).toLowerCase())
+        ? String(rawLevel).toLowerCase()
+        : "medium";
+      return `gemini-3.6-flash-${level}`;
+    }
+    return model;
+  } catch {
+    return urlModel;
+  }
+}
+
+module.exports = { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, MODEL_NO_MAP, LOG_BLACKLIST_URL_PARTS, getToolForHost, extractModel };

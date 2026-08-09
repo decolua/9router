@@ -37,7 +37,7 @@ export default function LoginPage() {
 
         if (res.ok) {
           const data = await res.json();
-          if (data.requireLogin === false) {
+          if (data.authenticated === true || data.requireLogin === false) {
             window.location.assign("/dashboard");
             return;
           }
