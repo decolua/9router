@@ -109,20 +109,27 @@ describe("local status payload (acceptance 1)", () => {
     const { setEdgeState } = await import("@/lib/federation/state.js");
     const { handleLocalStatus } = await import("@/lib/federation/server.js");
 
-    // Fresh edge: no last_state row → getEdgeState defaults to LINKED.
+    // Fresh edge (FED-016): the migration-seeded federation_meta row is
+    // all-NULL — the runtime has recorded NO lifecycle activity → loops
+    // never started. Previously this defaulted to LINKED (masking FED-013);
+    // now it reports 'uninitialized' with lastAppliedRevision null (never
+    // applied a replica).
     const fresh = await handleLocalStatus();
     expect(fresh.role).toBe("edge");
     expect(fresh.mode).toBe("edge");
-    expect(fresh.last_state).toBe("linked");
+    expect(fresh.last_state).toBe("uninitialized");
+    expect(fresh.initialized).toBe(false);
     expect(fresh.edgeId).toBe("edge-1");
     expect(fresh.revisionLag).toBe(0);
     expect(fresh.maxVersion).toBe(0);
-    expect(fresh.lastAppliedRevision).toBe(0);
+    expect(fresh.lastAppliedRevision).toBe(null);
 
-    // DEGRADED state is reflected.
+    // DEGRADED state is reflected (setEdgeState writes the row → the edge is
+    // now initialized; the failover state wins over 'uninitialized').
     setEdgeState(db, "degraded");
     const degraded = await handleLocalStatus();
     expect(degraded.last_state).toBe("degraded");
+    expect(degraded.initialized).toBe(true);
 
     // RECOVERING state is reflected.
     setEdgeState(db, "recovering");
@@ -144,6 +151,29 @@ describe("local status payload (acceptance 1)", () => {
     expect(lagged.maxVersion).toBe(7);
     expect(lagged.lastAppliedRevision).toBe(3);
     expect(lagged.revisionLag).toBe(4);
+    expect(lagged.initialized).toBe(true);
+  });
+
+  it("edge with a federation_meta row but no last_state → getEdgeState default LINKED (loops started, state machine not yet run)", async () => {
+    process.env.FEDERATION_MODE = "edge";
+    vi.resetModules();
+
+    const db = await createMigratedDb();
+    pointDriverAt(db);
+    // edgeClient.start()'s first tick writes role/edgeId before the first
+    // pull completes — the row exists but last_state is still null.
+    db.run(
+      `INSERT INTO federation_meta(id, role, edgeId) VALUES(1, 'edge', 'edge-1')
+       ON CONFLICT(id) DO UPDATE SET role = 'edge', edgeId = excluded.edgeId`
+    );
+    const { handleLocalStatus } = await import("@/lib/federation/server.js");
+    const payload = await handleLocalStatus();
+    expect(payload.role).toBe("edge");
+    expect(payload.initialized).toBe(true);
+    // Row exists → not 'uninitialized'; no last_state written yet → the
+    // state machine's resting default (LINKED).
+    expect(payload.last_state).toBe("linked");
+    expect(payload.lastAppliedRevision).toBe(null);
   });
 
   it("revisionLag is clamped ≥ 0 (never negative when applied > watermark)", async () => {
@@ -161,9 +191,10 @@ describe("local status payload (acceptance 1)", () => {
     expect(payload.maxVersion).toBe(0);
     expect(payload.lastAppliedRevision).toBe(99);
     expect(payload.revisionLag).toBe(0);
+    expect(payload.initialized).toBe(true);
   });
 
-  it("central mode: role 'central', no last_state", async () => {
+  it("central mode: role 'central', no last_state, revisionLag 0 + edge-only note (FED-016)", async () => {
     process.env.FEDERATION_MODE = "central";
     process.env.FEDERATION_TOKEN = "fed-secret";
     vi.resetModules();
@@ -175,9 +206,16 @@ describe("local status payload (acceptance 1)", () => {
     expect(payload.role).toBe("central");
     expect(payload.mode).toBe("central");
     expect(payload.last_state).toBeUndefined();
+    // FED-016: central is the source of truth — no replica, no lag. The
+    // previous payload reported revisionLag = maxVersion (a misleading
+    // "self-lag" because lastAppliedRevision is never set on central).
+    expect(payload.revisionLag).toBe(0);
+    expect(payload.revisionLagNote).toContain("edge-only");
+    expect(payload.lastAppliedRevision).toBe(null);
+    expect(payload.initialized).toBeUndefined();
   });
 
-  it("standalone mode: role 'standalone', no last_state, zero drift", async () => {
+  it("standalone mode: role 'standalone', no last_state, zero drift, edge-only lag note", async () => {
     vi.resetModules(); // FEDERATION_MODE unset
     const db = await createMigratedDb();
     pointDriverAt(db);
@@ -187,9 +225,12 @@ describe("local status payload (acceptance 1)", () => {
     expect(payload.mode).toBe("standalone");
     expect(payload.last_state).toBeUndefined();
     expect(payload.revisionLag).toBe(0);
+    expect(payload.revisionLagNote).toContain("edge-only");
+    expect(payload.lastAppliedRevision).toBe(null);
+    expect(payload.initialized).toBeUndefined();
   });
 
-  it("handleStatus (guarded route) reports the same local payload — role 'edge' in edge mode", async () => {
+  it("handleStatus (guarded route) reports the same local payload — role 'edge' in edge mode, 'uninitialized' before the loops write a row", async () => {
     process.env.FEDERATION_MODE = "edge";
     process.env.FEDERATION_TOKEN = "fed-secret";
     vi.resetModules();
@@ -199,7 +240,7 @@ describe("local status payload (acceptance 1)", () => {
     const { handleStatus } = await import("@/lib/federation/server.js");
     const payload = await handleStatus();
     expect(payload.role).toBe("edge");
-    expect(payload.last_state).toBe("linked");
+    expect(payload.last_state).toBe("uninitialized");
   });
 });
 
@@ -273,7 +314,8 @@ describe("local status — token-less dashboard access (acceptance 2)", () => {
     const resp = await route.GET();
     expect(resp.status).toBe(200);
     expect(resp.body.role).toBe("edge");
-    expect(resp.body.last_state).toBe("linked");
+    // Fresh edge, no federation_meta row → 'uninitialized' (FED-016).
+    expect(resp.body.last_state).toBe("uninitialized");
   });
 
   it("the guarded /api/federation/status route still 401s without a token in edge mode (unchanged)", async () => {

@@ -130,9 +130,12 @@ export async function handleVerify(request) {
 //
 // FED-005: role now reports 'edge' when the instance is an edge (previously
 // it only ever said 'central'/'standalone'), and the payload carries
-// last_state (LINKED/DEGRADED/RECOVERING from federation_meta) + revisionLag
-// (maxVersion - lastAppliedRevision, clamped ≥ 0) so the dashboard banner
-// can render state + lag from one call.
+// last_state (LINKED/DEGRADED/RECOVERING from federation_meta — or
+// 'uninitialized' when no federation_meta row exists, i.e. the loops never
+// started) + revisionLag (maxVersion - lastAppliedRevision, clamped ≥ 0;
+// edge-only — central/standalone report 0 + a revisionLagNote) so the
+// dashboard banner can render state + lag from one call. See
+// buildLocalStatusPayload for the FED-016 semantics.
 export async function handleStatus() {
   // Preserve the pre-FED-005 behavior: the guarded diagnostics endpoint
   // initializes the DB adapter if needed (a fresh boot may not have touched
@@ -155,13 +158,32 @@ export async function handleStatus() {
 // 'standalone' otherwise. last_state is only meaningful for edges (the
 // failover state machine only runs there); for central/standalone it is
 // omitted so the payload stays honest about what the state means.
+//
+// FED-016 (status-surface honesty):
+//   - lastAppliedRevision is the RAW value (null = never applied a replica).
+//     It is no longer coalesced to 0 — a never-started edge and an
+//     up-to-date edge must not be indistinguishable.
+//   - An edge's last_state reports 'uninitialized' (never 'linked') when the
+//     runtime has recorded NO lifecycle activity: migration 002 seeds an
+//     empty federation_meta row (id=1, all columns NULL), so row presence is
+//     meaningless — only role/last_state/lastAppliedRevision are written by
+//     the runtime (edgeClient's first tick writes role/edgeId; failover
+//     writes last_state). All-NULL = the loops never started. Defaulting to
+//     LINKED masked exactly that during the FED-013 dogfood diagnosis.
+//     initialized (bool) exposes the same discriminator machine-readably.
+//   - revisionLag is an EDGE metric (replica trailing the central
+//     watermark). Central IS the source of truth and standalone has no
+//     federation, so non-edge roles report revisionLag: 0 + a
+//     revisionLagNote instead of a misleading "self-lag" number
+//     (previously central reported revisionLag = maxVersion because its
+//     lastAppliedRevision is never set).
 export function buildLocalStatusPayload() {
   const db = getAdapterSyncSafe();
   const meta = db
-    ? db.get(`SELECT role, edgeId, lastAppliedRevision, schemaVersion FROM federation_meta WHERE id = 1`)
+    ? db.get(`SELECT role, edgeId, lastAppliedRevision, last_state, schemaVersion FROM federation_meta WHERE id = 1`)
     : null;
   const maxVersion = db ? computeWatermark(db) : 0;
-  const lastAppliedRevision = meta?.lastAppliedRevision ?? 0;
+  const lastAppliedRevision = meta?.lastAppliedRevision ?? null;
   const role = isCentral() ? "central" : isEdge() ? "edge" : "standalone";
   const payload = {
     role,
@@ -170,10 +192,20 @@ export function buildLocalStatusPayload() {
     lastAppliedRevision,
     schemaVersion: latestVersion(),
     maxVersion,
-    revisionLag: Math.max(0, maxVersion - lastAppliedRevision),
   };
   if (isEdge()) {
-    payload.last_state = db ? getEdgeState(db) : "linked";
+    // All-NULL seeded row (migration 002) = the runtime never wrote anything
+    // → loops never started. Any of role/last_state/lastAppliedRevision set
+    // means the runtime is (or was) live, and the failover state applies.
+    const initialized =
+      meta != null &&
+      (meta.role != null || meta.last_state != null || meta.lastAppliedRevision != null);
+    payload.initialized = initialized;
+    payload.last_state = initialized ? getEdgeState(db) : "uninitialized";
+    payload.revisionLag = Math.max(0, maxVersion - (lastAppliedRevision ?? 0));
+  } else {
+    payload.revisionLag = 0;
+    payload.revisionLagNote = "edge-only metric — central/standalone instances have no replica to lag";
   }
   return payload;
 }

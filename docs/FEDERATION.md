@@ -157,6 +157,26 @@ page only reports "configured yes/no".
   central invalidates old tokens, so a zombie edge cannot apply writes
   against a lease it no longer holds.
 
+### 4.1 Status surface semantics (FED-016)
+
+Both `GET /api/federation/status` (guarded, central + edge) and
+`GET /api/federation/local-status` (token-less, edge dashboard) return the
+same payload from `buildLocalStatusPayload`. Semantics:
+
+| Field | Meaning |
+|---|---|
+| `role` | `central` \| `edge` \| `standalone` |
+| `lastAppliedRevision` | The edge's replication watermark. **`null` means the instance has never applied a replica** (loops never started, or a central/standalone instance that has no replica) — it is *not* the same as `0`. |
+| `maxVersion` | Central watermark of the local DB (highest `federation_version`). |
+| `revisionLag` | **Edge-only.** `maxVersion - lastAppliedRevision` (clamped ≥ 0). Central and standalone report `0` + a `revisionLagNote` — central is the source of truth and has no replica to lag; a self-lag number there was misleading. |
+| `last_state` | **Edge-only.** `linked` \| `degraded` \| `recovering` from the failover state machine — or **`uninitialized`** when the runtime has recorded no lifecycle activity. Migration 002 seeds an empty `federation_meta` row (all columns NULL); `role`/`last_state`/`lastAppliedRevision` are only written by the runtime (replication loop on its first tick, failover on state change), so an all-NULL row means the loops never started — previously this reported `linked`, which masked a dead edge during the 2026-08-08 dogfood diagnosis. |
+| `initialized` | **Edge-only.** `true` when any lifecycle field (`role`, `last_state`, `lastAppliedRevision`) has been written; the machine-readable twin of `last_state`'s `uninitialized` vs real-state distinction. |
+
+A misconfigured edge (missing `FEDERATION_MODE=edge`, wrapper not booted, or
+federation modules absent from the image) now shows `"last_state":
+"uninitialized"` and a grey/blue "Federation uninitialized" banner instead
+of a false green "Federation linked".
+
 ---
 
 ## 5. Failover runbook
@@ -214,6 +234,7 @@ page only reports "configured yes/no".
 
 | Symptom | Cause / fix |
 |---|---|
+| Edge reports `"last_state": "uninitialized"` (never-started) | Federation loops never started: `FEDERATION_MODE=edge` missing at boot, the custom-server wrapper didn't boot, or the federation modules are absent from the image. Check logs for `[federation] replication + failover loops started`; an edge that is actually running flips to `linked`/`degraded` within seconds. |
 | Edge stays LINKED but `/v1` 502s | `FEDERATION_CENTRAL_URL` unreachable from the edge (firewall, DNS, TLS). Check `curl https://central/api/federation/verify` with the token. |
 | Federation API calls 401 | `FEDERATION_TOKEN` mismatch. Regenerate once and set identically everywhere. |
 | Dashboard sessions break across instances | `JWT_SECRET` mismatch. |

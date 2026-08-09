@@ -60,6 +60,16 @@ describe("federationStatusView — edge render states (acceptance 1)", () => {
     expect(view.label).toBe("Federation recovering");
   });
 
+  it("UNINITIALIZED (FED-016: no federation_meta row — loops never started) → info variant, 'Federation uninitialized' label", async () => {
+    const { federationStatusView } = await loadView();
+    const view = federationStatusView({ role: "edge", last_state: "uninitialized", revisionLag: 0 });
+    expect(view).not.toBeNull();
+    expect(view.variant).toBe("info");
+    expect(view.label).toBe("Federation uninitialized");
+    expect(view.icon).toBe("sync_problem");
+    expect(view.lagText).toBe("");
+  });
+
   it("revision lag > 0 → 'behind N revisions' text (singular for 1)", async () => {
     const { federationStatusView } = await loadView();
     const view = federationStatusView({ role: "edge", last_state: "linked", revisionLag: 4 });

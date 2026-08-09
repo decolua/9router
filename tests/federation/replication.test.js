@@ -548,7 +548,12 @@ describe("central route handlers (server.js)", () => {
     expect(status.role).toBe("central");
     expect(status.schemaVersion).toBe(latestVersion());
     expect(status.maxVersion).toBe(wm);
-    expect(typeof status.lastAppliedRevision).toBe("number");
+    // FED-016: central never applies a replica → lastAppliedRevision is null
+    // (not 0) and revisionLag is 0 with an edge-only annotation — no
+    // misleading "self-lag" number.
+    expect(status.lastAppliedRevision).toBe(null);
+    expect(status.revisionLag).toBe(0);
+    expect(status.revisionLagNote).toContain("edge-only");
   });
 
   it("invalid since → 400", async () => {

@@ -8,11 +8,15 @@
 // Contract with the payload (src/lib/federation/server.js
 // buildLocalStatusPayload):
 //   { role: 'standalone'|'central'|'edge', last_state?: 'linked'|'degraded'|
-//     'recovering', revisionLag: number, ... }
+//     'recovering'|'uninitialized', revisionLag: number, ... }
 //   - standalone → render nothing (zero drift)
 //   - central → render nothing (the banner is an EDGE UX; central is the
 //     authoritative instance and has no failover state to show)
-//   - edge → badge per last_state + lag text when revisionLag > 0
+//   - edge → badge per last_state + lag text when revisionLag > 0;
+//     'uninitialized' (FED-016: migration-seeded federation_meta row with no
+//     runtime lifecycle activity — the loops never started) renders an info
+//     badge instead of silently hiding, so a misconfigured edge is visibly
+//     "not started" rather than quietly green or absent
 //   - unknown/error → null (hide quietly, retry next poll)
 import { STATES } from "./constants.js";
 
@@ -21,6 +25,7 @@ export const STATE_BADGE_VARIANTS = Object.freeze({
   [STATES.LINKED]: "success",
   [STATES.DEGRADED]: "error",
   [STATES.RECOVERING]: "info",
+  uninitialized: "info",
 });
 
 // Human label per state (EN literals — i18n fallback covers other locales).
@@ -28,6 +33,7 @@ export const STATE_LABELS = Object.freeze({
   [STATES.LINKED]: "Federation linked",
   [STATES.DEGRADED]: "Federation degraded",
   [STATES.RECOVERING]: "Federation recovering",
+  uninitialized: "Federation uninitialized",
 });
 
 // Icon per state (material-symbols-outlined names).
@@ -35,6 +41,7 @@ export const STATE_ICONS = Object.freeze({
   [STATES.LINKED]: "cloud_done",
   [STATES.DEGRADED]: "cloud_off",
   [STATES.RECOVERING]: "sync",
+  uninitialized: "sync_problem",
 });
 
 // Map a local-status payload to banner view state.
@@ -42,7 +49,8 @@ export const STATE_ICONS = Object.freeze({
 //   - standalone / central roles (banner is an edge-only UX)
 //   - missing/invalid last_state (unknown → hide quietly)
 //   - malformed payload (defensive)
-// Returns { variant, label, icon, lagText } for edges.
+// Returns { variant, label, icon, lagText } for edges — including the
+// FED-016 'uninitialized' state (info badge).
 export function federationStatusView(payload) {
   if (!payload || typeof payload !== "object") return null;
   if (payload.role !== "edge") return null;
