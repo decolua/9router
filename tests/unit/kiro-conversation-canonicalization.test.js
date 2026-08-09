@@ -300,6 +300,37 @@ describe("Kiro conversation canonicalizer", () => {
     });
   });
 
+  it("removes unsupported schema keywords at every nesting level", () => {
+    const { specs } = normalizeKiroToolSpecs([tool("dynamic_tool", {
+      type: "object",
+      $defs: { Filter: { type: "string" } },
+      properties: {
+        filter: {
+          description: "kept",
+          anyOf: [{ type: "string" }, { type: "null" }],
+          $ref: "#/$defs/Filter",
+        },
+        nested: {
+          type: "object",
+          properties: {
+            value: {
+              type: "string",
+              if: { const: "x" },
+              then: { minLength: 1 },
+              else: { maxLength: 10 },
+            },
+          },
+        },
+      },
+    })]);
+
+    const schema = specs[0].toolSpecification.inputSchema.json;
+    expect(schema.properties.filter.description).toBe("kept");
+    expect(JSON.stringify(schema)).not.toMatch(
+      /\"(?:anyOf|oneOf|allOf|not|\$schema|\$id|\$ref|\$defs|definitions|if|then|else|unevaluatedProperties|unevaluatedItems|contentEncoding|contentMediaType)\"/
+    );
+  });
+
   it("does not mutate the source conversation or tool definitions", () => {
     const sourceTools = [tool("first")];
     const sourceHistory = [

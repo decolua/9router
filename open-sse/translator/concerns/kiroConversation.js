@@ -6,6 +6,25 @@ import {
 
 const TOOL_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const TOOL_NAME_PATTERN = /[^a-zA-Z0-9_-]/g;
+const UNSUPPORTED_SCHEMA_KEYS = new Set([
+  "additionalProperties",
+  "anyOf",
+  "oneOf",
+  "allOf",
+  "not",
+  "$schema",
+  "$id",
+  "$ref",
+  "$defs",
+  "definitions",
+  "if",
+  "then",
+  "else",
+  "unevaluatedProperties",
+  "unevaluatedItems",
+  "contentEncoding",
+  "contentMediaType",
+]);
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -53,7 +72,7 @@ function cleanSchemaValue(value) {
 
   const cleaned = {};
   for (const [key, child] of Object.entries(value)) {
-    if (key === "additionalProperties") continue;
+    if (UNSUPPORTED_SCHEMA_KEYS.has(key)) continue;
     if (key === "required" && Array.isArray(child) && child.length === 0) continue;
     cleaned[key] = cleanSchemaValue(child);
   }
@@ -61,7 +80,16 @@ function cleanSchemaValue(value) {
 }
 
 function normalizeRootSchema(schema) {
-  const cleaned = cleanSchemaValue(schema && typeof schema === "object" ? clone(schema) : {});
+  const source = schema && typeof schema === "object" ? clone(schema) : {};
+  const rootBranches = new Map(
+    ["allOf", "oneOf", "anyOf"].map((keyword) => [
+      keyword,
+      Array.isArray(source[keyword]) ? source[keyword] : [],
+    ])
+  );
+  for (const keyword of rootBranches.keys()) delete source[keyword];
+
+  const cleaned = cleanSchemaValue(source);
   cleaned.type = "object";
   if (!cleaned.properties || typeof cleaned.properties !== "object" || Array.isArray(cleaned.properties)) {
     cleaned.properties = {};
@@ -69,10 +97,7 @@ function normalizeRootSchema(schema) {
 
   const required = new Set(Array.isArray(cleaned.required) ? cleaned.required : []);
   for (const keyword of ["allOf", "oneOf", "anyOf"]) {
-    const branches = Array.isArray(cleaned[keyword])
-      ? cleaned[keyword].map(normalizeRootSchema)
-      : [];
-    delete cleaned[keyword];
+    const branches = rootBranches.get(keyword).map(normalizeRootSchema);
     if (branches.length === 0) continue;
 
     for (const branch of branches) {
