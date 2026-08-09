@@ -25,6 +25,9 @@ const STRIP_RULES = [
   // reasoning — they speak plain OpenAI chat completions without thinking support.
   // Drop them to avoid HTTP 400 "Unsupported parameter: reasoning_effort". #3008
   { provider: /openai-compatible|custom/i, drop: ["reasoning_effort", "reasoning"] },
+  // OpenAI gpt-5.x rejects `max_tokens`; it must be `max_completion_tokens`.
+  // Rename to avoid HTTP 400 "Unsupported parameter: 'max_tokens'". #2830
+  { provider: "openai", match: /gpt-5/i, rename: [["max_tokens", "max_completion_tokens"]] },
 ];
 
 // Test a rule's match (regex or predicate) against the model id.
@@ -36,6 +39,15 @@ function matches(rule, model) {
 function clampNumber(body, key, ceiling) {
   if (typeof body[key] === "number" && Number.isFinite(body[key]) && body[key] > ceiling) {
     body[key] = ceiling;
+  }
+}
+
+function renameParams(body, renames) {
+  for (const [from, to] of renames) {
+    if (body[from] !== undefined && body[to] === undefined) {
+      body[to] = body[from];
+      delete body[from];
+    }
   }
 }
 
@@ -51,6 +63,7 @@ export function stripUnsupportedParams(provider, model, body) {
     for (const key of rule.drop || []) {
       if (body[key] !== undefined) delete body[key];
     }
+    if (rule.rename) renameParams(body, rule.rename);
     // CF Workers AI oneOf root schema only accepts content as plain string (#1926)
     if (rule.flattenContent && Array.isArray(body.messages)) {
       for (const msg of body.messages) {

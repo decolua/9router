@@ -70,4 +70,22 @@ describe("stripUnsupportedParams", () => {
 
     expect(body.reasoning_effort).toBe("high"); // preserved for providers that support it
   });
+
+  it("renames max_tokens → max_completion_tokens for OpenAI gpt-5.x (#2830)", () => {
+    const body = { max_tokens: 4096, model: "gpt-5.6-luna" };
+
+    stripUnsupportedParams("openai", "gpt-5.6-luna", body);
+
+    expect(body.max_tokens).toBeUndefined();
+    expect(body.max_completion_tokens).toBe(4096);
+  });
+
+  it("does NOT rename for OpenAI gpt-4o (still uses max_tokens)", () => {
+    const body = { max_tokens: 2048, model: "gpt-4o" };
+
+    stripUnsupportedParams("openai", "gpt-4o", body);
+
+    expect(body.max_tokens).toBe(2048);
+    expect(body.max_completion_tokens).toBeUndefined();
+  });
 });
