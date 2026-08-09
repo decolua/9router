@@ -481,14 +481,16 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         await new Promise(r => setTimeout(r, cooldownMs));
       }
 
-      // Fallback to next model
+      // Fallback to next model. Status and message move together: they describe
+      // one failure, and keeping the first status beside the last message hands
+      // the client a code from one provider explaining another provider's error.
       lastError = errorText || String(result.status);
-      if (!lastStatus) lastStatus = result.status;
+      lastStatus = result.status;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
       lastError = error.message || String(error);
-      if (!lastStatus) lastStatus = error.comboFallbackStatus || 500;
+      lastStatus = error.comboFallbackStatus || 500;
       // Score throw-class failures too. The returned-Response path records at
       // the status branch above; without this, a model whose failure mode is
       // "HTTP 200 then the stream ends before the first event" (preflight
