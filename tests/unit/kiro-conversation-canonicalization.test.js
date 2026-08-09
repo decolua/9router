@@ -331,6 +331,32 @@ describe("Kiro conversation canonicalizer", () => {
     );
   });
 
+  it("preserves property names that equal unsupported schema keywords", () => {
+    const { specs } = normalizeKiroToolSpecs([tool("conditional_names", {
+      type: "object",
+      properties: {
+        if: { type: "string", description: "condition name" },
+        then: {
+          type: "object",
+          properties: { additionalProperties: { type: "boolean" } },
+        },
+      },
+      required: ["if", "then"],
+    })]);
+
+    expect(specs[0].toolSpecification.inputSchema.json).toEqual({
+      type: "object",
+      properties: {
+        if: { type: "string", description: "condition name" },
+        then: {
+          type: "object",
+          properties: { additionalProperties: { type: "boolean" } },
+        },
+      },
+      required: ["if", "then"],
+    });
+  });
+
   it("does not mutate the source conversation or tool definitions", () => {
     const sourceTools = [tool("first")];
     const sourceHistory = [

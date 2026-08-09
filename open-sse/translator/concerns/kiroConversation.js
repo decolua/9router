@@ -72,6 +72,15 @@ function cleanSchemaValue(value) {
 
   const cleaned = {};
   for (const [key, child] of Object.entries(value)) {
+    if (key === "properties" && child && typeof child === "object" && !Array.isArray(child)) {
+      cleaned[key] = Object.fromEntries(
+        Object.entries(child).map(([name, propertySchema]) => [
+          name,
+          cleanSchemaValue(propertySchema),
+        ])
+      );
+      continue;
+    }
     if (UNSUPPORTED_SCHEMA_KEYS.has(key)) continue;
     if (key === "required" && Array.isArray(child) && child.length === 0) continue;
     cleaned[key] = cleanSchemaValue(child);
