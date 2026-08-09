@@ -134,10 +134,19 @@ export const ANTIGRAVITY_HEADERS = {
   "User-Agent": ANTIGRAVITY_IDE_USER_AGENT
 };
 
-// Cloud Code Assist API
+// Cloud Code Assist API endpoints differ by client ecosystem.
 export const CLOUD_CODE_API = {
-  loadCodeAssist: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
-  onboardUser: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
+  "gemini-cli": {
+    loadCodeAssist: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+    onboardUser: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
+  },
+  // Project discovery (loadCodeAssist/onboardUser) stays on PROD — the daily host
+  // rejects these auth/onboarding calls. Only chat traffic uses the daily host
+  // (see transport.apiEndpoint in registry/antigravity.js, set to bypass prod 429).
+  antigravity: {
+    loadCodeAssist: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+    onboardUser: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
+  },
 };
 
 export const LOAD_CODE_ASSIST_HEADERS = {
@@ -145,6 +154,13 @@ export const LOAD_CODE_ASSIST_HEADERS = {
   "User-Agent": "google-api-nodejs-client/9.15.1",
   "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
   "Client-Metadata": JSON.stringify({ ideType: IDE_TYPE.ANTIGRAVITY, platform: getPlatformEnum(), pluginType: PLUGIN_TYPE.GEMINI }),
+};
+
+// Real Antigravity IDE doesn't send X-Goog-Api-Client/Client-Metadata on loadCodeAssist/onboardUser —
+// Google's backend fingerprints those and silently refuses to provision a cloudaicompanionProject.
+export const ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS = {
+  "Content-Type": "application/json",
+  "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
 };
 
 export const LOAD_CODE_ASSIST_METADATA = {
@@ -167,7 +183,6 @@ export const OAUTH_ENDPOINTS = {
   google:    { token: "https://oauth2.googleapis.com/token", auth: "https://accounts.google.com/o/oauth2/auth" },
   openai:    { token: PROVIDER_OAUTH["codex"]?.tokenUrl, auth: PROVIDER_OAUTH["codex"]?.authorizeUrl },
   anthropic: { token: PROVIDER_OAUTH["claude"]?.tokenUrl, auth: "https://api.anthropic.com/v1/oauth/authorize" }, // ≠ claude.authorizeUrl (claude.ai login) — keep
-  qwen:      { token: PROVIDER_OAUTH["qwen"]?.tokenUrl, auth: PROVIDER_OAUTH["qwen"]?.deviceCodeUrl },
   iflow:     { token: PROVIDER_OAUTH["iflow"]?.tokenUrl, auth: PROVIDER_OAUTH["iflow"]?.authorizeUrl },
   github:    { token: PROVIDER_OAUTH["github"]?.tokenUrl, auth: PROVIDER_OAUTH["github"]?.authorizeUrl, deviceCode: PROVIDER_OAUTH["github"]?.deviceCodeUrl },
 };
