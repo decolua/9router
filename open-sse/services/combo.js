@@ -288,6 +288,48 @@ async function preflightSseResponse(response) {
 }
 
 /**
+ * The one place a combo entry is passed over without being tried.
+ *
+ * Returns null to attempt the model, or `{ reason }` naming why it was skipped —
+ * the caller logs it. Every skip rule lives here so that "the combo answered from
+ * its last entry" is a diagnosable event instead of a silent one: three rules
+ * deciding independently in-line is how a healthy provider disappears from a
+ * cascade with nothing in the log to say so.
+ *
+ * @param {string} modelStr - Combo entry, e.g. "ag/gemini-3.1-pro-low"
+ * @param {Object} ctx
+ * @param {number} [ctx.inputTokens] - Estimated tokens in the request
+ * @param {number} [ctx.requestedOutputTokens] - Output budget the client asked for
+ * @returns {{ reason: string }|null}
+ */
+export function shouldSkipModel(modelStr, { inputTokens = 0, requestedOutputTokens = 0 } = {}) {
+  const slash = modelStr.indexOf("/");
+  const provider = slash > 0 ? modelStr.slice(0, slash) : "";
+  const model = slash > 0 ? modelStr.slice(slash + 1) : modelStr;
+
+  const contextWindow = getCapabilitiesForModel(provider, model).contextWindow;
+  const needed = inputTokens + requestedOutputTokens;
+  if (contextWindow && needed > contextWindow) {
+    return { reason: `request needs ~${needed} tokens but window is ${contextWindow}` };
+  }
+
+  // Quota exhaustion outlives a cooldown by hours — skip rather than spend a
+  // request rediscovering it. If every model is out, the cascade still falls
+  // through to the normal exhausted path.
+  if (isQuotaExhausted(modelStr)) {
+    return { reason: `quota exhausted for ${Math.round(quotaRemainingMs(modelStr) / 60000)}m` };
+  }
+
+  // A model that told us to back off is skipped until its window elapses —
+  // retrying it only spends a round trip to be told the same thing again.
+  if (isModelCoolingDown(modelStr)) {
+    return { reason: `cooling down for ${Math.round(modelCooldownRemaining(modelStr) / 1000)}s` };
+  }
+
+  return null;
+}
+
+/**
  * Handle combo chat with fallback
  * @param {Object} options
  * @param {Object} options.body - Request body
@@ -332,26 +374,13 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
-    const slash = modelStr.indexOf("/");
-    const provider = slash > 0 ? modelStr.slice(0, slash) : "";
-    const model = slash > 0 ? modelStr.slice(slash + 1) : modelStr;
-    const contextWindow = getCapabilitiesForModel(provider, model).contextWindow;
-    if (contextWindow && inputTokens + requestedOutputTokens > contextWindow) {
-      log.info("COMBO", `Skipping ${modelStr}, request needs ~${inputTokens + requestedOutputTokens} tokens but window is ${contextWindow}`);
-      continue;
-    }
-    // A model that told us to back off is skipped until its window elapses —
-    // retrying it only spends a round trip to be told the same thing again.
-    // Every model cooling down still falls through to the normal exhausted path.
-    // Quota exhaustion outlives a cooldown by hours — skip rather than spend a
-    // request rediscovering it. If every model is out, the loop still falls
-    // through to the existing exhausted path.
-    if (isQuotaExhausted(modelStr)) {
-      log.info("COMBO", `Skipping ${modelStr}, quota exhausted for ${Math.round(quotaRemainingMs(modelStr) / 60000)}m`);
-      continue;
-    }
-    if (isModelCoolingDown(modelStr)) {
-      log.info("COMBO", `Skipping ${modelStr}, cooling down for ${Math.round(modelCooldownRemaining(modelStr) / 1000)}s`);
+
+    // Skipped entries are warn, not info: a combo quietly answering from its last
+    // entry because the earlier ones were never attempted is the failure mode this
+    // level of logging exists to make visible.
+    const skip = shouldSkipModel(modelStr, { inputTokens, requestedOutputTokens });
+    if (skip) {
+      log.warn("COMBO", `Skipping ${modelStr}, ${skip.reason}`);
       continue;
     }
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);

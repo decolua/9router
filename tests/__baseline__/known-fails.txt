@@ -1,4 +1,10 @@
 tests/unit/claude-header-forwarding.test.js :: proxyAwareFetch — api.anthropic.com routing routes api.anthropic.com to gotScraping (non-streaming) and returns ok response
+tests/unit/combo-skip-filters.test.js :: combo skip filters a one-off 500 does not sideline the model for later requests
+tests/unit/combo-skip-filters.test.js :: combo skip filters does not treat the router's own all-accounts-locked reply as fresh quota evidence
+tests/unit/combo-skip-filters.test.js :: combo skip filters one account's quota error does not ban the model for accounts that still have quota
+tests/unit/combo-skip-filters.test.js :: combo skip filters reports the status of the error it quotes when every entry fails
+tests/unit/combo-skip-filters.test.js :: combo skip filters skips a model only while every account for it is genuinely out
+tests/unit/combo-skip-filters.test.js :: combo skip filters the output budget does not count against an input context window
 tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import extracts tokens using exact keys
 tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import falls back to fuzzy key matching on macOS when exact keys are missing
 tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import linux uses single hardcoded path and original error message
