@@ -359,7 +359,7 @@ export class GrokCliExecutor extends BaseExecutor {
     return shouldRefreshCredentials("grok-cli", credentials);
   }
 
-  buildHeaders(credentials, stream = true) {
+  buildHeaders(credentials, stream = true, url = null, model = null) {
     const headers = super.buildHeaders(credentials, stream);
 
     // Static fingerprint from registry
@@ -368,15 +368,9 @@ export class GrokCliExecutor extends BaseExecutor {
       if (v != null && headers[k] === undefined) headers[k] = v;
     }
 
-    headers["x-grok-client-identifier"] =
-      this.config.clientIdentifier || headers["x-grok-client-identifier"] || GROK_CLI_CLIENT_IDENTIFIER;
-    headers["x-grok-client-version"] =
-      this.config.clientVersion || headers["x-grok-client-version"] || GROK_CLI_VERSION;
-
-    const sessionId = this._currentSessionId || credentials?.connectionId || crypto.randomUUID();
+    const sessionId = this._currentSessionId || resolveGrokCliSessionId(credentials);
     const reqId = this._currentReqId || crypto.randomUUID();
-    headers["x-grok-session-id"] = sessionId;
-    // CLI uses the same id for conv + session on chat turns
+
     headers["x-grok-conv-id"] = sessionId;
     headers["x-grok-req-id"] = reqId;
     headers["x-grok-turn-idx"] = String(this._currentTurnIdx || 1);
@@ -384,7 +378,7 @@ export class GrokCliExecutor extends BaseExecutor {
     if (this._agentId) headers["x-grok-agent-id"] = this._agentId;
 
     // Surface model override (CLI always sets this)
-    if (this._currentModel) headers["x-grok-model-override"] = this._currentModel;
+    if (model) headers["x-grok-model-override"] = model;
 
     // Identity: mapTokens stores email top-level AND in providerSpecificData;
     // fall back either way so OAuth connections always fingerprint like the CLI.
@@ -470,7 +464,6 @@ export class GrokCliExecutor extends BaseExecutor {
       resolvedModel = getModelUpstreamId("grok-cli", resolvedModel) || resolvedModel;
     }
     body.model = resolvedModel;
-    this._currentModel = resolvedModel;
 
     // Reasoning effort priority: explicit > reasoning_effort > model suffix > default high.
     // grok-build and Composer reject reasoningEffort but still accept summary/encrypted continuity.
