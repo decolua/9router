@@ -39,13 +39,18 @@ describe("Responses route streaming selection", () => {
     expect(handleChatMock).toHaveBeenCalledWith(request, null, { body });
   });
 
-  it("enables event keepalives for Codex streams", async () => {
+  it.each([
+    "Codex/0.1.0",
+    "Codex Desktop/0.146.1",
+    "codex_cli_rs/0.113.0",
+  ])("enables event keepalives for Codex stream UA %s", async (userAgent) => {
     const body = { model: "gpt-5.6-sol", input: "hello", stream: true };
     const request = new Request("http://localhost/v1/responses", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "User-Agent": "codex_cli_rs/0.113.0",
+        "User-Agent": userAgent,
+        "X-Initiator": "user",
       },
       body: JSON.stringify(body),
     });

@@ -47,6 +47,8 @@ export async function POST(request) {
       signal: request.signal,
       model: body?.model,
       eventKeepalive: detectClientTool(Object.fromEntries(request.headers), body) === "codex"
+        || userAgent.startsWith("codex/")
+        || userAgent.startsWith("codex ")
         || userAgent.includes("codex_cli_rs")
         || userAgent.includes("codex_exec"),
     },
