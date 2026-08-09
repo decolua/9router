@@ -24,6 +24,26 @@ function githubMonthlyResetMs(status, errorText, provider) {
  * @param {Set<string>|string|null} excludeConnectionIds - Connection ID(s) to exclude (for retry with next account)
  * @param {string|null} model - Model name for per-model rate limit filtering
  */
+/**
+ * Does any account still have capacity for this provider+model right now?
+ *
+ * A read-only probe, deliberately free of the selection side effects (mutex,
+ * lastUsedAt bookkeeping, round-robin advance) that getProviderCredentials
+ * carries. The combo cascade asks this before passing over an entry, so that a
+ * single account's rate limit can't hide a provider whose other accounts are idle.
+ *
+ * @param {string} provider - Provider id or alias
+ * @param {string|null} model - Provider-native model name
+ * @returns {Promise<boolean>}
+ */
+export async function hasServeableAccount(provider, model = null) {
+  const providerId = resolveProviderId(provider);
+  if (FREE_PROVIDERS[providerId]?.noAuth) return true;
+
+  const connections = await getProviderConnections({ provider: providerId, isActive: true });
+  return connections.some((c) => !isModelLockActive(c, model));
+}
+
 export async function getProviderCredentials(provider, excludeConnectionIds = null, model = null, options = {}) {
   // Normalize to Set for consistent handling
   const excludeSet = excludeConnectionIds instanceof Set

@@ -296,21 +296,42 @@ async function preflightSseResponse(response) {
  * deciding independently in-line is how a healthy provider disappears from a
  * cascade with nothing in the log to say so.
  *
+ * `canServe` is the authority when supplied. The quota/cooldown maps below are a
+ * per-model guess held in one process; the caller's account layer knows which
+ * individual accounts are locked and until when. A guess must never outlive the
+ * fact: if any account can serve the model right now, we try it, whatever an
+ * earlier account's 429 wrote into the map. Without `canServe` (open-sse used
+ * standalone, no account layer) the maps stand on their own as before.
+ *
  * @param {string} modelStr - Combo entry, e.g. "ag/gemini-3.1-pro-low"
  * @param {Object} ctx
  * @param {number} [ctx.inputTokens] - Estimated tokens in the request
- * @param {number} [ctx.requestedOutputTokens] - Output budget the client asked for
- * @returns {{ reason: string }|null}
+ * @param {(modelStr: string) => boolean|Promise<boolean>} [ctx.canServe] - Does any
+ *   account still have capacity for this model?
+ * @returns {Promise<{ reason: string }|null>}
  */
-export function shouldSkipModel(modelStr, { inputTokens = 0, requestedOutputTokens = 0 } = {}) {
+export async function shouldSkipModel(modelStr, { inputTokens = 0, canServe = null } = {}) {
   const slash = modelStr.indexOf("/");
   const provider = slash > 0 ? modelStr.slice(0, slash) : "";
   const model = slash > 0 ? modelStr.slice(slash + 1) : modelStr;
 
+  // Only the input is weighed against the input window. The output budget is a
+  // separate allowance upstream, so counting it here silently removes big-window
+  // models from long conversations. If a provider really does share one budget,
+  // it says so upstream and the cascade falls through on a real answer.
   const contextWindow = getCapabilitiesForModel(provider, model).contextWindow;
-  const needed = inputTokens + requestedOutputTokens;
-  if (contextWindow && needed > contextWindow) {
-    return { reason: `request needs ~${needed} tokens but window is ${contextWindow}` };
+  if (contextWindow && inputTokens > contextWindow) {
+    return { reason: `request needs ~${inputTokens} tokens but window is ${contextWindow}` };
+  }
+
+  if (canServe) {
+    let serveable = false;
+    try {
+      serveable = await canServe(modelStr);
+    } catch {
+      serveable = true; // fail open: never hide a model because the probe broke
+    }
+    return serveable ? null : { reason: "no account has capacity for it right now" };
   }
 
   // Quota exhaustion outlives a cooldown by hours — skip rather than spend a
@@ -339,9 +360,12 @@ export function shouldSkipModel(modelStr, { inputTokens = 0, requestedOutputToke
  * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
  * @param {string} [options.comboStrategy] - Strategy: "fallback" or "round-robin"
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
+ * @param {Function} [options.canServe] - (modelStr) => boolean: does any account still
+ *   have capacity for this model? Supplied by the app's account layer; when omitted the
+ *   cascade falls back to its own per-model quota/cooldown memory.
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, canServe = null }) {
   // Apply rotation strategy if enabled
   let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
 
@@ -370,7 +394,6 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   let earliestRetryAfter = null;
   let lastStatus = null;
   const inputTokens = estimateInputTokens(body);
-  const requestedOutputTokens = Number(body?.max_tokens ?? body?.max_output_tokens ?? body?.generationConfig?.maxOutputTokens) || 0;
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
@@ -378,7 +401,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     // Skipped entries are warn, not info: a combo quietly answering from its last
     // entry because the earlier ones were never attempted is the failure mode this
     // level of logging exists to make visible.
-    const skip = shouldSkipModel(modelStr, { inputTokens, requestedOutputTokens });
+    const skip = await shouldSkipModel(modelStr, { inputTokens, canServe });
     if (skip) {
       log.warn("COMBO", `Skipping ${modelStr}, ${skip.reason}`);
       continue;
@@ -403,10 +426,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       // Extract error info from response
       let errorText = result.statusText || "";
       let retryAfter = null;
+      let accountsLocked = false;
       try {
         const errorBody = await result.clone().json();
         errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
         retryAfter = errorBody?.retryAfter || null;
+        accountsLocked = errorBody?.accountsLocked === true;
       } catch {
         // Ignore JSON parse errors
       }
@@ -423,9 +448,23 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
       // Check if should fallback to next model
       const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
-      // Remember it for subsequent requests, not just this cascade.
-      markModelCooldownFrom(modelStr, retryAfter, cooldownMs);
-      if (isQuotaExhaustion(result.status, errorText)) markQuotaExhausted(modelStr);
+
+      // `accountsLocked` marks our own reply, synthesized when the account layer
+      // found every account locked. It quotes the provider's original text, so
+      // reading it back as a fresh verdict lets one provider 429 renew its own
+      // ban indefinitely. The account layer already holds the real expiry — the
+      // per-model memory below stays out of it.
+      if (!accountsLocked) {
+        // Remember it for subsequent requests, not just this cascade.
+        markModelCooldownFrom(modelStr, retryAfter, cooldownMs);
+        // Bound the ban by the provider's own reset time when it gave one; the
+        // default hour is a guess, and a guess should not outlive the fact.
+        if (isQuotaExhaustion(result.status, errorText)) {
+          const until = retryAfter ? new Date(retryAfter).getTime() : NaN;
+          const ttlMs = Number.isNaN(until) ? undefined : Math.max(until - Date.now(), 0);
+          markQuotaExhausted(modelStr, Date.now(), ttlMs);
+        }
+      }
       recordModelFailure(modelStr);
 
       if (!shouldFallback) {

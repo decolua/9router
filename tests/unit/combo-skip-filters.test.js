@@ -4,7 +4,7 @@
 // These cases pin the conditions under which an entry must still be attempted.
 import { describe, it, expect, beforeEach } from "vitest";
 import { handleComboChat, resetComboRotation } from "open-sse/services/combo.js";
-import { clearQuotaState, isQuotaExhausted } from "open-sse/services/quotaState.js";
+import { clearQuotaState, isQuotaExhausted, quotaRemainingMs } from "open-sse/services/quotaState.js";
 import { clearModelCooldowns, isModelCoolingDown } from "open-sse/services/modelCooldown.js";
 import { clearModelHealth } from "open-sse/services/modelHealth.js";
 
@@ -17,9 +17,18 @@ const ok = (model) =>
   new Response(JSON.stringify({ model }), { status: 200, headers: { "Content-Type": "application/json" } });
 
 // What the app-side account loop returns when every currently selectable account
-// of a provider is locked for this model: the provider's own text, re-quoted.
+// of a provider is locked for this model: the provider's own text, re-quoted, and
+// flagged as our synthesis rather than a fresh provider verdict.
 const unavailable = (model, status, msg) =>
-  new Response(JSON.stringify({ error: { message: `[${model}] ${msg} (reset after 30s)` } }),
+  new Response(JSON.stringify({
+    error: { message: `[${model}] ${msg} (reset after 30s)` },
+    retryAfter: new Date(Date.now() + 30_000).toISOString(),
+    accountsLocked: true,
+  }), { status, headers: { "Content-Type": "application/json" } });
+
+// A verdict straight from the provider, with no account layer in between.
+const providerError = (status, msg) =>
+  new Response(JSON.stringify({ error: { message: msg } }),
     { status, headers: { "Content-Type": "application/json" } });
 
 const run = (models, handler, opts = {}) =>
@@ -88,6 +97,25 @@ describe("combo skip filters", () => {
       { canServe: () => true });
 
     expect(isModelCoolingDown(AG)).toBe(false);
+  });
+
+  it("bounds a quota ban by the reset time the provider reported", async () => {
+    const retryAfter = new Date(Date.now() + 2_000).toISOString();
+    await run([AG, DEEPSEEK], async (_b, m) => (m === AG
+      ? new Response(JSON.stringify({ error: { message: "Quota exceeded" }, retryAfter }),
+        { status: 429, headers: { "Content-Type": "application/json" } })
+      : ok(m)));
+
+    expect(isQuotaExhausted(AG)).toBe(true);
+    expect(quotaRemainingMs(AG)).toBeLessThanOrEqual(2_000); // not the default hour
+  });
+
+  it("still remembers a provider's own verdict when no account layer is present", async () => {
+    await run([AG, DEEPSEEK], async (_b, m) =>
+      (m === AG ? providerError(429, "You exceeded your current quota") : ok(m)));
+
+    expect(isQuotaExhausted(AG)).toBe(true);
+    expect(quotaRemainingMs(AG)).toBeGreaterThan(60_000);
   });
 
   it("the output budget does not count against an input context window", async () => {

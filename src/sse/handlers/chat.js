@@ -2,6 +2,7 @@ import "open-sse/index.js";
 
 import {
   getProviderCredentials,
+  hasServeableAccount,
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
@@ -23,6 +24,20 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+
+/**
+ * Does any account still have capacity for this combo entry?
+ *
+ * The cascade asks before passing an entry over, so one account's rate limit can
+ * never hide a provider whose other accounts are idle. Unresolvable entries are
+ * reported serveable: the cascade should try them and learn from the real answer
+ * rather than skip them on a guess.
+ */
+async function canServeModel(modelStr) {
+  const { provider, model } = await getModelInfo(modelStr);
+  if (!provider) return true;
+  return hasServeableAccount(provider, model);
+}
 
 /**
  * Handle chat completion request
@@ -129,7 +144,8 @@ export async function handleChat(request, clientRawRequest = null) {
       log,
       comboName: modelStr,
       comboStrategy,
-      comboStickyLimit
+      comboStickyLimit,
+      canServe: canServeModel
     });
   }
 
@@ -148,7 +164,8 @@ export async function handleChat(request, clientRawRequest = null) {
       ),
       log,
       comboName: modelStr,
-      comboStrategy: getActiveAdapterStrategy(requiredCapabilities, settings)
+      comboStrategy: getActiveAdapterStrategy(requiredCapabilities, settings),
+      canServe: canServeModel
     });
   }
 
@@ -208,7 +225,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         log,
         comboName: modelStr,
         comboStrategy,
-        comboStickyLimit
+        comboStickyLimit,
+        canServe: canServeModel
       });
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });
@@ -236,7 +254,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
         log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
-        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman, { accountsLocked: true });
       }
       if (excludeConnectionIds.size === 0) {
         log.warn("AUTH", `No active credentials for provider: ${provider}`);

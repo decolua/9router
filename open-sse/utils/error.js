@@ -107,17 +107,28 @@ export function createErrorResult(statusCode, message, resetsAtMs) {
 
 /**
  * Create unavailable response when all accounts are rate limited
+ *
+ * `retryAfter` is carried in the body as well as the header so that a combo
+ * cascade reading this response learns the real expiry instead of inventing a
+ * cooldown of its own. `accountsLocked` marks the body as *our* synthesis rather
+ * than a provider verdict — it quotes the provider's text, and a reader that
+ * mistakes the quote for fresh evidence will keep renewing a ban from its own echo.
+ *
  * @param {number} statusCode - Original error status code
  * @param {string} message - Error message (without retry info)
  * @param {string} retryAfter - ISO timestamp when earliest account becomes available
  * @param {string} retryAfterHuman - Human-readable retry info e.g. "reset after 30s"
+ * @param {Object} [opts]
+ * @param {boolean} [opts.accountsLocked] - Set when every account was locked for the model
  * @returns {Response}
  */
-export function unavailableResponse(statusCode, message, retryAfter, retryAfterHuman) {
+export function unavailableResponse(statusCode, message, retryAfter, retryAfterHuman, { accountsLocked = false } = {}) {
   const retryAfterSec = Math.max(Math.ceil((new Date(retryAfter).getTime() - Date.now()) / 1000), 1);
   const msg = `${message} (${retryAfterHuman})`;
+  const body = { error: { message: msg }, retryAfter };
+  if (accountsLocked) body.accountsLocked = true;
   return new Response(
-    JSON.stringify({ error: { message: msg } }),
+    JSON.stringify(body),
     {
       status: statusCode,
       headers: {
