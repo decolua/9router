@@ -4,7 +4,7 @@ services:
     container_name: 9router
     restart: always
     ports:
-      - "20128:20128"
+      - "127.0.0.1:20128:20128"
     volumes:
       - 9router-data:/app/data
       - ./open-sse:/app/open-sse
@@ -23,8 +23,6 @@ services:
     image: ghcr.io/chopratejas/headroom:latest
     container_name: headroom
     restart: always
-    ports:
-      - "8787:8787"
 
 volumes:
   9router-data:
