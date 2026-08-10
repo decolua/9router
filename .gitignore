@@ -89,3 +89,6 @@ graphify-out/*
 
 # Kiro local workspace state
 .kiro/
+
+# Local CLI build tarball
+*.tgz
