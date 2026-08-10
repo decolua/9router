@@ -812,10 +812,11 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
 export async function testSingleConnection(id) {
   const connection = await getProviderConnectionById(id);
   if (!connection) return { valid: false, error: "Connection not found", latencyMs: 0, testedAt: new Date().toISOString() };
+  const isKiroApiKey = connection.provider === "kiro" && connection.authType === "api_key";
 
   const effectiveProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
 
-  if (effectiveProxy.connectionProxyEnabled && effectiveProxy.connectionProxyUrl && !effectiveProxy.vercelRelayUrl) {
+  if (!isKiroApiKey && effectiveProxy.connectionProxyEnabled && effectiveProxy.connectionProxyUrl && !effectiveProxy.vercelRelayUrl) {
     const proxyResult = await testProxyUrl({ proxyUrl: effectiveProxy.connectionProxyUrl });
     if (!proxyResult.ok) {
       const proxyError = proxyResult.error || `Proxy test failed with status ${proxyResult.status}`;
@@ -831,8 +832,7 @@ export async function testSingleConnection(id) {
   const start = Date.now();
   let result;
 
-  if (connection.authType === "apikey" || connection.authType === "cookie" ||
-      (connection.provider === "kiro" && connection.authType === "api_key")) {
+  if (connection.authType === "apikey" || connection.authType === "cookie" || isKiroApiKey) {
     result = await testApiKeyConnection(connection, effectiveProxy);
   } else {
     result = await testOAuthConnection(connection, effectiveProxy);
@@ -854,7 +854,7 @@ export async function testSingleConnection(id) {
       : new Date().toISOString(),
   };
 
-  if (result.valid && connection.provider === "kiro" && connection.authType === "api_key") {
+  if (result.valid && isKiroApiKey) {
     updateData.errorCode = null;
     updateData.backoffLevel = 0;
     for (const key of Object.keys(connection)) {
