@@ -167,6 +167,13 @@ export const LOAD_CODE_ASSIST_HEADERS = {
   "User-Agent": getPlatformUserAgent(),
 };
 
+// Real Antigravity IDE doesn't send X-Goog-Api-Client/Client-Metadata on loadCodeAssist/onboardUser —
+// Google's backend fingerprints those and silently refuses to provision a cloudaicompanionProject.
+export const ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS = {
+  "Content-Type": "application/json",
+  "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
+};
+
 export const LOAD_CODE_ASSIST_METADATA = {
   ideType: IDE_TYPE.ANTIGRAVITY,
   platform: getPlatformEnum(),
@@ -187,7 +194,6 @@ export const OAUTH_ENDPOINTS = {
   google:    { token: "https://oauth2.googleapis.com/token", auth: "https://accounts.google.com/o/oauth2/auth" },
   openai:    { token: PROVIDER_OAUTH["codex"]?.tokenUrl, auth: PROVIDER_OAUTH["codex"]?.authorizeUrl },
   anthropic: { token: PROVIDER_OAUTH["claude"]?.tokenUrl, auth: "https://api.anthropic.com/v1/oauth/authorize" }, // ≠ claude.authorizeUrl (claude.ai login) — keep
-  qwen:      { token: PROVIDER_OAUTH["qwen"]?.tokenUrl, auth: PROVIDER_OAUTH["qwen"]?.deviceCodeUrl },
   iflow:     { token: PROVIDER_OAUTH["iflow"]?.tokenUrl, auth: PROVIDER_OAUTH["iflow"]?.authorizeUrl },
   github:    { token: PROVIDER_OAUTH["github"]?.tokenUrl, auth: PROVIDER_OAUTH["github"]?.authorizeUrl, deviceCode: PROVIDER_OAUTH["github"]?.deviceCodeUrl },
 };
