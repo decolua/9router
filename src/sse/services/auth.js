@@ -2,7 +2,8 @@ import { getProviderConnections, validateApiKey, updateProviderConnection, getSe
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, parseProviderResetMs, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
-import { resolveProviderId, FREE_PROVIDERS, FREE_TIER_PROVIDERS } from "@/shared/constants/providers.js";
+import { resolveProviderId, resolveProviderRpm, FREE_PROVIDERS, FREE_TIER_PROVIDERS } from "@/shared/constants/providers.js";
+import { isOverLimit, recordRequest, retryAfterMs } from "./rpmLimiter.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -89,10 +90,17 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    // Filter out model-locked and excluded connections
+    const settings = await getSettings();
+    // Per-account requests-per-minute cap. Skipping an account that has used
+    // its budget keeps us inside the provider's limit instead of collecting a
+    // 429 and parking the account on a cooldown.
+    const rpmLimit = resolveProviderRpm(settings, providerId);
+
+    // Filter out model-locked, excluded and rate-capped connections
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
+      if (isOverLimit(c.id, rpmLimit)) return false;
       return true;
     });
 
@@ -122,11 +130,25 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           lastErrorCode: earliestConn?.errorCode || null
         };
       }
+      const capped = connections
+        .map(c => retryAfterMs(c.id, rpmLimit))
+        .filter(ms => ms !== null && ms !== undefined);
+      if (capped.length === connections.length && capped.length > 0) {
+        const waitMs = Math.min(...capped);
+        const until = new Date(Date.now() + waitMs).toISOString();
+        log.warn("AUTH", `${provider} | all ${connections.length} accounts at the ${rpmLimit} RPM cap (${Math.ceil(waitMs / 1000)}s)`);
+        return {
+          allRateLimited: true,
+          retryAfter: until,
+          retryAfterHuman: formatRetryAfter(until),
+          lastError: `Local ${rpmLimit} RPM cap reached for every ${provider} account`,
+          lastErrorCode: null
+        };
+      }
       log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
       return null;
     }
 
-    const settings = await getSettings();
     // Per-provider strategy overrides global setting
     const providerOverride = (settings.providerStrategies || {})[providerId] || {};
     const strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";
@@ -183,6 +205,10 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     } else {
       // Default: fill-first (already sorted by priority in getProviderConnections)
       connection = availableConnections[0];
+    }
+
+    if (rpmLimit > 0) {
+      recordRequest(connection.id);
     }
 
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});

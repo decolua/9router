@@ -6,7 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/providerIcon";
 import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS, DEFAULT_PROVIDER_RPM } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -84,6 +84,7 @@ export default function ProviderDetailPage() {
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [liveModels, setLiveModels] = useState([]);
+  const [rpmLimit, setRpmLimit] = useState("");
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
@@ -335,6 +336,9 @@ export default function ProviderDetailPage() {
       // Load per-provider retry-delay override
       const rd = (settingsData.retryDelayByProvider || {})[providerId];
       setRetryDelay(rd != null && rd !== "auto" ? String(rd) : "auto");
+      // Per-account RPM cap; blank input means "use the provider default"
+      const rpm = (settingsData.rpmByProvider || {})[providerId];
+      setRpmLimit(rpm != null ? String(rpm) : "");
       const autoPingSettingsKey = AUTO_PING_SETTINGS_KEYS[providerId];
       const apCfg = autoPingSettingsKey ? settingsData[autoPingSettingsKey] || {} : {};
       setAutoPing({ enabled: apCfg.enabled === true, connections: apCfg.connections || {} });
@@ -468,6 +472,27 @@ export default function ProviderDetailPage() {
       });
     } catch (error) {
       console.log("Error saving retry delay:", error);
+    }
+  };
+
+  const saveRpmLimit = async (value) => {
+    try {
+      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
+      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+      const updated = { ...(settingsData.rpmByProvider || {}) };
+      const trimmed = String(value ?? "").trim();
+      if (trimmed === "") {
+        delete updated[providerId]; // fall back to the provider default
+      } else {
+        updated[providerId] = Math.max(0, Number(trimmed) || 0);
+      }
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rpmByProvider: updated }),
+      });
+    } catch (error) {
+      console.log("Error saving RPM limit:", error);
     }
   };
 
@@ -1375,6 +1400,17 @@ export default function ProviderDetailPage() {
           </div>
           {/* Retry-delay control — right side of the provider header */}
           <div className="ml-auto flex shrink-0 items-center gap-2">
+            <span className="hidden text-xs text-text-muted sm:inline">RPM / account</span>
+            <input
+              type="number"
+              min="0"
+              value={rpmLimit}
+              placeholder={String(DEFAULT_PROVIDER_RPM[providerId] || 0)}
+              onChange={(e) => setRpmLimit(e.target.value)}
+              onBlur={(e) => saveRpmLimit(e.target.value)}
+              title="Max requests per minute per account. Accounts over the cap are skipped before a request is sent, so the provider never sees a 429. Blank = provider default, 0 = unlimited."
+              className="w-16 rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
+            />
             <span className="hidden text-xs text-text-muted sm:inline">Retry delay</span>
             <select
               value={retryDelay}

@@ -18,6 +18,9 @@ const DEFAULT_SETTINGS = {
   // "auto"/absent → provider-reported reset else built-in backoff; a number is
   // the lock duration used when the provider reports no reset of its own.
   retryDelayByProvider: {},
+  // Per-provider requests-per-minute cap per ACCOUNT: { [providerId]: <number> }.
+  // Absent → DEFAULT_PROVIDER_RPM, 0 → unlimited.
+  rpmByProvider: {},
   comboStrategy: "fallback",
   comboStickyRoundRobinLimit: 1,
   comboStrategies: {},
