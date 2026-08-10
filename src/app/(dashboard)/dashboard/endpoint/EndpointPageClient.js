@@ -78,6 +78,7 @@ export default function APIPageClient({ machineId }) {
   const [visibleKeys, setVisibleKeys] = useState(new Set());
   const [limitsOpen, setLimitsOpen] = useState(null); // key id whose limits editor is open
   const [limitsDraft, setLimitsDraft] = useState({});
+  const [availableModels, setAvailableModels] = useState([]);
 
   // Client-side local/remote detection (UI hint only, not a security gate)
   const [isRemoteHost, setIsRemoteHost] = useState(false);
@@ -669,7 +670,28 @@ export default function APIPageClient({ machineId }) {
     });
   };
 
+  // Allowlist options come from what the endpoint can actually serve, so a key
+  // cannot be pinned to a model that does not exist.
+  const loadAvailableModels = async () => {
+    if (availableModels.length) return;
+    try {
+      const res = await fetch("/api/models/access", { cache: "no-store" });
+      const data = await res.json();
+      const out = [];
+      for (const p of data.providers || []) {
+        for (const m of p.models || []) {
+          if (m.blocked) continue;
+          out.push(p.routePrefix ? `${p.routePrefix}/${m.id}` : m.id);
+        }
+      }
+      setAvailableModels([...new Set(out)].sort());
+    } catch {
+      setAvailableModels([]);
+    }
+  };
+
   const openLimits = (key) => {
+    loadAvailableModels();
     setLimitsOpen(key.id);
     setLimitsDraft({
       rpm: key.rpm ?? "",
@@ -678,7 +700,7 @@ export default function APIPageClient({ machineId }) {
       budgetPeriod: key.budgetPeriod ?? "",
       priority: key.priority ?? "",
       expiresAt: key.expiresAt ? key.expiresAt.slice(0, 16) : "",
-      models: (key.models || []).join(", "),
+      models: [...(key.models || [])],
     });
   };
 
@@ -695,7 +717,7 @@ export default function APIPageClient({ machineId }) {
           budgetPeriod: d.budgetPeriod || null,
           priority: d.priority || null,
           expiresAt: d.expiresAt ? new Date(d.expiresAt).toISOString() : null,
-          models: d.models.split(",").map((m) => m.trim()).filter(Boolean),
+          models: Array.isArray(d.models) ? d.models : [],
         }),
       });
       if (!res.ok) throw new Error("save failed");
@@ -1102,7 +1124,7 @@ export default function APIPageClient({ machineId }) {
                     );
                   })()}
                   {limitsOpen === key.id && (
-                    <div className="mt-2 grid gap-2 rounded-md border border-border p-2 sm:grid-cols-2 lg:grid-cols-3">
+                    <div className="mt-2 grid grid-cols-1 gap-2 rounded-md border border-border p-2 sm:grid-cols-2 lg:grid-cols-3">
                       {[
                         ["rpm", "RPM (requests/min)", "number", "unlimited"],
                         ["tpm", "TPM (tokens/min)", "number", "unlimited"],
@@ -1111,7 +1133,7 @@ export default function APIPageClient({ machineId }) {
                         ["priority", "Priority", "text", "prod / dev"],
                         ["expiresAt", "Expires", "datetime-local", ""],
                       ].map(([field, label, type, placeholder]) => (
-                        <label key={field} className="text-[11px] text-text-muted">
+                        <label key={field} className="min-w-0 text-[11px] text-text-muted">
                           {label}
                           <input
                             type={type}
@@ -1122,17 +1144,56 @@ export default function APIPageClient({ machineId }) {
                           />
                         </label>
                       ))}
-                      <label className="text-[11px] text-text-muted sm:col-span-2 lg:col-span-3">
-                        Model allowlist (comma separated, blank = all models)
-                        <input
-                          type="text"
-                          value={limitsDraft.models ?? ""}
-                          placeholder="gemini-3-flash, oc/mimo-v2.5-free"
-                          onChange={(e) => setLimitsDraft((d) => ({ ...d, models: e.target.value }))}
-                          className="mt-0.5 w-full rounded-md border border-border bg-background px-2 py-1 text-xs font-mono focus:border-primary focus:outline-none"
-                        />
-                      </label>
-                      <div className="flex gap-2 sm:col-span-2 lg:col-span-3">
+                      <div className="min-w-0 text-[11px] text-text-muted sm:col-span-2 lg:col-span-3">
+                        Model allowlist — blank means every model
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            const picked = e.target.value;
+                            if (!picked) return;
+                            setLimitsDraft((d) => ({
+                              ...d,
+                              models: [...(d.models || []), picked],
+                            }));
+                          }}
+                          className="mt-0.5 w-full rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
+                        >
+                          <option value="">
+                            {availableModels.length ? "Add a model..." : "Loading models..."}
+                          </option>
+                          {availableModels
+                            .filter((m) => !(limitsDraft.models || []).includes(m))
+                            .map((m) => (
+                              <option key={m} value={m}>{m}</option>
+                            ))}
+                        </select>
+                        {(limitsDraft.models || []).length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {(limitsDraft.models || []).map((m) => (
+                              <span
+                                key={m}
+                                className="inline-flex max-w-full items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 font-mono text-[10px]"
+                              >
+                                <span className="truncate">{m}</span>
+                                <button
+                                  type="button"
+                                  title="Remove"
+                                  onClick={() =>
+                                    setLimitsDraft((d) => ({
+                                      ...d,
+                                      models: (d.models || []).filter((x) => x !== m),
+                                    }))
+                                  }
+                                  className="shrink-0 text-text-muted hover:text-red-500"
+                                >
+                                  <span className="material-symbols-outlined text-[12px]">close</span>
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-3">
                         <Button size="sm" onClick={() => saveLimits(key.id)}>Save limits</Button>
                         <Button size="sm" variant="ghost" onClick={() => setLimitsOpen(null)}>Cancel</Button>
                       </div>
