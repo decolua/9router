@@ -1255,6 +1255,7 @@ export default function ProviderDetailPage() {
       filteredCustomRows,
       filteredDisplayModels,
       disabledDisplayModels,
+      customModelRows,
       modelSearch,
       shownCount,
     } = modelsSectionData;
