@@ -788,6 +788,13 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         );
         return { valid: exRes.ok, error: exRes.ok ? null : "Invalid Personal Access Token" };
       }
+      case "tokenrouter": {
+        const baseUrl = connection.providerSpecificData?.baseUrl || "https://api.tokenrouter.com/v1";
+        const res = await fetchWithConnectionProxy(`${baseUrl.replace(/\/$/, "")}/models`, {
+          headers: { Authorization: `Bearer ${connection.apiKey}` },
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
+      }
       default:
         return { valid: false, error: "Provider test not supported" };
     }
