@@ -23,6 +23,7 @@ import Link from "next/link";
 import { getErrorCode, getRelativeTime } from "@/shared/utils";
 import { useNotificationStore } from "@/store/notificationStore";
 import { useHeaderSearchStore } from "@/store/headerSearchStore";
+import { getModelsByProviderId } from "@/shared/constants/models";
 import ModelAvailabilityBadge from "./components/ModelAvailabilityBadge";
 import AddCompatibleModal from "./components/AddCompatibleModal";
 import { STATUS_FILTER_OPTIONS, matchesStatusFilter } from "./utils";
@@ -117,10 +118,19 @@ export default function ProvidersPage() {
     return () => unregisterSearch();
   }, [registerSearch, unregisterSearch]);
 
-  const matchSearch = (name) => {
-    if (!searchQuery.trim()) return true;
-    if (!name) return false;
-    return name.toLowerCase().includes(searchQuery.trim().toLowerCase());
+  // A provider card matches the header search if its display name matches OR
+  // any of its registry models (id/name/fullModel) matches. This lets users
+  // search by model, e.g. "claude" or "gpt-5" instead of only by provider name.
+  const matchSearch = (name, providerId) => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return true;
+    if (name.toLowerCase().includes(query)) return true;
+    const models = getModelsByProviderId(providerId);
+    return models.some((m) =>
+      (m.id || "").toLowerCase().includes(query) ||
+      (m.name || "").toLowerCase().includes(query) ||
+      `${providerId}/${m.id}`.toLowerCase().includes(query),
+    );
   };
 
   const sortByPriority = (entries, authType) =>
@@ -273,7 +283,7 @@ export default function ProvidersPage() {
       apiType: node.apiType,
     }))
     .filter(
-      (p) => matchSearch(p.name) && matchStatus(getProviderStats(p.id, "apikey")),
+      (p) => matchSearch(p.name, p.id) && matchStatus(getProviderStats(p.id, "apikey")),
     );
 
   const anthropicCompatibleProviders = providerNodes
@@ -285,7 +295,7 @@ export default function ProvidersPage() {
       textIcon: "AC",
     }))
     .filter(
-      (p) => matchSearch(p.name) && matchStatus(getProviderStats(p.id, "apikey")),
+      (p) => matchSearch(p.name, p.id) && matchStatus(getProviderStats(p.id, "apikey")),
     );
 
   // Dual-auth providers (oauth + apikey) store API keys as authType "apikey"
@@ -310,7 +320,7 @@ export default function ProvidersPage() {
     Object.entries(OAUTH_PROVIDERS).filter(
       ([key, info]) =>
         !info.hidden &&
-        matchSearch(info.name) &&
+        matchSearch(info.name, info.id) &&
         matchStatus(getProviderStats(key, dualAuthTypes(info, key)), info.noAuth),
     ),
     "oauth",
@@ -319,7 +329,7 @@ export default function ProvidersPage() {
     .filter(
       ([key, info]) =>
         !info.hidden &&
-        matchSearch(info.name) &&
+        matchSearch(info.name, info.id) &&
         matchStatus(getProviderStats(key, dualAuthTypes(info, key)), info.noAuth),
     )
     .sort(([, a], [, b]) => (b.noAuth ? 1 : 0) - (a.noAuth ? 1 : 0));
@@ -330,7 +340,7 @@ export default function ProvidersPage() {
     .filter(
       ([key, info]) =>
         !info.hidden &&
-        matchSearch(info.name) &&
+        matchSearch(info.name, info.id) &&
         (info.serviceKinds ?? ["llm"]).includes("llm") &&
         matchStatus(getProviderStats(key, dualAuthTypes(info, key)), info.noAuth),
     )
@@ -351,7 +361,7 @@ export default function ProvidersPage() {
       ([key, info]) =>
         !info.hidden &&
         (info.serviceKinds ?? ["llm"]).includes("llm") &&
-        matchSearch(info.name) &&
+        matchSearch(info.name, info.id) &&
         matchStatus(getProviderStats(key, "apikey"), info.noAuth),
     )
     .sort(([ka, a], [kb, b]) => {
