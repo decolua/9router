@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   filterQuotasByVisibility,
+  getCodexPlan,
   getHiddenQuotaRows,
   parseQuotaData,
 } from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
@@ -51,5 +52,19 @@ describe("provider quota visibility", () => {
       codex: { hidden: ["gemini-pro-agent"] },
     };
     expect(filterQuotasByVisibility("antigravity", quotas, visibility)).toHaveLength(2);
+  });
+
+  it("prefers live Codex plan over stored connection plan", () => {
+    expect(getCodexPlan(
+      { plan: "ChatGPT Pro" },
+      { providerSpecificData: { chatgptPlanType: "Plus" } },
+    )).toBe("ChatGPT Pro");
+  });
+
+  it("uses stored Codex plan when live plan is unavailable", () => {
+    const connection = { providerSpecificData: { chatgptPlanType: "Plus" } };
+    expect(getCodexPlan({ plan: "unknown" }, connection)).toBe("Plus");
+    expect(getCodexPlan({}, connection)).toBe("Plus");
+    expect(getCodexPlan({}, {})).toBeNull();
   });
 });

@@ -12,6 +12,7 @@ import {
   getHiddenQuotaRows,
   getQuotaVisibilityKey,
   getConnectionLabel,
+  getCodexPlan,
   getConnectionQuotaRemaining,
   sortVisibleConnections,
   buildLoadingState,
@@ -1029,6 +1030,7 @@ export default function ProviderLimits() {
           // Use table layout for all providers
           const isInactive = conn.isActive === false;
           const isCodex = conn.provider === "codex";
+          const codexPlan = isCodex ? getCodexPlan(quota, conn) : null;
           const resetCreditCount = getCodexResetCreditCount(quota);
           const isResettingLimit = resettingLimitId === conn.id;
           const rowBusy = deletingId === conn.id || togglingId === conn.id || isResettingLimit;
@@ -1069,6 +1071,11 @@ export default function ProviderLimits() {
                         <p className="text-[11px] text-text-muted/80 truncate">
                           {getConnectionSecondaryLabel(conn)}
                         </p>
+                      ) : null}
+                      {codexPlan ? (
+                        <span className="mt-1 inline-flex rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-semibold text-brand-600 dark:text-brand-300">
+                          {codexPlan}
+                        </span>
                       ) : null}
                       {conn.provider === "kiro" && (
                         <div className="mt-1 flex flex-wrap items-center gap-1">
