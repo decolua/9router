@@ -136,6 +136,10 @@ export class AntigravityExecutor extends BaseExecutor {
   transformRequest(model, body, stream, credentials) {
     const projectId = credentials?.projectId || this.generateProjectId();
 
+    // OpenAI clients may include stream_options even for non-streaming calls.
+    // Google generateContent rejects that combination before processing the request.
+    if (stream !== true) delete body.stream_options;
+
     // ─── Image generation: completely different request structure ───
     if (isImageModel(model)) {
       const imageConfig = parseImageConfig(model);
@@ -264,7 +268,7 @@ export class AntigravityExecutor extends BaseExecutor {
     return {
       ...body,
       project: projectId,
-      model: model,
+      model: body.model || model,
       userAgent: "antigravity",
       requestType: "agent",
       requestId: buildIdeRequestId({ body, request: transformedRequest, credentials, model, requestType: "agent" }),
