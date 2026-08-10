@@ -19,7 +19,7 @@ function getAuthGroup(providerId, connection = null) {
     }
     return connection.authType;
   }
-  
+
   // Fallback to constants
   if (FREE_PROVIDERS[providerId]) return "free";
   if (OAUTH_PROVIDERS[providerId]) return "oauth";
