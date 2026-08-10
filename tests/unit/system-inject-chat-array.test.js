@@ -62,17 +62,12 @@ describe("systemInject — responses input[]", () => {
       role: "system",
       content: [{ type: "input_text", text: "caveman prompt" }],
     });
+    expect(body.input[1]).toEqual({ type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] });
   });
 
   it("appends to top-level instructions when present", () => {
     const body = { instructions: "You are a helper.", input: [] };
     injectSystemPrompt(body, FORMATS.OPENAI_RESPONSES, "caveman prompt");
     expect(body.instructions).toBe("You are a helper.\n\ncaveman prompt");
-  });
-
-  it("sets top-level instructions when absent", () => {
-    const body = { input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] }] };
-    injectSystemPrompt(body, FORMATS.OPENAI_RESPONSES, "caveman prompt");
-    expect(body.instructions).toBe("caveman prompt");
   });
 });
