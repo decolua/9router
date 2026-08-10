@@ -76,6 +76,8 @@ export default function APIPageClient({ machineId }) {
 
   // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
+  const [limitsOpen, setLimitsOpen] = useState(null); // key id whose limits editor is open
+  const [limitsDraft, setLimitsDraft] = useState({});
 
   // Client-side local/remote detection (UI hint only, not a security gate)
   const [isRemoteHost, setIsRemoteHost] = useState(false);
@@ -667,6 +669,43 @@ export default function APIPageClient({ machineId }) {
     });
   };
 
+  const openLimits = (key) => {
+    setLimitsOpen(key.id);
+    setLimitsDraft({
+      rpm: key.rpm ?? "",
+      tpm: key.tpm ?? "",
+      maxBudget: key.maxBudget ?? "",
+      budgetPeriod: key.budgetPeriod ?? "",
+      priority: key.priority ?? "",
+      expiresAt: key.expiresAt ? key.expiresAt.slice(0, 16) : "",
+      models: (key.models || []).join(", "),
+    });
+  };
+
+  const saveLimits = async (id) => {
+    try {
+      const d = limitsDraft;
+      const res = await fetch(`/api/keys/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rpm: d.rpm === "" ? null : Number(d.rpm),
+          tpm: d.tpm === "" ? null : Number(d.tpm),
+          maxBudget: d.maxBudget === "" ? null : Number(d.maxBudget),
+          budgetPeriod: d.budgetPeriod || null,
+          priority: d.priority || null,
+          expiresAt: d.expiresAt ? new Date(d.expiresAt).toISOString() : null,
+          models: d.models.split(",").map((m) => m.trim()).filter(Boolean),
+        }),
+      });
+      if (!res.ok) throw new Error("save failed");
+      setLimitsOpen(null);
+      loadData();
+    } catch {
+      // surfaced by the reload showing unchanged values
+    }
+  };
+
   const handleToggleKey = async (id, isActive) => {
     try {
       const res = await fetch(`/api/keys/${id}`, {
@@ -1039,6 +1078,66 @@ export default function APIPageClient({ machineId }) {
                   <p className="text-xs text-text-muted mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
                   </p>
+                  {(() => {
+                    const bits = [];
+                    if (key.rpm) bits.push(`${key.usage?.rpmUsed ?? 0}/${key.rpm} RPM`);
+                    if (key.tpm) bits.push(`${key.usage?.tpmUsed ?? 0}/${key.tpm} TPM`);
+                    if (key.maxBudget) bits.push(`$${(key.usage?.spendUsed ?? 0).toFixed(2)}/$${key.maxBudget}${key.budgetPeriod ? ` per ${key.budgetPeriod}` : ""}`);
+                    if (key.models?.length) bits.push(`${key.models.length} model${key.models.length === 1 ? "" : "s"}`);
+                    if (key.priority) bits.push(key.priority);
+                    if (key.expiresAt) {
+                      const exp = new Date(key.expiresAt);
+                      bits.push(`${exp <= new Date() ? "expired" : "expires"} ${exp.toLocaleDateString()}`);
+                    }
+                    return (
+                      <p className="text-xs text-text-muted mt-1">
+                        {bits.length ? bits.join(" · ") : "No limits"}
+                        <button
+                          onClick={() => (limitsOpen === key.id ? setLimitsOpen(null) : openLimits(key))}
+                          className="ml-2 text-primary hover:underline"
+                        >
+                          {limitsOpen === key.id ? "close" : "edit limits"}
+                        </button>
+                      </p>
+                    );
+                  })()}
+                  {limitsOpen === key.id && (
+                    <div className="mt-2 grid gap-2 rounded-md border border-border p-2 sm:grid-cols-2 lg:grid-cols-3">
+                      {[
+                        ["rpm", "RPM (requests/min)", "number", "unlimited"],
+                        ["tpm", "TPM (tokens/min)", "number", "unlimited"],
+                        ["maxBudget", "Max budget (USD)", "number", "unlimited"],
+                        ["budgetPeriod", "Budget period", "text", "1d / 30d / 1mo"],
+                        ["priority", "Priority", "text", "prod / dev"],
+                        ["expiresAt", "Expires", "datetime-local", ""],
+                      ].map(([field, label, type, placeholder]) => (
+                        <label key={field} className="text-[11px] text-text-muted">
+                          {label}
+                          <input
+                            type={type}
+                            value={limitsDraft[field] ?? ""}
+                            placeholder={placeholder}
+                            onChange={(e) => setLimitsDraft((d) => ({ ...d, [field]: e.target.value }))}
+                            className="mt-0.5 w-full rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
+                          />
+                        </label>
+                      ))}
+                      <label className="text-[11px] text-text-muted sm:col-span-2 lg:col-span-3">
+                        Model allowlist (comma separated, blank = all models)
+                        <input
+                          type="text"
+                          value={limitsDraft.models ?? ""}
+                          placeholder="gemini-3-flash, oc/mimo-v2.5-free"
+                          onChange={(e) => setLimitsDraft((d) => ({ ...d, models: e.target.value }))}
+                          className="mt-0.5 w-full rounded-md border border-border bg-background px-2 py-1 text-xs font-mono focus:border-primary focus:outline-none"
+                        />
+                      </label>
+                      <div className="flex gap-2 sm:col-span-2 lg:col-span-3">
+                        <Button size="sm" onClick={() => saveLimits(key.id)}>Save limits</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setLimitsOpen(null)}>Cancel</Button>
+                      </div>
+                    </div>
+                  )}
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}

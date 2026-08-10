@@ -1,4 +1,7 @@
-// Per-account requests-per-minute cap.
+// Sliding one-minute usage windows.
+//
+// Used for two things: the per-account request cap below, and the per-API-key
+// RPM/TPM caps (which count tokens, not just requests -- hence the amount).
 //
 // Providers like NVIDIA NIM enforce a per-key RPM limit and answer 429 once it
 // is crossed, which then parks the whole account on a cooldown. Counting our
@@ -11,7 +14,7 @@
 
 const WINDOW_MS = 60_000;
 
-/** connectionId -> array of request timestamps inside the current window */
+/** id -> array of { t, n } entries inside the current window */
 const hits = new Map();
 
 function prune(connectionId, now) {
@@ -20,16 +23,16 @@ function prune(connectionId, now) {
   const cutoff = now - WINDOW_MS;
   // Timestamps are appended in order, so drop from the front.
   let i = 0;
-  while (i < list.length && list[i] <= cutoff) i += 1;
+  while (i < list.length && list[i].t <= cutoff) i += 1;
   const kept = i === 0 ? list : list.slice(i);
   if (kept.length) hits.set(connectionId, kept);
   else hits.delete(connectionId);
   return kept;
 }
 
-/** Requests made by this account in the last minute. */
+/** Units (requests, or tokens) used by this id in the last minute. */
 export function usage(connectionId, now = Date.now()) {
-  return prune(connectionId, now).length;
+  return prune(connectionId, now).reduce((sum, e) => sum + e.n, 0);
 }
 
 /** True when the account has already used its whole minute budget. */
@@ -38,11 +41,12 @@ export function isOverLimit(connectionId, limit, now = Date.now()) {
   return usage(connectionId, now) >= limit;
 }
 
-/** Count one request against the account. Call when an account is handed out. */
-export function recordRequest(connectionId, now = Date.now()) {
+/** Count usage against an id: amount is 1 for a request, or a token count. */
+export function recordRequest(connectionId, amount = 1, now = Date.now()) {
   if (!connectionId) return;
+  if (!(amount > 0)) return;
   const list = prune(connectionId, now);
-  list.push(now);
+  list.push({ t: now, n: amount });
   hits.set(connectionId, list);
 }
 
@@ -55,7 +59,7 @@ export function retryAfterMs(connectionId, limit, now = Date.now()) {
   const list = hits.get(connectionId) || [];
   const oldest = list[0];
   if (!oldest) return null;
-  return Math.max(0, oldest + WINDOW_MS - now);
+  return Math.max(0, oldest.t + WINDOW_MS - now);
 }
 
 /** Test seam. */
