@@ -52,29 +52,13 @@ export const PLUGIN_TYPE = {
 };
 
 export function getPlatformEnum() {
-  const os = platform();
-  const architecture = arch();
-  if (os === "darwin") return architecture === "arm64" ? PLATFORM.DARWIN_ARM64 : PLATFORM.DARWIN_AMD64;
-  if (os === "linux") return architecture === "arm64" ? PLATFORM.LINUX_ARM64 : PLATFORM.LINUX_AMD64;
-  if (os === "win32") return PLATFORM.WINDOWS_AMD64;
-  return PLATFORM.UNSPECIFIED;
+  return PLATFORM.DARWIN_ARM64;
 }
 
-// Map Node.js os identifiers to the format used by the real Antigravity IDE
-function getIdePlatform() {
-  const p = platform();
-  if (p === "win32") return "windows";
-  if (p === "darwin") return "darwin";
-  return p; // linux, etc.
-}
-function getIdeArch() {
-  const a = arch();
-  if (a === "x64") return "amd64";
-  return a; // arm64, etc.
-}
+
 
 export function getPlatformUserAgent() {
-  return `antigravity/ide/${ANTIGRAVITY_IDE_VERSION} ${getIdePlatform()}/${getIdeArch()}`;
+  return ANTIGRAVITY_IDE_USER_AGENT;
 }
 
 export const CLIENT_METADATA = {

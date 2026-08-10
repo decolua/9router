@@ -10,12 +10,7 @@ import { PROVIDER_OAUTH, PROVIDERS as REGISTRY_PROVIDERS } from "open-sse/provid
  * Matches Antigravity binary's ClientMetadata.Platform enum.
  */
 function getOAuthPlatformEnum() {
-  const os = platform();
-  const architecture = arch();
-  if (os === "darwin") return architecture === "arm64" ? 2 : 1;
-  if (os === "linux") return architecture === "arm64" ? 4 : 3;
-  if (os === "win32") return 5;
-  return 0;
+  return 2; // Hardcode to darwin/arm64 (PLATFORM.DARWIN_ARM64)
 }
 
 // Claude OAuth Configuration (Authorization Code Flow with PKCE)
