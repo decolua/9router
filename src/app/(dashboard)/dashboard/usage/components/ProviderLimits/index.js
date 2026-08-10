@@ -62,7 +62,7 @@ const AUTO_PING_SETTINGS_KEYS = {
 
 const AUTO_PING_TOOLTIPS = {
   claude: "When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.",
-  codex: "Auto-starts the next 5h Codex window after reset by sending a tiny gpt-5.5 request. Consumes a small amount of quota.",
+  codex: "Auto-starts the next 5h Codex window after reset by sending a tiny request to an available model. Consumes a small amount of quota.",
 };
 
 function kiroMethodLabel(conn) {

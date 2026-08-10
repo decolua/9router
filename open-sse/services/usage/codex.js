@@ -8,6 +8,8 @@ import { U, parseResetTime, toFiniteNumber } from "./shared.js";
 // Codex (OpenAI) API config
 const CODEX_CONFIG = {
   usageUrl: U("codex").url,
+  modelsUrl: U("codex").modelsUrl,
+  clientVersion: U("codex").clientVersion,
   resetCreditsUrl: U("codex").resetCreditsUrl,
   resetCreditsConsumeUrl: U("codex").resetCreditsConsumeUrl,
 };
@@ -113,6 +115,28 @@ export async function getCodexUsage(accessToken, proxyOptions = null) {
   } catch (error) {
     throw new Error(`Failed to fetch Codex usage: ${error.message}`);
   }
+}
+
+export async function getCodexModels(accessToken, proxyOptions = null, providerSpecificData = null) {
+  if (!CODEX_CONFIG.modelsUrl) return [];
+
+  const url = new URL(CODEX_CONFIG.modelsUrl);
+  if (CODEX_CONFIG.clientVersion) url.searchParams.set("client_version", CODEX_CONFIG.clientVersion);
+  const headers = {
+    "Authorization": `Bearer ${accessToken}`,
+    "Accept": "application/json",
+  };
+  const accountId = getCodexAccountId(providerSpecificData);
+  if (accountId) headers["ChatGPT-Account-ID"] = accountId;
+
+  const response = await proxyAwareFetch(url, { method: "GET", headers }, proxyOptions);
+  if (!response.ok) return [];
+
+  const data = await response.json();
+  const models = Array.isArray(data?.models) ? data.models : [];
+  return models
+    .filter((model) => model?.supported_in_api !== false && typeof model?.slug === "string" && model.slug)
+    .sort((a, b) => Number(a.priority || 0) - Number(b.priority || 0));
 }
 
 export async function getCodexRateLimitResetCredits(accessToken, proxyOptions = null, providerSpecificData = null) {
