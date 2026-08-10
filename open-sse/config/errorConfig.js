@@ -57,6 +57,22 @@ const COOLDOWN = {
  *   - backoff: true = use exponential backoff (rate limit)
  */
 export const ERROR_RULES = [
+  // --- Permanent, request-scoped failures (highest priority) ---
+  // The model name itself is wrong, so no other account can do better. Without
+  // these the default "fall back and cool down" applied: one typo walked every
+  // account into cooldown and then answered 503 "try again later" for something
+  // retrying can never fix. `permanent` returns the upstream 4xx straight to the
+  // caller and leaves account state untouched.
+  // Matched on text, not status, because providers report this as 400 as often
+  // as 404 — the observed message is "The 'x' model is not supported when using
+  // Codex with a ChatGPT account." on a 400.
+  { text: "model is not supported",   permanent: true },
+  { text: "model not supported",      permanent: true },
+  { text: "model not found",          permanent: true },
+  { text: "model does not exist",     permanent: true },
+  { text: "unknown model",            permanent: true },
+  { text: "invalid model",            permanent: true },
+
   // --- Text-based rules (checked first, order = priority) ---
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
