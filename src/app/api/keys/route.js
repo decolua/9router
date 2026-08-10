@@ -8,7 +8,10 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const keys = await getApiKeys();
-    return NextResponse.json({ keys });
+    const { keyUsageSnapshot } = await import("@/sse/services/keyPolicy.js");
+    return NextResponse.json({
+      keys: keys.map((k) => ({ ...k, usage: keyUsageSnapshot(k) })),
+    });
   } catch (error) {
     console.log("Error fetching keys:", error);
     return NextResponse.json({ error: "Failed to fetch keys" }, { status: 500 });

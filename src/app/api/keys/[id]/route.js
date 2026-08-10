@@ -30,6 +30,11 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (body.name !== undefined) updateData.name = body.name;
+    // Per-key controls: null/"" clears a limit, so pass them straight through.
+    for (const field of ["rpm", "tpm", "maxBudget", "budgetPeriod", "models", "priority", "expiresAt"]) {
+      if (body[field] !== undefined) updateData[field] = body[field];
+    }
 
     const updated = await updateApiKey(id, updateData);
 

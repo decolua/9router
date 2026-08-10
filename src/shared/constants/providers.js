@@ -124,6 +124,22 @@ export function resolveProviderId(aliasOrId) {
 }
 
 // Helper: Get alias from provider ID
+// Per-account requests-per-minute defaults. NVIDIA NIM enforces ~40 RPM per
+// API key, so cap there by default rather than discovering it via 429s.
+// Anything not listed is uncapped unless the user sets a value.
+export const DEFAULT_PROVIDER_RPM = {
+  nvidia: 40,
+};
+
+// settings.rpmByProvider wins; "" / null falls back to the default; 0 = unlimited.
+export function resolveProviderRpm(settings, providerId) {
+  const configured = (settings?.rpmByProvider || {})[providerId];
+  if (configured === 0 || configured === "0") return 0;
+  const n = Number(configured);
+  if (Number.isFinite(n) && n > 0) return n;
+  return DEFAULT_PROVIDER_RPM[providerId] || 0;
+}
+
 export function getProviderAlias(providerId) {
   const provider = AI_PROVIDERS[providerId];
   return provider?.alias || providerId;

@@ -4,6 +4,24 @@ const { pathToFileURL } = require("url");
 
 const origCreate = http.createServer.bind(http);
 
+// Optional second listener that serves ONLY the OpenAI-compatible endpoint.
+// Set API_PORT to split the API off the dashboard port, so the API can be
+// exposed (tunnel, mesh, Zero Trust) without exposing the dashboard with it.
+// API_HOSTNAME defaults to loopback -- widen it deliberately, never by accident.
+const API_PORT = Number(process.env.API_PORT || 0);
+const API_HOSTNAME = process.env.API_HOSTNAME || "127.0.0.1";
+
+// Paths reachable on the API port. Everything else 404s there, including the
+// dashboard and its /api/* routes, which is the entire point of the split.
+const API_PREFIXES = ["/v1", "/v1beta", "/responses", "/codex"];
+
+function isApiPath(url) {
+  const p = String(url || "").split("?")[0];
+  return API_PREFIXES.some((prefix) => p === prefix || p.startsWith(`${prefix}/`));
+}
+
+let apiServerStarted = false;
+
 let backgroundRefreshStarted = false;
 
 function startBackgroundTokenRefreshFromCustomServer() {
@@ -61,6 +79,23 @@ http.createServer = (...args) => {
     if (viaProxy) req.headers["x-9r-via-proxy"] = "1";
     return handler(req, res);
   };
+  // Next creates one server; guard anyway so a second call cannot fight over the port.
+  if (API_PORT && !apiServerStarted) {
+    apiServerStarted = true;
+    origCreate((req, res) => {
+      if (!isApiPath(req.url)) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: { message: "Not found. This port serves the API only.", type: "invalid_request_error" } }));
+        return;
+      }
+      return wrapped(req, res);
+    }).listen(API_PORT, API_HOSTNAME, () => {
+      console.log(`  \u25b2 API-only listener on http://${API_HOSTNAME}:${API_PORT} (${API_PREFIXES.join(", ")})`);
+    }).on("error", (err) => {
+      console.error(`  \u2717 API-only listener failed on ${API_HOSTNAME}:${API_PORT}: ${err.message}`);
+    });
+  }
+
   const server = origCreate(...rest, wrapped);
   server.once("listening", () => {
     startBackgroundTokenRefreshFromCustomServer();
