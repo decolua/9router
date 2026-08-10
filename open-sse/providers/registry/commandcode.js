@@ -18,18 +18,28 @@ export default {
     },
   },
   category: "apikey",
+  thinkingConfig: {
+    options: ["auto", "low", "medium", "high", "xhigh", "max"],
+    defaultMode: "auto",
+  },
   transport: {
     baseUrl: "https://api.commandcode.ai/alpha/generate",
     format: "commandcode",
     forceStream: true,
     headers: {
-      "x-command-code-version": "0.25.7",
+      // Command Code v1.14+ rejects tool-bearing Muse requests with older
+      // client metadata. Keep this aligned with the current CLI protocol.
+      "x-command-code-version": "1.15.1",
       "x-cli-environment": "cli",
+    },
+    retry: {
+      "503": { attempts: 1, delayMs: 250 },
     },
   },
   models: [
     { id: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro" },
     { id: "deepseek/deepseek-v4-flash", name: "DeepSeek V4 Flash" },
+    { id: "meta/muse-spark-1.2-contributor", name: "Muse Spark 1.2 Contributor" },
     { id: "moonshotai/Kimi-K2.6", name: "Kimi K2.6" },
     { id: "moonshotai/Kimi-K2.5", name: "Kimi K2.5" },
     { id: "zai-org/GLM-5.1", name: "GLM 5.1" },
