@@ -74,14 +74,18 @@ the cost of retrofitting purity outweighs the benefit.
 - One walker (`forEachVisibleText`) serves both scrubbing and detection, so a
   new response shape is taught to both at once rather than to whichever the
   author remembered.
-- **Streaming is signalled by strike, not by health.** The streaming filter sees
-  the violation, but the accumulated content reaching `onStreamComplete` is
-  already filtered, and the translator state has no channel to that write.
-  Reusing `onDisciplineLock` was rejected: it marks the *account* unavailable,
-  which is far too heavy for a model writing in the wrong voice. Wiring a
-  per-request frame channel through `createSSETransformStreamWithLogger` (twelve
-  positional parameters today) is the follow-up; until then a streaming
-  violation records a strike and arms the corrective nudge.
+- **Streaming reaches the health signal too**, from both directions. A tag block
+  the filter removes leaves no trace in the accumulated text, so the translator
+  records `state.frameViolation` and `stream.js` — which already holds both the
+  state and the `onStreamComplete` call — passes it as a fourth argument to that
+  callback. Control markers are never stripped, so they survive into the
+  accumulated content and are detected there; that second check also covers the
+  passthrough stream, which runs no filter at all.
+
+  This deliberately avoided a thirteenth positional parameter on
+  `createSSETransformStreamWithLogger`. Reusing `onDisciplineLock` was rejected
+  outright: it marks the *account* unavailable, far too heavy for a model
+  writing in the wrong voice.
 - False positives are possible: a model quoting a harness tag inside a code
   fence while genuinely discussing this router is indistinguishable from forging
   one. Accepted — the health rule needs a sustained run of errors with no

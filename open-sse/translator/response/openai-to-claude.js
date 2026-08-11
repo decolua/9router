@@ -115,6 +115,10 @@ export function filterEchoText(state, text) {
         // (only doubled-json counts toward the threshold) but it arms a nudge
         // on this model's next request.
         try { recordStrike(state.servingModel, "echo"); } catch { /* discipline must not break output */ }
+        // Frame violation, remembered on the stream. The accumulated content
+        // that reaches the request-detail write has already had this block
+        // removed, so the flag is the only surviving evidence. See ADR 0002.
+        state.frameViolation = true;
         break;
       }
       if (open.startsWith(buf)) partial = true;

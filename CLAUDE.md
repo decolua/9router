@@ -40,8 +40,13 @@ npx vitest run unit/capabilities.test.js   # single file (path relative to tests
 ```
 > The committed `tests/package.json` `test` script hardcodes Unix paths (`NODE_PATH=/tmp/node_modules …`) — a shared-install workaround from upstream. On Windows (or anywhere), ignore it and use the `npx vitest` form above; `vitest.config.js` resolves the `open-sse`/`@/` aliases from the repo root regardless of where vitest lives.
 >
-> **The suite is NOT expected to be all-green on a plain checkout.** ~938 pass, ~64 fail. Judge regressions with `tests/__baseline__/verify-no-regression.mjs`, not a raw run. Expected red:
-> - 26 catalogued in `tests/__baseline__/known-fails.txt` (rtk, oauth-cursor-auto-import, translator-request-normalization, …).
+> **The suite is NOT expected to be all-green on a plain checkout.** 1808 pass, 85 fail (re-measured 2026-08-11). Judge regressions with `tests/__baseline__/verify-no-regression.mjs`, not a raw run:
+> ```bash
+> cd tests && npx vitest run --reporter=json --outputFile=/tmp/results.json
+> cd .. && node tests/__baseline__/verify-no-regression.mjs /tmp/results.json
+> ```
+> - All 85 are catalogued in `tests/__baseline__/known-fails.txt`, so the gate is meaningful again. It had drifted badly — 24 entries against 98 actual failures — and the verifier itself only worked inside the container, because it recovered the repo-relative path by splitting on `/app/`. It now anchors on the `tests/` segment, so it runs anywhere. Regenerate the list the same way you verify, writing the failures to that file, and only when you have confirmed the new reds are not yours.
+> - The largest block, 35 in `unit/cursor-agent-proto.test.js`, imports `buildAgentRunFrame`, `encodeAgentValue` and six other symbols that **exist nowhere in the source** — it is a test for a Cursor AgentService codec that was never written. Delete it or write the codec; do not "fix" it.
 > - `unit/embeddings.cloud.test.js` imports `cloud/src/handlers/embeddings.js` — the `cloud/` worker dir is **not in this repo**, so it always fails here.
 > - `unit/xai-oauth-service.test.js` times out (5s) when the xAI endpoint-discovery fetch isn't reachable/mocked.
 > - `real/*.real.test.js` make live provider calls — need credentials, skip otherwise.
