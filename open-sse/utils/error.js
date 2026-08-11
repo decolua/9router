@@ -1,4 +1,5 @@
-import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
+import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES, isPermanentModelError } from "../config/errorConfig.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 
 /**
  * Build OpenAI-compatible error response body
@@ -95,14 +96,53 @@ export async function parseUpstreamError(response, executor = null) {
  * @param {number} [resetsAtMs] - Optional precise cooldown expiry (ms epoch) for provider-specific quota errors
  * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number }}
  */
-export function createErrorResult(statusCode, message, resetsAtMs) {
+export function createErrorResult(statusCode, message, resetsAtMs, clientStatus = null) {
   return {
     success: false,
+    // The true upstream status, kept for internal classification (fallback
+    // rules, cooldowns) so those keep seeing what the provider actually said.
     status: statusCode,
     error: message,
     resetsAtMs,
-    response: errorResponse(statusCode, message)
+    // What the CLIENT sees, which may be normalised — e.g. an unknown model
+    // reported as 401 becomes 404, so callers do not read it as an auth failure.
+    response: errorResponse(clientStatus ?? statusCode, message)
   };
+}
+
+/**
+ * Map an upstream failure onto the status the client should see.
+ *
+ * The contract clients actually depend on is coarse: 4xx means stop, 5xx means
+ * retry. So the rule is to preserve the upstream's CLASS, never to flatten it.
+ *
+ * An earlier version of this collapsed every non-429 4xx to 503 to stop a
+ * flaky upstream killing a turn. That was the wrong lever: the real cause of
+ * those mislabelled statuses was stale per-connection error state being replayed
+ * across requests (fixed in auth.js), and the flattening made permanent failures
+ * — a rejected temperature, a nonexistent model — look transient. Clients then
+ * burned their whole retry budget on hopeless requests, and 5xx bypassed the
+ * reactive repair paths that key off a 4xx naming the rejected parameter.
+ *
+ * Wrong-model errors are the one deliberate re-mapping: providers report them as
+ * 400, as 404, and as 401-with-a-ModelError-body. Passing a 401 through makes a
+ * client report "authentication failed" for perfectly good credentials, so those
+ * are normalised to 404.
+ *
+ * @param {number|string|null} upstreamStatus - status from the upstream attempt
+ * @param {string|object} [errorText] - upstream error text, for model detection
+ * @returns {number} status to return to the client
+ */
+export function clientStatusForUpstream(upstreamStatus, errorText = null) {
+  if (isPermanentModelError(errorText)) return HTTP_STATUS.NOT_FOUND;
+
+  const status = Number(upstreamStatus);
+  // Nothing usable to propagate (no attempt made, or a non-numeric code): this
+  // is our own "no capacity" condition, which is genuinely transient.
+  if (!Number.isFinite(status) || status < 400) return HTTP_STATUS.SERVICE_UNAVAILABLE;
+  // Anything already carrying a real class keeps it — 4xx stop, 5xx retry.
+  if (status <= 599) return status;
+  return HTTP_STATUS.SERVICE_UNAVAILABLE;
 }
 
 /**
