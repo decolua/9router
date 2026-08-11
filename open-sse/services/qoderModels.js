@@ -267,122 +267,8 @@ async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null) {
       maxOutputTokens: Number(entry.max_output_tokens) || 0,
       description: entry.description || "",
     });
-  }
 
-  // Force-add cmodel (Cantus) if not present from upstream
-  // This ensures qd/cmodel is always available even when upstream doesn't return it
-  if (!rawConfigs.has("cmodel")) {
-    let fallbackConfig = null;
-    // Try to copy config from any available Qoder model as fallback
-    for (const entry of body.chat) {
-      if (entry && entry.key && rawConfigs.has(entry.key)) {
-        fallbackConfig = entry;
-        break;
-      }
-    }
-
-    // Create cmodel config using fallback or defaults
-    const cmodelConfig = fallbackConfig
-      ? { ...fallbackConfig, key: "cmodel", display_name: "Cantus" }
-      : {
-          key: "cmodel",
-          enable: true,
-          display_name: "Cantus",
-          max_input_tokens: 131072,
-          max_output_tokens: 64000,
-          is_vl: false,
-          is_reasoning: false,
-          description: "Qoder Cantus (C-model)",
-        };
-
-    // Register the config and add to models list
-    rawConfigs.set("cmodel", cmodelConfig);
-    const ctx = Number(cmodelConfig.max_input_tokens) || 131072;
-    models.push({
-      id: "cmodel",
-      name: "Cantus",
-      contextLength: ctx,
-      isVL: !!cmodelConfig.is_vl,
-      isReasoning: !!cmodelConfig.is_reasoning,
-      maxOutputTokens: Number(cmodelConfig.max_output_tokens) || 0,
-      description: cmodelConfig.description || "",
-    });
-  }
-
-  // Force-add cmodel (Cantus) if not present from upstream
-  // This ensures qd/cmodel is always available even when upstream doesn't return it
-  if (!rawConfigs.has("cmodel")) {
-    let fallbackConfig = null;
-    // Try to copy config from any available Qoder model as fallback
-    for (const entry of body.chat) {
-      if (entry && entry.key && rawConfigs.has(entry.key)) {
-        fallbackConfig = entry;
-        break;
-      }
-    }
-
-    // Create cmodel config using fallback or defaults
-    const cmodelConfig = fallbackConfig
-      ? { ...fallbackConfig, key: "cmodel", display_name: "Cantus" }
-      : {
-          key: "cmodel",
-          enable: true,
-          display_name: "Cantus",
-          max_input_tokens: 131072,
-          max_output_tokens: 64000,
-          is_vl: false,
-          is_reasoning: false,
-          description: "Qoder Cantus (C-model)",
-        };
-
-    // Register the config and add to models list
-    rawConfigs.set("cmodel", cmodelConfig);
-    const ctx = Number(cmodelConfig.max_input_tokens) || 131072;
-    models.push({
-      id: "cmodel",
-      name: "Cantus",
-      contextLength: ctx,
-      isVL: !!cmodelConfig.is_vl,
-      isReasoning: !!cmodelConfig.is_reasoning,
-      maxOutputTokens: Number(cmodelConfig.max_output_tokens) || 0,
-      description: cmodelConfig.description || "",
-    });
-  }
-
-  return { models, rawConfigs };
-}
-
-/**
- * Get the cached model_config block for a given model key, fetching the
- * catalog first if needed. Returns null when the catalog can't be fetched
- * (so callers can fall back to the static registry).
- */
-export async function getQoderModelConfig(credentials, modelKey, options = {}) {
-  const cached = await resolveQoderModels(credentials, options);
-  if (!cached) return null;
-  const config = cached.rawConfigs.get(modelKey);
-  if (!config) return null;
-  // Defensive copy — chat code may mutate `key` to align with the alias path.
-  return { ...config, key: modelKey };
-}
-
-/**
- * Resolve the live model catalog + raw configs for a credential. Caches
- * results for CACHE_TTL_MS so repeated chat requests don't re-fetch, and
- * deduplicates concurrent misses so parallel chat windows fan-out exactly
- * one upstream request per credential.
- */
-export async function resolveQoderModels(credentials, options = {}) {
-  let resolved;
-  try {
-    resolved = await resolveQoderCredentials(credentials, options.proxyOptions, options.signal);
-  } catch (error) {
-    options.log?.warn?.("QODER", `PAT exchange failed: ${error.message}`);
-    return null;
-  }
-  if (!resolved?.accessToken || !(resolved.providerSpecificData || {}).userId) return null;
-
-  const key = cacheKey(resolved);
+  const key = cacheKey(credentials);
   const now = Date.now();
   if (!options.forceRefresh) {
     const cached = catalogCache.get(key);
@@ -399,7 +285,7 @@ export async function resolveQoderModels(credentials, options = {}) {
   }
 
   const fetchPromise = (async () => {
-    const fetched = await fetchQoderCatalogRaw(resolved, options.signal, options.proxyOptions);
+    const fetched = await fetchQoderCatalogRaw(credentials, options.signal, options.proxyOptions);
     if (!fetched) return null;
     const entry = {
       expiresAt: Date.now() + CACHE_TTL_MS,
