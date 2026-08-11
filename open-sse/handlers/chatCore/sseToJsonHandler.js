@@ -9,7 +9,8 @@ import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
 import { saveRequestDetail, appendRequestLog } from "@/lib/usageDb.js";
-import { scrubResponseBody } from "../../utils/echoScrub.js";
+import { scrubResponseBody, hasFrameViolation } from "../../utils/echoScrub.js";
+import { hasFrameMarker } from "../../config/frameMarkers.js";
 import { extractLastUserText } from "../../utils/userEcho.js";
 import { recordStrike } from "../../utils/discipline.js";
 
@@ -218,12 +219,18 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       const { msgItem, textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
       const totalLatency = Date.now() - requestStartTime;
 
+      // The Responses shape carries its visible text here rather than in any of
+      // the shapes the body walker knows, so the frame check reads the text that
+      // was already extracted. Detection only — this path has never scrubbed,
+      // and adding stripping to it now would be a behaviour change, not a fix.
+      const codexFrameViolation = hasFrameMarker(textContent);
+
       saveRequestDetail(buildRequestDetail({
         ...ctx,
         latency: { ttft: totalLatency, total: totalLatency },
         tokens: { prompt_tokens: inTokensForLog, completion_tokens: usage.output_tokens || 0 },
         response: { content: textContent, thinking: null, finish_reason: jsonResponse.status || "unknown" },
-        status: "success"
+        status: codexFrameViolation ? "error" : "success"
       }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
 
       // Client is Responses API → return as-is
@@ -299,7 +306,10 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     // Third response path, same blind spot: the SSE arrives as chunks but is
     // assembled into a JSON body here, so the streaming filter never saw it and
     // the non-streaming one is not on this route either.
+    // Frame check runs first — scrubbing removes the evidence. See docs/adr/0002.
+    let frameViolation = false;
     try {
+      frameViolation = hasFrameViolation(parsed);
       if (scrubResponseBody(parsed, extractLastUserText(body))) {
         recordStrike(provider && model ? `${provider}/${model}` : model, "echo");
       }
@@ -328,7 +338,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         thinking: parsed.choices?.[0]?.message?.reasoning_content || null,
         finish_reason: parsed.choices?.[0]?.finish_reason || "unknown"
       },
-      status: "success"
+      status: frameViolation ? "error" : "success"
     }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
 
     // Re-attach usage explicitly. This handler already HAS the correct usage — it is

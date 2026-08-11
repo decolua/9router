@@ -8,15 +8,14 @@
 // any non-streamed reply.
 
 import { isUserEcho } from "./userEcho.js";
-
-const ECHO_TAGS = ["instructions", "system-reminder", "task-notification", "command-message", "command-name"];
+import { FRAME_TAGS, hasFrameMarker } from "../config/frameMarkers.js";
 
 // Drop whole <tag>...</tag> blocks, and an unclosed trailing block, matching
 // what the streaming filter does at end of stream.
 export function stripEchoTags(text) {
   if (typeof text !== "string" || !text) return text;
   let out = text;
-  for (const tag of ECHO_TAGS) {
+  for (const tag of FRAME_TAGS) {
     const open = "<" + tag + ">";
     const close = "</" + tag + ">";
     let i;
@@ -36,29 +35,20 @@ export function scrubEcho(text, lastUserText) {
   return stripped;
 }
 
-// Apply to whichever field carries visible text in each response shape. Returns
-// true when anything was changed, so the caller can record a discipline strike.
-export function scrubResponseBody(body, lastUserText) {
-  if (!body || typeof body !== "object") return false;
-  let changed = false;
-
-  const fix = (obj, key) => {
-    if (!obj || typeof obj[key] !== "string" || !obj[key]) return;
-    const next = scrubEcho(obj[key], lastUserText);
-    if (next !== obj[key]) {
-      obj[key] = next;
-      changed = true;
-    }
-  };
+// Visit every field that carries visible text, across the response shapes this
+// router emits. One walker so a new shape is taught to scrubbing and to frame
+// detection at the same time, instead of to whichever one the author remembered.
+function forEachVisibleText(body, visit) {
+  if (!body || typeof body !== "object") return;
 
   // OpenAI chat completion
   if (Array.isArray(body.choices)) {
-    for (const c of body.choices) fix(c && c.message, "content");
+    for (const c of body.choices) visit(c && c.message, "content");
   }
   // Claude message
   if (Array.isArray(body.content)) {
     for (const b of body.content) {
-      if (b && b.type === "text") fix(b, "text");
+      if (b && b.type === "text") visit(b, "text");
     }
   }
   // Gemini / Antigravity
@@ -66,9 +56,40 @@ export function scrubResponseBody(body, lastUserText) {
   if (Array.isArray(response.candidates)) {
     for (const cand of response.candidates) {
       const parts = cand && cand.content && cand.content.parts;
-      if (Array.isArray(parts)) for (const p of parts) fix(p, "text");
+      if (Array.isArray(parts)) for (const p of parts) visit(p, "text");
     }
   }
+}
+
+// Whether the reply forges any part of the conversation frame. Ask BEFORE
+// scrubbing — stripping removes the evidence.
+//
+// Deliberately narrower than "scrubResponseBody changed something": repeating
+// the user's message back is bad output, not a protocol violation, and the
+// router does not grade output. Only a forged frame marker counts.
+export function hasFrameViolation(body) {
+  let found = false;
+  forEachVisibleText(body, (obj, key) => {
+    if (found || !obj || typeof obj[key] !== "string") return;
+    if (hasFrameMarker(obj[key])) found = true;
+  });
+  return found;
+}
+
+// Apply to whichever field carries visible text in each response shape. Returns
+// true when anything was changed, so the caller can record a discipline strike.
+export function scrubResponseBody(body, lastUserText) {
+  if (!body || typeof body !== "object") return false;
+  let changed = false;
+
+  forEachVisibleText(body, (obj, key) => {
+    if (!obj || typeof obj[key] !== "string" || !obj[key]) return;
+    const next = scrubEcho(obj[key], lastUserText);
+    if (next !== obj[key]) {
+      obj[key] = next;
+      changed = true;
+    }
+  });
 
   return changed;
 }
