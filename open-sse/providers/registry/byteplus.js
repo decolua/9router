@@ -29,7 +29,7 @@ export default {
     { id: "seed-2-0-lite-260228", name: "Seed 2.0 Lite" },
     { id: "kimi-k2-thinking-251104", name: "Kimi K2 Thinking" },
     { id: "glm-4-7-251222", name: "GLM 4.7" },
-    { id: "gpt-oss-120b-250805", name: "GPT-OSS-120B" },
+    { id: "gpt-oss-120b-250805", name: "GPT-OSS-120B", family: "gpt-oss-120b" },
   ],
   serviceKinds: ["llm"],
 };

@@ -62,6 +62,7 @@ async function dashboardCookie() {
 async function getCandidates(db, bench, token) {
   const candidates = new Set();
   const caps = new Map();
+  const identities = new Map();
   const nodePrefix = new Map();
   for (const row of db.prepare('SELECT id, data FROM providerNodes').all()) {
     try {
@@ -86,6 +87,9 @@ async function getCandidates(db, bench, token) {
       for (const m of d.data ?? []) {
         candidates.add(m.id);
         if (m.capabilities) caps.set(m.id, m.capabilities);
+        if (m.family || m.effort || m.mode) {
+          identities.set(m.id, { family: m.family ?? null, effort: m.effort ?? null, mode: m.mode ?? null });
+        }
       }
     } else {
       console.warn(`WARN /v1/models returned ${res.status}`);
@@ -135,7 +139,7 @@ async function getCandidates(db, bench, token) {
     const pfx = id.slice(0, id.indexOf('/'));
     if (!validPrefixes.has(pfx)) candidates.delete(id);
   }
-  return { candidates, caps };
+  return { candidates, caps, identities };
 }
 
 // ponytail: stats scoped by bench.providerByPrefix; any prefix missing from that map falls back to model-name-only matching.
@@ -172,20 +176,60 @@ function getHealth(db, candidates, bench) {
   return health;
 }
 
-function matchBench(bench, id) {
+// A model id is a wire name, not a description. `ag/gemini-3.1-pro-low` carries
+// the route (ag), the capability class (gemini-3.1-pro) and the effort (low) in
+// one opaque string. This used to end with a substring scan over bench.models,
+// which failed in both directions: `gemini-3.1-pro-low` matched `gemini-3.1-pro`
+// and inherited an opus band it never earned, while `gemini-pro-agent` — the
+// HIGH variant of the same model — matched nothing and went invisible to every
+// combo. Substring inference is gone; the family is declared, never guessed.
+//
+// Resolution is exact, in three steps (see docs/adr/0001):
+//   1. bench._modelIdentity[<full id>] — for candidates with no registry entry
+//      (custom models registered against a provider node).
+//   2. the identity /v1/models reported for this id (registry `family`/`effort`).
+//   3. an exact bench.models key equal to the model part, or to its last segment
+//      — the id IS the family, so nothing needs declaring.
+// Nothing else matches. An unresolved candidate has no band, which makes it
+// invisible to every combo, and is reported by name (see reportUnbanded).
+function identityOf(bench, id, identities) {
   const modelPart = id.slice(id.indexOf('/') + 1);
-  if (bench.models[modelPart]) return [modelPart, bench.models[modelPart]];
+  // Field by field, so a bench override that names only an effort corrects that
+  // one fact instead of erasing the family the registry already declared.
+  const declared = { ...(identities?.get(id) ?? {}), ...(bench._modelIdentity?.[id] ?? {}) };
   const tail = modelPart.slice(modelPart.lastIndexOf('/') + 1);
-  if (bench.models[tail]) return [tail, bench.models[tail]];
-  for (const key of Object.keys(bench.models)) {
-    if (modelPart.includes(key)) return [key, bench.models[key]];
-  }
-  return null;
+  const exact = bench.models[modelPart] ? modelPart : bench.models[tail] ? tail : null;
+  return {
+    family: declared.family ?? exact ?? null,
+    effort: declared.effort ?? null,
+    mode: declared.mode ?? null,
+  };
 }
 
-function band(bench, id) {
-  const m = matchBench(bench, id);
-  return m ? m[1].band ?? null : null;
+function matchBench(bench, id, identities) {
+  const family = identityOf(bench, id, identities).family;
+  return family && bench.models[family] ? [family, bench.models[family]] : null;
+}
+
+// Effort shifts the family's band by a declared offset, so a low-effort variant
+// can never sit in its family's tier. Offsets are signed in quality terms:
+// -1 means one band WORSE, which is one step further down bandOrder. Steps past
+// either end clamp rather than wrap.
+function shiftBand(bench, base, effort) {
+  const order = bench._bands ?? [];
+  const i = order.indexOf(base);
+  if (i === -1) return null;
+  if (!effort) return base;
+  const offset = bench._effortBandOffset?.[effort];
+  if (offset === undefined) return base;
+  return order[Math.min(order.length - 1, Math.max(0, i - offset))];
+}
+
+function band(bench, id, identities) {
+  const identity = identityOf(bench, id, identities);
+  const entry = identity.family ? bench.models[identity.family] : null;
+  const base = entry?.band ?? null;
+  return base ? shiftBand(bench, base, identity.effort) : null;
 }
 
 function cost(bench, id) {
@@ -195,8 +239,8 @@ function cost(bench, id) {
   return bench.costClass?.[prefix] ?? 3;
 }
 
-function benchScore(bench, id) {
-  const m = matchBench(bench, id);
+function benchScore(bench, id, identities) {
+  const m = matchBench(bench, id, identities);
   if (!m) return 0;
   const e = m[1];
   return e.swe_verified ?? e.swe_pro ?? e.terminal_bench ?? 0;
@@ -249,6 +293,61 @@ function capPerPool(ids, bench, max) {
   return out;
 }
 
+// An unbanded candidate is invisible to every combo, because `null` is in no
+// combo's allowed band list. That fail-closed default is correct — an unvetted
+// model discovered off a public list must not serve traffic — but it used to be
+// silent, so a model could sit dark forever with no signal anywhere. Keep the
+// safety, delete the silence: every run names them and says which of the two
+// things is missing, so the fix is one bench entry or two registry fields away.
+function reportUnbanded(bench, candidates, identities) {
+  const out = [];
+  for (const id of candidates) {
+    if (band(bench, id, identities)) continue;
+    const family = identityOf(bench, id, identities).family;
+    out.push({
+      id,
+      family,
+      reason: family ? 'family-not-in-bench' : 'no-family-declared',
+    });
+  }
+  out.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  if (out.length === 0) {
+    console.log('unbanded=0');
+    return out;
+  }
+  console.log(`UNBANDED CANDIDATES (${out.length}) - invisible to every combo until banded`);
+  for (const u of out) {
+    console.log(`  ${u.id}  ${u.reason}${u.family ? ` (family=${u.family})` : ''}`);
+  }
+  return out;
+}
+
+// Push the same list to Discord, reusing the webhook discover.mjs already posts
+// to. Only on CHANGE: this script runs on a dwell timer, and re-posting an
+// unchanged list every few minutes is how a channel gets muted.
+async function postUnbanded(unbanded, previous) {
+  const webhook = process.env.DISCORD_WEBHOOK_URL || '';
+  const ids = unbanded.map((u) => u.id);
+  const before = (previous ?? []).map((u) => u.id);
+  if (!webhook || ids.length === 0) return;
+  if (JSON.stringify(ids) === JSON.stringify(before)) return;
+  const lines = [`9r-tuner: ${ids.length} unbanded candidate(s) - invisible to every combo`];
+  for (const u of unbanded.slice(0, 25)) {
+    lines.push(`- ${u.id} (${u.reason})`);
+  }
+  if (ids.length > 25) lines.push(`... and ${ids.length - 25} more`);
+  try {
+    const res = await fetch(webhook, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: lines.join('\n').slice(0, 1900) }),
+    });
+    if (!res.ok) console.warn(`WARN webhook post returned ${res.status}`);
+  } catch (err) {
+    console.warn(`WARN webhook post failed: ${err.message}`);
+  }
+}
+
 function selfTest() {
   const bench = JSON.parse(fs.readFileSync(new URL('./bench.json', import.meta.url), 'utf8'));
   assert.equal(poolKey('cx/gpt-5.6-sol', bench), 'codex-subscription');
@@ -259,6 +358,45 @@ function selfTest() {
     capPerPool(applyPins(ids, { 'ocg/gpt-5.6-sol-review': 1 }, ids, bench), bench, MAX_PER_POOL),
     ['cx/gpt-5.6-sol', 'ag/claude-opus-5', 'ag/gemini-3.1-pro'],
   );
+
+  // Band derivation. The incident these guard: a fable-band combo (Odin, depth 1)
+  // served ag/gemini-3.1-pro-low for two whole sessions because substring matching
+  // handed the low variant its family's opus band, while the HIGH variant of the
+  // same model - registered upstream as `gemini-pro-agent` - matched nothing.
+  const idn = (family, effort) => new Map([['t/x', { family, effort, mode: null }]]);
+  assert.equal(band(bench, 't/x', idn('gemini-3.1-pro', 'high')), 'opus');
+  assert.equal(band(bench, 't/x', idn('gemini-3.1-pro', 'medium')), 'sonnet');
+  assert.equal(band(bench, 't/x', idn('gemini-3.1-pro', 'low')), 'haiku');
+  assert.equal(band(bench, 't/x', idn('gemini-3.1-pro', null)), 'opus');
+  // An effort can never promote a family past the top of the ladder, nor sink it
+  // past the bottom - both ends clamp.
+  assert.equal(band(bench, 't/x', idn('kimi-k3', 'high')), 'fable');
+  assert.equal(band(bench, 't/x', idn('gpt-oss-120b', 'low')), 'below');
+  // Exact ids still band with nothing declared: the id IS the family.
+  assert.equal(band(bench, 'ag/gemini-3.1-pro', new Map()), 'opus');
+  assert.equal(band(bench, 'tokenrouter/moonshotai/kimi-k3', new Map()), 'fable');
+  // Substring inference is gone. `-low` no longer borrows its family's band, and
+  // an id that merely CONTAINS a bench key is not that model.
+  assert.equal(band(bench, 'ag/gemini-3.1-pro-low', new Map()), null);
+  assert.equal(band(bench, 'x/gemini-3.1-pro-someone-elses-model', new Map()), null);
+  // An undeclared family fails closed rather than guessing.
+  assert.equal(band(bench, 't/x', idn('no-such-family', 'high')), null);
+  // bench._modelIdentity covers candidates with no registry entry, and outranks
+  // an exact id match so a declaration can always correct one.
+  assert.equal(
+    band({ ...bench, _modelIdentity: { 'n/foo': { family: 'gemini-3.1-pro', effort: 'low' } } }, 'n/foo', new Map()),
+    'haiku',
+  );
+  // A partial override corrects one field and leaves the registry's family alone.
+  assert.equal(
+    band({ ...bench, _modelIdentity: { 't/x': { effort: 'low' } } }, 't/x', idn('gemini-3.1-pro', 'high')),
+    'haiku',
+  );
+
+  const unbanded = reportUnbanded(bench, ['ag/gemini-3.1-pro', 'ag/gemini-3.1-pro-low'], idn());
+  assert.deepEqual(unbanded.map((u) => u.id), ['ag/gemini-3.1-pro-low']);
+  assert.equal(unbanded[0].reason, 'no-family-declared');
+
   console.log('self-test passed');
 }
 
@@ -324,9 +462,12 @@ async function main() {
   const db = new DatabaseSync(DB_PATH, { readOnly: true });
   db.exec('PRAGMA busy_timeout = 5000');
   const token = cliToken();
-  const { candidates, caps } = await getCandidates(db, bench, token);
+  const { candidates, caps, identities } = await getCandidates(db, bench, token);
   const health = getHealth(db, candidates, bench);
-  const bandOrder = ['fable', 'opus', 'sonnet', 'haiku', 'below'];
+  // One ladder, declared in bench.json, shared with shiftBand.
+  const bandOrder = bench._bands ?? ['fable', 'opus', 'sonnet', 'haiku', 'below'];
+  const bandOf = (id) => band(bench, id, identities);
+  const scoreOf = (id) => benchScore(bench, id, identities);
   const combos = db.prepare('SELECT id, name, models FROM combos').all();
   const state = fs.existsSync(STATE_PATH) ? JSON.parse(fs.readFileSync(STATE_PATH, 'utf8')) : {};
   const lastApplied = { ...(state.lastApplied ?? {}) };
@@ -335,15 +476,21 @@ async function main() {
 
   for (const id of candidates) {
     const h = health.get(id) ?? { ok: 0, err: 0, health: 0.5 };
+    const identity = identityOf(bench, id, identities);
     scores[id] = {
-      band: band(bench, id),
+      band: bandOf(id),
+      family: identity.family,
+      effort: identity.effort,
+      mode: identity.mode,
       cost: cost(bench, id),
       health: h.health,
       ok: h.ok,
       err: h.err,
-      benchScore: benchScore(bench, id),
+      benchScore: scoreOf(id),
     };
   }
+
+  const unbanded = reportUnbanded(bench, candidates, identities);
 
   for (const row of combos) {
     const targetBand = bench._comboBand?.[row.name];
@@ -351,11 +498,11 @@ async function main() {
     const idx = bandOrder.indexOf(targetBand);
     const depth = bench._comboDepth?.[row.name] ?? 1;
     const allowed = bandOrder.slice(idx, idx + 1 + depth).filter(Boolean);
-    const poolBand = [...candidates].filter((id) => allowed.includes(band(bench, id)));
+    const poolBand = [...candidates].filter((id) => allowed.includes(bandOf(id)));
     const required = (bench._comboRequires?.[row.name] ?? []).filter((k) => k !== '_comment');
     const pool = poolBand.filter((id) => required.every((k) => caps.get(id)?.[k] === true));
     const bandRank = (id) => {
-      const i = allowed.indexOf(band(bench, id));
+      const i = allowed.indexOf(bandOf(id));
       return i === -1 ? 99 : i;
     };
     const sorted = pool.slice().sort((a, b) => {
@@ -382,8 +529,8 @@ async function main() {
       const ha = health.get(a)?.health ?? 0.5;
       const hb = health.get(b)?.health ?? 0.5;
       if (ha !== hb) return hb - ha;
-      const sa = benchScore(bench, a);
-      const sb = benchScore(bench, b);
+      const sa = scoreOf(a);
+      const sb = scoreOf(b);
       if (sa !== sb) return sb - sa;
       return a < b ? -1 : a > b ? 1 : 0;
     });
@@ -437,11 +584,13 @@ async function main() {
       reason = 'dwell';
     }
 
-    outCombos[row.name] = { current, desired, changed, applied, reason, pool: pool.length, headBand: desired[0] ? band(bench, desired[0]) : null };
+    outCombos[row.name] = { current, desired, changed, applied, reason, pool: pool.length, headBand: desired[0] ? bandOf(desired[0]) : null };
     console.log(
       `${row.name} band=${targetBand} pool=${pool.length} head=${desired[0]} changed=${changed} applied=${applied}`
     );
   }
+
+  await postUnbanded(unbanded, state.unbanded);
 
   fs.mkdirSync(path.dirname(STATE_PATH), { recursive: true });
   fs.writeFileSync(
@@ -452,6 +601,7 @@ async function main() {
         dryRun: DRY_RUN,
         combos: outCombos,
         scores,
+        unbanded,
         lastApplied,
       },
       null,

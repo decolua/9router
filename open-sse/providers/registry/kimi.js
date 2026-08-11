@@ -62,7 +62,7 @@ export default {
     { id: "kimi-for-coding-highspeed", name: "Kimi for Coding Highspeed" },
     // Pay-as-you-go platform ids
     { id: "kimi-k2.7-code", name: "Kimi K2.7 Code" },
-    { id: "kimi-k2.7-code-highspeed", name: "Kimi K2.7 Code Highspeed" },
+    { id: "kimi-k2.7-code-highspeed", name: "Kimi K2.7 Code Highspeed", family: "kimi-k2.7-code", mode: "highspeed" },
     { id: "kimi-k2.6", name: "Kimi K2.6" },
     { id: "kimi-k2.5", name: "Kimi K2.5" },
     { id: "kimi-k2.5-thinking", name: "Kimi K2.5 Thinking" },

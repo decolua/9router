@@ -33,7 +33,7 @@ export default {
     { id: "kimi-k2.7", name: "Kimi-K2.7" },
     { id: "kimi-k2.6", name: "Kimi-K2.6" },
     { id: "kimi-k2.5", name: "Kimi-K2.5" },
-    { id: "nemotron-3-ultra-fp4", name: "Nemotron 3 Ultra FP4" },
+    { id: "nemotron-3-ultra-fp4", name: "Nemotron 3 Ultra FP4", family: "nemotron-3-ultra" },
     { id: "minimax-m2.7", name: "MiniMax-M2.7" },
     { id: "claude-opus-4-6", name: "Claude Opus 4.6" },
     { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },

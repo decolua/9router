@@ -18,6 +18,7 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { modelEffort, modelFamily, modelMode } from "open-sse/providers/models/schema.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -362,6 +363,10 @@ export async function buildModelsList(kindFilter, options = {}) {
       const staticModelKindById = new Map(
         providerModels.map((m) => [m.id, modelKind(m)])
       );
+      // Declared model identity (family/effort/mode) travels with the listing because
+      // the tuner is a separate process: it reads candidates from here, and band
+      // derivation keys on the family rather than on the shape of the id.
+      const staticModelById = new Map(providerModels.map((m) => [m.id, m]));
       let liveModelKindById = new Map();
       let liveCapabilitiesById = new Map();
 
@@ -485,6 +490,13 @@ export async function buildModelsList(kindFilter, options = {}) {
           || capabilitiesFromServiceKind(customKind || liveKind)
           || (kind === LLM_KIND ? getCapabilitiesForModel(providerId, modelId) : null);
         if (caps) model.capabilities = caps;
+        const staticModel = staticModelById.get(modelId);
+        const family = modelFamily(staticModel);
+        const effort = modelEffort(staticModel);
+        const mode = modelMode(staticModel);
+        if (family) model.family = family;
+        if (effort) model.effort = effort;
+        if (mode) model.mode = mode;
         models.push(model);
       }
 
