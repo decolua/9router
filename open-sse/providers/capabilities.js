@@ -101,6 +101,9 @@ export const MODEL_CAPABILITIES = {
   "vision-model":      { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 },
   "coder-model":       { reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 },
 
+  // Qoder Cantus - Reasoning model with 128K context
+  "cmodel":            { reasoning: true, thinkingCanDisable: true, contextWindow: 131072, maxOutput: 64000 },
+
   // Kimi flagship + coding (platform + Kimi Code ids) — vision/video native
   "kimi-k3":           { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
   "k3":                { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
@@ -314,6 +317,9 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*step-*",         caps: { reasoning: true, thinkingFormat: "step", contextWindow: 128000 } },
   { pattern: "*nemotron*",      caps: { reasoning: true, contextWindow: 128000 } },
   { pattern: "*ling-*",         caps: { reasoning: true, contextWindow: 128000 } },
+
+  // Qoder Cantus (cmodel) pattern fallback
+  { pattern: "*cmodel*",        caps: { reasoning: true, thinkingCanDisable: true, contextWindow: 131072, maxOutput: 64000 } },
 ];
 
 /**
