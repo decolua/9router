@@ -1,3 +1,41 @@
+# Unreleased
+
+## Fixes
+- **Tuner**: bands are derived from a model's declared identity instead of guessed
+  from its id. `matchBench` ended in a substring scan, which failed in both
+  directions on the same model — `ag/gemini-3.1-pro-low` matched `gemini-3.1-pro`
+  and inherited an `opus` band it never earned, while `ag/gemini-pro-agent`, the
+  HIGH variant, matched no key at all and was invisible to every combo. A
+  fable-band combo served the low variant for two full sessions while the high one
+  sat unused. `gcli/grok-4.5-low` and `-medium` had the same defect
+- **Tuner**: an unbanded candidate is still invisible to every combo, but no longer
+  silently — every run names it, says whether its family is undeclared or merely
+  unbanded, records it in the tuner state, and posts to the Discord webhook when
+  the list changes
+- **Tuner**: TTS, image and STT models are no longer banded as chat models. Eleven
+  ids (`mimo-v2.5-tts*`, `gemini-2.5-flash-preview-tts`, `gemini-2.5-flash-image`,
+  `gpt-5.5-image`, …) were substring-matching a chat family and competing for
+  combo slots
+- **Tuner**: `gpt-5.3-codex-spark` and `gpt-5.5-pro` get their own `bench.json`
+  entries instead of borrowing a neighbour's tier. Both stay at their former band —
+  neither has a published benchmark, and an unproven model is banded low
+
+## Features
+- **Providers**: registry model entries declare `family`, `effort` and `mode`
+  beside `upstreamModelId`. Bands attach to families; `effort` shifts a band by a
+  declared offset from `bench._effortBandOffset`; `mode` (`thinking`, `agentic`,
+  `review`, …) never moves one. Matching is exact — substring inference is gone, so
+  a low-effort variant cannot reach its family's tier by any path
+- **Endpoint**: `/v1/models` reports a model's declared `family` / `effort` / `mode`
+  when it has them, so the tuner (a separate process) can band without re-deriving
+
+## Docs
+- **CONTEXT.md**: new glossary for the routing vocabulary — family, effort, mode,
+  route, band, candidate, pool, combo, quota domain, frame integrity. Much of this
+  previously lived only inside `bench.json` `_comment` strings
+- **ADR**: `docs/adr/0001` records why model identity is `(family, effort, mode)`
+  and why bands are never inferred from ids, with the four alternatives rejected
+
 # v0.5.50 (2026-08-05)
 
 ## Features

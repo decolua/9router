@@ -149,6 +149,14 @@
     "gpt-5.3-codex": {
       "band": "sonnet"
     },
+    "gpt-5.3-codex-spark": {
+      "band": "sonnet",
+      "note": "Its own model, not a variant of gpt-5.3-codex - it has its own price profile (3.00/12.00 vs 1.75/14.00) and the -review entry points at it, not at gpt-5.3-codex. No published benchmark; banded from price, which sits between gpt-5.6-luna (haiku, 1.00/6.00) and gpt-5.6-terra (opus, 2.50/15.00), so level with gpt-5.3-codex itself."
+    },
+    "gpt-5.5-pro": {
+      "band": "sonnet",
+      "note": "No published benchmark. Priced 30.00/180.00 - six times gpt-5.6-sol (opus, 5.00/30.00) - which argues for a higher band, but price is a proxy and this file bands from benchmarks. Held at gpt-5.5's tier because understating a model only costs it work it could have done, while overstating puts it in a combo it has not earned. Promote deliberately once there is a score."
+    },
     "kimi-k2.7-code": {
       "band": "sonnet",
       "note": "vendor-reported only, no independent verification"

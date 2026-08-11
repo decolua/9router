@@ -39,8 +39,10 @@ export const MODEL_DEFAULTS = {
 //           "preview", "fast". Documentary only: a mode never moves a band.
 //
 // A model that is a DIFFERENT model rather than a variant (gpt-5.3-codex-spark
-// is not gpt-5.3-codex) must not borrow a family. Leave it undeclared and give
-// it its own bench entry instead.
+// is not gpt-5.3-codex; gpt-5.5-pro is not gpt-5.5) must not borrow a family.
+// Give it a family of its own name and a bench entry to match. A model that is
+// not a chat model at all - TTS, image, embedding - declares no family, so it
+// can never be ranked as one.
 export const MODEL_EFFORTS = ["minimal", "extra-low", "low", "medium", "high", "max"];
 
 export function modelFamily(model) {

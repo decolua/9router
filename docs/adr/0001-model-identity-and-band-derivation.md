@@ -88,13 +88,19 @@ band by any path, so a low-effort variant can no longer appear in a top-band com
 `ag/gemini-pro-agent` becomes visible at `opus` for the first time — the high
 variant now competes where the low one used to sit.
 
-Five bands move and one model is newly banded. Fourteen ids lose a band they should
-never have had: TTS and image models that were being ranked as chat models, and
-three genuinely distinct models — `gpt-5.3-codex-spark`, its review variant, and
-`openai/gpt-5.5-pro` — that were borrowing a neighbour's tier. Those three are left
-undeclared on purpose. Giving them a family they do not belong to is the defect
-this ADR removes; they need their own `bench.json` entries, which is a band
-judgement, and this repository assigns bands by hand.
+Five bands move and one model is newly banded. Eleven ids lose a band they should
+never have had — TTS, image and STT models that were being ranked as chat models.
+Every remaining band change is a chat model moving to a tier it earned.
+
+Three models that were borrowing a neighbour's tier get families and bench entries
+of their own instead: `gpt-5.3-codex-spark` (its `-review` sibling points at *it*,
+not at `gpt-5.3-codex`, and it has its own price profile) and `openai/gpt-5.5-pro`.
+Neither has a published benchmark, so both are banded at their former tier rather
+than promoted. That is the rule this ADR implies and worth stating: **when the
+evidence is thin, band low.** Understating a model costs it work it could have
+done; overstating it puts it in a combo it has not earned, which is the failure
+this ADR exists to prevent. `gpt-5.5-pro` is priced six times `gpt-5.6-sol` and is
+a candidate for promotion the moment there is a score to promote it on.
 
 Every effort variant now needs its family declared or it goes dark. That is the
 cost of exact matching, and the unbanded report is what makes it survivable.

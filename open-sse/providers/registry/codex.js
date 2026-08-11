@@ -60,11 +60,10 @@ export default {
     { id: "gpt-5.4-mini", name: "GPT 5.4 Mini" },
     { id: "gpt-5.4-mini-review", name: "GPT 5.4 Mini Review", upstreamModelId: "gpt-5.4-mini", quotaFamily: "review", family: "gpt-5.4-mini", mode: "review" },
     // Spark is its OWN upstream model - the review entry below points at it, not at
-    // gpt-5.3-codex - so it must not borrow gpt-5.3-codex's band the way substring
-    // matching used to give it. Left undeclared on purpose: it needs its own bench
-    // entry, and until it has one the tuner reports it as unbanded every run.
-    { id: "gpt-5.3-codex-spark", name: "GPT 5.3 Codex Spark" },
-    { id: "gpt-5.3-codex-spark-review", name: "GPT 5.3 Codex Spark Review", upstreamModelId: "gpt-5.3-codex-spark", quotaFamily: "review", mode: "review" },
+    // gpt-5.3-codex - so it carries its own family and its own bench entry rather
+    // than borrowing gpt-5.3-codex's band the way substring matching used to give it.
+    { id: "gpt-5.3-codex-spark", name: "GPT 5.3 Codex Spark", family: "gpt-5.3-codex-spark" },
+    { id: "gpt-5.3-codex-spark-review", name: "GPT 5.3 Codex Spark Review", upstreamModelId: "gpt-5.3-codex-spark", quotaFamily: "review", family: "gpt-5.3-codex-spark", mode: "review" },
     { id: "gpt-5.5-image", name: "GPT 5.5 Image", capabilities: ["text2img","edit"], params: ["size","quality","background","image_detail","output_format"], kind: "image" },
     { id: "gpt-5.4-image", name: "GPT 5.4 Image", capabilities: ["text2img","edit"], params: ["size","quality","background","image_detail","output_format"], kind: "image" },
     { id: "gpt-5.3-image", name: "GPT 5.3 Image", capabilities: ["text2img","edit"], params: ["size","quality","background","image_detail","output_format"], kind: "image" },

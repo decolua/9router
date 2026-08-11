@@ -101,7 +101,7 @@ export default {
     { id: "openai/gpt-5.4-nano", name: "Gpt 5.4 Nano" },
     { id: "openai/gpt-5.4-pro", name: "Gpt 5.4 Pro" },
     { id: "openai/gpt-5.5", name: "Gpt 5.5" },
-    { id: "openai/gpt-5.5-pro", name: "Gpt 5.5 Pro" },
+    { id: "openai/gpt-5.5-pro", name: "Gpt 5.5 Pro", family: "gpt-5.5-pro" },
     { id: "openai/gpt-5.6-luna", name: "Gpt 5.6 Luna" },
     { id: "openai/gpt-5.6-sol", name: "Gpt 5.6 Sol" },
     { id: "openai/gpt-5.6-terra", name: "Gpt 5.6 Terra" },
