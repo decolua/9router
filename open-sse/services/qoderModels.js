@@ -135,6 +135,47 @@ async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null) {
     });
   }
 
+  // Force-add cmodel (Cantus) if not present from upstream
+  // This ensures qd/cmodel is always available even when upstream doesn't return it
+  // Patch reference: patch_cantus.MD
+  if (!rawConfigs.has("cmodel")) {
+    let fallbackConfig = null;
+    // Try to copy config from any available Qoder model as fallback
+    for (const entry of body.chat) {
+      if (entry && entry.key && rawConfigs.has(entry.key)) {
+        fallbackConfig = entry;
+        break;
+      }
+    }
+
+    // Create cmodel config using fallback or defaults
+    const cmodelConfig = fallbackConfig
+      ? { ...fallbackConfig, key: "cmodel", display_name: "Cantus" }
+      : {
+          key: "cmodel",
+          enable: true,
+          display_name: "Cantus",
+          max_input_tokens: 131072,
+          max_output_tokens: 64000,
+          is_vl: false,
+          is_reasoning: false,
+          description: "Qoder Cantus (C-model)",
+        };
+
+    // Register the config and add to models list
+    rawConfigs.set("cmodel", cmodelConfig);
+    const ctx = Number(cmodelConfig.max_input_tokens) || 131072;
+    models.push({
+      id: "cmodel",
+      name: "Cantus",
+      contextLength: ctx,
+      isVL: !!cmodelConfig.is_vl,
+      isReasoning: !!cmodelConfig.is_reasoning,
+      maxOutputTokens: Number(cmodelConfig.max_output_tokens) || 0,
+      description: cmodelConfig.description || "",
+    });
+  }
+
   return { models, rawConfigs };
 }
 
@@ -202,46 +243,6 @@ export async function resolveQoderModels(credentials, options = {}) {
       inflight.delete(key);
     }
   }
-}
-
-// Force-add cmodel (Cantus) if not present from upstream
-// This ensures qd/cmodel is always available even when upstream doesn't return it
-if (!rawConfigs.has("cmodel")) {
-  let fallbackConfig = null;
-  // Try to copy config from any available Qoder model as fallback
-  for (const entry of body.chat) {
-    if (entry && entry.key && rawConfigs.has(entry.key)) {
-      fallbackConfig = entry;
-      break;
-    }
-  }
-
-  // Create cmodel config using fallback or defaults
-  const cmodelConfig = fallbackConfig
-    ? { ...fallbackConfig, key: "cmodel", display_name: "Cantus" }
-    : {
-        key: "cmodel",
-        enable: true,
-        display_name: "Cantus",
-        max_input_tokens: 131072,
-        max_output_tokens: 64000,
-        is_vl: false,
-        is_reasoning: false,
-        description: "Qoder Cantus (C-model)",
-      };
-
-  // Register the config and add to models list
-  rawConfigs.set("cmodel", cmodelConfig);
-  const ctx = Number(cmodelConfig.max_input_tokens) || 131072;
-  models.push({
-    id: "cmodel",
-    name: "Cantus",
-    contextLength: ctx,
-    isVL: !!cmodelConfig.is_vl,
-    isReasoning: !!cmodelConfig.is_reasoning,
-    maxOutputTokens: Number(cmodelConfig.max_output_tokens) || 0,
-    description: cmodelConfig.description || "",
-  });
 }
 
 export function invalidateQoderCatalog(credentials) {
