@@ -12,6 +12,7 @@ import { saveRequestDetail, appendRequestLog } from "@/lib/usageDb.js";
 import { scrubResponseBody } from "../../utils/echoScrub.js";
 import { extractLastUserText } from "../../utils/userEcho.js";
 import { recordStrike } from "../../utils/discipline.js";
+import { withServingModel } from "../../utils/provenance.js";
 
 function textFromResponsesMessageItem(item) {
   if (!item?.content || !Array.isArray(item.content)) return "";
@@ -228,7 +229,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
 
       // Client is Responses API → return as-is
       if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
-        return { success: true, response: new Response(JSON.stringify(jsonResponse), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+        return { success: true, response: new Response(JSON.stringify(jsonResponse), { headers: withServingModel({ "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }, provider, model) }) };
       }
 
       // Build client-format response.
@@ -284,7 +285,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         };
       }
 
-      return { success: true, response: new Response(JSON.stringify(finalResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+      return { success: true, response: new Response(JSON.stringify(finalResp), { headers: withServingModel({ "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }, provider, model) }) };
     } catch (err) {
       console.error("[ChatCore] Responses API SSE→JSON failed:", err);
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
@@ -362,7 +363,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       ? chatCompletionToResponses(parsed, customToolNames)
       : parsed;
 
-    return { success: true, response: new Response(JSON.stringify(finalBody), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+    return { success: true, response: new Response(JSON.stringify(finalBody), { headers: withServingModel({ "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }, provider, model) }) };
   } catch (err) {
     console.error("[ChatCore] Chat Completions SSE→JSON failed:", err);
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");

@@ -41,13 +41,13 @@ const EMPTY_TURN_PARTS = emptyTurnParts;
 // answering. A placeholder there would invite exactly the completion behaviour
 // the placeholder exists to prevent, and the last turn has no neighbours to keep
 // apart, so it is dropped.
-function dropTrailingEmptyModelTurn(contents) {
+export function dropTrailingEmptyModelTurn(contents) {
   const last = contents.at(-1);
   if (last?.role === GEMINI_ROLE.MODEL && isEmptyTurnParts(last.parts)) contents.pop();
   return contents;
 }
 
-function normalizeGeminiContents(contents) {
+export function normalizeGeminiContents(contents) {
   const out = [];
   for (const c of contents || []) {
     if (!c?.role) continue;
@@ -266,14 +266,19 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
     }
   }
 
-  result.contents = dropTrailingEmptyModelTurn(normalizeGeminiContents(result.contents));
+  // Judged before the trailing turn is dropped. That drop is deliberate and
+  // legitimate, so measuring after it reports a violation on any request whose
+  // only assistant message was a trailing empty one — a warning with nothing
+  // wrong behind it, which is how a diagnostic stops being read.
+  const normalized = normalizeGeminiContents(result.contents);
+  const violationBeforeTrim = findSpeakerBoundaryViolation(body?.messages, normalized);
+  result.contents = dropTrailingEmptyModelTurn(normalized);
 
   // Diagnostic, not enforcement: this logs and the request still goes out. It
   // exists so a future edit that reintroduces the erasure is visible instead of
   // silent — the original went undiagnosed for weeks because nothing anywhere
   // said the history had been rewritten.
-  const violation = findSpeakerBoundaryViolation(body?.messages, result.contents);
-  if (violation) console.error(`[gemini-request] speaker boundary: ${violation}`);
+  if (violationBeforeTrim) console.error(`[gemini-request] speaker boundary: ${violationBeforeTrim}`);
 
   return result;
 }
@@ -462,9 +467,9 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
     envelope.request.systemInstruction = { role: GEMINI_ROLE.USER, parts: systemParts };
   }
 
-  envelope.request.contents = dropTrailingEmptyModelTurn(normalizeGeminiContents(envelope.request.contents));
-
-  const envelopeViolation = findSpeakerBoundaryViolation(claudeRequest?.messages, envelope.request.contents);
+  const normalizedEnvelope = normalizeGeminiContents(envelope.request.contents);
+  const envelopeViolation = findSpeakerBoundaryViolation(claudeRequest?.messages, normalizedEnvelope);
+  envelope.request.contents = dropTrailingEmptyModelTurn(normalizedEnvelope);
   if (envelopeViolation) console.error(`[antigravity-request] speaker boundary: ${envelopeViolation}`);
   return envelope;
 }

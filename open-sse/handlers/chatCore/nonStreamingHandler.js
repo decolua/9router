@@ -13,6 +13,7 @@ import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 import { scrubResponseBody } from "../../utils/echoScrub.js";
 import { extractLastUserText } from "../../utils/userEcho.js";
 import { recordStrike } from "../../utils/discipline.js";
+import { withServingModel } from "../../utils/provenance.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -405,7 +406,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   return {
     success: true,
     response: new Response(JSON.stringify(translatedResponse), {
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+      headers: withServingModel({ "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }, provider, model)
     })
   };
 }

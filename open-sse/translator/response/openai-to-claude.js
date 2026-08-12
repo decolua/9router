@@ -126,7 +126,7 @@ export function filterEchoText(state, text) {
 }
 
 // End of stream: an unclosed echo block is dropped; a held non-tag prefix is real text.
-function flushEchoText(state) {
+export function flushEchoText(state) {
   const tail = state.echoDropTag ? "" : (state.echoCarry || "");
   state.echoCarry = "";
   state.echoDropTag = null;

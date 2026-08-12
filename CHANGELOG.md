@@ -1,6 +1,34 @@
 # Unreleased
 
 ## Fixes
+- **Router**: a degenerate opening no longer reaches the client. The combo
+  preflight, which already read the first chunk before committing to a model,
+  now holds a short window open — bounded by a chunk budget, a 300ms wall clock
+  that only runs when the stream actually pauses, and stopping the moment there
+  is enough prose to judge — and fails over to the next combo member when the
+  opening is a continuation rather than a reply: it begins on sentence
+  punctuation, or resumes mid-sentence after a single stray space. Failing over
+  is the right response where deleting text is
+  not: a retry costs one upstream call, a wrong deletion costs the answer. The
+  rules are structural and narrow, because a false positive here discards a
+  working model: indentation never counts (a reply opening on a code line is
+  not a continuation), and a prefill — a request whose last turn is the
+  assistant's — is exempt outright, since resuming mid-sentence is exactly what
+  a prefill asks for. Verbatim regurgitation is deliberately left to the
+  existing `utils/userEcho.js`, where a mistake costs less than a discarded
+  model. An error met while reading ahead is replayed, never cascaded, so the
+  existing "no cascade once the first chunk arrived" rule still holds
+- **Router**: responses now carry `x-9r-serving-model`, the provider/model that
+  actually answered. A request names a combo alias and the router picks a
+  member, so one conversation could be served by several models with nothing
+  saying so — observed as three models on one thread while the client displayed
+  one alias throughout
+- **Translator**: `claude:gemini` is a direct route. The pair was crossing two
+  rebuilds of its message list via the OpenAI pivot, which is where its turn
+  structure was being lost; `CLAUDE.md` already prescribes a direct route for
+  fragile pairs. Gemini also delivers a functionCall whole, so the direct path
+  has no partial-argument accumulation and none of the doubling the
+  openai-compat path defends against
 - **Translator**: a Gemini-served model would stop replying and start completing
   the user's sentence — mid-word, in the user's voice — after enough turns. Two
   rules combined to cause it: an assistant turn whose parts came out empty was
@@ -19,13 +47,13 @@
   placeholder is non-whitespace because `hasValidContent` filters blank blocks
   straight back out, and is never left trailing, where an assistant turn is a
   prefill the model continues from
-
 - **Tests**: `verify-no-regression.mjs` recovered the repo-relative path by
   splitting on `/app/`, so outside the container every entry became
   `undefined :: <name>`, matched nothing in the baseline, and reported all 98
   failures as regressions — the gate only ever worked in Docker. It anchors on
-  the `tests/` segment now, and `known-fails.txt` is re-measured (85 entries,
-  was 24)
+  the `tests/` segment now, and `known-fails.txt` is re-measured (87 entries,
+  was 24), built from the union of a branch run and a clean-tree run so the two
+  flaky xai files cannot masquerade as regressions
 - **Tests**: the 13 `security-audit` assertions that read repo source resolved
   `src/...` against the process cwd, so running the suite the documented way
   (`cd tests && npx vitest run`) failed every one with ENOENT on `tests/src/...`.

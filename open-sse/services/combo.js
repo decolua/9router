@@ -10,6 +10,7 @@ import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
 import { estimateInputTokens } from "../utils/usageTracking.js";
+import { extractVisibleText, findDegeneracy, hasAssistantPrefill, GATE_WINDOW_CHARS, GATE_MIN_JUDGEABLE_CHARS, PREFLIGHT_MAX_READS, HOLD_BACK_MS } from "../utils/degeneracy.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -241,7 +242,7 @@ export function getComboModelsFromData(modelStr, combosData) {
   return null;
 }
 
-async function preflightSseResponse(response) {
+async function preflightSseResponse(response, isPrefill = false) {
   const contentType = response.headers.get("content-type") || "";
   if (!response.body || !contentType.toLowerCase().includes("text/event-stream")) return response;
 
@@ -254,12 +255,131 @@ async function preflightSseResponse(response) {
 
     if (first.done) throw new Error("stream ended before first event");
 
-    let buffered = first.value;
+    // Hold-back window. Nothing has reached the client yet, so this is the last
+    // point at which a bad answer can still be replaced by a different model's.
+    // Read a little further than the first chunk — enough visible text to judge
+    // the opening — then decide. Everything read is replayed, so a stream that
+    // passes is delivered byte-for-byte.
+    const held = [first.value];
+    let visible = "";
+    let decodedUpTo = 0;
+    let reads = 0;
+    const decoder = new TextDecoder();
+    let sseTail = "";
+
+    // An error met while reading ahead is replayed to the client, never turned
+    // into a cascade. Reading ahead is our doing, not the client's: the first
+    // chunk arrived intact, and re-running the model from here would repeat work
+    // the upstream has already charged for. Only a failure *before* the first
+    // chunk cascades, which is the invariant the preflight had to begin with.
+    let readAheadError = null;
+    // A read left in flight when the budget expires. A reader permits one read
+    // at a time, so it has to be carried into the replay rather than abandoned.
+    let pendingRead = null;
+    let streamDone = false;
+
+    // Three bounds, because the judging window sits in front of every streamed
+    // response and must never become a stall: a chunk budget, a wall-clock
+    // budget, and stopping the moment there is enough text to judge. The clock
+    // only runs when the stream actually pauses — back-to-back chunks resolve
+    // immediately and cost nothing.
+    const deadline = Date.now() + HOLD_BACK_MS;
+    const TIMED_OUT = Symbol("timed-out");
+
+    while (reads < PREFLIGHT_MAX_READS) {
+      while (decodedUpTo < held.length) {
+        sseTail += decoder.decode(held[decodedUpTo++], { stream: true });
+      }
+      const lines = sseTail.split("\n");
+      sseTail = lines.pop() || "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const payload = trimmed.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+        try {
+          const text = extractVisibleText(JSON.parse(payload));
+          if (text) visible += text;
+        } catch { /* a frame we cannot read is not evidence of anything */ }
+      }
+
+      if (visible.trim().length >= GATE_MIN_JUDGEABLE_CHARS || visible.length >= GATE_WINDOW_CHARS) break;
+
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+
+      reads++;
+      const inFlight = reader.read();
+      let timer;
+      let next;
+      try {
+        next = await Promise.race([
+          inFlight,
+          new Promise((resolve) => { timer = setTimeout(() => resolve(TIMED_OUT), remaining); }),
+        ]);
+      } catch (error) {
+        readAheadError = error;
+        break;
+      } finally {
+        clearTimeout(timer);
+      }
+
+      if (next === TIMED_OUT) { pendingRead = inFlight; break; }
+      if (next.done) { streamDone = true; break; }
+      if (next.value?.byteLength) held.push(next.value);
+    }
+
+    // Only judge what was actually read cleanly. A stream that errored or that
+    // produced no prose has told us nothing about how it opens.
+    const degeneracy = visible && !readAheadError && !isPrefill ? findDegeneracy(visible) : null;
+    if (degeneracy) {
+      const failure = new Error(`degenerate opening: ${degeneracy}`);
+      failure.comboFallbackStatus = 502;
+      throw failure;
+    }
+
+    let queue = held;
+    let buffered = null;
     return new Response(new ReadableStream({
       async pull(controller) {
+        if (queue && queue.length > 0) {
+          controller.enqueue(queue.shift());
+          if (queue.length === 0) queue = null;
+          return;
+        }
         if (buffered) {
           controller.enqueue(buffered);
           buffered = null;
+          return;
+        }
+        // Everything held has now been delivered, so whatever ended the judging
+        // window is replayed in the position it would have occupied anyway.
+        if (readAheadError) {
+          const error = readAheadError;
+          readAheadError = null;
+          await reader.cancel(error).catch(() => {});
+          // Errors rather than closes, unlike the branch below, and the
+          // difference is deliberate. combo-stream-fallback.test.js pins that a
+          // stream which delivered its first chunk and then aborted surfaces the
+          // abort to the client instead of being silently truncated or retried.
+          // Review suggested unifying on the clean close; that test is the
+          // authority, and a silent truncation here would look like a complete
+          // answer that simply stopped.
+          controller.error(error);
+          return;
+        }
+        if (streamDone) { controller.close(); return; }
+        if (pendingRead) {
+          const inFlight = pendingRead;
+          pendingRead = null;
+          try {
+            const { done, value } = await inFlight;
+            if (done) controller.close();
+            else controller.enqueue(value);
+          } catch (error) {
+            await reader.cancel(error).catch(() => {});
+            controller.error(error);
+          }
           return;
         }
         try {
@@ -450,7 +570,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
       // Success (2xx) - verify an SSE stream produces data before committing to it.
       if (result.ok) {
-        const ready = await preflightSseResponse(result);
+        const ready = await preflightSseResponse(result, hasAssistantPrefill(body));
         log.info("COMBO", `Model ${modelStr} succeeded`);
         recordModelSuccess(modelStr);
         return ready;

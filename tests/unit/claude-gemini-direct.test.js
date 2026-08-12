@@ -1,0 +1,197 @@
+import { describe, it, expect } from "vitest";
+
+import { FORMATS } from "../../open-sse/translator/formats.js";
+import { translateRequest } from "../../open-sse/translator/index.js";
+import { claudeToGeminiRequest } from "../../open-sse/translator/request/claude-to-gemini.js";
+import { geminiToClaudeResponse } from "../../open-sse/translator/response/gemini-to-claude.js";
+
+const roles = (r) => r.contents.map((c) => c.role);
+
+describe("claude→gemini direct request route", () => {
+  it("is selected instead of the openai pivot", () => {
+    const out = translateRequest(FORMATS.CLAUDE, FORMATS.GEMINI, "gemini-3-pro", {
+      messages: [{ role: "user", content: "hello" }],
+    }, false);
+
+    // The pivot would have produced OpenAI-shaped `messages` somewhere along the
+    // way; the direct route yields Gemini `contents` and nothing else.
+    expect(Array.isArray(out.contents)).toBe(true);
+    expect(out.messages).toBeUndefined();
+  });
+
+  it("maps system, text, images and generation config", () => {
+    const out = claudeToGeminiRequest("gemini-3-pro", {
+      system: "be terse",
+      max_tokens: 1024,
+      temperature: 0.2,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: "what is this?" },
+          { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } },
+        ],
+      }],
+    }, true);
+
+    expect(out.systemInstruction.parts[0].text).toBe("be terse");
+    expect(out.generationConfig.maxOutputTokens).toBe(1024);
+    expect(out.generationConfig.temperature).toBe(0.2);
+    expect(out.contents[0].parts[0].text).toBe("what is this?");
+    expect(out.contents[0].parts[1].inlineData).toEqual({ mimeType: "image/png", data: "AAAA" });
+  });
+
+  it("carries tool_use and tool_result across with the name attached", () => {
+    const out = claudeToGeminiRequest("gemini-3-pro", {
+      messages: [
+        { role: "user", content: "list the files" },
+        { role: "assistant", content: [{ type: "tool_use", id: "tu_1", name: "Bash", input: { cmd: "ls" } }] },
+        { role: "user", content: [{ type: "tool_result", tool_use_id: "tu_1", content: "a.js" }] },
+      ],
+    }, false);
+
+    expect(roles(out)).toEqual(["user", "model", "user"]);
+    expect(out.contents[1].parts[0].functionCall).toMatchObject({ name: "Bash", args: { cmd: "ls" } });
+    // A tool_result knows only the id; the name has to be recovered from the call.
+    expect(out.contents[2].parts[0].functionResponse).toMatchObject({ name: "Bash" });
+  });
+
+  it("keeps is_error distinguishable on a failed tool result", () => {
+    const out = claudeToGeminiRequest("gemini-3-pro", {
+      messages: [
+        { role: "assistant", content: [{ type: "tool_use", id: "tu_1", name: "Bash", input: {} }] },
+        { role: "user", content: [{ type: "tool_result", tool_use_id: "tu_1", content: "boom", is_error: true }] },
+      ],
+    }, false);
+
+    expect(out.contents.at(-1).parts[0].functionResponse.response).toHaveProperty("error");
+  });
+
+  it("preserves the speaker boundary an emptied assistant turn would break", () => {
+    const out = claudeToGeminiRequest("gemini-3-pro", {
+      messages: [
+        { role: "user", content: "first" },
+        { role: "assistant", content: "" },
+        { role: "user", content: "second" },
+      ],
+    }, false);
+
+    expect(roles(out)).toEqual(["user", "model", "user"]);
+  });
+
+  it("does not leave a trailing model turn to be continued", () => {
+    const out = claudeToGeminiRequest("gemini-3-pro", {
+      messages: [
+        { role: "user", content: "hi" },
+        { role: "assistant", content: "" },
+      ],
+    }, false);
+
+    expect(roles(out).at(-1)).toBe("user");
+  });
+
+  it("converts claude tools to functionDeclarations", () => {
+    const out = claudeToGeminiRequest("gemini-3-pro", {
+      messages: [{ role: "user", content: "go" }],
+      tools: [{ name: "Read", description: "read a file", input_schema: { type: "object", properties: { path: { type: "string" } } } }],
+    }, false);
+
+    expect(out.tools[0].functionDeclarations[0]).toMatchObject({ name: "Read", description: "read a file" });
+    expect(out.tools[0].functionDeclarations[0].parameters).toBeTruthy();
+  });
+});
+
+describe("gemini→claude direct response route", () => {
+  const run = (chunks) => {
+    const state = {};
+    const events = [];
+    for (const c of chunks) {
+      const out = geminiToClaudeResponse(c, state);
+      if (out) events.push(...out);
+    }
+    return events;
+  };
+
+  it("opens with message_start and emits text deltas", () => {
+    const events = run([
+      { candidates: [{ content: { parts: [{ text: "Hello" }] } }] },
+      { candidates: [{ content: { parts: [{ text: " world" }] }, finishReason: "STOP" }], usageMetadata: { promptTokenCount: 5, candidatesTokenCount: 2 } },
+    ]);
+
+    const types = events.map((e) => e.type);
+    expect(types[0]).toBe("message_start");
+    expect(types).toContain("content_block_start");
+    expect(types.at(-1)).toBe("message_stop");
+    const text = events.filter((e) => e.delta?.type === "text_delta").map((e) => e.delta.text).join("");
+    expect(text).toBe("Hello world");
+  });
+
+  it("emits a tool_use block with complete arguments in one delta", () => {
+    const events = run([
+      { candidates: [{ content: { parts: [{ functionCall: { id: "c1", name: "Bash", args: { cmd: "ls" } } }] }, finishReason: "STOP" }] },
+    ]);
+
+    const start = events.find((e) => e.content_block?.type === "tool_use");
+    expect(start.content_block).toMatchObject({ name: "Bash", id: "c1" });
+    const delta = events.find((e) => e.delta?.type === "input_json_delta");
+    expect(JSON.parse(delta.delta.partial_json)).toEqual({ cmd: "ls" });
+    const stop = events.find((e) => e.type === "message_delta");
+    expect(stop.delta.stop_reason).toBe("tool_use");
+  });
+
+  it("maps thought parts to thinking blocks, not text", () => {
+    const events = run([
+      { candidates: [{ content: { parts: [{ thought: true, text: "considering" }, { text: "Answer." }] }, finishReason: "STOP" }] },
+    ]);
+
+    expect(events.some((e) => e.content_block?.type === "thinking")).toBe(true);
+    expect(events.some((e) => e.delta?.type === "thinking_delta")).toBe(true);
+    const text = events.filter((e) => e.delta?.type === "text_delta").map((e) => e.delta.text).join("");
+    expect(text).toBe("Answer.");
+  });
+
+  it("unwraps the gemini-cli/antigravity envelope", () => {
+    const events = run([{ response: { candidates: [{ content: { parts: [{ text: "hi" }] }, finishReason: "STOP" }] } }]);
+    expect(events.some((e) => e.delta?.type === "text_delta")).toBe(true);
+  });
+
+  it("reports max_tokens rather than end_turn when truncated", () => {
+    const events = run([{ candidates: [{ content: { parts: [{ text: "cut" }] }, finishReason: "MAX_TOKENS" }] }]);
+    expect(events.find((e) => e.type === "message_delta").delta.stop_reason).toBe("max_tokens");
+  });
+
+  it("flushes a parked echo tail instead of dropping it", () => {
+    // filterEchoText holds back a possible split-tag tail; without a flush at
+    // end of stream a reply ending in "<" loses those characters.
+    const events = run([
+      { candidates: [{ content: { parts: [{ text: "if (a " }] } }] },
+      { candidates: [{ content: { parts: [{ text: "<" }] } }] },
+      { candidates: [{ content: { parts: [{ text: "" }] }, finishReason: "STOP" }] },
+    ]);
+    const text = events.filter((e) => e.delta?.type === "text_delta").map((e) => e.delta.text).join("");
+    expect(text).toBe("if (a <");
+  });
+
+  it("backfills thoughtSignature on history functionCall parts", () => {
+    // Gemini 3+ rejects a functionCall part without one, and clients do not
+    // persist it. The pivot route this replaces attached one.
+    const out = claudeToGeminiRequest("gemini-3-pro", {
+      messages: [{ role: "assistant", content: [{ type: "tool_use", id: "tu_1", name: "Bash", input: {} }] }],
+    });
+    expect(out.contents[0].parts[0].thoughtSignature).toBeTruthy();
+  });
+
+  it("does not mutate the caller's tool schema", () => {
+    // The combo cascade reuses the same body for the next model on failover.
+    const schema = { type: "object", properties: { path: { type: "string" } }, additionalProperties: false };
+    const body = { messages: [{ role: "user", content: "go" }], tools: [{ name: "Read", input_schema: schema }] };
+    const before = JSON.stringify(schema);
+    claudeToGeminiRequest("gemini-3-pro", body);
+    expect(JSON.stringify(schema)).toBe(before);
+  });
+
+  it("ignores frames carrying nothing", () => {
+    const state = {};
+    expect(geminiToClaudeResponse("[DONE]", state)).toBeNull();
+    expect(geminiToClaudeResponse("not json", state)).toBeNull();
+  });
+});
