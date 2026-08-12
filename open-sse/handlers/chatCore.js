@@ -23,6 +23,7 @@ import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
 import { injectDisciplineNudge } from "../rtk/disciplineNudge.js";
+import { injectOrchestrationNudge } from "../rtk/orchestrationNudge.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { compressWithPxpipe } from "../rtk/pxpipe.js";
@@ -267,6 +268,18 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // emitted garbage needs correcting whether or not token-saver is on.
   if (injectDisciplineNudge(translatedBody, finalFormat, provider, model)) {
     xf.push("NUDGE");
+  }
+
+  // Orchestration nudge: states the live novel-context count when the session is
+  // past the delegation cap. Counted from the SOURCE body, where tool blocks are
+  // still in the client's shape, and injected into the translated body — so it
+  // reaches every combo and every provider format without per-handler wiring.
+  // Unconditional for the same reason as the discipline nudge: this is a policy
+  // correction, not a token saver, and a lead 14 calls over cap needs telling
+  // whether or not compression is enabled.
+  const orchTier = injectOrchestrationNudge(translatedBody, finalFormat, body);
+  if (orchTier) {
+    xf.push(`ORCH:${orchTier}`);
   }
 
   // PXPIPE: image bulky context (Claude-format bodies only), last saver before dispatch

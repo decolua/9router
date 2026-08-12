@@ -1,5 +1,27 @@
 # Unreleased
 
+## Features
+- **Router**: an orchestration nudge now states the live delegation count back to
+  the model when a session runs past its cap. The delegation rule lives in the
+  client's `CLAUDE.md`, but a rule read once at the start is buried under 174K of
+  context by turn 40 and stops being acted on — one observed session made 83
+  consecutive `cat`/`grep`/`find` calls with zero delegations, served by a
+  legitimate Fenrir-band model that had received both the rule and the Agent tool
+  intact. The rule was delivered; it was forgotten. The count does not need to be
+  remembered, because the client sends the whole conversation on every turn, so
+  the router recomputes it from the tool blocks already in the request body and
+  injects the actual number at the moment it matters — reminding at the cap and
+  escalating at double it, and also naming a previous delegation that specified no
+  model and therefore silently inherited the session's expensive one. Counted on
+  the source body, where tool blocks are still in the client's shape, and injected
+  into the translated body via the existing format-aware `systemInject`, so it
+  reaches every combo and every provider format without per-handler wiring.
+  Deliberately stateless, unlike the discipline nudge: that one corrects a past
+  event and must self-clear, while this reflects a condition that is still true
+  and should keep firing until a delegation resets the count. Fail-open — any
+  error leaves the body untouched. This nudges; it cannot compel. A model that
+  ignores it is now measurable, which is the evidence for not making it a lead
+
 ## Fixes
 - **Router**: a degenerate opening no longer reaches the client. The combo
   preflight, which already read the first chunk before committing to a model,
