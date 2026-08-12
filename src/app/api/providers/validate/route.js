@@ -5,6 +5,7 @@ import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from "open-sse/config/providers.js";
 import { openaiToCommandCodeRequest } from "open-sse/translator/request/openai-to-commandcode.js";
 import { resolveQoderCredentials, resolveQoderModels } from "open-sse/services/qoderModels.js";
+import { OPENCODE_GO_USAGE_URL, isOpenCodeGoCreditsError } from "open-sse/services/usage/opencode-go.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
@@ -396,17 +397,16 @@ export async function POST(request) {
         }
 
         case "opencode-go": {
-          const res = await fetch("https://opencode.ai/zen/go/v1/chat/completions", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-            body: JSON.stringify({
-              model: getDefaultModel("opencode-go"),
-              messages: [{ role: "user", content: "ping" }],
-              max_tokens: 1,
-              stream: false,
-            }),
+          // Probe /usage rather than a chat completion: a key whose plan window is
+          // spent still answers 200 here but 401 on chat, so the old ping reported
+          // a working key as invalid. It also costs no tokens.
+          const res = await fetch(OPENCODE_GO_USAGE_URL, {
+            headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" },
+            signal: AbortSignal.timeout(8000),
           });
-          isValid = res.status !== 401 && res.status !== 403;
+          // Belt and braces: if this endpoint ever starts 401ing an exhausted plan
+          // the way chat does, CreditsError still means the key itself is good.
+          isValid = res.ok || isOpenCodeGoCreditsError(await res.text().catch(() => ""));
           break;
         }
 

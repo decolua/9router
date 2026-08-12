@@ -21,6 +21,13 @@ export default {
   transport: {
     baseUrl: "https://opencode.ai/zen/go/v1/chat/completions",
     headers: {},
+    usage: {
+      url: "https://opencode.ai/zen/go/v1/usage",
+    },
+  },
+  features: {
+    usage: true,
+    usageApikey: true,
   },
   models: [
     { id: "glm-5.2", name: "GLM 5.2" },

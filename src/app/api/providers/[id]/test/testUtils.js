@@ -8,6 +8,7 @@ import {
   refreshProviderCredentials,
   shouldRefreshCredentials,
 } from "open-sse/services/oauthCredentialManager.js";
+import { OPENCODE_GO_USAGE_URL, isOpenCodeGoCreditsError } from "open-sse/services/usage/opencode-go.js";
 import {
   GEMINI_CONFIG,
   ANTIGRAVITY_CONFIG,
@@ -745,12 +746,15 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid, error: valid ? null : "Session expired — re-paste cookie" };
       }
       case "opencode-go": {
-        const res = await fetchWithConnectionProxy("https://opencode.ai/zen/go/v1/chat/completions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${connection.apiKey}` },
-          body: JSON.stringify({ model: getDefaultModel("opencode-go"), messages: [{ role: "user", content: "ping" }], max_tokens: 1, stream: false }),
+        // Probe /usage rather than a chat completion: a key whose plan window is
+        // spent still answers 200 here but 401 on chat, so the old ping reported a
+        // working key as "Invalid API key". It also costs no tokens.
+        const res = await fetchWithConnectionProxy(OPENCODE_GO_USAGE_URL, {
+          headers: { Authorization: `Bearer ${connection.apiKey}`, Accept: "application/json" },
         }, effectiveProxy);
-        const valid = res.status !== 401 && res.status !== 403;
+        // Belt and braces: if this endpoint ever starts 401ing an exhausted plan
+        // the way chat does, CreditsError still means the key itself is good.
+        const valid = res.ok || isOpenCodeGoCreditsError(await res.text().catch(() => ""));
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "xiaomi-mimo":
