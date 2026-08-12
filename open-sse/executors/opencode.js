@@ -3,7 +3,6 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 
-// ponytail: bare "opencode" substring satisfies Console checkHeaders; revisit if Console pins a version regex.
 const OPENCODE_UA = "opencode";
 const PROCESS_SESSION_ID = `ses_${crypto.randomUUID().replace(/-/g, "")}`;
 const MESSAGES_MODELS = new Set();
