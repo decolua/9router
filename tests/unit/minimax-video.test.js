@@ -25,6 +25,7 @@ describe("MiniMax video registry", () => {
         expect.objectContaining({ id: "MiniMax-H3", kind: "video" }),
       );
       expect(getVideoConfig(provider).defaultModel).toBe("MiniMax-H3");
+      expect(getVideoConfig(provider).textToVideoRatios).toContain("adaptive");
     }
   });
 });

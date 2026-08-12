@@ -79,7 +79,7 @@ export default {
     models: ["MiniMax-H3"],
     resolutions: ["2K"],
     duration: { min: 4, max: 15 },
-    textToVideoRatios: ["21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
+    textToVideoRatios: ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"],
     maxPromptCharacters: 7000,
   },
   imageConfig: { baseUrl: "https://api.minimaxi.com/v1/images/generations" },
