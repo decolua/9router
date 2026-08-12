@@ -102,6 +102,49 @@ describe("opencode-go usage", () => {
     expect(usage.quotas.Monthly.remainingPercentage).toBe(0);
   });
 
+  it("drops a window with no usable percent rather than showing it as full", async () => {
+    proxyAwareFetch.mockResolvedValue(
+      jsonResponse({
+        usage: {
+          ...SAMPLE_USAGE.usage,
+          weekly: { status: "ok", resetsAt: "2026-08-17T00:00:00.083Z" }, // percent missing
+        },
+      }),
+    );
+    const usage = await getUsageForProvider(conn);
+
+    // Defaulting the missing percent to 0 would publish "100% remaining" and
+    // tell the user they have headroom they may not have.
+    expect(usage.quotas).not.toHaveProperty("Weekly");
+    expect(Object.keys(usage.quotas)).toEqual(["Rolling", "Monthly"]);
+    expect(parseQuotaData("opencode-go", usage).find((r) => r.name === "Weekly")).toBeUndefined();
+  });
+
+  it("still flags limitReached when a rate-limited window omits percent", async () => {
+    proxyAwareFetch.mockResolvedValue(
+      jsonResponse({
+        usage: {
+          ...SAMPLE_USAGE.usage,
+          monthly: { status: "rate-limited", resetsAt: "2026-08-25T01:33:44.083Z" },
+        },
+      }),
+    );
+    const usage = await getUsageForProvider(conn);
+
+    // status is authoritative on its own — dropping the unusable percent must
+    // not also discard the "you are throttled" signal.
+    expect(usage.quotas).not.toHaveProperty("Monthly");
+    expect(usage.limitReached).toBe(true);
+  });
+
+  it("accepts a numeric string percent", async () => {
+    proxyAwareFetch.mockResolvedValue(
+      jsonResponse({ usage: { monthly: { status: "ok", percent: "91", resetsAt: null } } }),
+    );
+    const usage = await getUsageForProvider(conn);
+    expect(usage.quotas.Monthly.used).toBe(91);
+  });
+
   it("reports a missing subscription (403) distinctly from an auth failure", async () => {
     proxyAwareFetch.mockResolvedValue(
       jsonResponse(

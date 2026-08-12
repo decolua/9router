@@ -29,8 +29,15 @@ const WINDOW_LABELS = {
   monthly: "Monthly",
 };
 
+// Returns null when the window carries no usable percent. Defaulting a missing
+// percent to 0 would publish the window as 100% remaining, i.e. malformed data
+// would read as full headroom — the most dangerous direction to be wrong in for
+// a quota display. Parsed via toFiniteNumber so a numeric string still counts.
 function formatWindow(window) {
-  const used = Math.max(0, Math.min(100, toFiniteNumber(window?.percent, 0)));
+  const percent = toFiniteNumber(window?.percent, NaN);
+  if (!Number.isFinite(percent)) return null;
+
+  const used = Math.max(0, Math.min(100, percent));
   return {
     used,
     total: 100,
@@ -99,8 +106,12 @@ export async function getOpenCodeGoUsage(apiKey = null, proxyOptions = null) {
     for (const [key, label] of Object.entries(WINDOW_LABELS)) {
       const window = usage[key];
       if (!window || typeof window !== "object") continue;
-      quotas[label] = formatWindow(window);
+      // Check status before the percent gate: "rate-limited" is authoritative on
+      // its own, so a window with a missing percent must still raise the flag.
       if (window.status === "rate-limited") limitReached = true;
+      const quota = formatWindow(window);
+      if (!quota) continue;
+      quotas[label] = quota;
     }
 
     if (Object.keys(quotas).length === 0) {
