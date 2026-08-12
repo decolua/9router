@@ -32,7 +32,7 @@ Subscription tier providers are your **primary** choice - you're already paying 
 **Step 1: Connect via Dashboard**
 
 ```bash
-9router
+10router
 # Dashboard opens → Providers → Connect Claude Code
 ```
 
@@ -82,7 +82,7 @@ Model: cc/claude-opus-4-5-20251101
 **Step 1: Connect via Dashboard**
 
 ```bash
-9router
+10router
 # Dashboard → Providers → Connect Codex
 ```
 
@@ -134,7 +134,7 @@ Model: cx/gpt-5.2-codex
 **Step 1: Connect via Dashboard**
 
 ```bash
-9router
+10router
 # Dashboard → Providers → Connect Gemini CLI
 ```
 
@@ -186,7 +186,7 @@ Model: gc/gemini-3-flash-preview
 **Step 1: Connect via Dashboard**
 
 ```bash
-9router
+10router
 # Dashboard → Providers → Connect GitHub
 ```
 
@@ -236,7 +236,7 @@ Model: gh/gpt-5
 **Step 1: Connect via Dashboard**
 
 ```bash
-9router
+10router
 # Dashboard → Providers → Connect Antigravity
 ```
 
@@ -292,7 +292,7 @@ Model: ag/gemini-3-pro-high
 ```
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [from 9router dashboard]
+  OpenAI API Key: [from 10router dashboard]
   Model: cc/claude-opus-4-5-20251101
 ```
 
@@ -316,7 +316,7 @@ Use in CLI: premium-coding
 
 ## Quota Tracking
 
-9Router tracks quota in real-time:
+10router tracks quota in real-time:
 
 - **Token consumption** - Input/output tokens per request
 - **Reset countdown** - Time until next quota reset
@@ -385,7 +385,7 @@ Night: Cheap/free tier
 ### "OAuth token expired"
 
 **Solution:**
-- Auto-refreshed by 9Router
+- Auto-refreshed by 10router
 - If issues: Dashboard → Provider → Reconnect
 
 ### "Rate limiting"

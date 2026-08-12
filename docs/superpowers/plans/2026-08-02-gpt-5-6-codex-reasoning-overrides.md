@@ -282,7 +282,7 @@ git commit -m "feat(codex): forward GPT-5.6 max and ultra efforts"
 
 **Interfaces:**
 - Consumes: completed Tasks 1-3.
-- Produces: verified branch pushed to `origin` and a pull request targeting `decolua/9router:master`.
+- Produces: verified branch pushed to `origin` and a pull request targeting `some-du6e/10router:master`.
 
 - [ ] **Step 1: Run all focused regression tests**
 
@@ -322,7 +322,7 @@ Expected: no whitespace errors, no uncommitted source changes, and only scoped f
 
 ```bash
 git push -u origin codex/gpt-5-6-reasoning-overrides
-gh pr create --repo decolua/9router --base master --head seakleangnhak:codex/gpt-5-6-reasoning-overrides --title "feat(codex): support GPT-5.6 Max and Ultra overrides" --body $'## Summary\n- expose Max and Ultra for Codex GPT-5.6 Sol and Terra\n- expose Max for Codex GPT-5.6 Luna and normalize Luna Ultra to Max\n- keep Kiro and generic OpenAI-compatible reasoning behavior unchanged\n\n## Verification\n- `npx vitest run tests/unit tests/translator`\n- `npm run build`'
+gh pr create --repo some-du6e/10router --base master --head seakleangnhak:codex/gpt-5-6-reasoning-overrides --title "feat(codex): support GPT-5.6 Max and Ultra overrides" --body $'## Summary\n- expose Max and Ultra for Codex GPT-5.6 Sol and Terra\n- expose Max for Codex GPT-5.6 Luna and normalize Luna Ultra to Max\n- keep Kiro and generic OpenAI-compatible reasoning behavior unchanged\n\n## Verification\n- `npx vitest run tests/unit tests/translator`\n- `npm run build`'
 ```
 
 The pull request body must summarize the Codex-only support matrix, Luna Ultra-to-Max fallback, Kiro isolation, and fresh test/build evidence.

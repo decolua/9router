@@ -21,7 +21,7 @@ async function probeMcp(url) {
       headers,
       body: JSON.stringify({
         jsonrpc: "2.0", id: 1, method: "initialize",
-        params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "9router", version: "1" } },
+        params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "10router", version: "1" } },
       }),
       signal: ac.signal,
     });

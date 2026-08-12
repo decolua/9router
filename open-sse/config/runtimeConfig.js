@@ -65,7 +65,23 @@ export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH
 export const DEFAULT_MAX_TOKENS = 64000;
 export const DEFAULT_MIN_TOKENS = 32000;
 
-export const TOKEN_SAVER_HEADER = "x-9router-token-saver";
+// Inbound per-request opt-out header. `x-10router-token-saver` is the primary
+// name; the pre-rebrand `x-9router-token-saver` is still accepted so clients
+// configured before the 10router rebrand keep working. Always read both via
+// `getTokenSaverHeader()` — never index a request's headers with only one.
+export const TOKEN_SAVER_HEADER = "x-10router-token-saver";
+export const TOKEN_SAVER_HEADER_LEGACY = "x-9router-token-saver";
+
+/**
+ * Read the token-saver opt-out header from a raw request's headers,
+ * preferring the current name and falling back to the legacy one.
+ * @param {Record<string, string>|undefined|null} headers lowercase-keyed headers
+ * @returns {string|undefined} raw header value, if present
+ */
+export function getTokenSaverHeader(headers) {
+  if (!headers) return undefined;
+  return headers[TOKEN_SAVER_HEADER] ?? headers[TOKEN_SAVER_HEADER_LEGACY];
+}
 
 // Retry config for 429 responses (legacy - kept for backward compatibility)
 export const RETRY_CONFIG = {

@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 
-const STORAGE_KEY = "9router.cliToolEndpointPresets";
+const STORAGE_KEY = "10router.cliToolEndpointPresets";
+// Presets saved before the 10router rebrand live under the old key. Read them
+// once as a fallback and migrate on the next write, so saved endpoints survive.
+const LEGACY_STORAGE_KEY = "9router.cliToolEndpointPresets";
 const CUSTOM_VALUE = "__custom__";
 const SAVE_VALUE = "__save__";
 
@@ -16,7 +19,9 @@ const ensureV1 = (url) => {
 const readSavedPresets = () => {
   if (typeof window === "undefined") return [];
   try {
-    const raw = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "[]");
+    const stored = window.localStorage.getItem(STORAGE_KEY)
+      ?? window.localStorage.getItem(LEGACY_STORAGE_KEY);
+    const raw = JSON.parse(stored || "[]");
     if (!Array.isArray(raw)) return [];
     return raw.filter((p) => p?.name && p?.baseUrl);
   } catch {

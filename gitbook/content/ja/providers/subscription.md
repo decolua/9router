@@ -32,7 +32,7 @@
 **ステップ1: ダッシュボード経由で接続**
 
 ```bash
-9router
+10router
 # Dashboard開く → Providers → Connect Claude Code
 ```
 
@@ -82,7 +82,7 @@ Model: cc/claude-opus-4-5-20251101
 **ステップ1: ダッシュボード経由で接続**
 
 ```bash
-9router
+10router
 # Dashboard → Providers → Connect Codex
 ```
 
@@ -134,7 +134,7 @@ Model: cx/gpt-5.2-codex
 **ステップ1: ダッシュボード経由で接続**
 
 ```bash
-9router
+10router
 # Dashboard → Providers → Connect Gemini CLI
 ```
 
@@ -186,7 +186,7 @@ Model: gc/gemini-3-flash-preview
 **ステップ1: ダッシュボード経由で接続**
 
 ```bash
-9router
+10router
 # Dashboard → Providers → Connect GitHub
 ```
 
@@ -236,7 +236,7 @@ Model: gh/gpt-5
 **ステップ1: ダッシュボード経由で接続**
 
 ```bash
-9router
+10router
 # Dashboard → Providers → Connect Antigravity
 ```
 
@@ -292,7 +292,7 @@ Model: ag/gemini-3-pro-high
 ```
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [9routerダッシュボードから取得]
+  OpenAI API Key: [10routerダッシュボードから取得]
   Model: cc/claude-opus-4-5-20251101
 ```
 
@@ -316,7 +316,7 @@ CLIで使用: premium-coding
 
 ## クォータトラッキング
 
-9Routerはクォータをリアルタイムで追跡:
+10routerはクォータをリアルタイムで追跡:
 
 - **トークン消費** - リクエストごとの入出力トークン
 - **リセットカウントダウン** - 次のクォータリセットまでの時間
@@ -385,7 +385,7 @@ Claude Code Pro
 ### 「OAuthトークン期限切れ」
 
 **解決策:**
-- 9Routerにより自動更新
+- 10routerにより自動更新
 - 問題がある場合: Dashboard → Provider → Reconnect
 
 ### 「レート制限」

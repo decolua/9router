@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-const STORAGE_KEY = "9router.cliToolEndpointPresets";
+const STORAGE_KEY = "10router.cliToolEndpointPresets";
+// Presets saved before the 10router rebrand live under the old key. Read them
+// once as a fallback and migrate on the next write, so saved endpoints survive.
+const LEGACY_STORAGE_KEY = "9router.cliToolEndpointPresets";
 
 function maskApiKey(apiKey) {
   if (!apiKey) return "No API key";
@@ -18,7 +21,9 @@ function normalizePresets(value) {
 function readPresets() {
   if (typeof window === "undefined") return [];
   try {
-    return normalizePresets(JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "[]"));
+    const raw = window.localStorage.getItem(STORAGE_KEY)
+      ?? window.localStorage.getItem(LEGACY_STORAGE_KEY);
+    return normalizePresets(JSON.parse(raw || "[]"));
   } catch {
     return [];
   }

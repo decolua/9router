@@ -3,7 +3,7 @@
  *
  * Calls AWS CodeWhisperer's `ListAvailableModels` endpoint to get the live
  * catalog for an authenticated Kiro account, then expands each upstream model
- * into 9router-shaped variants:
+ * into 10router-shaped variants:
  *
  *   {upstream}                          - base model
  *   {upstream}-thinking                 - same model, thinking on at request time
@@ -11,7 +11,7 @@
  *   {upstream}-thinking-agentic         - both
  *
  * The `-thinking` and `-agentic` suffixes do not exist on the Kiro upstream
- * API. They are 9router fictions and the `openai-to-kiro` translator strips
+ * API. They are 10router fictions and the `openai-to-kiro` translator strips
  * them before the request leaves this process.
  *
  * The runtime UA is built to match what Kiro IDE itself sends, because the
@@ -93,7 +93,7 @@ function buildKiroFingerprintHeaders(credentials) {
 }
 
 /**
- * Build the synthetic 9router variant set for a single upstream Kiro model.
+ * Build the synthetic 10router variant set for a single upstream Kiro model.
  *
  * Returns objects shaped for `PROVIDER_MODELS` (`{ id, name }`) so they can
  * be slotted directly into the existing model registry.
@@ -218,7 +218,7 @@ function cacheKey(credentials) {
 
 /**
  * Resolve the live Kiro model catalog for a credential and expand each entry
- * into 9router variants (`-thinking`, `-agentic`, `-thinking-agentic`).
+ * into 10router variants (`-thinking`, `-agentic`, `-thinking-agentic`).
  *
  * On any error (network, 4xx, 5xx), returns `null` so callers can fall back
  * to the static catalog without taking down the dashboard or `/v1/models`.

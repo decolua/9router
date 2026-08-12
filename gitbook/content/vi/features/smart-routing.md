@@ -1,15 +1,15 @@
 # Smart Routing & Auto Fallback
 
-9Router tự động định tuyến request qua provider tốt nhất hiện có bằng hệ thống fallback 3 tầng. Không bao giờ ngừng code vì giới hạn quota hay rate limiting.
+10router tự động định tuyến request qua provider tốt nhất hiện có bằng hệ thống fallback 3 tầng. Không bao giờ ngừng code vì giới hạn quota hay rate limiting.
 
 ---
 
 ## Cách hoạt động
 
-9Router dùng định tuyến thông minh để tối đa hóa subscription hiện có, giảm chi phí và đảm bảo khả dụng 24/7:
+10router dùng định tuyến thông minh để tối đa hóa subscription hiện có, giảm chi phí và đảm bảo khả dụng 24/7:
 
 ```
-Request → 9Router → Check Tier 1 (Subscription)
+Request → 10router → Check Tier 1 (Subscription)
                      ↓ quota exhausted
                      Check Tier 2 (Cheap)
                      ↓ budget limit
@@ -47,7 +47,7 @@ Request → 9Router → Check Tier 1 (Subscription)
 
 ## Chuyển đổi Tự động
 
-9Router giám sát quota thời gian thực và chuyển provider tự động:
+10router giám sát quota thời gian thực và chuyển provider tự động:
 
 ### Kịch bản 1: Hết Quota Subscription
 
@@ -89,7 +89,7 @@ User request → cc/claude-opus-4-5
 
 ## Logic chọn Model
 
-9Router chọn model tốt nhất dựa trên:
+10router chọn model tốt nhất dựa trên:
 
 1. **Khả dụng quota** - Kiểm tra provider còn quota không
 2. **Tier chi phí** - Ưu tiên subscription → cheap → free
@@ -138,7 +138,7 @@ Dashboard → Settings → Budget Control
 → Monthly limit: $50
 ```
 
-Khi đạt ngân sách, 9Router tự động chuyển sang free tier.
+Khi đạt ngân sách, 10router tự động chuyển sang free tier.
 
 **3. Cấu hình Thứ tự Fallback**
 

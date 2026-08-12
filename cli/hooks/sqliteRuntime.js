@@ -9,6 +9,8 @@ const path = require("path");
 const BETTER_SQLITE3_VERSION = "12.6.2";
 const SQL_JS_VERSION = "1.14.1";
 
+// NOTE: the ".9router" / "9router" directory names are retained for compatibility
+// with existing installs — deliberately NOT renamed during the 10router rebrand.
 function getDataDir() {
   if (process.env.DATA_DIR) return process.env.DATA_DIR;
   return process.platform === "win32"
@@ -32,10 +34,10 @@ function ensureRuntimeDir() {
   const pkgPath = path.join(dir, "package.json");
   if (!fs.existsSync(pkgPath)) {
     fs.writeFileSync(pkgPath, JSON.stringify({
-      name: "9router-runtime",
+      name: "10router-runtime",
       version: "1.0.0",
       private: true,
-      description: "User-writable runtime deps for 9router (better-sqlite3 native binary)",
+      description: "User-writable runtime deps for 10router (better-sqlite3 native binary)",
     }, null, 2));
   }
   return dir;

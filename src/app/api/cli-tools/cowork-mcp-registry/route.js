@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 const REGISTRY_URL = "https://api.anthropic.com/mcp-registry/v0/servers";
 const VISIBILITY = "commercial,gsuite,gsuite-google";
 const CACHE_TTL_MS = 60 * 60 * 1000;
-const G_KEY = "__9routerCoworkMcpRegistryCache";
+const G_KEY = "__10routerCoworkMcpRegistryCache";
 
 function gcache() {
   if (!globalThis[G_KEY]) globalThis[G_KEY] = { ts: 0, data: null };

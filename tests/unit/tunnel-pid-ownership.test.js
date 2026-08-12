@@ -7,7 +7,7 @@ describe("cloudflared PID ownership", () => {
   let dataDir;
 
   beforeEach(() => {
-    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-tunnel-pid-"));
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "10router-tunnel-pid-"));
     process.env.DATA_DIR = dataDir;
     vi.resetModules();
   });

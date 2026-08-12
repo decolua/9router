@@ -31,7 +31,7 @@
 **步骤 1:通过仪表盘连接**
 
 ```bash
-9router
+10router
 # 仪表盘 → 提供商 → 连接 iFlow
 ```
 
@@ -91,7 +91,7 @@ Model: if/kimi-k2-thinking
 **步骤 1:通过仪表盘连接**
 
 ```bash
-9router
+10router
 # 仪表盘 → 提供商 → 连接 Qwen
 ```
 
@@ -144,7 +144,7 @@ Model: qw/qwen3-coder-plus
 **步骤 1:通过仪表盘连接**
 
 ```bash
-9router
+10router
 # 仪表盘 → 提供商 → 连接 Kiro
 ```
 
@@ -200,7 +200,7 @@ Model: kr/claude-sonnet-4.5
 ```
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [从 9router 仪表盘获取]
+  OpenAI API Key: [从 10router 仪表盘获取]
   Model: if/kimi-k2-thinking
 ```
 
@@ -376,13 +376,13 @@ CLI 中使用: complete-fallback
 100M × $20/1M = $2,000/月
 ```
 
-**方案 2:仅 9Router 免费层**
+**方案 2:仅 10router 免费层**
 ```
 100M 通过免费层 = $0/月
 节省: $2,000/月 (100%)
 ```
 
-**方案 3:9Router 完整策略**
+**方案 3:10router 完整策略**
 ```
 60M 通过 Gemini CLI(免费): $0
 30M 通过 Claude Code(订阅): 无额外费用

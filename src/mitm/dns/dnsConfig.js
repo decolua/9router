@@ -12,6 +12,8 @@ const { runElevatedPowerShell, isAdmin } = require("../winElevated.js");
  * If anything fails mid-way, restore from `.bak`. Same-volume renames are atomic on NTFS.
  */
 function atomicWriteHostsWin(target, originalContent, newContent) {
+  // ".9router" suffix kept as-is: on-disk filenames are deliberately unchanged for
+  // backward compatibility (an older build may need to clean up these leftovers).
   const tmpNew = `${target}.9router.new`;
   const tmpBak = `${target}.9router.bak`;
   try {

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { POST } from "../../src/app/api/v1/messages/count_tokens/route.js";
 
 async function countTokens(body) {
-  const response = await POST(new Request("https://9router.local/v1/messages/count_tokens", {
+  const response = await POST(new Request("https://10router.local/v1/messages/count_tokens", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

@@ -6,7 +6,7 @@ Track real-time token consumption, monitor quota limits, estimate costs, and get
 
 ## Overview
 
-9Router provides comprehensive quota tracking for all providers:
+10router provides comprehensive quota tracking for all providers:
 
 - **Real-time token consumption** - See tokens used per request
 - **Quota limits & remaining** - Track usage vs limits
@@ -669,7 +669,7 @@ Response:
 1. Refresh dashboard (F5)
 2. Check system time is correct
 3. Verify timezone settings
-4. Restart 9Router if issue persists
+4. Restart 10router if issue persists
 
 **Issue: Alerts not received**
 

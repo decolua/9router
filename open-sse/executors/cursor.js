@@ -158,7 +158,7 @@ function decodeAgentFrames(buffer, onFrame) {
 }
 
 function createRequestContextResponse() {
-  // AgentService asks every run for client context. 9router has no IDE file
+  // AgentService asks every run for client context. 10router has no IDE file
   // context, so acknowledge with an empty RequestContext.
   const requestContextSuccess = agentMessage(1, new Uint8Array());
   const requestContextResult = agentMessage(1, requestContextSuccess);
@@ -567,14 +567,14 @@ export class CursorExecutor extends BaseExecutor {
             }
 
             // AgentService requests IDE context before producing a response.
-            // Return an empty context; 9router is not coupled to an editor.
+            // Return an empty context; 10router is not coupled to an editor.
             if (serverMessage.has(2)) {
               const execRequest = decodeMessage(serverMessage.get(2)[0].value);
               if (execRequest.has(10)) {
                 session.write(createRequestContextResponse());
               } else {
                 // Every other ExecServerMessage variant is an editor-backed tool
-                // (shell, read, write, …) that 9router cannot service. Fail the
+                // (shell, read, write, …) that 10router cannot service. Fail the
                 // turn rather than narrating protocol state as assistant text.
                 debugLog(`[CURSOR AGENT] Unsupported exec request fields: ${[...execRequest.keys()].join(",")}`);
                 finished = true;

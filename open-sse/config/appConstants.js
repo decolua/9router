@@ -221,7 +221,8 @@ export function buildKimiHeaders(deviceId) {
     : `kimi-${Date.now()}`;
 
   return {
-    "X-Msh-Platform": "9router",
+    // Outbound identifier sent to Kimi/Moonshot (Msh) — renamed during the 10router rebrand; wire-visible.
+    "X-Msh-Platform": "10router",
     "X-Msh-Version": getAppPackageVersion(),
     "X-Msh-Device-Name": deviceName,
     "X-Msh-Device-Model": deviceModel,

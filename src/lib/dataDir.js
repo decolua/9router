@@ -2,6 +2,8 @@ import fs from "node:fs";
 import path from "path";
 import os from "os";
 
+// Intentionally still "9router": the on-disk data directory is kept unchanged
+// for backward compatibility with existing installs. Not a missed rebrand.
 const APP_NAME = "9router";
 
 function defaultDir() {

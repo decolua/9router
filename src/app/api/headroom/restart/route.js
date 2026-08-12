@@ -19,7 +19,7 @@ export async function POST() {
     const settings = await getSettings();
     const url = settings.headroomUrl || DEFAULT_HEADROOM_URL;
     if (!isLoopbackHeadroomUrl(url)) {
-      return NextResponse.json({ error: "External Headroom proxies must be started outside 9Router", code: "EXTERNAL_PROXY" }, { status: 400 });
+      return NextResponse.json({ error: "External Headroom proxies must be started outside 10router", code: "EXTERNAL_PROXY" }, { status: 400 });
     }
     const port = parsePortFromUrl(url) || 8787;
     const result = await restartHeadroomProxy({

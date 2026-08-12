@@ -6,7 +6,7 @@ import { extractJsonPath } from "./_shared.js";
 // Trae (ByteDance marscode) OAuth helpers
 // ───────────────────────────────────────────────────────────────────────────
 
-// Per-login device context. No IDE access in 9router, so use stable defaults.
+// Per-login device context. No IDE access in 10router, so use stable defaults.
 function buildTraeDeviceContext() {
   return {
     plugin_version: TRAE_CONFIG.defaultPluginVersion,

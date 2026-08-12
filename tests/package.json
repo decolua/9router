@@ -1,9 +1,9 @@
 {
-  "name": "9router-tests",
+  "name": "10router-tests",
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Unit tests for 9router embeddings endpoint",
+  "description": "Unit tests for 10router embeddings endpoint",
   "scripts": {
     "test": "vitest run --reporter=verbose",
     "test:watch": "vitest --reporter=verbose"

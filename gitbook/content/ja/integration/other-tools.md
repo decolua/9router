@@ -1,10 +1,10 @@
 # その他ツール統合
 
-9RouterはOpenAI API形式をサポートする任意のツールと互換性があります。このガイドでは、様々なツールやカスタムアプリケーション向けの汎用統合パターンを説明します。
+10routerはOpenAI API形式をサポートする任意のツールと互換性があります。このガイドでは、様々なツールやカスタムアプリケーション向けの汎用統合パターンを説明します。
 
 ## 概要
 
-9RouterはOpenAI互換APIエンドポイントを提供し、以下と動作します:
+10routerはOpenAI互換APIエンドポイントを提供し、以下と動作します:
 - カスタムスクリプトとアプリケーション
 - APIクライアントとテストツール
 - CLIツールとユーティリティ
@@ -13,20 +13,20 @@
 
 ## 汎用セットアップパターン
 
-任意のOpenAI互換ツールは以下の設定で9Routerに接続できます:
+任意のOpenAI互換ツールは以下の設定で10routerに接続できます:
 
-**ローカル9Router:**
+**ローカル10router:**
 ```
 Base URL: http://localhost:20128/v1
 API Key: your-api-key-from-dashboard
-Model: 任意の9Routerモデル (cc/*, cx/*, glm/*など)
+Model: 任意の10routerモデル (cc/*, cx/*, glm/*など)
 ```
 
-**クラウド9Router:**
+**クラウド10router:**
 ```
-Base URL: https://9router.com/v1
+Base URL: https://your-10router-host/v1
 API Key: your-api-key-from-dashboard
-Model: 任意の9Routerモデル (cc/*, cx/*, glm/*など)
+Model: 任意の10routerモデル (cc/*, cx/*, glm/*など)
 ```
 
 ## 利用可能なモデル
@@ -318,9 +318,9 @@ def chat_with_retry(prompt, max_retries=3):
 
 ### 接続の問題
 
-**問題:** 9Routerに接続できない
+**問題:** 10routerに接続できない
 ```bash
-# 9Routerが動作中か確認
+# 10routerが動作中か確認
 curl http://localhost:20128/health
 
 # 期待されるレスポンス:
@@ -328,7 +328,7 @@ curl http://localhost:20128/health
 ```
 
 **解決策:**
-- 9Routerが動作中か確認
+- 10routerが動作中か確認
 - ポート20128がブロックされていないか確認
 - 正しいbase URLを確認 (`/v1`を含む)
 
@@ -366,7 +366,7 @@ Error: Request timed out after 30s
 **解決策:**
 - クライアント設定でタイムアウトを増やす
 - 時間制約のあるタスクには高速モデルを使用
-- 9Routerへのネットワーク接続を確認
+- 10routerへのネットワーク接続を確認
 
 ### レート制限
 

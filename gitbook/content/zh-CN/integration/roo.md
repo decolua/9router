@@ -1,12 +1,12 @@
 # Roo AI 助手集成
 
-将 9Router 与 Roo AI 助手集成,通过统一界面访问多个 AI 模型。
+将 10router 与 Roo AI 助手集成,通过统一界面访问多个 AI 模型。
 
 ## 前置要求
 
 - 已安装 Roo AI 助手
-- 来自 [仪表盘](https://9router.com/dashboard) 的 9Router API key
-- 9Router 正在运行(本地或云端)
+- 来自 [仪表盘](http://localhost:20128/dashboard) 的 10router API key
+- 10router 正在运行(本地或云端)
 
 ## 配置步骤
 
@@ -20,21 +20,21 @@
 2. 选择 **Ollama** 作为 provider 类型
 3. 配置以下设置:
 
-**本地 9Router:**
+**本地 10router:**
 ```
 Base URL: http://localhost:20128/v1
 API Key: your-api-key-from-dashboard
 ```
 
-**云端 9Router:**
+**云端 10router:**
 ```
-Base URL: https://9router.com/v1
+Base URL: https://your-10router-host/v1
 API Key: your-api-key-from-dashboard
 ```
 
 ### 3. 选择模型
 
-从可用的 9Router 模型中选择:
+从可用的 10router 模型中选择:
 
 **Claude 模型:**
 - `cc/claude-opus-4-5-20251101` - 最强
@@ -54,7 +54,7 @@ API Key: your-api-key-from-dashboard
 发送测试消息验证集成:
 
 ```
-Hello! Can you confirm you're connected through 9Router?
+Hello! Can you confirm you're connected through 10router?
 ```
 
 ## 使用示例
@@ -87,19 +87,19 @@ Hello! Can you confirm you're connected through 9Router?
 ## 故障排除
 
 ### 连接失败
-- 确认 9Router 正在运行:`curl http://localhost:20128/health`
+- 确认 10router 正在运行:`curl http://localhost:20128/health`
 - 检查 API key 是否正确
 - 确保 Base URL 末尾包含 `/v1`
 
 ### 模型不可用
 - 检查模型名是否完全匹配(大小写敏感)
-- 确认 9Router 套餐中已启用该模型
+- 确认 10router 套餐中已启用该模型
 - 尝试列表中的其他模型
 
 ### 响应缓慢
 - 切换到更快的模型(haiku、flash)
 - 检查网络连接
-- 查看 9Router 日志排查问题
+- 查看 10router 日志排查问题
 
 ## 高级配置
 

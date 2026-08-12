@@ -1,3 +1,20 @@
+# v0.6.0 (2026-08-11)
+
+## Changed
+- **Rebrand**: the project is now **10router** (fork of
+  [decolua/9router](https://github.com/decolua/9router)). Repository moved to
+  `github.com/some-du6e/10router`, npm package to `10router`, Docker images to
+  `some-du6e/10router`, and the app package to `10router-app`.
+- **Env**: `NINEROUTER_PROXY_CLIENT_MAX_BODY_SIZE` is now
+  `TENROUTER_PROXY_CLIENT_MAX_BODY_SIZE`. The old name is still accepted as a
+  fallback, so existing setups keep working.
+- **Unchanged on purpose**: the on-disk data directory stays `~/.9router`
+  (`%APPDATA%\9router` on Windows) and the Docker volumes stay `9router-data` /
+  `9router-usage`, so upgrading installs keep their existing data.
+
+> Entries below this point are historical and refer to the project under its
+> former name, 9Router. They are left as-published.
+
 # v0.5.50 (2026-08-05)
 
 ## Features
