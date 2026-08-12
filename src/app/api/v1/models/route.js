@@ -375,7 +375,25 @@ export async function buildModelsList(kindFilter, options = {}) {
           )
         : providerModels.map((model) => model.id);
 
-      if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
+      const customModelKindById = new Map();
+      const customModelIds = customModels
+        .filter((m) => {
+          if (!m?.id) return false;
+          const kind = getModelKind(m) || LLM_KIND;
+          // imageToText custom models are vision-capable chat models: expose them
+          // both in the default LLM list and in /v1/models/image-to-text.
+          if (!kindFilter.includes(kind) && !(kind === "imageToText" && kindFilter.includes(LLM_KIND))) return false;
+          const alias = m.providerAlias;
+          return alias === staticAlias || alias === outputAlias || alias === providerId;
+        })
+        .map((m) => {
+          const modelId = String(m.id).trim();
+          if (modelId) customModelKindById.set(modelId, getModelKind(m) || LLM_KIND);
+          return modelId;
+        })
+        .filter((modelId) => modelId !== "");
+
+      if (isCompatibleProvider && rawModelIds.length === 0 && customModelIds.length === 0 && !skipDynamicFetch) {
         rawModelIds = await fetchCompatibleModelIds(conn);
       }
 
@@ -418,24 +436,6 @@ export async function buildModelsList(kindFilter, options = {}) {
           return modelId;
         })
         .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
-
-      const customModelKindById = new Map();
-      const customModelIds = customModels
-        .filter((m) => {
-          if (!m?.id) return false;
-          const kind = getModelKind(m) || LLM_KIND;
-          // imageToText custom models are vision-capable chat models: expose them
-          // both in the default LLM list and in /v1/models/image-to-text.
-          if (!kindFilter.includes(kind) && !(kind === "imageToText" && kindFilter.includes(LLM_KIND))) return false;
-          const alias = m.providerAlias;
-          return alias === staticAlias || alias === outputAlias || alias === providerId;
-        })
-        .map((m) => {
-          const modelId = String(m.id).trim();
-          if (modelId) customModelKindById.set(modelId, getModelKind(m) || LLM_KIND);
-          return modelId;
-        })
-        .filter((modelId) => modelId !== "");
 
       const aliasModelIds = Object.values(modelAliases || {})
         .filter((fullModel) => {
