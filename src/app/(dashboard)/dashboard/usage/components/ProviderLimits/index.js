@@ -5,6 +5,7 @@ import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
 import Toggle from "@/shared/components/Toggle";
 import Tooltip from "@/shared/components/Tooltip";
+import { useBlurEmails } from "@/shared/hooks/useBlurEmails";
 import {
   parseQuotaData,
   calculatePercentage,
@@ -83,6 +84,12 @@ function getConnectionSecondaryLabel(connection) {
   return null;
 }
 
+// Only the label that actually is the email address should be blurred
+function isConnectionEmail(connection, label) {
+  const email = connection.email?.trim();
+  return !!email && label === email;
+}
+
 // Region is stored for builder-id/idc/api_key flows; social and imported flows
 // omit it, so fall back to the region segment of the profileArn
 // (arn:aws:codewhisperer:<region>:...).
@@ -126,6 +133,7 @@ function formatTimeRemaining(value) {
 
 export default function ProviderLimits() {
   const { copied, copy } = useCopyToClipboard();
+  const { blurClass } = useBlurEmails();
   const [connections, setConnections] = useState([]);
   const [quotaData, setQuotaData] = useState({});
   const [loading, setLoading] = useState({});
@@ -1060,12 +1068,12 @@ export default function ProviderLimits() {
                         {conn.provider}
                       </h3>
                       {getConnectionLabel(conn) ? (
-                        <p className="text-xs text-text-muted truncate">
+                        <p className={`text-xs text-text-muted truncate ${isConnectionEmail(conn, getConnectionLabel(conn)) ? blurClass : ""}`}>
                           {getConnectionLabel(conn)}
                         </p>
                       ) : null}
                       {getConnectionSecondaryLabel(conn) ? (
-                        <p className="text-[11px] text-text-muted/80 truncate">
+                        <p className={`text-[11px] text-text-muted/80 truncate ${isConnectionEmail(conn, getConnectionSecondaryLabel(conn)) ? blurClass : ""}`}>
                           {getConnectionSecondaryLabel(conn)}
                         </p>
                       ) : null}
@@ -1426,7 +1434,19 @@ export default function ProviderLimits() {
           setResetConfirmState(null);
         }}
         title="Reset Codex limit?"
-        message={`Use 1 Codex reset credit for ${getConnectionLabel(resetConfirmState?.connection || {}) || "this account"}. This cannot be undone. Remaining credits: ${resetConfirmState?.resetCreditCount ?? 0}.`}
+        message={(() => {
+          const conn = resetConfirmState?.connection || {};
+          const label = getConnectionLabel(conn);
+          return (
+            <>
+              {"Use 1 Codex reset credit for "}
+              <span className={isConnectionEmail(conn, label) ? blurClass : ""}>
+                {label || "this account"}
+              </span>
+              {`. This cannot be undone. Remaining credits: ${resetConfirmState?.resetCreditCount ?? 0}.`}
+            </>
+          );
+        })()}
         confirmText="Reset limit"
         cancelText="Cancel"
         variant="danger"
@@ -1439,7 +1459,7 @@ export default function ProviderLimits() {
             <div className="flex items-start justify-between gap-3 border-b border-black/10 bg-black/[0.03] px-4 py-3 dark:border-white/10 dark:bg-white/[0.04]">
               <div className="min-w-0">
                 <h3 className="text-base font-semibold text-text-primary">Codex Reset Credit Expiry</h3>
-                <p className="mt-0.5 truncate text-xs text-text-muted">
+                <p className={`mt-0.5 truncate text-xs text-text-muted ${isConnectionEmail(resetCreditsState.connection, getConnectionLabel(resetCreditsState.connection)) ? blurClass : ""}`}>
                   {getConnectionLabel(resetCreditsState.connection) || "Codex account"}
                 </p>
               </div>
