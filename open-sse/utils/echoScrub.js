@@ -13,15 +13,28 @@ const ECHO_TAGS = ["instructions", "system-reminder", "task-notification", "comm
 
 // Drop whole <tag>...</tag> blocks, and an unclosed trailing block, matching
 // what the streaming filter does at end of stream.
+//
+// The opening tag is matched WITH ATTRIBUTES. This was an exact `indexOf("<tag>")`,
+// which a model walks straight through by inventing one: an observed reply opened
+// `<task-notification task_id="a424703057daa789f">`, which is not the string
+// `<task-notification>`, so nothing matched and the whole block reached the client
+// verbatim. The tag was in the list and the filter did run — it could not see it.
+// Only whitespace may follow the name, so `<system-reminders>` is still not
+// `<system-reminder>`.
+const OPEN_TAG_RE = new Map(
+  ECHO_TAGS.map((tag) => [tag, new RegExp("<" + tag + "(?:\\s[^>]*)?>")]),
+);
+
 export function stripEchoTags(text) {
   if (typeof text !== "string" || !text) return text;
   let out = text;
   for (const tag of ECHO_TAGS) {
-    const open = "<" + tag + ">";
+    const open = OPEN_TAG_RE.get(tag);
     const close = "</" + tag + ">";
-    let i;
-    while ((i = out.indexOf(open)) !== -1) {
-      const j = out.indexOf(close, i + open.length);
+    let m;
+    while ((m = open.exec(out)) !== null) {
+      const i = m.index;
+      const j = out.indexOf(close, i + m[0].length);
       out = j === -1 ? out.slice(0, i) : out.slice(0, i) + out.slice(j + close.length);
     }
   }

@@ -1,5 +1,22 @@
 # Unreleased
 
+## Fixes
+- **Translator**: harness tags are now stripped when the model opens them with
+  attributes. Both echo filters compared against the literal `"<tag>"`, so a reply
+  that opened `<task-notification task_id="a424703057daa789f">` matched nothing and
+  the whole block reached the client as visible text — the tag was in `ECHO_TAGS`
+  and the filter did run, it simply could not see it. Fixed in the whole-text
+  scrubber (`utils/echoScrub.js`) and in the streaming filter
+  (`translator/response/openai-to-claude.js`, which `gemini-to-claude.js` and
+  `kiro-to-claude.js` both reuse). Only whitespace may follow the tag name, so
+  `<system-reminders>` is still not `<system-reminder>`, and an unterminated
+  opening tag is held across chunk boundaries only up to a bound, so a model
+  emitting `<instructions ` without a closing `>` cannot buffer the rest of the
+  stream. Known gap left open: the Codex/Responses path
+  (`translator/response/openai-responses.js`) applies no echo filter at all, for
+  any tag — that mechanism was removed by the revert in `81b6fcd4` and would have
+  to be rebuilt rather than edited.
+
 ## Features
 - **Router**: an orchestration nudge now states the live delegation count back to
   the model when a session runs past its cap. The delegation rule lives in the

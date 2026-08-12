@@ -68,6 +68,11 @@ function isValidPdfPagesArg(filePath, pages) {
 // Streaming-safe: tags split across chunks are held in state.echoCarry.
 const ECHO_TAGS = ["instructions", "system-reminder", "task-notification", "command-message", "command-name"];
 
+// Longest attribute run tolerated inside an opening tag before it stops looking
+// like one. Bounds state.echoCarry: without it, `<instructions ` with no closing
+// `>` would buffer the rest of the stream.
+const MAX_OPEN_TAG_SPAN = 512;
+
 // A model repeating the user's own message back as its reply. Judged on the
 // accumulated visible text rather than per chunk, because the regurgitation
 // only becomes recognisable once enough of it has arrived. Conservative by
@@ -104,10 +109,33 @@ export function filterEchoText(state, text) {
     buf = buf.slice(lt);
     let matched = false, partial = false;
     for (const tag of ECHO_TAGS) {
-      const open = "<" + tag + ">";
-      if (buf.startsWith(open)) {
+      // Matched WITH ATTRIBUTES: this compared against the literal "<tag>", and a
+      // model got a whole block through by opening it
+      // `<task-notification task_id="...">`. See echoScrub.js for the incident.
+      // Only whitespace may follow the name, so `<system-reminders>` is still not
+      // `<system-reminder>`.
+      const prefix = "<" + tag;
+      if (buf.startsWith(prefix)) {
+        const rest = buf.slice(prefix.length);
+        if (!rest) { partial = true; break; }   // one more character decides it
+        let consumed = -1;
+        if (rest[0] === ">") {
+          consumed = prefix.length + 1;
+        } else if (/\s/.test(rest[0])) {
+          const gt = rest.indexOf(">");
+          // Attributes can straddle a chunk boundary, so an unterminated tag is
+          // held — but only up to a bound. A model that emits `<instructions `
+          // and never closes it must not stall the stream indefinitely.
+          if (gt === -1) {
+            if (rest.length <= MAX_OPEN_TAG_SPAN) { partial = true; break; }
+            continue;                            // give up; emit as ordinary text
+          }
+          if (gt > MAX_OPEN_TAG_SPAN) continue;
+          consumed = prefix.length + gt + 1;
+        }
+        if (consumed === -1) continue;           // e.g. <system-reminders>, not ours
         state.echoDropTag = tag;
-        buf = buf.slice(open.length);
+        buf = buf.slice(consumed);
         matched = true;
         // Echoing harness XML is a discipline strike. It never locks the model
         // (only doubled-json counts toward the threshold) but it arms a nudge
@@ -115,7 +143,7 @@ export function filterEchoText(state, text) {
         try { recordStrike(state.servingModel, "echo"); } catch { /* discipline must not break output */ }
         break;
       }
-      if (open.startsWith(buf)) partial = true;
+      if (prefix.startsWith(buf)) partial = true;
     }
     if (matched) continue;
     if (partial) { state.echoCarry = buf; return out; }
