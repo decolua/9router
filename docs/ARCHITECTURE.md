@@ -523,7 +523,15 @@ Runtime visibility sources:
 ## Security-Sensitive Boundaries
 
 - JWT secret (`JWT_SECRET`) secures dashboard session cookie verification/signing
-- Initial password fallback (`INITIAL_PASSWORD`, default `123456`) must be overridden in real deployments
+- First-run bootstrap: there is **no default dashboard password**. An unclaimed
+  install mints a one-time setup token (`$DATA_DIR/setup-token.json`, 0600),
+  prints it to the server console, and locks every dashboard/API route until
+  `/setup` is completed with that token. The token expires 5 minutes after the
+  server starts; restarting mints a new one. `requireLogin=false` does not
+  bypass this. `INITIAL_PASSWORD` (optional, min 8 chars) is an explicit
+  headless bootstrap and skips the setup flow. Installs predating this flow are
+  stamped `legacyDefaultPassword` in `_meta` and get exactly one login on the
+  old default before a password change is forced.
 - API key HMAC secret (`API_KEY_SECRET`) secures generated local API key format
 - Provider secrets (API keys/tokens) are persisted in local DB and should be protected at filesystem level
 - Cloud sync endpoints rely on API key auth + machine id semantics

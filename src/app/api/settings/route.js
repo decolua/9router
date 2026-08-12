@@ -3,6 +3,13 @@ import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
 import bcrypt from "bcryptjs";
+import {
+  getAuthBootstrapState,
+  getBootstrapSecret,
+  validateNewPassword,
+  clearLegacyGrace,
+} from "@/lib/auth/setupState";
+import { clearSetupToken } from "@/lib/auth/setupToken";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -47,6 +54,11 @@ export async function PATCH(request) {
       const settings = await getSettings();
       const currentHash = settings.password;
 
+      const policy = validateNewPassword(body.newPassword);
+      if (!policy.ok) {
+        return NextResponse.json({ error: policy.error }, { status: 400 });
+      }
+
       // Verify current password if it exists
       if (currentHash) {
         if (!body.currentPassword) {
@@ -57,10 +69,20 @@ export async function PATCH(request) {
           return NextResponse.json({ error: "Invalid current password" }, { status: 401 });
         }
       } else {
-        // First time setting password, no current password needed
-        // Allow empty currentPassword or default "123456"
-        if (body.currentPassword && body.currentPassword !== "123456") {
-           return NextResponse.json({ error: "Invalid current password" }, { status: 401 });
+        const state = await getAuthBootstrapState(settings);
+        // An unclaimed install must go through /setup with the console token —
+        // a password cannot be planted through the settings API.
+        if (state === "setup") {
+          return NextResponse.json(
+            { error: "Complete first-run setup before setting a password.", needsSetup: true },
+            { status: 403 }
+          );
+        }
+        // First time setting a password: the session already proves the caller
+        // knew the bootstrap secret, so an empty current password is accepted.
+        const secret = await getBootstrapSecret(settings);
+        if (body.currentPassword && body.currentPassword !== secret) {
+          return NextResponse.json({ error: "Invalid current password" }, { status: 401 });
         }
       }
 
@@ -68,6 +90,9 @@ export async function PATCH(request) {
       body.password = await bcrypt.hash(body.newPassword, salt);
       delete body.newPassword;
       delete body.currentPassword;
+      // A real hash exists now — the legacy default password is dead.
+      await clearLegacyGrace();
+      clearSetupToken();
     }
 
     if (Object.prototype.hasOwnProperty.call(body, "oidcClientSecret")) {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSettings, validateApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { needsSetup } from "@/lib/auth/setupState";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
@@ -26,6 +27,7 @@ const PUBLIC_API_PATHS = [
   "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/status",
+  "/api/auth/setup",
   "/api/auth/oidc",
   "/api/version",
   "/api/settings/require-login",
@@ -163,7 +165,9 @@ async function loadSettings() {
 async function isAuthenticated(request) {
   if (await hasValidToken(request)) return true;
   const settings = await loadSettings();
-  if (settings && settings.requireLogin === false) return true;
+  // requireLogin=false is an opt-out for a *claimed* instance. An instance that
+  // has never been set up must never be open, whatever the stored flag says.
+  if (settings && settings.requireLogin === false) return !(await needsSetup(settings));
   return false;
 }
 
@@ -182,6 +186,20 @@ export const __test__ = {
 
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
+
+  // First-run gate: until someone claims the instance with the console setup
+  // token, every dashboard/login page funnels to /setup.
+  if (pathname === "/setup" || pathname.startsWith("/dashboard") || pathname === "/login" || pathname === "/") {
+    const settings = await loadSettings();
+    const setupPending = await needsSetup(settings);
+    if (setupPending && pathname !== "/setup") {
+      return NextResponse.redirect(new URL("/setup", request.url));
+    }
+    if (!setupPending && pathname === "/setup") {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+    if (pathname === "/setup") return NextResponse.next();
+  }
 
   // Local-only gate for spawn-capable / host-secret routes.
   if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {

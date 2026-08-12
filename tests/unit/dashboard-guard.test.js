@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   validateApiKey: vi.fn(),
   getConsistentMachineId: vi.fn(),
   verifyDashboardAuthToken: vi.fn(),
+  getMeta: vi.fn(),
 }));
 
 vi.mock("next/server", () => ({
@@ -33,6 +34,16 @@ vi.mock("@/lib/auth/dashboardSession", () => ({
   verifyDashboardAuthToken: mocks.verifyDashboardAuthToken,
 }));
 
+// setupState (pulled in by the guard) would otherwise touch the real DB/_meta.
+vi.mock("@/lib/db/helpers/metaStore.js", () => ({
+  getMeta: mocks.getMeta,
+  setMeta: vi.fn(),
+}));
+
+vi.mock("@/lib/auth/oidc", () => ({
+  isOidcConfigured: () => false,
+}));
+
 const { proxy, __test__ } = await import("../../src/dashboardGuard.js");
 
 function request(pathname, headers = {}) {
@@ -48,10 +59,11 @@ function request(pathname, headers = {}) {
 describe("dashboard guard public LLM API access", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    mocks.getSettings.mockResolvedValue({ requireLogin: true, password: "$2a$10$storedhash" });
     mocks.validateApiKey.mockResolvedValue(false);
     mocks.getConsistentMachineId.mockResolvedValue("cli-token");
     mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+    mocks.getMeta.mockResolvedValue("0");
   });
 
   it("allows loopback public LLM API without API key", async () => {
@@ -191,10 +203,11 @@ describe("dashboard guard public LLM API access", () => {
 describe("dashboard guard local-only access", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    mocks.getSettings.mockResolvedValue({ requireLogin: true, password: "$2a$10$storedhash" });
     mocks.validateApiKey.mockResolvedValue(false);
     mocks.getConsistentMachineId.mockResolvedValue("cli-token");
     mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+    mocks.getMeta.mockResolvedValue("0");
   });
 
   it("rejects local-only route from non-loopback host without CLI token", async () => {
@@ -217,7 +230,7 @@ describe("dashboard guard local-only access", () => {
   });
 
   it("allows local-only route on loopback when requireLogin=false", async () => {
-    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+    mocks.getSettings.mockResolvedValue({ requireLogin: false, password: "$2a$10$storedhash" });
 
     const response = await proxy(request("/api/cli-tools/antigravity-mitm", {
       host: "localhost:20128",
@@ -228,7 +241,7 @@ describe("dashboard guard local-only access", () => {
   });
 
   it("rejects local-only route from tunnel host even when requireLogin=false", async () => {
-    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+    mocks.getSettings.mockResolvedValue({ requireLogin: false, password: "$2a$10$storedhash" });
 
     const response = await proxy(request("/api/cli-tools/antigravity-mitm", {
       host: "router.example.com",
@@ -238,7 +251,7 @@ describe("dashboard guard local-only access", () => {
   });
 
   it("rejects local-only route when Origin is non-loopback (CSRF block)", async () => {
-    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+    mocks.getSettings.mockResolvedValue({ requireLogin: false, password: "$2a$10$storedhash" });
 
     const response = await proxy(request("/api/cli-tools/antigravity-mitm", {
       host: "localhost:20128",
@@ -253,6 +266,65 @@ describe("dashboard guard local-only access", () => {
       host: "router.example.com",
       "x-9r-cli-token": "cli-token",
     }));
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+});
+
+describe("dashboard guard first-run setup gate", () => {
+  // No stored password hash and no legacy stamp → instance is unclaimed.
+  const unclaimed = { requireLogin: true };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getSettings.mockResolvedValue(unclaimed);
+    mocks.validateApiKey.mockResolvedValue(false);
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+    mocks.getMeta.mockResolvedValue("0");
+  });
+
+  it("redirects the dashboard to /setup", async () => {
+    const response = await proxy(request("/dashboard", { host: "localhost:20128" }));
+
+    expect(response.status).toBe(307);
+    expect(response.url.pathname).toBe("/setup");
+  });
+
+  it("redirects the login page to /setup", async () => {
+    const response = await proxy(request("/login", { host: "localhost:20128" }));
+
+    expect(response.status).toBe(307);
+    expect(response.url.pathname).toBe("/setup");
+  });
+
+  it("serves /setup itself", async () => {
+    const response = await proxy(request("/setup", { host: "localhost:20128" }));
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+
+  it("does not let requireLogin=false open an unclaimed instance", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+
+    const response = await proxy(request("/api/settings", { host: "localhost:20128" }));
+
+    expect(response.status).toBe(401);
+  });
+
+  it("redirects /setup back to /login once a password is stored", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: true, password: "$2a$10$storedhash" });
+
+    const response = await proxy(request("/setup", { host: "localhost:20128" }));
+
+    expect(response.status).toBe(307);
+    expect(response.url.pathname).toBe("/login");
+  });
+
+  it("keeps the legacy default-password install on the normal login page", async () => {
+    mocks.getMeta.mockResolvedValue("1");
+
+    const response = await proxy(request("/login", { host: "localhost:20128" }));
 
     expect(response).toBe(mocks.nextResponse);
   });

@@ -13,7 +13,6 @@ const COLORS = {
   cyan: "\x1b[36m"
 };
 
-const DEFAULT_PASSWORD = "123456";
 
 /**
  * Show settings menu (tunnel + RTK + reset password)
@@ -83,7 +82,7 @@ async function showSettingsMenu(breadcrumb = []) {
         action: async (d) => { await toggleHeadroom(d?.settings?.headroomEnabled === true); return true; }
       },
       {
-        label: "🔑 Reset Password to Default",
+        label: "🔑 Reset Password (re-run setup)",
         action: async () => { await resetPassword(); return true; }
       },
       {
@@ -181,11 +180,13 @@ async function toggleHeadroom(currentlyOn) {
 }
 
 /**
- * Reset dashboard password to default via server API (writes the live SQLite DB).
- * After reset, user can log in with the default password "123456".
+ * Clear the dashboard password via server API (writes the live SQLite DB) and
+ * put the instance back into first-run setup. There is no default password:
+ * the server mints a one-time setup token, printed here and on the server
+ * console, which must be used at /setup before the token expires.
  */
 async function resetPassword() {
-  const ok = await confirm(`Reset dashboard password to default "${DEFAULT_PASSWORD}"?`);
+  const ok = await confirm("Clear the dashboard password and re-run first-time setup?");
   if (!ok) {
     showStatus("Cancelled", "info");
     await pause();
@@ -194,7 +195,15 @@ async function resetPassword() {
 
   const result = await api.resetPassword();
   if (result.success) {
-    showStatus(`Password reset. Default: ${DEFAULT_PASSWORD}`, "success");
+    const { token, expiresInSec } = result.data || {};
+    if (token) {
+      const minutes = Math.max(1, Math.round((expiresInSec || 300) / 60));
+      showStatus("Password cleared. Open the dashboard to finish setup.", "success");
+      console.log(`\n  Setup token: ${COLORS.cyan}${token}${COLORS.reset}`);
+      console.log(`  ${COLORS.dim}Valid for ${minutes} minutes — restart 10router for a new one.${COLORS.reset}\n`);
+    } else {
+      showStatus("Password cleared. Check the server console for the setup token.", "success");
+    }
   } else {
     showStatus(`Failed to reset password: ${result.error}`, "error");
   }
