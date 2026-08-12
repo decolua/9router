@@ -35,9 +35,10 @@ vi.mock("@/lib/auth/dashboardSession", () => ({
 
 const { proxy, __test__ } = await import("../../src/dashboardGuard.js");
 
-function request(pathname, headers = {}) {
+function request(pathname, headers = {}, method = "GET") {
   const normalizedHeaders = new Headers(headers);
   return {
+    method,
     nextUrl: { pathname, searchParams: new URL(`http://localhost${pathname}`).searchParams },
     headers: normalizedHeaders,
     cookies: { get: vi.fn(() => undefined) },
@@ -69,6 +70,91 @@ describe("dashboard guard public LLM API access", () => {
 
     expect(response.status).toBe(401);
     expect(response.body.error).toBe("API key required for remote API access");
+  });
+
+  it.each([
+    "/v1/messages",
+    "/api/v1/chat/completions",
+    "/v1beta/models",
+  ])("allows remote OPTIONS %s without settings or API key validation", async (pathname) => {
+    const response = await proxy(request(pathname, { host: "router.example.com" }, "OPTIONS"));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.getSettings).not.toHaveBeenCalled();
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+
+  it("allows remote keyless POST when requireApiKey=false without validating a key", async () => {
+    mocks.getSettings.mockResolvedValue({ requireApiKey: false });
+
+    const response = await proxy(request("/v1/messages", { host: "router.example.com" }, "POST"));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+
+  it("allows remote keyless GET when requireApiKey=false", async () => {
+    mocks.getSettings.mockResolvedValue({ requireApiKey: false });
+
+    const response = await proxy(request("/v1/models", { host: "router.example.com" }));
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+
+  it("rejects remote actual POST without a key when requireApiKey=true", async () => {
+    const response = await proxy(request("/v1/messages", { host: "router.example.com" }, "POST"));
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([
+    ["x-api-key", "sk-invalid"],
+    ["authorization", "Bearer sk-invalid"],
+    ["x-goog-api-key", "sk-invalid"],
+  ])("rejects invalid %s even when requireApiKey=false", async (header, value) => {
+    mocks.getSettings.mockResolvedValue({ requireApiKey: false });
+
+    const response = await proxy(request("/v1/messages", {
+      host: "router.example.com",
+      [header]: value,
+    }, "POST"));
+
+    expect(response.status).toBe(401);
+    expect(mocks.validateApiKey).toHaveBeenCalledWith("sk-invalid");
+  });
+
+  it("rejects an invalid Gemini query key even when requireApiKey=false", async () => {
+    mocks.getSettings.mockResolvedValue({ requireApiKey: false });
+
+    const response = await proxy(request("/v1beta/models?key=sk-invalid", {
+      host: "router.example.com",
+    }, "POST"));
+
+    expect(response.status).toBe(401);
+    expect(mocks.validateApiKey).toHaveBeenCalledWith("sk-invalid");
+  });
+
+  it("fails closed when settings read rejects for a keyless actual request", async () => {
+    mocks.getSettings.mockRejectedValue(new Error("settings unavailable"));
+
+    const response = await proxy(request("/v1/messages", { host: "router.example.com" }, "POST"));
+
+    expect(response.status).toBe(401);
+  });
+
+  it("allows OPTIONS when settings read rejects", async () => {
+    mocks.getSettings.mockRejectedValue(new Error("settings unavailable"));
+
+    const response = await proxy(request("/v1/messages", { host: "router.example.com" }, "OPTIONS"));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.getSettings).not.toHaveBeenCalled();
+  });
+
+  it("allows loopback OPTIONS", async () => {
+    const response = await proxy(request("/v1/messages", { host: "localhost:20128" }, "OPTIONS"));
+
+    expect(response).toBe(mocks.nextResponse);
   });
 
   it("allows loopback peer IP regardless of Host", async () => {
