@@ -26,10 +26,12 @@ export default {
     // not its vendor-native thinking shape. Force the openai thinking format.
     thinkingFormat: "openai",
     headers: {
-      "User-Agent": "CLI/2.108.1 CodeBuddy/2.108.1",
+      "User-Agent": "CLI/2.133.1 CodeBuddy/2.133.1",
       "X-Product": "SaaS",
       "X-IDE-Type": "CLI",
       "X-IDE-Name": "CLI",
+      "X-IDE-Version": "2.133.1",
+      "X-Domain": "www.codebuddy.cn",
       "x-requested-with": "XMLHttpRequest",
       "x-codebuddy-request": "1",
     },
@@ -66,7 +68,7 @@ export default {
     stateUrl: "https://copilot.tencent.com/v2/plugin/auth/state",
     tokenUrl: "https://copilot.tencent.com/v2/plugin/auth/token",
     refreshUrl: "https://copilot.tencent.com/v2/plugin/auth/token/refresh",
-    userAgent: "CLI/2.63.2 CodeBuddy/2.63.2",
+    userAgent: "CLI/2.133.1 CodeBuddy/2.133.1",
     platform: "CLI",
     pollInterval: 5000,
   },
