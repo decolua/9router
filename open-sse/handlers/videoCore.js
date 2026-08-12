@@ -2,6 +2,7 @@ import { createErrorResult } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { refreshTokenByProvider } from "../services/tokenRefresh.js";
 import { PROVIDER_MEDIA } from "../providers/index.js";
+import { prepareMinimaxVideoRequest, normalizeMinimaxVideoResponse } from "./videoProviders/minimax.js";
 
 // Upstream fetch deadline for video job submission/polling (the job itself is
 // async upstream — this only bounds the HTTP round-trip, not video rendering).
@@ -33,6 +34,17 @@ export function sanitizeSecrets(text, credentials = null) {
 function buildUpstreamUrl(config, action, requestId) {
   const base = config.baseUrl.replace(/\/$/, "");
   return requestId ? `${base}/${encodeURIComponent(requestId)}` : `${base}/${action}`;
+}
+
+function prepareRequest(config, options) {
+  if (config.format === "minimax-v2") return prepareMinimaxVideoRequest(config, options);
+  const method = options.requestId ? "GET" : "POST";
+  return {
+    method,
+    url: buildUpstreamUrl(config, options.action, options.requestId),
+    body: method === "POST" ? options.rawBody : undefined,
+    contentType: method === "POST" ? options.contentType : null,
+  };
 }
 
 function buildHeaders({ token, contentType, idempotencyKey }) {
@@ -94,15 +106,16 @@ export async function handleVideoProxyCore({
     return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Unknown video action: ${action}`);
   }
 
-  const method = requestId ? "GET" : "POST";
-  const url = buildUpstreamUrl(config, action, requestId);
+  const request = prepareRequest(config, { action, requestId, rawBody, contentType });
+  if (request.error) return request.error;
+  const { method, url } = request;
   const fetchSignal = combineSignals(signal, timeoutMs);
 
   const doFetch = (token) =>
     fetch(url, {
       method,
-      headers: buildHeaders({ token, contentType: method === "POST" ? contentType : null, idempotencyKey: method === "POST" ? idempotencyKey : null }),
-      body: method === "POST" ? rawBody : undefined,
+      headers: buildHeaders({ token, contentType: request.contentType, idempotencyKey: method === "POST" ? idempotencyKey : null }),
+      body: request.body,
       signal: fetchSignal,
     });
 
@@ -152,10 +165,16 @@ export async function handleVideoProxyCore({
     return createErrorResult(upstream.status, `[${provider}] ${message.slice(0, 2000)}`);
   }
 
-  // Success: pass the upstream JSON through untouched (request_id / status / video.url).
+  let responseBody = bodyText;
+  if (config.format === "minimax-v2") {
+    const normalized = normalizeMinimaxVideoResponse(bodyText, requestId);
+    if (normalized.error) return normalized.error;
+    responseBody = normalized.bodyText;
+  }
+
   return {
     success: true,
-    response: new Response(bodyText, {
+    response: new Response(responseBody, {
       status: upstream.status,
       headers: {
         "Content-Type": upstream.headers.get("content-type") || "application/json",
