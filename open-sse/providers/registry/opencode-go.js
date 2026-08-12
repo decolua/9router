@@ -21,6 +21,9 @@ export default {
   transport: {
     baseUrl: "https://opencode.ai/zen/go/v1/chat/completions",
     headers: {},
+    usage: {
+      url: "https://opencode.ai/zen/go/v1/usage",
+    },
   },
   models: [
     { id: "glm-5.2", name: "GLM 5.2" },
@@ -38,4 +41,11 @@ export default {
     { id: "qwen3.7-plus", name: "Qwen 3.7 Plus", targetFormat: "claude" },
     { id: "qwen3.6-plus", name: "Qwen 3.6 Plus", targetFormat: "claude" },
   ],
+  features: {
+    // Go is a subscription with rolling/weekly/monthly windows, but it authenticates
+    // with a plain API key (category "apikey"), so usageApikey is required for the
+    // /api/usage route to accept the connection.
+    usage: true,
+    usageApikey: true,
+  },
 };
