@@ -104,13 +104,21 @@ npm start
 
 ### Đăng nhập Dashboard
 
-**Credentials mặc định:**
-- Mật khẩu: `123456`
+**Không có mật khẩu mặc định.** Ở lần chạy đầu, 10router in ra console của server một setup token dùng một lần:
 
-**⚠️ Đổi mật khẩu ngay:**
-1. Đăng nhập dashboard
-2. Settings → Change Password
-3. Dùng mật khẩu mạnh
+```
+  10router setup required (first run)
+  Open the dashboard at /setup and paste this token:
+
+      iMy2dXkv2J3pQrVHxcjBsce05izk0ACp
+
+  Valid for 5 minutes. Restart the server to get a new one.
+```
+
+1. Mở `http://localhost:20128/setup`
+2. Dán token và chọn mật khẩu (tối thiểu 8 ký tự)
+
+Token hết hạn 5 phút sau khi server khởi động — khởi động lại 10router để lấy token mới. Quên mật khẩu sau này? Chạy CLI `10router` trên host → **Settings** → **Reset Password**, lệnh này sẽ in ra một token mới.
 
 ### Lấy API Key
 

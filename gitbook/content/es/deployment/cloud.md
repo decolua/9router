@@ -48,7 +48,7 @@ export NODE_ENV="production"
 | Variable | Por defecto | Descripción |
 |----------|---------|-------------|
 | `JWT_SECRET` | Auto-generado | **¡DEBE cambiarse en producción!** Usado para firmar tokens JWT |
-| `INITIAL_PASSWORD` | `123456` | Contraseña de login del dashboard |
+| `INITIAL_PASSWORD` | sin definir | Contraseña opcional de arranque headless (mínimo 8 caracteres). Sin definir, el primer arranque requiere el token de configuración de un solo uso impreso en la consola del servidor — no hay contraseña por defecto |
 | `DATA_DIR` | `~/.9router` | Ruta de almacenamiento de la base de datos (el nombre del directorio no ha cambiado respecto a la versión anterior por compatibilidad) |
 | `NODE_ENV` | `development` | Establece a `production` para despliegue |
 | `ENABLE_REQUEST_LOGS` | `false` | Habilita logs de debug de request/response |

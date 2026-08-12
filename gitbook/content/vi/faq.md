@@ -236,7 +236,7 @@ npm run deploy:cloudflare
 **Biến môi trường:**
 - `JWT_SECRET` - **PHẢI đổi trong production!**
 - `DATA_DIR` - Đường dẫn lưu database (mặc định: `~/.9router`)
-- `INITIAL_PASSWORD` - Đăng nhập Dashboard (mặc định: `123456`)
+- `INITIAL_PASSWORD` - Mật khẩu bootstrap headless tùy chọn (tối thiểu 8 ký tự). Mặc định không đặt: lần chạy đầu cần setup token dùng một lần in ra console của server
 - `NODE_ENV` - Đặt `production` để deploy
 
 Xem [hướng dẫn deployment](getting-started/installation.md#deployment) để biết chi tiết.

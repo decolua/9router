@@ -104,13 +104,21 @@ npm start
 
 ### 仪表盘登录
 
-**默认凭据:**
-- 密码:`123456`
+**没有默认密码。** 首次启动时,10router 会在服务器控制台打印一次性 setup token:
 
-**⚠️ 立即修改密码:**
-1. 登录仪表盘
-2. 设置 → 修改密码
-3. 使用强密码
+```
+  10router setup required (first run)
+  Open the dashboard at /setup and paste this token:
+
+      iMy2dXkv2J3pQrVHxcjBsce05izk0ACp
+
+  Valid for 5 minutes. Restart the server to get a new one.
+```
+
+1. 打开 `http://localhost:20128/setup`
+2. 粘贴 token 并设置密码(至少 8 个字符)
+
+Token 在服务器启动 5 分钟后失效 —— 重启 10router 可获取新的 token。之后忘记密码?在宿主机上运行 `10router` CLI → **设置** → **重置密码**,它会打印一个新的 token。
 
 ### 获取 API Key
 
