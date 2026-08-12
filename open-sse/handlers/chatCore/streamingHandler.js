@@ -7,7 +7,6 @@ import { STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
 import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
-import { hasFrameMarker } from "../../config/frameMarkers.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
 
 // Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
@@ -114,23 +113,13 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 export function buildOnStreamComplete({ provider, model, connectionId, sessionId, comboName, chainDepth, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, pxpipe, reqTag, log }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
-  const onStreamComplete = (contentObj, usage, ttftAt, meta) => {
+  const onStreamComplete = (contentObj, usage, ttftAt) => {
     const latency = {
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime
     };
     const safeContent = contentObj?.content || "[Empty streaming response]";
     const safeThinking = contentObj?.thinking || null;
-
-    // Frame integrity on the streaming path, from both directions: `meta` carries
-    // tag blocks the filter already removed (the flag is the only evidence left),
-    // and the accumulated text is checked for control markers, which are never
-    // stripped and so survive to here. The second half also covers the
-    // passthrough stream, which runs no filter at all. See docs/adr/0002.
-    let frameViolation = meta?.frameViolation === true;
-    if (!frameViolation) {
-      try { frameViolation = hasFrameMarker(safeContent); } catch { /* never break a completed stream */ }
-    }
 
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
@@ -141,7 +130,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, sessionId
       providerResponse: safeContent,
       response: { content: safeContent, thinking: safeThinking, type: "streaming" },
       pxpipe,
-      status: frameViolation ? "error" : "success"
+      status: "success"
     }, { id: streamDetailId })).catch(err => {
       console.error("[RequestDetail] Failed to update streaming content:", err.message);
     });

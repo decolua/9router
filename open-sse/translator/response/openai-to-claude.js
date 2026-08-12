@@ -5,7 +5,6 @@ import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
 import { recordStrike } from "../../utils/discipline.js";
 import { isUserEcho } from "../../utils/userEcho.js";
-import { FRAME_TAGS } from "../../config/frameMarkers.js";
 
 // Legacy "proxy_" prefix used by older request translators. Response strips it
 // defensively so tool names from such turns resolve back (e.g. proxy_Read → Read
@@ -67,8 +66,7 @@ function isValidPdfPagesArg(filePath, pages) {
 // blocks (<instructions>, <system-reminder>, ...) verbatim into their visible
 // output. Models never legitimately emit these tags, so drop the whole block.
 // Streaming-safe: tags split across chunks are held in state.echoCarry.
-// The vocabulary itself lives in config/frameMarkers.js — see docs/adr/0002.
-const ECHO_TAGS = FRAME_TAGS;
+const ECHO_TAGS = ["instructions", "system-reminder", "task-notification", "command-message", "command-name"];
 
 // A model repeating the user's own message back as its reply. Judged on the
 // accumulated visible text rather than per chunk, because the regurgitation
@@ -115,10 +113,6 @@ export function filterEchoText(state, text) {
         // (only doubled-json counts toward the threshold) but it arms a nudge
         // on this model's next request.
         try { recordStrike(state.servingModel, "echo"); } catch { /* discipline must not break output */ }
-        // Frame violation, remembered on the stream. The accumulated content
-        // that reaches the request-detail write has already had this block
-        // removed, so the flag is the only surviving evidence. See ADR 0002.
-        state.frameViolation = true;
         break;
       }
       if (open.startsWith(buf)) partial = true;

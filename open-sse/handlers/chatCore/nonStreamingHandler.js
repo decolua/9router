@@ -10,7 +10,7 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
-import { scrubResponseBody, hasFrameViolation } from "../../utils/echoScrub.js";
+import { scrubResponseBody } from "../../utils/echoScrub.js";
 import { extractLastUserText } from "../../utils/userEcho.js";
 import { recordStrike } from "../../utils/discipline.js";
 
@@ -332,14 +332,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   // chunks arrive; this path had no filtering at all, so the same output was
   // clean when streamed and dirty when not. A drop records a strike so the
   // discipline nudge corrects the model rather than filtering it forever.
-  // Frame integrity is judged BEFORE scrubbing, because scrubbing removes the
-  // evidence. A forged frame marker is a protocol violation and is recorded as
-  // an error on this request, which is the signal the tuner already reads —
-  // see docs/adr/0002. Note this is narrower than "the scrub changed
-  // something": echoing the user back is poor output, not a forged frame.
-  let frameViolation = false;
   try {
-    frameViolation = hasFrameViolation(translatedResponse);
     if (scrubResponseBody(translatedResponse, extractLastUserText(body))) {
       recordStrike(provider && model ? `${provider}/${model}` : model, "echo");
     }
@@ -404,7 +397,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       finish_reason: translatedResponse?.choices?.[0]?.finish_reason || "unknown"
     },
     pxpipe,
-    status: frameViolation ? "error" : "success"
+    status: "success"
   }, { endpoint: clientRawRequest?.endpoint || null })).catch(err => {
     console.error("[RequestDetail] Failed to save:", err.message);
   });

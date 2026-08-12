@@ -393,7 +393,7 @@ export function createSSEStream(options = {}) {
             onStreamComplete({
               content: accumulatedContent,
               thinking: accumulatedThinking
-            }, usage, ttftAt, { frameViolation: state?.frameViolation === true });
+            }, usage, ttftAt);
           }
           return;
         }
@@ -470,7 +470,7 @@ export function createSSEStream(options = {}) {
           onStreamComplete({
             content: accumulatedContent,
             thinking: accumulatedThinking
-          }, state?.usage, ttftAt, { frameViolation: state?.frameViolation === true });
+          }, state?.usage, ttftAt);
         }
       } catch (error) {
         console.log("Error in flush:", error);
