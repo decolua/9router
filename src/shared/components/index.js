@@ -20,7 +20,6 @@ export { default as ComboFormModal } from "./ComboFormModal";
 export { default as McpMarketplaceModal } from "./McpMarketplaceModal";
 export { default as UsageStats } from "./UsageStats";
 export { default as LanguageSwitcher } from "./LanguageSwitcher";
-export { default as NineRemoteButton } from "./NineRemoteButton";
 export { default as HeaderMenu } from "./HeaderMenu";
 export { default as ChangelogModal } from "./ChangelogModal";
 export { default as RequestLogger } from "./RequestLogger";
