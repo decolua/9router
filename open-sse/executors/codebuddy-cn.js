@@ -1,4 +1,11 @@
 import { DefaultExecutor } from "./default.js";
+import crypto from "node:crypto";
+import {
+  sendSessionLifecycle,
+  sendPreChatEvents,
+  sendPostChatEvents,
+  sendGalileoTrace,
+} from "../services/codebuddyTelemetry.js";
 
 /**
  * CodeBuddyExecutor — talks to https://copilot.tencent.com/v2/chat/completions
@@ -12,6 +19,61 @@ import { DefaultExecutor } from "./default.js";
 export class CodeBuddyExecutor extends DefaultExecutor {
   constructor() {
     super("codebuddy-cn");
+  }
+
+  /**
+   * Override execute() to surround the upstream chat call with CodeBuddy
+   * telemetry (anti-ban). All telemetry is fire-and-forget and fail-open — it
+   * never delays the request, never throws, and never changes the response.
+   * Without it, a proxied key is "silent" (chat with zero telemetry) and gets
+   * flagged/banned by Tencent.
+   */
+  async execute(args) {
+    const { credentials, body, proxyOptions = null } = args || {};
+    const t0 = Date.now();
+
+    // Stable per-request identifiers for telemetry correlation.
+    const requestId = crypto.randomUUID();
+    const messageId = crypto.randomUUID();
+    const conversationId = requestId; // one gateway request ≈ one official task
+    const model = body?.model || "auto";
+    const historyCount = Array.isArray(body?.messages) ? body.messages.length : 1;
+    const inputLength = (() => {
+      try { return JSON.stringify(body?.messages ?? []).length; } catch { return 0; }
+    })();
+
+    // Fire lifecycle + pre-chat events without awaiting (non-blocking).
+    try {
+      sendSessionLifecycle(credentials, proxyOptions).catch(() => {});
+      sendPreChatEvents(credentials, { requestId, conversationId, messageId, model, historyCount, inputLength }, proxyOptions).catch(() => {});
+    } catch { /* fail-open */ }
+
+    let result = null;
+    let execError = null;
+    try {
+      result = await super.execute(args);
+      return result;
+    } catch (e) {
+      execError = e;
+      throw e;
+    } finally {
+      // Post-chat telemetry (response received or error) — fire-and-forget.
+      try {
+        const durationMs = Date.now() - t0;
+        const isSuccessful = !execError && (result?.response?.ok ?? false);
+        sendPostChatEvents(credentials, {
+          requestId,
+          conversationId,
+          model,
+          inputToken: 0,
+          outputToken: 0,
+          isSuccessful,
+          messageErrorCode: execError ? String(execError?.status || "error") : "",
+          durationMs,
+        }, proxyOptions).catch(() => {});
+        sendGalileoTrace(credentials, { durationMs }, proxyOptions).catch(() => {});
+      } catch { /* fail-open */ }
+    }
   }
 
   transformRequest(model, body, stream, credentials) {
