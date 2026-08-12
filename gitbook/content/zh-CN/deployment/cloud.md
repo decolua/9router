@@ -48,7 +48,7 @@ export NODE_ENV="production"
 | 变量 | 默认值 | 说明 |
 |----------|---------|-------------|
 | `JWT_SECRET` | 自动生成 | **生产环境必须修改!** 用于 JWT token 签名 |
-| `INITIAL_PASSWORD` | `123456` | 仪表盘登录密码 |
+| `INITIAL_PASSWORD` | 不设置 | 可选的无头引导密码(至少 8 个字符)。不设置时,首次启动需要服务器控制台打印的一次性 setup token —— 没有默认密码 |
 | `DATA_DIR` | `~/.9router` | 数据库与数据存储路径 （目录名称与旧版本保持一致，以确保向后兼容） |
 | `NODE_ENV` | `development` | 部署时设为 `production` |
 | `ENABLE_REQUEST_LOGS` | `false` | 启用 debug 请求/响应日志 |
