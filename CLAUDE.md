@@ -40,7 +40,7 @@ npx vitest run unit/capabilities.test.js   # single file (path relative to tests
 ```
 > The committed `tests/package.json` `test` script hardcodes Unix paths (`NODE_PATH=/tmp/node_modules …`) — a shared-install workaround from upstream. On Windows (or anywhere), ignore it and use the `npx vitest` form above; `vitest.config.js` resolves the `open-sse`/`@/` aliases from the repo root regardless of where vitest lives.
 >
-> **The suite is NOT expected to be all-green on a plain checkout.** 1808 pass, 85 fail (re-measured 2026-08-11). Judge regressions with `tests/__baseline__/verify-no-regression.mjs`, not a raw run:
+> **The suite is NOT expected to be all-green on a plain checkout.** 1801 pass, 85 fail (re-measured 2026-08-12). Judge regressions with `tests/__baseline__/verify-no-regression.mjs`, not a raw run:
 > ```bash
 > cd tests && npx vitest run --reporter=json --outputFile=/tmp/results.json
 > cd .. && node tests/__baseline__/verify-no-regression.mjs /tmp/results.json

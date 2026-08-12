@@ -1,6 +1,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { CLAUDE_SYSTEM_PROMPT } from "../../config/appConstants.js";
+import { EMPTY_TURN_TEXT, isEmptyTurnContent } from "../../config/emptyTurn.js";
 import { adjustMaxTokens } from "../formats/maxTokens.js";
 import { safeParseJSON } from "../concerns/json.js";
 import { parseDataUri } from "../concerns/image.js";
@@ -51,11 +52,25 @@ export function openaiToClaudeRequest(model, body, stream) {
     let currentRole = undefined;
     let currentParts = [];
 
+    // A turn that produced no blocks — an assistant reply the echo filter
+    // scrubbed to nothing — still happened. Dropping it lets the turns on either
+    // side merge into one, which erases a speaker from the history; a model that
+    // cannot see its own voice in the transcript starts continuing the user's
+    // instead of answering it. The turn keeps its slot instead.
+    //
+    // The text has to be non-whitespace: `hasValidContent` in formats/claude.js
+    // requires `block.text?.trim()`, so a blank placeholder is filtered straight
+    // back out and the merge happens anyway.
+    const emptyTurnBlock = () => ({ type: CLAUDE_BLOCK.TEXT, text: EMPTY_TURN_TEXT });
+
     const flushCurrentMessage = () => {
-      if (currentRole && currentParts.length > 0) {
-        result.messages.push({ role: currentRole, content: currentParts });
-        currentParts = [];
-      }
+      if (!currentRole) return;
+      // Substituted only when the whole turn is empty, so a placeholder is never
+      // prepended to a turn that does carry real content.
+      const content = currentParts.length > 0 ? currentParts : [emptyTurnBlock()];
+      result.messages.push({ role: currentRole, content });
+      currentParts = [];
+      currentRole = undefined;
     };
 
     for (const msg of nonSystemMessages) {
@@ -95,6 +110,15 @@ export function openaiToClaudeRequest(model, body, stream) {
     }
 
     flushCurrentMessage();
+
+    // A trailing assistant turn is a prefill: the model is asked to continue
+    // from it rather than answer. A placeholder there would invite exactly the
+    // completion behaviour this placeholder exists to prevent, so drop it — a
+    // dangling empty turn at the end has no neighbours to keep apart anyway.
+    const last = result.messages.at(-1);
+    if (last?.role === ROLE.ASSISTANT && isEmptyTurnContent(last.content)) {
+      result.messages.pop();
+    }
 
     // Add cache_control to last assistant message
     for (let i = result.messages.length - 1; i >= 0; i--) {

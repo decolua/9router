@@ -1,6 +1,25 @@
 # Unreleased
 
 ## Fixes
+- **Translator**: a Gemini-served model would stop replying and start completing
+  the user's sentence — mid-word, in the user's voice — after enough turns. Two
+  rules combined to cause it: an assistant turn whose parts came out empty was
+  never pushed, and `normalizeGeminiContents` merged whatever ended up adjacent.
+  Drop a model turn between two user turns and those user turns fuse. In an
+  agentic session, where every tool result arrives as a `user` turn, the model's
+  voice eroded a little each round until Gemini was handed a transcript in which
+  it had never spoken — an unfinished monologue, which it continued. A six-round
+  tool exchange lost half its model turns. Empty turns now keep their slot on
+  all three affected paths (`openai-to-gemini`, the Antigravity envelope, and
+  `openai-to-claude`, which dropped the turn one hop earlier), never as a
+  trailing prefill. `findSpeakerBoundaryViolation` asserts the invariant so a
+  future edit that reintroduces the erasure is loud rather than silent.
+  The echo scrubbers made this worse over time: each scrub emptied an assistant
+  turn, and the emptied turn was then dropped from the next request. The
+  placeholder is non-whitespace because `hasValidContent` filters blank blocks
+  straight back out, and is never left trailing, where an assistant turn is a
+  prefill the model continues from
+
 - **Tests**: `verify-no-regression.mjs` recovered the repo-relative path by
   splitting on `/app/`, so outside the container every entry became
   `undefined :: <name>`, matched nothing in the baseline, and reported all 98
