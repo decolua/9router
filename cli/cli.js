@@ -540,9 +540,20 @@ if (!fs.existsSync(serverPath)) {
 
 // Start server immediately; run update check in parallel (not on the critical path).
 const updatePromise = checkForUpdate();
-killAllAppProcesses(port)
-  .then(() => killProcessOnPort(port))
-  .then(() => startServer(updatePromise));
+// If a server is already listening (e.g. a launchd/systemd-managed always-on
+// instance), attach to it instead of killing/restarting — killing races with the
+// supervisor's KeepAlive and crashes the CLI. Short timeout: a live server
+// resolves immediately; a free port resolves false after ~500ms.
+waitServerReady(port, { timeoutMs: 500 }).then((alreadyRunning) => {
+  if (alreadyRunning) {
+    console.log(`\x1b[33mℹ 9Router already running on port ${port}. Attaching to existing instance.\x1b[0m`);
+    startServer(updatePromise, { attachOnly: true });
+  } else {
+    killAllAppProcesses(port)
+      .then(() => killProcessOnPort(port))
+      .then(() => startServer(updatePromise));
+  }
+});
 
 // Show interface selection menu
 async function showInterfaceMenu(latestVersion) {
@@ -592,7 +603,7 @@ async function showInterfaceMenu(latestVersion) {
 const MAX_RESTARTS = 2;
 const RESTART_RESET_MS = 30000; // Reset counter if alive > 30s
 
-function startServer(updatePromise) {
+function startServer(updatePromise, { attachOnly = false } = {}) {
   // Accept either a Promise (parallel update check) or a resolved value.
   const latestVersionPromise = Promise.resolve(updatePromise);
   const displayHost = getDisplayHost();
@@ -633,7 +644,9 @@ function startServer(updatePromise) {
     return child;
   }
 
-  let server = spawnServer();
+  // In attach-only mode we do NOT own the server process, so cleanup must not
+  // kill it. We only manage the tray and tunnel, never the shared server.
+  let server = attachOnly ? null : spawnServer();
 
   // Cleanup function - force kill server process
   let isCleaningUp = false;
@@ -650,12 +663,14 @@ function startServer(updatePromise) {
       killProxyByPidFile();
       // Kill cloudflared/tailscale via PID file (only this app's tunnel)
       killTunnelByPidFile();
-      // Kill server process directly
-      if (server.pid) {
+      // Kill server process directly (only when we own it)
+      if (server && server.pid) {
         process.kill(server.pid, "SIGKILL");
       }
       // Also try to kill process group
-      process.kill(-server.pid, "SIGKILL");
+      if (server && server.pid) {
+        process.kill(-server.pid, "SIGKILL");
+      }
     } catch (e) { }
   }
 
@@ -866,5 +881,10 @@ function startServer(updatePromise) {
     }, delay);
   }
 
-  attachServerEvents();
+  // Only attach crash/restart handlers when we own the server process. In
+  // attach-only mode the server is managed externally (launchd/systemd), so we
+  // must not try to restart it or listen for its exit.
+  if (!attachOnly) {
+    attachServerEvents();
+  }
 }

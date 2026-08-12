@@ -180,7 +180,7 @@ function enableMacOS(cliPath) {
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
-    <false/>
+    <true/>
     <key>StandardOutPath</key>
     <string>/tmp/9router.log</string>
     <key>StandardErrorPath</key>
