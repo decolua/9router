@@ -94,8 +94,10 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
   const displayName = isOAuth
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
     : connection.name;
-  // Only blur when the label actually is the email address
-  const displayNameIsEmail = !!connection.email?.trim() && displayName === connection.email.trim();
+  // Only blur when the label actually is the email address. Compare trimmed
+  // values so padding around the stored email can't slip past the check.
+  const connectionEmail = connection.email?.trim();
+  const displayNameIsEmail = !!connectionEmail && displayName?.trim() === connectionEmail;
 
   const handleSelectProxy = async (poolId) => {
     setUpdatingProxy(true);

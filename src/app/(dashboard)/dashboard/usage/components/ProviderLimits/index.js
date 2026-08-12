@@ -1434,7 +1434,19 @@ export default function ProviderLimits() {
           setResetConfirmState(null);
         }}
         title="Reset Codex limit?"
-        message={`Use 1 Codex reset credit for ${getConnectionLabel(resetConfirmState?.connection || {}) || "this account"}. This cannot be undone. Remaining credits: ${resetConfirmState?.resetCreditCount ?? 0}.`}
+        message={(() => {
+          const conn = resetConfirmState?.connection || {};
+          const label = getConnectionLabel(conn);
+          return (
+            <>
+              {"Use 1 Codex reset credit for "}
+              <span className={isConnectionEmail(conn, label) ? blurClass : ""}>
+                {label || "this account"}
+              </span>
+              {`. This cannot be undone. Remaining credits: ${resetConfirmState?.resetCreditCount ?? 0}.`}
+            </>
+          );
+        })()}
         confirmText="Reset limit"
         cancelText="Cancel"
         variant="danger"
@@ -1447,7 +1459,7 @@ export default function ProviderLimits() {
             <div className="flex items-start justify-between gap-3 border-b border-black/10 bg-black/[0.03] px-4 py-3 dark:border-white/10 dark:bg-white/[0.04]">
               <div className="min-w-0">
                 <h3 className="text-base font-semibold text-text-primary">Codex Reset Credit Expiry</h3>
-                <p className="mt-0.5 truncate text-xs text-text-muted">
+                <p className={`mt-0.5 truncate text-xs text-text-muted ${isConnectionEmail(resetCreditsState.connection, getConnectionLabel(resetCreditsState.connection)) ? blurClass : ""}`}>
                   {getConnectionLabel(resetCreditsState.connection) || "Codex account"}
                 </p>
               </div>
