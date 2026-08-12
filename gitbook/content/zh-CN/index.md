@@ -1,14 +1,14 @@
-# 欢迎使用 9Router
+# 欢迎使用 10router
 
 **免费使用 Claude、Codex、Gemini • 超低价替代方案,每 1M token 仅需 $0.20**
 
-9Router 是一款 AI 模型路由工具,通过智能路由和自动回退机制,最大化你的订阅价值并最小化成本。
+10router 是一款 AI 模型路由工具,通过智能路由和自动回退机制,最大化你的订阅价值并最小化成本。
 
 ---
 
-## 什么是 9Router?
+## 什么是 10router?
 
-9Router 是一款智能代理,位于你的编码工具(Cursor、Cline、Claude Desktop)与 AI 提供商之间。它会根据配额、成本和可用性,自动将请求路由到最合适的模型。
+10router 是一款智能代理,位于你的编码工具(Cursor、Cline、Claude Desktop)与 AI 提供商之间。它会根据配额、成本和可用性,自动将请求路由到最合适的模型。
 
 **告别浪费:**
 - ❌ 订阅配额每月未用完就过期
@@ -66,7 +66,7 @@
 
 ---
 
-## 为什么选择 9Router?
+## 为什么选择 10router?
 
 ### 最大化订阅价值
 
@@ -105,10 +105,10 @@
 
 ```bash
 # 全局安装
-npm install -g 9router
+npm install -g 10router
 
 # 启动(仪表盘自动打开)
-9router
+10router
 ```
 
 🎉 **仪表盘自动打开** → 连接提供商 → 开始编码!
@@ -143,10 +143,10 @@ Model: cc/claude-opus-4-5-20251101
 
 ### 移动/远程编码
 
-- 使用云端部署(https://9router.com)
+- 在 VPS 或 Docker 上部署你自己的实例(参见[云端部署](deployment/cloud.md))
 - 从 iPad、手机、任何地方访问
 - 没有 localhost 限制
-- Cloudflare 边缘网络(300+ 节点)
+- 可通过你自己的域名从互联网访问
 
 ---
 

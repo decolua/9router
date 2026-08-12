@@ -6,7 +6,7 @@
 
 ## コンボとは?
 
-コンボはダッシュボードで作成する**カスタムフォールバックチェーン**です。単一モデルを使う代わりに、9Routerが順番に試すモデルのシーケンスを定義します。
+コンボはダッシュボードで作成する**カスタムフォールバックチェーン**です。単一モデルを使う代わりに、10routerが順番に試すモデルのシーケンスを定義します。
 
 **例:**
 ```
@@ -22,7 +22,7 @@
 Model: premium-coding
 ```
 
-9Routerは成功するまで各モデルを順番に自動的に試します。
+10routerは成功するまで各モデルを順番に自動的に試します。
 
 ---
 
@@ -354,7 +354,7 @@ Settings → Models → Advanced:
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
-  "anthropic_api_key": "your-9router-api-key",
+  "anthropic_api_key": "your-10router-api-key",
   "model": "budget-combo"
 }
 ```
@@ -363,7 +363,7 @@ Settings → Models → Advanced:
 
 ```bash
 export OPENAI_BASE_URL="http://localhost:20128"
-export OPENAI_API_KEY="your-9router-api-key"
+export OPENAI_API_KEY="your-10router-api-key"
 
 codex --model quality-first "your prompt"
 ```
@@ -480,7 +480,7 @@ Dashboard → Combos → Edit → Budget:
   Monthly limit: $50
 ```
 
-上限に達すると、9Routerは有料モデルをスキップして無料階層のみを使用。
+上限に達すると、10routerは有料モデルをスキップして無料階層のみを使用。
 
 ### コンボ内のモデルを有効/無効
 

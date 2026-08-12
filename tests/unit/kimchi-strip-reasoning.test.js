@@ -1,7 +1,7 @@
 /**
  * Kimchi executor: strip reasoning_content echoed by clients.
  *
- * Background: when 9Router streams a thinking model (deepseek-r1,
+ * Background: when 10router streams a thinking model (deepseek-r1,
  * minimax-m3) to a client, the response carries `reasoning_content`.
  * Most OpenAI-compatible SDKs echo the whole history on the next turn,
  * so Kimchi's upstream counts the scratch block as input tokens.

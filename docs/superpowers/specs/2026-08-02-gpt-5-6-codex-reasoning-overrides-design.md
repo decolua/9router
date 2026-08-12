@@ -14,7 +14,7 @@ The supported override matrix is:
 | GPT-5.6 Terra | Yes | Yes |
 | GPT-5.6 Luna | Yes | No |
 
-The same matrix applies to 9router's virtual `-review` variants because they
+The same matrix applies to 10router's virtual `-review` variants because they
 resolve to the corresponding upstream base model.
 
 ## Scope
@@ -118,5 +118,5 @@ Use test-driven development with focused unit coverage:
 - Runtime fetching or caching of the Codex model catalog.
 - Adding these levels to Kiro or another provider.
 - Changing model pricing, quotas, defaults, or service tiers.
-- Adding Codex Ultra's multi-agent orchestration behavior inside 9router;
-  9router only forwards the catalog-advertised reasoning override.
+- Adding Codex Ultra's multi-agent orchestration behavior inside 10router;
+  10router only forwards the catalog-advertised reasoning override.

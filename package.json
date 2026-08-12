@@ -1,8 +1,12 @@
 {
-  "name": "9router-app",
-  "version": "0.5.50",
-  "description": "9Router web dashboard",
+  "name": "10router-app",
+  "version": "0.6.0",
+  "description": "10router web dashboard",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/some-du6e/10router"
+  },
   "scripts": {
     "dev": "next dev --port 20127",
     "dev:webpack": "next dev --webpack --port 20127",

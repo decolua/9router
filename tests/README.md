@@ -1,4 +1,4 @@
-# 9Router Embeddings Tests
+# 10router Embeddings Tests
 
 Unit tests for the `/v1/embeddings` endpoint implementation.
 

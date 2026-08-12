@@ -51,7 +51,7 @@ export default {
 
   // Catalog verified against model_configs_v2.bin from Devin CLI (2026.5.x).
   // Dot-notation ids; the executor MODEL_ALIAS_MAP maps these to Windsurf modelUid.
-  // contextLength dropped — 9router schema uses id+name only.
+  // contextLength dropped — 10router schema uses id+name only.
   models: [
     // Cognition / SWE
     { id: "swe-1.6-fast", name: "SWE-1.6 Fast" },

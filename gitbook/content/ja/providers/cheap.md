@@ -45,10 +45,10 @@ Dashboard → API Keys → Create New
 → APIキーをコピー ("zhipu-"で始まる)
 ```
 
-**ステップ3: 9Routerに追加**
+**ステップ3: 10routerに追加**
 
 ```bash
-9router
+10router
 # Dashboard → Providers → Add API Key
 
 Provider: glm
@@ -117,10 +117,10 @@ Dashboard → API Management → Create Key
 → APIキーをコピー
 ```
 
-**ステップ3: 9Routerに追加**
+**ステップ3: 10routerに追加**
 
 ```bash
-9router
+10router
 # Dashboard → Providers → Add API Key
 
 Provider: minimax
@@ -190,10 +190,10 @@ Dashboard → API Keys → Create New
 → APIキーをコピー
 ```
 
-**ステップ3: 9Routerに追加**
+**ステップ3: 10routerに追加**
 
 ```bash
-9router
+10router
 # Dashboard → Providers → Add API Key
 
 Provider: kimi
@@ -255,7 +255,7 @@ Model: kimi/kimi-latest
 ```
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [9routerダッシュボードから取得]
+  OpenAI API Key: [10routerダッシュボードから取得]
   Model: glm/glm-4.7
 ```
 

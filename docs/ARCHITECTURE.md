@@ -1,10 +1,10 @@
-# 9Router Architecture
+# 10router Architecture
 
 _Last updated: 2026-02-06_
 
 ## Executive Summary
 
-9Router is a local AI routing gateway and dashboard built on Next.js.
+10router is a local AI routing gateway and dashboard built on Next.js.
 It provides a single OpenAI-compatible endpoint (`/v1/*`) and routes traffic across multiple upstream providers with translation, fallback, token refresh, and usage tracking.
 
 Core capabilities:
@@ -52,7 +52,7 @@ flowchart LR
         BROWSER[Browser Dashboard]
     end
 
-    subgraph Router[9Router Local Process]
+    subgraph Router[10router Local Process]
         API[V1 Compatibility API\n/v1/*]
         DASH[Dashboard + Management API\n/api/*]
         CORE[SSE + Translation Core\nopen-sse + src/sse]
@@ -138,7 +138,7 @@ Main flow modules:
 Primary state DB:
 
 - `src/lib/localDb.js`
-- file: `${DATA_DIR}/db.json` (or `~/.9router/db.json` when `DATA_DIR` is unset)
+- file: `${DATA_DIR}/db.json` (or `~/.9router/db.json` when `DATA_DIR` is unset) (the directory name is unchanged from the previous release for backward compatibility)
 - entities: providerConnections, providerNodes, modelAliases, combos, apiKeys, settings, pricing
 
 Usage DB:
@@ -391,7 +391,7 @@ flowchart LR
         Browser[Dashboard Browser]
     end
 
-    subgraph ContainerOrProcess[9Router Runtime]
+    subgraph ContainerOrProcess[10router Runtime]
         Next[Next.js Server\nPORT=20128]
         Core[SSE Core + Executors]
         MainDB[(db.json)]
@@ -549,8 +549,8 @@ Environment variables actively used by code:
 
 ## Operational Verification Checklist
 
-- Build from source: `cd /root/dev/9router && npm run build`
-- Build Docker image: `cd /root/dev/9router && docker build -t 9router .`
+- Build from source: `cd /root/dev/10router && npm run build`
+- Build Docker image: `cd /root/dev/10router && docker build -t 10router .`
 - Start service and verify:
 - `GET /api/settings`
 - `GET /api/v1/models`

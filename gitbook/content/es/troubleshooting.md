@@ -1,6 +1,6 @@
 # Solución de problemas
 
-Problemas comunes y soluciones al usar 9Router.
+Problemas comunes y soluciones al usar 10router.
 
 ---
 
@@ -78,7 +78,7 @@ Problemas comunes y soluciones al usar 9Router.
 **Soluciones:**
 
 1. **Refresh automático (por defecto):**
-   9Router refresca automáticamente los tokens. Espera 30 segundos y reintenta.
+   10router refresca automáticamente los tokens. Espera 30 segundos y reintenta.
 
 2. **Reconexión manual:**
    ```
@@ -135,15 +135,15 @@ Problemas comunes y soluciones al usar 9Router.
 **Problema:** "ECONNREFUSED" o "Cannot connect to localhost:20128".
 
 **Causas:**
-- 9Router no está ejecutándose
+- 10router no está ejecutándose
 - Puerto 20128 bloqueado
 - Firewall bloqueando la conexión
 
 **Soluciones:**
 
-1. **Inicia 9Router:**
+1. **Inicia 10router:**
    ```bash
-   9router
+   10router
    ```
    El dashboard debe abrir en http://localhost:3000
 
@@ -161,10 +161,10 @@ Problemas comunes y soluciones al usar 9Router.
    - Windows: Windows Defender Firewall → Allow app
    - Linux: `sudo ufw allow 20128`
 
-4. **Usa el endpoint en la nube:**
-   Si localhost no funciona (ej. Cursor IDE):
+4. **Usa un endpoint público:**
+   Si localhost no funciona (ej. Cursor IDE), expón tu propia instancia (VPS o túnel) y usa su URL:
    ```
-   Endpoint: https://9router.com/v1
+   Endpoint: https://your-10router-host/v1
    ```
 
 ---
@@ -175,15 +175,15 @@ Problemas comunes y soluciones al usar 9Router.
 
 **Causas:**
 - Puerto 3000 ya en uso
-- 9Router crasheó
+- 10router crasheó
 - Problemas de caché del navegador
 
 **Soluciones:**
 
-1. **Verifica si 9Router está ejecutándose:**
+1. **Verifica si 10router está ejecutándose:**
    ```bash
    # Verifica el proceso
-   ps aux | grep 9router
+   ps aux | grep 10router
    
    # Verifica el puerto 3000
    lsof -i :3000
@@ -199,13 +199,13 @@ Problemas comunes y soluciones al usar 9Router.
    taskkill /PID <PID> /F
    ```
 
-3. **Reinicia 9Router:**
+3. **Reinicia 10router:**
    ```bash
    # Detener
-   pkill -f 9router
+   pkill -f 10router
    
    # Iniciar
-   9router
+   10router
    ```
 
 4. **Limpia la caché del navegador:**
@@ -346,6 +346,6 @@ Problemas comunes y soluciones al usar 9Router.
 
 ## ¿Necesitas más ayuda?
 
-- **GitHub Issues:** [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
-- **Documentación:** [9router.com/docs](https://9router.com/docs)
+- **GitHub Issues:** [github.com/some-du6e/10router/issues](https://github.com/some-du6e/10router/issues)
+- **Documentación:** [gitbook/content/es](https://github.com/some-du6e/10router/tree/master/gitbook/content/es)
 - **FAQ:** [faq.md](faq.md)

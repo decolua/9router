@@ -61,7 +61,7 @@ const MODEL_PATTERNS = {
 // Models that must NEVER be re-routed — always passthrough to the real upstream, even when
 // the tool's other models are mapped. Antigravity's tab-autocomplete (`tab_jump_flash_lite_preview`,
 // `tab_flash_lite_preview`, requestType tab/tab_jump) is latency-critical inline completion; routing
-// it through 9Router to an external chat model makes typing laggy and burns provider quota per
+// it through 10router to an external chat model makes typing laggy and burns provider quota per
 // keystroke. Without this guard the broad `flash` pattern in MODEL_PATTERNS hijacks them onto the
 // flash-agent slot. Verified via MITM dump capture of streamGenerateContent (see AI_JOURNAL).
 const MODEL_NO_MAP = {

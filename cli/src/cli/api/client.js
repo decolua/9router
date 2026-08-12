@@ -15,7 +15,7 @@ const DEFAULT_CONFIG = {
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
-const APP_NAME = "9router";
+const APP_NAME = "10router";
 
 function getDataDir() {
   if (process.env.DATA_DIR) return process.env.DATA_DIR;
@@ -364,7 +364,7 @@ async function deleteCombo(id) {
 /**
  * Get CLI tool settings
  * @param {string} tool - Tool name: claude | codex | droid | openclaw
- * @returns {Promise<Object>} { success, data: { installed, has9Router, ... } }
+ * @returns {Promise<Object>} { success, data: { installed, has10Router, ... } }
  */
 async function getCliToolSettings(tool) {
   return makeRequest("GET", `/api/cli-tools/${tool}-settings`);

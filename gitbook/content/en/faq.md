@@ -1,12 +1,12 @@
 # Frequently Asked Questions
 
-Common questions about 9Router.
+Common questions about 10router.
 
 ---
 
-## What is 9Router?
+## What is 10router?
 
-**9Router is an AI model router that maximizes your subscription value and minimizes costs.**
+**10router is an AI model router that maximizes your subscription value and minimizes costs.**
 
 It intelligently routes requests across multiple AI providers using a 3-tier fallback system:
 1. **Subscription tier** - Maximize Claude Code, Codex, Gemini quotas you already pay for
@@ -23,7 +23,7 @@ It intelligently routes requests across multiple AI providers using a 3-tier fal
 
 ## How does pricing work?
 
-**9Router uses a 3-tier pricing strategy:**
+**10router uses a 3-tier pricing strategy:**
 
 ### Tier 1: Subscription (Maximize First)
 - **Claude Code** (Pro/Max): $20-100/month - 5-hour + weekly quota
@@ -50,9 +50,9 @@ It intelligently routes requests across multiple AI providers using a 3-tier fal
 
 ---
 
-## Is 9Router free?
+## Is 10router free?
 
-**Yes, 9Router itself is 100% free and open source.**
+**Yes, 10router itself is 100% free and open source.**
 
 **Free tier providers available:**
 - **Gemini CLI** - 180K completions/month (FREE Google account)
@@ -96,7 +96,7 @@ See [providers documentation](providers/subscription.md) for details.
 
 ## Can I use multiple providers?
 
-**Yes! This is 9Router's core feature.**
+**Yes! This is 10router's core feature.**
 
 **Combos allow you to chain multiple providers with automatic fallback:**
 
@@ -129,7 +129,7 @@ See [combos documentation](features/combos.md) for examples.
 
 ## How does quota tracking work?
 
-**9Router tracks quota in real-time for all providers:**
+**10router tracks quota in real-time for all providers:**
 
 **Features:**
 - **Token consumption** - Input/output tokens per request
@@ -154,26 +154,26 @@ See [quota tracking documentation](features/quota-tracking.md) for details.
 
 ---
 
-## Does 9Router work with Cursor?
+## Does 10router work with Cursor?
 
-**Yes, but Cursor requires a cloud endpoint.**
+**Yes, but Cursor requires a publicly reachable endpoint.**
 
 **Problem:** Cursor IDE doesn't support localhost endpoints.
 
-**Solution:** Use 9Router cloud deployment:
+**Solution:** Host 10router at a public URL and point Cursor at it:
 
 ```
 Cursor Settings → Models → Advanced:
-  OpenAI API Base URL: https://9router.com/v1
+  OpenAI API Base URL: https://your-10router-host/v1
   OpenAI API Key: [from dashboard]
   Model: cc/claude-opus-4-5-20251101
 ```
 
-**Alternative:** Self-host on VPS with public domain:
+**Example:** Self-host on a VPS with a public domain:
 ```bash
 # Deploy to VPS
-git clone https://github.com/decolua/9router.git
-cd 9router/app
+git clone https://github.com/some-du6e/10router.git
+cd 10router/app
 npm install && npm run build
 npm start
 
@@ -192,22 +192,22 @@ See [Cursor integration guide](integration/cursor.md) for details.
 
 ---
 
-## Can I self-host 9Router?
+## Can I self-host 10router?
 
-**Yes! 9Router supports multiple deployment options:**
+**Yes! 10router supports multiple deployment options:**
 
 ### Localhost (Default)
 ```bash
-npm install -g 9router
-9router
+npm install -g 10router
+10router
 → Dashboard: http://localhost:3000
 → API: http://localhost:20128/v1
 ```
 
 ### VPS/Cloud
 ```bash
-git clone https://github.com/decolua/9router.git
-cd 9router/app
+git clone https://github.com/some-du6e/10router.git
+cd 10router/app
 npm install && npm run build
 
 export JWT_SECRET="your-secure-secret"
@@ -219,17 +219,17 @@ npm start
 
 ### Docker
 ```bash
-docker build -t 9router .
+docker build -t 10router .
 docker run -d \
   -p 3000:3000 \
   -e JWT_SECRET="your-secret" \
-  -v 9router-data:/app/data \
-  9router
+  -v 10router-data:/app/data \
+  10router
 ```
 
 ### Cloudflare Workers
 ```bash
-cd 9router/app
+cd 10router/app
 npm run deploy:cloudflare
 ```
 
@@ -245,11 +245,11 @@ See [deployment guide](getting-started/installation.md#deployment) for details.
 
 ## Is my data secure?
 
-**Yes, 9Router prioritizes security and privacy:**
+**Yes, 10router prioritizes security and privacy:**
 
 **Local storage:**
-- All data stored locally in `~/.9router` (or custom `DATA_DIR`)
-- No data sent to 9Router servers
+- All data stored locally in `~/.9router` (or custom `DATA_DIR`) (the directory name is unchanged from the previous release for backward compatibility)
+- No data sent to 10router servers
 - OAuth tokens encrypted with JWT
 
 **No telemetry:**
@@ -268,31 +268,31 @@ See [deployment guide](getting-started/installation.md#deployment) for details.
 - Enable HTTPS for cloud deployments
 - Rotate API keys regularly
 
-**What 9Router stores:**
+**What 10router stores:**
 - Provider OAuth tokens (encrypted)
 - API keys (encrypted)
 - Usage statistics (local only)
 - Combo configurations
 
-**What 9Router does NOT store:**
+**What 10router does NOT store:**
 - Your prompts or responses
 - Code you generate
 - Personal information
 
 ---
 
-## How do I update 9Router?
+## How do I update 10router?
 
 **Update methods depend on installation type:**
 
 ### Global NPM Install
 ```bash
-npm update -g 9router
+npm update -g 10router
 ```
 
 ### Local Install
 ```bash
-cd 9router/app
+cd 10router/app
 git pull origin main
 npm install
 npm run build
@@ -301,22 +301,22 @@ npm start
 
 ### Docker
 ```bash
-docker pull 9router:latest
-docker stop 9router
-docker rm 9router
+docker pull 10router:latest
+docker stop 10router
+docker rm 10router
 docker run -d \
   -p 3000:3000 \
-  -v 9router-data:/app/data \
-  9router:latest
+  -v 10router-data:/app/data \
+  10router:latest
 ```
 
 **Check version:**
 ```bash
-9router --version
+10router --version
 ```
 
 **Breaking changes:**
-- Check [CHANGELOG.md](https://github.com/decolua/9router/blob/main/CHANGELOG.md)
+- Check [CHANGELOG.md](https://github.com/some-du6e/10router/blob/main/CHANGELOG.md)
 - Backup `~/.9router` before major updates
 - Review migration guides for major versions
 
@@ -329,18 +329,18 @@ docker run -d \
 ### Ways to contribute:
 
 1. **Report bugs:**
-   - [GitHub Issues](https://github.com/decolua/9router/issues)
+   - [GitHub Issues](https://github.com/some-du6e/10router/issues)
    - Include error logs, steps to reproduce
 
 2. **Request features:**
-   - [GitHub Discussions](https://github.com/decolua/9router/discussions)
+   - [GitHub Discussions](https://github.com/some-du6e/10router/discussions)
    - Describe use case and benefits
 
 3. **Submit code:**
    ```bash
    # Fork repo
-   git clone https://github.com/YOUR_USERNAME/9router.git
-   cd 9router
+   git clone https://github.com/YOUR_USERNAME/10router.git
+   cd 10router
    
    # Create branch
    git checkout -b feature/your-feature
@@ -375,13 +375,13 @@ docker run -d \
 - Update documentation
 - Keep commits atomic and descriptive
 
-See [CONTRIBUTING.md](https://github.com/decolua/9router/blob/main/CONTRIBUTING.md) for details.
+See [CONTRIBUTING.md](https://github.com/some-du6e/10router/blob/main/CONTRIBUTING.md) for details.
 
 ---
 
 ## Need More Help?
 
-- **Documentation:** [9router.com/docs](https://9router.com/docs)
-- **GitHub:** [github.com/decolua/9router](https://github.com/decolua/9router)
-- **Issues:** [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **Documentation:** [gitbook/content/en](https://github.com/some-du6e/10router/tree/master/gitbook/content/en)
+- **GitHub:** [github.com/some-du6e/10router](https://github.com/some-du6e/10router)
+- **Issues:** [github.com/some-du6e/10router/issues](https://github.com/some-du6e/10router/issues)
 - **Troubleshooting:** [troubleshooting.md](troubleshooting.md)

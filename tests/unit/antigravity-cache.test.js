@@ -6,7 +6,9 @@
  *  2. Different sessionId (same account) → cache miss
  *  3. Cross-account cache share? (call A warmup → B same prompt/session, check hit)
  *
- * Reads real OAuth refreshToken from ~/.9router/db.json.
+ * Reads real OAuth refreshToken from ~/.9router/db.json. The on-disk data dir keeps the
+ * pre-rebrand `.9router` name for backward compatibility with existing installs — do NOT
+ * rename it to `.10router`.
  * Enable with: AG_CACHE_TEST=1 npm test
  */
 

@@ -18,11 +18,11 @@ const FEATURES = [
     title: "Easy Setup", 
     desc: "Get up and running in minutes with npx command.", 
     colors: {
-      border: "hover:border-orange-500/50",
-      bg: "hover:bg-orange-500/5",
-      iconBg: "bg-orange-500/10",
-      iconText: "text-orange-500",
-      titleHover: "group-hover:text-orange-400"
+      border: "hover:border-pink-500/50",
+      bg: "hover:bg-pink-500/5",
+      iconBg: "bg-pink-500/10",
+      iconText: "text-pink-500",
+      titleHover: "group-hover:text-pink-400"
     }
   },
   { 
@@ -114,7 +114,7 @@ export default function Features() {
           {FEATURES.map((feature) => (
             <div 
               key={feature.title}
-              className={`p-6 rounded-xl bg-[#23180f] border border-[#3a2f27] ${feature.colors.border} ${feature.colors.bg} transition-all duration-300 group`}
+              className={`p-6 rounded-xl bg-[#20141c] border border-[#3a2733] ${feature.colors.border} ${feature.colors.bg} transition-all duration-300 group`}
             >
               <div className={`w-10 h-10 rounded-lg ${feature.colors.iconBg} flex items-center justify-center mb-4 ${feature.colors.iconText} group-hover:scale-110 transition-transform duration-300`}>
                 <span className="material-symbols-outlined">{feature.icon}</span>

@@ -12,11 +12,13 @@ const BUILD_CONFIG = {
 
 const cliDir = path.resolve(__dirname, "..");
 const appDir = path.resolve(cliDir, "..");
-const cliAppDir = process.env.NINEROUTER_CLI_APP_DIR || path.join(cliDir, "app");
+// Dual-accept: prefer the new TENROUTER_* name, still honour the legacy
+// NINEROUTER_* name so existing build environments keep working.
+const cliAppDir = process.env.TENROUTER_CLI_APP_DIR || process.env.NINEROUTER_CLI_APP_DIR || path.join(cliDir, "app");
 const cliMitmDir = path.join(cliAppDir, "src", "mitm");
 // Bundle everything — no externals. This keeps MITM runtime self-contained so
 // it can be copied to DATA_DIR/runtime/ and spawned from there (escapes
-// node_modules file locks that block `npm i -g 9router@latest` on Windows).
+// node_modules file locks that block `npm i -g 10router@latest` on Windows).
 const EXTERNALS = [];
 const ENTRIES = ["server.js"];
 

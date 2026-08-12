@@ -1,7 +1,7 @@
 <div align="center">
-  <img src="../images/9router.png?1" alt="9Router Dashboard" width="800"/>
+  <img src="../images/10router.png?1" alt="10router Dashboard" width="800"/>
   
-  # 9Router - 免费 AI 路由器
+  # 10router - 免费 AI 路由器
   
   **永不停歇的编程体验。智能回退，自动路由到免费和廉价的 AI 模型。**
   
@@ -11,16 +11,16 @@
     <img src="../public/providers/openclaw.png" alt="OpenClaw" width="80"/>
   </p>
   
-  [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
-  [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-  [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
+  [![npm](https://img.shields.io/npm/v/10router.svg)](https://www.npmjs.com/package/10router)
+  [![Downloads](https://img.shields.io/npm/dm/10router.svg)](https://www.npmjs.com/package/10router)
+  [![License](https://img.shields.io/npm/l/10router.svg)](https://github.com/some-du6e/10router/blob/main/LICENSE)
   
-  [🚀 快速开始](#-quick-start) • [💡 特性](#-key-features) • [📖 设置](#-setup) • [🌐 网站](https://9router.com)
+  [🚀 快速开始](#-quick-start) • [💡 特性](#-key-features) • [📖 设置](#-setup)
 </div>
 
 ---
 
-## 🤔 为什么选择 9Router？
+## 🤔 为什么选择 10router？
 
 **停止浪费金钱和触碰限制：**
 
@@ -29,7 +29,7 @@
 - ❌ 昂贵的 API（每个提供商 $20-50/月）
 - ❌ 手动在提供商之间切换
 
-**9Router 解决方案：**
+**10router 解决方案：**
 
 - ✅ **最大化订阅价值** - 追踪配额，在重置前用尽每一分
 - ✅ **自动回退** - 订阅 廉价 → 免费，零停机时间
@@ -48,7 +48,7 @@
        │ http://localhost:20128/v1
        ↓
 ┌─────────────────────────────────────────────┐
-│           9Router (Smart Router)            │
+│           10router (Smart Router)            │
 │  • RTK Token Saver (节省 20-40% Token)      │
 │  • 格式转换 (OpenAI ↔ Claude)               │
 │  • 配额追踪 (Quota tracking)                │
@@ -71,8 +71,8 @@
 **1. 全局安装：**
 
 ```bash
-npm install -g 9router
-9router
+npm install -g 10router
+10router
 ```
 
 🎉 仪表板将在 `http://localhost:20128` 打开
@@ -94,7 +94,7 @@ Claude Code/Codex/Gemini CLI/OpenClaw/Cursor/Cline 设置:
 
 **替代方案：从源码运行（此仓库）：**
 
-此仓库包是私有的（`9router-app`），因此源码/Docker 执行是预期的本地开发路径。
+此仓库包是私有的（`10router-app`），因此源码/Docker 执行是预期的本地开发路径。
 
 ```bash
 cp .env.example .env
@@ -119,12 +119,12 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 <div align="center">
   
-### 📺完整设置指南 - 9Router + Claude Code 免费
+### 📺完整设置指南 - 10router + Claude Code 免费
   
-[![9Router + Claude Code Setup](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
+[![10router + Claude Code Setup](https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg)](https://www.youtube.com/watch?v=raEyZPg5xE0)
 
 **🎬 观看完整的分步教程：**
-- ✅ 9Router 安装与设置
+- ✅ 10router 安装与设置
 - ✅ 免费 Claude Sonnet 4.5 配置
 - ✅ Claude Code 集成
 - ✅ 实时编程演示
@@ -139,7 +139,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 ## 🛠️ 支持的 CLI 工具
 
-9Router 与所有主流 AI 编程工具无缝协作：
+10router 与所有主流 AI 编程工具无缝协作：
 
 <div align="center">
   <table>
@@ -390,7 +390,7 @@ Combo: "my-coding-stack"
 
 格式间无缝转换：
 - **OpenAI** ↔ **Claude** ↔ **Gemini** ↔ **OpenAI Responses**
-- 您的 CLI 工具发送 OpenAI 格式 → 9Router 转换 → 提供商接收原生格式
+- 您的 CLI 工具发送 OpenAI 格式 → 10router 转换 → 提供商接收原生格式
 - 适用于任何支持自定义 OpenAI 端点的工具
 
 ### 👥 多账户支持
@@ -444,13 +444,13 @@ Combo: "my-coding-stack"
 > **💡 重要 - 理解仪表板成本：**
 > 
 > 使用分析中显示的“成本”**仅用于追踪和比较目的**。
-> 9Router 本身**从不向您收费**。您只需直接向提供商付款（如果使用付费服务）。
+> 10router 本身**从不向您收费**。您只需直接向提供商付款（如果使用付费服务）。
 > 
 > **示例：** 如果您的仪表板在使用 iFlow 模型时显示“$290 总成本”，这代表
 > 您直接使用付费 API 时需要支付的金额。您的实际成本 = **$0**（iFlow 是免费无限制的）。
 > 
 > 将其视为“节省追踪器”，显示您通过使用免费模型或
-> 通过 9Router 路由节省了多少！
+> 通过 10router 路由节省了多少！
 
 ### 🌐 随处部署
 
@@ -482,15 +482,15 @@ Combo: "my-coding-stack"
 
 ---
 
-### 📊 理解 9Router 成本和计费
+### 📊 理解 10router 成本和计费
 
-**9Router 计费现实：**
+**10router 计费现实：**
 
-✅ **9Router 软件 = 永远免费**开源，从不收费）  
+✅ **10router 软件 = 永远免费**开源，从不收费）  
 ✅ **仪表板“成本” = 仅显示/追踪**（非实际账单）  
 ✅ **您直接向提供商付款**（订阅或 API 费用）  
 ✅ **免费提供商保持免费**（iFlow, Kiro, Qwen = $0 无限制）  
-❌ **9Router 从不发送发票**或向您的卡收费
+❌ **10router 从不发送发票**或向您的卡收费
 
 **成本显示如何工作：**
 
@@ -510,9 +510,9 @@ Combo: "my-coding-stack"
 
 **付款规则：**
 - **订阅提供商**（Claude Code, Codex）：通过他们的网站直接向他们付款
-- **廉价提供商**（GLM, MiniMax）：直接向他们付款，9Router 只是路由
+- **廉价提供商**（GLM, MiniMax）：直接向他们付款，10router 只是路由
 - **免费**（iFlow, Kiro, Qwen）：真正永远免费，没有隐藏费用
-- **9Router**：从不收取任何费用，永远
+- **10router**：从不收取任何费用，永远
 
 ---
 
@@ -587,7 +587,7 @@ Access via: WhatsApp, Telegram, Slack, Discord, iMessage, Signal...
 <details>
 <summary><b>📊 为什么我的仪表板显示高成本？</b></summary>
 
-仪表板追踪您的 Token 使用情况，并显示**估算成本**，就像您直接使用付费 API 一样。这**不是实际计费** - 它是一个参考，显示您通过 9Router 使用免费模型或现有订阅节省了多少。
+仪表板追踪您的 Token 使用情况，并显示**估算成本**，就像您直接使用付费 API 一样。这**不是实际计费** - 它是一个参考，显示您通过 10router 使用免费模型或现有订阅节省了多少。
 
 **示例：**
 - **仪表板显示：**“$290 总成本”
@@ -600,16 +600,16 @@ Access via: WhatsApp, Telegram, Slack, Discord, iMessage, Signal...
 </details>
 
 <details>
-<summary><b>💳 9Router 会向我收费吗？</b></summary>
+<summary><b>💳 10router 会向我收费吗？</b></summary>
 
 **不会。** 9 是免费的开源软件，在您自己的计算机上运行。它从不向您收费。
 
 **您只需支付：**
 - ✅ **订阅提供商**（Claude Code $20/月, Codex $20-200/月）→ 在他们的网站上直接向他们付款
-- ✅ **廉价提供商**（GLM, MiniMax）→ 直接向他们付款，9Router 只是路由您的请求
-- ❌ **9Router 本身** → **从不收取任何费用，永远**
+- ✅ **廉价提供商**（GLM, MiniMax）→ 直接向他们付款，10router 只是路由您的请求
+- ❌ **10router 本身** → **从不收取任何费用，永远**
 
-9Router 是本地代理/路由器。它没有您的信用卡，不能发送发票，也没有计费系统。完全免费的软件。
+10router 是本地代理/路由器。它没有您的信用卡，不能发送发票，也没有计费系统。完全免费的软件。
 
 </details>
 
@@ -623,9 +623,9 @@ Access via: WhatsApp, Telegram, Slack, Discord, iMessage, Signal...
 - **Kiro**：通过 AWS Builder ID 免费无限制 Claude 模型
 - **Qwen**：通过设备认证免费无限制访问 Qwen 模型
 
-Router 只是将您的请求路由到它们 - 没有“陷阱”或未来计费。它们是真正的免费服务，9Router 使它们易于使用并支持回退。
+Router 只是将您的请求路由到它们 - 没有“陷阱”或未来计费。它们是真正的免费服务，10router 使它们易于使用并支持回退。
 
-**注意：** 一些订阅提供商（Antigravity, GitHub Copilot）可能有免费预览期，后来可能变成付费，但这会由这些提供商明确宣布，而不是 9Router。
+**注意：** 一些订阅提供商（Antigravity, GitHub Copilot）可能有免费预览期，后来可能变成付费，但这会由这些提供商明确宣布，而不是 10router。
 
 </details>
 
@@ -650,7 +650,7 @@ Router 只是将您的请求路由到它们 - 没有“陷阱”或未来计费�
 
 3. **最后使用订阅提供商：**
    - 仅当您已经拥有它们时
-   - 9Router 通过配额追踪帮助最大化其价值
+   - 10router 通过配额追踪帮助最大化其价值
 
 **结果：** 大多数用户可以仅使用免费层以 $0/月运行！
 
@@ -659,20 +659,20 @@ Router 只是将您的请求路由到它们 - 没有“陷阱”或未来计费�
 <details>
 <summary><b>📈 如果我的使用量突然激增怎么办？</b></summary>
 
-9Router 的智能回退可防止意外费用：
+10router 的智能回退可防止意外费用：
 
 **场景：** 您正在进行编程冲刺并耗尽了配额
 
-**没有 9Router：**
+**没有 10router：**
 - ❌ 遇到速率限制 → 工作停止 → 沮丧
 - ❌ 或：意外累积巨额 API 账单
 
-**有 9Router：**
+**有 10router：**
 - ✅订阅达到限制 → 自动回退到廉价层
 - ✅ 廉价层变得昂贵 → 自动回退到免费层
 - ✅ 永不停止编程 → 可预测的成本
 
-**您在控制中：** 在仪表板中设置每个提供商的支出限制，9Router 会遵守它们。
+**您在控制中：** 在仪表板中设置每个提供商的支出限制，10router 会遵守它们。
 
 </details>
 
@@ -696,7 +696,7 @@ Models:
   cc/claude-haiku-4-5-20251001
 ```
 
-**专业提示：** 使用 Opus 处理复杂任务，Sonnet 追求速度。9Router 追踪每个模型的配额！
+**专业提示：** 使用 Opus 处理复杂任务，Sonnet 追求速度。10router 追踪每个模型的配额！
 
 ### OpenAI Codex (Plus/Pro)
 
@@ -863,7 +863,7 @@ Cost: $0 forever!
 ```
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [from 9router dashboard]
+  OpenAI API Key: [from 10router dashboard]
   Model: cc/claude-opus-4-6
 ```
 
@@ -876,7 +876,7 @@ Settings → Models → Advanced:
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
-  "anthropic_api_key": "your-9router-api-key"
+  "anthropic_api_key": "your-10router-api-key"
 }
 ```
 
@@ -884,7 +884,7 @@ Settings → Models → Advanced:
 
 ```bash
 export OPENAI_BASE_URL="http://localhost:20128"
-export OPENAI_API_KEY="your-9router-api-key"
+export OPENAI_API_KEY="your-10router-api-key"
 
 codex "your prompt"
 ```
@@ -904,15 +904,15 @@ Dashboard → CLI Tools →Claw → Select Model → Apply
   "agents": {
     "defaults": {
       "model": {
-        "primary": "9router/if/glm-4.7"
+        "primary": "10router/if/glm-4.7"
       }
     }
   },
   "models": {
     "providers": {
-      "9router": {
+      "10router": {
         "baseUrl": "http://127.0.0.1:20128/v1",
-        "apiKey": "sk_9router",
+        "apiKey": "sk_10router",
         "api": "openai-completions",
         "models": [
           {
@@ -926,7 +926,7 @@ Dashboard → CLI Tools →Claw → Select Model → Apply
 }
 ```
 
-> **注意：** OpenClaw 仅适用于本地 9Router。使用 `127.0.0.1` 而不是 `localhost` 以避免 IPv6 解析问题。
+> **注意：** OpenClaw 仅适用于本地 10router。使用 `127.0.0.1` 而不是 `localhost` 以避免 IPv6 解析问题。
 
 ### Cline / Continue / RooCode
 
@@ -946,15 +946,15 @@ Model: cc/claudeus-4-6
 
 ```bash
 # Clone and install
-git clone https://github.com/decolua/9router.git
-cd 9router
+git clone https://github.com/some-du6e/10router.git
+cd 10router
 npm install
 npm run build
 
 # Configure
 export JWT_SECRET="your-secure-secret-change-this"
 export INITIAL_PASSWORD="your-password"
-export DATA_DIR="/var/lib/9router"
+export DATA_DIR="/var/lib/10router"
 export PORT="20128"
 export HOSTNAME="0.0.0.0"
 export NODE_ENV="production"
@@ -968,7 +968,7 @@ npm run start
 
 # Or use PM2
 npm install -g pm2
-pm2 start npm --name 9router -- start
+pm2 start npm --name 10router -- start
 pm2 save
 pm2 startup
 ```
@@ -977,26 +977,26 @@ pm2 startup
 
 ```bash
 # Build image (from repository root)
-docker build -t 9router .
+docker build -t 10router .
 
 # Run container (command used in current setup)
 docker run -d \
-  --name 9router  -p 20128:20128 \
-  --env-file /root/dev/9router/.env \
-  -v 9router-data:/app/data \
-  -v 9router-usage:/root/.9router \
-  9router
+  --name 10router  -p 20128:20128 \
+  --env-file /root/dev/10router/.env \
+  -v 10router-data:/app/data \
+  -v 10router-usage:/root/.9router \
+  10router
 ```
 
 便携式命令（如果您已在仓库根目录）：
 
 ```bash
 docker run -d \
-  --name 9router \
+  --name 10router \
   -p 20128:20128 \
   --env-file ./.env \
-  -v 9router-data:/app/data \
-  -v 9router-usage:/root/.9router \
+  -v 10router-data:/app/data \
+  -v 10router-usage:/root/.9router \
   9
 ```
 
@@ -1007,9 +1007,9 @@ docker run -d \
 有用命令：
 
 ```bash
-docker logs -f 9router
-docker restart 9router
-docker stop 9router && docker rm 9router
+docker logs -f 10router
+docker restart 10router
+docker stop 10router && docker rm 10router
 ```
 
 ### 环境变量
@@ -1018,12 +1018,12 @@ docker stop 9router && docker rm 9router
 |----------|---------|-------------|
 | `JWT_SECRET` | 自动生成（`~/.9router/jwt-secret`） | 仪表板认证 cookie 的 JWT 签名密钥（设置可在多实例间共享） |
 | `INITIAL_PASSWORD | `123456` | 当没有保存的哈希时的首次登录密码 |
-| `DATA_DIR` | `~/.9router` | 主应用数据库位置（`db.json`） |
+| `DATA_DIR` | `~/.9router` | 主应用数据库位置（`db.json`） （目录名称与旧版本保持一致，以确保向后兼容） |
 | `PORT` | 框架默认值 | 服务端口（示例中为 `20128`） |
 | `HOSTNAME` | 框架默认值 | 绑定主机（Docker 默认为 `0.0.0.0`） |
 | `NODE_ENV` | 运行时默认值 | 部署时设置 `production` |
 | `BASE_URL` |http://localhost:20128` | 云同步作业使用的服务器端内部基础 URL |
-| `CLOUD_URL` | `https://9router.com` | 服务器端云同步端点基础 URL |
+| `CLOUD_URL` | `https://9router.com` | 服务器端云同步端点基础 URL（可选服务，由上游 9router 项目运营，并非 10router 提供） |
 | `NEXT_PUBLIC_BASE_URL` | `http://localhost:3000` | 向后兼容/公共基础 URL（服务器运行时优先使用 `BASE_URL`） |
 | `NEXT_PUBLIC_CLOUD_URL` | `https://9router.com` | 向后兼容/公共云 URL（服务器运行时优先使用 `CLOUD_URL`） |
 | `API_KEY_SECRET` | `endpoint-proxy-api-secret` | 生成的 API Key 的 HMAC 密钥 |
@@ -1105,7 +1105,7 @@ docker stop 9router && docker rm 9router
 - 添加组合：`cc/claude-opus-4-6 → glm/glm-4.7 → if/kimi-k2-thinking`
 
 **OAuth token 过期**
-- 由 9Router 自动刷新
+- 由 10router 自动刷新
 - 如果问题持续：仪表板 → 提供商 → 重新
 
 **高成本**
@@ -1125,7 +1125,7 @@ docker stop 9router && docker rm 9router
 - 症状通常出现在公共云端端点（`https://9router.com/v1`）的非流式调用上。
 - 根本原因：上游返回 SSE 负载（`data: ...`）而客户端期望 JSON。
 - 变通方法：对云端直接调用使用 `stream=true`。
-- 当上游返回 `text/event-stream` 时，本地 9Router 运行时包含 SSE→JSON 回退用于非流式调用。
+- 当上游返回 `text/event-stream` 时，本地 10router 运行时包含 SSE→JSON 回退用于非流式调用。
 
 **云端显示已连接，但请求仍然失败并显示 `Invalid API key`**
 - 从本地仪表板（`/api/keys`）创建新密钥并运行云端同步（`Enable Cloud` 然后 `Sync Now`）。
@@ -1254,23 +1254,22 @@ OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatibl
 
 ## 📧 支持
 
-- **网站**：[9router.com](https://9router.com)
-- **GitHub**：[github.com/decolua/9router](https://github.com/decolua/9router)
-- **问题**：[github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
+- **GitHub**：[github.com/some-du6e/10router](https://github.com/some-du6e/10router)
+- **问题**：[github.com/some-du6e/10router/issues](https://github.com/some-du6e/10router/issues)
 
 ---
 
 ## 👥 贡献者
 
-感谢所有帮助让 9Router 变得更好的贡献者！
+感谢所有帮助让 10router 变得更好的贡献者！
 
-[![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=100&columns=20&anon=1)](https://github.com/decolua/9router/graphs/contributors)
+[![Contributors](https://contrib.rocks/image?repo=some-du6e/10router&max=100&columns=20&anon=1)](https://github.com/some-du6e/10router/graphs/contributors)
 
 ---
 
 ## 📊 Star 图表
 
-[![Star Chart](https://starchart.cc/decolua/9router.svg?variant=adaptive)](https://starchart.cc/decolua/9router)
+[![Star Chart](https://starchart.cc/some-du6e/10router.svg?variant=adaptive)](https://starchart.cc/some-du6e/10router)
 
 ### 如何贡献
 
@@ -1280,13 +1279,13 @@ OPENAI_API_KEY="your-cloud-key" bash tester/security/test-cloud-openai-compatibl
 4 推送到分支（`git push origin feature/amazing-feature`）
 5. 打开 Pull Request
 
-详细指南请参阅 [Pull Requests](https://github.com/decolua/9router/pulls)。
+详细指南请参阅 [Pull Requests](https://github.com/some-du6e/10router/pulls)。
 
 ---
 
 ## 🔀 分支
 
-**[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** — 9Router 的全功能 TypeScript 分支。添加了 36+ 提供商、4 层自动回退、多模态 API（图像、嵌入、音频、TTS）、熔断器、语义缓存、LLM 评估和精美的仪表板。8+ 单元测试。通过 npm 和 Docker 可用。
+**[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** — 10router 的全功能 TypeScript 分支。添加了 36+ 提供商、4 层自动回退、多模态 API（图像、嵌入、音频、TTS）、熔断器、语义缓存、LLM 评估和精美的仪表板。8+ 单元测试。通过 npm 和 Docker 可用。
 
 ---
 

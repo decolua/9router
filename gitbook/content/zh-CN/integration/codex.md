@@ -1,12 +1,12 @@
 # OpenAI Codex CLI 集成
 
-将 9Router 与 OpenAI Codex CLI 集成,通过 9Router 的智能路由系统转发你的 OpenAI API 请求。
+将 10router 与 OpenAI Codex CLI 集成,通过 10router 的智能路由系统转发你的 OpenAI API 请求。
 
 ## 前置要求
 
 - 已安装 OpenAI Codex CLI
-- 9Router 本地运行或已配置云端 endpoint
-- 来自 9Router 仪表盘的 API key
+- 10router 本地运行或已配置云端 endpoint
+- 来自 10router 仪表盘的 API key
 
 ## 设置
 
@@ -15,11 +15,11 @@
 在 shell 配置文件(`~/.bashrc`、`~/.zshrc` 或 `~/.bash_profile`)中设置以下环境变量:
 
 ```bash
-# 9Router 的 Base URL
+# 10router 的 Base URL
 export OPENAI_BASE_URL="http://localhost:20128/v1"
 
-# 来自 9Router 仪表盘的 API Key
-export OPENAI_API_KEY="your-9router-api-key"
+# 来自 10router 仪表盘的 API Key
+export OPENAI_API_KEY="your-10router-api-key"
 ```
 
 ### 2. 重新加载 Shell 配置
@@ -39,7 +39,7 @@ echo $OPENAI_API_KEY
 
 ## 可用模型
 
-9Router 提供以下 Codex 模型:
+10router 提供以下 Codex 模型:
 
 | 模型 ID | 描述 |
 |----------|-------------|
@@ -77,7 +77,7 @@ codex --model cx/gpt-5.1-codex-max "Explain what this code does: $(cat myfile.js
 ```json
 {
   "baseUrl": "http://localhost:20128/v1",
-  "apiKey": "your-9router-api-key",
+  "apiKey": "your-10router-api-key",
   "defaultModel": "cx/gpt-5.2-codex"
 }
 ```
@@ -88,7 +88,7 @@ codex --model cx/gpt-5.1-codex-max "Explain what this code does: $(cat myfile.js
 
 遇到认证错误时:
 
-1. 在 9Router 仪表盘中确认 API key 正确
+1. 在 10router 仪表盘中确认 API key 正确
 2. 检查 `OPENAI_API_KEY` 环境变量已设置
 3. 确认 API key 未过期
 
@@ -96,7 +96,7 @@ codex --model cx/gpt-5.1-codex-max "Explain what this code does: $(cat myfile.js
 
 遇到连接错误时:
 
-1. 确认 9Router 正在运行:`curl http://localhost:20128/health`
+1. 确认 10router 正在运行:`curl http://localhost:20128/health`
 2. 检查环境变量设置是否正确
 3. 确保防火墙没有阻止 20128 端口
 
@@ -104,19 +104,19 @@ codex --model cx/gpt-5.1-codex-max "Explain what this code does: $(cat myfile.js
 
 出现 "model not available" 错误时:
 
-1. 确认模型名与 9Router 配置一致
-2. 检查 9Router 仪表盘中 OpenAI 提供商连接是否激活
+1. 确认模型名与 10router 配置一致
+2. 检查 10router 仪表盘中 OpenAI 提供商连接是否激活
 3. 确认连接的提供商中包含该模型
 
-## 云端 Endpoint
+## 远程 Endpoint
 
-使用 9Router 云端 endpoint 而非 localhost:
+要指向你自建在另一台机器(VPS、家庭服务器、隧道)上的 10router 而非 localhost:
 
 ```bash
-export OPENAI_BASE_URL="https://9router.com"
+export OPENAI_BASE_URL="https://your-10router-host"
 ```
 
-确保已在 9Router 云端仪表盘中配置 API key。
+确保已在该实例的仪表盘中创建 API key。
 
 ## 高级配置
 

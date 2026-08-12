@@ -1,6 +1,6 @@
 # 故障排除
 
-使用 9Router 时常见的问题与解决方案。
+使用 10router 时常见的问题与解决方案。
 
 ---
 
@@ -78,7 +78,7 @@
 **解决方案:**
 
 1. **自动刷新(默认):**
-   9Router 会自动刷新 token。等待 30 秒后重试。
+   10router 会自动刷新 token。等待 30 秒后重试。
 
 2. **手动重连:**
    ```
@@ -135,15 +135,15 @@
 **问题:** 出现 "ECONNREFUSED" 或 "Cannot connect to localhost:20128"。
 
 **原因:**
-- 9Router 未运行
+- 10router 未运行
 - 端口 20128 被阻止
 - 防火墙拦截连接
 
 **解决方案:**
 
-1. **启动 9Router:**
+1. **启动 10router:**
    ```bash
-   9router
+   10router
    ```
    仪表盘应该在 http://localhost:3000 打开。
 
@@ -161,10 +161,10 @@
    - Windows: Windows Defender 防火墙 → 允许应用
    - Linux: `sudo ufw allow 20128`
 
-4. **使用云端 endpoint:**
-   如果 localhost 不行(例如 Cursor IDE):
+4. **使用公网 endpoint:**
+   如果 localhost 不行(例如 Cursor IDE),把你自己的实例暴露出去(VPS 或隧道)并使用它的 URL:
    ```
-   Endpoint: https://9router.com/v1
+   Endpoint: https://your-10router-host/v1
    ```
 
 ---
@@ -175,15 +175,15 @@
 
 **原因:**
 - 端口 3000 被占用
-- 9Router 崩溃
+- 10router 崩溃
 - 浏览器缓存问题
 
 **解决方案:**
 
-1. **确认 9Router 是否运行:**
+1. **确认 10router 是否运行:**
    ```bash
    # 检查进程
-   ps aux | grep 9router
+   ps aux | grep 10router
    
    # 检查端口 3000
    lsof -i :3000
@@ -199,13 +199,13 @@
    taskkill /PID <PID> /F
    ```
 
-3. **重启 9Router:**
+3. **重启 10router:**
    ```bash
    # 停止
-   pkill -f 9router
+   pkill -f 10router
    
    # 启动
-   9router
+   10router
    ```
 
 4. **清除浏览器缓存:**
@@ -346,6 +346,6 @@
 
 ## 需要更多帮助?
 
-- **GitHub Issues:** [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
-- **文档:** [9router.com/docs](https://9router.com/docs)
+- **GitHub Issues:** [github.com/some-du6e/10router/issues](https://github.com/some-du6e/10router/issues)
+- **文档:** [gitbook/content/zh-CN](https://github.com/some-du6e/10router/tree/master/gitbook/content/zh-CN)
 - **常见问题:** [faq.md](faq.md)

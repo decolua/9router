@@ -179,10 +179,13 @@ async function buildCodexHeader() {
   const result = await api.getCliToolSettings("codex");
   if (!result.success) return `  ${COLORS.red}Failed to load settings${COLORS.reset}`;
 
-  const { installed, has9Router, config } = result.data;
+  const { installed, config } = result.data;
+  // Server renamed this field in the 10router rebrand; fall back to the old
+  // name so a new CLI still reads an older gateway correctly.
+  const has10Router = result.data.has10Router ?? result.data.has9Router;
   if (!installed) return `Status:   ${COLORS.red}✗ Codex CLI not installed${COLORS.reset}`;
 
-  if (!has9Router) {
+  if (!has10Router) {
     return [
       `Status:   ${COLORS.red}✗ Not configured${COLORS.reset}`,
       `${COLORS.dim}Run "Quick Setup" to configure${COLORS.reset}`
@@ -267,18 +270,26 @@ async function buildDroidHeader() {
   const result = await api.getCliToolSettings("droid");
   if (!result.success) return `  ${COLORS.red}Failed to load settings${COLORS.reset}`;
 
-  const { installed, has9Router, settings } = result.data;
+  const { installed, settings } = result.data;
+  // Server renamed this field in the 10router rebrand; fall back to the old
+  // name so a new CLI still reads an older gateway correctly.
+  const has10Router = result.data.has10Router ?? result.data.has9Router;
   if (!installed) return `Status:   ${COLORS.red}✗ Factory Droid not installed${COLORS.reset}`;
 
-  if (!has9Router) {
+  if (!has10Router) {
     return [
       `Status:   ${COLORS.red}✗ Not configured${COLORS.reset}`,
       `${COLORS.dim}Run "Quick Setup" to configure${COLORS.reset}`
     ].join("\n");
   }
 
-  // Extract 9Router custom model config
-  const custom = settings?.customModels?.find(m => m.id === "custom:9Router-0");
+  // Extract our custom model config. This id is written into Droid's own config
+  // file by src/app/api/cli-tools/droid-settings — keep the two in lockstep.
+  // Rebrand changed it to `custom:10router-N`; the old id is still matched so a
+  // config written before the rebrand keeps displaying until the user re-Applies.
+  const custom = settings?.customModels?.find(
+    m => m.id?.startsWith("custom:10router") || m.id === "custom:9Router-0"
+  );
   const lines = [`Status:   ${COLORS.green}✓ Configured${COLORS.reset}`];
   if (custom?.baseUrl) lines.push(`Endpoint: ${COLORS.cyan}${custom.baseUrl}${COLORS.reset}`);
   if (custom?.model)   lines.push(`Model:    ${COLORS.dim}${custom.model}${COLORS.reset}`);
@@ -350,20 +361,30 @@ async function buildOpenClawHeader() {
   const result = await api.getCliToolSettings("openclaw");
   if (!result.success) return `  ${COLORS.red}Failed to load settings${COLORS.reset}`;
 
-  const { installed, has9Router, settings } = result.data;
+  const { installed, settings } = result.data;
+  // Server renamed this field in the 10router rebrand; fall back to the old
+  // name so a new CLI still reads an older gateway correctly.
+  const has10Router = result.data.has10Router ?? result.data.has9Router;
   if (!installed) return `Status:   ${COLORS.red}✗ Open Claw not installed${COLORS.reset}`;
 
-  if (!has9Router) {
+  if (!has10Router) {
     return [
       `Status:   ${COLORS.red}✗ Not configured${COLORS.reset}`,
       `${COLORS.dim}Run "Quick Setup" to configure${COLORS.reset}`
     ].join("\n");
   }
 
-  // Extract 9Router provider config
-  const provider = settings?.models?.providers?.["9router"];
+  // Extract our provider config. This key is written into the third-party CLI's
+  // own config file by src/app/api/cli-tools/* — keep the two in lockstep. The
+  // rebrand renamed it to "10router"; the old key is still read so a config
+  // written before the rebrand keeps resolving until the user re-Applies.
+  const provider = settings?.models?.providers?.["10router"]
+    ?? settings?.models?.providers?.["9router"];
   const primary = settings?.agents?.defaults?.model?.primary || "";
-  const model = primary.startsWith("9router/") ? primary.replace("9router/", "") : (provider?.models?.[0]?.id || "");
+  // Same dual read for the "<provider>/<model>" prefix written alongside the key.
+  const model = primary.startsWith("10router/") ? primary.replace("10router/", "")
+    : primary.startsWith("9router/") ? primary.replace("9router/", "")
+    : (provider?.models?.[0]?.id || "");
   const lines = [`Status:   ${COLORS.green}✓ Configured${COLORS.reset}`];
   if (provider?.baseUrl) lines.push(`Endpoint: ${COLORS.cyan}${provider.baseUrl}${COLORS.reset}`);
   if (model)             lines.push(`Model:    ${COLORS.dim}${model}${COLORS.reset}`);
@@ -431,10 +452,13 @@ async function buildOpenCodeHeader() {
   const result = await api.getCliToolSettings("opencode");
   if (!result.success) return `  ${COLORS.red}Failed to load settings${COLORS.reset}`;
 
-  const { installed, has9Router, opencode } = result.data;
+  const { installed, opencode } = result.data;
+  // Server renamed this field in the 10router rebrand; fall back to the old
+  // name so a new CLI still reads an older gateway correctly.
+  const has10Router = result.data.has10Router ?? result.data.has9Router;
   if (!installed) return `Status:   ${COLORS.red}✗ OpenCode CLI not installed${COLORS.reset}`;
 
-  if (!has9Router) {
+  if (!has10Router) {
     return [
       `Status:   ${COLORS.red}✗ Not configured${COLORS.reset}`,
       `${COLORS.dim}Run "Quick Setup" to configure${COLORS.reset}`
@@ -519,10 +543,13 @@ async function buildHermesHeader() {
   const result = await api.getCliToolSettings("hermes");
   if (!result.success) return `  ${COLORS.red}Failed to load settings${COLORS.reset}`;
 
-  const { installed, has9Router, settings } = result.data;
+  const { installed, settings } = result.data;
+  // Server renamed this field in the 10router rebrand; fall back to the old
+  // name so a new CLI still reads an older gateway correctly.
+  const has10Router = result.data.has10Router ?? result.data.has9Router;
   if (!installed) return `Status:   ${COLORS.red}✗ Hermes Agent not installed${COLORS.reset}`;
 
-  if (!has9Router) {
+  if (!has10Router) {
     return [
       `Status:   ${COLORS.red}✗ Not configured${COLORS.reset}`,
       `${COLORS.dim}Run "Quick Setup" to configure${COLORS.reset}`
@@ -585,7 +612,7 @@ async function showCliToolsMenu(port, breadcrumb = []) {
   await showMenuWithBack({
     title: "🔧 CLI Tools",
     breadcrumb,
-    headerContent: `Configure CLI tools to use 9Router\nEndpoint: ${endpoint}`,
+    headerContent: `Configure CLI tools to use 10router\nEndpoint: ${endpoint}`,
     items: [
       {
         label: "Claude Code",

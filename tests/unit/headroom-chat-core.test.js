@@ -251,47 +251,54 @@ describe("handleChatCore Headroom diagnostics", () => {
     );
   });
 
-  it("bypasses token savers when requested by the client", async () => {
-    const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
-    const pxpipeTransform = vi.fn();
-    const messages = [{ role: "user", content: "Write polished prose." }];
+  // The token-saver opt-out header is dual-accept after the 9router → 10router rebrand:
+  // `x-10router-token-saver` is the primary name, `x-9router-token-saver` MUST keep working
+  // for clients configured before the rename. Both names are exercised here so the legacy
+  // back-compat path cannot silently rot.
+  for (const headerName of ["x-10router-token-saver", "x-9router-token-saver"]) {
+    const legacy = headerName.startsWith("x-9router");
+    it(`bypasses token savers when requested by the client via ${headerName}${legacy ? " (legacy)" : ""}`, async () => {
+      const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
+      const pxpipeTransform = vi.fn();
+      const messages = [{ role: "user", content: "Write polished prose." }];
 
-    global.fetch = vi.fn(async (url) => {
-      throw new Error(`unexpected fetch: ${url}`);
-    });
+      global.fetch = vi.fn(async (url) => {
+        throw new Error(`unexpected fetch: ${url}`);
+      });
 
-    await handleChatCore({
-      body: { model: "gpt-4o", stream: false, messages },
-      modelInfo: { provider: "openai", model: "gpt-4o" },
-      credentials: { apiKey: "test-key", providerSpecificData: {} },
-      log,
-      connectionId: "test-conn",
-      headroomEnabled: true,
-      headroomUrl: "http://localhost:8787",
-      headroomCompressUserMessages: true,
-      rtkEnabled: true,
-      cavemanEnabled: true,
-      cavemanLevel: "full",
-      ponytailEnabled: true,
-      ponytailLevel: "full",
-      pxpipeEnabled: true,
-      pxpipeTransform,
-      clientRawRequest: {
-        endpoint: "/v1/chat/completions",
-        body: {},
-        headers: {
-          accept: "application/json",
-          "x-9router-token-saver": "off",
+      await handleChatCore({
+        body: { model: "gpt-4o", stream: false, messages },
+        modelInfo: { provider: "openai", model: "gpt-4o" },
+        credentials: { apiKey: "test-key", providerSpecificData: {} },
+        log,
+        connectionId: "test-conn",
+        headroomEnabled: true,
+        headroomUrl: "http://localhost:8787",
+        headroomCompressUserMessages: true,
+        rtkEnabled: true,
+        cavemanEnabled: true,
+        cavemanLevel: "full",
+        ponytailEnabled: true,
+        ponytailLevel: "full",
+        pxpipeEnabled: true,
+        pxpipeTransform,
+        clientRawRequest: {
+          endpoint: "/v1/chat/completions",
+          body: {},
+          headers: {
+            accept: "application/json",
+            [headerName]: "off",
+          },
         },
-      },
-    });
+      });
 
-    expect(global.fetch).not.toHaveBeenCalled();
-    expect(pxpipeTransform).not.toHaveBeenCalled();
-    expect(executeMock).toHaveBeenCalledWith(expect.objectContaining({
-      body: expect.objectContaining({
-        messages: [{ role: "user", content: "Write polished prose." }],
-      }),
-    }));
-  });
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(pxpipeTransform).not.toHaveBeenCalled();
+      expect(executeMock).toHaveBeenCalledWith(expect.objectContaining({
+        body: expect.objectContaining({
+          messages: [{ role: "user", content: "Write polished prose." }],
+        }),
+      }));
+    });
+  }
 });

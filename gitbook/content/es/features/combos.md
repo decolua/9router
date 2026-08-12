@@ -6,7 +6,7 @@ Crea combinaciones de modelos personalizadas con fallback automático. Los combo
 
 ## ¿Qué son los combos?
 
-Los combos son **cadenas de fallback personalizadas** que creas en el dashboard. En lugar de usar un solo modelo, defines una secuencia de modelos que 9Router intenta en orden.
+Los combos son **cadenas de fallback personalizadas** que creas en el dashboard. En lugar de usar un solo modelo, defines una secuencia de modelos que 10router intenta en orden.
 
 **Ejemplo:**
 ```
@@ -22,7 +22,7 @@ Modelos:
 Model: premium-coding
 ```
 
-9Router intenta automáticamente cada modelo en secuencia hasta que uno tenga éxito.
+10router intenta automáticamente cada modelo en secuencia hasta que uno tenga éxito.
 
 ---
 
@@ -354,7 +354,7 @@ Edita `~/.claude/config.json`:
 ```json
 {
   "anthropic_api_base": "http://localhost:20128/v1",
-  "anthropic_api_key": "your-9router-api-key",
+  "anthropic_api_key": "your-10router-api-key",
   "model": "budget-combo"
 }
 ```
@@ -363,7 +363,7 @@ Edita `~/.claude/config.json`:
 
 ```bash
 export OPENAI_BASE_URL="http://localhost:20128"
-export OPENAI_API_KEY="your-9router-api-key"
+export OPENAI_API_KEY="your-10router-api-key"
 
 codex --model quality-first "your prompt"
 ```
@@ -480,7 +480,7 @@ Dashboard → Combos → Edit → Budget:
   Monthly limit: $50
 ```
 
-Cuando se alcanza el límite, 9Router omite los modelos de pago y usa solo el nivel gratis.
+Cuando se alcanza el límite, 10router omite los modelos de pago y usa solo el nivel gratis.
 
 ### Habilitar/Deshabilitar modelos en un combo
 

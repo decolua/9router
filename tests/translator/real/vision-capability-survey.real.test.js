@@ -95,6 +95,7 @@ function targetProviders() {
     const path = require("path");
     const dbPath = process.env.DATA_DIR
       ? path.join(process.env.DATA_DIR, "db", "data.sqlite")
+      // Data dir intentionally stays `.9router` after the 10router rebrand (back-compat).
       : path.join(os.homedir(), ".9router", "db", "data.sqlite");
     const db = new Database(dbPath, { readonly: true });
     const rows = db.prepare("SELECT DISTINCT provider FROM providerConnections WHERE isActive = 1").all();

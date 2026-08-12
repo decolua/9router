@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Các vấn đề và giải pháp phổ biến khi dùng 9Router.
+Các vấn đề và giải pháp phổ biến khi dùng 10router.
 
 ---
 
@@ -78,7 +78,7 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Giải pháp:**
 
 1. **Auto-refresh (mặc định):**
-   9Router tự refresh tokens. Đợi 30 giây rồi thử lại.
+   10router tự refresh tokens. Đợi 30 giây rồi thử lại.
 
 2. **Kết nối lại thủ công:**
    ```
@@ -135,15 +135,15 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 **Vấn đề:** Lỗi "ECONNREFUSED" hoặc "Cannot connect to localhost:20128".
 
 **Nguyên nhân:**
-- 9Router không chạy
+- 10router không chạy
 - Port 20128 bị chặn
 - Firewall chặn kết nối
 
 **Giải pháp:**
 
-1. **Khởi động 9Router:**
+1. **Khởi động 10router:**
    ```bash
-   9router
+   10router
    ```
    Dashboard sẽ mở tại http://localhost:3000
 
@@ -161,10 +161,10 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
    - Windows: Windows Defender Firewall → Allow app
    - Linux: `sudo ufw allow 20128`
 
-4. **Dùng cloud endpoint:**
-   Nếu localhost không hoạt động (ví dụ: Cursor IDE):
+4. **Dùng endpoint công khai:**
+   Nếu localhost không hoạt động (ví dụ: Cursor IDE), hãy expose instance của bạn (VPS hoặc tunnel) và dùng URL đó:
    ```
-   Endpoint: https://9router.com/v1
+   Endpoint: https://your-10router-host/v1
    ```
 
 ---
@@ -175,15 +175,15 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 
 **Nguyên nhân:**
 - Port 3000 đã được dùng
-- 9Router bị crash
+- 10router bị crash
 - Vấn đề cache browser
 
 **Giải pháp:**
 
-1. **Kiểm tra 9Router có chạy không:**
+1. **Kiểm tra 10router có chạy không:**
    ```bash
    # Check process
-   ps aux | grep 9router
+   ps aux | grep 10router
    
    # Check port 3000
    lsof -i :3000
@@ -199,13 +199,13 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
    taskkill /PID <PID> /F
    ```
 
-3. **Khởi động lại 9Router:**
+3. **Khởi động lại 10router:**
    ```bash
    # Stop
-   pkill -f 9router
+   pkill -f 10router
    
    # Start
-   9router
+   10router
    ```
 
 4. **Xóa cache browser:**
@@ -346,6 +346,6 @@ Các vấn đề và giải pháp phổ biến khi dùng 9Router.
 
 ## Cần trợ giúp thêm?
 
-- **GitHub Issues:** [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
-- **Documentation:** [9router.com/docs](https://9router.com/docs)
+- **GitHub Issues:** [github.com/some-du6e/10router/issues](https://github.com/some-du6e/10router/issues)
+- **Documentation:** [gitbook/content/vi](https://github.com/some-du6e/10router/tree/master/gitbook/content/vi)
 - **FAQ:** [faq.md](faq.md)

@@ -1,7 +1,7 @@
 /**
- * Tests for the `9router xai video` CLI command (cli/src/cli/commands/xaiVideo.js)
+ * Tests for the `10router xai video` CLI command (cli/src/cli/commands/xaiVideo.js)
  *
- * Uses a real local HTTP server standing in for the 9router gateway + video CDN.
+ * Uses a real local HTTP server standing in for the 10router gateway + video CDN.
  * No real credentials or upstream calls.
  *
  * Covers:
@@ -98,7 +98,11 @@ describe("sanitizeText", () => {
 });
 
 describe("run (against a mock gateway)", () => {
-  it("creates, polls to done, downloads the MP4, and exits 0", async () => {
+  // The gateway emits both `x-10router-connection-id` (primary, post-rebrand) and the
+  // legacy `x-9router-connection-id`. The CLI dual-accepts, so both are exercised here —
+  // a user on an older gateway must still get their polls pinned to the right account.
+  for (const connHeader of ["x-10router-connection-id", "x-9router-connection-id"]) {
+  it(`creates, polls to done, downloads the MP4, and exits 0 (connection id via ${connHeader})`, async () => {
     let pollCount = 0;
     const seen = { createAuth: null, pollConnectionIds: [] };
 
@@ -109,7 +113,7 @@ describe("run (against a mock gateway)", () => {
         req.on("data", (c) => (body += c));
         req.on("end", () => {
           seen.createBody = JSON.parse(body);
-          res.writeHead(200, { "Content-Type": "application/json", "x-9router-connection-id": "conn-42" });
+          res.writeHead(200, { "Content-Type": "application/json", [connHeader]: "conn-42" });
           res.end(JSON.stringify({ request_id: "job-1" }));
         });
         return;
@@ -160,6 +164,7 @@ describe("run (against a mock gateway)", () => {
     expect(logs.join("\n")).not.toContain("local-key-secret");
     expect(logs.join("\n")).not.toContain("Authorization");
   });
+  }
 
   it("exits non-zero when the job fails, without leaving files", async () => {
     ({ server } = await startServer((req, res) => {

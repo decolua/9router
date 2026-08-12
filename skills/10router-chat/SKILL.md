@@ -1,23 +1,23 @@
 ---
-name: 9router-chat
-description: Chat / code generation via 9Router using OpenAI /v1/chat/completions or Anthropic /v1/messages format with streaming + auto-fallback combos. Use when the user wants to ask an LLM, generate code, summarize text, or run prompts through 9Router.
+name: 10router-chat
+description: Chat / code generation via 10router using OpenAI /v1/chat/completions or Anthropic /v1/messages format with streaming + auto-fallback combos. Use when the user wants to ask an LLM, generate code, summarize text, or run prompts through 10router.
 ---
 
-# 9Router — Chat
+# 10router — Chat
 
-Requires `NINEROUTER_URL` (and `NINEROUTER_KEY` if auth enabled). See https://raw.githubusercontent.com/decolua/9router/refs/heads/master/skills/9router/SKILL.md for setup.
+Requires `TENROUTER_URL` (and `TENROUTER_KEY` if auth enabled). See https://raw.githubusercontent.com/some-du6e/10router/refs/heads/master/skills/10router/SKILL.md for setup.
 
 ## Endpoints
 
-- `POST $NINEROUTER_URL/v1/chat/completions` — OpenAI format
-- `POST $NINEROUTER_URL/v1/messages` — Anthropic format
+- `POST $TENROUTER_URL/v1/chat/completions` — OpenAI format
+- `POST $TENROUTER_URL/v1/messages` — Anthropic format
 
 ## Discover
 
 ```bash
-curl $NINEROUTER_URL/v1/models | jq '.data[].id'
+curl $TENROUTER_URL/v1/models | jq '.data[].id'
 # Per-model metadata (contextWindow, params)
-curl "$NINEROUTER_URL/v1/models/info?id=openai/gpt-4o"
+curl "$TENROUTER_URL/v1/models/info?id=openai/gpt-4o"
 ```
 
 Combos (e.g. `vip`, `mycodex`) auto-fallback through multiple providers.
@@ -25,8 +25,8 @@ Combos (e.g. `vip`, `mycodex`) auto-fallback through multiple providers.
 ## OpenAI format
 
 ```bash
-curl -X POST $NINEROUTER_URL/v1/chat/completions \
-  -H "Authorization: Bearer $NINEROUTER_KEY" \
+curl -X POST $TENROUTER_URL/v1/chat/completions \
+  -H "Authorization: Bearer $TENROUTER_KEY" \
   -H "Content-Type: application/json" \
   -d '{"model":"openai/gpt-5","messages":[{"role":"user","content":"Hi"}],"stream":false}'
 ```
@@ -35,7 +35,7 @@ JS (OpenAI SDK):
 
 ```js
 import OpenAI from "openai";
-const client = new OpenAI({ baseURL: `${process.env.NINEROUTER_URL}/v1`, apiKey: process.env.NINEROUTER_KEY });
+const client = new OpenAI({ baseURL: `${process.env.TENROUTER_URL}/v1`, apiKey: process.env.TENROUTER_KEY });
 const res = await client.chat.completions.create({
   model: "openai/gpt-5",
   messages: [{ role: "user", content: "Hi" }],
@@ -47,8 +47,8 @@ for await (const chunk of res) process.stdout.write(chunk.choices[0]?.delta?.con
 ## Anthropic format
 
 ```bash
-curl -X POST $NINEROUTER_URL/v1/messages \
-  -H "Authorization: Bearer $NINEROUTER_KEY" \
+curl -X POST $TENROUTER_URL/v1/messages \
+  -H "Authorization: Bearer $TENROUTER_KEY" \
   -H "anthropic-version: 2023-06-01" \
   -H "Content-Type: application/json" \
   -d '{"model":"cc/claude-opus-4-7","max_tokens":1024,"messages":[{"role":"user","content":"Hi"}]}'

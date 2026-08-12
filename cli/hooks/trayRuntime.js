@@ -24,7 +24,7 @@ function hasSystray() {
 // binary is broken on modern OS versions.
 function cleanupLegacySystray({ silent = false } = {}) {
   // 1) Runtime dir: ~/.9router/runtime/node_modules/systray (or %APPDATA% on Win)
-  // 2) npm global nested: <npm_prefix>/node_modules/9router/node_modules/systray
+  // 2) npm global nested: <npm_prefix>/node_modules/10router/node_modules/systray
   //    __dirname here = <pkg root>/hooks → up 1 = pkg root
   const targets = [
     path.join(getRuntimeNodeModules(), LEGACY_SYSTRAY_PKG),
@@ -34,9 +34,9 @@ function cleanupLegacySystray({ silent = false } = {}) {
     if (fs.existsSync(dir)) {
       try {
         fs.rmSync(dir, { recursive: true, force: true });
-        if (!silent) console.log(`[9router][runtime] removed legacy systray: ${dir}`);
+        if (!silent) console.log(`[10router][runtime] removed legacy systray: ${dir}`);
       } catch (e) {
-        if (!silent) console.warn(`[9router][runtime] failed to remove ${dir}: ${e.message}`);
+        if (!silent) console.warn(`[10router][runtime] failed to remove ${dir}: ${e.message}`);
       }
     }
   }
@@ -53,7 +53,7 @@ function chmodSystrayBin({ silent = false } = {}) {
   try {
     fs.chmodSync(binPath, 0o755);
   } catch (e) {
-    if (!silent) console.warn(`[9router][runtime] chmod tray bin failed: ${e.message}`);
+    if (!silent) console.warn(`[10router][runtime] chmod tray bin failed: ${e.message}`);
   }
 }
 
@@ -63,7 +63,7 @@ function ensureRuntimeDir() {
   const pkgPath = path.join(dir, "package.json");
   if (!fs.existsSync(pkgPath)) {
     fs.writeFileSync(pkgPath, JSON.stringify({
-      name: "9router-runtime",
+      name: "10router-runtime",
       version: "1.0.0",
       private: true
     }, null, 2));

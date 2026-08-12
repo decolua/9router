@@ -33,7 +33,7 @@ export default {
     // variable part. Treating it as a voice sent voice="kokoro" upstream and
     // Kokoro answered 400, so `selfhosted-tts/kokoro` — the obvious way to
     // address this provider — was the one form that did not work (verified
-    // against a live Kokoro through 9router, 2026-08-03).
+    // against a live Kokoro through 10router, 2026-08-03).
     let ttsModel = DEFAULT_MODEL;
     let voice = DEFAULT_VOICE;
     if (model) {

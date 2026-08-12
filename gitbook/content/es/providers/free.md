@@ -31,7 +31,7 @@ Los proveedores del nivel gratis son tu **fallback** cuando se agota la cuota de
 **Paso 1: Conectar vía Dashboard**
 
 ```bash
-9router
+10router
 # Dashboard → Providers → Connect iFlow
 ```
 
@@ -91,7 +91,7 @@ Model: if/kimi-k2-thinking
 **Paso 1: Conectar vía Dashboard**
 
 ```bash
-9router
+10router
 # Dashboard → Providers → Connect Qwen
 ```
 
@@ -144,7 +144,7 @@ Model: qw/qwen3-coder-plus
 **Paso 1: Conectar vía Dashboard**
 
 ```bash
-9router
+10router
 # Dashboard → Providers → Connect Kiro
 ```
 
@@ -200,7 +200,7 @@ Model: kr/claude-sonnet-4.5
 ```
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [desde el dashboard de 9router]
+  OpenAI API Key: [desde el dashboard de 10router]
   Model: if/kimi-k2-thinking
 ```
 
@@ -376,13 +376,13 @@ Perfecto para:
 100M × $20/1M = $2,000/mes
 ```
 
-**Opción 2: Solo nivel gratis de 9Router**
+**Opción 2: Solo nivel gratis de 10router**
 ```
 100M vía nivel gratis = $0/mes
 Ahorros: $2,000/mes (100%)
 ```
 
-**Opción 3: Estrategia completa de 9Router**
+**Opción 3: Estrategia completa de 10router**
 ```
 60M vía Gemini CLI (GRATIS): $0
 30M vía Claude Code (suscripción): $0 extra

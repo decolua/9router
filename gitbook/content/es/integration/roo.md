@@ -1,12 +1,12 @@
 # Integración con Roo AI Assistant
 
-Integra 9Router con Roo AI Assistant para acceder a múltiples modelos de IA a través de una interfaz unificada.
+Integra 10router con Roo AI Assistant para acceder a múltiples modelos de IA a través de una interfaz unificada.
 
 ## Requisitos previos
 
 - Roo AI Assistant instalado
-- API key de 9Router desde el [dashboard](https://9router.com/dashboard)
-- 9Router ejecutándose (local o en la nube)
+- API key de 10router desde el [dashboard](http://localhost:20128/dashboard)
+- 10router ejecutándose (en local o en tu propio host remoto)
 
 ## Pasos de configuración
 
@@ -20,21 +20,21 @@ Inicia Roo AI Assistant y abre el panel de configuración.
 2. Selecciona **Ollama** como tipo de proveedor
 3. Configura los siguientes ajustes:
 
-**Para 9Router local:**
+**Para 10router local:**
 ```
 Base URL: http://localhost:20128/v1
 API Key: your-api-key-from-dashboard
 ```
 
-**Para 9Router en la nube:**
+**Para una instancia remota de 10router:**
 ```
-Base URL: https://9router.com/v1
+Base URL: https://your-10router-host/v1
 API Key: your-api-key-from-dashboard
 ```
 
 ### 3. Seleccionar modelo
 
-Elige entre los modelos disponibles de 9Router:
+Elige entre los modelos disponibles de 10router:
 
 **Modelos Claude:**
 - `cc/claude-opus-4-5-20251101` - El más capaz
@@ -54,7 +54,7 @@ Elige entre los modelos disponibles de 9Router:
 Envía un mensaje de prueba para verificar la integración:
 
 ```
-Hello! Can you confirm you're connected through 9Router?
+Hello! Can you confirm you're connected through 10router?
 ```
 
 ## Ejemplos de uso
@@ -87,19 +87,19 @@ Modelo: cx/deepseek-reasoner
 ## Solución de problemas
 
 ### Connection Failed
-- Verifica que 9Router esté corriendo: `curl http://localhost:20128/health`
+- Verifica que 10router esté corriendo: `curl http://localhost:20128/health`
 - Verifica que la API key sea correcta
 - Asegúrate de que la Base URL incluya el sufijo `/v1`
 
 ### Modelo no disponible
 - Verifica que el nombre del modelo coincida exactamente (sensible a mayúsculas)
-- Verifica que el modelo esté habilitado en tu plan de 9Router
+- Verifica que el modelo esté habilitado en tu plan de 10router
 - Intenta otro modelo de la lista
 
 ### Respuestas lentas
 - Cambia a modelos más rápidos (haiku, flash)
 - Verifica la conexión de red
-- Monitorea los logs de 9Router por problemas
+- Monitorea los logs de 10router por problemas
 
 ## Configuración avanzada
 

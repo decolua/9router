@@ -9,7 +9,7 @@ import os from "os";
 
 const execAsync = promisify(exec);
 
-const PROVIDER_NAME = "9router";
+const PROVIDER_NAME = "10router";
 
 const getDeepSeekDir = () => path.join(os.homedir(), ".deepseek");
 const getDeepSeekConfigPath = () => path.join(getDeepSeekDir(), "config.toml");
@@ -51,8 +51,8 @@ const parseToml = (content) => {
     return result;
 };
 
-// Build TOML config for 9Router (openai provider mode)
-const build9RouterConfig = (baseUrl, apiKey, model) => {
+// Build TOML config for 10router (openai provider mode)
+const build10RouterConfig = (baseUrl, apiKey, model) => {
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
     return `provider = "openai"
 
@@ -92,8 +92,8 @@ const readConfigToml = async () => {
     }
 };
 
-// Detect 9Router by checking if provider is "openai" and base_url points to localhost/127.0.0.1
-const has9RouterConfig = (config) => {
+// Detect 10router by checking if provider is "openai" and base_url points to localhost/127.0.0.1
+const has10RouterConfig = (config) => {
     if (!config) return false;
     const provider = config.provider;
     if (provider !== "openai") return false;
@@ -113,7 +113,7 @@ export async function GET() {
         return NextResponse.json({
             installed: true,
             settings: config,
-            has9Router: has9RouterConfig(config),
+            has10Router: has10RouterConfig(config),
             configPath: getDeepSeekConfigPath(),
         });
     } catch (error) {
@@ -132,7 +132,7 @@ export async function POST(request) {
         const dir = getDeepSeekDir();
         await fs.mkdir(dir, { recursive: true });
 
-        const newConfig = build9RouterConfig(baseUrl, apiKey || "sk_9router", model);
+        const newConfig = build10RouterConfig(baseUrl, apiKey || "sk_10router", model);
         await fs.writeFile(getDeepSeekConfigPath(), newConfig);
 
         return NextResponse.json({

@@ -7,7 +7,10 @@ const projectRoot = dirname(fileURLToPath(import.meta.url));
 const tracingRoot = process.env.NEXT_TRACING_ROOT_MODE === "workspace"
   ? join(projectRoot, "..")
   : projectRoot;
-const proxyClientMaxBodySize = process.env.NINEROUTER_PROXY_CLIENT_MAX_BODY_SIZE || "128mb";
+// Prefer the new TENROUTER_* name; the legacy NINEROUTER_* name still works for existing setups.
+const proxyClientMaxBodySize = process.env.TENROUTER_PROXY_CLIENT_MAX_BODY_SIZE
+  || process.env.NINEROUTER_PROXY_CLIENT_MAX_BODY_SIZE
+  || "128mb";
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

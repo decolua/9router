@@ -84,6 +84,10 @@ function withConnectionHeader(response, connectionId) {
   const headers = new Headers(response.headers);
   // Video jobs are account-bound upstream — clients echo this back as
   // `x-connection-id` on GET polls so the same account is used.
+  headers.set("x-10router-connection-id", String(connectionId));
+  // Legacy alias, retained for CLI builds predating the 10router rebrand that
+  // still read `x-9router-connection-id`. Emit both; drop after a deprecation
+  // window once old CLIs are gone.
   headers.set("x-9router-connection-id", String(connectionId));
   return new Response(response.body, { status: response.status, headers });
 }

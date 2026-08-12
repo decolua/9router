@@ -5,6 +5,8 @@ import fs from "fs";
 import path from "path";
 import os from "os";
 
+// "9router" / ".9router" is the on-disk data dir, deliberately kept unchanged for
+// backward compatibility with existing installs — not a missed rebrand.
 const DATA_DIR = process.env.DATA_DIR
   || (process.platform === "win32"
     ? path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "9router")

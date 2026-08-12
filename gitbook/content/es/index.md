@@ -1,14 +1,14 @@
-# Bienvenido a 9Router
+# Bienvenido a 10router
 
 **Usa Claude, Codex, Gemini GRATIS • Alternativas ultra-baratas desde $0.20/1M tokens**
 
-9Router es un router de modelos de IA que maximiza el valor de tus suscripciones y minimiza los costos mediante enrutamiento inteligente y fallback automático.
+10router es un router de modelos de IA que maximiza el valor de tus suscripciones y minimiza los costos mediante enrutamiento inteligente y fallback automático.
 
 ---
 
-## ¿Qué es 9Router?
+## ¿Qué es 10router?
 
-9Router es un proxy inteligente que se sitúa entre tus herramientas de codificación (Cursor, Cline, Claude Desktop) y los proveedores de IA. Enruta automáticamente las solicitudes al mejor modelo disponible según la cuota, el costo y la disponibilidad.
+10router es un proxy inteligente que se sitúa entre tus herramientas de codificación (Cursor, Cline, Claude Desktop) y los proveedores de IA. Enruta automáticamente las solicitudes al mejor modelo disponible según la cuota, el costo y la disponibilidad.
 
 **Deja de desperdiciar dinero:**
 - ❌ La cuota de suscripción expira sin usar cada mes
@@ -66,7 +66,7 @@ Total: $5.20/mes vs $2000 en ChatGPT API!
 
 ---
 
-## ¿Por qué elegir 9Router?
+## ¿Por qué elegir 10router?
 
 ### Maximiza tus suscripciones
 
@@ -105,10 +105,10 @@ Comienza en 2 minutos:
 
 ```bash
 # Instala globalmente
-npm install -g 9router
+npm install -g 10router
 
 # Inicia (el dashboard se abre automáticamente)
-9router
+10router
 ```
 
 🎉 **Se abre el dashboard** → Conecta proveedores → ¡Empieza a codificar!
@@ -143,10 +143,10 @@ Model: cc/claude-opus-4-5-20251101
 
 ### Para codificación móvil/remota
 
-- Usa el despliegue en la nube (https://9router.com)
+- Despliega tu propia instancia en un VPS o con Docker (ver [Despliegue en la nube](deployment/cloud.md))
 - Accede desde iPad, teléfono, donde sea
 - Sin limitaciones de localhost
-- Red edge de Cloudflare (300+ ubicaciones)
+- Accesible desde internet en tu propio dominio
 
 ---
 

@@ -14,8 +14,9 @@ const COLORS = {
   bgGreen: "\x1b[42m",
   bgBlue: "\x1b[44m",
   black: "\x1b[30m",
-  terracotta: "\x1b[38;2;217;119;87m",
-  bgTerracotta: "\x1b[48;2;217;119;87m"
+  // Brand accent — 10router pink (#ec4899)
+  brand: "\x1b[38;2;236;72;153m",
+  bgBrand: "\x1b[48;2;236;72;153m"
 };
 
 // Prime stdin once globally. Toggling raw mode between menus adds latency on
@@ -101,10 +102,10 @@ async function selectMenu(title, items, defaultIndex = 0, subtitle = "", headerC
       if (!isActive) return;
       process.stdout.write("\x1b[2J\x1b[H");
       const width = Math.min(process.stdout.columns || 40, 40);
-      console.log(`\n${COLORS.terracotta}${"=".repeat(width)}${COLORS.reset}`);
-      console.log(`  ${COLORS.bright}${COLORS.terracotta}${title}${COLORS.reset}`);
+      console.log(`\n${COLORS.brand}${"=".repeat(width)}${COLORS.reset}`);
+      console.log(`  ${COLORS.bright}${COLORS.brand}${title}${COLORS.reset}`);
       if (subtitle) console.log(`  ${COLORS.dim}${subtitle}${COLORS.reset}`);
-      console.log(`${COLORS.terracotta}${"=".repeat(width)}${COLORS.reset}`);
+      console.log(`${COLORS.brand}${"=".repeat(width)}${COLORS.reset}`);
       if (breadcrumb.length > 0) console.log(`  ${COLORS.dim}${breadcrumb.join(" > ")}${COLORS.reset}`);
       console.log();
       if (headerContent) { console.log(headerContent); console.log(); }

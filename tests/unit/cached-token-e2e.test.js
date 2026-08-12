@@ -12,7 +12,7 @@ let tempDir;
 let db;
 
 beforeAll(async () => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-cached-e2e-"));
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "10router-cached-e2e-"));
   process.env.DATA_DIR = tempDir;
   vi.resetModules();
   db = await import("@/lib/db/index.js");

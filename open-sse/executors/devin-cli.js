@@ -105,7 +105,8 @@ rl.on("line", (line) => {
 `.trimStart();
 
 function ensureClientToolsScript() {
-  const scriptPath = path.join(os.tmpdir(), "9router-devin-client-tools.mjs");
+  // Local temp filename only (not wire-visible) — renamed during the 10router rebrand.
+  const scriptPath = path.join(os.tmpdir(), "10router-devin-client-tools.mjs");
   // Always rewrite so script upgrades land without a process restart.
   fs.writeFileSync(scriptPath, CLIENT_TOOLS_MCP_SCRIPT);
   return scriptPath;
@@ -412,7 +413,7 @@ export class DevinCliExecutor extends BaseExecutor {
         // (fs/shell/search) so the model can actually perform tasks. Override to
         // `summarizer` (no tools, text-only) via CLI_DEVIN_AGENT_TYPE for a safer,
         // tool-less mode. WARNING: the default agent can run shell commands and
-        // modify the filesystem on the host running 9router — only expose locally.
+        // modify the filesystem on the host running 10router — only expose locally.
         const agentType = process.env.CLI_DEVIN_AGENT_TYPE?.trim();
         const acpArgs = ["acp"];
         if (agentType) acpArgs.push("--agent-type", agentType);
@@ -789,7 +790,9 @@ export class DevinCliExecutor extends BaseExecutor {
         // ── Send initialize ───────────────────────────────────────────────
         sendRpc("initialize", {
           protocolVersion: "0.3",
-          clientInfo: { name: "9router", version: "1.0" },
+          // Outbound identifier sent to the Devin CLI MCP handshake — renamed during
+          // the 10router rebrand; wire-visible.
+          clientInfo: { name: "10router", version: "1.0" },
           capabilities: {},
         });
       },

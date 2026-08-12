@@ -429,9 +429,15 @@ describe("DevinCliExecutor ACP session/new", () => {
     // XDG_CONFIG_HOME set so devin loads the generated config.
     expect(child.opts.env.XDG_CONFIG_HOME).toBeTruthy();
     // Static MCP bridge script written to disk.
-    const scriptPath = path.join(os.tmpdir(), "9router-devin-client-tools.mjs");
+    const scriptPath = path.join(os.tmpdir(), "10router-devin-client-tools.mjs");
     expect(fs.existsSync(scriptPath)).toBe(true);
     expect(fs.readFileSync(scriptPath, "utf8")).toContain("clientTools");
     expect(fs.readFileSync(scriptPath, "utf8")).toContain("DEVIN_MCP_TOOLS");
+
+    // Outbound wire identifier: the MCP handshake advertises the rebranded client name.
+    const initialize = child.writes
+      .map((w) => { try { return JSON.parse(w.trim()); } catch { return null; } })
+      .find((m) => m?.method === "initialize");
+    expect(initialize?.params?.clientInfo?.name).toBe("10router");
   });
 });

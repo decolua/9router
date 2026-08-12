@@ -1,11 +1,13 @@
 services:
-  9router:
-    image: decolua/9router:latest
-    container_name: 9router
+  10router:
+    image: some-du6e/10router:latest
+    container_name: 10router
     restart: always
     ports:
       - "20128:20128"
     volumes:
+      # Volume name "9router-data" is retained for compatibility with existing installs —
+      # renaming it would orphan the data of anyone upgrading.
       - 9router-data:/app/data
     env_file:
       - .env
@@ -26,5 +28,6 @@ services:
       - "8787:8787"
 
 volumes:
+  # Kept as "9router-data" on purpose: renaming the named volume would orphan existing user data.
   9router-data:
     name: 9router-data
