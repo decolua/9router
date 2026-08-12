@@ -3,6 +3,7 @@
 const { spawn, exec, execSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
+const http = require("http");
 const https = require("https");
 const net = require("net");
 const os = require("os");
@@ -592,6 +593,16 @@ async function showInterfaceMenu(latestVersion) {
 const MAX_RESTARTS = 2;
 const RESTART_RESET_MS = 30000; // Reset counter if alive > 30s
 
+// Built-in watchdog: detects a server that is alive but frozen (App Nap /
+// event-loop stall) where the process never exits, so the crash/restart
+// handlers above never fire. Polls the HTTP health endpoint and restarts the
+// server after enough consecutive failures. This replaces the need for an
+// external launchd watchdog daemon.
+const WATCHDOG_INTERVAL_MS = 30000; // Match the old external watchdog cadence
+const WATCHDOG_TIMEOUT_MS = 5000;   // Per-check HTTP timeout
+const WATCHDOG_MAX_FAILURES = 3;    // Consecutive failures before restart
+const WATCHDOG_HEALTH_PATH = "/api/settings";
+
 function startServer(updatePromise) {
   // Accept either a Promise (parallel update check) or a resolved value.
   const latestVersionPromise = Promise.resolve(updatePromise);
@@ -866,5 +877,54 @@ function startServer(updatePromise) {
     }, delay);
   }
 
+  // Built-in self-healing watchdog. The crash/restart handlers above only fire
+  // when the server process exits; a server that is alive but frozen (App Nap,
+  // event-loop stall, hung upstream) never triggers them. This polls the HTTP
+  // health endpoint and restarts the server after enough consecutive failures,
+  // so a single launchd agent (autostart + KeepAlive) fully replaces the old
+  // external watchdog daemon.
+  function startWatchdog() {
+    let consecutiveFailures = 0;
+    let restarting = false;
+
+    const check = () => {
+      if (isShuttingDown) return;
+
+      const req = http.get(
+        { host: "127.0.0.1", port, path: WATCHDOG_HEALTH_PATH, timeout: WATCHDOG_TIMEOUT_MS },
+        (res) => {
+          res.resume(); // Drain so the socket can be reused/closed
+          consecutiveFailures = 0;
+          // Server is healthy again — allow future watchdog restarts.
+          restarting = false;
+        }
+      );
+
+      req.on("timeout", () => {
+        req.destroy();
+        onFailure();
+      });
+      req.on("error", () => onFailure());
+
+      function onFailure() {
+        // Skip while a restart is already in flight so we don't stack restarts
+        // while the freshly spawned server is still booting.
+        if (restarting) return;
+        consecutiveFailures++;
+        if (consecutiveFailures >= WATCHDOG_MAX_FAILURES) {
+          const failed = consecutiveFailures;
+          consecutiveFailures = 0;
+          restarting = true;
+          console.error(`\n⚠️  Server unresponsive (${failed} checks failed). Restarting...`);
+          tryRestart("watchdog");
+        }
+      }
+    };
+
+    check();
+    setInterval(check, WATCHDOG_INTERVAL_MS);
+  }
+
   attachServerEvents();
+  startWatchdog();
 }
