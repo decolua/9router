@@ -3,6 +3,7 @@
 // native-passthrough flows. Used by caveman.js and ponytail.js.
 
 import { FORMATS } from "../translator/formats.js";
+import { OPENAI_BLOCK, RESPONSES_ITEM, ROLE } from "../translator/schema/index.js";
 
 const SEP = "\n\n";
 
@@ -36,25 +37,38 @@ function injectMessagesSystem(body, prompt) {
     return;
   }
 
-  const arr = Array.isArray(body.messages) ? body.messages
+  const isChatMessages = Array.isArray(body.messages);
+  const arr = isChatMessages ? body.messages
     : Array.isArray(body.input) ? body.input
     : null;
-  if (!arr) return;
+  if (!arr) {
+    // Responses also accepts a bare string input with no instructions field. There is
+    // no array to append a part to, so the system channel has to be created instead —
+    // otherwise the prompt is dropped without a trace.
+    if (typeof body.input === "string") body.instructions = prompt;
+    return;
+  }
 
-  const idx = arr.findIndex(m => m && (m.role === "system" || m.role === "developer"));
+  const partType = isChatMessages ? OPENAI_BLOCK.TEXT : RESPONSES_ITEM.INPUT_TEXT;
+
+  const idx = arr.findIndex(m => m && (m.role === ROLE.SYSTEM || m.role === ROLE.DEVELOPER));
   if (idx >= 0) {
-    appendToOpenAIMessage(arr[idx], prompt);
+    appendToOpenAIMessage(arr[idx], prompt, partType);
+  } else if (isChatMessages) {
+    arr.unshift({ role: ROLE.SYSTEM, content: prompt });
   } else {
-    arr.unshift({ role: "system", content: prompt });
+    // A Responses input[] item carries its own type; upstream rejects a bare {role,content}.
+    arr.unshift({ type: RESPONSES_ITEM.MESSAGE, role: ROLE.SYSTEM, content: [{ type: partType, text: prompt }] });
   }
 }
 
-function appendToOpenAIMessage(msg, prompt) {
+function appendToOpenAIMessage(msg, prompt, partType) {
   if (typeof msg.content === "string") {
-    msg.content = `${msg.content}${SEP}${prompt}`;
+    // Guarded like the instructions and Claude branches: an empty string would
+    // otherwise leave the prompt behind two blank lines.
+    msg.content = msg.content ? `${msg.content}${SEP}${prompt}` : prompt;
   } else if (Array.isArray(msg.content)) {
-    // Responses-style array of parts {type:"input_text"|"text", text}
-    msg.content.push({ type: "input_text", text: prompt });
+    msg.content.push({ type: partType, text: prompt });
   } else {
     msg.content = prompt;
   }
