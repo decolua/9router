@@ -87,6 +87,8 @@ State is **no longer `db.json`**. It's a SQLite layer under `src/lib/db/` with a
 ### RTK token saver (`open-sse/rtk/`)
 Pre-translate hooks that compress `tool_result` content in-place to cut tokens. **Fail-open**: any error returns null and leaves the body untouched — never throw out of them. Skips `is_error`/`status:"error"` results to preserve traces.
 
+Not everything here is compression. `systemInject.js` is the shared, format-aware system-prompt appender (Claude `system[]`, Gemini `systemInstruction.parts`, OpenAI `messages[]`/`instructions`), and three hooks build on it: `caveman`/`ponytail` (style, opt-in), `disciplineNudge` (corrects a past malformed-output strike; **stateful**, armed by `recordStrike` and consumed once), and `orchestrationNudge` (states the live delegation count when a session is over cap; **stateless** — it recomputes from the request body each turn because the condition is still true, see `docs/adr/0003`). The last two are unconditional: they are policy corrections, not token savers, so they do not check `tokenSaverEnabled`. Note the ordering — `translateRequest` runs first (`handlers/chatCore.js`), then RTK/Headroom, then these injectors; anything counting client-shaped tool blocks must read the **source** body and inject into the **translated** one.
+
 ## Conventions & gotchas
 
 - Plain JavaScript (ESM), no TypeScript. `@/*` path alias → `src/*` (`jsconfig.json`).
