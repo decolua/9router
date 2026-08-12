@@ -100,7 +100,7 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   }
 
   // Handle tool_calls
-  if (delta.tool_calls) {
+  if (delta.tool_calls?.length) {
     closeMessage(state, emit, idx);
     for (const tc of delta.tool_calls) {
       emitToolCall(state, emit, tc);
