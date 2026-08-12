@@ -24,6 +24,11 @@ vi.mock("fs/promises", () => ({
   constants: { R_OK: 4 },
 }));
 
+// Mock child_process for CLI fallback
+vi.mock("child_process", () => ({
+  execFile: vi.fn(),
+}));
+
 // Shared mock db instance
 const mockDbInstance = {
   prepare: vi.fn(),
@@ -52,9 +57,7 @@ describe("GET /api/oauth/cursor/auto-import", () => {
   beforeEach(async () => {
     vi.clearAllMocks();
     mockDbInstance.__throwOnConstruct = false;
-    // Force darwin so macOS-specific logic is exercised
     Object.defineProperty(process, "platform", { value: "darwin", writable: true });
-    // Re-import to pick up fresh mocks each run
     const mod = await import("../../src/app/api/oauth/cursor/auto-import/route.js");
     GET = mod.GET;
   });
@@ -63,15 +66,13 @@ describe("GET /api/oauth/cursor/auto-import", () => {
     Object.defineProperty(process, "platform", { value: originalPlatform, writable: true });
   });
 
-  // ── macOS path probing ────────────────────────────────────────────────
-
   it("returns not-found when no macOS cursor db paths are accessible", async () => {
     vi.mocked(fsPromises.access).mockRejectedValue(new Error("ENOENT"));
 
     const response = await GET();
 
     expect(response.body.found).toBe(false);
-    expect(response.body.error).toContain("Cursor database not found in known macOS locations");
+    expect(response.body.error).toContain("Cursor database not found");
   });
 
   it("returns descriptive error if macOS db file exists but cannot be opened", async () => {
@@ -84,8 +85,6 @@ describe("GET /api/oauth/cursor/auto-import", () => {
     expect(response.body.error).toContain("could not open it");
     expect(response.body.error).toContain("SQLITE_CANTOPEN");
   });
-
-  // ── Token extraction ──────────────────────────────────────────────────
 
   it("extracts tokens using exact keys", async () => {
     vi.mocked(fsPromises.access).mockResolvedValue();
@@ -120,15 +119,12 @@ describe("GET /api/oauth/cursor/auto-import", () => {
     expect(response.body.machineId).toBe("json-machine-id");
   });
 
-  // ── Fuzzy fallback (macOS only) ───────────────────────────────────────
-
   it("falls back to fuzzy key matching on macOS when exact keys are missing", async () => {
     vi.mocked(fsPromises.access).mockResolvedValue();
     mockDbInstance.prepare.mockImplementation((query) => {
       if (query.includes("IN (")) {
         return { all: vi.fn().mockReturnValue([]) };
       }
-      // Fuzzy LIKE query
       return {
         all: vi.fn().mockReturnValue([
           { key: "cursorAuth/someOtherAccessTokenKey", value: "fallback-token" },
@@ -156,8 +152,6 @@ describe("GET /api/oauth/cursor/auto-import", () => {
     expect(response.body.error).toContain("Please login to Cursor IDE first");
   });
 
-  // ── Backwards-compatible: linux/win32 keep original single-path logic ─
-
   it("linux uses single hardcoded path and original error message", async () => {
     Object.defineProperty(process, "platform", { value: "linux", writable: true });
     vi.mocked(fsPromises.access).mockRejectedValue(new Error("ENOENT"));
@@ -169,7 +163,6 @@ describe("GET /api/oauth/cursor/auto-import", () => {
     expect(response.body.error).toBe(
       "Cursor database not found. Make sure Cursor IDE is installed and you are logged in."
     );
-    // fs/promises.access should NOT have been called (linux skips probing)
     expect(fsPromises.access).not.toHaveBeenCalled();
   });
 

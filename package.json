@@ -12,7 +12,8 @@
     "build:bun": "bun --bun next build --webpack",
     "start:bun": "bun ./.next/standalone/server.js",
     "cli:pack": "npm --prefix cli run pack:cli",
-    "cli:publish": "npm --prefix cli run publish:cli"
+    "cli:publish": "npm --prefix cli run publish:cli",
+    "postinstall": "bash tests/setup-aliases.sh"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

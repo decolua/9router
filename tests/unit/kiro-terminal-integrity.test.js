@@ -701,12 +701,17 @@ describe("Kiro terminal integrity recovery", () => {
   });
 
   it("surfaces retry HTTP failures as SSE after heartbeat commits headers", async () => {
+    process.env.KIRO_TOOL_CALL_REPAIR_TTFT_TIMEOUT_MS = "500";
+    process.env.KIRO_TOOL_CALL_REPAIR_STALL_TIMEOUT_MS = "500";
+    const unauthorized = new Response("unauthorized", {
+      status: 401,
+      statusText: "Unauthorized"
+    });
     fetchMock
       .mockResolvedValueOnce(response([]))
-      .mockResolvedValueOnce(new Response("unauthorized", {
-        status: 401,
-        statusText: "Unauthorized"
-      }));
+      .mockResolvedValueOnce(unauthorized)
+      .mockResolvedValueOnce(unauthorized)
+      .mockResolvedValueOnce(unauthorized);
 
     const result = await execute();
     const body = await result.response.text();
@@ -717,12 +722,17 @@ describe("Kiro terminal integrity recovery", () => {
   });
 
   it("bounds the retry HTTP error body", async () => {
+    process.env.KIRO_TOOL_CALL_REPAIR_TTFT_TIMEOUT_MS = "500";
+    process.env.KIRO_TOOL_CALL_REPAIR_STALL_TIMEOUT_MS = "500";
+    const errorBody = new Response(`error-start-${"x".repeat(10_000)}-error-tail`, {
+      status: 401,
+      statusText: "Unauthorized"
+    });
     fetchMock
       .mockResolvedValueOnce(response([]))
-      .mockResolvedValueOnce(new Response(`error-start-${"x".repeat(10_000)}-error-tail`, {
-        status: 401,
-        statusText: "Unauthorized"
-      }));
+      .mockResolvedValueOnce(errorBody)
+      .mockResolvedValueOnce(errorBody)
+      .mockResolvedValueOnce(errorBody);
 
     const body = await (await execute()).response.text();
 

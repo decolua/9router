@@ -64,7 +64,6 @@ import p61 from "./mmf.js";
 import p62 from "./nanobanana.js";
 import p63 from "./nebius.js";
 import p64 from "./nvidia.js";
-import p65 from "./ollama-local.js";
 import p66 from "./ollama.js";
 import p67 from "./openai.js";
 import p68 from "./opencode-go.js";
@@ -183,7 +182,6 @@ export default [
   p62,
   p63,
   p64,
-  p65,
   p66,
   p67,
   p68,

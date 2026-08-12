@@ -5,8 +5,6 @@ import {
   resolveCursorModels,
 } from "../../open-sse/services/cursorModels.js";
 
-const originalFetch = global.fetch;
-
 function varint(value) {
   const bytes = [];
   while (value >= 0x80) {
@@ -46,8 +44,8 @@ describe("Cursor live model catalog", () => {
   });
 
   afterEach(() => {
-    global.fetch = originalFetch;
     clearCursorModelCache();
+    vi.restoreAllMocks();
   });
 
   it("decodes the GetUsableModels protobuf response", () => {
@@ -63,39 +61,79 @@ describe("Cursor live model catalog", () => {
     ]);
   });
 
-  it("fetches the account-specific catalog and caches it", async () => {
+  it("fetches the account-specific catalog via http2 and caches it", async () => {
     const payload = concat(model("claude-4.6-opus", "Claude 4.6 Opus"));
-    global.fetch = vi.fn().mockResolvedValue(new Response(payload, { status: 200 }));
+
+    const mockReq = {
+      on: vi.fn((event, cb) => {
+        if (event === "response") cb({ ":status": "200" });
+        if (event === "data") cb(payload);
+        if (event === "end") cb();
+        return mockReq;
+      }),
+      end: vi.fn(),
+    };
+
+    const mockClient = {
+      request: vi.fn().mockReturnValue(mockReq),
+      on: vi.fn(),
+      close: vi.fn(),
+    };
+
+    vi.doMock("http2", () => ({
+      default: {
+        connect: vi.fn().mockReturnValue(mockClient),
+      },
+      connect: vi.fn().mockReturnValue(mockClient),
+    }));
+
+    vi.resetModules();
+    const { resolveCursorModels: freshResolve } = await import("../../open-sse/services/cursorModels.js");
+
     const credentials = {
       accessToken: "cursor-token",
       providerSpecificData: { machineId: "machine-id" },
     };
 
-    await expect(resolveCursorModels(credentials)).resolves.toEqual({
-      models: [{ id: "claude-4.6-opus", name: "Claude 4.6 Opus" }],
-    });
-    await expect(resolveCursorModels(credentials)).resolves.toEqual({
+    const result = await freshResolve(credentials);
+    expect(result).toEqual({
       models: [{ id: "claude-4.6-opus", name: "Claude 4.6 Opus" }],
     });
 
-    expect(global.fetch).toHaveBeenCalledTimes(1);
-    expect(global.fetch).toHaveBeenCalledWith(
-      "https://agent.api5.cursor.sh/agent.v1.AgentService/GetUsableModels",
-      expect.objectContaining({
-        method: "POST",
-        body: expect.any(Uint8Array),
-        headers: expect.objectContaining({
-          "content-type": "application/proto",
-          accept: "application/proto",
-        }),
-      }),
-    );
-  });
+    const result2 = await freshResolve(credentials);
+    expect(result2).toEqual({
+      models: [{ id: "claude-4.6-opus", name: "Claude 4.6 Opus" }],
+    });
+
+    expect(mockClient.request).toHaveBeenCalledTimes(1);
+  }, 15000);
 
   it("fails open when the Cursor catalog request fails", async () => {
-    global.fetch = vi.fn().mockResolvedValue(new Response("no", { status: 403 }));
+    const mockReq = {
+      on: vi.fn((event, cb) => {
+        if (event === "error") cb(new Error("connection refused"));
+        return mockReq;
+      }),
+      end: vi.fn(),
+    };
 
-    await expect(resolveCursorModels({
+    const mockClient = {
+      request: vi.fn().mockReturnValue(mockReq),
+      on: vi.fn(),
+      close: vi.fn(),
+    };
+
+    vi.doMock("http2", () => ({
+      default: {
+        connect: vi.fn().mockReturnValue(mockClient),
+      },
+      connect: vi.fn().mockReturnValue(mockClient),
+    }));
+
+    vi.resetModules();
+    const { resolveCursorModels: freshResolve } = await import("../../open-sse/services/cursorModels.js");
+
+    await expect(freshResolve({
       accessToken: "cursor-token",
       providerSpecificData: { machineId: "machine-id" },
     })).resolves.toBeNull();

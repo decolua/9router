@@ -6,11 +6,17 @@ services:
     mem_limit: 1g   # 2026-08-03: cap RAM
     mem_reservation: 256m
     ports:
-      - "127.0.0.1:20128:20128"
+      - "0.0.0.0:20128:20128"
     volumes:
       - 9router-data:/app/data
     env_file:
       - .env
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:20128/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     environment:
       DATA_DIR: /app/data
       PORT: "20128"
