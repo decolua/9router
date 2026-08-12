@@ -44,6 +44,14 @@ export default function LoginPage() {
             window.location.assign("/setup");
             return;
           }
+          // A restricted session that reloaded the page lands back here: keep
+          // it on the change form instead of bouncing it to a locked dashboard.
+          if (data.authenticated === true && data.mustChangePassword === true) {
+            setMustChange(true);
+            setHasPassword(false);
+            setLegacyPassword(true);
+            return;
+          }
           if (data.authenticated === true || data.requireLogin === false) {
             window.location.assign("/dashboard");
             return;
@@ -108,10 +116,12 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
+      // Dedicated endpoint: the restricted session issued at legacy login is
+      // only accepted here, and the old password is not asked for again.
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ currentPassword: password, newPassword }),
+        body: JSON.stringify({ newPassword }),
       });
       if (res.ok) {
         window.location.assign("/dashboard");

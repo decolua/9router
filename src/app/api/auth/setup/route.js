@@ -9,7 +9,7 @@ import {
   validateNewPassword,
   MIN_PASSWORD_LENGTH,
 } from "@/lib/auth/setupState";
-import { verifySetupToken, getSetupTokenState, clearSetupToken, SETUP_WINDOW_MS } from "@/lib/auth/setupToken";
+import { consumeSetupToken, getSetupTokenState, SETUP_WINDOW_MS } from "@/lib/auth/setupToken";
 import { ensureSetupToken } from "@/lib/auth/setupBootstrap";
 
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
@@ -60,7 +60,14 @@ export async function POST(request) {
 
     const { token, password } = await request.json();
 
-    const verified = verifySetupToken(token);
+    // Validate the password first: consuming the token is irreversible, so a
+    // too-short password must not burn it.
+    const check = validateNewPassword(password);
+    if (!check.ok) {
+      return NextResponse.json({ error: check.error }, { status: 400, headers: NO_STORE_HEADERS });
+    }
+
+    const verified = consumeSetupToken(token);
     if (!verified.ok) {
       if (verified.reason === "expired" || verified.reason === "missing") {
         return NextResponse.json({ error: EXPIRED_MESSAGE, locked: true }, { status: 403, headers: NO_STORE_HEADERS });
@@ -72,16 +79,10 @@ export async function POST(request) {
       );
     }
 
-    const check = validateNewPassword(password);
-    if (!check.ok) {
-      return NextResponse.json({ error: check.error }, { status: 400, headers: NO_STORE_HEADERS });
-    }
-
     const hash = await bcrypt.hash(password, await bcrypt.genSalt(10));
     // requireLogin is forced back on: an instance being claimed for the first
     // time must not come up with authentication disabled.
     await updateSettings({ password: hash, requireLogin: true });
-    clearSetupToken();
     recordSuccess(ip);
 
     const cookieStore = await cookies();

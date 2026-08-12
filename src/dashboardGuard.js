@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSettings, validateApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { verifyDashboardAuthToken, getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 import { needsSetup } from "@/lib/auth/setupState";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
@@ -28,6 +28,7 @@ const PUBLIC_API_PATHS = [
   "/api/auth/logout",
   "/api/auth/status",
   "/api/auth/setup",
+  "/api/auth/change-password",
   "/api/auth/oidc",
   "/api/version",
   "/api/settings/require-login",
@@ -148,9 +149,28 @@ async function canAccessLocalOnlyRoute(request) {
   return false;
 }
 
+// The only endpoints a restricted (forced-password-change) session may reach.
+const PW_CHANGE_ALLOWED_PATHS = [
+  "/api/auth/change-password",
+  "/api/auth/logout",
+  "/api/auth/status",
+];
+
+async function readSession(request) {
+  return await getDashboardAuthSession(request.cookies.get("auth_token")?.value);
+}
+
+// A restricted session is deliberately NOT a valid token anywhere else: it is
+// issued after a last login on the old default password and unlocks only the
+// change-password endpoint.
 async function hasValidToken(request) {
-  const token = request.cookies.get("auth_token")?.value;
-  return await verifyDashboardAuthToken(token);
+  const session = await readSession(request);
+  return !!session && session.pwChange !== true;
+}
+
+async function hasRestrictedSession(request) {
+  const session = await readSession(request);
+  return !!session && session.pwChange === true;
 }
 
 // Read settings directly from DB to avoid self-fetch deadlock in proxy
@@ -199,6 +219,22 @@ export async function proxy(request) {
       return NextResponse.redirect(new URL("/login", request.url));
     }
     if (pathname === "/setup") return NextResponse.next();
+  }
+
+  // Forced-password-change gate: a legacy session may only reach the endpoints
+  // that complete the change. Everything else funnels back to /login, so the
+  // change cannot be skipped by navigating straight to the dashboard.
+  if (pathname.startsWith("/dashboard") || pathname === "/" || pathname.startsWith("/api/")) {
+    if (!isPublicLlmApi(pathname) && await hasRestrictedSession(request)) {
+      if (PW_CHANGE_ALLOWED_PATHS.includes(pathname)) return NextResponse.next();
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json(
+          { error: "Password change required", mustChangePassword: true },
+          { status: 403 }
+        );
+      }
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
   }
 
   // Local-only gate for spawn-capable / host-secret routes.

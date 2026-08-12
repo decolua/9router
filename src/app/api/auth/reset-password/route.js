@@ -10,9 +10,13 @@ import { issueSetupToken, printSetupBanner, SETUP_WINDOW_MS } from "@/lib/auth/s
 // Local-only (enforced by dashboardGuard).
 export async function POST() {
   try {
+    // Order matters, and neither step may be best-effort: if the grace flag
+    // survived a cleared hash the instance would report "legacy" — login would
+    // accept the old default password while /setup rejected the fresh token.
+    // Clearing the flag first means a failure here leaves the current password
+    // untouched and mints nothing.
+    await setMeta(LEGACY_GRACE_META_KEY, "0");
     await updateSettings({ password: null });
-    // Never re-open the old default password on a reset.
-    try { await setMeta(LEGACY_GRACE_META_KEY, "0"); } catch { /* best effort */ }
 
     const token = issueSetupToken();
     printSetupBanner(token, { reason: "password reset" });

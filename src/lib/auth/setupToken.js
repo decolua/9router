@@ -71,6 +71,21 @@ export function getSetupTokenState() {
   };
 }
 
+// Verify and consume in one synchronous step. Verifying and clearing as two
+// awaited steps leaves a window where two concurrent claims both pass and each
+// writes a password hash; unlinking here means only one caller can win.
+export function consumeSetupToken(candidate) {
+  const result = verifySetupToken(candidate);
+  if (!result.ok) return result;
+  try {
+    fs.unlinkSync(TOKEN_FILE);
+  } catch {
+    // Another request consumed it between verify and unlink.
+    return { ok: false, reason: "missing" };
+  }
+  return { ok: true };
+}
+
 // Constant-time comparison; also enforces the setup window.
 export function verifySetupToken(candidate) {
   if (typeof candidate !== "string" || !candidate) return { ok: false, reason: "invalid" };

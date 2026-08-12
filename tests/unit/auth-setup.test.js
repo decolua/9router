@@ -40,6 +40,7 @@ const {
 
 const {
   issueSetupToken,
+  consumeSetupToken,
   verifySetupToken,
   clearSetupToken,
   getSetupTokenState,
@@ -155,16 +156,49 @@ describe("setup token", () => {
   });
 });
 
+describe("consumeSetupToken", () => {
+  it("verifies and consumes in one step so a token cannot be claimed twice", () => {
+    const token = issueSetupToken();
+
+    expect(consumeSetupToken(token).ok).toBe(true);
+    // A second concurrent claim finds it already gone.
+    expect(consumeSetupToken(token)).toEqual({ ok: false, reason: "missing" });
+    expect(getSetupTokenState().present).toBe(false);
+  });
+
+  it("leaves the token intact when the candidate is wrong", () => {
+    const token = issueSetupToken();
+
+    expect(consumeSetupToken("not-the-token").ok).toBe(false);
+    expect(getSetupTokenState().present).toBe(true);
+    expect(consumeSetupToken(token).ok).toBe(true);
+  });
+
+  it("does not consume an expired token", () => {
+    const token = issueSetupToken();
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + SETUP_WINDOW_MS + 1000);
+
+    expect(consumeSetupToken(token)).toEqual({ ok: false, reason: "expired" });
+  });
+});
+
 describe("ensureSetupToken", () => {
   beforeEach(() => {
     mocks.getSettings.mockResolvedValue({ authMode: "password" });
   });
 
   it("mints and prints a token for an unclaimed instance", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+
     const token = await ensureSetupToken();
 
     expect(token).toBeTruthy();
     expect(verifySetupToken(token).ok).toBe(true);
+    const printed = log.mock.calls.map((c) => c.join(" ")).join("\n");
+    expect(printed).toContain(token);
+    expect(printed).toContain("/setup");
+    log.mockRestore();
   });
 
   it("replaces a stale token from a previous run on the first call of a process", async () => {

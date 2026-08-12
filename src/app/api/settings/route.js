@@ -49,6 +49,8 @@ export async function PATCH(request) {
     // Strip protected secrets before any internal handling sets them
     for (const key of PROTECTED_SETTING_KEYS) delete body[key];
 
+    let passwordChanged = false;
+
     // If updating password, hash it
     if (body.newPassword) {
       const settings = await getSettings();
@@ -90,9 +92,7 @@ export async function PATCH(request) {
       body.password = await bcrypt.hash(body.newPassword, salt);
       delete body.newPassword;
       delete body.currentPassword;
-      // A real hash exists now — the legacy default password is dead.
-      await clearLegacyGrace();
-      clearSetupToken();
+      passwordChanged = true;
     }
 
     if (Object.prototype.hasOwnProperty.call(body, "oidcClientSecret")) {
@@ -102,6 +102,14 @@ export async function PATCH(request) {
     }
 
     const settings = await updateSettings(body);
+
+    // Only once the replacement hash is persisted: revoking the legacy default
+    // and the setup token before the write would, on a failed write, leave the
+    // install with no password and no way back in.
+    if (passwordChanged) {
+      await clearLegacyGrace();
+      clearSetupToken();
+    }
 
     // Apply outbound proxy settings immediately (no restart required)
     if (
