@@ -5,6 +5,7 @@ import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
 import Toggle from "@/shared/components/Toggle";
 import Tooltip from "@/shared/components/Tooltip";
+import { useBlurEmails } from "@/shared/hooks/useBlurEmails";
 import {
   parseQuotaData,
   calculatePercentage,
@@ -83,6 +84,12 @@ function getConnectionSecondaryLabel(connection) {
   return null;
 }
 
+// Only the label that actually is the email address should be blurred
+function isConnectionEmail(connection, label) {
+  const email = connection.email?.trim();
+  return !!email && label === email;
+}
+
 // Region is stored for builder-id/idc/api_key flows; social and imported flows
 // omit it, so fall back to the region segment of the profileArn
 // (arn:aws:codewhisperer:<region>:...).
@@ -126,6 +133,7 @@ function formatTimeRemaining(value) {
 
 export default function ProviderLimits() {
   const { copied, copy } = useCopyToClipboard();
+  const { blurClass } = useBlurEmails();
   const [connections, setConnections] = useState([]);
   const [quotaData, setQuotaData] = useState({});
   const [loading, setLoading] = useState({});
@@ -1060,12 +1068,12 @@ export default function ProviderLimits() {
                         {conn.provider}
                       </h3>
                       {getConnectionLabel(conn) ? (
-                        <p className="text-xs text-text-muted truncate">
+                        <p className={`text-xs text-text-muted truncate ${isConnectionEmail(conn, getConnectionLabel(conn)) ? blurClass : ""}`}>
                           {getConnectionLabel(conn)}
                         </p>
                       ) : null}
                       {getConnectionSecondaryLabel(conn) ? (
-                        <p className="text-[11px] text-text-muted/80 truncate">
+                        <p className={`text-[11px] text-text-muted/80 truncate ${isConnectionEmail(conn, getConnectionSecondaryLabel(conn)) ? blurClass : ""}`}>
                           {getConnectionSecondaryLabel(conn)}
                         </p>
                       ) : null}
