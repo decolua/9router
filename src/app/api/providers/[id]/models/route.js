@@ -275,10 +275,21 @@ const PROVIDER_MODELS_CONFIG = {
   },
   cursor: {
     customResolver: async (connection) => {
+      const proxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
       const result = await resolveCursorModels({
         accessToken: connection.accessToken,
         providerSpecificData: connection.providerSpecificData || {},
-      }, { forceRefresh: true, log: console });
+      }, {
+        forceRefresh: true,
+        log: console,
+        proxyOptions: {
+          enabled: proxy.connectionProxyEnabled === true,
+          connectionProxyEnabled: proxy.connectionProxyEnabled === true,
+          connectionProxyUrl: proxy.connectionProxyUrl || "",
+          connectionNoProxy: proxy.connectionNoProxy || "",
+          strictProxy: proxy.strictProxy === true,
+        },
+      });
       if (result?.models?.length) return { models: result.models };
       return {
         models: getStaticProviderModels("cursor"),
