@@ -12,6 +12,7 @@ import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { normalizeCodexServiceTier } from "../shared/codexServiceTier.js";
 
 // SSE error patterns inside 200-OK bodies. Some retry same account first; capacity rotates accounts.
 const CODEX_SSE_RETRY_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
@@ -477,8 +478,9 @@ export class CodexExecutor extends BaseExecutor {
     delete body.safety_identifier; // Droid CLI sends this but Codex doesn't support it
     delete body.previous_response_id; // store=false → backend can't resolve previous resp; avoid 404
 
-    if (body.service_tier === "fast") body.service_tier = "priority";
-    if (body.service_tier && body.service_tier !== "priority") delete body.service_tier;
+    const serviceTier = normalizeCodexServiceTier(body.service_tier);
+    if (serviceTier) body.service_tier = serviceTier;
+    else delete body.service_tier;
 
     // Final allowlist filter — strip any unknown field that could trigger upstream "routing_unsupported"
     for (const k of Object.keys(body)) {

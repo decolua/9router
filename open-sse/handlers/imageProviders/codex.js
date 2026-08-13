@@ -2,6 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { nowSec } from "./_base.js";
 import { PROVIDERS } from "../../config/providers.js";
+import { normalizeCodexServiceTier } from "../../shared/codexServiceTier.js";
 
 const CODEX_RESPONSES_URL = PROVIDERS["codex"].baseUrl;
 const CODEX_USER_AGENT = "codex_cli_rs/0.136.0";
@@ -171,7 +172,7 @@ export default {
     if (body.size && body.size !== "") imgTool.size = body.size;
     if (body.quality && body.quality !== "") imgTool.quality = body.quality;
     if (body.background && body.background !== "") imgTool.background = body.background;
-    return {
+    const payload = {
       model: stripImageSuffix(model),
       instructions: "",
       input: [{ type: "message", role: "user", content: buildContent(body.prompt, refs, detail) }],
@@ -183,6 +184,11 @@ export default {
       store: false,
       reasoning: null,
     };
+    // Opt into Codex's accelerated tier when asked. Omitted entirely otherwise —
+    // an unrecognized service_tier makes the backend reject the request.
+    const serviceTier = normalizeCodexServiceTier(body.service_tier);
+    if (serviceTier) payload.service_tier = serviceTier;
+    return payload;
   },
   // Custom: codex parses SSE → either pipe to client or collect b64
   async parseResponse(response, { log, streamToClient, onRequestSuccess }) {
