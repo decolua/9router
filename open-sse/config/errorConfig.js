@@ -58,22 +58,30 @@ const COOLDOWN = {
  */
 export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
-  { text: "no credentials",           cooldownMs: COOLDOWN.long },
-  { text: "request not allowed",      cooldownMs: COOLDOWN.short },
-  { text: "improperly formed request", cooldownMs: COOLDOWN.long },
-  { text: "rate limit",               backoff: true },
-  { text: "too many requests",        backoff: true },
-  { text: "quota exceeded",           backoff: true },
-  { text: "capacity",                 backoff: true },
-  { text: "overloaded",               backoff: true },
+  { text: "no credentials",                   cooldownMs: COOLDOWN.long },
+  { text: "request not allowed",              cooldownMs: COOLDOWN.short },
+  { text: "improperly formed request",        cooldownMs: COOLDOWN.long },
+  { text: "antigravity project id is unavailable", cooldownMs: COOLDOWN.short },
+  { text: "location is not supported",        cooldownMs: COOLDOWN.short },
+  { text: "failed_precondition",              cooldownMs: COOLDOWN.short },
+  { text: "invalid project",                  cooldownMs: COOLDOWN.short },
+  { text: "capacity",                         cooldownMs: 10000 },
+  { text: "overloaded",                       cooldownMs: 10000 },
+  { text: "high traffic",                     cooldownMs: 10000 },
+  { text: "rate limit",                       backoff: true },
+  { text: "too many requests",                backoff: true },
+  { text: "quota exceeded",                   backoff: true },
+  { text: "resource_exhausted",               backoff: true },
 
   // --- Status-based rules (fallback when text doesn't match) ---
   { status: 401, cooldownMs: COOLDOWN.long },
   { status: 402, cooldownMs: COOLDOWN.long },
   { status: 403, cooldownMs: COOLDOWN.long },
   { status: 404, cooldownMs: COOLDOWN.long },
-  { status: 429, backoff: true },
+  // Generic 429 without explicit quota proof: transient 10s cooldown, no exponential backoff ramp
+  { status: 429, cooldownMs: 10000 },
 ];
+
 
 // Backward compat: COOLDOWN_MS object (used by index.js re-export)
 export const COOLDOWN_MS = {

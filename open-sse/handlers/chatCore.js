@@ -29,6 +29,8 @@ import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { resolveAntigravityProjectId } from "../services/projectId.js";
+
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -291,11 +293,22 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log, provider, model, reqTag
   });
 
+  if ((provider === "antigravity" || provider === "gemini-cli") && !credentials?.projectId) {
+    const resolvedPid = await resolveAntigravityProjectId({ credentials, connectionId, accessToken: credentials?.accessToken, provider });
+    if (resolvedPid) {
+      credentials.projectId = resolvedPid;
+    } else {
+      return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Antigravity project ID is unavailable");
+    }
+  }
+
   const proxyOptions = {
     connectionProxyEnabled: credentials?.providerSpecificData?.connectionProxyEnabled === true,
     connectionProxyUrl: credentials?.providerSpecificData?.connectionProxyUrl || "",
     connectionNoProxy: credentials?.providerSpecificData?.connectionNoProxy || "",
     vercelRelayUrl: credentials?.providerSpecificData?.vercelRelayUrl || "",
+    proxySource: credentials?.providerSpecificData?.proxySource || (credentials?.providerSpecificData?.connectionProxyPoolId ? "pool" : credentials?.providerSpecificData?.connectionProxyEnabled ? "legacy" : "none"),
+    proxyPoolId: credentials?.providerSpecificData?.connectionProxyPoolId || credentials?.providerSpecificData?.proxyPoolId || null,
   };
 
   if (proxyOptions.vercelRelayUrl) {
@@ -370,7 +383,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       // refreshWithRetry's 2nd/3rd attempt reuses the already-consumed RT →
       // invalid_grant → auth_failed retryable=false.
       const newCredentials = await refreshWithRetry(async () => {
-        const result = await executor.refreshCredentials(credentials, log);
+        const result = await executor.refreshCredentials(credentials, log, proxyOptions);
+
         if (result?.refreshToken && result.refreshToken !== credentials.refreshToken) {
           if (result.accessToken) credentials.accessToken = result.accessToken;
           credentials.refreshToken = result.refreshToken;

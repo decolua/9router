@@ -134,7 +134,10 @@ export class AntigravityExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
-    const projectId = credentials?.projectId || this.generateProjectId();
+    const projectId = credentials?.projectId?.trim();
+    if (!projectId) {
+      throw new Error("Antigravity project ID is unavailable");
+    }
 
     // OpenAI clients may include stream_options even for non-streaming calls.
     // Google generateContent rejects that combination before processing the request.
@@ -373,6 +376,62 @@ export class AntigravityExecutor extends BaseExecutor {
       bodyText,
     ].filter(Boolean).map(v => typeof v === "string" ? v : JSON.stringify(v)).join("\n");
   }
+
+  parseError(response, bodyText) {
+    if (!bodyText) {
+      return { status: response.status, message: `HTTP ${response.status}`, reason: "HTTP_ERROR" };
+    }
+    try {
+      const json = JSON.parse(bodyText);
+      const err = json.error || json;
+      const reason = err.status || err.code || (response.status === 429 ? "RESOURCE_EXHAUSTED" : "UNKNOWN_ERROR");
+      const message = err.message || (typeof err === "string" ? err : bodyText);
+      return {
+        status: response.status,
+        reason,
+        message: `[${reason}] ${message}`,
+        rawDetails: err.details || json,
+        errorJson: json
+      };
+    } catch {
+      return { status: response.status, message: bodyText, reason: "UNPARSABLE_BODY" };
+    }
+  }
+
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+    const connectionId = credentials?.connectionId || credentials?.id || "unknown";
+    const email = credentials?.email || credentials?.connectionName || "unknown";
+    const projectId = credentials?.projectId?.trim() || "";
+
+    let proxySource = "none";
+    let proxyPoolId = "none";
+
+    if (proxyOptions?.vercelRelayUrl) {
+      proxySource = "vercel";
+      proxyPoolId = credentials?.providerSpecificData?.connectionProxyPoolId || credentials?.providerSpecificData?.proxyPoolId || "none";
+    } else if (proxyOptions?.connectionProxyEnabled && proxyOptions?.connectionProxyUrl) {
+      proxySource = credentials?.providerSpecificData?.connectionProxyPoolId || credentials?.providerSpecificData?.proxyPoolId ? "pool" : "legacy";
+      proxyPoolId = credentials?.providerSpecificData?.connectionProxyPoolId || credentials?.providerSpecificData?.proxyPoolId || "none";
+    }
+
+    const url = this.buildUrl(model, stream, 0);
+
+    const logLines = [
+      `[ANTIGRAVITY] connectionId=${connectionId}`,
+      `[ANTIGRAVITY] email=${email}`,
+      `[ANTIGRAVITY] projectId=${projectId}`,
+      `[ANTIGRAVITY] proxySource=${proxySource}`,
+      `[ANTIGRAVITY] proxyPoolId=${proxyPoolId}`,
+      `[ANTIGRAVITY] model=${model}`,
+      `[ANTIGRAVITY] upstream=${url}`,
+    ].join("\n");
+
+    log?.info?.("ANTIGRAVITY", logLines);
+    console.log(logLines);
+
+    return super.execute({ model, body, stream, credentials, signal, log, proxyOptions });
+  }
+
 
   isTransientAntigravityError(status, message) {
     if (status === HTTP_STATUS.RATE_LIMITED) return true;
