@@ -42,6 +42,12 @@ function normalizeGeminiContents(contents) {
     if (last?.role === c.role) last.parts.push(...c.parts);
     else out.push({ ...c, parts: [...c.parts] });
   }
+  if (out.length > 0 && out[out.length - 1].role === GEMINI_ROLE.MODEL) {
+    out.push({
+      role: GEMINI_ROLE.USER,
+      parts: [{ text: "Continue" }]
+    });
+  }
   return out;
 }
 
@@ -132,48 +138,34 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
         }
 
         if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
-          const toolCallIds = [];
+          const toolCallInfos = [];
           for (const tc of msg.tool_calls) {
             if (tc.type !== OPENAI_BLOCK.FUNCTION) continue;
 
             const args = tryParseJSON(tc.function?.arguments || "{}");
+            const sanitizedName = sanitizeGeminiFunctionName(tc.function?.name);
             parts.push({
               thoughtSignature: signature,
               functionCall: {
                 id: tc.id,
-                name: sanitizeGeminiFunctionName(tc.function.name),
+                name: sanitizedName,
                 args: args
               }
             });
-            toolCallIds.push(tc.id);
+            toolCallInfos.push({ id: tc.id, name: sanitizedName });
           }
 
           if (parts.length > 0) {
             result.contents.push({ role: GEMINI_ROLE.MODEL, parts });
           }
 
-          // Check if there are actual tool responses in the next messages
-          const hasActualResponses = toolCallIds.some(fid => toolResponses[fid]);
-
-          if (hasActualResponses) {
+          if (toolCallInfos.length > 0) {
             const toolParts = [];
-            for (const fid of toolCallIds) {
-              if (!toolResponses[fid]) continue;
-
-              let name = tcID2Name[fid];
-              if (!name) {
-                const idParts = fid.split("-");
-                if (idParts.length > 2) {
-                  name = idParts.slice(0, -2).join("-");
-                } else {
-                  name = fid;
-                }
-              }
-
-              let resp = toolResponses[fid];
-              let parsedResp = tryParseJSON(resp);
+            for (const { id: fid, name: fnName } of toolCallInfos) {
+              const rawResp = toolResponses[fid] ?? "";
+              let parsedResp = tryParseJSON(rawResp);
               if (parsedResp === null) {
-                parsedResp = { result: resp };
+                parsedResp = { result: rawResp };
               } else if (typeof parsedResp !== "object") {
                 parsedResp = { result: parsedResp };
               }
@@ -181,7 +173,7 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
               toolParts.push({
                 functionResponse: {
                   id: fid,
-                  name: sanitizeGeminiFunctionName(name),
+                  name: fnName,
                   response: parsedResp
                 }
               });

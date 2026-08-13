@@ -165,4 +165,46 @@ describe("Antigravity executor", () => {
     expect(tool1Id).toBe(call1Id);
     expect(tool2Id).toBe(call2Id);
   });
+
+  it("openaiToAntigravityRequest preserves empty string tool responses without dropping functionResponse", () => {
+    const out = openaiToAntigravityRequest("gemini-3.6-flash-high", {
+      messages: [
+        { role: "user", content: "find files" },
+        {
+          role: "assistant",
+          tool_calls: [{
+            id: "call_abc123",
+            type: "function",
+            function: { name: "grep_search", arguments: '{"query":"test"}' }
+          }]
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_abc123",
+          content: "" // empty tool response output
+        }
+      ]
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const contents = out.request.contents;
+    expect(contents.length).toBe(3); // user -> model -> user (functionResponse)
+    const lastTurn = contents[2];
+    expect(lastTurn.role).toBe("user");
+    expect(lastTurn.parts[0].functionResponse).toBeDefined();
+    expect(lastTurn.parts[0].functionResponse.name).toBe("grep_search");
+    expect(lastTurn.parts[0].functionResponse.response).toEqual({ result: "" });
+  });
+
+  it("openaiToAntigravityRequest normalizes trailing model turn to end with user turn", () => {
+    const out = openaiToAntigravityRequest("gemini-3.6-flash-high", {
+      messages: [
+        { role: "user", content: "hello" },
+        { role: "assistant", content: "hi there" }
+      ]
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const contents = out.request.contents;
+    const lastTurn = contents[contents.length - 1];
+    expect(lastTurn.role).toBe("user");
+  });
 });
