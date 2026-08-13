@@ -19,6 +19,12 @@
   hand-rolled (and declines `permessage-deflate`) because this file is copied
   into the standalone output by itself — a `require("ws")` that Next's tracing
   never saw would crash the server at boot.
+  Codex's startup *prewarm* connection is answered directly instead of being
+  routed: it carries `request_kind: "prewarm"` and sends the full turn payload
+  purely to warm ChatGPT's prompt cache, blocking the first real turn until it
+  completes. Routing it upstream would spend a real model call on every session
+  start and overrun the client's `websocket_connect_timeout`. There is no cache
+  of ours to warm, so it is acknowledged in milliseconds.
   **Only the production server has it**: `next dev` and `next start` do not load
   `custom-server.js`, so websockets need `npm run build` + the standalone server
   (which is what Docker and the CLI launcher run).

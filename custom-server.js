@@ -232,6 +232,14 @@ function handleCodexUpgrade(req, socket, head, port) {
   socket.setNoDelay(true);
 
   const peerIp = socket.remoteAddress || "";
+  // Codex tags the connection's purpose here; a malformed value just means we
+  // treat the connection as a normal turn.
+  let isPrewarm = false;
+  try {
+    isPrewarm = JSON.parse(req.headers["x-codex-turn-metadata"] || "{}").request_kind === "prewarm";
+  } catch {
+    isPrewarm = false;
+  }
   let closed = false;
   const send = (text) => {
     if (!closed && socket.writable) socket.write(encodeWsFrame(0x1, text));
@@ -258,6 +266,27 @@ function handleCodexUpgrade(req, socket, head, port) {
       if (request?.type !== "response.create") {
         // Anything else is a control message this bridge does not implement;
         // ignoring beats closing a connection the client still wants.
+        return;
+      }
+
+      // Codex opens a second connection at session start carrying
+      // `request_kind: "prewarm"` and sends the full turn payload down it,
+      // waiting for `response.completed` before the first real turn may run.
+      // ChatGPT answers that cheaply to warm its own prompt cache; routing it
+      // upstream instead would spend a real model call on every session start
+      // and blow past the client's websocket_connect_timeout. There is no cache
+      // of ours to warm, so acknowledge it and route nothing.
+      if (isPrewarm) {
+        const responseId = `prewarm_${crypto.randomBytes(12).toString("hex")}`;
+        const usage = {
+          input_tokens: 0,
+          input_tokens_details: null,
+          output_tokens: 0,
+          output_tokens_details: null,
+          total_tokens: 0,
+        };
+        send(JSON.stringify({ type: "response.created", response: { id: responseId } }));
+        send(JSON.stringify({ type: "response.completed", response: { id: responseId, usage } }));
         return;
       }
       bridgeCodexTurn(request, port, req.headers, peerIp, send, (error, rejectedStatus) => {
