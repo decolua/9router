@@ -106,6 +106,15 @@ function createWsDecoder(onMessage, onClose, onPing) {
         fragments = [payload];
         fragmentOpcode = opcode;
       }
+      // The per-frame limit above does not bound a stream of small continuation
+      // frames that never sets FIN, so cap the reassembled total too.
+      let buffered = 0;
+      for (const part of fragments) buffered += part.length;
+      if (buffered > MAX_WS_MESSAGE_BYTES) {
+        fragments = [];
+        fragmentOpcode = null;
+        return onClose(1009, "message too large");
+      }
       if (!fin) continue;
 
       const message = Buffer.concat(fragments);
@@ -119,25 +128,57 @@ function createWsDecoder(onMessage, onClose, onPing) {
 
 // Run one `response.create` through this process's own HTTP endpoint and relay
 // each SSE event back as a text frame.
-function bridgeCodexTurn(request, port, headers, send, done) {
+function bridgeCodexTurn(request, port, headers, peerIp, send, done) {
   const { type, ...body } = request;
   void type;
   body.stream = true; // the WS transport is inherently streaming
 
   const payload = Buffer.from(JSON.stringify(body), "utf8");
   const forwarded = { "content-type": "application/json", "content-length": payload.length };
-  // Carry through auth and Codex's own request metadata; drop hop-by-hop and
-  // websocket-specific headers that make no sense on the bridged request.
+  // Carry through auth and Codex's own request metadata, but drop:
+  //   - hop-by-hop / websocket-specific headers, meaningless on a POST;
+  //   - forwarding headers — the bridged request originates from 127.0.0.1, so
+  //     the wrapper above treats it as a local reverse proxy and would trust a
+  //     remote client's own x-forwarded-for, letting it pick the IP used for
+  //     rate limiting. The real peer is attached below instead;
+  //   - cookie, so a browser-initiated handshake cannot ride a session cookie
+  //     into a route that accepts one.
   for (const [name, value] of Object.entries(headers)) {
     if (/^(host|connection|upgrade|sec-websocket-|content-length|content-type)/i.test(name)) continue;
+    if (/^(x-forwarded-for|x-real-ip|x-9r-|cookie)/i.test(name)) continue;
     forwarded[name] = value;
   }
+  if (peerIp) forwarded["x-forwarded-for"] = peerIp;
 
   const req = http.request(
     { host: "127.0.0.1", port, path: CODEX_WS_PATH, method: "POST", headers: forwarded },
     (res) => {
       let pending = "";
       res.setEncoding("utf8");
+
+      // A rejected turn (401, unknown model, upstream failure) answers with a
+      // JSON error body, not an event stream. Without this the SSE parser finds
+      // no `data:` lines and the client is left waiting on a silent socket.
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        let raw = "";
+        res.on("data", (chunk) => { raw += chunk; });
+        res.on("end", () => {
+          let error;
+          try {
+            error = JSON.parse(raw).error;
+          } catch {
+            error = null;
+          }
+          send(JSON.stringify({
+            type: "error",
+            error: error || { message: `Request failed with status ${res.statusCode}`, type: "server_error" },
+          }));
+          done(null, res.statusCode);
+        });
+        res.on("error", (error) => done(error));
+        return;
+      }
+
       res.on("data", (chunk) => {
         pending += chunk;
         let index;
@@ -158,9 +199,29 @@ function bridgeCodexTurn(request, port, headers, send, done) {
   req.end(payload);
 }
 
-function handleCodexUpgrade(req, socket, port) {
+function handleCodexUpgrade(req, socket, head, port) {
   const key = req.headers["sec-websocket-key"];
-  if (!key) return socket.destroy();
+  if (!key || String(req.headers["sec-websocket-version"] || "") !== "13") {
+    socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+    return socket.destroy();
+  }
+
+  // Codex sends no Origin. A browser always does, so a present Origin that is
+  // not this host means a web page is driving the socket — refuse it rather
+  // than let any site reach a local gateway.
+  const origin = req.headers.origin;
+  if (origin) {
+    let originHost = null;
+    try {
+      originHost = new URL(origin).host;
+    } catch {
+      originHost = null;
+    }
+    if (!originHost || originHost !== req.headers.host) {
+      socket.write("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+      return socket.destroy();
+    }
+  }
 
   socket.write(
     "HTTP/1.1 101 Switching Protocols\r\n" +
@@ -170,6 +231,7 @@ function handleCodexUpgrade(req, socket, port) {
   );
   socket.setNoDelay(true);
 
+  const peerIp = socket.remoteAddress || "";
   let closed = false;
   const send = (text) => {
     if (!closed && socket.writable) socket.write(encodeWsFrame(0x1, text));
@@ -198,13 +260,16 @@ function handleCodexUpgrade(req, socket, port) {
         // ignoring beats closing a connection the client still wants.
         return;
       }
-      bridgeCodexTurn(request, port, req.headers, send, (error) => {
+      bridgeCodexTurn(request, port, req.headers, peerIp, send, (error, rejectedStatus) => {
         if (error) {
           send(JSON.stringify({ type: "error", error: { message: error.message, type: "server_error" } }));
           return close(1011, "bridge error");
         }
-        // Leave the socket open: Codex opens one connection per turn and closes
-        // it itself, and closing early races its own shutdown.
+        // A rejected turn already sent its error frame; close so the client
+        // stops waiting instead of holding a socket that will never stream.
+        if (rejectedStatus) return close(1011, `upstream ${rejectedStatus}`);
+        // Otherwise leave the socket open: Codex opens one connection per turn
+        // and closes it itself, and closing early races its own shutdown.
       });
     },
     (code) => close(code === 1005 ? 1000 : code, ""),
@@ -213,14 +278,19 @@ function handleCodexUpgrade(req, socket, port) {
     }
   );
 
-  socket.on("data", (chunk) => {
+  const feed = (chunk) => {
     try {
       decode(chunk);
     } catch (error) {
       console.error("[CodexWS] frame decode failed:", error && error.message ? error.message : error);
       close(1011, "decode error");
     }
-  });
+  };
+  // Node hands over any bytes that arrived in the same segment as the
+  // handshake. Codex sends `response.create` immediately, so that first frame
+  // is often already here — dropping `head` would hang the turn forever.
+  if (head && head.length) feed(head);
+  socket.on("data", feed);
   socket.on("error", () => { closed = true; });
   socket.on("close", () => { closed = true; });
 }
@@ -297,7 +367,7 @@ http.createServer = (...args) => {
       if (requestPath === CODEX_WS_PATH || requestPath === "/backend-api/codex/v1/responses") {
         const port = this.address() && this.address().port;
         if (port) {
-          handleCodexUpgrade(req, socket, port);
+          handleCodexUpgrade(req, socket, head, port);
           return true;
         }
       }

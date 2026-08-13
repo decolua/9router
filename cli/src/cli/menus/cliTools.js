@@ -255,7 +255,11 @@ async function showCodexMenu(port, breadcrumb = []) {
   // Adopt whatever ingress the existing config uses, so re-running Quick Setup
   // keeps a working setup where it is.
   const current = await api.getCliToolSettings("codex");
-  if (current.success && current.data?.has10Router) {
+  // Same legacy fallback buildCodexHeader uses — against an older gateway the
+  // field is still has9Router, and missing it would silently move an existing
+  // /v1 config onto the native endpoint.
+  const hasRouter = current.data?.has10Router ?? current.data?.has9Router;
+  if (current.success && hasRouter) {
     codexUseNative = current.data.native === true;
   }
 

@@ -28,6 +28,9 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { buildRateLimitHeaders } from "./codexUsagePool.js";
 
 const CACHE_TTL_MS = 60_000;
+// One upstream call per connected account, so allow for a few slow ones while
+// still guaranteeing the refresh slot frees up.
+const REFRESH_TIMEOUT_MS = 30_000;
 
 let cache = { at: 0, headers: {} };
 let inflight = null;
@@ -87,7 +90,16 @@ async function computeHeaders() {
 
 function refreshInBackground() {
   if (inflight) return;
-  inflight = computeHeaders()
+  // A hung upstream call would otherwise pin `inflight` for the life of the
+  // process, freezing the pooled headers at their last value with no recovery
+  // short of a restart. Losing the race just means the next request retries.
+  const bounded = Promise.race([
+    computeHeaders(),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`usage refresh timed out after ${REFRESH_TIMEOUT_MS}ms`)), REFRESH_TIMEOUT_MS).unref?.()
+    ),
+  ]);
+  inflight = bounded
     .then((headers) => {
       cache = { at: Date.now(), headers };
     })

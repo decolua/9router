@@ -12,11 +12,17 @@ import { matchKnownEndpoint } from "./cliEndpointMatch";
 // available for setups that need the plain OpenAI-compatible endpoint.
 const CODEX_NATIVE_PATH = "/backend-api/codex";
 
-const endpointRoot = (url) => (url || "")
-  .trim()
-  .replace(/\/+$/, "")
-  .replace(/\/backend-api\/codex$/, "")
-  .replace(/\/v1$/, "");
+// Strip repeatedly: a hand-typed endpoint can carry both suffixes at once
+// (Codex appends /v1 to a base URL that already ends in /backend-api/codex),
+// and a single pass in fixed order would leave half of it behind.
+const endpointRoot = (url) => {
+  let root = (url || "").trim().replace(/\/+$/, "");
+  for (;;) {
+    const stripped = root.replace(/\/(?:backend-api\/codex|v1)$/, "");
+    if (stripped === root) return root;
+    root = stripped;
+  }
+};
 
 export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
   const [codexStatus, setCodexStatus] = useState(initialStatus || null);

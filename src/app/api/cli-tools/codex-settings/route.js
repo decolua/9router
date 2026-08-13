@@ -145,7 +145,9 @@ export async function POST(request) {
   try {
     const { baseUrl, apiKey, model, subagentModel, native } = await request.json();
     
-    if (!baseUrl || !apiKey || !model) {
+    // Type-check rather than truthy-check: a non-string baseUrl reaches
+    // normalizeBaseUrl's .trim() and would surface as a 500 instead of a 400.
+    if (typeof baseUrl !== "string" || !baseUrl.trim() || !apiKey || !model) {
       return NextResponse.json({ error: "baseUrl, apiKey and model are required" }, { status: 400 });
     }
 
