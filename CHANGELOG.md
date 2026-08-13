@@ -2,6 +2,7 @@
 
 ## Features
 - **CLI tools**: add Oh My Pi (omp) (can1357/oh-my-pi) — writes `~/.omp/agent/models.yml` and optionally `~/.omp/agent/config.yml` via a YAML-aware writer that preserves user comments and unrelated providers. Dashboard → CLI Tools → Oh My Pi → Apply.
+- **CLI tools**: Oh My Pi card can assign all official omp roles (`default`, `smol`, `slow`, `vision`, `plan`, `designer`, `commit`, `tiny`, `task`, `advisor`) to selected 9Router models. Unset and Reset leave foreign-provider and unofficial custom roles alone.
 
 # v0.5.35 (2026-07-16)
 

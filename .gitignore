@@ -86,3 +86,6 @@ graphify-out/*
 .codegraph/
 .PR/
 .next-analyze/*
+
+# Functional-validation captures (may include dashboard key chips)
+/e2e-evidence/
