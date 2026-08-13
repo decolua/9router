@@ -138,8 +138,42 @@ export function detectRequiredCapabilities(body) {
     if (Array.isArray(content)) for (const b of content) scanBlock(b);
   };
 
+  const scanMessage = (m) => {
+    if (!m || typeof m !== "object") return;
+
+    // Ollama / Hermes images array (strings or objects)
+    if (Array.isArray(m.images) && m.images.length > 0) {
+      required.add("vision");
+    }
+
+    // Vercel AI SDK / Hermes attachments / experimental_attachments
+    const attachments = m.experimental_attachments || m.attachments;
+    if (Array.isArray(attachments)) {
+      for (const att of attachments) {
+        if (!att) continue;
+        const mime = att.contentType || att.mediaType || (typeof att.url === "string" && att.url.match(/^data:([^;,]+)/)?.[1]);
+        if (mime) addByMime(mime);
+        else if (att.url || att.data) required.add("vision");
+      }
+    }
+
+    // Direct message-level modality properties
+    if (m.image_url || m.image) required.add("vision");
+    if (m.audio_url || m.audio) required.add("audioInput");
+
+    // Scan array content blocks
+    scanContent(m.content);
+
+    // Scan string content for embedded data URIs
+    if (typeof m.content === "string") {
+      if (m.content.includes("data:image/")) required.add("vision");
+      else if (m.content.includes("data:audio/")) required.add("audioInput");
+      else if (m.content.includes("data:application/pdf")) required.add("pdf");
+    }
+  };
+
   // Modalities: current user turn only (trailing user run across each known shape).
-  for (const m of trailingUserItems(body.messages)) scanContent(m.content);      // openai / claude
+  for (const m of trailingUserItems(body.messages)) scanMessage(m);              // openai / claude / hermes / ollama
   for (const it of trailingUserItems(body.input)) scanContent(it.content);       // responses
   const contents = body.contents || body.request?.contents;                      // gemini / antigravity
   for (const c of trailingUserItems(contents)) scanContent(c.parts);
