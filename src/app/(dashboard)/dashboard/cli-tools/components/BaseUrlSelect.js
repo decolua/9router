@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 
 const STORAGE_KEY = "9router.cliToolEndpointPresets";
+const CUSTOM_LAST_KEY = "9router.cliToolEndpointCustom";
 const CUSTOM_VALUE = "__custom__";
 const SAVE_VALUE = "__save__";
 
@@ -27,6 +28,17 @@ const readSavedPresets = () => {
 const writeSavedPresets = (presets) => {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(presets));
+};
+
+// Remember the last manually-entered custom URL so re-selecting "Custom URL..."
+// repopulates the field instead of showing a blank input.
+const readLastCustom = () => {
+  if (typeof window === "undefined") return "";
+  try { return window.localStorage.getItem(CUSTOM_LAST_KEY) || ""; } catch { return ""; }
+};
+const writeLastCustom = (url) => {
+  if (typeof window === "undefined") return;
+  try { window.localStorage.setItem(CUSTOM_LAST_KEY, url || ""); } catch { /* noop */ }
 };
 
 const buildOptions = ({ requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, cloudEnabled, cloudUrl, savedPresets, withV1 }) => {
@@ -112,8 +124,16 @@ export default function BaseUrlSelect({
     }
     setMode(next);
     if (next === CUSTOM_VALUE) {
-      setCustomInput("");
-      onChange("");
+      // Prefer the current selected URL (so switching from Local/Tunnel keeps
+      // that value in the input), then the last remembered custom, else blank.
+      const seed = (value || "").trim() || readLastCustom();
+      setCustomInput(seed);
+      if (seed) {
+        writeLastCustom(seed);
+        onChange(seed);
+      } else {
+        onChange("");
+      }
       return;
     }
     const opt = options.find((o) => o.value === next);
@@ -124,6 +144,7 @@ export default function BaseUrlSelect({
     const v = e.target.value;
     setCustomInput(v);
     onChange(v);
+    if (v.trim()) writeLastCustom(v.trim());
   };
 
   const handleDeleteSaved = () => {
@@ -132,9 +153,10 @@ export default function BaseUrlSelect({
     const updated = savedPresets.filter((p) => p.name !== name);
     setSavedPresets(updated);
     writeSavedPresets(updated);
+    const seed = (value || "").trim() || readLastCustom();
     setMode(CUSTOM_VALUE);
-    setCustomInput("");
-    onChange("");
+    setCustomInput(seed);
+    onChange(seed);
   };
 
   const isSaved = mode.startsWith("saved:");
