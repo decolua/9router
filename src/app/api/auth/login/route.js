@@ -54,15 +54,36 @@ export async function POST(request) {
 
     if (isValid) {
       recordSuccess(ip);
-      const cookieStore = await cookies();
-      await setDashboardAuthCookie(cookieStore, request);
 
       // Default password still in use on a remote client → force a password
       // change before the dashboard is exposed remotely (keeps local UX intact).
       const mustChangePassword =
         !storedHash && !process.env.INITIAL_PASSWORD && !isLocalRequest(request);
 
-      return NextResponse.json({ success: true, mustChangePassword }, { headers: NO_STORE_HEADERS });
+      if (mustChangePassword) {
+        // Do NOT issue a session token: a fresh install's default password is
+        // public knowledge ("123456"), so handing out a valid JWT would let any
+        // remote attacker authenticate and (e.g.) PATCH /api/settings to disable
+        // authentication entirely (CVE-2026-56679 class). Require the password
+        // to be changed first.
+        //
+        // NOTE: this intentionally leaves no remote self-service password-change
+        // path — the change-password flow (PATCH /api/settings) requires a JWT,
+        // which we deliberately withhold. A remote fresh-install user must either
+        // change the password from the local machine or set INITIAL_PASSWORD
+        // before first launch. This is a deliberate security trade-off, not an
+        // oversight: issuing any credential before the default password is
+        // rotated re-opens the exact attack chain this branch closes.
+        return NextResponse.json(
+          { success: false, error: "Default password must be changed before remote access. Change it from the local machine (or set INITIAL_PASSWORD).", mustChangePassword },
+          { status: 403, headers: NO_STORE_HEADERS }
+        );
+      }
+
+      const cookieStore = await cookies();
+      await setDashboardAuthCookie(cookieStore, request);
+
+      return NextResponse.json({ success: true, mustChangePassword: false }, { headers: NO_STORE_HEADERS });
     }
 
     const { remainingBeforeLock } = recordFail(ip);
