@@ -314,42 +314,39 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints, provi
     return null;
 }
 
+function parseProjectIdVal(val) {
+    if (!val) return null;
+    if (typeof val === "string" && val.trim()) {
+        const cleaned = val.replace(/^projects\//, "").trim();
+        if (cleaned) return cleaned;
+    }
+    if (typeof val === "object") {
+        const id = val.id || val.projectId || val.projectNumber || val.name;
+        if (id != null) {
+            const cleaned = String(id).replace(/^projects\//, "").trim();
+            if (cleaned) return cleaned;
+        }
+    }
+    return null;
+}
+
 /**
  * Extract project ID from loadCodeAssist response.
  */
 function extractProjectId(data) {
     if (!data) return null;
-
-    if (typeof data.cloudaicompanionProject === "string") {
-        const id = data.cloudaicompanionProject.trim();
-        if (id) return id;
-    }
-
-    if (data.cloudaicompanionProject && typeof data.cloudaicompanionProject === "object") {
-        const id = data.cloudaicompanionProject.id;
-        if (typeof id === "string" && id.trim()) return id.trim();
-    }
-
-    return null;
+    return parseProjectIdVal(data.cloudaicompanionProject) ||
+           parseProjectIdVal(data.projectId) ||
+           parseProjectIdVal(data.project);
 }
 
 /**
  * Extract project ID from onboardUser response.
  */
 function extractProjectIdFromOnboard(data) {
-    if (!data?.response) return null;
-
-    const project = data.response.cloudaicompanionProject;
-
-    if (typeof project === "string") {
-        const id = project.trim();
-        if (id) return id;
-    }
-
-    if (project && typeof project === "object") {
-        const id = project.id;
-        if (typeof id === "string" && id.trim()) return id.trim();
-    }
-
-    return null;
+    if (!data) return null;
+    const resp = data.response || data;
+    return parseProjectIdVal(resp.cloudaicompanionProject) ||
+           parseProjectIdVal(resp.projectId) ||
+           parseProjectIdVal(resp.project);
 }
