@@ -471,13 +471,16 @@ export default function CoworkToolCard({
                                 {p.extensionUrl && (
                                   <a href={p.extensionUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-primary underline">Install Chrome extension</a>
                                 )}
+                                {p.setupUrl && (
+                                  <a href={p.setupUrl} target="_blank" rel="noopener noreferrer" className="text-[10px] text-primary underline">{p.setupLabel || "Setup guide"}</a>
+                                )}
                               </div>
                             </label>
                           );
                         })}
                       </div>
                       <p className="text-[10px] text-text-muted leading-snug">
-                        ⚠️ Local plugins run as subprocess via <code className="px-1 py-0.5 rounded bg-black/5 dark:bg-white/5">npx</code>. Requires Node.js installed.
+                        ⚠️ Local plugins run as subprocesses. Install the runtime shown for each plugin before enabling it.
                       </p>
                     </div>
                   </div>
