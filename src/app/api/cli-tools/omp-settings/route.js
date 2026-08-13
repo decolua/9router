@@ -7,6 +7,8 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import YAML from "yaml";
+import { OMP_ROLE_IDS } from "../../../../shared/constants/ompRoles.js";
+
 
 const execAsync = promisify(exec);
 
@@ -14,8 +16,10 @@ const PROVIDER_KEY = "9router";
 
 // Oh My Pi (omp) keeps its agent config under ~/.omp/agent:
 //   models.yml  → provider catalog (custom OpenAI-compatible providers)
-//   config.yml  → runtime settings, including modelRoles.default
+//   config.yml  → runtime settings, including modelRoles.<role>
+// Official roles: default, smol, slow, vision, plan, designer, commit, tiny, task, advisor
 // Docs: https://github.com/can1357/oh-my-pi/blob/main/docs/models.md
+
 const getConfigDir = () => path.join(os.homedir(), ".omp", "agent");
 const getModelsPath = () => path.join(getConfigDir(), "models.yml");
 const getConfigPath = () => path.join(getConfigDir(), "config.yml");
@@ -138,6 +142,47 @@ const buildModelEntry = (modelId, capabilities) => {
   return entry;
 };
 
+const nineRouterModelId = (value) => {
+  if (typeof value !== "string" || !value.startsWith(`${PROVIDER_KEY}/`)) return null;
+  return value.slice(PROVIDER_KEY.length + 1);
+};
+
+const readNineRouterRoles = (settingsDoc) => {
+  const roles = {};
+  if (!settingsDoc) return roles;
+  for (const role of OMP_ROLE_IDS) {
+    const modelId = nineRouterModelId(settingsDoc.getIn(["modelRoles", role]));
+    if (modelId) roles[role] = modelId;
+  }
+  return roles;
+};
+
+const applyNineRouterRoles = ({ settingsDoc, roles, knownIds }) => {
+  const next = roles && typeof roles === "object" && !Array.isArray(roles) ? roles : {};
+  const unknown = Object.keys(next).filter((role) => !OMP_ROLE_IDS.includes(role));
+  if (unknown.length) {
+    return { error: `Unknown OMP role(s): ${unknown.join(", ")}` };
+  }
+  for (const role of OMP_ROLE_IDS) {
+    if (!Object.prototype.hasOwnProperty.call(next, role)) continue;
+    const requested = next[role];
+    const current = settingsDoc.getIn(["modelRoles", role]);
+    if (requested === "" || requested == null) {
+      if (nineRouterModelId(current)) settingsDoc.deleteIn(["modelRoles", role]);
+      continue;
+    }
+    if (typeof requested !== "string") {
+      return { error: `modelRoles.${role} must be a 9Router model id or empty` };
+    }
+    if (!knownIds.has(requested)) {
+      return { error: `modelRoles.${role} must be one of the selected 9Router models` };
+    }
+    settingsDoc.setIn(["modelRoles", role], `${PROVIDER_KEY}/${requested}`);
+  }
+  return { error: null };
+};
+
+
 // GET - Check omp CLI and read current settings
 export async function GET() {
   try {
@@ -170,15 +215,9 @@ export async function GET() {
       ? provider.models.map((m) => m?.id).filter(Boolean)
       : [];
 
-    // Active model lives in config.yml as modelRoles.default: "9router/<id>"
-    let activeModel = null;
+    let roles = {};
     const { doc: settingsDoc, corrupt: settingsCorrupt } = await readYamlDoc(getConfigPath());
-    if (!settingsCorrupt) {
-      const role = settingsDoc?.getIn(["modelRoles", "default"]);
-      if (typeof role === "string" && role.startsWith(`${PROVIDER_KEY}/`)) {
-        activeModel = role.slice(PROVIDER_KEY.length + 1);
-      }
-    }
+    if (!settingsCorrupt) roles = readNineRouterRoles(settingsDoc);
 
     return NextResponse.json({
       installed: true,
@@ -188,7 +227,8 @@ export async function GET() {
       configPath: getConfigPath(),
       omp: {
         models,
-        activeModel,
+        roles,
+        activeModel: roles.default || null,
         baseURL: provider?.baseUrl || null,
       },
     });
@@ -201,7 +241,7 @@ export async function GET() {
 // POST - Apply 9Router as an openai-completions provider in ~/.omp/agent/models.yml
 export async function POST(request) {
   try {
-    const { baseUrl, apiKey, model, models, activeModel, capabilities } = await request.json();
+    const { baseUrl, apiKey, model, models, activeModel, roles, capabilities } = await request.json();
 
     // Accept either `model` (string, legacy) or `models` (array of strings)
     const modelsArray = Array.isArray(models) ? models.slice() : (typeof model === "string" ? [model] : []);
@@ -221,8 +261,11 @@ export async function POST(request) {
     } catch (error) {
       return NextResponse.json({ error: "Failed to read models file: " + (error.message || "unknown") }, { status: 500 });
     }
+    const requestedRoles = (roles && typeof roles === "object" && !Array.isArray(roles)) ? { ...roles } : {};
+    if (activeModel !== undefined && requestedRoles.default === undefined) requestedRoles.default = activeModel;
+    const wantsRoleWrite = Object.keys(requestedRoles).length > 0;
     let configDocInfo = { doc: null, missing: true, corrupt: false };
-    if (activeModel !== undefined) {
+    if (wantsRoleWrite) {
       configDocInfo = await readYamlDoc(getConfigPath());
     }
     const modelsCorrupt = modelsDocInfo.corrupt;
@@ -257,10 +300,23 @@ export async function POST(request) {
       const next = buildModelEntry(id, capabilities?.[id]);
       byId.set(id, { ...prev, ...next, name: prev.name || next.name });
     }
-    if (activeModel && !byId.has(activeModel)) {
-      return NextResponse.json({ error: "activeModel must be one of the selected 9Router models" }, { status: 400 });
+    const unknownRoles = Object.keys(requestedRoles).filter((role) => !OMP_ROLE_IDS.includes(role));
+    if (unknownRoles.length) {
+      return NextResponse.json({ error: `Unknown OMP role(s): ${unknownRoles.join(", ")}` }, { status: 400 });
+    }
+    for (const role of Object.keys(requestedRoles)) {
+      const value = requestedRoles[role];
+      if (value && !byId.has(value)) {
+        return NextResponse.json({ error: `modelRoles.${role} must be one of the selected 9Router models` }, { status: 400 });
+      }
     }
 
+    if (wantsRoleWrite) {
+      const applied = applyNineRouterRoles({ settingsDoc: configDocInfo.doc, roles: requestedRoles, knownIds: byId });
+      if (applied.error) {
+        return NextResponse.json({ error: applied.error }, { status: 400 });
+      }
+    }
 
     const provider = {
       ...existing,
@@ -272,32 +328,15 @@ export async function POST(request) {
       models: Array.from(byId.values()),
     };
 
-    // Mandatory recoverable backups BEFORE any write. If a legacy models.json
-    // seeded the existing provider data, back THAT up; otherwise back up the
-    // canonical models.yml so we always have a restore point.
     const backupTarget = modelsDocInfo.sourcePath || (modelsMissing ? null : modelsPath);
     if (backupTarget) await backupFile(backupTarget);
     doc.setIn(["providers", PROVIDER_KEY], doc.createNode(provider));
     await fs.writeFile(modelsPath, String(doc));
 
-    // Only touch config.yml when the caller asked for a default model.
-    // An empty string explicitly clears the 9Router default role.
     const configPath = getConfigPath();
-    if (activeModel !== undefined) {
-      const settingsDoc = configDocInfo.doc;
-      const settingsMissing = configDocInfo.missing;
-      const current = settingsDoc ? settingsDoc.getIn(["modelRoles", "default"]) : null;
-      if (activeModel === "") {
-        if (typeof current === "string" && current.startsWith(`${PROVIDER_KEY}/`)) {
-          if (!settingsMissing) await backupFile(configPath);
-          settingsDoc.deleteIn(["modelRoles", "default"]);
-          await fs.writeFile(configPath, String(settingsDoc));
-        }
-      } else {
-        if (!settingsMissing) await backupFile(configPath);
-        settingsDoc.setIn(["modelRoles", "default"], `${PROVIDER_KEY}/${activeModel}`);
-        await fs.writeFile(configPath, String(settingsDoc));
-      }
+    if (wantsRoleWrite) {
+      if (!configDocInfo.missing) await backupFile(configPath);
+      await fs.writeFile(configPath, String(configDocInfo.doc));
     }
 
     return NextResponse.json({
@@ -312,27 +351,39 @@ export async function POST(request) {
   }
 }
 
-// PATCH - Update specific settings (e.g., clear the default model role)
+// PATCH - Update role assignments without rewriting the provider catalog
 export async function PATCH(request) {
   try {
-    const { clearActiveModel } = await request.json();
+    const { clearActiveModel, roles } = await request.json();
     const configPath = getConfigPath();
 
+    const requestedRoles = (roles && typeof roles === "object" && !Array.isArray(roles)) ? { ...roles } : {};
+    if (clearActiveModel === true && requestedRoles.default === undefined) requestedRoles.default = "";
+    if (Object.keys(requestedRoles).length === 0) {
+      return NextResponse.json({ success: true, message: "Settings updated" });
+    }
+
     const { doc, missing, corrupt } = await readYamlDoc(configPath);
-    if (missing) return NextResponse.json({ success: true, message: "No config file found" });
     if (corrupt) {
       return NextResponse.json({ error: "~/.omp/agent/config.yml could not be parsed" }, { status: 409 });
     }
-
-    if (clearActiveModel === true) {
-      const current = doc.getIn(["modelRoles", "default"]);
-      if (typeof current === "string" && current.startsWith(`${PROVIDER_KEY}/`)) {
-        await backupFile(configPath);
-        doc.deleteIn(["modelRoles", "default"]);
-        await fs.writeFile(configPath, String(doc));
-      }
+    if (missing && Object.values(requestedRoles).every((value) => !value)) {
+      return NextResponse.json({ success: true, message: "No config file found" });
     }
 
+    const modelsDocInfo = await readModelsDoc();
+    const provider = !modelsDocInfo.corrupt && modelsDocInfo.doc
+      ? getProviderNode(modelsDocInfo.doc)?.toJSON?.()
+      : null;
+    const knownIds = new Set(
+      (Array.isArray(provider?.models) ? provider.models : []).map((m) => m?.id).filter(Boolean)
+    );
+
+    const applied = applyNineRouterRoles({ settingsDoc: doc, roles: requestedRoles, knownIds });
+    if (applied.error) return NextResponse.json({ error: applied.error }, { status: 400 });
+
+    if (!missing) await backupFile(configPath);
+    await fs.writeFile(configPath, String(doc));
     return NextResponse.json({ success: true, message: "Settings updated" });
   } catch (error) {
     console.log("Error patching omp settings:", error);
@@ -390,14 +441,18 @@ export async function DELETE(request) {
 
     if (!configDocInfo.missing) {
       const settingsDoc = configDocInfo.doc;
-      const current = settingsDoc.getIn(["modelRoles", "default"]);
-      if (typeof current === "string" && current.startsWith(`${PROVIDER_KEY}/`)) {
-        const activeId = current.slice(PROVIDER_KEY.length + 1);
-        if (!modelToRemove || (activeId === modelToRemove && !remainingIds.includes(activeId))) {
-          await backupFile(configPath);
-          settingsDoc.deleteIn(["modelRoles", "default"]);
-          await fs.writeFile(configPath, String(settingsDoc));
+      let changed = false;
+      for (const role of OMP_ROLE_IDS) {
+        const modelId = nineRouterModelId(settingsDoc.getIn(["modelRoles", role]));
+        if (!modelId) continue;
+        if (!modelToRemove || (modelId === modelToRemove && !remainingIds.includes(modelId))) {
+          settingsDoc.deleteIn(["modelRoles", role]);
+          changed = true;
         }
+      }
+      if (changed) {
+        await backupFile(configPath);
+        await fs.writeFile(configPath, String(settingsDoc));
       }
     }
 
