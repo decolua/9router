@@ -17,8 +17,13 @@ const PROVIDER_ORDER = [
   ...Object.keys(APIKEY_PROVIDERS),
 ];
 
-// Providers that need no auth — always show in model selector
-const NO_AUTH_PROVIDER_IDS = Object.keys(FREE_PROVIDERS).filter(id => FREE_PROVIDERS[id].noAuth);
+// Providers that need no auth — always show in model selector.
+// Includes both `free` and `freeTier` categories so providers like SearXNG
+// (category: "freeTier", noAuth) appear in webSearch/webFetch combo pickers. (#3269)
+const NO_AUTH_PROVIDER_IDS = [
+  ...Object.keys(FREE_PROVIDERS),
+  ...Object.keys(FREE_TIER_PROVIDERS),
+].filter(id => (FREE_PROVIDERS[id] || FREE_TIER_PROVIDERS[id])?.noAuth);
 
 export default function ModelSelectModal({
   isOpen,
