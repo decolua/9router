@@ -223,6 +223,10 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
         <b>Droid</b>
       </td>
       <td align="center" width="120">
+        <img src="./public/providers/oh-my-pi.svg" width="60" alt="Oh My Pi"/><br/>
+        <b>Oh My Pi</b>
+      </td>
+      <td align="center" width="120">
         <img src="./public/providers/roo.png" width="60" alt="Roo"/><br/>
         <b>Roo</b>
       </td>
@@ -999,6 +1003,33 @@ codex "your prompt"
 ```
 
 > **注意：** OpenClaw 仅适用于本地 9Router。使用 `127.0.0.1` 而不是 `localhost` 以避免 IPv6 解析问题。
+
+### Oh My Pi (omp)
+
+**方式 1 — 控制面板（推荐）：**
+
+```
+控制面板 → CLI Tools → Oh My Pi → 选择模型 → 应用
+```
+
+**方式 2 — 手动：** 编辑 `~/.omp/agent/models.yml`：
+
+```yaml
+providers:
+  9router:
+    baseUrl: http://127.0.0.1:20128/v1
+    api: openai-completions
+    apiKey: NINEROUTER_KEY
+    authHeader: true
+    discovery:
+      type: openai-models-list
+```
+
+```bash
+omp models 9router
+omp --model 9router/kr/claude-sonnet-4.5 -p "Reply with exactly: OK"
+```
+
 
 ### Cline / Continue / RooCode
 

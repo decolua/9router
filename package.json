@@ -44,6 +44,7 @@
     "sql.js": "^1.14.1",
     "undici": "^7.19.2",
     "uuid": "^13.0.0",
+    "yaml": "^2.9.0",
     "zustand": "^5.0.10"
   },
   "optionalDependencies": {

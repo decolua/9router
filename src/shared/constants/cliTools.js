@@ -387,6 +387,15 @@ amp --model "{{model}}"
       },
     ],
   },
+  omp: {
+    id: "omp",
+    name: "Oh My Pi",
+    image: "/providers/oh-my-pi.svg",
+    color: "#7C3AED",
+    description: "Oh My Pi (omp) — agent-native coding tool by can1357. Routes through 9Router as an OpenAI-compatible provider.",
+    configType: "custom",
+    homepage: "https://github.com/can1357/oh-my-pi",
+  },
   // HIDDEN: gemini-cli
   // "gemini-cli": {
   //   id: "gemini-cli",

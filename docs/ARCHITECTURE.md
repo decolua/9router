@@ -47,7 +47,7 @@ flowchart LR
     subgraph Clients[Developer Clients]
         C1[Claude Code]
         C2[Codex CLI]
-        C3[OpenClaw / Droid / Cline / Continue / Roo]
+        C3[OpenClaw / Droid / Cline / Continue / Roo / Oh My Pi]
         C4[Custom OpenAI-compatible clients]
         BROWSER[Browser Dashboard]
     end

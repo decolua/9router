@@ -1,3 +1,8 @@
+# Unreleased
+
+## Features
+- **CLI tools**: add Oh My Pi (omp) (can1357/oh-my-pi) — writes `~/.omp/agent/models.yml` and optionally `~/.omp/agent/config.yml` via a YAML-aware writer that preserves user comments and unrelated providers. Dashboard → CLI Tools → Oh My Pi → Apply.
+
 # v0.5.35 (2026-07-16)
 
 ## Features

@@ -14,6 +14,7 @@ import { GET as kiloGet } from "../kilo-settings/route";
 import { GET as deepseekTuiGet } from "../deepseek-tui-settings/route";
 import { GET as jcodeGet } from "../jcode-settings/route";
 import { GET as grokBuildGet } from "../grok-build-settings/route";
+import { GET as ompGet } from "../omp-settings/route";
 
 const STATUS_GETTERS = {
   claude: claudeGet,
@@ -29,6 +30,7 @@ const STATUS_GETTERS = {
   "deepseek-tui": deepseekTuiGet,
   jcode: jcodeGet,
   "grok-build": grokBuildGet,
+  omp: ompGet,
 };
 
 // Batch endpoint: gather all CLI tool statuses in one round-trip

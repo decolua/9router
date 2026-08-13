@@ -180,6 +180,10 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
         <b>Droid</b>
       </td>
       <td align="center" width="120">
+        <img src="../public/providers/oh-my-pi.svg" width="60" alt="Oh My Pi"/><br/>
+        <b>Oh My Pi</b>
+      </td>
+      <td align="center" width="120">
         <img src="../public/providers/roo.png" width="60" alt="Roo"/><br/>
         <b>Roo</b>
       </td>
