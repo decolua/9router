@@ -100,8 +100,12 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   }
 
   // Handle tool_calls
+  // NOTE: Do NOT close the text message here (#3234). Some providers (e.g. cbcn
+  // reasoning models) emit `tool_calls` interleaved with content deltas; closing
+  // the message on the first tool_call prematurely emits `response.output_text.done`
+  // after the first delta, truncating the rest of the stream. The message is closed
+  // later by finish_reason / response.completed in closeMessage() at line 111-112.
   if (delta.tool_calls) {
-    closeMessage(state, emit, idx);
     for (const tc of delta.tool_calls) {
       emitToolCall(state, emit, tc);
     }

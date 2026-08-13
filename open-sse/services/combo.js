@@ -7,6 +7,38 @@ import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
 
+/**
+ * Inspect a successful (HTTP 200) upstream response for an embedded error payload.
+ * Some providers (e.g. NaraRouter) return 200 OK with { error: "..." } or
+ * { message: "..." } when the underlying backend actually failed. Without this,
+ * the combo layer treats the error as a successful response and never falls through.
+ * (#3242)
+ * @param {Response} result - fetch Response with status 200
+ * @returns {string|null} error text if an error payload was detected, else null
+ */
+export async function detectUpstreamError(result) {
+  if (!result.ok) return null;
+  try {
+    const clone = result.clone();
+    const ct = clone.headers?.get?.("content-type") || "";
+    if (!ct.includes("json")) return null;
+    const body = await clone.json();
+    if (body && typeof body === "object") {
+      const err =
+        (typeof body.error === "object" && body.error?.message) ||
+        (typeof body.error === "string" ? body.error : null) ||
+        (typeof body.message === "string" ? body.message : null) ||
+        (typeof body.detail === "string" ? body.detail : null);
+      if (typeof err === "string" && err.trim().length > 0) {
+        return err.trim();
+      }
+    }
+  } catch {
+    // Not JSON or unreadable — treat as a real success
+  }
+  return null;
+}
+
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
 const HARD_CAPS = new Set(["vision", "pdf", "audioInput", "videoInput"]);
@@ -269,9 +301,27 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
     try {
       const result = await handleSingleModel(body, modelStr);
-      
-      // Success (2xx) - return response
+
+      // Some upstreams return HTTP 200 with an error payload in the body
+      // (e.g. NaraRouter: { "error": "..." } or { "message": "..." }).
+      // Without this check the combo treats it as success and never falls through.
+      // (#3242)
       if (result.ok) {
+        const upstreamError = await detectUpstreamError(result);
+        if (upstreamError) {
+          log.warn("COMBO", `Model ${modelStr} returned 200 but body is an error`, {
+            error: upstreamError,
+          });
+          const { shouldFallback } = checkFallbackError(200, upstreamError);
+          if (shouldFallback) {
+            lastError = upstreamError;
+            if (!lastStatus) lastStatus = 200;
+            log.warn("COMBO", `Model ${modelStr} failed (200+error body), trying next`);
+            continue;
+          }
+          // No fallback rule matched — return the upstream error as-is
+          return result;
+        }
         log.info("COMBO", `Model ${modelStr} succeeded`);
         return result;
       }
