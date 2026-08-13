@@ -74,6 +74,19 @@ const nextConfig = {
         source: "/codex/:path*",
         destination: "/api/v1/responses"
       },
+      // Codex-native ingress. Configuring the Codex CLI/IDE with
+      // `base_url = "<host>/backend-api/codex"` makes it use the ChatGPT wire
+      // (native model catalog + `requires_openai_auth`) instead of the plain
+      // OpenAI one. Some clients unconditionally append `/v1` to the configured
+      // base URL, so collapse that duplicated prefix first.
+      {
+        source: "/backend-api/codex/v1/:path*",
+        destination: "/api/v1/codex/:path*"
+      },
+      {
+        source: "/backend-api/codex/:path*",
+        destination: "/api/v1/codex/:path*"
+      },
       {
         source: "/responses",
         destination: "/api/v1/responses"

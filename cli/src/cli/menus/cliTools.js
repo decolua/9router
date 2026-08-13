@@ -171,6 +171,16 @@ async function showClaudeCodeMenu(port, breadcrumb = []) {
 
 // ─── Codex CLI ────────────────────────────────────────────────────────────────
 
+// Which ingress Quick Setup writes into ~/.codex/config.toml. Native points Codex
+// at /backend-api/codex (ChatGPT wire — Codex reads 10router's model catalog);
+// compatible keeps the plain OpenAI /v1 endpoint. Synced from the current config
+// on menu entry so an existing setup isn't silently moved to the other ingress.
+let codexUseNative = true;
+
+const codexEndpointModeLabel = () => (codexUseNative
+  ? "native (/backend-api/codex)"
+  : "compatible (/v1)");
+
 /**
  * Build header showing current Codex config status
  * @returns {Promise<string>}
@@ -222,7 +232,7 @@ async function codexQuickSetup(port) {
   const model = await selectModelFromList("Select Codex Model", "cx/claude-sonnet-4-5-20250929", { excludeCombos: true });
   if (!model) return;
 
-  const result = await api.applyCliToolSettings("codex", { baseUrl: endpoint, apiKey, model });
+  const result = await api.applyCliToolSettings("codex", { baseUrl: endpoint, apiKey, model, native: codexUseNative });
   showStatus(result.success ? "Codex setup completed!" : `Failed: ${result.error}`, result.success ? "success" : "error");
   await pause();
 }
@@ -242,6 +252,17 @@ async function codexReset() {
  * @param {Array<string>} breadcrumb
  */
 async function showCodexMenu(port, breadcrumb = []) {
+  // Adopt whatever ingress the existing config uses, so re-running Quick Setup
+  // keeps a working setup where it is.
+  const current = await api.getCliToolSettings("codex");
+  // Same legacy fallback buildCodexHeader uses — against an older gateway the
+  // field is still has9Router, and missing it would silently move an existing
+  // /v1 config onto the native endpoint.
+  const hasRouter = current.data?.has10Router ?? current.data?.has9Router;
+  if (current.success && hasRouter) {
+    codexUseNative = current.data.native === true;
+  }
+
   await showMenuWithBack({
     title: "🤖 Codex CLI Settings",
     breadcrumb,
@@ -251,6 +272,10 @@ async function showCodexMenu(port, breadcrumb = []) {
       {
         label: "⚡ Quick Setup",
         action: async () => { await codexQuickSetup(port); return true; }
+      },
+      {
+        label: () => `Endpoint Mode → ${codexEndpointModeLabel()}`,
+        action: async () => { codexUseNative = !codexUseNative; return true; }
       },
       {
         label: "Reset to Default",
