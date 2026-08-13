@@ -223,7 +223,7 @@ describe("omp settings route (YAML-aware writer)", () => {
     expect(res.status).toBe(200);
     const entry = readModelsFile().doc.providers["9router"].models[0];
     expect(entry.cost).toEqual({ input: 1 });
-    expect(entry.name).toBe("cc/claude-opus-5");
+    expect(entry.name).toBe("custom-name");
   });
 
 

@@ -26,6 +26,7 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
   const [activeModelSelected, setActiveModelSelected] = useState(false);
   const [updatingActiveModel, setUpdatingActiveModel] = useState(false);
   const selectedModelsRef = useRef([]);
+  const updatingActiveModelRef = useRef(false);
   const effectiveSelectedApiKey = selectedApiKey || apiKeys?.[0]?.key || "";
 
 
@@ -322,8 +323,9 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
                           <span
                             key={model}
                             onClick={async () => {
-                              if (updatingActiveModel) return;
+                              if (updatingActiveModelRef.current) return;
                               if (model === activeModel) {
+                                updatingActiveModelRef.current = true;
                                 setUpdatingActiveModel(true);
                                 try {
                                   const res = await fetch("/api/cli-tools/omp-settings", {
@@ -339,6 +341,7 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
                                 } catch (error) {
                                   console.log("Error clearing active model:", error);
                                 } finally {
+                                  updatingActiveModelRef.current = false;
                                   setUpdatingActiveModel(false);
                                 }
                               } else {

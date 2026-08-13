@@ -253,7 +253,9 @@ export async function POST(request) {
 
     for (const id of modelsArray) {
       if (!id || typeof id !== "string") continue;
-      byId.set(id, { ...(byId.get(id) || {}), ...buildModelEntry(id, capabilities?.[id]) });
+      const prev = byId.get(id) || {};
+      const next = buildModelEntry(id, capabilities?.[id]);
+      byId.set(id, { ...prev, ...next, name: prev.name || next.name });
     }
     if (activeModel && !byId.has(activeModel)) {
       return NextResponse.json({ error: "activeModel must be one of the selected 9Router models" }, { status: 400 });
