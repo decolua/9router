@@ -2,13 +2,45 @@
  * HTTP/2 client sessions, optionally tunneled through an HTTP CONNECT or SOCKS proxy.
  *
  * Node's http2.connect() is a direct TCP/TLS connection and ignores HTTP_PROXY.
- * Cursor's AgentService (GetUsableModels) is HTTP/2-only, so we must keep h2
- * and tunnel it: CONNECT (or SOCKS) → TLS(ALPN=h2) → http2 session.
+ * Cursor's AgentService (GetUsableModels and Run) is HTTP/2-only, so we must
+ * keep h2 and tunnel it: CONNECT (or SOCKS) → TLS(ALPN=h2) → http2 session.
  */
 
 import net from "net";
 import tls from "tls";
 import http2 from "http2";
+
+function waitForHttp2Session(client, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    if (client.destroyed) {
+      reject(new Error("HTTP/2 session destroyed"));
+      return;
+    }
+    if (!client.connecting) {
+      resolve(client);
+      return;
+    }
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("HTTP/2 session connect timed out"));
+    }, timeoutMs);
+    const cleanup = () => {
+      clearTimeout(timer);
+      client.off("connect", onConnect);
+      client.off("error", onError);
+    };
+    const onConnect = () => {
+      cleanup();
+      resolve(client);
+    };
+    const onError = (error) => {
+      cleanup();
+      reject(error);
+    };
+    client.once("connect", onConnect);
+    client.once("error", onError);
+  });
+}
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 const SOCKS_PROTOCOLS = new Set(["socks:", "socks4:", "socks4a:", "socks5:", "socks5h:"]);
@@ -58,6 +90,7 @@ async function connectViaHttpProxy(proxyUrl, targetHost, targetPort, timeoutMs) 
     socket.setTimeout(timeoutMs);
 
     socket.once("connect", () => {
+      socket.setNoDelay(true);
       socket.write(buildHttpConnectRequest(targetHost, targetPort, proxyUrl));
     });
 
@@ -123,6 +156,7 @@ async function createProxiedTlsSocket(proxyUrl, targetHost, targetPort, timeoutM
     }, timeoutMs);
     tlsSocket.once("secureConnect", () => {
       clearTimeout(timer);
+      tlsSocket.setNoDelay(true);
       resolve(tlsSocket);
     });
     tlsSocket.once("error", (error) => {
@@ -143,11 +177,29 @@ export async function connectHttp2(url, { proxyUrl, timeoutMs = DEFAULT_TIMEOUT_
   const authority = `https://${host}${urlObj.port ? `:${urlObj.port}` : ""}`;
 
   if (!proxyUrl) {
-    return http2.connect(authority);
+    const client = http2.connect(authority);
+    try {
+      return await waitForHttp2Session(client, timeoutMs);
+    } catch (error) {
+      try { client.close(); } catch {}
+      throw error;
+    }
   }
 
   const tlsSocket = await createProxiedTlsSocket(proxyUrl, host, port, timeoutMs);
-  return http2.connect(authority, {
+  const client = http2.connect(authority, {
     createConnection: () => tlsSocket,
   });
+  const destroySocket = () => {
+    try { tlsSocket.destroy(); } catch {}
+  };
+  client.once("close", destroySocket);
+  client.once("error", destroySocket);
+  try {
+    return await waitForHttp2Session(client, timeoutMs);
+  } catch (error) {
+    try { client.close(); } catch {}
+    destroySocket();
+    throw error;
+  }
 }
