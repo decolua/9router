@@ -6,6 +6,8 @@ import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
+import { OMP_MODEL_ROLES, emptyOmpRoleAssignments } from "@/shared/constants/ompRoles";
+
 
 export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
   const [status, setStatus] = useState(initialStatus || null);
@@ -21,12 +23,9 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [selectedModels, setSelectedModels] = useState([]);
-  const [activeModel, setActiveModel] = useState("");
   const [catalogModels, setCatalogModels] = useState([]);
-  const [activeModelSelected, setActiveModelSelected] = useState(false);
-  const [updatingActiveModel, setUpdatingActiveModel] = useState(false);
+  const [roleAssignments, setRoleAssignments] = useState(emptyOmpRoleAssignments);
   const selectedModelsRef = useRef([]);
-  const updatingActiveModelRef = useRef(false);
   const effectiveSelectedApiKey = selectedApiKey || apiKeys?.[0]?.key || "";
 
 
@@ -57,6 +56,15 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
       console.log("Error fetching model aliases:", error);
     }
   };
+  const pruneRoleAssignments = (assignments, models) => {
+    const allowed = new Set(models || []);
+    const next = emptyOmpRoleAssignments();
+    for (const role of Object.keys(next)) {
+      next[role] = allowed.has(assignments?.[role]) ? assignments[role] : "";
+    }
+    return next;
+  };
+
   const saveModels = async (models) => {
     try {
       const keyToUse = (effectiveSelectedApiKey && effectiveSelectedApiKey.trim())
@@ -68,6 +76,7 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
         if (!m?.caps) continue;
         capabilities[id] = { vision: !!m.caps.vision, search: !!m.caps.search, reasoning: !!m.caps.reasoning };
       }
+      const roles = pruneRoleAssignments(roleAssignments, models);
       await fetch("/api/cli-tools/omp-settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -76,6 +85,7 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
           apiKey: keyToUse,
           models,
           capabilities,
+          roles,
         }),
       });
     } catch (error) {
@@ -107,13 +117,13 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
       const data = await res.json();
       setStatus(data);
       setSelectedModels(data?.omp?.models || []);
-      if (data?.omp?.activeModel) {
-        setActiveModel(data.omp.activeModel);
-        setActiveModelSelected(true);
-      } else {
-        setActiveModel("");
-        setActiveModelSelected(false);
+      const nextRoles = emptyOmpRoleAssignments();
+      const incoming = data?.omp?.roles && typeof data.omp.roles === "object" ? data.omp.roles : {};
+      for (const role of Object.keys(nextRoles)) {
+        if (typeof incoming[role] === "string") nextRoles[role] = incoming[role];
       }
+      if (!nextRoles.default && data?.omp?.activeModel) nextRoles.default = data.omp.activeModel;
+      setRoleAssignments(nextRoles);
     } catch (error) {
       setStatus({ installed: false, error: error.message });
     } finally {
@@ -139,8 +149,8 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
         apiKey: keyToUse,
         models: selectedModels,
         capabilities,
+        roles: pruneRoleAssignments(roleAssignments, selectedModels),
       };
-      if (activeModelSelected && activeModel) payload.activeModel = activeModel;
       const res = await fetch("/api/cli-tools/omp-settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -168,10 +178,8 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Oh My Pi settings reset successfully!" });
-        setSelectedModel("");
         setSelectedModels([]);
-        setActiveModel("");
-        setActiveModelSelected(false);
+        setRoleAssignments(emptyOmpRoleAssignments());
         checkStatus();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings" });
@@ -322,41 +330,21 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
                         selectedModels.map((model) => (
                           <span
                             key={model}
-                            onClick={async () => {
-                              if (updatingActiveModelRef.current) return;
-                              if (model === activeModel) {
-                                updatingActiveModelRef.current = true;
-                                setUpdatingActiveModel(true);
-                                try {
-                                  const res = await fetch("/api/cli-tools/omp-settings", {
-                                    method: "PATCH",
-                                    headers: { "Content-Type": "application/json" },
-                                    body: JSON.stringify({ clearActiveModel: true }),
-                                  });
-                                  if (res.ok && model === activeModel) {
-                                    setActiveModel("");
-                                    setActiveModelSelected(false);
-                                    checkStatus();
-                                  }
-                                } catch (error) {
-                                  console.log("Error clearing active model:", error);
-                                } finally {
-                                  updatingActiveModelRef.current = false;
-                                  setUpdatingActiveModel(false);
-                                }
+                            onClick={() => {
+                              if (model === roleAssignments.default) {
+                                setRoleAssignments((prev) => ({ ...prev, default: "" }));
                               } else {
-                                setActiveModel(model);
-                                setActiveModelSelected(true);
+                                setRoleAssignments((prev) => ({ ...prev, default: model }));
                               }
                             }}
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs cursor-pointer transition-colors ${updatingActiveModel ? "pointer-events-none opacity-60" : ""} ${
-                              model === activeModel
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs cursor-pointer transition-colors ${
+                              model === roleAssignments.default
                                 ? "bg-primary/10 text-primary border border-primary"
                                 : "bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border"
                             }`}
-                            title={model === activeModel ? "Click to clear active model" : "Click to set as active"}
+                            title={model === roleAssignments.default ? "Click to clear default role" : "Click to set as default role"}
                           >
-                            {model === activeModel && <span className="material-symbols-outlined text-[10px]">star</span>}
+                            {model === roleAssignments.default && <span className="material-symbols-outlined text-[10px]">star</span>}
                             {model}
                             <button
                               onClick={async (e) => {
@@ -364,12 +352,14 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
                                 try {
                                   const res = await fetch(`/api/cli-tools/omp-settings?model=${encodeURIComponent(model)}`, { method: "DELETE" });
                                   if (res.ok) {
-                                    const newModels = selectedModels.filter((m) => m !== model);
-                                    setSelectedModels(newModels);
-                                    if (activeModel === model) {
-                                      setActiveModel("");
-                                      setActiveModelSelected(false);
-                                    }
+                                    setSelectedModels((prev) => prev.filter((id) => id !== model));
+                                    setRoleAssignments((prev) => {
+                                      const next = { ...prev };
+                                      for (const role of Object.keys(next)) {
+                                        if (next[role] === model) next[role] = "";
+                                      }
+                                      return next;
+                                    });
                                     checkStatus();
                                   }
                                 } catch (error) {
@@ -384,18 +374,48 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
                         ))
                       )}
                     </div>
-                    <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
+                    <div className="flex items-center gap-2">
                       <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`px-2 py-1 rounded border text-xs transition-colors ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Add Model</button>
                       <span className="text-xs text-text-muted">
-                        {selectedModels.length > 0 && activeModel ? (
-                          <>Active: <span className="text-primary">{activeModel}</span></>
+                        {selectedModels.length > 0 && roleAssignments.default ? (
+                          <>Default: <span className="text-primary">{roleAssignments.default}</span></>
                         ) : selectedModels.length > 0 ? (
-                          <span className="text-yellow-500">Click a model to set/clear active</span>
+                          <span className="text-yellow-500">Assign OMP roles below, then Apply</span>
                         ) : (
                           "Select models to add"
                         )}
                       </span>
                     </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-start sm:gap-2">
+                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right pt-1">OMP roles</span>
+                  <span className="material-symbols-outlined text-text-muted text-[14px] mt-1.5">arrow_forward</span>
+                  <div className="flex-1 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                    {OMP_MODEL_ROLES.map((role) => (
+                      <label key={role.id} className="flex flex-col gap-0.5 min-w-0">
+                        <span className="text-[11px] font-medium text-text-main">
+                          {role.name}
+                          <span className="ml-1 font-normal text-text-muted">({role.id})</span>
+                        </span>
+                        <select
+                          value={roleAssignments[role.id] || ""}
+                          disabled={selectedModels.length === 0}
+                          title={role.hint}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setRoleAssignments((prev) => ({ ...prev, [role.id]: value }));
+                          }}
+                          className="w-full min-w-0 px-2 py-1 rounded border border-border bg-surface text-xs text-text-main disabled:opacity-50"
+                        >
+                          <option value="">Unset</option>
+                          {selectedModels.map((modelId) => (
+                            <option key={modelId} value={modelId}>{modelId}</option>
+                          ))}
+                        </select>
+                      </label>
+                    ))}
                   </div>
                 </div>
 
@@ -437,12 +457,9 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
             }
           }}
           onDeselect={(model) => {
-            const remaining = selectedModels.filter(m => m !== model.value);
+            const remaining = selectedModels.filter((id) => id !== model.value);
             setSelectedModels(remaining);
-            if (activeModel === model.value) {
-              setActiveModel("");
-              setActiveModelSelected(false);
-            }
+            setRoleAssignments((prev) => pruneRoleAssignments(prev, remaining));
           }}
           selectedModel={null}
           activeProviders={activeProviders}
