@@ -202,6 +202,31 @@ describe("omp settings route (YAML-aware writer)", () => {
     expect(readConfig().modelRoles.default).toBe("9router/cc/claude-opus-5");
   });
 
+  it("rejects an activeModel that is not in the provider model list", async () => {
+    const res = await route.POST({ json: async () => ({ baseUrl: "http://127.0.0.1:20128", apiKey: "sk_x", models: ["cc/claude-opus-5"], activeModel: "not-a-model" }) });
+    expect(res.status).toBe(400);
+    expect(existsSync(configPath())).toBe(false);
+    expect(existsSync(modelsPath())).toBe(false);
+  });
+
+  it("allows activeModel that already exists on the 9router provider", async () => {
+    writeFileSync(modelsPath(), "providers:\n  9router:\n    baseUrl: http://127.0.0.1:20128/v1\n    api: openai-completions\n    apiKey: sk_old\n    models:\n      - id: kr/claude-sonnet-4.5\n        name: existing\n");
+    const res = await route.POST({ json: async () => ({ baseUrl: "http://127.0.0.1:20128", apiKey: "sk_x", models: ["cc/claude-opus-5"], activeModel: "kr/claude-sonnet-4.5" }) });
+    expect(res.status).toBe(200);
+    expect(readConfig().modelRoles.default).toBe("9router/kr/claude-sonnet-4.5");
+  });
+
+
+  it("keeps extra fields on an existing same-id model when merging", async () => {
+    writeFileSync(modelsPath(), "providers:\n  9router:\n    baseUrl: http://127.0.0.1:20128/v1\n    api: openai-completions\n    apiKey: sk_old\n    models:\n      - id: cc/claude-opus-5\n        name: custom-name\n        cost: { input: 1 }\n");
+    const res = await route.POST({ json: async () => ({ baseUrl: "http://127.0.0.1:20128", apiKey: "sk_x", models: ["cc/claude-opus-5"] }) });
+    expect(res.status).toBe(200);
+    const entry = readModelsFile().doc.providers["9router"].models[0];
+    expect(entry.cost).toEqual({ input: 1 });
+    expect(entry.name).toBe("cc/claude-opus-5");
+  });
+
+
   it("emits live capabilities from /v1/models into model entries", async () => {
     const caps = {
       "cc/claude-opus-5": { vision: true, contextWindow: 1048576, maxOutput: 65536, reasoning: true },
@@ -252,6 +277,44 @@ describe("omp settings route (YAML-aware writer)", () => {
     const cfgRaw = readFileSync(configPath(), "utf-8").trim();
     expect(cfgRaw).not.toContain('9router/');
   });
+
+  it("refuses DELETE when config.yml is corrupt and does not touch models.yml", async () => {
+    const seed = "providers:\n  9router:\n    baseUrl: http://127.0.0.1:20128/v1\n    api: openai-completions\n    apiKey: sk_x\n    models:\n      - id: cc/claude-opus-5\n        name: cc/claude-opus-5\n";
+    writeFileSync(modelsPath(), seed);
+    const corruptCfg = "modelRoles:\n  default:\n    bad-: ::\n    :::\n  [unclosed\n";
+    writeFileSync(configPath(), corruptCfg);
+
+    const res = await route.DELETE({ url: "http://x/omp-settings" });
+    expect(res.status).toBe(409);
+    expect(readFileSync(modelsPath(), "utf-8")).toBe(seed);
+    expect(readFileSync(configPath(), "utf-8")).toBe(corruptCfg);
+  });
+
+  it("DELETE updates models.yaml when that is the resolved file", async () => {
+    writeFileSync(modelsYamlPath(), "providers:\n  other-yaml: { baseUrl: y }\n  9router:\n    baseUrl: http://127.0.0.1:20128/v1\n    api: openai-completions\n    apiKey: sk_x\n    models:\n      - id: cc/claude-opus-5\n        name: cc/claude-opus-5\n");
+    const res = await route.DELETE({ url: "http://x/omp-settings?model=cc/claude-opus-5" });
+    expect(res.status).toBe(200);
+    expect(existsSync(modelsPath())).toBe(false);
+    const out = parseYAML(readFileSync(modelsYamlPath(), "utf-8"));
+    expect(out?.providers?.["9router"]).toBeFalsy();
+    expect(out?.providers?.["other-yaml"]).toBeTruthy();
+  });
+
+  it("DELETE of a legacy models.json writes canonical models.yml and keeps other providers", async () => {
+    writeFileSync(modelsJsonPath(), JSON.stringify({
+      providers: {
+        "legacy-only": { baseUrl: "http://legacy/v1" },
+        "9router": { baseUrl: "http://127.0.0.1:20128/v1", api: "openai-completions", apiKey: "sk_x", models: [{ id: "cc/claude-opus-5", name: "cc/claude-opus-5" }] },
+      },
+    }));
+    const res = await route.DELETE({ url: "http://x/omp-settings" });
+    expect(res.status).toBe(200);
+    const out = parseYAML(readFileSync(modelsPath(), "utf-8"));
+    expect(out?.providers?.["9router"]).toBeFalsy();
+    expect(out?.providers?.["legacy-only"]).toBeTruthy();
+  });
+
+
 
   it("returns installed=false when neither omp binary nor config is present", async () => {
     rmSync(agentDir(), { recursive: true, force: true });

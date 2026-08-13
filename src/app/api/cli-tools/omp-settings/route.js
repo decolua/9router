@@ -253,8 +253,12 @@ export async function POST(request) {
 
     for (const id of modelsArray) {
       if (!id || typeof id !== "string") continue;
-      byId.set(id, buildModelEntry(id, capabilities?.[id]));
+      byId.set(id, { ...(byId.get(id) || {}), ...buildModelEntry(id, capabilities?.[id]) });
     }
+    if (activeModel && !byId.has(activeModel)) {
+      return NextResponse.json({ error: "activeModel must be one of the selected 9Router models" }, { status: 400 });
+    }
+
 
     const provider = {
       ...existing,
@@ -339,18 +343,30 @@ export async function DELETE(request) {
   try {
     const { searchParams } = new URL(request.url);
     const modelToRemove = searchParams.get("model");
-    const modelsPath = getModelsPath();
 
-    const { doc, missing, corrupt } = await readYamlDoc(modelsPath);
-    if (missing) return NextResponse.json({ success: true, message: "No config file to reset" });
-    if (corrupt) {
-      return NextResponse.json({ error: "~/.omp/agent/models.yml could not be parsed" }, { status: 409 });
+    const modelsDocInfo = await readModelsDoc();
+    if (modelsDocInfo.corrupt) {
+      return NextResponse.json({ error: "~/.omp/agent/models file could not be parsed" }, { status: 409 });
+    }
+    if (modelsDocInfo.missing) {
+      return NextResponse.json({ success: true, message: "No config file to reset" });
     }
 
+    const configPath = getConfigPath();
+    const configDocInfo = await readYamlDoc(configPath);
+    if (configDocInfo.corrupt) {
+      return NextResponse.json(
+        { error: "~/.omp/agent/config.yml could not be parsed. Fix or remove it before reset; models file was NOT modified." },
+        { status: 409 }
+      );
+    }
+
+    const doc = modelsDocInfo.doc;
+    const modelsPath = modelsDocInfo.path;
     const provider = getProviderNode(doc)?.toJSON?.();
     if (!provider) return NextResponse.json({ success: true, message: "No 9Router provider configured" });
 
-    await backupFile(modelsPath);
+    await backupFile(modelsDocInfo.sourcePath || modelsPath);
 
     let remainingIds = [];
     if (modelToRemove) {
@@ -365,16 +381,13 @@ export async function DELETE(request) {
       doc.deleteIn(["providers", PROVIDER_KEY]);
     }
 
-    // Drop the providers map entirely if 9Router was the only entry.
     const providers = doc.getIn(["providers"])?.toJSON?.();
     if (providers && Object.keys(providers).length === 0) doc.deleteIn(["providers"]);
 
     await fs.writeFile(modelsPath, String(doc));
 
-    // Clear a dangling default role that pointed at a removed model.
-    const configPath = getConfigPath();
-    const { doc: settingsDoc, missing: settingsMissing, corrupt: settingsCorrupt } = await readYamlDoc(configPath);
-    if (!settingsMissing && !settingsCorrupt) {
+    if (!configDocInfo.missing) {
+      const settingsDoc = configDocInfo.doc;
       const current = settingsDoc.getIn(["modelRoles", "default"]);
       if (typeof current === "string" && current.startsWith(`${PROVIDER_KEY}/`)) {
         const activeId = current.slice(PROVIDER_KEY.length + 1);

@@ -24,6 +24,7 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
   const [activeModel, setActiveModel] = useState("");
   const [catalogModels, setCatalogModels] = useState([]);
   const [activeModelSelected, setActiveModelSelected] = useState(false);
+  const [updatingActiveModel, setUpdatingActiveModel] = useState(false);
   const selectedModelsRef = useRef([]);
   const effectiveSelectedApiKey = selectedApiKey || apiKeys?.[0]?.key || "";
 
@@ -321,27 +322,31 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
                           <span
                             key={model}
                             onClick={async () => {
+                              if (updatingActiveModel) return;
                               if (model === activeModel) {
+                                setUpdatingActiveModel(true);
                                 try {
                                   const res = await fetch("/api/cli-tools/omp-settings", {
                                     method: "PATCH",
                                     headers: { "Content-Type": "application/json" },
                                     body: JSON.stringify({ clearActiveModel: true }),
                                   });
-                                  if (res.ok) {
+                                  if (res.ok && model === activeModel) {
                                     setActiveModel("");
                                     setActiveModelSelected(false);
                                     checkStatus();
                                   }
                                 } catch (error) {
                                   console.log("Error clearing active model:", error);
+                                } finally {
+                                  setUpdatingActiveModel(false);
                                 }
                               } else {
                                 setActiveModel(model);
                                 setActiveModelSelected(true);
                               }
                             }}
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs cursor-pointer transition-colors ${
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs cursor-pointer transition-colors ${updatingActiveModel ? "pointer-events-none opacity-60" : ""} ${
                               model === activeModel
                                 ? "bg-primary/10 text-primary border border-primary"
                                 : "bg-black/5 dark:bg-white/5 text-text-muted border border-transparent hover:border-border"
