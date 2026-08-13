@@ -23,6 +23,7 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@monaco-editor/react": "^4.7.0",
     "@next/third-parties": "^16.2.9",
+    "@node-saml/node-saml": "^5.1.0",
     "@xyflow/react": "^12.10.1",
     "bcryptjs": "^3.0.3",
     "chalk": "^5.6.2",

@@ -198,7 +198,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
         if (!res.ok) return;
         const data = await res.json();
         if (!cancelled) {
-          setDisplayName(data?.displayName || data?.oidcName || data?.oidcEmail || "");
+          setDisplayName(data?.displayName || data?.samlName || data?.samlEmail || data?.oidcName || data?.oidcEmail || "");
           setLoginMethod(data?.loginMethod || "");
         }
       } catch {
@@ -303,12 +303,15 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
 
       {/* Right actions */}
       <div className="flex items-center gap-1 shrink-0">
-        {displayName && loginMethod === "OIDC" && (
-          <div className="hidden sm:flex items-center max-w-[220px] px-3 py-1.5 rounded-full border border-border bg-surface/70 text-xs text-text-muted truncate">
+        {displayName && (loginMethod === "OIDC" || loginMethod === "SAML") && (
+          <div
+            className="hidden sm:flex items-center max-w-[220px] px-3 py-1.5 rounded-full border border-border bg-surface/70 text-xs text-text-muted truncate"
+            title={displayName}
+          >
             <span className="material-symbols-outlined text-[14px] mr-1.5 text-primary">person</span>
             <span className="truncate">{displayName}</span>
             <span className="ml-2 shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
-              OIDC
+              {loginMethod}
             </span>
           </div>
         )}
