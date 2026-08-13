@@ -61,7 +61,9 @@ const buildOptions = ({ requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tai
     opts.push({ value: "cloud", label: u, url: u });
   }
   savedPresets.forEach((p) => {
-    opts.push({ value: `saved:${p.name}`, label: p.baseUrl, url: p.baseUrl, saved: true });
+    const url = p.baseUrl;
+    const label = p.name === url ? url : `${p.name} — ${url}`;
+    opts.push({ value: `saved:${p.name}`, label, url, saved: true });
   });
   opts.push({ value: CUSTOM_VALUE, label: "Custom URL...", url: "" });
   return opts;
@@ -116,10 +118,13 @@ export default function BaseUrlSelect({
       try { defaultName = new URL(trimmed).host; } catch {}
       const name = window.prompt("Save endpoint as:", defaultName);
       if (!name?.trim()) return;
-      const updated = [...savedPresets.filter((p) => p.name !== name.trim()), { name: name.trim(), baseUrl: trimmed }]
+      const savedName = name.trim();
+      const updated = [...savedPresets.filter((p) => p.name !== savedName), { name: savedName, baseUrl: trimmed }]
         .sort((a, b) => a.name.localeCompare(b.name));
       setSavedPresets(updated);
       writeSavedPresets(updated);
+      setMode(`saved:${savedName}`);
+      onChange(trimmed);
       return;
     }
     setMode(next);
