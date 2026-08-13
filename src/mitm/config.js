@@ -26,9 +26,27 @@ const TARGET_HOSTS = [
 const URL_PATTERNS = {
   antigravity: [":generateContent", ":streamGenerateContent"],
   copilot: ["/chat/completions", "/v1/messages", "/responses"],
+  // Legacy path form. Kiro IDE 1.0.228+ posts to `/` with x-amz-target instead —
+  // see isChatRequest() for the header-based match.
   kiro: ["/generateAssistantResponse"],
   cursor: ["/BidiAppend", "/RunSSE", "/RunPoll", "/Run"],
 };
+
+/**
+ * Whether this request is a chat turn we should intercept (vs passthrough).
+ * Kiro Runtime moved GenerateAssistantResponse from path `/generateAssistantResponse`
+ * to `POST /` + `x-amz-target: KiroRuntimeService.GenerateAssistantResponse`
+ * (verified via live mitmproxy capture of Kiro IDE 1.0.228).
+ */
+function isChatRequest(tool, req) {
+  const patterns = URL_PATTERNS[tool] || [];
+  if (patterns.some((p) => (req.url || "").includes(p))) return true;
+  if (tool === "kiro") {
+    const target = String(req.headers?.["x-amz-target"] || "");
+    return target.includes("GenerateAssistantResponse");
+  }
+  return false;
+}
 
 // Synonym map: rawModel from request → canonical alias key in mitmAlias DB
 const MODEL_SYNONYMS = {
@@ -127,4 +145,4 @@ function extractModel(url, body) {
   }
 }
 
-module.exports = { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, MODEL_NO_MAP, LOG_BLACKLIST_URL_PARTS, getToolForHost, extractModel };
+module.exports = { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, MODEL_NO_MAP, LOG_BLACKLIST_URL_PARTS, getToolForHost, isChatRequest, extractModel };
