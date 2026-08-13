@@ -16,6 +16,7 @@ import {
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 import { killAllBridges } from "@/lib/mcp/stdioSseBridge";
+import { ensureSetupToken } from "@/lib/auth/setupBootstrap";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -65,6 +66,10 @@ export async function initializeApp() {
       process.on("exit", () => { try { removeAllDNSEntriesSync(); } catch { /* ignore */ } });
       g.signalHandlersRegistered = true;
     }
+
+    // Mint + print the one-time setup token before anything else can be served,
+    // so the console banner is the first thing the operator sees on a fresh install.
+    await ensureSetupToken().catch((e) => console.error("[InitApp] setup token failed:", e.message));
 
     setTunnelUnexpectedExitCallback(() => {
       safeRestartTunnel("unexpected-exit").catch(() => {});

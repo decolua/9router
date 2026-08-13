@@ -278,7 +278,7 @@ npm install
 npm run build
 
 export JWT_SECRET="your-secure-secret-change-this"
-export INITIAL_PASSWORD="your-password"
+export INITIAL_PASSWORD="your-password"   # optional; omit to use the console setup token
 export DATA_DIR="/var/lib/10router"
 export PORT="20128"
 export HOSTNAME="0.0.0.0"
@@ -336,7 +336,7 @@ container.
 | Variable | Default | Description |
 | --- | --- | --- |
 | `JWT_SECRET` | Auto-generated (`~/.9router/jwt-secret`) | JWT signing secret for the dashboard auth cookie (override to share across instances) |
-| `INITIAL_PASSWORD` | `123456` | First login password when no saved hash exists — override this |
+| `INITIAL_PASSWORD` | unset | Optional headless bootstrap password (min 8 chars). When unset, first run requires the one-time setup token printed to the server console. There is no default password |
 | `DATA_DIR` | `~/.9router` | App data location (SQLite at `$DATA_DIR/db/data.sqlite`); the `.9router` name is kept for compatibility |
 | `PORT` | framework default | Service port (`20128` in examples) |
 | `HOSTNAME` | framework default | Bind host (Docker defaults to `0.0.0.0`) |
@@ -483,7 +483,7 @@ dashboard quota tracker; add a combo fallback.
 **Dashboard opens on the wrong port** — set `PORT=20128` and
 `NEXT_PUBLIC_BASE_URL=http://localhost:20128`.
 
-**First login fails** — check `INITIAL_PASSWORD` in `.env`; the fallback is `123456`.
+**First login fails** — a fresh install has no default password. Open `/setup` and paste the one-time setup token printed to the server console (valid 5 minutes; restart to get a new one). Lost it? `10router` CLI → **Settings** → **Reset Password**.
 
 **No logs under `logs/`** — set `ENABLE_REQUEST_LOGS=true`.
 

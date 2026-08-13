@@ -10,6 +10,39 @@ import { parseTOML, stringifyTOML } from "confbox";
 
 const execAsync = promisify(exec);
 
+// Codex-native ingress path (mirrors chatgpt.com/backend-api/codex). Pointing the
+// CLI here instead of /v1 makes it use the ChatGPT wire: native model catalog with
+// real context windows/reasoning levels, and `requires_openai_auth`.
+const CODEX_NATIVE_PATH = "/backend-api/codex";
+
+const stripEndpointSuffix = (baseUrl) => baseUrl
+  .trim()
+  .replace(/\/+$/, "")
+  .replace(/\/backend-api\/codex$/, "")
+  .replace(/\/v1$/, "");
+
+// Native -> <host>/backend-api/codex, compatible -> <host>/v1. Accepts a base URL
+// already carrying either suffix so re-applying settings is idempotent.
+const resolveCodexBaseUrl = (baseUrl, native) => {
+  const root = stripEndpointSuffix(baseUrl);
+  return native ? `${root}${CODEX_NATIVE_PATH}` : `${root}/v1`;
+};
+
+// `name` must be the lowercase "openai" for recent Codex versions to accept the
+// native ChatGPT wire; the OpenAI-compatible endpoint keeps the 10router label.
+const buildProviderSection = (baseUrl, native) => (native
+  ? {
+    name: "openai",
+    base_url: baseUrl,
+    wire_api: "responses",
+    requires_openai_auth: true,
+  }
+  : {
+    name: "10router",
+    base_url: baseUrl,
+    wire_api: "responses",
+  });
+
 const getCodexDir = () => path.join(os.homedir(), ".codex");
 const getCodexConfigPath = () => path.join(getCodexDir(), "config.toml");
 const getCodexAuthPath = () => path.join(getCodexDir(), "auth.json");
@@ -98,6 +131,7 @@ export async function GET() {
       installed: true,
       config,
       has10Router: has10RouterConfig(config),
+      native: Boolean(config && config.includes(CODEX_NATIVE_PATH)),
       configPath: getCodexConfigPath(),
     });
   } catch (error) {
@@ -109,9 +143,11 @@ export async function GET() {
 // POST - Update 10router settings (merge with existing config)
 export async function POST(request) {
   try {
-    const { baseUrl, apiKey, model, subagentModel } = await request.json();
+    const { baseUrl, apiKey, model, subagentModel, native } = await request.json();
     
-    if (!baseUrl || !apiKey || !model) {
+    // Type-check rather than truthy-check: a non-string baseUrl reaches
+    // normalizeBaseUrl's .trim() and would surface as a 500 instead of a 400.
+    if (typeof baseUrl !== "string" || !baseUrl.trim() || !apiKey || !model) {
       return NextResponse.json({ error: "baseUrl, apiKey and model are required" }, { status: 400 });
     }
 
@@ -132,14 +168,11 @@ export async function POST(request) {
     parsed.model = model;
     parsed.model_provider = "10router";
 
-    // Update or create 10router provider section (no api_key - Codex reads from auth.json)
-    // Ensure /v1 suffix is added only once
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    setNestedSection(parsed, "model_providers.10router", {
-      name: "10router",
-      base_url: normalizedBaseUrl,
-      wire_api: "responses",
-    });
+    // Update or create 10router provider section (no api_key - Codex reads from auth.json).
+    // The Codex-native endpoint is the default; pass native:false for plain /v1.
+    const useNative = native !== false;
+    const normalizedBaseUrl = resolveCodexBaseUrl(baseUrl, useNative);
+    setNestedSection(parsed, "model_providers.10router", buildProviderSection(normalizedBaseUrl, useNative));
 
     // Add subagent configuration
     const effectiveSubagentModel = subagentModel || model;
@@ -168,6 +201,8 @@ export async function POST(request) {
       success: true,
       message: "Codex settings applied successfully!",
       configPath,
+      baseUrl: normalizedBaseUrl,
+      native: useNative,
     });
   } catch (error) {
     console.log("Error updating codex settings:", error);

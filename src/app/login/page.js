@@ -15,6 +15,9 @@ export default function LoginPage() {
   const [oidcLoginLabel, setOidcLoginLabel] = useState("Sign in with OIDC");
   const [mustChange, setMustChange] = useState(false);
   const [newPassword, setNewPassword] = useState("");
+  const [legacyPassword, setLegacyPassword] = useState(false);
+
+  const MIN_PASSWORD_LENGTH = 8;
 
   // Countdown for rate-limit
   useEffect(() => {
@@ -37,11 +40,24 @@ export default function LoginPage() {
 
         if (res.ok) {
           const data = await res.json();
+          if (data.needsSetup === true) {
+            window.location.assign("/setup");
+            return;
+          }
+          // A restricted session that reloaded the page lands back here: keep
+          // it on the change form instead of bouncing it to a locked dashboard.
+          if (data.authenticated === true && data.mustChangePassword === true) {
+            setMustChange(true);
+            setHasPassword(false);
+            setLegacyPassword(true);
+            return;
+          }
           if (data.authenticated === true || data.requireLogin === false) {
             window.location.assign("/dashboard");
             return;
           }
           setHasPassword(!!data.hasPassword);
+          setLegacyPassword(data.mustChangePassword === true);
           setAuthMode(data.authMode || "password");
           setOidcConfigured(data.oidcConfigured === true);
           setOidcLoginLabel(data.oidcLoginLabel || "Sign in with OIDC");
@@ -79,6 +95,10 @@ export default function LoginPage() {
         window.location.assign("/dashboard");
       } else {
         const data = await res.json();
+        if (data.needsSetup === true) {
+          window.location.assign("/setup");
+          return;
+        }
         setError(data.error || "Invalid password");
         if (data.resetHint) setResetHint(data.resetHint);
         if (data.retryAfter) setRetryAfter(Number(data.retryAfter));
@@ -96,10 +116,12 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
+      // Dedicated endpoint: the restricted session issued at legacy login is
+      // only accepted here, and the old password is not asked for again.
+      const res = await fetch("/api/auth/change-password", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ currentPassword: password, newPassword }),
+        body: JSON.stringify({ newPassword }),
       });
       if (res.ok) {
         window.location.assign("/dashboard");
@@ -151,21 +173,28 @@ export default function LoginPage() {
           {mustChange ? (
             <form onSubmit={handleSetNewPassword} className="flex flex-col gap-4">
               <p className="text-sm text-amber-600 dark:text-amber-400 text-center">
-                Set a new password before accessing the dashboard remotely.
+                This instance is still on the old default password. Set a new one to continue.
               </p>
               <div className="flex flex-col gap-2">
                 <label className="text-sm font-medium">New password</label>
                 <Input
                   type="password"
-                  placeholder="Enter new password"
+                  placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   required
                   autoFocus
+                  autoComplete="new-password"
                 />
                 {error && <p className="text-xs text-red-500">{error}</p>}
               </div>
-              <Button type="submit" variant="primary" className="w-full" loading={loading} disabled={!newPassword}>
+              <Button
+                type="submit"
+                variant="primary"
+                className="w-full"
+                loading={loading}
+                disabled={newPassword.length < MIN_PASSWORD_LENGTH}
+              >
                 Set password
               </Button>
             </form>
@@ -211,7 +240,7 @@ export default function LoginPage() {
                   )}
                   {resetHint && (
                     <p className="text-xs text-text-muted">
-                      Forgot password? Open <code className="bg-sidebar px-1 rounded">10router</code> CLI on the host → <b>Settings</b> → <b>Reset Password to Default</b>.
+                      Forgot password? Open <code className="bg-sidebar px-1 rounded">10router</code> CLI on the host → <b>Settings</b> → <b>Reset Password</b>, then finish setup with the token it prints.
                     </p>
                   )}
                 </div>
@@ -226,12 +255,10 @@ export default function LoginPage() {
                   {retryAfter > 0 ? `Wait ${retryAfter}s` : "Login"}
                 </Button>
 
-                <p className="text-xs text-center text-text-muted mt-2">
-                  Default password is <code className="bg-sidebar px-1 rounded">123456</code>
-                </p>
-                {hasPassword === false && (
+                {legacyPassword && (
                   <p className="text-xs text-center text-amber-600 dark:text-amber-400">
-                    Security risk: no password set. You will be asked to set one when logging in remotely.
+                    This install is still on the old default password. You will be asked to set a
+                    new one right after logging in.
                   </p>
                 )}
               </form>

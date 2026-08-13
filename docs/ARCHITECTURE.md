@@ -96,7 +96,9 @@ Main directories:
 
 - `src/app/api/v1/*` and `src/app/api/v1beta/*` for compatibility APIs
 - `src/app/api/*` for management/configuration APIs
-- Next rewrites in `next.config.mjs` map `/v1/*` to `/api/v1/*`
+- Next rewrites in `next.config.mjs` map `/v1/*` to `/api/v1/*`, and
+  `/backend-api/codex/*` (plus the duplicated `/backend-api/codex/v1/*` some
+  clients emit) to `/api/v1/codex/*` — the Codex-native ingress
 
 Important compatibility routes:
 
@@ -104,6 +106,10 @@ Important compatibility routes:
 - `src/app/api/v1/messages/route.js`
 - `src/app/api/v1/responses/route.js`
 - `src/app/api/v1/models/route.js`
+- `src/app/api/v1/codex/*` — Codex-native ingress served at `/backend-api/codex`
+  (`responses` and `responses/compact` reuse the `/v1` handlers, `models` serves
+  the routed catalog in Codex's `{ "models": [...] }` shape, `[...path]`
+  acknowledges Codex's advisory side-calls)
 - `src/app/api/v1/messages/count_tokens/route.js`
 - `src/app/api/v1beta/models/route.js`
 - `src/app/api/v1beta/models/[...path]/route.js`
@@ -523,7 +529,17 @@ Runtime visibility sources:
 ## Security-Sensitive Boundaries
 
 - JWT secret (`JWT_SECRET`) secures dashboard session cookie verification/signing
-- Initial password fallback (`INITIAL_PASSWORD`, default `123456`) must be overridden in real deployments
+- First-run bootstrap: there is **no default dashboard password**. An unclaimed
+  install mints a one-time setup token (`$DATA_DIR/setup-token.json`, 0600),
+  prints it to the server console, and locks every dashboard/API route until
+  `/setup` is completed with that token. The token expires 5 minutes after it
+  is minted (startup, or a CLI password reset); restarting mints a new one, and
+  claiming consumes it atomically. `requireLogin=false` does not bypass this.
+  `INITIAL_PASSWORD` (optional, min 8 chars) is an explicit headless bootstrap
+  and skips the setup flow. Installs predating this flow are stamped
+  `legacyDefaultPassword` in `_meta` and get exactly one login on the old
+  default; that session carries a `pwChange` claim which the guard restricts to
+  `/api/auth/change-password`, so the forced change cannot be skipped.
 - API key HMAC secret (`API_KEY_SECRET`) secures generated local API key format
 - Provider secrets (API keys/tokens) are persisted in local DB and should be protected at filesystem level
 - Cloud sync endpoints rely on API key auth + machine id semantics

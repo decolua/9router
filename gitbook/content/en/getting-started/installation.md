@@ -104,13 +104,21 @@ npm start
 
 ### Dashboard Login
 
-**Default credentials:**
-- Password: `123456`
+**There is no default password.** On first run 10router prints a one-time setup token to the server console:
 
-**⚠️ Change password immediately:**
-1. Login to dashboard
-2. Settings → Change Password
-3. Use strong password
+```
+  10router setup required (first run)
+  Open the dashboard at /setup and paste this token:
+
+      iMy2dXkv2J3pQrVHxcjBsce05izk0ACp
+
+  Valid for 5 minutes. Restart the server to get a new one.
+```
+
+1. Open `http://localhost:20128/setup`
+2. Paste the token and choose a password (at least 8 characters)
+
+The token expires 5 minutes after startup — restart 10router to get a new one. Forgot the password later? Run the `10router` CLI on the host → **Settings** → **Reset Password**, which prints a fresh token.
 
 ### Get Your API Key
 

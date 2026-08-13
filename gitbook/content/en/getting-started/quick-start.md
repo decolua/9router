@@ -22,7 +22,7 @@ npm install -g 10router
 
 🎉 **Dashboard opens automatically** at `http://localhost:20128`
 
-- Default password: `123456` (change in dashboard)
+- First run: a one-time setup token is printed to the console — open `/setup` and paste it to set your password (there is no default password)
 - API key generated automatically
 - Ready to connect providers
 

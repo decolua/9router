@@ -5,9 +5,9 @@ import { cookies } from "next/headers";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 import { isOidcConfigured } from "@/lib/auth/oidc";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
-import { isLocalRequest } from "@/dashboardGuard";
+import { getAuthBootstrapState, getBootstrapSecret } from "@/lib/auth/setupState";
 
-const RESET_HINT = "Forgot password? Reset to default via 10router CLI → Settings → Reset Password to Default.";
+const RESET_HINT = "Forgot password? Run 10router CLI → Settings → Reset Password, then use the new setup token printed on the host console.";
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
 
 function isTunnelRequest(request, settings) {
@@ -36,31 +36,45 @@ export async function POST(request) {
       return NextResponse.json({ error: "Dashboard access via tunnel is disabled" }, { status: 403 });
     }
 
-    // Default password is '123456' if not set
     const storedHash = settings.password;
 
     if (settings.authMode === "oidc" && isOidcConfigured(settings)) {
       return NextResponse.json({ error: "Password login is disabled. Use OIDC sign in." }, { status: 403 });
     }
 
+    const bootstrapState = await getAuthBootstrapState(settings);
+
+    // Nothing configured yet — there is no default password to guess. The only
+    // way in is /setup with the token printed on the host console.
+    if (bootstrapState === "setup") {
+      return NextResponse.json(
+        { error: "Setup required. Complete first-run setup with the token from the server console.", needsSetup: true },
+        { status: 403, headers: NO_STORE_HEADERS }
+      );
+    }
+
     let isValid = false;
     if (storedHash) {
       isValid = await bcrypt.compare(password, storedHash);
     } else {
-      // Use env var or default
-      const initialPassword = process.env.INITIAL_PASSWORD || "123456";
-      isValid = password === initialPassword;
+      // "env" (operator-supplied INITIAL_PASSWORD) or "legacy" (pre-existing
+      // install still on the old default) — compared as a plain secret since
+      // no hash has ever been stored.
+      const secret = await getBootstrapSecret(settings);
+      isValid = typeof secret === "string" && typeof password === "string" && password === secret;
     }
 
     if (isValid) {
       recordSuccess(ip);
       const cookieStore = await cookies();
-      await setDashboardAuthCookie(cookieStore, request);
 
-      // Default password still in use on a remote client → force a password
-      // change before the dashboard is exposed remotely (keeps local UX intact).
-      const mustChangePassword =
-        !storedHash && !process.env.INITIAL_PASSWORD && !isLocalRequest(request);
+      // Legacy installs get exactly one login on the old default password, then
+      // must set a real one before the dashboard loads. The session issued here
+      // carries pwChange, which the guard honours: it unlocks nothing but
+      // /api/auth/change-password, so the change cannot be skipped by simply
+      // navigating to /dashboard.
+      const mustChangePassword = bootstrapState === "legacy";
+      await setDashboardAuthCookie(cookieStore, request, mustChangePassword ? { pwChange: true } : {});
 
       return NextResponse.json({ success: true, mustChangePassword }, { headers: NO_STORE_HEADERS });
     }

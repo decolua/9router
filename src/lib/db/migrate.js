@@ -212,6 +212,32 @@ function importLegacyDetails(adapter, data) {
   }
 }
 
+// ─── Default-password grace stamp ────────────────────────────────────────
+// Installs that predate the setup-token flow have no stored password hash and
+// were relying on the old built-in default. Stamp them once so login can grant
+// exactly one more default login before forcing a change. A fresh DB is never
+// stamped: it must go through /setup instead.
+function stampLegacyDefaultPassword(adapter, fresh, { force = false } = {}) {
+  try {
+    if (!force && getMetaSync(adapter, "legacyDefaultPassword", null) !== null) return;
+    if (fresh) {
+      setMetaSync(adapter, "legacyDefaultPassword", "0");
+      return;
+    }
+    const row = adapter.get(`SELECT data FROM settings WHERE id = 1`);
+    if (!row) {
+      // Non-fresh DB with no settings row at all — treat as unclaimed.
+      setMetaSync(adapter, "legacyDefaultPassword", "0");
+      return;
+    }
+    let hasPassword = false;
+    try { hasPassword = !!JSON.parse(row.data || "{}")?.password; } catch { hasPassword = false; }
+    setMetaSync(adapter, "legacyDefaultPassword", hasPassword ? "0" : "1");
+  } catch (e) {
+    console.warn(`[DB][migrate] legacy password stamp failed: ${e.message}`);
+  }
+}
+
 // ─── Main entry ──────────────────────────────────────────────────────────
 export async function runMigrationOnce(adapter) {
   if (_migratedAdapters.has(adapter)) return;
@@ -252,6 +278,9 @@ export async function runMigrationOnce(adapter) {
   // Stamp the schema version we just reached so future boots skip re-backup.
   setMetaSync(adapter, "backupSchemaVersion", SCHEMA_VERSION);
 
+  // Decide once whether this install carries the old default-password grace.
+  stampLegacyDefaultPassword(adapter, fresh);
+
   // 3. One-time legacy JSON import (only if DB was fresh on entry)
   const alreadyImported = fs.existsSync(MIGRATED_MARKER);
   const legacyMain = readJsonSafe(LEGACY_FILES.main);
@@ -282,6 +311,10 @@ export async function runMigrationOnce(adapter) {
       }
       throw err;
     }
+
+    // Settings just came from a pre-setup-flow install — re-evaluate the grace
+    // stamp against the imported settings, not the empty DB we started from.
+    stampLegacyDefaultPassword(adapter, false, { force: true });
 
     try { fs.writeFileSync(MIGRATED_MARKER, new Date().toISOString()); } catch {}
     pruneOldBackups();

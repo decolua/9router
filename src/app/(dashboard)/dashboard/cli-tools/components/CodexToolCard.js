@@ -7,6 +7,23 @@ import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 
+// Codex-native ingress (mirrors chatgpt.com/backend-api/codex). Codex only serves
+// its native model catalog and ChatGPT-style auth from this base path; /v1 stays
+// available for setups that need the plain OpenAI-compatible endpoint.
+const CODEX_NATIVE_PATH = "/backend-api/codex";
+
+// Strip repeatedly: a hand-typed endpoint can carry both suffixes at once
+// (Codex appends /v1 to a base URL that already ends in /backend-api/codex),
+// and a single pass in fixed order would leave half of it behind.
+const endpointRoot = (url) => {
+  let root = (url || "").trim().replace(/\/+$/, "");
+  for (;;) {
+    const stripped = root.replace(/\/(?:backend-api\/codex|v1)$/, "");
+    if (stripped === root) return root;
+    root = stripped;
+  }
+};
+
 export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
   const [codexStatus, setCodexStatus] = useState(initialStatus || null);
   const [checkingCodex, setCheckingCodex] = useState(false);
@@ -22,6 +39,7 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
+  const [useNative, setUseNative] = useState(true);
 
   useEffect(() => {
     if (apiKeys?.length > 0 && !selectedApiKey) {
@@ -59,6 +77,10 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
       // Parse subagent settings
       const subagentModelMatch = codexStatus.config.match(/\[agents\.subagent\]\s*\n\s*model\s*=\s*"([^"]+)"/m);
       if (subagentModelMatch) setSubagentModel(subagentModelMatch[1]);
+
+      // Reflect the ingress the config already points at, so Apply doesn't
+      // silently move a working setup off /v1.
+      if (codexStatus.has10Router) setUseNative(codexStatus.native === true);
     }
   }, [codexStatus]);
 
@@ -72,10 +94,10 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
 
   const configStatus = getConfigStatus();
 
+  // The selector emits /v1 URLs; swap the suffix for whichever ingress is picked.
   const getEffectiveBaseUrl = () => {
-    const url = customBaseUrl || `${baseUrl}/v1`;
-    // Ensure URL ends with /v1
-    return url.endsWith("/v1") ? url : `${url}/v1`;
+    const root = endpointRoot(customBaseUrl || baseUrl);
+    return `${root}${useNative ? CODEX_NATIVE_PATH : "/v1"}`;
   };
 
   const getDisplayUrl = () => customBaseUrl || `${baseUrl}/v1`;
@@ -109,7 +131,8 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
           baseUrl: getEffectiveBaseUrl(),
           apiKey: keyToUse,
           model: selectedModel,
-          subagentModel: subagentModel || selectedModel
+          subagentModel: subagentModel || selectedModel,
+          native: useNative
         }),
       });
       const data = await res.json();
@@ -163,14 +186,22 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
 
     const effectiveSubagentModel = subagentModel || selectedModel;
 
+    const providerSection = useNative
+      ? `[model_providers.10router]
+name = "openai"
+base_url = "${getEffectiveBaseUrl()}"
+wire_api = "responses"
+requires_openai_auth = true`
+      : `[model_providers.10router]
+name = "10router"
+base_url = "${getEffectiveBaseUrl()}"
+wire_api = "responses"`;
+
     const configContent = `# 10router Configuration for Codex CLI
 model = "${selectedModel}"
 model_provider = "10router"
 
-[model_providers.10router]
-name = "10router"
-base_url = "${getEffectiveBaseUrl()}"
-wire_api = "responses"
+${providerSection}
 
 [agents.subagent]
 model = "${effectiveSubagentModel}"
@@ -280,6 +311,31 @@ model = "${effectiveSubagentModel}"
                     tailscaleEnabled={tailscaleEnabled}
                     tailscaleUrl={tailscaleUrl}
                   />
+                </div>
+
+                {/* Endpoint mode */}
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
+                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Endpoint Mode</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <label className="flex items-center gap-2 text-xs cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={useNative}
+                        onChange={(e) => setUseNative(e.target.checked)}
+                        className="accent-primary"
+                      />
+                      <span>Codex native endpoint <code className="px-1 bg-black/5 dark:bg-white/5 rounded">{CODEX_NATIVE_PATH}</code></span>
+                    </label>
+                    <span className="text-[11px] text-text-muted">
+                      {useNative
+                        ? "Uses the ChatGPT wire — Codex reads the model catalog from 10router. Uncheck for the plain /v1 endpoint."
+                        : "Uses the OpenAI-compatible /v1 endpoint. Codex falls back to its bundled model metadata."}
+                    </span>
+                    <span className="min-w-0 truncate rounded bg-surface/40 px-2 py-1 text-[11px] text-text-muted">
+                      {getEffectiveBaseUrl()}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Current configured */}

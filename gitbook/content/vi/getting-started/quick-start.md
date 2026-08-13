@@ -22,7 +22,7 @@ npm install -g 10router
 
 🎉 **Dashboard tự động mở** tại `http://localhost:20128`
 
-- Mật khẩu mặc định: `123456` (đổi trong dashboard)
+- Lần chạy đầu: một setup token dùng một lần được in ra console — mở `/setup` và dán vào để đặt mật khẩu (không có mật khẩu mặc định)
 - API key được tạo tự động
 - Sẵn sàng kết nối provider
 

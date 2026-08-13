@@ -104,13 +104,21 @@ npm start
 
 ### ダッシュボードログイン
 
-**デフォルト認証情報:**
-- パスワード: `123456`
+**デフォルトパスワードはありません。** 初回起動時、10router はワンタイムのセットアップトークンをサーバーのコンソールに出力します:
 
-**⚠️ パスワードをすぐに変更:**
-1. ダッシュボードにログイン
-2. Settings → Change Password
-3. 強力なパスワードを使用
+```
+  10router setup required (first run)
+  Open the dashboard at /setup and paste this token:
+
+      iMy2dXkv2J3pQrVHxcjBsce05izk0ACp
+
+  Valid for 5 minutes. Restart the server to get a new one.
+```
+
+1. `http://localhost:20128/setup` を開く
+2. トークンを貼り付け、パスワードを設定(8文字以上)
+
+トークンは起動から5分で失効します。新しいトークンが必要な場合は 10router を再起動してください。後でパスワードを忘れた場合は、ホスト上で `10router` CLI を実行し → **Settings** → **Reset Password** を選ぶと、新しいトークンが出力されます。
 
 ### APIキーを取得
 

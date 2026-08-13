@@ -602,3 +602,20 @@ button:disabled,
   border-top: 1px solid var(--color-border);
   margin: 1.5rem 0;
 }
+
+/* Blur-emails toggle — icon artwork from Lucide (MIT). The slash draws on via
+   stroke-dashoffset; state values are set inline, timing lives here so the
+   reduced-motion query can switch it off. */
+.blur-toggle-icon g,
+.blur-toggle-icon .blur-toggle-slash {
+  transition: opacity 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.blur-toggle-icon .blur-toggle-slash {
+  transition: stroke-dashoffset 500ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .blur-toggle-icon g,
+  .blur-toggle-icon .blur-toggle-slash {
+    transition: none;
+  }
+}
