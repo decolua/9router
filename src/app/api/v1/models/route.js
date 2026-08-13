@@ -247,10 +247,19 @@ export async function buildModelsList(kindFilter, options = {}) {
   // cross-instance recursive loops.
   const skipDynamicFetch = options.skipDynamicFetch === true;
   let connections = [];
+  // Distinguish "DB healthy but with no connections" from "DB unavailable".
+  // `getProviderConnections()` returns [] for a healthy DB with no provider
+  // connections and throws only when the DB itself is unreachable. The
+  // static-catalog fallback below is meant for the latter; a healthy DB with
+  // zero connections must NOT dump every built-in model onto the client
+  // (hundreds of mostly-unusable entries) — only expose what the user has
+  // explicitly added via custom models / combos.
+  let dbAvailable = true;
   try {
     connections = await getProviderConnections();
     connections = connections.filter(c => c.isActive !== false);
   } catch (e) {
+    dbAvailable = false;
     console.log("Could not fetch providers, returning all models");
   }
 
@@ -307,21 +316,29 @@ export async function buildModelsList(kindFilter, options = {}) {
   }
 
   if (connections.length === 0) {
-    // DB unavailable -> return static models, filtered by per-model kind
-    const aliasToProviderId = Object.fromEntries(
-      Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id])
-    );
-    for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
-      const providerId = aliasToProviderId[alias] || alias;
-      if (!providerMatchesKinds(providerId, kindFilter)) continue;
-      for (const model of providerModels) {
-        if (!kindFilter.includes(modelKind(model))) continue;
-        if (isDisabled(alias, model.id)) continue;
-        models.push({
-          id: `${alias}/${model.id}`,
-          object: "model",
-          owned_by: alias,
-        });
+    // Only when the DB itself is unavailable do we fall back to the full
+    // static catalog (filtered by per-model kind). A healthy DB with zero
+    // connections means the user hasn't set up any provider yet — exposing all
+    // built-in models there would flood the client with hundreds of entries
+    // that mostly can't be used (e.g. OpenCode seeing 600+ models when only a
+    // few free ones were configured). Custom models/combos the user explicitly
+    // added are still exposed below.
+    if (!dbAvailable) {
+      const aliasToProviderId = Object.fromEntries(
+        Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id])
+      );
+      for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
+        const providerId = aliasToProviderId[alias] || alias;
+        if (!providerMatchesKinds(providerId, kindFilter)) continue;
+        for (const model of providerModels) {
+          if (!kindFilter.includes(modelKind(model))) continue;
+          if (isDisabled(alias, model.id)) continue;
+          models.push({
+            id: `${alias}/${model.id}`,
+            object: "model",
+            owned_by: alias,
+          });
+        }
       }
     }
 
