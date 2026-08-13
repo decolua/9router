@@ -335,4 +335,193 @@ describe("omp settings route (YAML-aware writer)", () => {
       if (savedPath2 !== undefined) process.env.Path = savedPath2;
     }
   });
+
+  it("writes every official OMP role supplied in roles", async () => {
+    const req = {
+      json: async () => ({
+        baseUrl: "http://127.0.0.1:20128",
+        apiKey: "sk_roles",
+        models: ["kimi/kimi-k3", "gcli/grok-4.6"],
+        roles: {
+          default: "kimi/kimi-k3",
+          smol: "gcli/grok-4.6",
+          slow: "kimi/kimi-k3",
+          vision: "gcli/grok-4.6",
+          plan: "kimi/kimi-k3",
+          designer: "gcli/grok-4.6",
+          commit: "kimi/kimi-k3",
+          tiny: "gcli/grok-4.6",
+          task: "kimi/kimi-k3",
+          advisor: "gcli/grok-4.6",
+        },
+      }),
+    };
+    const res = await route.POST(req);
+    expect(res.status).toBe(200);
+    expect(readConfig().modelRoles).toEqual({
+      default: "9router/kimi/kimi-k3",
+      smol: "9router/gcli/grok-4.6",
+      slow: "9router/kimi/kimi-k3",
+      vision: "9router/gcli/grok-4.6",
+      plan: "9router/kimi/kimi-k3",
+      designer: "9router/gcli/grok-4.6",
+      commit: "9router/kimi/kimi-k3",
+      tiny: "9router/gcli/grok-4.6",
+      task: "9router/kimi/kimi-k3",
+      advisor: "9router/gcli/grok-4.6",
+    });
+  });
+
+  it("rejects an unknown role before writing models.yml", async () => {
+    const res = await route.POST({
+      json: async () => ({
+        baseUrl: "http://127.0.0.1:20128",
+        apiKey: "sk_x",
+        models: ["kimi/kimi-k3"],
+        roles: { default: "kimi/kimi-k3", notARole: "kimi/kimi-k3" },
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(existsSync(modelsPath())).toBe(false);
+    expect(existsSync(configPath())).toBe(false);
+  });
+
+  it("rejects a role model that is not selected before writing models.yml", async () => {
+    const res = await route.POST({
+      json: async () => ({
+        baseUrl: "http://127.0.0.1:20128",
+        apiKey: "sk_x",
+        models: ["kimi/kimi-k3"],
+        roles: { smol: "gcli/grok-4.6" },
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(existsSync(modelsPath())).toBe(false);
+    expect(existsSync(configPath())).toBe(false);
+  });
+
+  it("GET returns all 9Router role assignments", async () => {
+    writeFileSync(modelsPath(), "providers:\n  9router:\n    baseUrl: http://127.0.0.1:20128/v1\n    api: openai-completions\n    apiKey: sk_x\n    models:\n      - id: kimi/kimi-k3\n        name: kimi/kimi-k3\n");
+    writeFileSync(configPath(), "modelRoles:\n  default: 9router/kimi/kimi-k3\n  task: 9router/kimi/kimi-k3\n  smol: xai-oauth/grok-4.6\n");
+    const res = await route.GET();
+    const data = await res.json();
+    expect(data.omp.roles.default).toBe("kimi/kimi-k3");
+    expect(data.omp.roles.task).toBe("kimi/kimi-k3");
+    expect(data.omp.roles.smol).toBeUndefined();
+    expect(data.omp.activeModel).toBe("kimi/kimi-k3");
+  });
+
+  it("DELETE of a model clears every official role pointing at it", async () => {
+    writeFileSync(modelsPath(), "providers:\n  9router:\n    baseUrl: http://127.0.0.1:20128/v1\n    api: openai-completions\n    apiKey: sk_x\n    models:\n      - id: kimi/kimi-k3\n        name: kimi/kimi-k3\n      - id: gcli/grok-4.6\n        name: gcli/grok-4.6\n");
+    writeFileSync(configPath(), "modelRoles:\n  default: 9router/kimi/kimi-k3\n  smol: 9router/gcli/grok-4.6\n  task: 9router/kimi/kimi-k3\n");
+    const res = await route.DELETE({ url: "http://x/omp-settings?model=kimi/kimi-k3" });
+    expect(res.status).toBe(200);
+    const cfg = readConfig();
+    expect(cfg.modelRoles.default).toBeUndefined();
+    expect(cfg.modelRoles.task).toBeUndefined();
+    expect(cfg.modelRoles.smol).toBe("9router/gcli/grok-4.6");
+  });
+
+  it("omitted roles leave existing modelRoles untouched", async () => {
+    writeFileSync(modelsPath(), "providers:\n  9router:\n    baseUrl: http://127.0.0.1:20128/v1\n    api: openai-completions\n    apiKey: sk_old\n    models:\n      - id: kimi/kimi-k3\n        name: kimi/kimi-k3\n");
+    writeFileSync(configPath(), "modelRoles:\n  default: 9router/kimi/kimi-k3\n  smol: 9router/kimi/kimi-k3\n  advisor: xai-oauth/grok-4.6\n");
+    const res = await route.POST({
+      json: async () => ({
+        baseUrl: "http://127.0.0.1:20128",
+        apiKey: "sk_x",
+        models: ["kimi/kimi-k3", "gcli/grok-4.6"],
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(readConfig().modelRoles).toEqual({
+      default: "9router/kimi/kimi-k3",
+      smol: "9router/kimi/kimi-k3",
+      advisor: "xai-oauth/grok-4.6",
+    });
+  });
+
+  it("empty role string clears only that 9Router assignment", async () => {
+    writeFileSync(modelsPath(), "providers:\n  9router:\n    baseUrl: http://127.0.0.1:20128/v1\n    api: openai-completions\n    apiKey: sk_old\n    models:\n      - id: kimi/kimi-k3\n        name: kimi/kimi-k3\n");
+    writeFileSync(configPath(), "modelRoles:\n  default: 9router/kimi/kimi-k3\n  smol: 9router/kimi/kimi-k3\n  advisor: xai-oauth/grok-4.6\n");
+    const res = await route.POST({
+      json: async () => ({
+        baseUrl: "http://127.0.0.1:20128",
+        apiKey: "sk_x",
+        models: ["kimi/kimi-k3"],
+        roles: { smol: "", advisor: "" },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const cfg = readConfig();
+    expect(cfg.modelRoles.default).toBe("9router/kimi/kimi-k3");
+    expect(cfg.modelRoles.smol).toBeUndefined();
+    expect(cfg.modelRoles.advisor).toBe("xai-oauth/grok-4.6");
+  });
+
+  it("switches an existing official role to another selected model", async () => {
+    writeFileSync(modelsPath(), "providers:\n  9router:\n    baseUrl: http://127.0.0.1:20128/v1\n    api: openai-completions\n    apiKey: sk_old\n    models:\n      - id: kimi/kimi-k3\n        name: kimi/kimi-k3\n      - id: gcli/grok-4.6\n        name: gcli/grok-4.6\n");
+    writeFileSync(configPath(), "modelRoles:\n  default: 9router/kimi/kimi-k3\n  task: 9router/kimi/kimi-k3\n");
+    const res = await route.POST({
+      json: async () => ({
+        baseUrl: "http://127.0.0.1:20128",
+        apiKey: "sk_x",
+        models: ["kimi/kimi-k3", "gcli/grok-4.6"],
+        roles: { task: "gcli/grok-4.6" },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const cfg = readConfig();
+    expect(cfg.modelRoles.default).toBe("9router/kimi/kimi-k3");
+    expect(cfg.modelRoles.task).toBe("9router/gcli/grok-4.6");
+  });
+
+  it("GET after Apply still reports the written roles", async () => {
+    await route.POST({
+      json: async () => ({
+        baseUrl: "http://127.0.0.1:20128",
+        apiKey: "sk_x",
+        models: ["kimi/kimi-k3", "gcli/grok-4.6"],
+        roles: { default: "kimi/kimi-k3", smol: "gcli/grok-4.6" },
+      }),
+    });
+    const data = await (await route.GET()).json();
+    expect(data.omp.roles.default).toBe("kimi/kimi-k3");
+    expect(data.omp.roles.smol).toBe("gcli/grok-4.6");
+    expect(data.omp.activeModel).toBe("kimi/kimi-k3");
+  });
+
+  it("full reset clears official 9Router roles and keeps foreign plus custom roles", async () => {
+    writeFileSync(modelsPath(), "providers:\n  other: { baseUrl: http://other/v1 }\n  9router:\n    baseUrl: http://127.0.0.1:20128/v1\n    api: openai-completions\n    apiKey: sk_x\n    models:\n      - id: kimi/kimi-k3\n        name: kimi/kimi-k3\n");
+    writeFileSync(configPath(), "modelRoles:\n  default: 9router/kimi/kimi-k3\n  smol: 9router/kimi/kimi-k3\n  advisor: xai-oauth/grok-4.6\n  reviewer: 9router/kimi/kimi-k3\n");
+    const res = await route.DELETE({ url: "http://x/omp-settings" });
+    expect(res.status).toBe(200);
+    expect(readModelsFile().doc.providers["9router"]).toBeFalsy();
+    expect(readModelsFile().doc.providers.other).toBeTruthy();
+    expect(readConfig().modelRoles).toEqual({
+      advisor: "xai-oauth/grok-4.6",
+      reviewer: "9router/kimi/kimi-k3",
+    });
+  });
+
+  it("POST official roles leaves unofficial custom role keys untouched", async () => {
+    writeFileSync(modelsPath(), "providers:\n  9router:\n    baseUrl: http://127.0.0.1:20128/v1\n    api: openai-completions\n    apiKey: sk_old\n    models:\n      - id: kimi/kimi-k3\n        name: kimi/kimi-k3\n");
+    writeFileSync(configPath(), "modelRoles:\n  default: 9router/kimi/kimi-k3\n  reviewer: local/custom-reviewer\n  cycleOrder: [default, smol]\n");
+    const res = await route.POST({
+      json: async () => ({
+        baseUrl: "http://127.0.0.1:20128",
+        apiKey: "sk_x",
+        models: ["kimi/kimi-k3", "gcli/grok-4.6"],
+        roles: { default: "gcli/grok-4.6", smol: "kimi/kimi-k3" },
+      }),
+    });
+    expect(res.status).toBe(200);
+    const cfg = readConfig();
+    expect(cfg.modelRoles.default).toBe("9router/gcli/grok-4.6");
+    expect(cfg.modelRoles.smol).toBe("9router/kimi/kimi-k3");
+    expect(cfg.modelRoles.reviewer).toBe("local/custom-reviewer");
+    expect(cfg.modelRoles.cycleOrder).toEqual(["default", "smol"]);
+  });
+
+
+
 });
