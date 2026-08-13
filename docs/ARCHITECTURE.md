@@ -96,7 +96,9 @@ Main directories:
 
 - `src/app/api/v1/*` and `src/app/api/v1beta/*` for compatibility APIs
 - `src/app/api/*` for management/configuration APIs
-- Next rewrites in `next.config.mjs` map `/v1/*` to `/api/v1/*`
+- Next rewrites in `next.config.mjs` map `/v1/*` to `/api/v1/*`, and
+  `/backend-api/codex/*` (plus the duplicated `/backend-api/codex/v1/*` some
+  clients emit) to `/api/v1/codex/*` — the Codex-native ingress
 
 Important compatibility routes:
 
@@ -104,6 +106,10 @@ Important compatibility routes:
 - `src/app/api/v1/messages/route.js`
 - `src/app/api/v1/responses/route.js`
 - `src/app/api/v1/models/route.js`
+- `src/app/api/v1/codex/*` — Codex-native ingress served at `/backend-api/codex`
+  (`responses` and `responses/compact` reuse the `/v1` handlers, `models` serves
+  the routed catalog in Codex's `{ "models": [...] }` shape, `[...path]`
+  acknowledges Codex's advisory side-calls)
 - `src/app/api/v1/messages/count_tokens/route.js`
 - `src/app/api/v1beta/models/route.js`
 - `src/app/api/v1beta/models/[...path]/route.js`

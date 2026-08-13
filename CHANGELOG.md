@@ -1,3 +1,42 @@
+# Unreleased
+
+## Features
+- **Codex-native endpoint**: 10router now serves `/backend-api/codex`, the base
+  URL the Codex CLI/IDE expects for the ChatGPT wire (same shape codex-lb
+  exposes). `POST /backend-api/codex/responses` and `/responses/compact` reuse
+  the existing routing pipeline, `GET /backend-api/codex/models` serves the
+  routed catalog in Codex's native `{ "models": [...] }` shape so Codex picks up
+  real context windows and reasoning levels instead of its bundled metadata, and
+  Codex's advisory side-calls (telemetry, thread goals, memory summarisation) are
+  acknowledged instead of erroring on every turn. Clients that append `/v1` to
+  the base URL are collapsed onto the same routes.
+- **Codex WebSocket transport**: Codex ≥0.147 with `supports_websockets = true`
+  upgrades `<base_url>/responses` instead of POSTing it, sending the Responses
+  body as one `{"type":"response.create", …}` text frame and expecting the same
+  event objects back, one per frame. `custom-server.js` now accepts that upgrade
+  and bridges the turn through this process's own HTTP endpoint, so routing,
+  auth, and fallback behave exactly as on the POST path. The frame codec is
+  hand-rolled (and declines `permessage-deflate`) because this file is copied
+  into the standalone output by itself — a `require("ws")` that Next's tracing
+  never saw would crash the server at boot.
+  **Only the production server has it**: `next dev` and `next start` do not load
+  `custom-server.js`, so websockets need `npm run build` + the standalone server
+  (which is what Docker and the CLI launcher run).
+- **Pooled Codex usage**: Codex reads its usage bar from `x-codex-*` response
+  headers, which 10router previously did not send — so the bar sat empty. The
+  Codex-native endpoint now reports the **pooled** figure across every connected
+  Codex account, weighted by each plan's allowance
+  (`Σ(capacity × used%) / Σ(capacity)`), so two Plus accounts at 60% and 20%
+  show as 40% and a Pro account outweighs a Plus one. The reported reset is the
+  earliest across accounts. Usage is cached and refreshed in the background, so
+  no request ever blocks on it.
+- **CLI Tools**: the Codex card and the launcher's Codex menu gained an endpoint
+  mode. It defaults to the native endpoint — writing
+  `base_url = "<host>/backend-api/codex"` with `name = "openai"` and
+  `requires_openai_auth = true` — and can be switched back to the plain `/v1`
+  endpoint. Re-applying settings keeps an existing config on the ingress it
+  already uses.
+
 # v0.6.0 (2026-08-11)
 
 ## Changed
