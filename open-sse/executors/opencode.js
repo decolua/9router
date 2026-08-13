@@ -22,11 +22,21 @@ export class OpenCodeExecutor extends BaseExecutor {
   }
 
   buildHeaders() {
+    const randomId = (length) =>
+      Array.from({ length }, () =>
+        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".charAt(
+          Math.floor(Math.random() * 62)
+        )
+      ).join("");
     return {
       "Content-Type": "application/json",
       "Authorization": "Bearer public",
       "x-opencode-client": "desktop",
-      "Accept": "text/event-stream"
+      "x-opencode-session": `ses_${randomId(24)}`,
+      "x-opencode-project": "/opencode",
+      "x-opencode-request": `req_${randomId(24)}`,
+      "User-Agent": "opencode/latest/1.18.18/cli",
+      "Accept": "text/event-stream",
     };
   }
 }
