@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
+import SubscriptionValueBadge from "./SubscriptionValueBadge";
 import Toggle from "@/shared/components/Toggle";
 import Tooltip from "@/shared/components/Tooltip";
 import {
@@ -37,6 +38,9 @@ import {
   ACCOUNT_PAGE_SIZE_MAX,
   ACCOUNT_FILTER_OPTIONS,
   QUOTA_SORT_OPTIONS,
+  SUB_VALUE_DEFAULT_WINDOW,
+  readSubValueWindow,
+  writeSubValueWindow,
 } from "./utils";
 import Card from "@/shared/components/Card";
 import { ConfirmModal, EditConnectionModal } from "@/shared/components";
@@ -144,6 +148,8 @@ export default function ProviderLimits() {
   const [resetCreditsState, setResetCreditsState] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
+  const [connectionValues, setConnectionValues] = useState({});
+  const [valueWindow, setValueWindow] = useState(SUB_VALUE_DEFAULT_WINDOW);
   const [proxyPools, setProxyPools] = useState([]);
   const [providerFilter, setProviderFilter] = useState("all");
   const [providerOptions, setProviderOptions] = useState([]);
@@ -421,6 +427,17 @@ export default function ProviderLimits() {
     [fetchConnections, page],
   );
 
+  const fetchConnectionValues = useCallback(async () => {
+    try {
+      const res = await fetch("/api/usage/connection-value", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data?.connections) setConnectionValues(data.connections);
+    } catch {
+      // The badge is supplementary — a failed fetch just leaves it hidden.
+    }
+  }, []);
+
   const handleUpdateConnection = useCallback(
     async (formData) => {
       if (!selectedConnection?.id) return;
@@ -436,6 +453,7 @@ export default function ProviderLimits() {
           await fetchConnections();
           setShowEditModal(false);
           setSelectedConnection(null);
+          await fetchConnectionValues();
           if (USAGE_SUPPORTED_PROVIDERS.includes(provider)) {
             await fetchQuota(connectionId, provider);
           }
@@ -444,8 +462,21 @@ export default function ProviderLimits() {
         console.error("Error saving connection:", error);
       }
     },
-    [selectedConnection, fetchConnections, fetchQuota],
+    [selectedConnection, fetchConnections, fetchQuota, fetchConnectionValues],
   );
+
+  useEffect(() => {
+    setValueWindow(readSubValueWindow());
+    fetchConnectionValues();
+  }, [fetchConnectionValues]);
+
+  const handleToggleValueWindow = useCallback(() => {
+    setValueWindow((prev) => {
+      const next = prev === "lifetime" ? "month" : "lifetime";
+      writeSubValueWindow(next);
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1068,6 +1099,15 @@ export default function ProviderLimits() {
                         <p className="text-[11px] text-text-muted/80 truncate">
                           {getConnectionSecondaryLabel(conn)}
                         </p>
+                      ) : null}
+                      {connectionValues[conn.id] ? (
+                        <div className="mt-1">
+                          <SubscriptionValueBadge
+                            value={connectionValues[conn.id]}
+                            window={valueWindow}
+                            onToggleWindow={handleToggleValueWindow}
+                          />
+                        </div>
                       ) : null}
                       {conn.provider === "kiro" && (
                         <div className="mt-1 flex flex-wrap items-center gap-1">

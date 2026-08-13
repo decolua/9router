@@ -343,6 +343,50 @@ function loadDaysInRange(adapter, maxDays) {
   return adapter.all(`SELECT dateKey, data FROM usageDaily WHERE dateKey >= ?`, [cutoffKey]);
 }
 
+/**
+ * Per-connection API-list-price value, for the subscription value badge.
+ *
+ * The `cost` already accrued in usageDaily.byAccount is computed at canonical
+ * API rates (see open-sse/providers/pricing.js) regardless of whether the
+ * request was billed through a subscription — so summing it answers "what
+ * would this account's traffic have cost on the pay-as-you-go API".
+ *
+ * @returns {Promise<Object>} { [connectionId]: { lifetimeCost, monthCost, lifetimeRequests, monthRequests, firstDateKey } }
+ */
+export async function getConnectionValue() {
+  const db = await getAdapter();
+  const rows = db.all(`SELECT dateKey, data FROM usageDaily`);
+
+  const now = new Date();
+  const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  const out = {};
+  for (const row of rows) {
+    const day = parseJson(row.data, {});
+    const inCurrentMonth = String(row.dateKey || "").startsWith(monthPrefix);
+
+    for (const [connectionId, acct] of Object.entries(day.byAccount || {})) {
+      if (!out[connectionId]) {
+        out[connectionId] = {
+          lifetimeCost: 0, monthCost: 0,
+          lifetimeRequests: 0, monthRequests: 0,
+          firstDateKey: row.dateKey,
+        };
+      }
+      const entry = out[connectionId];
+      entry.lifetimeCost += acct.cost || 0;
+      entry.lifetimeRequests += acct.requests || 0;
+      if (inCurrentMonth) {
+        entry.monthCost += acct.cost || 0;
+        entry.monthRequests += acct.requests || 0;
+      }
+      if (row.dateKey && row.dateKey < entry.firstDateKey) entry.firstDateKey = row.dateKey;
+    }
+  }
+
+  return out;
+}
+
 export async function getUsageStats(period = "all") {
   const db = await getAdapter();
 

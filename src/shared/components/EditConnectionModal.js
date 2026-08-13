@@ -8,12 +8,14 @@ import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
+import { getSuggestedMonthlyCost } from "@/shared/constants/subscriptionPlans";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
     name: "",
     priority: 1,
     apiKey: "",
+    monthlyCost: "",
   });
   const [azureData, setAzureData] = useState({
     azureEndpoint: "",
@@ -28,13 +30,34 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [suggestedCost, setSuggestedCost] = useState(null);
 
   useEffect(() => {
     if (connection) {
+      // Seed the sub price from the plan catalog when the user hasn't set one.
+      // A seeded value is only a suggestion until they save it — the badge
+      // shows no ratio while monthlyCost is unset, so nothing is guessed
+      // behind their back.
+      const detectedPlan =
+        connection.plan
+        || connection.providerSpecificData?.plan
+        // Codex stashes the ChatGPT tier here at OAuth time ("plus", "pro").
+        || connection.providerSpecificData?.chatgptPlanType
+        || connection.subscriptionType
+        || null;
+      const suggested = getSuggestedMonthlyCost(connection.provider, detectedPlan);
+      setSuggestedCost(suggested);
+
       setFormData({
         name: connection.name || "",
         priority: connection.priority || 1,
         apiKey: "",
+        monthlyCost:
+          typeof connection.monthlyCost === "number"
+            ? String(connection.monthlyCost)
+            : suggested != null
+              ? String(suggested)
+              : "",
       });
       // Load Azure-specific data if present
       if (connection.provider === "azure" && connection.providerSpecificData) {
@@ -121,6 +144,13 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         name: formData.name,
         priority: formData.priority,
       };
+
+      if (isOAuth) {
+        const trimmed = String(formData.monthlyCost).trim();
+        const parsed = trimmed === "" ? null : Number(trimmed);
+        updates.monthlyCost =
+          parsed != null && Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+      }
       if (!isOAuth && formData.apiKey) {
         updates.apiKey = formData.apiKey;
         let isValid = validationResult === "success";
@@ -201,6 +231,23 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           value={formData.priority}
           onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value, 10) || 1 })}
         />
+
+        {isOAuth && (
+          <Input
+            label="Sub cost / month (USD)"
+            type="number"
+            min="0"
+            step="any"
+            value={formData.monthlyCost}
+            onChange={(e) => setFormData({ ...formData, monthlyCost: e.target.value })}
+            placeholder="20"
+            hint={
+              suggestedCost != null && String(formData.monthlyCost) === String(suggestedCost)
+                ? `Suggested from the detected plan — correct it if your price differs. Save to confirm.`
+                : "What you actually pay for this subscription. 0 for free plans, blank to hide the comparison."
+            }
+          />
+        )}
 
         {!isOAuth && (
           <>
@@ -305,6 +352,9 @@ EditConnectionModal.propTypes = {
     authType: PropTypes.string,
     provider: PropTypes.string,
     providerSpecificData: PropTypes.object,
+    monthlyCost: PropTypes.number,
+    plan: PropTypes.string,
+    subscriptionType: PropTypes.string,
   }),
   proxyPools: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.string,
