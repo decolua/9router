@@ -142,6 +142,34 @@ export const CLI_TOOLS = {
     description: "OpenCode AI Terminal Assistant",
     configType: "custom",
   },
+  openclaude: {
+    id: "openclaude",
+    name: "OpenClaude",
+    image: "/providers/openclaude.png",
+    color: "#000000",
+    description: "OpenClaude Coding Agent CLI",
+    configType: "guide",
+    notes: [
+      { type: "warning", text: "OpenClaude needs --provider openai. Without it the env vars are ignored and it stops at \"Not logged in\"." },
+    ],
+    guideSteps: [
+      { step: 1, title: "Install", desc: "npm install -g @gitlawb/openclaude" },
+      { step: 2, title: "Base URL", value: "{{baseUrl}}", copyable: true },
+      { step: 3, title: "API Key", type: "apiKeySelector" },
+      { step: 4, title: "Select Model", type: "modelSelector" },
+      { step: 5, title: "Run", desc: "Export the variables below, then start OpenClaude with --provider openai" },
+    ],
+    codeBlock: {
+      language: "bash",
+      code: `export OPENAI_BASE_URL="{{baseUrl}}"
+export OPENAI_API_KEY="{{apiKey}}"
+export OPENAI_MODEL="{{model}}"
+openclaude --provider openai
+# Windows PowerShell:
+# $env:OPENAI_BASE_URL="{{baseUrl}}"; $env:OPENAI_API_KEY="{{apiKey}}"; $env:OPENAI_MODEL="{{model}}"
+# openclaude --provider openai`,
+    },
+  },
   cowork: {
     id: "cowork",
     name: "Claude Cowork",
