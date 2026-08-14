@@ -409,6 +409,14 @@ export function createSSEStream(options = {}) {
           }
         }
 
+        // Make fallback usage available before translators emit their terminal
+        // event. Responses clients read usage from response.completed, so
+        // estimating after flush leaves their context counters at zero.
+        if (sourceFormat === FORMATS.OPENAI_RESPONSES &&
+            !hasValidUsage(state?.usage) && totalContentLength > 0) {
+          state.usage = estimateUsage(body, totalContentLength, sourceFormat);
+        }
+
         const flushed = translateResponse(targetFormat, sourceFormat, null, state);
 
         if (flushed?._openaiIntermediate) {
@@ -444,6 +452,8 @@ export function createSSEStream(options = {}) {
           streamDoneSent = true;
         }
 
+        // Preserve the existing post-translation estimation timing for every
+        // other client format.
         if (!hasValidUsage(state?.usage) && totalContentLength > 0) {
           state.usage = estimateUsage(body, totalContentLength, sourceFormat);
         }

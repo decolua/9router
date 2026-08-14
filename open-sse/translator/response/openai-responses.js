@@ -5,7 +5,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { buildChunk } from "../concerns/chunk.js";
-import { buildUsage } from "../concerns/usage.js";
+import { buildUsage, toResponsesUsage } from "../concerns/usage.js";
 import { fallbackToolCallId } from "../concerns/toolCall.js";
 import { reasoningDelta, extractReasoningText } from "../concerns/reasoning.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } from "../schema/index.js";
@@ -18,16 +18,26 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   if (!chunk) {
     return flushEvents(state);
   }
-  
-  if (!chunk.choices?.length) return [];
-  
+
   const events = [];
   const nextSeq = () => ++state.seq;
-  
+
   const emit = (eventType, data) => {
     data.sequence_number = nextSeq();
     events.push({ event: eventType, data });
   };
+
+  // OpenAI-compatible streams commonly send usage in a final choices: []
+  // chunk after the finish_reason chunk. Capture it before the early return so
+  // response.completed can include it.
+  if (chunk.usage && typeof chunk.usage === "object") {
+    state.usage = chunk.usage;
+  }
+
+  if (!chunk.choices?.length) {
+    if (state.completionPending && state.usage) sendCompleted(state, emit);
+    return events;
+  }
 
   const choice = chunk.choices[0];
   const idx = choice.index || 0;
@@ -112,7 +122,10 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
     for (const i in state.msgItemAdded) closeMessage(state, emit, i);
     closeReasoning(state, emit);
     for (const i in state.funcCallIds) closeToolCall(state, emit, i);
-    sendCompleted(state, emit);
+    state.completionPending = true;
+    // Emit immediately when usage is carried on the finish chunk. Otherwise,
+    // wait for the standard trailing usage-only chunk (or stream flush).
+    if (state.usage) sendCompleted(state, emit);
   }
 
   return events;
@@ -368,6 +381,7 @@ function closeToolCall(state, emit, idx) {
 function sendCompleted(state, emit) {
   if (!state.completedSent) {
     state.completedSent = true;
+    const usage = toResponsesUsage(state.usage);
     emit("response.completed", {
       type: "response.completed",
       response: {
@@ -376,7 +390,8 @@ function sendCompleted(state, emit) {
         created_at: state.created,
         status: "completed",
         background: false,
-        error: null
+        error: null,
+        ...(usage ? { usage } : {})
       }
     });
   }
