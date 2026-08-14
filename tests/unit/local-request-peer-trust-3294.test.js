@@ -114,6 +114,34 @@ describe("peer header trust", () => {
     expect(mocks.validateApiKey).not.toHaveBeenCalled();
   });
 
+  // A dual-stack listener reports loopback as ::ffff:127.0.0.1, which the old
+  // split-on-first-colon check reduced to "".
+  it.each(["::ffff:127.0.0.1", "::1", "[::1]", "127.0.0.1", "::FFFF:127.0.0.1"])(
+    "treats %s as a loopback peer",
+    async (peerIp) => {
+      const response = await proxy(request("/api/v1/models", {
+        host: "localhost:20128",
+        "x-9r-real-ip": peerIp,
+        "x-9r-peer-token": PEER_TOKEN,
+      }));
+
+      expect(response).toBe(mocks.nextResponse);
+    }
+  );
+
+  it.each(["::ffff:10.204.111.34", "2001:db8::1", "[2001:db8::1]", "10.204.111.34"])(
+    "refuses %s as a peer",
+    async (peerIp) => {
+      const response = await proxy(request("/api/v1/models", {
+        host: "localhost:20128",
+        "x-9r-real-ip": peerIp,
+        "x-9r-peer-token": PEER_TOKEN,
+      }));
+
+      expect(response.status).toBe(401);
+    }
+  );
+
   it("still refuses a stamped non-loopback peer IP", async () => {
     const response = await proxy(request("/api/v1/models", {
       host: "localhost:20128",

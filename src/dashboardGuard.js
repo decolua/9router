@@ -87,9 +87,20 @@ const LOCAL_ONLY_PATHS = [
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
+// Accepts a Host header, a URL hostname or a raw socket address. Splitting on the first
+// colon only works for IPv4 and would reduce every IPv6 form to "", so a dual-stack
+// listener handing back ::ffff:127.0.0.1 would not read as loopback.
 function isLoopbackHostname(h) {
   if (!h) return false;
-  const name = h.split(":")[0].replace(/^\[|\]$/g, "").toLowerCase();
+  let name = String(h).trim().toLowerCase();
+  if (name.startsWith("[")) {
+    const end = name.indexOf("]");
+    if (end === -1) return false;
+    name = name.slice(1, end);
+  } else if (name.indexOf(":") !== -1 && name.indexOf(":") === name.lastIndexOf(":")) {
+    name = name.slice(0, name.indexOf(":"));
+  }
+  if (name.startsWith("::ffff:")) name = name.slice(7);
   return LOOPBACK_HOSTS.has(name);
 }
 
