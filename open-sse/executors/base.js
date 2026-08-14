@@ -5,6 +5,13 @@ import { dbg } from "../utils/debugLog.js";
 import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
 import { resolveOpenAICompatibleApiType } from "../services/provider.js";
 
+// Format byte count to human-readable string for debug logs
+function fmtBytes(n) {
+  if (n < 1024) return `${n}B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`;
+  return `${(n / (1024 * 1024)).toFixed(2)}MB`;
+}
+
 /**
  * BaseExecutor - Base class for provider executors
  */
@@ -140,7 +147,7 @@ export class BaseExecutor {
       try {
         const bodyStr = JSON.stringify(transformedBody);
         const fetchT0 = Date.now();
-        dbg("FETCH", `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | connectTimeout=${timeoutMs}ms`);
+        dbg("FETCH", `${this.provider.toUpperCase()} → ${url} | model=${model} | body=${fmtBytes(bodyStr.length)} | connectTimeout=${timeoutMs}ms`);
         const response = await proxyAwareFetch(url, {
           method: "POST",
           headers,
