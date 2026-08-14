@@ -35,7 +35,7 @@ vi.mock("@/lib/auth/dashboardSession", () => ({
 
 const { proxy, __test__ } = await import("../../src/dashboardGuard.js");
 
-const PEER_TRUST = "peer-trust-token";
+const PEER_TOKEN = "peer-token-fixture";
 
 function request(pathname, headers = {}) {
   const normalizedHeaders = new Headers(headers);
@@ -50,13 +50,13 @@ function request(pathname, headers = {}) {
 // A request that actually came through custom-server.js: peer IP stamped from the TCP
 // socket and proven by the per-process secret.
 function localRequest(pathname, headers = {}) {
-  return request(pathname, { "x-9r-peer-trust": PEER_TRUST, "x-9r-real-ip": "127.0.0.1", ...headers });
+  return request(pathname, { "x-9r-peer-token": PEER_TOKEN, "x-9r-real-ip": "127.0.0.1", ...headers });
 }
 
 describe("dashboard guard public LLM API access", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.NINEROUTER_PEER_TRUST = PEER_TRUST;
+    process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
     mocks.getSettings.mockResolvedValue({ requireLogin: true });
     mocks.validateApiKey.mockResolvedValue(false);
     mocks.getConsistentMachineId.mockResolvedValue("cli-token");
@@ -200,7 +200,7 @@ describe("dashboard guard public LLM API access", () => {
 describe("dashboard guard local-only access", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.NINEROUTER_PEER_TRUST = PEER_TRUST;
+    process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
     mocks.getSettings.mockResolvedValue({ requireLogin: true });
     mocks.validateApiKey.mockResolvedValue(false);
     mocks.getConsistentMachineId.mockResolvedValue("cli-token");
