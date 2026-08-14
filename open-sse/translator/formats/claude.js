@@ -9,6 +9,9 @@ import { PROVIDERS } from "../../providers/index.js";
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
 
+const CACHE_CONTROL_5M = { type: "ephemeral" };
+const CACHE_CONTROL_1H = { type: "ephemeral", ttl: "1h" };
+
 // Check if message has valid non-empty content
 export function hasValidContent(msg) {
   if (typeof msg.content === "string" && msg.content.trim()) return true;
@@ -16,7 +19,9 @@ export function hasValidContent(msg) {
     return msg.content.some(block =>
       (block.type === CLAUDE_BLOCK.TEXT && block.text?.trim()) ||
       block.type === CLAUDE_BLOCK.TOOL_USE ||
-      block.type === CLAUDE_BLOCK.TOOL_RESULT
+      block.type === CLAUDE_BLOCK.TOOL_RESULT ||
+      block.type === CLAUDE_BLOCK.IMAGE ||
+      block.type === CLAUDE_BLOCK.DOCUMENT
     );
   }
   return false;
@@ -122,32 +127,38 @@ export function normalizeClaudePassthrough(body, model = "") {
     if (Object.keys(body.output_config).length === 0) delete body.output_config;
   }
 
-  // 2. Hoist mid-conversation system messages into the top-level system field
+  // 2. Fold mid-conversation system messages into the neighbouring turn.
+  // Hoisting them into body.system would insert volatile content (token counters,
+  // reminders) ahead of the whole conversation and invalidate the prefix cache on
+  // every request. Folding in place keeps the cached prefix stable.
   if (Array.isArray(body.messages)) {
-    const systemBlocks = [];
     const messages = [];
     for (const msg of body.messages) {
-      if (msg.role === ROLE.SYSTEM) {
-        const text = typeof msg.content === "string"
-          ? msg.content
-          : Array.isArray(msg.content)
-            ? msg.content.map(b => (typeof b === "string" ? b : b?.text || "")).join("\n")
-            : "";
-        if (text.trim()) systemBlocks.push({ type: CLAUDE_BLOCK.TEXT, text });
+      if (msg.role !== ROLE.SYSTEM) {
+        messages.push(msg);
         continue;
       }
-      messages.push(msg);
-    }
+      const text = typeof msg.content === "string"
+        ? msg.content
+        : Array.isArray(msg.content)
+          ? msg.content.map(b => (typeof b === "string" ? b : b?.text || "")).join("\n")
+          : "";
+      if (!text.trim()) continue;
 
-    if (systemBlocks.length > 0) {
-      const existing = Array.isArray(body.system)
-        ? body.system
-        : typeof body.system === "string" && body.system.trim()
-          ? [{ type: "text", text: body.system }]
-          : [];
-      body.system = [...existing, ...systemBlocks];
-      body.messages = messages;
+      // Copy-on-write: the caller's body is reused across account-fallback
+      // attempts, so folding must never mutate the original message.
+      const block = { type: CLAUDE_BLOCK.TEXT, text };
+      const prev = messages[messages.length - 1];
+      if (prev?.role === ROLE.USER) {
+        const content = typeof prev.content === "string"
+          ? [{ type: CLAUDE_BLOCK.TEXT, text: prev.content }]
+          : Array.isArray(prev.content) ? [...prev.content] : [];
+        messages[messages.length - 1] = { ...prev, content: [...content, block] };
+        continue;
+      }
+      messages.push({ role: ROLE.USER, content: [block] });
     }
+    body.messages = messages;
   }
 
   // 3. Drop thinking blocks whose signature is not Claude's (combo mixes models,
@@ -173,6 +184,70 @@ export function normalizeClaudePassthrough(body, model = "") {
       msg.content = kept;
       if (thinkingEnabled && !hasKeptThinking && hasToolUse) {
         msg.content.unshift(buildThinkingPlaceholder("claude"));
+      }
+    }
+  }
+
+  return body;
+}
+
+// Put a 5m breakpoint on the last cache-eligible block of a message.
+// thinking/redacted_thinking blocks do not accept cache_control.
+function markLastCacheableBlock(msg) {
+  if (!Array.isArray(msg?.content)) return false;
+  for (let i = msg.content.length - 1; i >= 0; i--) {
+    const block = msg.content[i];
+    if (typeof block !== "object" || block === null) continue;
+    if (block.type === CLAUDE_BLOCK.THINKING || block.type === CLAUDE_BLOCK.REDACTED_THINKING) continue;
+    block.cache_control = { ...CACHE_CONTROL_5M };
+    return true;
+  }
+  return false;
+}
+
+// Re-anchor cache breakpoints on a Claude passthrough body (same policy as
+// prepareClaudeRequest): last tool + last system block at 1h, last assistant at 5m.
+// The client's own markers point at pre-normalization offsets, so they are dropped.
+// Must run LAST, after every step that can reshape system/tools/messages
+// (normalize, tool dedupe, token savers) — otherwise the anchor drifts off the tail.
+export function anchorClaudeCache(body) {
+  if (!body || typeof body !== "object") return body;
+
+  if (Array.isArray(body.system)) {
+    const last = body.system.length - 1;
+    body.system.forEach((block, i) => {
+      if (typeof block !== "object" || block === null) return;
+      if (i === last) block.cache_control = { ...CACHE_CONTROL_1H };
+      else delete block.cache_control;
+    });
+  }
+
+  if (Array.isArray(body.tools)) {
+    const last = body.tools.length - 1;
+    body.tools.forEach((tool, i) => {
+      if (i === last) tool.cache_control = { ...CACHE_CONTROL_1H };
+      else delete tool.cache_control;
+    });
+  }
+
+  if (Array.isArray(body.messages)) {
+    let anchored = null;
+    for (let i = body.messages.length - 1; i >= 0; i--) {
+      const msg = body.messages[i];
+      if (!Array.isArray(msg.content)) continue;
+      for (const block of msg.content) delete block.cache_control;
+
+      // Prefer the last assistant turn: it ends a completed exchange, so the
+      // prefix up to it stays byte-stable across the following requests.
+      if (anchored || msg.role !== ROLE.ASSISTANT) continue;
+      anchored = markLastCacheableBlock(msg);
+    }
+
+    // First turn of a conversation has no assistant yet — anchor the final
+    // message instead, so the opening prompt is cached rather than paid twice.
+    if (!anchored) {
+      for (let i = body.messages.length - 1; i >= 0 && !anchored; i--) {
+        anchored = markLastCacheableBlock(body.messages[i]);
       }
     }
   }

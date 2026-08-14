@@ -1,12 +1,12 @@
 import { detectFormat, getTargetFormat, resolveTransport } from "../services/provider.js";
 import { translateRequest } from "../translator/index.js";
-import { stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
+import { applyThinking, extractThinking, stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
-import { normalizeClaudePassthrough } from "../translator/formats/claude.js";
+import { normalizeClaudePassthrough, anchorClaudeCache } from "../translator/formats/claude.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
-import { getModelTargetFormat, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
+import { getModelTargetFormat, getModelSupportedFormats, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
@@ -28,7 +28,6 @@ import { compressWithPxpipe } from "../rtk/pxpipe.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
-import { extractThinking } from "../translator/concerns/thinkingUnified.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
 /**
@@ -38,6 +37,26 @@ import { resolveSessionId } from "../utils/sessionManager.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
+/**
+ * Remove translator-internal continuity fields from the outbound upstream
+ * body. The Responses→Chat request translator stashes reasoning
+ * `encrypted_content` on assistant messages so a later openai→responses
+ * round-trip can restore the store=false continuity blob; that stash must
+ * never reach an upstream provider. Chat-native proxies reject the unknown
+ * assistant-message field and answer every turn with a literal "400" body
+ * (observed with multi-turn Codex sessions via OpenAI-compatible nodes).
+ */
+export function stripContinuityFields(body) {
+  if (!body || !Array.isArray(body.messages)) return body;
+  for (const msg of body.messages) {
+    if (msg && typeof msg === "object") {
+      delete msg.encrypted_content;
+      delete msg.reasoning_encrypted_content;
+    }
+  }
+  return body;
+}
+
 export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
@@ -59,10 +78,20 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
   const modelTargetFormat = getModelTargetFormat(alias, model);
-  // Multi-endpoint providers: pick transport matching sourceFormat → zero translation
+  // Multi-endpoint providers: pick transport matching sourceFormat → zero translation.
+  // Per-model guard: only use the transport when the model declares support for that
+  // sourceFormat — opencode-go models differ in endpoint support (kimi/glm only do
+  // /chat/completions), so without this guard a claude-format request would wrongly
+  // route kimi to /messages.
+  const modelSupportedFormats = getModelSupportedFormats(alias, model);
   const runtimeTransport = resolveTransport(provider, sourceFormat);
-  const targetFormat = modelTargetFormat || runtimeTransport?.format || getTargetFormat(provider);
-  if (runtimeTransport && credentials) credentials.runtimeTransport = runtimeTransport;
+  // Per-model guard: when a model declares supportedFormats, only use the
+  // sourceFormat-matched transport if that format is declared (opencode-go models
+  // differ — kimi/glm only do /chat/completions). Undeclared models keep the
+  // upstream default (use the transport), preserving behavior for glm/deepseek/...
+  const useTransport = (!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat)) ? runtimeTransport : null;
+  const targetFormat = modelTargetFormat || useTransport?.format || getTargetFormat(provider, credentials);
+  if (useTransport && credentials) credentials.runtimeTransport = useTransport;
   const stripList = getModelStrip(alias, model);
   const upstreamModel = getModelUpstreamId(alias, model);
 
@@ -134,9 +163,22 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   let translatedBody;
   let toolNameMap;
+  let customToolNames;
   if (passthrough) {
     log?.debug?.("PASSTHROUGH", `${clientTool} → ${provider} | native lossless`);
     translatedBody = { ...body, model: stripThinkingSuffix(upstreamModel) };
+    if (provider === "codex") {
+      const suffixThinking = {};
+      applyThinking(sourceFormat, upstreamModel, suffixThinking, provider);
+      if (suffixThinking.reasoning_effort) {
+        const reasoning = translatedBody.reasoning;
+        translatedBody.reasoning = {
+          ...(reasoning && typeof reasoning === "object" && !Array.isArray(reasoning) ? reasoning : {}),
+          effort: suffixThinking.reasoning_effort,
+        };
+        delete translatedBody.reasoning_effort;
+      }
+    }
     // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
     if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, translatedBody.model);
   } else {
@@ -147,7 +189,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
     toolNameMap = translatedBody._toolNameMap;
     delete translatedBody._toolNameMap;
+    customToolNames = translatedBody._customToolNames;
+    delete translatedBody._customToolNames;
     translatedBody.model = stripThinkingSuffix(upstreamModel);
+    stripContinuityFields(translatedBody);
   }
 
   // Dedupe duplicate built-in tools when equivalent MCP tools are present (Claude clients only).
@@ -240,6 +285,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   if (xf.length && log?.line) log.line(reqTag, "⚙", xf.join(" · "));
 
+  // Pin cache breakpoints to the final body — every saver above can reshape
+  // system/tools/messages, and a stale anchor costs a full prefix rewrite.
+  if (passthrough && clientTool === "claude") anchorClaudeCache(translatedBody);
+
   const executor = getExecutor(provider);
   trackPendingRequest(model, provider, connectionId, true);
   appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => { });
@@ -291,12 +340,16 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Execute request
   let providerResponse, providerUrl, providerHeaders, finalBody;
+  // Most executors return their registry format. Cursor AgentService is an
+  // exception: it is decoded by the executor into OpenAI-compatible output.
+  let providerResponseFormat = targetFormat;
   try {
     const result = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
     providerResponse = result.response;
     providerUrl = result.url;
     providerHeaders = result.headers;
     finalBody = result.transformedBody;
+    providerResponseFormat = result.responseFormat || targetFormat;
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false, true);
@@ -326,7 +379,18 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Handle 401/403 - try token refresh (skip for noAuth providers)
   if (!executor.noAuth && (providerResponse.status === HTTP_STATUS.UNAUTHORIZED || providerResponse.status === HTTP_STATUS.FORBIDDEN)) {
     try {
-      const newCredentials = await refreshWithRetry(() => executor.refreshCredentials(credentials, log), 3, log);
+      // Mutate credentials after each successful refresh: rotating refresh_token
+      // providers (xAI/grok-cli) issue a new RT on every refresh; without this,
+      // refreshWithRetry's 2nd/3rd attempt reuses the already-consumed RT →
+      // invalid_grant → auth_failed retryable=false.
+      const newCredentials = await refreshWithRetry(async () => {
+        const result = await executor.refreshCredentials(credentials, log);
+        if (result?.refreshToken && result.refreshToken !== credentials.refreshToken) {
+          if (result.accessToken) credentials.accessToken = result.accessToken;
+          credentials.refreshToken = result.refreshToken;
+        }
+        return result;
+      }, 3, log);
       if (newCredentials?.accessToken || newCredentials?.copilotToken) {
         if (log?.line) log.line(reqTag, "🔑", `TOKEN REFRESHED · ${provider}/${model}`);
         Object.assign(credentials, newCredentials);
@@ -335,7 +399,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         }
         try {
           const retryResult = await executor.execute({ model, body: translatedBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
-          if (retryResult.response.ok) { providerResponse = retryResult.response; providerUrl = retryResult.url; }
+          if (retryResult.response.ok) {
+            providerResponse = retryResult.response;
+            providerUrl = retryResult.url;
+            providerResponseFormat = retryResult.responseFormat || targetFormat;
+          }
         } catch { log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`); }
       } else {
         log?.warn?.("TOKEN", `${provider.toUpperCase()} | refresh failed`);
@@ -376,20 +444,20 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Provider forced streaming but client wants JSON
   if (!clientRequestedStreaming && providerRequiresStreaming) {
-    const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, trackDone, appendLog });
+    const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, customToolNames, trackDone, appendLog });
     if (result) { streamController.handleComplete(); return result; }
   }
 
   // True non-streaming response
   if (!stream) {
-    const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, reqLogger, toolNameMap, trackDone, appendLog });
+    const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, reqLogger, toolNameMap, customToolNames, trackDone, appendLog });
     streamController.handleComplete();
     return result;
   }
 
   // Streaming response
   const { onStreamComplete, streamDetailId } = buildOnStreamComplete({ ...sharedCtx });
-  return handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, streamController, onStreamComplete, streamDetailId });
+  return handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, userAgent, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId });
 }
 
 export function isTokenExpiringSoon(expiresAt, bufferMs = 5 * 60 * 1000) {
