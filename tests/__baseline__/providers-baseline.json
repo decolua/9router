@@ -968,7 +968,15 @@
   "tokenrouter": {
     "baseUrl": "https://api.tokenrouter.com/v1/chat/completions",
     "validateUrl": "https://api.tokenrouter.com/v1/models",
-    "thinkingFormat": "openai",
+    "thinkingFormat": "tokenrouter",
+    "format": "openai"
+  },
+  "alitp-intl": {
+    "baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
+    "headers": {},
+    "quirks": {
+      "preserveCacheControl": true
+    },
     "format": "openai"
   }
 }
