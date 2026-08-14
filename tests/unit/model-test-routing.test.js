@@ -147,7 +147,7 @@ describe("model test route kind routing", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "hf/openai/whisper-small",
+        model: "hf/openai/whisper-large-v3",
         kind: "stt",
       }),
     });

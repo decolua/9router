@@ -4,8 +4,9 @@ import { useState, useCallback, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Card, Button, Modal } from "@/shared/components";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
-import { getProviderAlias } from "@/shared/constants/providers";
+import { getProviderAlias, getProviderModelsFetcher } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 
 // ── ModelRow ───────────────────────────────────────────────────
 export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting }) {
@@ -116,6 +117,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
   const [testingModelId, setTestingModelId] = useState(null);
   const [testError, setTestError] = useState("");
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
+  const [suggestedModels, setSuggestedModels] = useState([]);
 
   const providerAlias = providerAliasOverride || getProviderAlias(providerId);
   const effectiveType = kindFilter || "llm";
@@ -134,6 +136,21 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  useEffect(() => {
+    const fetcher = getProviderModelsFetcher(providerId, effectiveType);
+    if (!fetcher) {
+      setSuggestedModels([]);
+      return;
+    }
+    let cancelled = false;
+    fetchSuggestedModels(fetcher).then((models) => {
+      if (!cancelled) setSuggestedModels(models);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [providerId, effectiveType]);
 
   const handleSetAlias = async (modelId, alias) => {
     const fullModel = `${providerAlias}/${modelId}`;
@@ -214,6 +231,11 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
   );
 
   const displayModels = builtInModels;
+  const customIds = new Set(myCustomModels.map((m) => m.id));
+  const builtInIds = new Set(builtInModels.map((m) => m.id));
+  const suggestedNotAdded = suggestedModels.filter(
+    (m) => !builtInIds.has(m.id) && !customIds.has(m.id)
+  );
 
   return (
     <>
@@ -268,6 +290,27 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
             <span className="material-symbols-outlined text-sm">add</span>
             Add Model
           </button>
+
+          {suggestedNotAdded.length > 0 && (
+            <div className="w-full mt-1">
+              <p className="mt-2 mb-2 text-xs text-text-muted">Suggested models from provider:</p>
+              <div className="flex flex-wrap gap-2">
+                {suggestedNotAdded.map((model) => (
+                  <button
+                    key={model.id}
+                    onClick={async () => {
+                      await handleAddCustomModel(model.id);
+                    }}
+                    className="flex items-center gap-1 rounded-lg border border-black/10 px-2.5 py-1.5 text-xs text-text-muted transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary dark:border-white/10"
+                    title={model.name || model.id}
+                  >
+                    <span className="material-symbols-outlined text-[13px]">add</span>
+                    <span className="max-w-[18rem] truncate">{model.id}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </Card>
 
