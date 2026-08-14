@@ -68,6 +68,10 @@ const nextConfig = {
         destination: "/api/v1"
       },
       {
+        source: "/codex/alpha/search",
+        destination: "/api/v1/alpha/search"
+      },
+      {
         source: "/codex/:path*",
         destination: "/api/v1/responses"
       },
