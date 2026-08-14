@@ -29,6 +29,7 @@ import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { stripRejectedFields, addRejectedFields, getRejectedFields, extractRejectedFieldNamesFromError } from "../utils/adaptiveStripper.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -46,8 +47,16 @@ import { resolveSessionId } from "../utils/sessionManager.js";
  * assistant-message field and answer every turn with a literal "400" body
  * (observed with multi-turn Codex sessions via OpenAI-compatible nodes).
  */
-export function stripContinuityFields(body) {
+export function stripContinuityFields(body, provider, model, log) {
   if (!body || !Array.isArray(body.messages)) return body;
+  if (provider && model) {
+    const rejected = getRejectedFields(provider, model);
+    if (rejected.size) {
+      log?.debug?.("FIELDSTRIP", `preSend strip ${provider}/${model}: blocked ${[...rejected].join(", ")}`);
+      const stripped = stripRejectedFields(body, provider, model);
+      if (stripped) body = stripped;
+    }
+  }
   for (const msg of body.messages) {
     if (msg && typeof msg === "object") {
       delete msg.encrypted_content;
@@ -192,7 +201,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     customToolNames = translatedBody._customToolNames;
     delete translatedBody._customToolNames;
     translatedBody.model = stripThinkingSuffix(upstreamModel);
-    stripContinuityFields(translatedBody);
+    translatedBody = stripContinuityFields(translatedBody, provider, model, log);
   }
 
   // Dedupe duplicate built-in tools when equivalent MCP tools are present (Claude clients only).
@@ -412,11 +421,63 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       log?.warn?.("TOKEN", `${provider.toUpperCase()} | refresh threw: ${e.message}`);
     }
   }
-
   // Provider returned error
   if (!providerResponse.ok) {
     trackPendingRequest(model, provider, connectionId, false, true);
     const { statusCode, message, resetsAtMs } = await parseUpstreamError(providerResponse, executor);
+
+    const rejectedOn400 = statusCode === HTTP_STATUS.BAD_REQUEST
+      ? extractRejectedFieldNamesFromError(message).filter(f => {
+          const existing = getRejectedFields(provider, model);
+          return !existing.has(f.toLowerCase());
+        })
+      : [];
+
+    if (rejectedOn400.length > 0) {
+      log?.debug?.("FIELDSTRIP", `Parsed fields: ${JSON.stringify(rejectedOn400)} provider=${provider} model=${model}`);
+      addRejectedFields(provider, model, rejectedOn400);
+      const stripped = stripRejectedFields(translatedBody, provider, model);
+      if (stripped) {
+        log?.debug?.("FIELDSTRIP", `Stripped body sent. Fields blocked: ${rejectedOn400.join(", ")}`);
+        try {
+          const retryResult = await executor.execute({
+            model, body: stripped, stream, credentials,
+            signal: streamController.signal, log, proxyOptions
+          });
+          if (retryResult.response.ok) {
+            providerResponse = retryResult.response;
+            providerUrl = retryResult.url;
+            providerResponseFormat = retryResult.responseFormat || targetFormat;
+            translatedBody = stripped;
+            trackPendingRequest(model, provider, connectionId, false);
+            appendRequestLog({ model, provider, connectionId, status: "OK after field-strip" }).catch(() => { });
+            log?.debug?.("FIELDSTRIP", `Retry succeeded for ${provider}/${model}`);
+            const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
+            const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
+            const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
+            if (!clientRequestedStreaming && providerRequiresStreaming) {
+              const s2j = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, customToolNames, trackDone, appendLog });
+              if (s2j) return s2j;
+            }
+            if (!stream) {
+              const nr = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, reqLogger, toolNameMap, customToolNames, trackDone, appendLog });
+              return nr;
+            }
+            const { onStreamComplete, streamDetailId } = (await import('./chatCore/streamingHandler.js')).buildOnStreamComplete({ ...sharedCtx });
+            return (await import('./chatCore/streamingHandler.js')).handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, userAgent, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId });
+          } else {
+            log?.warn?.("FIELDSTRIP", `Retry still failed: ${retryResult.response.status} ${retryResult.response.statusText}`);
+          }
+        } catch (e) {
+          log?.warn?.("FIELDSTRIP", `Retry threw: ${e.message}`);
+        }
+      } else {
+        log?.warn?.("FIELDSTRIP", `stripRejectedFields returned null — no fields to strip or body unchanged`);
+      }
+    } else {
+      log?.debug?.("FIELDSTRIP", `No rejected fields parsed from error (statusCode=${statusCode})`);
+    }
+
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => { });
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
@@ -428,7 +489,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       pxpipe: pxpipeSummary,
       status: "error"
     })).catch(() => { });
-
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
     if (log?.errorLine) {
       const urlStr = providerUrl ? `\n    URL: ${providerUrl}` : "";
