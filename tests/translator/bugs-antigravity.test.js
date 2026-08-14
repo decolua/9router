@@ -136,4 +136,143 @@ describe("Antigravity executor", () => {
     expect(system).not.toContain(ANTIGRAVITY_DEFAULT_SYSTEM);
     expect(system).not.toContain("Please ignore the following [ignore]");
   });
+
+  it("multiple calls to the same tool name in different turns get unique stable IDs", () => {
+    const out = AG2O({
+      contents: [
+        { role: "model", parts: [{ functionCall: { name: "grep_search", args: { query: "hello" } } }] },
+        { role: "user", parts: [{ functionResponse: { name: "grep_search", response: { result: "res1" } } }] },
+        { role: "model", parts: [{ functionCall: { name: "grep_search", args: { query: "world" } } }] },
+        { role: "user", parts: [{ functionResponse: { name: "grep_search", response: { result: "res2" } } }] },
+      ],
+    });
+
+    const calls = out.messages.filter((m) => m.role === "assistant" && m.tool_calls);
+    const tools = out.messages.filter((m) => m.role === "tool");
+
+    expect(calls.length).toBe(2);
+    expect(tools.length).toBe(2);
+
+    const call1Id = calls[0].tool_calls[0].id;
+    const call2Id = calls[1].tool_calls[0].id;
+    const tool1Id = tools[0].tool_call_id;
+    const tool2Id = tools[1].tool_call_id;
+
+    // Check that tool call IDs are unique
+    expect(call1Id).not.toBe(call2Id);
+    
+    // Check that the tool response IDs match the corresponding tool call IDs
+    expect(tool1Id).toBe(call1Id);
+    expect(tool2Id).toBe(call2Id);
+  });
+
+  it("openaiToAntigravityRequest preserves empty string tool responses without dropping functionResponse", () => {
+    const out = openaiToAntigravityRequest("gemini-3.6-flash-high", {
+      messages: [
+        { role: "user", content: "find files" },
+        {
+          role: "assistant",
+          tool_calls: [{
+            id: "call_abc123",
+            type: "function",
+            function: { name: "grep_search", arguments: '{"query":"test"}' }
+          }]
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_abc123",
+          content: "" // empty tool response output
+        }
+      ]
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const contents = out.request.contents;
+    expect(contents.length).toBe(3); // user -> model -> user (functionResponse)
+    const lastTurn = contents[2];
+    expect(lastTurn.role).toBe("user");
+    expect(lastTurn.parts[0].functionResponse).toBeDefined();
+    expect(lastTurn.parts[0].functionResponse.name).toBe("grep_search");
+    expect(lastTurn.parts[0].functionResponse.response).toEqual({ result: "" });
+  });
+
+  it("openaiToAntigravityRequest normalizes trailing model turn to end with user turn", () => {
+    const out = openaiToAntigravityRequest("gemini-3.6-flash-high", {
+      messages: [
+        { role: "user", content: "hello" },
+        { role: "assistant", content: "hi there" }
+      ]
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const contents = out.request.contents;
+    const lastTurn = contents[contents.length - 1];
+    expect(lastTurn.role).toBe("user");
+  });
+
+  it("openaiToAntigravityRequest wraps JSON array tool outputs into an object to prevent Protobuf Proto field list error", () => {
+    const out = openaiToAntigravityRequest("gemini-3.6-flash-high", {
+      messages: [
+        { role: "user", content: "find files" },
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "call_search_1",
+              type: "function",
+              function: { name: "search", arguments: "{}" }
+            }
+          ]
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_search_1",
+          content: JSON.stringify([{ file: "index.js", line: 10 }, { file: "app.js", line: 20 }])
+        }
+      ]
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const contents = out.request.contents;
+    const toolTurn = contents.find((c) => c.parts?.some((p) => p.functionResponse));
+    expect(toolTurn).toBeDefined();
+    const fnResp = toolTurn.parts[0].functionResponse;
+    expect(fnResp.name).toBe("search");
+    expect(Array.isArray(fnResp.response)).toBe(false);
+    expect(typeof fnResp.response).toBe("object");
+    expect(fnResp.response).toEqual({
+      result: [{ file: "index.js", line: 10 }, { file: "app.js", line: 20 }]
+    });
+  });
+
+  it("openaiToAntigravityRequest strips null bytes and ANSI control characters from tool outputs and text", () => {
+    const out = openaiToAntigravityRequest("gemini-3.6-flash-high", {
+      messages: [
+        { role: "user", content: "run dir\u0000 command" },
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "call_cmd_1",
+              type: "function",
+              function: { name: "execute_command", arguments: JSON.stringify({ command: "cmd /c dir\u0000" }) }
+            }
+          ]
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_cmd_1",
+          content: "Volume in drive C\u0000\u001b[32m Header\u001b[0m\r\nDirectory of C:\\"
+        }
+      ]
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const contents = out.request.contents;
+    const userTurn = contents[0];
+    expect(userTurn.parts[0].text).toBe("run dir command");
+
+    const toolTurn = contents.find((c) => c.parts?.some((p) => p.functionResponse));
+    expect(toolTurn).toBeDefined();
+    const fnResp = toolTurn.parts[0].functionResponse;
+    expect(fnResp.response.result).not.toContain("\u0000");
+    expect(fnResp.response.result).not.toContain("\u001b[32m");
+    expect(fnResp.response.result).toContain("Volume in drive C Header\r\nDirectory of C:\\");
+  });
 });

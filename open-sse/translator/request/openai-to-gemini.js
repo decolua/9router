@@ -19,6 +19,32 @@ import {
 import { deriveSessionId, toNumericSessionId } from "../../utils/sessionManager.js";
 import { ROLE, GEMINI_ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 
+// Sanitize strings for Gemini API: ensure well-formed UTF-8, remove null bytes, control chars, and ANSI/OSC escape sequences.
+function sanitizeStringForGemini(str) {
+  if (typeof str !== "string") return str;
+  let clean = typeof str.toWellFormed === "function" ? str.toWellFormed() : str;
+  return clean
+    .replace(/\u0000/g, "")
+    .replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .replace(/\u001b\[[0-9;?]*[a-zA-Z]/g, "")
+    .replace(/\u001b\].*?(\u0007|\u001b\\)/g, "")
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD");
+}
+
+function sanitizeObjectForGemini(val) {
+  if (val === null || val === undefined) return val;
+  if (typeof val === "string") return sanitizeStringForGemini(val);
+  if (Array.isArray(val)) return val.map(sanitizeObjectForGemini);
+  if (typeof val === "object") {
+    const cleanObj = {};
+    for (const [k, v] of Object.entries(val)) {
+      cleanObj[k] = sanitizeObjectForGemini(v);
+    }
+    return cleanObj;
+  }
+  return val;
+}
+
 // Sanitize function names for Gemini API.
 // Gemini requires: starts with [a-zA-Z_], followed by [a-zA-Z0-9_.:\-], max 64 chars.
 // Replace any invalid character with '_' and truncate to 64.
@@ -41,6 +67,12 @@ function normalizeGeminiContents(contents) {
     const last = out.at(-1);
     if (last?.role === c.role) last.parts.push(...c.parts);
     else out.push({ ...c, parts: [...c.parts] });
+  }
+  if (out.length > 0 && out[out.length - 1].role === GEMINI_ROLE.MODEL) {
+    out.push({
+      role: GEMINI_ROLE.USER,
+      parts: [{ text: "Continue" }]
+    });
   }
   return out;
 }
@@ -127,62 +159,46 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
         if (content) {
           const text = typeof content === "string" ? content : extractTextContent(content);
           if (text) {
-            parts.push({ text });
+            parts.push({ text: sanitizeStringForGemini(text) });
           }
         }
 
         if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
-          const toolCallIds = [];
+          const toolCallInfos = [];
           for (const tc of msg.tool_calls) {
             if (tc.type !== OPENAI_BLOCK.FUNCTION) continue;
 
             const args = tryParseJSON(tc.function?.arguments || "{}");
+            const sanitizedName = sanitizeGeminiFunctionName(tc.function?.name);
             parts.push({
               thoughtSignature: signature,
               functionCall: {
                 id: tc.id,
-                name: sanitizeGeminiFunctionName(tc.function.name),
-                args: args
+                name: sanitizedName,
+                args: sanitizeObjectForGemini(args)
               }
             });
-            toolCallIds.push(tc.id);
+            toolCallInfos.push({ id: tc.id, name: sanitizedName });
           }
 
           if (parts.length > 0) {
             result.contents.push({ role: GEMINI_ROLE.MODEL, parts });
           }
 
-          // Check if there are actual tool responses in the next messages
-          const hasActualResponses = toolCallIds.some(fid => toolResponses[fid]);
-
-          if (hasActualResponses) {
+          if (toolCallInfos.length > 0) {
             const toolParts = [];
-            for (const fid of toolCallIds) {
-              if (!toolResponses[fid]) continue;
-
-              let name = tcID2Name[fid];
-              if (!name) {
-                const idParts = fid.split("-");
-                if (idParts.length > 2) {
-                  name = idParts.slice(0, -2).join("-");
-                } else {
-                  name = fid;
-                }
-              }
-
-              let resp = toolResponses[fid];
-              let parsedResp = tryParseJSON(resp);
-              if (parsedResp === null) {
-                parsedResp = { result: resp };
-              } else if (typeof parsedResp !== "object") {
-                parsedResp = { result: parsedResp };
+            for (const { id: fid, name: fnName } of toolCallInfos) {
+              const rawResp = toolResponses[fid] ?? "";
+              let parsedResp = tryParseJSON(rawResp);
+              if (parsedResp === null || typeof parsedResp !== "object" || Array.isArray(parsedResp)) {
+                parsedResp = { result: parsedResp ?? rawResp };
               }
 
               toolParts.push({
                 functionResponse: {
                   id: fid,
-                  name: sanitizeGeminiFunctionName(name),
-                  response: { result: parsedResp }
+                  name: fnName,
+                  response: sanitizeObjectForGemini(parsedResp)
                 }
               });
             }
@@ -337,14 +353,14 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
       if (Array.isArray(msg.content)) {
         for (const block of msg.content) {
           if (block.type === CLAUDE_BLOCK.TEXT) {
-            parts.push({ text: block.text });
+            parts.push({ text: sanitizeStringForGemini(block.text) });
           } else if (block.type === CLAUDE_BLOCK.TOOL_USE) {
             parts.push({
               thoughtSignature: signature,
               functionCall: {
                 id: block.id,
                 name: sanitizeGeminiFunctionName(block.name),
-                args: block.input || {}
+                args: sanitizeObjectForGemini(block.input || {})
               }
             });
           } else if (block.type === CLAUDE_BLOCK.TOOL_RESULT) {
@@ -356,17 +372,21 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
             const resolvedName = toolUseIdToName[block.tool_use_id]
               ? sanitizeGeminiFunctionName(toolUseIdToName[block.tool_use_id])
               : "tool";
+            const parsedResp = tryParseJSON(content);
+            const responseObj = (parsedResp !== null && typeof parsedResp === "object" && !Array.isArray(parsedResp))
+              ? parsedResp
+              : { result: parsedResp ?? content };
             parts.push({
               functionResponse: {
                 id: block.tool_use_id,
                 name: resolvedName,
-                response: { result: tryParseJSON(content) || content }
+                response: sanitizeObjectForGemini(responseObj)
               }
             });
           }
         }
       } else if (typeof msg.content === "string") {
-        parts.push({ text: msg.content });
+        parts.push({ text: sanitizeStringForGemini(msg.content) });
       }
 
       if (parts.length > 0) {

@@ -1,5 +1,7 @@
 import { getProviderConnections, updateProviderConnection } from "@/lib/localDb.js";
+import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy.js";
 import { getExecutor } from "open-sse/index.js";
+import { resolveAntigravityProjectId } from "open-sse/services/projectId.js";
 
 async function persistRefreshedCredentials(connection, newCredentials) {
   const updateData = {};
@@ -46,6 +48,16 @@ export async function POST(request) {
       return Response.json({ success: false, error: `No active connection for provider: ${provider}` }, { status: 400 });
     }
 
+    const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+
+    let projectId = connection.projectId;
+    if ((provider === "antigravity" || provider === "gemini-cli") && !projectId) {
+      projectId = await resolveAntigravityProjectId({ credentials: connection, connectionId: connection.id, accessToken: connection.accessToken, provider });
+      if (projectId) {
+        await updateProviderConnection(connection.id, { projectId });
+      }
+    }
+
     const credentials = {
       apiKey: connection.apiKey,
       accessToken: connection.accessToken,
@@ -55,24 +67,42 @@ export async function POST(request) {
       connectionId: connection.id,
       copilotToken: connection.providerSpecificData?.copilotToken,
       copilotTokenExpiresAt: connection.providerSpecificData?.copilotTokenExpiresAt,
-      projectId: connection.projectId,
-      providerSpecificData: connection.providerSpecificData
+      projectId: projectId,
+      providerSpecificData: {
+        ...(connection.providerSpecificData || {}),
+        connectionProxyEnabled: resolvedProxy.connectionProxyEnabled,
+        connectionProxyUrl: resolvedProxy.connectionProxyUrl,
+        connectionNoProxy: resolvedProxy.connectionNoProxy,
+        connectionProxyPoolId: resolvedProxy.proxyPoolId || null,
+        vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
+        proxySource: resolvedProxy.source || "none",
+      }
+    };
+
+    const proxyOptions = {
+      connectionProxyEnabled: resolvedProxy.connectionProxyEnabled,
+      connectionProxyUrl: resolvedProxy.connectionProxyUrl,
+      connectionNoProxy: resolvedProxy.connectionNoProxy,
+      vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
+      proxySource: resolvedProxy.source || "none",
+      proxyPoolId: resolvedProxy.proxyPoolId || null,
     };
 
     const executor = getExecutor(provider);
     const stream = body.stream !== false;
 
-    let { response } = await executor.execute({ model, body, stream, credentials });
+    let { response } = await executor.execute({ model, body, stream, credentials, proxyOptions });
 
     // Auto-refresh token on 401/403 and retry (same as chatCore.js)
     if (response.status === 401 || response.status === 403) {
-      const newCredentials = await executor.refreshCredentials(credentials, console);
+      const newCredentials = await executor.refreshCredentials(credentials, console, proxyOptions);
       if (newCredentials?.accessToken || newCredentials?.copilotToken) {
         Object.assign(credentials, newCredentials);
         await persistRefreshedCredentials(connection, newCredentials);
-        ({ response } = await executor.execute({ model, body, stream, credentials }));
+        ({ response } = await executor.execute({ model, body, stream, credentials, proxyOptions }));
       }
     }
+
 
     if (!response.ok) {
       const errorText = await response.text();

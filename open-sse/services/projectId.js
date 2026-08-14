@@ -145,6 +145,50 @@ export function removeConnection(connectionId) {
     }
 }
 
+/**
+ * Single Authoritative Project Resolver for Antigravity & Gemini CLI connections.
+ * Resolution hierarchy:
+ * 1. credentials.projectId (trimmed)
+ * 2. persisted connection data.projectId
+ * 3. cached project ID in memory
+ * 4. API discovery (loadCodeAssist / onboardUser) if it yields a valid non-empty string
+ * 5. Returns null on failure (callers MUST NOT fallback to random project IDs)
+ */
+export async function resolveAntigravityProjectId({ credentials, connectionId, accessToken, provider = "antigravity" }) {
+    if (!credentials && !connectionId) return null;
+
+    // 1. Direct credentials.projectId
+    const credPid = typeof credentials?.projectId === "string" ? credentials.projectId.trim() : null;
+    if (credPid) return credPid;
+
+    // 2. Underlying connection data
+    const connPid = typeof credentials?._connection?.projectId === "string" ? credentials._connection.projectId.trim() : null;
+    if (connPid) return connPid;
+
+    const connId = connectionId || credentials?.connectionId || credentials?.id;
+
+    // 3. Cache lookup
+    if (connId) {
+        const cached = projectIdCache.get(connId);
+        if (cached && cached.projectId && typeof cached.projectId === "string" && cached.projectId.trim()) {
+            return cached.projectId.trim();
+        }
+    }
+
+    // 4. API discovery (loadCodeAssist / onboardUser)
+    const token = accessToken || credentials?.accessToken;
+    if (connId && token) {
+        const discovered = await getProjectIdForConnection(connId, token, provider);
+        if (discovered && typeof discovered === "string" && discovered.trim()) {
+            return discovered.trim();
+        }
+    }
+
+    // 5. Resolution failed
+    return null;
+}
+
+
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 /**
@@ -238,8 +282,10 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints, provi
                     console.log(`[ProjectId] Successfully onboarded, project ID: ${projectId}`);
                     return projectId;
                 }
-                throw new Error("onboardUser done but no project_id in response");
+                console.warn("[ProjectId] onboardUser completed but no project ID returned");
+                return null;
             }
+
 
             // Server not done yet – wait and retry
             console.log(`[ProjectId] Onboard attempt ${attempt}/${MAX_ATTEMPTS}: not done yet, waiting...`);
@@ -268,42 +314,39 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints, provi
     return null;
 }
 
+function parseProjectIdVal(val) {
+    if (!val) return null;
+    if (typeof val === "string" && val.trim()) {
+        const cleaned = val.replace(/^projects\//, "").trim();
+        if (cleaned) return cleaned;
+    }
+    if (typeof val === "object") {
+        const id = val.id || val.projectId || val.projectNumber || val.name;
+        if (id != null) {
+            const cleaned = String(id).replace(/^projects\//, "").trim();
+            if (cleaned) return cleaned;
+        }
+    }
+    return null;
+}
+
 /**
  * Extract project ID from loadCodeAssist response.
  */
 function extractProjectId(data) {
     if (!data) return null;
-
-    if (typeof data.cloudaicompanionProject === "string") {
-        const id = data.cloudaicompanionProject.trim();
-        if (id) return id;
-    }
-
-    if (data.cloudaicompanionProject && typeof data.cloudaicompanionProject === "object") {
-        const id = data.cloudaicompanionProject.id;
-        if (typeof id === "string" && id.trim()) return id.trim();
-    }
-
-    return null;
+    return parseProjectIdVal(data.cloudaicompanionProject) ||
+           parseProjectIdVal(data.projectId) ||
+           parseProjectIdVal(data.project);
 }
 
 /**
  * Extract project ID from onboardUser response.
  */
 function extractProjectIdFromOnboard(data) {
-    if (!data?.response) return null;
-
-    const project = data.response.cloudaicompanionProject;
-
-    if (typeof project === "string") {
-        const id = project.trim();
-        if (id) return id;
-    }
-
-    if (project && typeof project === "object") {
-        const id = project.id;
-        if (typeof id === "string" && id.trim()) return id.trim();
-    }
-
-    return null;
+    if (!data) return null;
+    const resp = data.response || data;
+    return parseProjectIdVal(resp.cloudaicompanionProject) ||
+           parseProjectIdVal(resp.projectId) ||
+           parseProjectIdVal(resp.project);
 }

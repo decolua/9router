@@ -5,6 +5,7 @@ import { encodeDataUri } from "../concerns/image.js";
 import { ROLE, GEMINI_ROLE, OPENAI_BLOCK } from "../schema/index.js";
 import { budgetToEffort } from "../concerns/thinking.js";
 import { collapseTextParts } from "../concerns/message.js";
+import { generateToolCallId } from "../concerns/toolCall.js";
 
 // Convert Antigravity request to OpenAI format
 // Antigravity body: { project, model, userAgent, requestType, requestId, request: { contents, systemInstruction, tools, toolConfig, generationConfig, sessionId } }
@@ -50,8 +51,9 @@ export function antigravityToOpenAIRequest(model, body, stream) {
 
   // Convert contents to messages
   if (req.contents && Array.isArray(req.contents)) {
-    for (const content of req.contents) {
-      const converted = convertContent(content);
+    for (let i = 0; i < req.contents.length; i++) {
+      const content = req.contents[i];
+      const converted = convertContent(content, i);
       if (converted) {
         if (Array.isArray(converted)) {
           result.messages.push(...converted);
@@ -117,7 +119,7 @@ function normalizeSchemaTypes(schema) {
 
 // Convert Antigravity content to OpenAI message
 // Handles: text, thought, thoughtSignature, functionCall, functionResponse, inlineData
-function convertContent(content) {
+function convertContent(content, msgIndex = 0) {
   const role = content.role === GEMINI_ROLE.MODEL ? ROLE.ASSISTANT : content.role === GEMINI_ROLE.USER ? ROLE.USER : content.role;
 
   if (!content.parts || !Array.isArray(content.parts)) {
@@ -161,9 +163,10 @@ function convertContent(content) {
 
     // Function call
     if (part.functionCall) {
+      const tcIdx = toolCalls.length;
       toolCalls.push({
         // Deterministic id from name so the matching functionResponse pairs correctly.
-        id: part.functionCall.id || `call_${part.functionCall.name}`,
+        id: part.functionCall.id || generateToolCallId(msgIndex, tcIdx, part.functionCall.name),
         type: OPENAI_BLOCK.FUNCTION,
         function: {
           name: part.functionCall.name,
@@ -174,9 +177,10 @@ function convertContent(content) {
 
     // Function response → collect all, each becomes a separate tool message
     if (part.functionResponse) {
+      const trIdx = toolResults.length;
       toolResults.push({
         role: ROLE.TOOL,
-        tool_call_id: part.functionResponse.id || `call_${part.functionResponse.name}`,
+        tool_call_id: part.functionResponse.id || generateToolCallId(msgIndex - 1, trIdx, part.functionResponse.name),
         content: JSON.stringify(part.functionResponse.response?.result || part.functionResponse.response || {})
       });
     }

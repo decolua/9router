@@ -91,7 +91,9 @@ export function mergeRefreshedCredentials(provider, currentCredentials, refreshe
     next.expiresAt = refreshedCredentials.expiresAt;
   }
 
-  if (refreshedCredentials.projectId) next.projectId = refreshedCredentials.projectId;
+  const projectId = refreshedCredentials.projectId ?? currentCredentials?.projectId;
+  if (projectId) next.projectId = projectId;
+
 
   if (refreshedCredentials.providerSpecificData) {
     next.providerSpecificData = mergeProviderSpecificData(
