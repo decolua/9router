@@ -38,9 +38,15 @@ export function ensureToolCallIds(body) {
         if (!tc.type) {
           tc.type = "function";
         }
-        // Ensure arguments is JSON string, not object
-        if (tc.function?.arguments && typeof tc.function.arguments !== "string") {
-          tc.function.arguments = JSON.stringify(tc.function.arguments);
+        // OpenAI-compatible history requires function.arguments to be a JSON
+        // string even when the tool takes no arguments. Some clients replay an
+        // empty call as missing/null/"", which strict upstreams reject.
+        if (tc.function && typeof tc.function === "object") {
+          if (tc.function.arguments == null || tc.function.arguments === "") {
+            tc.function.arguments = "{}";
+          } else if (typeof tc.function.arguments !== "string") {
+            tc.function.arguments = JSON.stringify(tc.function.arguments);
+          }
         }
       }
     }
