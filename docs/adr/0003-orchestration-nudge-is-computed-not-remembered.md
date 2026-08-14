@@ -94,3 +94,12 @@ measured backing the cap of six has.
 `CLAUDE.md`. It is exported and asserted in `tests/unit/orchestration-nudge.test.js`
 so a change on one side shows up as a test edit on the other, but the two files are
 not linked by anything stronger than that.
+
+---
+
+**Superseded 2026-08-15.** The nudge is removed and `rtk/orchestrationNudge.js`
+with it. Its cap of 6 sat below its own break-even — a delegation costs a median
+313,582 units against 34,514 for a main-thread turn, so it is worth ~9 inline
+turns — and this ADR already conceded it "nudges and cannot compel", which
+session dce6e9bd then demonstrated. `rtk/languageLock.js` now occupies the slot
+in `chatCore.js`.

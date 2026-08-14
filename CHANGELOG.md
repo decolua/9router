@@ -1,6 +1,23 @@
 # Unreleased
 
 ## Fixes
+- **Router**: the orchestration nudge is removed (`rtk/orchestrationNudge.js`,
+  ADR 0003, now marked superseded). It stated a live novel-context count whenever a
+  session passed a delegation cap of 6. Two measurements retired it. The cap was below
+  its own break-even — a delegation costs a median 313,582 units against 34,514 for a
+  main-thread turn, so it is worth ~9 inline turns, and firing at 6 pushed every session
+  it touched into a losing trade. And it did not work: ADR 0003 conceded it "nudges and
+  cannot compel", then session dce6e9bd took 23 further inline calls with the nudge
+  firing at `firm` on all five logged turns. An ineffective instruction on every request
+  is a standing tax on the system prompt that also trains the model to discount it.
+- **Router**: new `rtk/languageLock.js` pins every part of a response to one language
+  (`NINER_RESPONSE_LANGUAGE`, default English), taking the slot the nudge vacated in
+  `chatCore.js`. Cheaper bands reason in Chinese and occasionally carry it into visible
+  output — 135 Han occurrences across 223 transcripts, nearly all inside `thinking`
+  blocks, which this operator reads directly because the client runs in verbose mode.
+  Filtering the output was rejected: stripping CJK would corrupt any legitimate quotation
+  of file content, and it treats the symptom at the last possible moment. An instruction
+  reaches the model before it generates and costs ~40 tokens.
 - **Translator (gemini→claude)**: a started stream can no longer end without
   renderable content. Gemini omits `content.parts` entirely when it blocks a
   candidate, so a `SAFETY`/`RECITATION`/`PROHIBITED_CONTENT` finish emitted

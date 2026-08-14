@@ -23,7 +23,7 @@ import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
 import { injectDisciplineNudge } from "../rtk/disciplineNudge.js";
-import { injectOrchestrationNudge } from "../rtk/orchestrationNudge.js";
+import { injectLanguageLock } from "../rtk/languageLock.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { compressWithPxpipe } from "../rtk/pxpipe.js";
@@ -270,16 +270,24 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     xf.push("NUDGE");
   }
 
-  // Orchestration nudge: states the live novel-context count when the session is
-  // past the delegation cap. Counted from the SOURCE body, where tool blocks are
-  // still in the client's shape, and injected into the translated body — so it
-  // reaches every combo and every provider format without per-handler wiring.
-  // Unconditional for the same reason as the discipline nudge: this is a policy
-  // correction, not a token saver, and a lead 14 calls over cap needs telling
-  // whether or not compression is enabled.
-  const orchTier = injectOrchestrationNudge(translatedBody, finalFormat, body);
-  if (orchTier) {
-    xf.push(`ORCH:${orchTier}`);
+  // Language lock: pin every part of the response to one language. Unconditional
+  // for the same reason as the discipline nudge — a policy setting, not a token
+  // saver. See rtk/languageLock.js for why this is an instruction and not a
+  // filter over the output.
+  //
+  // This replaced the orchestration nudge (ADR 0003), which stated the live
+  // novel-context count whenever a session was past a delegation cap of 6. Two
+  // measurements retired it. The cap was below its own break-even: a delegation
+  // costs a median 313,582 units against 34,514 for a main-thread turn, so it is
+  // worth ~9 inline turns and the nudge fired at 6, pushing every session it
+  // touched into a losing trade. And it did not work — ADR 0003 conceded it
+  // "nudges and cannot compel", then session dce6e9bd took 23 further inline
+  // calls with the nudge firing at `firm` on all five logged turns. An
+  // ineffective instruction on every request is not free; it is a standing tax
+  // on the system prompt that also trains the model to discount what it says.
+  const lockedLanguage = injectLanguageLock(translatedBody, finalFormat);
+  if (lockedLanguage) {
+    xf.push(`LANG:${lockedLanguage}`);
   }
 
   // PXPIPE: image bulky context (Claude-format bodies only), last saver before dispatch
