@@ -241,4 +241,38 @@ describe("Antigravity executor", () => {
       result: [{ file: "index.js", line: 10 }, { file: "app.js", line: 20 }]
     });
   });
+
+  it("openaiToAntigravityRequest strips null bytes and ANSI control characters from tool outputs and text", () => {
+    const out = openaiToAntigravityRequest("gemini-3.6-flash-high", {
+      messages: [
+        { role: "user", content: "run dir\u0000 command" },
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "call_cmd_1",
+              type: "function",
+              function: { name: "execute_command", arguments: JSON.stringify({ command: "cmd /c dir\u0000" }) }
+            }
+          ]
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_cmd_1",
+          content: "Volume in drive C\u0000\u001b[32m Header\u001b[0m\r\nDirectory of C:\\"
+        }
+      ]
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const contents = out.request.contents;
+    const userTurn = contents[0];
+    expect(userTurn.parts[0].text).toBe("run dir command");
+
+    const toolTurn = contents.find((c) => c.parts?.some((p) => p.functionResponse));
+    expect(toolTurn).toBeDefined();
+    const fnResp = toolTurn.parts[0].functionResponse;
+    expect(fnResp.response.result).not.toContain("\u0000");
+    expect(fnResp.response.result).not.toContain("\u001b[32m");
+    expect(fnResp.response.result).toContain("Volume in drive C Header\r\nDirectory of C:\\");
+  });
 });

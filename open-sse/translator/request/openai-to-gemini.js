@@ -19,6 +19,29 @@ import {
 import { deriveSessionId, toNumericSessionId } from "../../utils/sessionManager.js";
 import { ROLE, GEMINI_ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 
+// Sanitize strings for Gemini API: remove null bytes, control chars, and ANSI escape sequences.
+function sanitizeStringForGemini(str) {
+  if (typeof str !== "string") return str;
+  return str
+    .replace(/\u0000/g, "")
+    .replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .replace(/\u001b\[[0-9;]*[a-zA-Z]/g, "");
+}
+
+function sanitizeObjectForGemini(val) {
+  if (val === null || val === undefined) return val;
+  if (typeof val === "string") return sanitizeStringForGemini(val);
+  if (Array.isArray(val)) return val.map(sanitizeObjectForGemini);
+  if (typeof val === "object") {
+    const cleanObj = {};
+    for (const [k, v] of Object.entries(val)) {
+      cleanObj[k] = sanitizeObjectForGemini(v);
+    }
+    return cleanObj;
+  }
+  return val;
+}
+
 // Sanitize function names for Gemini API.
 // Gemini requires: starts with [a-zA-Z_], followed by [a-zA-Z0-9_.:\-], max 64 chars.
 // Replace any invalid character with '_' and truncate to 64.
@@ -133,7 +156,7 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
         if (content) {
           const text = typeof content === "string" ? content : extractTextContent(content);
           if (text) {
-            parts.push({ text });
+            parts.push({ text: sanitizeStringForGemini(text) });
           }
         }
 
@@ -149,7 +172,7 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
               functionCall: {
                 id: tc.id,
                 name: sanitizedName,
-                args: args
+                args: sanitizeObjectForGemini(args)
               }
             });
             toolCallInfos.push({ id: tc.id, name: sanitizedName });
@@ -172,7 +195,7 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
                 functionResponse: {
                   id: fid,
                   name: fnName,
-                  response: parsedResp
+                  response: sanitizeObjectForGemini(parsedResp)
                 }
               });
             }
@@ -327,14 +350,14 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
       if (Array.isArray(msg.content)) {
         for (const block of msg.content) {
           if (block.type === CLAUDE_BLOCK.TEXT) {
-            parts.push({ text: block.text });
+            parts.push({ text: sanitizeStringForGemini(block.text) });
           } else if (block.type === CLAUDE_BLOCK.TOOL_USE) {
             parts.push({
               thoughtSignature: signature,
               functionCall: {
                 id: block.id,
                 name: sanitizeGeminiFunctionName(block.name),
-                args: block.input || {}
+                args: sanitizeObjectForGemini(block.input || {})
               }
             });
           } else if (block.type === CLAUDE_BLOCK.TOOL_RESULT) {
@@ -354,13 +377,13 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
               functionResponse: {
                 id: block.tool_use_id,
                 name: resolvedName,
-                response: responseObj
+                response: sanitizeObjectForGemini(responseObj)
               }
             });
           }
         }
       } else if (typeof msg.content === "string") {
-        parts.push({ text: msg.content });
+        parts.push({ text: sanitizeStringForGemini(msg.content) });
       }
 
       if (parts.length > 0) {
