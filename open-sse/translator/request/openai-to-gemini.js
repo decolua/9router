@@ -19,13 +19,16 @@ import {
 import { deriveSessionId, toNumericSessionId } from "../../utils/sessionManager.js";
 import { ROLE, GEMINI_ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 
-// Sanitize strings for Gemini API: remove null bytes, control chars, and ANSI escape sequences.
+// Sanitize strings for Gemini API: ensure well-formed UTF-8, remove null bytes, control chars, and ANSI/OSC escape sequences.
 function sanitizeStringForGemini(str) {
   if (typeof str !== "string") return str;
-  return str
+  let clean = typeof str.toWellFormed === "function" ? str.toWellFormed() : str;
+  return clean
     .replace(/\u0000/g, "")
     .replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "")
-    .replace(/\u001b\[[0-9;]*[a-zA-Z]/g, "");
+    .replace(/\u001b\[[0-9;?]*[a-zA-Z]/g, "")
+    .replace(/\u001b\].*?(\u0007|\u001b\\)/g, "")
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD");
 }
 
 function sanitizeObjectForGemini(val) {
