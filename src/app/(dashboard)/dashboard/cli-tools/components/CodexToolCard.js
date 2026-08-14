@@ -5,6 +5,7 @@ import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/comp
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
+import BashSetupButton from "./BashSetupButton";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 
 export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
@@ -233,6 +234,7 @@ model = "${effectiveSubagentModel}"
                   </div>
                 </div>
                 <div className="flex items-center gap-2 pl-9">
+                  <BashSetupButton tool="codex" baseUrl={getEffectiveBaseUrl()} apiKey={selectedApiKey} model={selectedModel} className="!bg-yellow-500/20 !border-yellow-500/40 !text-yellow-700 dark:!text-yellow-300 hover:!bg-yellow-500/30" />
                   <Button variant="secondary" size="sm" onClick={() => setShowManualConfigModal(true)} className="!bg-yellow-500/20 !border-yellow-500/40 !text-yellow-700 dark:!text-yellow-300 hover:!bg-yellow-500/30">
                     <span className="material-symbols-outlined text-[18px] mr-1">content_copy</span>
                     Manual Config
@@ -364,6 +366,7 @@ model = "${effectiveSubagentModel}"
                 <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)}>
                   <span className="material-symbols-outlined text-[14px] mr-1">content_copy</span>Manual Config
                 </Button>
+                <BashSetupButton tool="codex" baseUrl={getEffectiveBaseUrl()} apiKey={selectedApiKey} model={selectedModel} variant="ghost" />
               </div>
             </>
           )}

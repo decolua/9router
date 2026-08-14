@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 
 const STORAGE_KEY = "9router.cliToolEndpointPresets";
 const CUSTOM_VALUE = "__custom__";
+const subscribe = () => () => {};
 const SAVE_VALUE = "__save__";
 
 const ensureV1 = (url) => {
@@ -29,13 +30,9 @@ const writeSavedPresets = (presets) => {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(presets));
 };
 
-const buildOptions = ({ requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, cloudEnabled, cloudUrl, savedPresets, withV1 }) => {
+const buildOptions = ({ requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, cloudEnabled, cloudUrl, savedPresets, withV1, browserOrigin }) => {
   const opts = [];
   const wrap = (url) => (withV1 ? ensureV1(url) : (url || "").replace(/\/+$/, ""));
-  if (!requiresExternalUrl) {
-    const localUrl = wrap(`http://127.0.0.1:${UPDATER_CONFIG.appPort}`);
-    opts.push({ value: "local", label: localUrl, url: localUrl });
-  }
   if (tunnelEnabled && tunnelPublicUrl) {
     const u = wrap(tunnelPublicUrl);
     opts.push({ value: "tunnel", label: u, url: u });
@@ -47,6 +44,10 @@ const buildOptions = ({ requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tai
   if (cloudEnabled && cloudUrl) {
     const u = wrap(cloudUrl);
     opts.push({ value: "cloud", label: u, url: u });
+  }
+  if (!requiresExternalUrl) {
+    const localUrl = wrap(browserOrigin || `http://127.0.0.1:${UPDATER_CONFIG.appPort}`);
+    opts.push({ value: "host", label: localUrl, url: localUrl });
   }
   savedPresets.forEach((p) => {
     opts.push({ value: `saved:${p.name}`, label: p.baseUrl, url: p.baseUrl, saved: true });
@@ -70,6 +71,7 @@ export default function BaseUrlSelect({
   const [savedPresets, setSavedPresets] = useState([]);
   const [mode, setMode] = useState("");
   const [customInput, setCustomInput] = useState("");
+  const browserOrigin = useSyncExternalStore(subscribe, () => window.location.origin, () => "");
   const initializedRef = useRef(false);
 
   useEffect(() => {
@@ -77,13 +79,14 @@ export default function BaseUrlSelect({
   }, []);
 
   const options = useMemo(
-    () => buildOptions({ requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, cloudEnabled, cloudUrl, savedPresets, withV1 }),
-    [requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, cloudEnabled, cloudUrl, savedPresets, withV1]
+    () => buildOptions({ requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, cloudEnabled, cloudUrl, savedPresets, withV1, browserOrigin }),
+    [requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, cloudEnabled, cloudUrl, savedPresets, withV1, browserOrigin]
   );
 
-  // Always default to first option (127.0.0.1) on mount, ignore persisted value
+  // Prefer Cloudflare Tunnel, then Tailscale, then the current dashboard host.
   useEffect(() => {
     if (initializedRef.current) return;
+    if (!browserOrigin && !requiresExternalUrl) return;
     if (options.length === 0) return;
     initializedRef.current = true;
     const first = options.find((o) => o.value !== CUSTOM_VALUE);
@@ -93,7 +96,7 @@ export default function BaseUrlSelect({
     } else {
       setMode(CUSTOM_VALUE);
     }
-  }, [options, onChange]);
+  }, [browserOrigin, options, onChange, requiresExternalUrl]);
 
   const handleSelect = (e) => {
     const next = e.target.value;
