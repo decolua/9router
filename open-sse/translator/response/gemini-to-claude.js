@@ -54,8 +54,19 @@ function convertFinishReason(reason) {
  * The echo filters below are a second route to the same state: if
  * filterUserEcho eats every part, no block is ever opened either.
  */
+/**
+ * Sticky, because the block-open flags are not. `stopText`/`stopThinking` set
+ * them back to false as part of closing a turn, so reading them after a finish
+ * branch has run reports "no content" for a turn that rendered perfectly well —
+ * which is how a good answer acquired a trailing "returned a response with no
+ * content" notice in production. Only `sawToolUse` was sticky, which is why
+ * tool-calling turns escaped it and the text-only ones did not.
+ */
 function hasRenderableContent(state) {
-  return Boolean(state.textBlockStarted || state.thinkingBlockStarted || state.sawToolUse);
+  return Boolean(
+    state.sawRenderable || state.textBlockStarted
+    || state.thinkingBlockStarted || state.sawToolUse,
+  );
 }
 
 /**
@@ -220,6 +231,7 @@ export function geminiToClaudeResponse(chunk, state) {
       if (!state.thinkingBlockStarted) {
         state.thinkingBlockIndex = state.nextBlockIndex++;
         state.thinkingBlockStarted = true;
+        state.sawRenderable = true;
         results.push({
           type: "content_block_start",
           index: state.thinkingBlockIndex,
@@ -268,6 +280,7 @@ export function geminiToClaudeResponse(chunk, state) {
       if (!state.textBlockStarted) {
         state.textBlockIndex = state.nextBlockIndex++;
         state.textBlockStarted = true;
+        state.sawRenderable = true;
         results.push({
           type: "content_block_start",
           index: state.textBlockIndex,
@@ -311,6 +324,11 @@ export function geminiToClaudeResponse(chunk, state) {
       usage: { output_tokens: state.usage?.output_tokens || 0 },
     });
     results.push({ type: "message_stop" });
+    // The turn is over. Gemini still sends `[DONE]` after this, and without
+    // this flag finishStream treats that terminator as a truncated stream and
+    // emits a second message_delta + message_stop — plus, once the flags above
+    // were cleared, a spurious empty-turn notice.
+    state.finishHandled = true;
   }
 
   return results.length > 0 ? results : null;

@@ -292,4 +292,58 @@ describe("gemini→claude: a started stream never ends empty", () => {
     expect(call.some((e) => e.content_block?.type === "tool_use")).toBe(true);
     expect(call.some((e) => e.delta?.type === "text_delta")).toBe(false);
   });
+
+  // Regression, observed in production on 2026-08-14 against the deployed
+  // fba16472: a complete four-stanza answer came back followed by a second
+  // content block reading "returned a response with no content", and a second
+  // message_stop. The finish branch closed the turn without marking it closed,
+  // so the `[DONE]` that Gemini sends next reached finishStream — and by then
+  // stopText had cleared textBlockStarted, so the liveness check reported an
+  // empty turn. The tests above missed it because none of them sent a
+  // terminator after a finishReason; real streams always do.
+  for (const terminator of ["[DONE]", "data: [DONE]", null]) {
+    it(`does not append an empty-turn notice when ${terminator ?? "a null chunk"} follows a complete reply`, () => {
+      const out = drive([
+        {
+          candidates: [{ content: { parts: [{ text: "hello" }] }, finishReason: "STOP" }],
+          modelVersion: "gemini-2.5-flash",
+        },
+        terminator,
+      ]);
+
+      const text = out.filter((e) => e.delta?.type === "text_delta").map((e) => e.delta.text).join("");
+      expect(text).toBe("hello");
+      expect(text).not.toContain("[9router]");
+      expect(out.filter((e) => e.type === "message_stop")).toHaveLength(1);
+      expect(out.filter((e) => e.type === "message_delta")).toHaveLength(1);
+    });
+  }
+
+  it("does not append an empty-turn notice after a completed thinking-only turn", () => {
+    const out = drive([
+      {
+        candidates: [{ content: { parts: [{ thought: true, text: "pondering" }] }, finishReason: "STOP" }],
+        modelVersion: "gemini-2.5-flash",
+      },
+      "[DONE]",
+    ]);
+
+    const text = out.filter((e) => e.delta?.type === "text_delta").map((e) => e.delta.text).join("");
+    expect(text).not.toContain("[9router]");
+    expect(out.filter((e) => e.type === "message_stop")).toHaveLength(1);
+  });
+
+  // The guard must not swallow the case it was built for: a blocked candidate
+  // still gets exactly one notice, not zero and not two.
+  it("still emits exactly one notice when a blocked candidate is followed by [DONE]", () => {
+    const out = drive([
+      { candidates: [{ finishReason: "SAFETY" }], modelVersion: "gemini-2.5-flash" },
+      "[DONE]",
+    ]);
+
+    const text = out.filter((e) => e.delta?.type === "text_delta").map((e) => e.delta.text).join("");
+    expect(text).toContain("SAFETY");
+    expect(text.match(/\[9router\]/g)).toHaveLength(1);
+    expect(out.filter((e) => e.type === "message_stop")).toHaveLength(1);
+  });
 });
