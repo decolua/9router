@@ -49,7 +49,7 @@ export const FREE_TIER_PROVIDERS = byCategory("freeTier");
 // options: list of selectable modes ("auto" = no override from server)
 // defaultMode: fallback when user hasn't configured
 // extended: claude-style thinking (thinking.type + budget_tokens) — used by most providers
-// effort: openai-style reasoning_effort — only openai + codex
+// effort: openai-style reasoning_effort — OpenAI-compatible effort providers
 export const THINKING_CONFIG = {
   extended: {
     options: ["auto", "on", "off"],

@@ -14,6 +14,8 @@ import { FORMATS } from "../formats.js";
 import { randomUUID } from "crypto";
 import { ROLE, OPENAI_BLOCK } from "../schema/index.js";
 import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
+import { getCapabilitiesForModel } from "../../providers/capabilities.js";
+import { stripThinkingSuffix } from "../concerns/thinkingUnified.js";
 
 function flattenText(content) {
   if (content == null) return "";
@@ -134,12 +136,15 @@ function convertTools(tools) {
 }
 
 export function openaiToCommandCodeRequest(model, body, stream /* , credentials */) {
+  const cleanModel = stripThinkingSuffix(model);
   const { messages, system } = convertMessages(body.messages);
+  const requestedMaxTokens = body.max_tokens ?? body.max_output_tokens ?? DEFAULT_MAX_TOKENS;
+  const maxTokens = Math.min(requestedMaxTokens, getCapabilitiesForModel("commandcode", cleanModel).maxOutput);
   const params = {
-    model,
+    model: cleanModel,
     messages,
     stream: stream !== false,
-    max_tokens: body.max_tokens ?? body.max_output_tokens ?? DEFAULT_MAX_TOKENS,
+    max_tokens: maxTokens,
     temperature: body.temperature ?? 0.3,
   };
 
