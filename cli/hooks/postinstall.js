@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 
-// Postinstall: warm-up SQLite deps into ~/.9router/runtime so the first
-// `9router` start doesn't need network. Failure here is non-fatal —
-// cli.js will retry at runtime if anything is missing.
+// Postinstall: warm up SQLite deps into ~/.9router/runtime so normal CLI startup
+// never attempts to install the optional native accelerator. Failure is non-fatal.
 const { ensureSqliteRuntime } = require("./sqliteRuntime");
 const { ensureTrayRuntime } = require("./trayRuntime");
 
 try {
-  ensureSqliteRuntime({ silent: false });
+  ensureSqliteRuntime({ silent: false, installBetterSqlite: true });
   console.log("[9router] runtime SQLite deps ready");
 } catch (e) {
   console.warn(`[9router] runtime warm-up skipped: ${e.message}`);

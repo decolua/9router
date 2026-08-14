@@ -6,7 +6,8 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const BETTER_SQLITE3_VERSION = "12.6.2";
+const BETTER_SQLITE3_VERSION = "12.10.1";
+const BETTER_SQLITE3_INSTALL_TIMEOUT = 30000;
 const SQL_JS_VERSION = "1.14.1";
 
 function getDataDir() {
@@ -114,7 +115,7 @@ function isSqlJsWasmValid() {
   return fs.existsSync(runtimeWasm);
 }
 
-function ensureSqliteRuntime({ silent = false } = {}) {
+function ensureSqliteRuntime({ silent = false, installBetterSqlite = false } = {}) {
   ensureRuntimeDir();
 
   let sqlJsOk = isSqlJsWasmValid();
@@ -129,7 +130,17 @@ function ensureSqliteRuntime({ silent = false } = {}) {
     return { betterSqlite: true, sqlJs: sqlJsOk };
   }
 
-  const ok = npmInstall([`better-sqlite3@${BETTER_SQLITE3_VERSION}`], { optional: true, silent });
+  // Native SQLite is an optional accelerator. Normal CLI startup must never block
+  // on npm/node-gyp; only postinstall explicitly opts into this bounded warm-up.
+  if (!installBetterSqlite) {
+    return { betterSqlite: false, sqlJs: sqlJsOk };
+  }
+
+  const ok = npmInstall([`better-sqlite3@${BETTER_SQLITE3_VERSION}`], {
+    optional: true,
+    silent,
+    timeout: BETTER_SQLITE3_INSTALL_TIMEOUT,
+  });
   return {
     betterSqlite: ok && hasModule("better-sqlite3") && isBetterSqliteBinaryValid(),
     sqlJs: sqlJsOk,

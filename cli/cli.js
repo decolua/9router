@@ -80,9 +80,9 @@ if (args[0] === "xai" && args[1] === "video") {
   return;
 }
 
-// Self-heal SQLite runtime deps (sql.js + better-sqlite3) into ~/.9router/runtime
-// so the server can resolve them via NODE_PATH. Best-effort — sql.js is required,
-// better-sqlite3 is optional. Logs to stderr only on failure.
+// Verify SQLite runtime deps. Missing sql.js may be repaired because it is the
+// required fallback; optional better-sqlite3 installation is postinstall-only so
+// ordinary startup never blocks on npm/node-gyp.
 try { ensureSqliteRuntime({ silent: true }); } catch {}
 
 // Self-heal tray runtime (systray for macOS/Linux only). Windows skipped.
