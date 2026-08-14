@@ -67,3 +67,37 @@ export function toOpenAIUsage(raw, kind) {
   if (!extract || !raw || typeof raw !== "object") return null;
   return buildUsage(extract(raw));
 }
+
+// Convert Chat Completions usage to the Responses API field names expected by
+// clients such as Codex and OpenCode.
+export function toResponsesUsage(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+
+  const inputTokens = n(raw.input_tokens) || n(raw.prompt_tokens);
+  const outputTokens = n(raw.output_tokens) || n(raw.completion_tokens);
+  if (!inputTokens && !outputTokens) return null;
+
+  const usage = {
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    total_tokens: n(raw.total_tokens) || inputTokens + outputTokens,
+  };
+
+  const cachedTokens =
+    n(raw.input_tokens_details?.cached_tokens) ||
+    n(raw.prompt_tokens_details?.cached_tokens) ||
+    n(raw.cached_tokens);
+  if (cachedTokens > 0) {
+    usage.input_tokens_details = { cached_tokens: cachedTokens };
+  }
+
+  const reasoningTokens =
+    n(raw.output_tokens_details?.reasoning_tokens) ||
+    n(raw.completion_tokens_details?.reasoning_tokens) ||
+    n(raw.reasoning_tokens);
+  if (reasoningTokens > 0) {
+    usage.output_tokens_details = { reasoning_tokens: reasoningTokens };
+  }
+
+  return usage;
+}

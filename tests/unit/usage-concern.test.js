@@ -1,6 +1,6 @@
 // A3: locks toOpenAIUsage per-provider token math (claude/gemini/kiro/ollama/commandcode).
 import { describe, it, expect } from "vitest";
-import { toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
+import { toOpenAIUsage, toResponsesUsage } from "../../open-sse/translator/concerns/usage.js";
 
 describe("toOpenAIUsage", () => {
   it("claude: folds cache read+create into prompt, exposes details", () => {
@@ -65,5 +65,28 @@ describe("toOpenAIUsage", () => {
   it("unknown kind / null raw -> null", () => {
     expect(toOpenAIUsage({}, "nope")).toBeNull();
     expect(toOpenAIUsage(null, "claude")).toBeNull();
+  });
+});
+
+describe("toResponsesUsage", () => {
+  it("maps Chat Completions usage and token details", () => {
+    expect(toResponsesUsage({
+      prompt_tokens: 12,
+      completion_tokens: 7,
+      total_tokens: 19,
+      prompt_tokens_details: { cached_tokens: 4 },
+      completion_tokens_details: { reasoning_tokens: 3 },
+    })).toEqual({
+      input_tokens: 12,
+      output_tokens: 7,
+      total_tokens: 19,
+      input_tokens_details: { cached_tokens: 4 },
+      output_tokens_details: { reasoning_tokens: 3 },
+    });
+  });
+
+  it("returns null when no token counts are available", () => {
+    expect(toResponsesUsage(null)).toBeNull();
+    expect(toResponsesUsage({})).toBeNull();
   });
 });

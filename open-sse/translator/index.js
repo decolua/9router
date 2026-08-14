@@ -262,6 +262,7 @@ export function initState(sourceFormat) {
       funcArgsDone: {},
       funcItemDone: {},
       customToolNames: new Set(),
+      completionPending: false,
       completedSent: false
     };
   }
