@@ -29,6 +29,7 @@ import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { stripRecognizedContextSuffix } from "../services/model.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -166,7 +167,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let customToolNames;
   if (passthrough) {
     log?.debug?.("PASSTHROUGH", `${clientTool} → ${provider} | native lossless`);
-    translatedBody = { ...body, model: stripThinkingSuffix(upstreamModel) };
+    translatedBody = { ...body, model: stripRecognizedContextSuffix(stripThinkingSuffix(upstreamModel)) };
     if (provider === "codex") {
       const suffixThinking = {};
       applyThinking(sourceFormat, upstreamModel, suffixThinking, provider);
@@ -191,7 +192,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     delete translatedBody._toolNameMap;
     customToolNames = translatedBody._customToolNames;
     delete translatedBody._customToolNames;
-    translatedBody.model = stripThinkingSuffix(upstreamModel);
+    translatedBody.model = stripRecognizedContextSuffix(stripThinkingSuffix(upstreamModel));
     stripContinuityFields(translatedBody);
   }
 
