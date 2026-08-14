@@ -307,6 +307,15 @@ export async function saveRequestUsage(entry) {
     if (inserted) {
       pushToRing(entry);
       scheduleStatsEvent("update", 250);
+      // Feed the per-key TPM window and budget from the same numbers the usage
+      // history records, so the dashboard and the limits never disagree.
+      if (entry.apiKey) {
+        const { recordKeyUsage } = await import("@/sse/services/keyPolicy.js");
+        await recordKeyUsage(entry.apiKey, {
+          tokens: promptTokens + completionTokens,
+          cost: entry.cost || 0,
+        });
+      }
     }
   } catch (e) {
     console.error("Failed to save usage stats:", e);

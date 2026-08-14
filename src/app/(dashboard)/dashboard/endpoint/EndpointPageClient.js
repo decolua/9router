@@ -76,6 +76,9 @@ export default function APIPageClient({ machineId }) {
 
   // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
+  const [limitsOpen, setLimitsOpen] = useState(null); // key id whose limits editor is open
+  const [limitsDraft, setLimitsDraft] = useState({});
+  const [availableModels, setAvailableModels] = useState([]);
 
   // Client-side local/remote detection (UI hint only, not a security gate)
   const [isRemoteHost, setIsRemoteHost] = useState(false);
@@ -667,6 +670,64 @@ export default function APIPageClient({ machineId }) {
     });
   };
 
+  // Allowlist options come from what the endpoint can actually serve, so a key
+  // cannot be pinned to a model that does not exist.
+  const loadAvailableModels = async () => {
+    if (availableModels.length) return;
+    try {
+      const res = await fetch("/api/models/access", { cache: "no-store" });
+      const data = await res.json();
+      const out = [];
+      for (const p of data.providers || []) {
+        for (const m of p.models || []) {
+          if (m.blocked) continue;
+          out.push(p.routePrefix ? `${p.routePrefix}/${m.id}` : m.id);
+        }
+      }
+      setAvailableModels([...new Set(out)].sort());
+    } catch {
+      setAvailableModels([]);
+    }
+  };
+
+  const openLimits = (key) => {
+    loadAvailableModels();
+    setLimitsOpen(key.id);
+    setLimitsDraft({
+      rpm: key.rpm ?? "",
+      tpm: key.tpm ?? "",
+      maxBudget: key.maxBudget ?? "",
+      budgetPeriod: key.budgetPeriod ?? "",
+      priority: key.priority ?? "",
+      expiresAt: key.expiresAt ? key.expiresAt.slice(0, 16) : "",
+      models: [...(key.models || [])],
+    });
+  };
+
+  const saveLimits = async (id) => {
+    try {
+      const d = limitsDraft;
+      const res = await fetch(`/api/keys/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rpm: d.rpm === "" ? null : Number(d.rpm),
+          tpm: d.tpm === "" ? null : Number(d.tpm),
+          maxBudget: d.maxBudget === "" ? null : Number(d.maxBudget),
+          budgetPeriod: d.budgetPeriod || null,
+          priority: d.priority || null,
+          expiresAt: d.expiresAt ? new Date(d.expiresAt).toISOString() : null,
+          models: Array.isArray(d.models) ? d.models : [],
+        }),
+      });
+      if (!res.ok) throw new Error("save failed");
+      setLimitsOpen(null);
+      loadData();
+    } catch {
+      // surfaced by the reload showing unchanged values
+    }
+  };
+
   const handleToggleKey = async (id, isActive) => {
     try {
       const res = await fetch(`/api/keys/${id}`, {
@@ -1039,6 +1100,105 @@ export default function APIPageClient({ machineId }) {
                   <p className="text-xs text-text-muted mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
                   </p>
+                  {(() => {
+                    const bits = [];
+                    if (key.rpm) bits.push(`${key.usage?.rpmUsed ?? 0}/${key.rpm} RPM`);
+                    if (key.tpm) bits.push(`${key.usage?.tpmUsed ?? 0}/${key.tpm} TPM`);
+                    if (key.maxBudget) bits.push(`$${(key.usage?.spendUsed ?? 0).toFixed(2)}/$${key.maxBudget}${key.budgetPeriod ? ` per ${key.budgetPeriod}` : ""}`);
+                    if (key.models?.length) bits.push(`${key.models.length} model${key.models.length === 1 ? "" : "s"}`);
+                    if (key.priority) bits.push(key.priority);
+                    if (key.expiresAt) {
+                      const exp = new Date(key.expiresAt);
+                      bits.push(`${exp <= new Date() ? "expired" : "expires"} ${exp.toLocaleDateString()}`);
+                    }
+                    return (
+                      <p className="text-xs text-text-muted mt-1">
+                        {bits.length ? bits.join(" · ") : "No limits"}
+                        <button
+                          onClick={() => (limitsOpen === key.id ? setLimitsOpen(null) : openLimits(key))}
+                          className="ml-2 text-primary hover:underline"
+                        >
+                          {limitsOpen === key.id ? "close" : "edit limits"}
+                        </button>
+                      </p>
+                    );
+                  })()}
+                  {limitsOpen === key.id && (
+                    <div className="mt-2 grid grid-cols-1 gap-2 rounded-md border border-border p-2 sm:grid-cols-2 lg:grid-cols-3">
+                      {[
+                        ["rpm", "RPM (requests/min)", "number", "unlimited"],
+                        ["tpm", "TPM (tokens/min)", "number", "unlimited"],
+                        ["maxBudget", "Max budget (USD)", "number", "unlimited"],
+                        ["budgetPeriod", "Budget period", "text", "1d / 30d / 1mo"],
+                        ["priority", "Priority", "text", "prod / dev"],
+                        ["expiresAt", "Expires", "datetime-local", ""],
+                      ].map(([field, label, type, placeholder]) => (
+                        <label key={field} className="min-w-0 text-[11px] text-text-muted">
+                          {label}
+                          <input
+                            type={type}
+                            value={limitsDraft[field] ?? ""}
+                            placeholder={placeholder}
+                            onChange={(e) => setLimitsDraft((d) => ({ ...d, [field]: e.target.value }))}
+                            className="mt-0.5 w-full rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
+                          />
+                        </label>
+                      ))}
+                      <div className="min-w-0 text-[11px] text-text-muted sm:col-span-2 lg:col-span-3">
+                        Model allowlist — blank means every model
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            const picked = e.target.value;
+                            if (!picked) return;
+                            setLimitsDraft((d) => ({
+                              ...d,
+                              models: [...(d.models || []), picked],
+                            }));
+                          }}
+                          className="mt-0.5 w-full rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
+                        >
+                          <option value="">
+                            {availableModels.length ? "Add a model..." : "Loading models..."}
+                          </option>
+                          {availableModels
+                            .filter((m) => !(limitsDraft.models || []).includes(m))
+                            .map((m) => (
+                              <option key={m} value={m}>{m}</option>
+                            ))}
+                        </select>
+                        {(limitsDraft.models || []).length > 0 && (
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {(limitsDraft.models || []).map((m) => (
+                              <span
+                                key={m}
+                                className="inline-flex max-w-full items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 font-mono text-[10px]"
+                              >
+                                <span className="truncate">{m}</span>
+                                <button
+                                  type="button"
+                                  title="Remove"
+                                  onClick={() =>
+                                    setLimitsDraft((d) => ({
+                                      ...d,
+                                      models: (d.models || []).filter((x) => x !== m),
+                                    }))
+                                  }
+                                  className="shrink-0 text-text-muted hover:text-red-500"
+                                >
+                                  <span className="material-symbols-outlined text-[12px]">close</span>
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-3">
+                        <Button size="sm" onClick={() => saveLimits(key.id)}>Save limits</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setLimitsOpen(null)}>Cancel</Button>
+                      </div>
+                    </div>
+                  )}
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}

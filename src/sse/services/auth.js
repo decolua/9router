@@ -1,8 +1,9 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
-import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
+import { formatRetryAfter, checkFallbackError, parseProviderResetMs, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
-import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { resolveProviderId, resolveProviderRpm, FREE_PROVIDERS, FREE_TIER_PROVIDERS } from "@/shared/constants/providers.js";
+import { isOverLimit, recordRequest, retryAfterMs } from "./rpmLimiter.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -16,6 +17,19 @@ function githubMonthlyResetMs(status, errorText, provider) {
   const now = new Date();
   return Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
 }
+// Community/free tiers (NVIDIA NIM, opencode-free, …) rate-limit on a short,
+// roughly per-minute window. The generic exponential backoff can bench a 429'd
+// account for up to 5 min — and with only a handful of free accounts that locks
+// the entire pool at once, so the gateway runs out of accounts and returns a 500.
+// Cap the STATIC fallback cooldown for these providers to one recovery window so
+// accounts come back quickly and keep rotating. Only the static backoff is
+// capped: a provider that reports an explicit reset (resetsAtMs / Retry-After /
+// retryDelay / X-RateLimit-Reset) still takes precedence and is never shortened.
+const FREE_TIER_STATIC_COOLDOWN_CAP_MS = 60 * 1000;
+const SHORT_COOLDOWN_PROVIDERS = new Set([
+  ...Object.keys(FREE_PROVIDERS),
+  ...Object.keys(FREE_TIER_PROVIDERS),
+]);
 
 /**
  * Get provider credentials from localDb
@@ -76,10 +90,17 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    // Filter out model-locked and excluded connections
+    const settings = await getSettings();
+    // Per-account requests-per-minute cap. Skipping an account that has used
+    // its budget keeps us inside the provider's limit instead of collecting a
+    // 429 and parking the account on a cooldown.
+    const rpmLimit = resolveProviderRpm(settings, providerId);
+
+    // Filter out model-locked, excluded and rate-capped connections
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
+      if (isOverLimit(c.id, rpmLimit)) return false;
       return true;
     });
 
@@ -109,11 +130,25 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           lastErrorCode: earliestConn?.errorCode || null
         };
       }
+      const capped = connections
+        .map(c => retryAfterMs(c.id, rpmLimit))
+        .filter(ms => ms !== null && ms !== undefined);
+      if (capped.length === connections.length && capped.length > 0) {
+        const waitMs = Math.min(...capped);
+        const until = new Date(Date.now() + waitMs).toISOString();
+        log.warn("AUTH", `${provider} | all ${connections.length} accounts at the ${rpmLimit} RPM cap (${Math.ceil(waitMs / 1000)}s)`);
+        return {
+          allRateLimited: true,
+          retryAfter: until,
+          retryAfterHuman: formatRetryAfter(until),
+          lastError: `Local ${rpmLimit} RPM cap reached for every ${provider} account`,
+          lastErrorCode: null
+        };
+      }
       log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
       return null;
     }
 
-    const settings = await getSettings();
     // Per-provider strategy overrides global setting
     const providerOverride = (settings.providerStrategies || {})[providerId] || {};
     const strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";
@@ -172,6 +207,10 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       connection = availableConnections[0];
     }
 
+    if (rpmLimit > 0) {
+      recordRequest(connection.id);
+    }
+
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
 
     return {
@@ -224,6 +263,23 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
 
   // GitHub premium-request exhaustion is account-wide until the next UTC month.
   const githubResetAtMs = githubMonthlyResetMs(status, errorText, provider);
+  const providerKey = resolveProviderId(provider);
+
+  // Per-provider retry-delay fallback (dashboard: Providers → Retry delay).
+  // "auto"/unset keeps the built-in behavior; a numeric value (seconds) is used
+  // as the lock duration ONLY when the provider itself reports no reset window.
+  // A provider-reported reset is always honored and never shortened by this.
+  let fallbackOverrideMs = null;
+  try {
+    const settings = await getSettings();
+    const sel = settings?.retryDelayByProvider?.[providerKey];
+    if (sel != null && sel !== "auto") {
+      const secs = Number(sel);
+      if (Number.isFinite(secs) && secs > 0) {
+        fallbackOverrideMs = Math.min(secs * 1000, MAX_RATE_LIMIT_COOLDOWN_MS);
+      }
+    }
+  } catch { /* settings unavailable → fall through to auto behavior */ }
 
   // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
   let shouldFallback, cooldownMs, newBackoffLevel;
@@ -237,6 +293,21 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     newBackoffLevel = 0;
   } else {
     ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));
+    // Only reshape the STATIC backoff — when the provider reported no reset of its own.
+    if (shouldFallback && parseProviderResetMs(errorText) == null) {
+      if (fallbackOverrideMs != null) {
+        // User pinned a fixed retry delay for this provider.
+        cooldownMs = fallbackOverrideMs;
+        newBackoffLevel = 0;
+      } else if (
+        // Default for free/free-tier pools: cap the static backoff so the small
+        // account set recovers within its real per-minute window and keeps rotating.
+        cooldownMs > FREE_TIER_STATIC_COOLDOWN_CAP_MS &&
+        SHORT_COOLDOWN_PROVIDERS.has(providerKey)
+      ) {
+        cooldownMs = FREE_TIER_STATIC_COOLDOWN_CAP_MS;
+      }
+    }
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
