@@ -45,14 +45,16 @@ export function extractUsageFromResponse(responseBody) {
     };
   }
 
-  // Gemini format — thoughts sit outside candidates upstream; fold them in so
-  // completion_tokens stays reasoning-inclusive (see extractUsage in usageTracking.js)
-  if (responseBody.usageMetadata) {
-    const thoughts = responseBody.usageMetadata.thoughtsTokenCount || 0;
+  // Gemini format. Antigravity / gemini-cli wrap the payload in { response: {...} }.
+  const usageMetadata = responseBody.usageMetadata || responseBody.response?.usageMetadata;
+  if (usageMetadata) {
+    // Thoughts sit outside candidates upstream; fold them in so completion_tokens
+    // stays reasoning-inclusive (see extractUsage in usageTracking.js).
+    const thoughts = usageMetadata.thoughtsTokenCount || 0;
     return {
-      prompt_tokens: responseBody.usageMetadata.promptTokenCount || 0,
-      completion_tokens: (responseBody.usageMetadata.candidatesTokenCount || 0) + thoughts,
-      cached_tokens: responseBody.usageMetadata.cachedContentTokenCount || 0,
+      prompt_tokens: usageMetadata.promptTokenCount || 0,
+      completion_tokens: (usageMetadata.candidatesTokenCount || 0) + thoughts,
+      cached_tokens: usageMetadata.cachedContentTokenCount || 0,
       reasoning_tokens: thoughts
     };
   }

@@ -552,7 +552,7 @@ describe("wrapQoderSSE", () => {
   it("forwards an OpenAI envelope chunk and emits [DONE] in flush", async () => {
     const inner = JSON.stringify({ choices: [{ delta: { content: "hi" } }] });
     const upstream = `data: ${JSON.stringify({ statusCodeValue: 200, body: inner })}\n\n`;
-    const wrapped = wrapQoderSSE(makeResponse([upstream]), "qoder/auto");
+    const wrapped = await wrapQoderSSE(makeResponse([upstream]), "qoder/auto");
     const out = await drain(wrapped);
     expect(out).toContain(`data: ${inner}\n\n`);
     expect(out).toContain("data: [DONE]\n\n");
@@ -564,7 +564,7 @@ describe("wrapQoderSSE", () => {
     const inner = JSON.stringify({ choices: [{ delta: { content: "tail" } }], finish_reason: "stop" });
     // Note: NO trailing \n on the final line.
     const upstream = `data: ${JSON.stringify({ statusCodeValue: 200, body: inner })}`;
-    const wrapped = wrapQoderSSE(makeResponse([upstream]), "qoder/auto");
+    const wrapped = await wrapQoderSSE(makeResponse([upstream]), "qoder/auto");
     const out = await drain(wrapped);
     expect(out).toContain(`data: ${inner}\n\n`);
   });
@@ -577,7 +577,7 @@ describe("wrapQoderSSE", () => {
     const errorEnv = JSON.stringify({ statusCodeValue: 500, body: "boom" });
     const validInner = JSON.stringify({ choices: [{ delta: { content: "leak" } }] });
     const validEnv = JSON.stringify({ statusCodeValue: 200, body: validInner });
-    const wrapped = wrapQoderSSE(
+    const wrapped = await wrapQoderSSE(
       makeResponse([`data: ${errorEnv}\n\ndata: ${validEnv}\n\n`]),
       "qoder/auto",
     );
@@ -594,7 +594,7 @@ describe("wrapQoderSSE", () => {
   it("strips embedded newlines from inner body before forwarding", async () => {
     const innerWithNewlines = '{"choices":[{"delta":{"content":"a\nb"}}]}';
     const env = JSON.stringify({ statusCodeValue: 200, body: innerWithNewlines });
-    const wrapped = wrapQoderSSE(makeResponse([`data: ${env}\n\n`]), "qoder/auto");
+    const wrapped = await wrapQoderSSE(makeResponse([`data: ${env}\n\n`]), "qoder/auto");
     const out = await drain(wrapped);
     // The forwarded data: line should be a single event terminated by \n\n
     // and contain no internal \n other than the trailing pair.
@@ -606,15 +606,15 @@ describe("wrapQoderSSE", () => {
 
   it("upstream error envelope produces an error chunk + [DONE]", async () => {
     const env = JSON.stringify({ statusCodeValue: 503, body: "service unavailable" });
-    const wrapped = wrapQoderSSE(makeResponse([`data: ${env}\n\n`]), "qoder/lite");
+    const wrapped = await wrapQoderSSE(makeResponse([`data: ${env}\n\n`]), "qoder/lite");
     const out = await drain(wrapped);
     expect(out).toContain("qoder_upstream_error");
     expect(out).toContain("data: [DONE]\n\n");
   });
 
-  it("non-ok responses are returned unchanged (no transform)", () => {
+  it("non-ok responses are returned unchanged (no transform)", async () => {
     const r = new Response("not ok", { status: 500 });
-    const wrapped = wrapQoderSSE(r, "qoder/auto");
+    const wrapped = await wrapQoderSSE(r, "qoder/auto");
     expect(wrapped).toBe(r);
   });
 });
@@ -1082,13 +1082,15 @@ describe("wrapQoderSSE special tokens", () => {
   }
 
   it("does not forward NOT_EXCEED_QUOTA as content", async () => {
-    const out = await drain(wrapQoderSSE(makeResponse(["data: [NOT_EXCEED_QUOTA]\n\n"]), "qoder/x"));
+    const response = await wrapQoderSSE(makeResponse(["data: [NOT_EXCEED_QUOTA]\n\n"]), "qoder/x");
+    const out = await drain(response);
     expect(out).not.toContain("NOT_EXCEED_QUOTA");
     expect(out).toContain("data: [DONE]");
   });
 
   it("maps EXCEED_QUOTA to error event not content delta", async () => {
-    const out = await drain(wrapQoderSSE(makeResponse(["data: [EXCEED_QUOTA] limit\n\n"]), "qoder/x"));
+    const response = await wrapQoderSSE(makeResponse(["data: [EXCEED_QUOTA] limit\n\n"]), "qoder/x");
+    const out = await drain(response);
     expect(out).toContain("qoder_upstream_error");
     expect(out).not.toMatch(/delta":\{"content":"\\n\[qoder error/);
   });

@@ -127,12 +127,71 @@ function normalizeReasoningItem(chunk) {
   return chunk;
 }
 
+/** Billing/quota blocks must be HTTP errors so account/combo failover can run. */
+function isBillingBlock(inner) {
+  if (!inner || typeof inner !== "string") return false;
+  return /"code"\s*:\s*"(112|10605)"/.test(inner) || inner.toLowerCase().includes("pricingurl");
+}
+
+async function probeFirstQoderFrame(stream) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) return null;
+      buffer += decoder.decode(value, { stream: true });
+
+      let nl;
+      while ((nl = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, nl).replace(/\r$/, "").trim();
+        buffer = buffer.slice(nl + 1);
+        if (!line.startsWith("data:")) continue;
+
+        const data = line.slice(5).trimStart();
+        if (data === "[DONE]") return null;
+
+        let envelope;
+        try {
+          envelope = JSON.parse(data);
+        } catch {
+          return null;
+        }
+
+        const statusVal = typeof envelope?.statusCodeValue === "number"
+          ? envelope.statusCodeValue
+          : 200;
+        const inner = typeof envelope?.body === "string" ? envelope.body : "";
+        return statusVal !== 200 && isBillingBlock(inner)
+          ? { statusVal, message: inner || `qoder billing block (${statusVal})` }
+          : null;
+      }
+    }
+  } finally {
+    // Do not await cancellation: a tee branch's cancel promise settles only
+    // after the other branch finishes, which would deadlock this probe.
+    reader.cancel().catch(() => {});
+  }
+}
+
 /**
  * @param {Response} response
  * @param {string} model - label for error chunks
  */
-function wrapQoderSSE(response, model) {
+async function wrapQoderSSE(response, model) {
   if (!response.ok || !response.body) return response;
+
+  const [probeStream, payloadStream] = response.body.tee();
+  const billing = await probeFirstQoderFrame(probeStream);
+  if (billing) {
+    payloadStream.cancel().catch(() => {});
+    return new Response(
+      JSON.stringify({ error: { message: billing.message, code: billing.statusVal } }),
+      { status: 403, headers: { "Content-Type": "application/json" } },
+    );
+  }
 
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
@@ -297,7 +356,7 @@ function wrapQoderSSE(response, model) {
     },
   });
 
-  const transformed = response.body.pipeThrough(transform);
+  const transformed = payloadStream.pipeThrough(transform);
   return new Response(transformed, {
     status: response.status,
     statusText: response.statusText,
@@ -308,4 +367,4 @@ function wrapQoderSSE(response, model) {
   });
 }
 
-export { wrapQoderSSE, isSpecialToken };
+export { wrapQoderSSE, isBillingBlock, isSpecialToken };

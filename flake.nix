@@ -31,7 +31,7 @@
           default = self.packages.${system}."9router";
           "9router" = pkgs.buildNpmPackage {
             pname = "9router";
-            version = "0.5.50";
+            version = "0.5.55";
             src = pkgs.lib.cleanSource ./.;
             npmDepsHash = "sha256-oj3900TiTXszkT/YqsiCXkT5ztAP70SCC/YoykqRk+E=";
             nodejs = pkgs.nodejs_22;

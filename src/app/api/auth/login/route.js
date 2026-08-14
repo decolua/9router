@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 import { isOidcConfigured } from "@/lib/auth/oidc";
+import { isSamlConfigured } from "@/lib/auth/saml.js";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
 import { isLocalRequest } from "@/dashboardGuard";
 
@@ -39,8 +40,14 @@ export async function POST(request) {
     // Default password is '123456' if not set
     const storedHash = settings.password;
 
-    if (settings.authMode === "oidc" && isOidcConfigured(settings)) {
-      return NextResponse.json({ error: "Password login is disabled. Use OIDC sign in." }, { status: 403 });
+    if (settings.authMode === "sso" || settings.authMode === "saml" || settings.authMode === "oidc") {
+      const ssoType = settings.ssoType || (settings.authMode === "saml" ? "saml" : "oidc");
+      if (ssoType === "saml" && isSamlConfigured(settings)) {
+        return NextResponse.json({ error: "Password login is disabled. Use SAML SSO sign in." }, { status: 403 });
+      }
+      if (ssoType === "oidc" && isOidcConfigured(settings)) {
+        return NextResponse.json({ error: "Password login is disabled. Use OIDC sign in." }, { status: 403 });
+      }
     }
 
     let isValid = false;
@@ -61,6 +68,19 @@ export async function POST(request) {
         !storedHash && !process.env.INITIAL_PASSWORD && !isLocalRequest(request);
 
       if (mustChangePassword) {
+        // Do NOT issue a session token: a fresh install's default password is
+        // public knowledge ("123456"), so handing out a valid JWT would let any
+        // remote attacker authenticate and (e.g.) PATCH /api/settings to disable
+        // authentication entirely (CVE-2026-56679 class). Require the password
+        // to be changed first.
+        //
+        // NOTE: this intentionally leaves no remote self-service password-change
+        // path — the change-password flow (PATCH /api/settings) requires a JWT,
+        // which we deliberately withhold. A remote fresh-install user must either
+        // change the password from the local machine or set INITIAL_PASSWORD
+        // before first launch. This is a deliberate security trade-off, not an
+        // oversight: issuing any credential before the default password is
+        // rotated re-opens the exact attack chain this branch closes.
         return NextResponse.json(
           {
             success: false,

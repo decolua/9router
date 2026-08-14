@@ -222,7 +222,9 @@ function buildCliPackage() {
     copyRecursive(path.join(appDir, "server"), path.join(cliAppDir, "server"));
     console.log("✅ Copied custom-server.js and server files\n");
   } else {
-    console.warn("⚠️  custom-server.js not found — server will run without real-IP injection\n");
+    console.error("❌ custom-server.js not found — without it no request can be proven local,");
+    console.error("   so the packaged CLI would demand an API key for its own dashboard and /v1.");
+    process.exit(1);
   }
 
   // Step 3b: Ensure sql.js (pure JS fallback) bundled in app/cli/app/node_modules.

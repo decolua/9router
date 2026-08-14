@@ -132,9 +132,20 @@ describe("handleChatCore native Claude server-tool passthrough", () => {
       model: "claude-sonnet-5",
       max_tokens: 128,
       stream: false,
-      system: [{ type: "text", text: "Claude Code 2.1.211" }],
+      system: [{
+        type: "text",
+        text: "Claude Code 2.1.211",
+        cache_control: { type: "ephemeral", ttl: "1h" },
+      }],
       messages: [
-        { role: "user", content: [{ type: "text", text: "Consult the advisor." }] },
+        {
+          role: "user",
+          content: [{
+            type: "text",
+            text: "Consult the advisor.",
+            cache_control: { type: "ephemeral" },
+          }],
+        },
       ],
       tools: [
         {
@@ -146,6 +157,7 @@ describe("handleChatCore native Claude server-tool passthrough", () => {
           type: "advisor_20260301",
           name: "advisor",
           model: "claude-opus-4-8",
+          cache_control: { type: "ephemeral", ttl: "1h" },
           input_schema: { type: "object", properties: { question: { type: "string" } } },
         },
       ],

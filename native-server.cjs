@@ -9,6 +9,8 @@ const dev = process.argv.includes("--dev") || process.env.NODE_ENV === "developm
 const port = Number.parseInt(process.env.PORT || "20127", 10);
 const hostname = process.env.HOSTNAME || "0.0.0.0";
 process.env.CODEX_NATIVE_INTERNAL_SECRET ||= crypto.randomBytes(32).toString("hex");
+const PEER_TOKEN = crypto.randomBytes(24).toString("hex");
+process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
 
 function stampPeer(request) {
   const socketIp = request.socket?.remoteAddress || "";
@@ -22,7 +24,9 @@ function stampPeer(request) {
   delete request.headers["x-forwarded-for"];
   delete request.headers["x-9r-real-ip"];
   delete request.headers["x-9r-via-proxy"];
+  delete request.headers["x-9r-peer-token"];
   request.headers["x-9r-real-ip"] = loopback && proxyIp ? proxyIp : socketIp;
+  request.headers["x-9r-peer-token"] = PEER_TOKEN;
   if (viaProxy) request.headers["x-9r-via-proxy"] = "1";
 }
 

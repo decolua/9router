@@ -35,6 +35,8 @@ vi.mock("@/lib/auth/dashboardSession", () => ({
 
 const { proxy, __test__ } = await import("../../src/dashboardGuard.js");
 
+const PEER_TOKEN = "peer-token-fixture";
+
 function request(pathname, headers = {}) {
   const normalizedHeaders = new Headers(headers);
   return {
@@ -45,9 +47,16 @@ function request(pathname, headers = {}) {
   };
 }
 
+// A request that actually came through custom-server.js: peer IP stamped from the TCP
+// socket and proven by the per-process secret.
+function localRequest(pathname, headers = {}) {
+  return request(pathname, { "x-9r-peer-token": PEER_TOKEN, "x-9r-real-ip": "127.0.0.1", ...headers });
+}
+
 describe("dashboard guard public LLM API access", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
     mocks.getSettings.mockResolvedValue({ requireLogin: true });
     mocks.validateApiKey.mockResolvedValue(false);
     mocks.getConsistentMachineId.mockResolvedValue("cli-token");
@@ -55,14 +64,14 @@ describe("dashboard guard public LLM API access", () => {
   });
 
   it("allows loopback public LLM API without API key", async () => {
-    const response = await proxy(request("/v1/chat/completions", { host: "localhost:20128" }));
+    const response = await proxy(localRequest("/v1/chat/completions", { host: "localhost:20128" }));
 
     expect(response).toBe(mocks.nextResponse);
     expect(mocks.validateApiKey).not.toHaveBeenCalled();
   });
 
   it("rejects remote Host-spoof when real peer IP is non-loopback", async () => {
-    const response = await proxy(request("/v1/chat/completions", {
+    const response = await proxy(localRequest("/v1/chat/completions", {
       host: "localhost",
       "x-9r-real-ip": "10.204.111.34",
     }));
@@ -72,7 +81,7 @@ describe("dashboard guard public LLM API access", () => {
   });
 
   it("allows loopback peer IP regardless of Host", async () => {
-    const response = await proxy(request("/v1/chat/completions", {
+    const response = await proxy(localRequest("/v1/chat/completions", {
       host: "localhost:20128",
       "x-9r-real-ip": "127.0.0.1",
     }));
@@ -89,7 +98,7 @@ describe("dashboard guard public LLM API access", () => {
   });
 
   it("allows loopback rewritten public LLM API without API key", async () => {
-    const response = await proxy(request("/api/v1/chat/completions", { host: "localhost:20128" }));
+    const response = await proxy(localRequest("/api/v1/chat/completions", { host: "localhost:20128" }));
 
     expect(response).toBe(mocks.nextResponse);
     expect(mocks.validateApiKey).not.toHaveBeenCalled();
@@ -191,6 +200,7 @@ describe("dashboard guard public LLM API access", () => {
 describe("dashboard guard always-protected auto-import routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
     mocks.getSettings.mockResolvedValue({ requireLogin: false });
     mocks.validateApiKey.mockResolvedValue(false);
     mocks.getConsistentMachineId.mockResolvedValue("cli-token");
@@ -198,20 +208,18 @@ describe("dashboard guard always-protected auto-import routes", () => {
   });
 
   it("allows local auto-import without JWT when requireLogin=false", async () => {
-    const response = await proxy(request("/api/oauth/cursor/auto-import", {
+    const response = await proxy(localRequest("/api/oauth/cursor/auto-import", {
       host: "localhost:20128",
       origin: "http://localhost:20128",
-      realIp: "127.0.0.1",
     }));
 
     expect(response).toBe(mocks.nextResponse);
   });
 
   it("allows local kiro auto-import without JWT when requireLogin=false", async () => {
-    const response = await proxy(request("/api/oauth/kiro/auto-import", {
+    const response = await proxy(localRequest("/api/oauth/kiro/auto-import", {
       host: "localhost:20128",
       origin: "http://localhost:20128",
-      realIp: "127.0.0.1",
     }));
 
     expect(response).toBe(mocks.nextResponse);
@@ -220,10 +228,9 @@ describe("dashboard guard always-protected auto-import routes", () => {
   it("blocks local auto-import without JWT when requireLogin=true", async () => {
     mocks.getSettings.mockResolvedValue({ requireLogin: true });
 
-    const response = await proxy(request("/api/oauth/cursor/auto-import", {
+    const response = await proxy(localRequest("/api/oauth/cursor/auto-import", {
       host: "localhost:20128",
       origin: "http://localhost:20128",
-      realIp: "127.0.0.1",
     }));
 
     // local-only gate (403) fires before the always-protected gate (401)
@@ -242,6 +249,7 @@ describe("dashboard guard always-protected auto-import routes", () => {
 describe("dashboard guard local-only access", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
     mocks.getSettings.mockResolvedValue({ requireLogin: true });
     mocks.validateApiKey.mockResolvedValue(false);
     mocks.getConsistentMachineId.mockResolvedValue("cli-token");
@@ -258,7 +266,7 @@ describe("dashboard guard local-only access", () => {
   });
 
   it("rejects local-only route on loopback when requireLogin=true and no JWT", async () => {
-    const response = await proxy(request("/api/mcp/filesystem/sse", {
+    const response = await proxy(localRequest("/api/mcp/filesystem/sse", {
       host: "localhost:20128",
       origin: "http://localhost:20128",
     }));
@@ -270,7 +278,7 @@ describe("dashboard guard local-only access", () => {
   it("allows local-only route on loopback when requireLogin=false", async () => {
     mocks.getSettings.mockResolvedValue({ requireLogin: false });
 
-    const response = await proxy(request("/api/cli-tools/antigravity-mitm", {
+    const response = await proxy(localRequest("/api/cli-tools/antigravity-mitm", {
       host: "localhost:20128",
       origin: "http://localhost:20128",
     }));
@@ -291,7 +299,7 @@ describe("dashboard guard local-only access", () => {
   it("rejects local-only route when Origin is non-loopback (CSRF block)", async () => {
     mocks.getSettings.mockResolvedValue({ requireLogin: false });
 
-    const response = await proxy(request("/api/cli-tools/antigravity-mitm", {
+    const response = await proxy(localRequest("/api/cli-tools/antigravity-mitm", {
       host: "localhost:20128",
       origin: "http://evil.example.com",
     }));

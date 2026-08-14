@@ -136,7 +136,9 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       headers,
       body: JSON.stringify({
         model,
-        max_tokens: 16,
+        // Reasoning models may spend their initial budget on chain-of-thought
+        // before emitting an answer. A tiny probe causes false failures.
+        max_tokens: 1024,
         stream: false,
         messages: [{ role: "user", content: "hi" }],
       }),
@@ -179,6 +181,20 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     }
 
     const hasChoices = Array.isArray(parsed?.choices) && parsed.choices.length > 0;
+
+    // A length-limited response containing only reasoning still proves that the
+    // model connection works; do not report it as a failed model probe.
+    const firstChoice = parsed?.choices?.[0] || {};
+    const hasReasoning =
+      firstChoice.message?.reasoning ||
+      firstChoice.message?.reasoning_content ||
+      firstChoice.message?.thinking ||
+      firstChoice.message?.thinking_content;
+    const contentEmpty = !String(firstChoice.message?.content || "").trim();
+    if (hasChoices && firstChoice.finish_reason === "length" && contentEmpty && hasReasoning) {
+      return { ok: true, latencyMs, error: null, status: res.status, note: "reasoning-only response (length-limited)" };
+    }
+
     if (!hasChoices) {
       return {
         ok: false,

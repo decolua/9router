@@ -8,10 +8,13 @@ describe("search baseUrl SSRF guard", () => {
     expect(resolveBaseUrl(CONFIG, {})).toBe("https://searxng.example.com");
   });
 
-  it("allows public HTTP(S) client overrides", () => {
+  it.each([
+    "https://search.example.net/",
+    "http://search.example.net/",
+  ])("allows public HTTP(S) client override %s", (baseUrl) => {
     expect(resolveBaseUrl(CONFIG, {
-      providerOptions: { baseUrl: "https://search.example.net/" },
-    })).toBe("https://search.example.net");
+      providerOptions: { baseUrl },
+    })).toBe(baseUrl.slice(0, -1));
   });
 
   it.each([
@@ -23,6 +26,7 @@ describe("search baseUrl SSRF guard", () => {
     "http://localhost:8080",
     "file:///etc/passwd",
     "gopher://127.0.0.1:70",
+    "ftp://10.0.0.1",
   ])("rejects unsafe client override %s", (baseUrl) => {
     expect(() => resolveBaseUrl(CONFIG, {
       providerOptions: { baseUrl },

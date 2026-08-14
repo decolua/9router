@@ -2,6 +2,7 @@ const http = require("http");
 const crypto = require("crypto");
 const { attachCodexNativeGateway } = require("./server/codexNativeGateway.cjs");
 const path = require("path");
+const fs = require("fs");
 const { pathToFileURL } = require("url");
 
 // Renaming next-server process to a unique name while keeping "next-server"
@@ -30,6 +31,13 @@ function skipClaimedUpgrade(server, gateway) {
     return originalOnce(event, event === "upgrade" ? wrap(listener) : listener);
   };
 }
+
+// Per-process secret proving x-9r-real-ip was stamped below rather than sent by the client.
+// A bare `next start` / `next dev` never loads this file, so it cannot produce a matching
+// header even though the env var is inherited by child processes. Named like x-9r-cli-token
+// so the request-detail header sanitizer redacts it too.
+const PEER_TOKEN = crypto.randomBytes(24).toString("hex");
+process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
 
 let backgroundRefreshStarted = false;
 
@@ -84,7 +92,9 @@ http.createServer = (...args) => {
     delete req.headers["x-9r-real-ip"];
     delete req.headers["x-forwarded-for"];
     delete req.headers["x-9r-via-proxy"];
+    delete req.headers["x-9r-peer-token"];
     req.headers["x-9r-real-ip"] = ip;
+    req.headers["x-9r-peer-token"] = PEER_TOKEN;
     if (viaProxy) req.headers["x-9r-via-proxy"] = "1";
     return handler(req, res);
   };
@@ -145,4 +155,15 @@ http.createServer = (...args) => {
   return server;
 };
 
-if (require.main === module) require("./server.js");
+if (require.main === module) {
+  const standalone = path.join(__dirname, "server.js");
+  if (fs.existsSync(standalone)) {
+    require(standalone);
+  } else {
+    // Repo checkout has no standalone build next to us. `next start` builds its HTTP
+    // server in-process, so the wrapper above still sanitizes every request.
+    const nextBin = require.resolve("next/dist/bin/next");
+    process.argv = [process.argv[0], nextBin, "start", ...process.argv.slice(2)];
+    require(nextBin);
+  }
+}

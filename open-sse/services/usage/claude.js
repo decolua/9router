@@ -179,11 +179,14 @@ async function fetchClaudeUsage(accessToken, proxyOptions, key) {
   }
 }
 
-export function getClaudeUsage(accessToken, proxyOptions = null) {
+export function getClaudeUsage(accessToken, proxyOptions = null, options = {}) {
   const key = credentialKey(accessToken);
   const cached = usageCache.get(key);
   const now = Date.now();
-  if (cached && (now < cached.expiresAt || now < cached.retryAt)) {
+  const force = options?.force === true;
+  // Manual refresh may bypass a successful-value TTL, but never the server's
+  // retry window after 429. In-flight requests are always deduplicated.
+  if (cached && (now < cached.retryAt || (!force && now < cached.expiresAt))) {
     return Promise.resolve(cached.value);
   }
   if (inFlight.has(key)) return inFlight.get(key);

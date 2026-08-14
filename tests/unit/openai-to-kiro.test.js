@@ -287,9 +287,8 @@ describe("openaiToKiroRequest", () => {
     it("does not inject a fake 'continue' user message on a tool-result-only turn", () => {
       // Regression: in an agentic loop the turn after an assistant tool_use is
       // tool-results-only with no user text. The translator must NOT substitute
-      // the literal word "continue" (Kiro accepts empty content when toolResults
-      // are present, and "continue" leaks into the visible conversation as if the
-      // user typed it). See openai-to-kiro.js flushPending.
+      // the literal word "continue" (the current-time context prefix is still
+      // intentional). See openai-to-kiro.js flushPending.
       const body = {
         messages: [
           { role: "user", content: "What is 2+2? Use the calc tool." },
@@ -313,10 +312,9 @@ describe("openaiToKiroRequest", () => {
       // The current (tool-result) turn carries the tool results...
       expect(current.userInputMessageContext.toolResults).toBeDefined();
       expect(current.userInputMessageContext.toolResults[0].toolUseId).toBe("call_1");
-      // ...and its user body (content minus any injected system prefix) is empty,
-      // NOT the literal "continue".
-      const body0 = current.content.split("\n\n").pop();
-      expect(body0).toBe("");
+      // ...and its body is only the intentional current-time context, never the
+      // literal "continue" as if the user had typed it.
+      expect(current.content).toMatch(/^\[Context: Current time is .+\]$/);
       expect(current.content).not.toMatch(/(^|\n)continue$/);
     });
   });

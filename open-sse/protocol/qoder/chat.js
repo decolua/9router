@@ -178,6 +178,6 @@ export async function chat({
     return { response, url, headers, transformedBody: payload };
   }
 
-  const wrapped = wrapQoderSSE(response, `qoder/${qoderKey}`);
+  const wrapped = await wrapQoderSSE(response, `qoder/${qoderKey}`);
   return { response: wrapped, url, headers, transformedBody: payload };
 }

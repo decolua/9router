@@ -30,7 +30,7 @@ import { FORMATS } from "../../open-sse/translator/formats.js";
 // line 23, COMP WR-01).
 
 describe("Phase 4: VAL-01 regression + VAL-03 fallback guard", () => {
-  it("Contract VAL-01: dispatched body structurally identical to client body (no openai intermediate, ollama)", () => {
+  it("Contract VAL-01: preserves Claude message semantics without an OpenAI intermediate (ollama)", () => {
     const body = {
       model: "claude-sonnet-4-5",
       messages: [{ role: "user", content: "hi" }],
@@ -56,11 +56,11 @@ describe("Phase 4: VAL-01 regression + VAL-03 fallback guard", () => {
       "ollama"
     );
 
-    // Scoped deep-equal on the passthrough fields, against the PRE-CALL
-    // snapshot. NOT a full toEqual — prepareClaudeRequest may add/normalize
-    // headers, cache_control, anthropic-version.
+    // Claude preparation normalizes string content to text blocks. Assert the
+    // normalized message plus the untouched semantic fields; preparation may
+    // also add/normalize headers, cache_control, and anthropic-version.
     expect(result).toMatchObject({
-      messages: snapshot.messages,
+      messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
       system: snapshot.system,
       thinking: snapshot.thinking,
       output_config: snapshot.output_config,
@@ -82,10 +82,9 @@ describe("Phase 4: VAL-01 regression + VAL-03 fallback guard", () => {
   // path (thinkingUnified.js:275 short-circuit is `provider === "ollama"` only —
   // the ponytail comment marks lifting to PROVIDERS[ollama].quirks when a second
   // native-claude provider lands). Consequence: thinking gets budget_tokens
-  // normalized in and output_config (OpenAI-shaped) is stripped. The structural
-  // passthrough still holds for messages/system/tools — that is the VAL-01
-  // invariant; thinking/output_config normalization is documented, not asserted.
-  it("Contract VAL-01 local: messages/system/tools structurally identical (no openai intermediate, ollama-local)", () => {
+  // normalized in and output_config (OpenAI-shaped) is stripped. Message text,
+  // system, and tools remain semantically intact without an OpenAI hop.
+  it("Contract VAL-01 local: preserves Claude message semantics without an OpenAI intermediate (ollama-local)", () => {
     const body = {
       model: "claude-sonnet-4-5",
       messages: [{ role: "user", content: "hi" }],
@@ -109,7 +108,7 @@ describe("Phase 4: VAL-01 regression + VAL-03 fallback guard", () => {
     );
 
     expect(result).toMatchObject({
-      messages: snapshot.messages,
+      messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
       system: snapshot.system,
       tools: snapshot.tools,
     });
