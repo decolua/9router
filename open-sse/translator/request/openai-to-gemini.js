@@ -164,10 +164,8 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
             for (const { id: fid, name: fnName } of toolCallInfos) {
               const rawResp = toolResponses[fid] ?? "";
               let parsedResp = tryParseJSON(rawResp);
-              if (parsedResp === null) {
-                parsedResp = { result: rawResp };
-              } else if (typeof parsedResp !== "object") {
-                parsedResp = { result: parsedResp };
+              if (parsedResp === null || typeof parsedResp !== "object" || Array.isArray(parsedResp)) {
+                parsedResp = { result: parsedResp ?? rawResp };
               }
 
               toolParts.push({
@@ -348,11 +346,15 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
             const resolvedName = toolUseIdToName[block.tool_use_id]
               ? sanitizeGeminiFunctionName(toolUseIdToName[block.tool_use_id])
               : "tool";
+            const parsedResp = tryParseJSON(content);
+            const responseObj = (parsedResp !== null && typeof parsedResp === "object" && !Array.isArray(parsedResp))
+              ? parsedResp
+              : { result: parsedResp ?? content };
             parts.push({
               functionResponse: {
                 id: block.tool_use_id,
                 name: resolvedName,
-                response: { result: tryParseJSON(content) || content }
+                response: responseObj
               }
             });
           }

@@ -207,4 +207,38 @@ describe("Antigravity executor", () => {
     const lastTurn = contents[contents.length - 1];
     expect(lastTurn.role).toBe("user");
   });
+
+  it("openaiToAntigravityRequest wraps JSON array tool outputs into an object to prevent Protobuf Proto field list error", () => {
+    const out = openaiToAntigravityRequest("gemini-3.6-flash-high", {
+      messages: [
+        { role: "user", content: "find files" },
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "call_search_1",
+              type: "function",
+              function: { name: "search", arguments: "{}" }
+            }
+          ]
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_search_1",
+          content: JSON.stringify([{ file: "index.js", line: 10 }, { file: "app.js", line: 20 }])
+        }
+      ]
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const contents = out.request.contents;
+    const toolTurn = contents.find((c) => c.parts?.some((p) => p.functionResponse));
+    expect(toolTurn).toBeDefined();
+    const fnResp = toolTurn.parts[0].functionResponse;
+    expect(fnResp.name).toBe("search");
+    expect(Array.isArray(fnResp.response)).toBe(false);
+    expect(typeof fnResp.response).toBe("object");
+    expect(fnResp.response).toEqual({
+      result: [{ file: "index.js", line: 10 }, { file: "app.js", line: 20 }]
+    });
+  });
 });
