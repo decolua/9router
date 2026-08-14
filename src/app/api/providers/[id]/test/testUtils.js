@@ -3,7 +3,12 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
-import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
+import {
+  resolveOllamaLocalHost,
+  resolveXiaomiTokenplanModelsUrl,
+  isXiaomiTokenplanTestResponseValid,
+  PROVIDERS,
+} from "open-sse/config/providers.js";
 import {
   refreshProviderCredentials,
   shouldRefreshCredentials,
@@ -755,11 +760,15 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       }
       case "xiaomi-mimo":
       case "xiaomi-tokenplan": {
-        const baseUrls = { "xiaomi-mimo": "https://api.xiaomimimo.com/v1", "xiaomi-tokenplan": "https://token-plan-sgp.xiaomimimo.com/v1" };
-        const res = await fetchWithConnectionProxy(`${baseUrls[connection.provider]}/models`, {
+        const isTokenPlan = connection.provider === "xiaomi-tokenplan";
+        const modelsUrl = isTokenPlan
+          ? resolveXiaomiTokenplanModelsUrl(connection)
+          : "https://api.xiaomimimo.com/v1/models";
+        const res = await fetchWithConnectionProxy(modelsUrl, {
           headers: { Authorization: `Bearer ${connection.apiKey}` },
         }, effectiveProxy);
-        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+        const valid = isTokenPlan ? isXiaomiTokenplanTestResponseValid(res) : res.ok;
+        return { valid, error: valid ? null : "Invalid API key" };
       }
       case "blackbox": {
         const baseUrl = PROVIDERS["blackbox"]?.baseUrl?.replace(/\/chat\/completions$/, "") || "https://api.blackbox.ai/v1";

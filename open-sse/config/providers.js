@@ -17,3 +17,12 @@ export function resolveXiaomiTokenplanBaseUrl(credentials) {
   const region = credentials?.providerSpecificData?.region;
   return XIAOMI_TOKENPLAN_REGIONS[region] || XIAOMI_TOKENPLAN_REGIONS[XIAOMI_TOKENPLAN_DEFAULT_REGION];
 }
+
+export function resolveXiaomiTokenplanModelsUrl(credentials) {
+  return `${resolveXiaomiTokenplanBaseUrl(credentials)}/models`;
+}
+
+export function isXiaomiTokenplanTestResponseValid(response) {
+  // Some valid Token Plan keys cannot list models and return 403; only 401 proves invalid auth.
+  return response?.status !== 401;
+}
