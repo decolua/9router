@@ -1,5 +1,6 @@
 // OpenAI helper functions for translator
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK, VALID_OPENAI_CONTENT_TYPES, VALID_OPENAI_MESSAGE_TYPES } from "../schema/index.js";
+import { normalizeOpenAIToolNames } from "../concerns/toolCall.js";
 
 // Re-export valid-type lists (moved to schema/blocks.js) to keep existing importers working.
 export { VALID_OPENAI_CONTENT_TYPES, VALID_OPENAI_MESSAGE_TYPES };
@@ -127,6 +128,11 @@ export function filterToOpenAIFormat(body, opts = {}) {
     } else if (choice.type === "tool" && choice.name) {
       body.tool_choice = { type: OPENAI_BLOCK.FUNCTION, function: { name: choice.name } };
     }
+  }
+
+  const aliases = normalizeOpenAIToolNames(body, 64);
+  if (aliases.size) {
+    body._toolNameMap = aliases;
   }
 
   return body;

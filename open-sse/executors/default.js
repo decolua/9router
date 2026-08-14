@@ -7,6 +7,7 @@ import { buildClineHeaders } from "../shared/clineAuth.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
+import { normalizeOpenAIToolNames, normalizeNvidiaToolCallIds } from "../translator/concerns/toolCall.js";
 
 // Auth header descriptors — derived from registry transport.auth, fallback to hardcoded defaults.
 const BEARER = { combined: true, header: "Authorization", scheme: "bearer" };
@@ -71,6 +72,11 @@ export class DefaultExecutor extends BaseExecutor {
     const transformed = this.applyJsonSchemaFallback(body);
 
     if (transformed && typeof transformed === "object") {
+      const toolNameMaxLength = this.config.quirks?.toolNameMaxLength || 64;
+      normalizeOpenAIToolNames(transformed, toolNameMaxLength);
+      // NVIDIA-specific: normalize tool_call IDs to a compact deterministic ID that NVIDIA accepts
+      if (this.provider === "nvidia") normalizeNvidiaToolCallIds(transformed);
+
       // quirk: some openai-compatible providers reject Anthropic's client_metadata field
       if (this.config.quirks?.dropClientMetadata) {
         delete transformed.client_metadata;

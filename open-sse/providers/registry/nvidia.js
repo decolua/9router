@@ -17,6 +17,9 @@ export default {
   category: "freeTier",
   authType: "apikey",
   authModes: ["apikey"],
+  quirks: {
+    toolNameMaxLength: 64,
+  },
   transport: {
     baseUrl: "https://integrate.api.nvidia.com/v1/chat/completions",
     validateUrl: "https://integrate.api.nvidia.com/v1/models",
