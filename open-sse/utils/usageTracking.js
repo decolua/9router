@@ -176,6 +176,12 @@ export function canonicalizeUsage(usage) {
   let prompt = num(usage.prompt_tokens ?? usage.input_tokens);
   let cached;
 
+  // buildUsage() (openai-responses streaming) writes cache-read only into the
+  // nested prompt_tokens_details.cached_tokens — treat that as top-level
+  // cached_tokens so streaming usage records cache hits instead of billing
+  // them at full input rate (issue #2873).
+  const nestedCached = num(usage.prompt_tokens_details?.cached_tokens);
+
   // Claude path: prompt excludes cache; cache_read_input_tokens and/or
   // cache_creation_input_tokens are separate. A cache-miss "first write" only
   // carries cache_creation_input_tokens (no cache_read_input_tokens yet), so
@@ -190,7 +196,7 @@ export function canonicalizeUsage(usage) {
     prompt = prompt + cached + cacheCreation;
   } else {
     // OpenAI/Gemini path (or already-canonical input): prompt already includes cached_tokens.
-    cached = num(usage.cached_tokens);
+    cached = num(usage.cached_tokens) || nestedCached;
   }
 
   const result = {
