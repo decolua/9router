@@ -195,3 +195,101 @@ describe("gemini→claude direct response route", () => {
     expect(geminiToClaudeResponse("not json", state)).toBeNull();
   });
 });
+
+describe("gemini→claude: a started stream never ends empty", () => {
+  // Gemini omits content.parts entirely when it blocks a candidate, so a
+  // SAFETY finish used to emit message_start → message_delta → message_stop
+  // with no content block at all. Claude Code renders nothing for that,
+  // persists no assistant entry, and injects "[Your previous response had no
+  // visible output. Please continue...]" — which is blocked again, forever.
+  // 238 instances of that marker were found across ~/.claude/projects.
+  const renderable = (events) =>
+    events.filter((e) => e.type === "content_block_start")
+      .filter((e) => e.content_block.type === "text" || e.content_block.type === "tool_use");
+
+  const drive = (chunks) => {
+    const state = {};
+    const out = [];
+    for (const c of chunks) {
+      const r = geminiToClaudeResponse(c, state);
+      if (r) out.push(...r);
+    }
+    return out;
+  };
+
+  for (const reason of ["SAFETY", "RECITATION", "BLOCKLIST", "PROHIBITED_CONTENT", "MALFORMED_FUNCTION_CALL"]) {
+    it(`explains a ${reason} candidate that carries no parts`, () => {
+      const out = drive([{
+        candidates: [{ finishReason: reason }],
+        modelVersion: "gemini-pro-default",
+      }]);
+
+      expect(renderable(out).length).toBeGreaterThan(0);
+      expect(out.at(-1).type).toBe("message_stop");
+      const text = out.filter((e) => e.delta?.type === "text_delta").map((e) => e.delta.text).join("");
+      expect(text).toContain(reason);
+    });
+  }
+
+  it("names the blocked safety categories when Gemini reports them", () => {
+    const out = drive([{
+      candidates: [{
+        finishReason: "SAFETY",
+        safetyRatings: [{ category: "HARM_CATEGORY_HARASSMENT", blocked: true }],
+      }],
+      promptFeedback: { blockReason: "SAFETY" },
+      modelVersion: "gemini-pro-default",
+    }]);
+
+    const text = out.filter((e) => e.delta?.type === "text_delta").map((e) => e.delta.text).join("");
+    expect(text).toContain("HARM_CATEGORY_HARASSMENT");
+    expect(text).toContain("blockReason=SAFETY");
+  });
+
+  // Each of these used to return null on its own, so a stream ending any of
+  // these ways emitted no message_stop — a dangling message, which the client
+  // also reports as "no visible output".
+  for (const [label, terminator] of [
+    ["[DONE]", "[DONE]"],
+    ["data: [DONE]", "data: [DONE]"],
+    ["an unparseable body", "<html>502 Bad Gateway</html>"],
+    ["a non-object chunk", null],
+  ]) {
+    it(`closes a started stream terminated by ${label}`, () => {
+      const out = drive([
+        { candidates: [{ content: { parts: [] } }], modelVersion: "gemini-pro-default" },
+        terminator,
+      ]);
+
+      expect(renderable(out).length).toBeGreaterThan(0);
+      expect(out.at(-1).type).toBe("message_stop");
+    });
+  }
+
+  it("surfaces the unparseable body rather than swallowing it", () => {
+    const out = drive([
+      { candidates: [{ content: { parts: [] } }], modelVersion: "gemini-pro-default" },
+      "RESOURCE_EXHAUSTED: Quota exceeded for quota metric generate_requests",
+    ]);
+
+    const text = out.filter((e) => e.delta?.type === "text_delta").map((e) => e.delta.text).join("");
+    expect(text).toContain("RESOURCE_EXHAUSTED");
+  });
+
+  it("leaves a normal reply and a tool call untouched", () => {
+    const reply = drive([{
+      candidates: [{ content: { parts: [{ text: "hello" }] }, finishReason: "STOP" }],
+      modelVersion: "gemini-pro-default",
+    }]);
+    const replyText = reply.filter((e) => e.delta?.type === "text_delta").map((e) => e.delta.text).join("");
+    expect(replyText).toBe("hello");
+    expect(replyText).not.toContain("[9router]");
+
+    const call = drive([{
+      candidates: [{ content: { parts: [{ functionCall: { name: "Bash", args: { command: "ls" } } }] }, finishReason: "STOP" }],
+      modelVersion: "gemini-pro-default",
+    }]);
+    expect(call.some((e) => e.content_block?.type === "tool_use")).toBe(true);
+    expect(call.some((e) => e.delta?.type === "text_delta")).toBe(false);
+  });
+});

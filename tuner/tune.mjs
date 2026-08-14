@@ -156,22 +156,51 @@ function getHealth(db, candidates, bench) {
   const recentOkStmt = db.prepare(
     `SELECT COUNT(*) c FROM requestDetails WHERE timestamp > datetime('now','-30 minutes') AND status != 'error' AND model = ? AND provider = ?`
   );
+  // A registered id and a logged model name do not always agree on the vendor
+  // namespace: `nvidia/deepseek-ai/deepseek-v4-pro` is registered with the
+  // `deepseek-ai/` segment but has been observed logged without it. An exact
+  // compare then matches nothing, `ok === 0 && err === 0` pins health at the
+  // 0.5 default, and the model becomes invisible to scoring in BOTH directions
+  // — never demoted on failures, never promoted on successes. Fenrir's head
+  // sat at ok=0/err=0 for a model that served 1,119 turns.
+  //
+  // So: exact match first, unchanged. Only when that yields nothing at all do
+  // we retry on the last path segment, and only within the same provider, so
+  // the relaxation cannot pull in a same-named model from somewhere else.
+  const tail = (s) => String(s ?? '').split('/').pop();
+  const sum = (rows, pick, match) => rows.filter(match).reduce((s, r) => s + (pick(r) ?? 0), 0);
   const health = new Map();
+  const statless = [];
   for (const id of candidates) {
     const modelPart = id.slice(id.indexOf('/') + 1);
     const prefix = id.slice(0, id.indexOf('/'));
     const providerName = bench.providerByPrefix?.[prefix] ?? null;
-    const ok = okRows
-      .filter((r) => (providerName ? r.provider === providerName && r.model === modelPart : r.model === modelPart))
-      .reduce((s, r) => s + r.n, 0);
-    const err = errRows
-      .filter((r) => (providerName ? r.provider === providerName && r.model === modelPart : r.model === modelPart))
-      .reduce((s, r) => s + (r.e ?? 0), 0);
+    const exact = (r) => (providerName ? r.provider === providerName && r.model === modelPart : r.model === modelPart);
+    let ok = sum(okRows, (r) => r.n, exact);
+    let err = sum(errRows, (r) => r.e, exact);
+    let matchedModel = modelPart;
+    if (ok === 0 && err === 0 && providerName && tail(modelPart) !== modelPart) {
+      const loose = (r) => r.provider === providerName && tail(r.model) === tail(modelPart);
+      const lOk = sum(okRows, (r) => r.n, loose);
+      const lErr = sum(errRows, (r) => r.e, loose);
+      if (lOk > 0 || lErr > 0) {
+        ok = lOk;
+        err = lErr;
+        matchedModel = okRows.concat(errRows).find(loose)?.model ?? tail(modelPart);
+      }
+    }
     let h = ok === 0 && err === 0 ? 0.5 : ok / (ok + err + 1);
-    const recentErr = providerName ? recentErrStmt.get(modelPart, providerName).c : 0;
-    const recentOk = providerName ? recentOkStmt.get(modelPart, providerName).c : 0;
+    const recentErr = providerName ? recentErrStmt.get(matchedModel, providerName).c : 0;
+    const recentOk = providerName ? recentOkStmt.get(matchedModel, providerName).c : 0;
     if (recentErr > 0 && recentOk === 0) h = 0;
+    if (ok === 0 && err === 0) statless.push(id);
     health.set(id, { ok, err, health: h });
+  }
+  // reportUnbanded already shouts about ids that fail to resolve. Nothing shouted
+  // about ids that resolve, band correctly, and still carry no observations —
+  // which is the state that silently freezes a combo's order.
+  if (statless.length) {
+    console.warn(`[tuner] ${statless.length} candidate(s) have no usage rows in the last day; health pinned at the 0.5 default: ${statless.join(', ')}`);
   }
   return health;
 }

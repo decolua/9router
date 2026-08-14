@@ -32,13 +32,60 @@ function emitFunctionCall(functionCall, state) {
   return buildChunk(chunkMeta(state), { tool_calls: [toolCall] }, null);
 }
 
+// Gemini drops `content.parts` when it blocks a candidate, so a SAFETY finish
+// arrives carrying a finishReason and nothing else. The parts loop then runs
+// zero times while the finish branch still emits a final chunk, producing a
+// well-formed OpenAI completion whose content is empty — which every client
+// downstream reports as the model having said nothing. The Claude route had the
+// same hole; see translator/response/gemini-to-claude.js.
+function blockNotice(state, candidate, response) {
+  const finish = candidate?.finishReason || response?.promptFeedback?.blockReason || "none";
+  const blocked = (candidate?.safetyRatings || [])
+    .filter((r) => r && r.blocked)
+    .map((r) => r.category)
+    .join(", ");
+
+  let text = `[9router] ${state.model || "upstream"} returned a response with no content (finishReason=${finish}`;
+  if (blocked) text += `, blocked=${blocked}`;
+  text += ").";
+
+  if (finish === "MALFORMED_FUNCTION_CALL") {
+    text += " The model emitted an unparseable tool call. Retry the request; if it repeats, simplify the tool arguments.";
+  } else if (finish !== "STOP" && finish !== "none") {
+    text += " This is a provider-side block, not a tool or network failure."
+      + " Rephrase the request, or switch to another model — repeating it verbatim will be blocked again.";
+  } else {
+    text += " The stream closed before emitting any content.";
+  }
+  return text;
+}
+
 // Convert Gemini response chunk to OpenAI format
 export function geminiToOpenAIResponse(chunk, state) {
   if (!chunk) return null;
-  
+
   // Handle Antigravity wrapper
   const response = chunk.response || chunk;
-  if (!response || !response.candidates?.[0]) return null;
+  if (!response) return null;
+
+  // A prompt blocked before generation comes back with no candidates at all.
+  // Returning null here emitted literally nothing, so the client saw a silent
+  // stream rather than a reason.
+  if (!response.candidates?.[0]) {
+    if (!response.promptFeedback?.blockReason || state.finishReason) return null;
+    const out = [];
+    if (!state.messageId) {
+      state.messageId = response.responseId || `msg_${Date.now()}`;
+      state.model = response.modelVersion || "gemini";
+      state.functionIndex = 0;
+      state.geminiToolCallCount = 0;
+      out.push(buildChunk(chunkMeta(state), { role: ROLE.ASSISTANT }, null));
+    }
+    out.push(buildChunk(chunkMeta(state), { content: blockNotice(state, null, response) }, null));
+    out.push(buildChunk(chunkMeta(state), {}, OPENAI_FINISH.STOP));
+    state.finishReason = OPENAI_FINISH.STOP;
+    return out;
+  }
 
   const results = [];
   const candidate = response.candidates[0];
@@ -65,6 +112,7 @@ export function geminiToOpenAIResponse(chunk, state) {
         const hasFunctionCall = !!part.functionCall;
         
         if (hasTextContent) {
+          state.geminiSawOutput = true;
           results.push(buildChunk(
             chunkMeta(state),
             isThought ? reasoningDelta(part.text) : { content: part.text },
@@ -83,6 +131,7 @@ export function geminiToOpenAIResponse(chunk, state) {
       // can also stream thought parts without a signature; those must not be
       // surfaced as normal assistant content in OpenAI-compatible clients.
       if (part.text !== undefined && part.text !== "") {
+        state.geminiSawOutput = true;
         results.push(buildChunk(
           chunkMeta(state),
           isThought ? reasoningDelta(part.text) : { content: part.text },
@@ -98,6 +147,7 @@ export function geminiToOpenAIResponse(chunk, state) {
       // Inline data (images)
       const inlineData = part.inlineData || part.inline_data;
       if (inlineData?.data) {
+        state.geminiSawOutput = true;
         const mimeType = inlineData.mimeType || inlineData.mime_type || DEFAULT_IMAGE_MIME;
         results.push(buildChunk(
           chunkMeta(state),
@@ -124,7 +174,13 @@ export function geminiToOpenAIResponse(chunk, state) {
     if (finishReason === OPENAI_FINISH.STOP && state.geminiToolCallCount > 0) {
       finishReason = OPENAI_FINISH.TOOL_CALLS;
     }
-    
+
+    // Nothing was ever emitted, so finishing here would hand the client an
+    // empty completion and no reason for it.
+    if (!state.geminiSawOutput && !state.geminiToolCallCount) {
+      results.push(buildChunk(chunkMeta(state), { content: blockNotice(state, candidate, response) }, null));
+    }
+
     const finalChunk = buildChunk(chunkMeta(state), {}, finishReason);
     
     // Include usage in final chunk for downstream translators

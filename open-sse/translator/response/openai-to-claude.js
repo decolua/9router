@@ -184,7 +184,85 @@ function stopTextBlock(state, results) {
 
 // Convert OpenAI stream chunk to Claude format
 export function openaiToClaudeResponse(chunk, state) {
-  if (!chunk || !chunk.choices?.[0]) return null;
+  if (!chunk || !chunk.choices?.[0]) {
+    if (!state.finishHandled && state.messageStartSent) {
+      state.finishHandled = true;
+      const results = [];
+      const echoTail = flushEchoText(state);
+      if (echoTail) {
+        if (!state.textBlockStarted) {
+          state.textBlockIndex = state.nextBlockIndex++;
+          state.textBlockStarted = true;
+          state.textBlockClosed = false;
+          results.push({
+            type: "content_block_start",
+            index: state.textBlockIndex,
+            content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+          });
+        }
+        results.push({
+          type: "content_block_delta",
+          index: state.textBlockIndex,
+          delta: { type: "text_delta", text: echoTail }
+        });
+      }
+      // Emitting message_stop having opened no block at all hands the client an
+      // empty message. Claude Code renders nothing for that, persists no
+      // assistant entry, and injects "[Your previous response had no visible
+      // output. Please continue...]" — which produces another empty turn, and
+      // the loop never terminates. 238 instances of that marker were found
+      // across ~/.claude/projects, spanning every provider that lands on this
+      // route, not just gemini. See gemini-to-claude.js for the same guard on
+      // the direct route.
+      if (!state.textBlockStarted && !state.thinkingBlockStarted && !(state.toolCalls?.size > 0)) {
+        state.textBlockIndex = state.nextBlockIndex++;
+        state.textBlockStarted = true;
+        state.textBlockClosed = false;
+        results.push({
+          type: "content_block_start",
+          index: state.textBlockIndex,
+          content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+        });
+        results.push({
+          type: "content_block_delta",
+          index: state.textBlockIndex,
+          delta: {
+            type: "text_delta",
+            text: `[9router] ${state.model || "upstream"} closed the stream without producing any content.`
+              + " This is an upstream failure, not a tool error. Retry, or switch model —"
+              + " repeating the request unchanged may fail the same way."
+          }
+        });
+      }
+      stopThinkingBlock(state, results);
+      stopTextBlock(state, results);
+      for (const [idx, toolInfo] of state.toolCalls) {
+        const buffered = state.toolArgBuffers?.get(idx);
+        if (buffered) {
+          const sanitized = sanitizeToolArgs(state, toolInfo.name, buffered);
+          results.push({
+            type: "content_block_delta",
+            index: toolInfo.blockIndex,
+            delta: { type: "input_json_delta", partial_json: sanitized }
+          });
+        }
+        results.push({
+          type: "content_block_stop",
+          index: toolInfo.blockIndex
+        });
+      }
+      state.finishReason = "end_turn";
+      const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+      results.push({
+        type: "message_delta",
+        delta: { stop_reason: "end_turn", stop_sequence: null },
+        usage: finalUsage
+      });
+      results.push({ type: "message_stop" });
+      return results.length > 0 ? results : null;
+    }
+    return null;
+  }
 
   const results = [];
   const choice = chunk.choices[0];

@@ -1,6 +1,40 @@
 # Unreleased
 
 ## Fixes
+- **Translator (gemini→claude)**: a started stream can no longer end without
+  renderable content. Gemini omits `content.parts` entirely when it blocks a
+  candidate, so a `SAFETY`/`RECITATION`/`PROHIBITED_CONTENT` finish emitted
+  `message_start` → `message_delta` → `message_stop` with no content block at
+  all. Claude Code renders nothing for that, persists no assistant entry, and
+  injects `[Your previous response had no visible output. Please continue...]`,
+  which goes back upstream and is blocked again — a livelock, not a refusal.
+  The marker appears **238 times** across `~/.claude/projects`; in one session
+  the user sent ten messages into the silence before giving up. The finish now
+  emits a visible block naming `finishReason`, `promptFeedback.blockReason` and
+  any blocked safety categories. `[DONE]`, an unparseable body and a non-object
+  chunk each used to `return null` on their own, so a stream ending any of those
+  ways emitted no `message_stop` either; all terminators now route through one
+  `finishStream` and an unparseable body travels with the notice instead of
+  being swallowed. A terminator on a stream that never sent `message_start` is
+  still a no-op — the HTTP-level version of that failure is caught by status in
+  `services/combo.js` preflight and cascades to the next member.
+- **Translator (openai→claude)**: the same guard on the pivot route, which most
+  providers land on. A chunk arriving with no `choices` now flushes the echo
+  tail, closes any dangling thinking/text/tool blocks and emits `message_stop`
+  instead of returning null — and when the stream opened without ever producing
+  a renderable block, it says so rather than closing empty. A terminator on a
+  stream that never sent `message_start` stays a no-op.
+- **Tuner**: `getHealth` matched usage rows on the exact registered model name
+  only, so an id whose logged name drops the vendor namespace
+  (`nvidia/deepseek-ai/deepseek-v4-pro`) matched nothing, `ok === 0 && err === 0`
+  pinned health at the 0.5 default, and the model became invisible to scoring in
+  both directions — never demoted on failures, never promoted on successes.
+  Fenrir's head sat at `ok=0/err=0` while that model served 1,119 turns. Falls
+  back to last-path-segment matching within the same provider, only when the
+  exact compare yields nothing. Candidates that still have no observations are
+  now warned about by name — `reportUnbanded` already shouted about ids that
+  fail to resolve, but nothing shouted about ids that resolve, band correctly
+  and still carry no data, which is the state that silently freezes a combo.
 - **Translator**: harness tags are now stripped when the model opens them with
   attributes. Both echo filters compared against the literal `"<tag>"`, so a reply
   that opened `<task-notification task_id="a424703057daa789f">` matched nothing and
