@@ -129,14 +129,15 @@ export class VertexExecutor extends BaseExecutor {
   }
 
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
-    const saJson = parseVertexSaJson(credentials?.apiKey);
-    const adcJson = parseVertexAdcJson(credentials?.apiKey);
+    const effectiveCredentials = credentials ? { ...credentials } : credentials;
+    const saJson = parseVertexSaJson(effectiveCredentials?.apiKey);
+    const adcJson = parseVertexAdcJson(effectiveCredentials?.apiKey);
 
     // SA JSON flow: mint Bearer token via JWT assertion (cached)
     if (saJson) {
       const result = await refreshVertexToken(saJson, log);
       if (!result?.accessToken) throw new Error("Vertex: failed to mint access token from Service Account JSON");
-      credentials.accessToken = result.accessToken;
+      effectiveCredentials.accessToken = result.accessToken;
     }
 
     // ADC user credential flow: refresh Bearer token via Google OAuth2 token endpoint
@@ -148,20 +149,20 @@ export class VertexExecutor extends BaseExecutor {
         log
       );
       if (!result?.accessToken) throw new Error("Vertex: failed to refresh access token from ADC JSON (authorized_user)");
-      credentials.accessToken = result.accessToken;
+      effectiveCredentials.accessToken = result.accessToken;
     }
 
     // vertex-partner with raw key: auto-resolve project_id if not provided
-    if (this.provider === "vertex-partner" && !saJson && !adcJson && !credentials?.providerSpecificData?.projectId) {
-      const projectId = await resolveProjectId(credentials.apiKey);
+    if (this.provider === "vertex-partner" && !saJson && !adcJson && !effectiveCredentials?.providerSpecificData?.projectId) {
+      const projectId = await resolveProjectId(effectiveCredentials.apiKey);
       if (!projectId) throw new Error("Vertex: could not resolve project_id from API key. Please add it manually in provider settings.");
       log?.debug?.("VERTEX", `Resolved project_id: ${projectId}`);
-      credentials.providerSpecificData = { ...credentials.providerSpecificData, projectId };
+      effectiveCredentials.providerSpecificData = { ...effectiveCredentials.providerSpecificData, projectId };
     }
 
-    const url = this.buildUrl(model, stream, 0, credentials);
-    const headers = this.buildHeaders(credentials, stream);
-    const transformedBody = this.transformRequest(model, body, stream, credentials);
+    const url = this.buildUrl(model, stream, 0, effectiveCredentials);
+    const headers = this.buildHeaders(effectiveCredentials, stream);
+    const transformedBody = this.transformRequest(model, body, stream, effectiveCredentials);
 
     const response = await proxyAwareFetch(url, {
       method: "POST",
