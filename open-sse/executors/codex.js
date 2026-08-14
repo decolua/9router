@@ -16,14 +16,13 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 // SSE error patterns inside 200-OK bodies. Some retry same account first; capacity rotates accounts.
 const CODEX_SSE_RETRY_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
 const CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS = ["selected model is at capacity", "model_at_capacity"];
-const CODEX_SSE_USER_OUTPUT_PATTERNS = [
-  "event: response.output_text.delta",
+const CODEX_SSE_FUNCTION_OUTPUT_PATTERNS = [
   "event: response.function_call_arguments.delta",
-  '"type":"response.output_text.delta"',
   '"type":"response.function_call_arguments.delta"',
 ];
 const CODEX_SSE_PEEK_BYTES = 256 * 1024;
 const CODEX_MODEL_CAPACITY_MESSAGE = "Selected model is at capacity. Please try a different model.";
+const CODEX_OVERLOADED_OUTPUT_MESSAGE = "Our servers are currently overloaded. Please try again later.";
 
 // Server-generated item id prefixes that Codex /responses cannot resolve when store=false
 const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
@@ -172,6 +171,24 @@ function extractSseErrorMessage(text, fallback) {
   return fallback || CODEX_MODEL_CAPACITY_MESSAGE;
 }
 
+function extractSseOutputText(text) {
+  let output = "";
+  for (const line of String(text || "").split(/\r?\n/)) {
+    if (!line.startsWith("data:")) continue;
+    const data = line.slice(5).trim();
+    if (!data || data === "[DONE]") continue;
+    try {
+      const event = JSON.parse(data);
+      if (event?.type === "response.output_text.delta" && typeof event.delta === "string") {
+        output += event.delta;
+      }
+    } catch {
+      // The last SSE frame may still be incomplete; the next read will finish it.
+    }
+  }
+  return output;
+}
+
 function codexSseErrorResponse(status, message) {
   return new Response(JSON.stringify({
     error: {
@@ -313,6 +330,7 @@ export class CodexExecutor extends BaseExecutor {
     const chunks = [];
     let text = "";
     let matched = null;
+    let message = null;
     let accountFallback = false;
     try {
       while (text.length < CODEX_SSE_PEEK_BYTES) {
@@ -325,16 +343,33 @@ export class CodexExecutor extends BaseExecutor {
         if (accountHit) { matched = accountHit; accountFallback = true; break; }
         const retryHit = CODEX_SSE_RETRY_PATTERNS.find(p => lowerText.includes(p));
         if (retryHit) { matched = retryHit; break; }
-        if (CODEX_SSE_USER_OUTPUT_PATTERNS.some(p => lowerText.includes(p))) break;
+        if (CODEX_SSE_FUNCTION_OUTPUT_PATTERNS.some(p => lowerText.includes(p))) break;
+
+        // Codex sometimes disguises overload as a successful output_text stream.
+        // Join complete delta frames so detection also works across network chunks.
+        const outputText = extractSseOutputText(text);
+        if (outputText) {
+          const normalizedOutput = outputText.toLowerCase();
+          const normalizedOverload = CODEX_OVERLOADED_OUTPUT_MESSAGE.toLowerCase();
+          // Keep peeking only while the first output is still an exact prefix of the
+          // known overload message. Waiting for the next frame avoids classifying a
+          // legitimate answer that starts by quoting the message as an outage.
+          if (!normalizedOverload.startsWith(normalizedOutput)) break;
+        }
       }
     } catch (e) {
       dbg("CODEX", `peek read error: ${e.message}`);
     }
 
+    if (!matched && extractSseOutputText(text) === CODEX_OVERLOADED_OUTPUT_MESSAGE) {
+      matched = "codex_overloaded_output";
+      message = CODEX_OVERLOADED_OUTPUT_MESSAGE;
+    }
+
     if (matched) {
       try { await reader.cancel(); } catch { /* noop */ }
       try { reader.releaseLock(); } catch { /* noop */ }
-      return { matched, message: extractSseErrorMessage(text, matched), accountFallback, replacementBody: null };
+      return { matched, message: message || extractSseErrorMessage(text, matched), accountFallback, replacementBody: null };
     }
 
     reader.releaseLock();
