@@ -50,10 +50,12 @@ function forwardedHeaders(request, target) {
 }
 
 function rewriteDashboardHtml(html) {
-  return html.replace(
-    /fetch\('(?=\/(?:stats|health|stats-history|transformations\/feed))/g,
-    `fetch('${DASHBOARD_PREFIX}`,
-  );
+  return html
+    .replace(
+      /fetch\('(?=\/(?:stats|health|stats-history|transformations\/feed))/g,
+      `fetch('${DASHBOARD_PREFIX}`,
+    )
+    .replace(/(src|href)="\/dashboard\//g, `$1="${DASHBOARD_PREFIX}/dashboard/`);
 }
 
 async function proxy(request, { params }) {
