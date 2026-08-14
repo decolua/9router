@@ -56,11 +56,10 @@ export default function JcodeToolCard({
   }, [initialStatus]);
 
   useEffect(() => {
-    if (isExpanded && !jcodeStatus) {
-      checkJcodeStatus();
+    if (isExpanded) {
+      if (!jcodeStatus) checkJcodeStatus();
       fetchModelAliases();
     }
-    if (isExpanded) fetchModelAliases();
   }, [isExpanded]);
 
   const fetchModelAliases = async () => {
@@ -215,7 +214,7 @@ id = "${selectedModel || "cc/claude-opus-4-7"}"`;
       <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
-            <Image src={tool.image || "/providers/jcode.png"} alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
+            <Image src={tool.image || "/providers/jcode.png"} alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} loading="lazy" decoding="async" />
           </div>
           <div className="min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -359,15 +358,17 @@ id = "${selectedModel || "cc/claude-opus-4-7"}"`;
         </div>
       )}
 
-      <ModelSelectModal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onSelect={handleModelSelect}
-        selectedModel={selectedModel}
-        activeProviders={activeProviders}
-        modelAliases={modelAliases}
-        title="Select Model for jcode"
-      />
+      {modalOpen && (
+        <ModelSelectModal
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
+          onSelect={handleModelSelect}
+          selectedModel={selectedModel}
+          activeProviders={activeProviders}
+          modelAliases={modelAliases}
+          title="Select Model for jcode"
+        />
+      )}
 
       <ManualConfigModal
         isOpen={showManualConfigModal}

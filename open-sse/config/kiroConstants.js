@@ -8,18 +8,24 @@
  *   - `-agentic` model suffix detection + chunked-write system prompt
  *   - reasoning / thinking trigger detection (Anthropic-Beta header,
  *     Claude `thinking`, OpenAI `reasoning_effort`, AMP/Cursor magic tag)
- *   - the `<thinking_mode>enabled</thinking_mode>` system-prompt injection
- *     that turns Kiro reasoning on
+ *   - schema-specific native effort fields for supported GPT and Claude models
+ *   - legacy `<thinking_mode>` system-prompt injection for other models
  *
  * Kiro upstream does not advertise `-agentic` model IDs; they are a 9router
  * fiction. The suffix is stripped before the request leaves this process.
  */
 
-import { extractThinking } from "../translator/concerns/thinkingUnified.js";
+import { extractThinking, parseSuffix } from "../translator/concerns/thinkingUnified.js";
 import { effortToBudget } from "../translator/concerns/thinking.js";
 
 export const KIRO_AGENTIC_SUFFIX = "-agentic";
 export const KIRO_THINKING_SUFFIX = "-thinking";
+export const KIRO_TOOL_NAME_MAX_LENGTH = 64;
+export const KIRO_TOOL_DESCRIPTION_MAX_LENGTH = 10237;
+export const KIRO_TOOL_ID_MAX_LENGTH = 64;
+export const KIRO_CODEWHISPERER_TARGET =
+  "AmazonCodeWhispererStreamingService.GenerateAssistantResponse";
+export const KIRO_ENDPOINT_FALLBACK_STATUSES = new Set([401, 403, 404]);
 
 // Public default CodeWhisperer profile ARNs (us-east-1), keyed by auth method.
 // Used when an account cannot resolve its own profileArn. Builder ID and social
@@ -39,6 +45,39 @@ export function resolveDefaultProfileArn(authMethod) {
 }
 
 export const KIRO_THINKING_BUDGET_DEFAULT = 16000;
+
+/**
+ * Resolve a Kiro model after consuming the generic model(level) suffix.
+ * The suffix is a 9router request override, not part of Kiro's upstream model id.
+ */
+export function resolveKiroModelIntent(model) {
+  const { cleanModel, override } = parseSuffix(model);
+  return {
+    model: cleanModel,
+    ...resolveKiroModel(cleanModel),
+    thinkingOverride: override,
+  };
+}
+
+/** Apply a parsed model(level) override without mutating the caller's body. */
+export function applyKiroThinkingOverride(body, override) {
+  if (!override) return body;
+
+  const next = { ...body };
+  if (override.mode === "budget") {
+    delete next.output_config;
+    delete next.reasoning_effort;
+    delete next.reasoning;
+    next.thinking = { type: "enabled", budget_tokens: override.budget };
+    return next;
+  }
+
+  next.output_config = {
+    ...(body.output_config || {}),
+    effort: override.mode === "level" ? override.level : override.mode,
+  };
+  return next;
+}
 
 export const KIRO_AGENTIC_SYSTEM_PROMPT = `
 # CRITICAL: CHUNKED WRITE PROTOCOL (MANDATORY)
@@ -109,6 +148,7 @@ export function resolveKiroThinkingBudget(body, headers, model) {
   const cfg = extractThinking(body);
   if (cfg) {
     if (cfg.mode === "none") return null;
+    if (cfg.mode === "level" && cfg.level === "disabled") return null;
     if (cfg.mode === "budget") return cfg.budget;
     if (cfg.mode === "level") return effortToBudget(cfg.level) ?? KIRO_THINKING_BUDGET_DEFAULT;
     return KIRO_THINKING_BUDGET_DEFAULT;
@@ -144,9 +184,30 @@ export function extractKiroEffortLevel(body) {
   return null;
 }
 
-export function buildKiroAdditionalModelRequestFields(body) {
-  const effort = extractKiroEffortLevel(body);
+function extractKiroGptEffortLevel(body) {
+  const effort =
+    body?.output_config?.effort ??
+    body?.reasoning_effort ??
+    (typeof body?.reasoning === "object" ? body.reasoning?.effort : null);
+  if (typeof effort !== "string") return null;
+  const normalized = effort.toLowerCase();
+  if (normalized === "max") return "xhigh";
+  // Kiro CLI does not advertise an explicit GPT "none" wire value; omit it.
+  if (["low", "medium", "high", "xhigh"].includes(normalized)) {
+    return normalized;
+  }
+  return null;
+}
+
+export function buildKiroAdditionalModelRequestFields(body, effortPath = "output_config") {
+  const effort = effortPath === "reasoning"
+    ? extractKiroGptEffortLevel(body)
+    : extractKiroEffortLevel(body);
   if (!effort) return undefined;
+  if (effortPath === "reasoning") {
+    // Mirrors Kiro CLI/KAS buildEffortRequestFields("reasoning") for GPT.
+    return { reasoning: { effort } };
+  }
   // Mirrors Kiro CLI/KAS buildEffortRequestFields("output_config").
   return {
     thinking: { type: "adaptive", display: "summarized" },
@@ -154,12 +215,15 @@ export function buildKiroAdditionalModelRequestFields(body) {
   };
 }
 
-export function supportsKiroAdditionalModelRequestFields(model) {
-  if (typeof model !== "string") return false;
+export function resolveKiroEffortPath(model) {
+  if (typeof model !== "string") return null;
   const normalized = model.toLowerCase().replace(/-/g, ".");
-  if (!normalized.includes("claude")) return false;
+  if (/(?:^|[/.])gpt[/.]5[/.]6(?:[/.]|$)/.test(normalized)) {
+    return "reasoning";
+  }
+  if (!normalized.includes("claude")) return null;
   const match = normalized.match(/(?:^|[/.])claude(?:[/.][a-z]+)*[/.](\d+)(?:[/.](\d+))?(?:[/.]|$)/);
-  if (!match) return false;
+  if (!match) return null;
   const [, majorText, minorText] = match;
   const major = Number(majorText);
   const minor = minorText === undefined ? null : Number(minorText);
@@ -167,12 +231,24 @@ export function supportsKiroAdditionalModelRequestFields(model) {
   // Kiro rejected additionalModelRequestFields on legacy 4.5 models in live smoke.
   // Default future Claude/Kiro models to supported so new model releases do not
   // need a code allowlist update.
-  return !(major < 4 || (major === 4 && (minor === null || minor <= 5 || dateSuffixMinor)));
+  return major < 4 || (major === 4 && (minor === null || minor <= 5 || dateSuffixMinor))
+    ? null
+    : "output_config";
+}
+
+export function supportsKiroAdditionalModelRequestFields(model) {
+  return resolveKiroEffortPath(model) !== null;
+}
+
+export function usesKiroNativeGptEffort(body, model) {
+  return resolveKiroEffortPath(model) === "reasoning"
+    && extractKiroGptEffortLevel(body) !== null;
 }
 
 export function buildKiroAdditionalModelRequestFieldsForModel(body, model) {
-  if (!supportsKiroAdditionalModelRequestFields(model)) return undefined;
-  return buildKiroAdditionalModelRequestFields(body);
+  const effortPath = resolveKiroEffortPath(model);
+  if (!effortPath) return undefined;
+  return buildKiroAdditionalModelRequestFields(body, effortPath);
 }
 
 /**

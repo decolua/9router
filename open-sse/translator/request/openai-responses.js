@@ -32,6 +32,8 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   let pendingToolResults = [];
   let pendingReasoning = "";
   let pendingReasoningEncrypted = "";
+  const additionalTools = [];
+  const customToolNames = new Set();
 
   const inputItems = normalizeResponsesInput(body.input);
   if (!inputItems) return body;
@@ -96,7 +98,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       }
       result.messages.push(msg);
     }
-    else if (itemType === RESPONSES_ITEM.FUNCTION_CALL) {
+    else if (itemType === RESPONSES_ITEM.FUNCTION_CALL || itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) {
       // Start or append to assistant message with tool_calls
       if (!currentAssistantMsg) {
         currentAssistantMsg = {
@@ -108,16 +110,20 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       }
       // Skip items with empty/missing name — Codex/OpenAI reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
+      if (itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) customToolNames.add(item.name);
+      const toolInput = itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL
+        ? { input: typeof item.input === "string" ? item.input : JSON.stringify(item.input ?? "") }
+        : item.arguments;
       currentAssistantMsg.tool_calls.push({
         id: item.call_id,
         type: OPENAI_BLOCK.FUNCTION,
         function: {
           name: item.name,
-          arguments: item.arguments
+          arguments: typeof toolInput === "string" ? toolInput : JSON.stringify(toolInput ?? {})
         }
       });
     }
-    else if (itemType === RESPONSES_ITEM.FUNCTION_CALL_OUTPUT) {
+    else if (itemType === RESPONSES_ITEM.FUNCTION_CALL_OUTPUT || itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL_OUTPUT) {
       // Flush assistant message first if exists
       if (currentAssistantMsg) {
         result.messages.push(currentAssistantMsg);
@@ -136,6 +142,9 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         tool_call_id: item.call_id,
         content: typeof item.output === "string" ? item.output : JSON.stringify(item.output)
       });
+    }
+    else if (itemType === RESPONSES_ITEM.ADDITIONAL_TOOLS) {
+      if (Array.isArray(item.tools)) additionalTools.push(...item.tools);
     }
     else if (itemType === RESPONSES_ITEM.REASONING) {
       // Buffer reasoning text; attached to next assistant message/function_call.
@@ -166,15 +175,45 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   // explicit `name` field and cannot be represented as Chat Completions function declarations.
   // Filter them out to avoid sending nameless functionDeclarations to downstream providers
   // such as Gemini, which strictly validates function names.
-  if (body.tools && Array.isArray(body.tools)) {
-    result.tools = body.tools
+  const responseTools = [
+    ...(Array.isArray(body.tools) ? body.tools : []),
+    ...additionalTools,
+  ];
+  if (responseTools.length > 0) {
+    result.tools = responseTools
       .map(tool => {
         // Already in Chat Completions format: { type: "function", function: { name, ... } }
         if (tool.function) return tool;
-        // Responses API function tool: { type: "function", name, description, parameters }
-        // Only convert when a non-empty name is present; skip hosted tools without one.
+        // Responses API function/custom tool: { type, name, description, parameters|format }.
+        // Chat Completions has no freeform custom-tool declaration, so expose custom
+        // tools as functions with one raw `input` string while retaining their names
+        // in translator-only metadata for the response conversion.
         const name = tool.name;
         if (!name || typeof name !== "string" || name.trim() === "") return null;
+        if (tool.type === "custom") {
+          customToolNames.add(name);
+          const formatHint = [tool.format?.syntax, tool.format?.definition].filter(Boolean).join("\n");
+          return {
+            type: OPENAI_BLOCK.FUNCTION,
+            function: {
+              name,
+              description: [String(tool.description || ""), formatHint].filter(Boolean).join("\n\n"),
+              parameters: {
+                type: "object",
+                properties: {
+                  input: {
+                    type: "string",
+                    description: "Raw freeform input for this custom tool"
+                  }
+                },
+                required: ["input"],
+                additionalProperties: false
+              }
+            }
+          };
+        }
+        // Responses API function tool: { type: "function", name, description, parameters }
+        // Only convert when a non-empty name is present; skip hosted tools without one.
         return {
           type: OPENAI_BLOCK.FUNCTION,
           function: {
@@ -187,6 +226,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       })
       .filter(Boolean);
   }
+  if (customToolNames.size > 0) result._customToolNames = [...customToolNames];
 
   // Cleanup Responses API specific fields
   // Map Responses-only max_output_tokens to Chat max_tokens (avoid leaking unknown field upstream)
@@ -200,6 +240,9 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   delete result.include;
   delete result.prompt_cache_key;
   delete result.store;
+  if (typeof result.reasoning?.effort === "string") {
+    result.reasoning_effort = result.reasoning.effort;
+  }
   delete result.reasoning;
   delete result.client_metadata;
 
@@ -377,6 +420,8 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   if (body.top_p !== undefined) result.top_p = body.top_p;
   if (body.reasoning !== undefined) result.reasoning = body.reasoning;
   if (body.reasoning_effort !== undefined) result.reasoning = { effort: body.reasoning_effort, summary: "auto" };
+  if (body.service_tier !== undefined) result.service_tier = body.service_tier;
+  if (body.prompt_cache_key !== undefined) result.prompt_cache_key = body.prompt_cache_key;
 
   return result;
 }
