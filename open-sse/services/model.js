@@ -21,6 +21,22 @@ const BUILTIN_MODEL_ALIASES = {
   "grok-build": "gcli/grok-build",
 };
 
+const CONTEXT_SUFFIX_RE = /(?:\[(1m)\]|-(1m))$/i;
+
+export function splitRecognizedContextSuffix(modelId) {
+  if (typeof modelId !== "string") return { baseModel: modelId, suffix: "" };
+  const match = modelId.match(CONTEXT_SUFFIX_RE);
+  if (!match) return { baseModel: modelId, suffix: "" };
+  return {
+    baseModel: modelId.slice(0, match.index).trimEnd(),
+    suffix: match[0],
+  };
+}
+
+export function stripRecognizedContextSuffix(modelId) {
+  return splitRecognizedContextSuffix(modelId).baseModel;
+}
+
 /**
  * Resolve provider alias to provider ID
  */
@@ -108,17 +124,21 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
       : aliasesOrGetter;
 
   // Resolve alias
+  const rawModel = parsed.model;
+  const baseModel = stripRecognizedContextSuffix(rawModel);
   const resolved =
-    resolveModelAliasFromMap(parsed.model, aliases) ||
-    resolveModelAliasFromMap(parsed.model, BUILTIN_MODEL_ALIASES);
+    resolveModelAliasFromMap(rawModel, aliases) ||
+    resolveModelAliasFromMap(rawModel, BUILTIN_MODEL_ALIASES) ||
+    (baseModel !== rawModel ? resolveModelAliasFromMap(baseModel, aliases) : null) ||
+    (baseModel !== rawModel ? resolveModelAliasFromMap(baseModel, BUILTIN_MODEL_ALIASES) : null);
   if (resolved) {
     return resolved;
   }
 
   // Fallback: infer provider from model name prefix
   return {
-    provider: inferProviderFromModelName(parsed.model),
-    model: parsed.model,
+    provider: inferProviderFromModelName(baseModel),
+    model: baseModel,
   };
 }
 

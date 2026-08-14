@@ -6,6 +6,7 @@ import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
+import { stripRecognizedContextSuffix } from "./model.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -258,7 +259,11 @@ export function getComboModelsFromData(modelStr, combosData) {
   // Handle both array and object formats
   const combos = Array.isArray(combosData) ? combosData : (combosData?.combos || []);
   
-  const combo = combos.find(c => c.name === modelStr);
+  const combo = combos.find(c => c.name === modelStr)
+    || (() => {
+      const baseName = stripRecognizedContextSuffix(modelStr);
+      return baseName !== modelStr ? combos.find(c => c.name === baseName) : null;
+    })();
   if (combo && combo.models && combo.models.length > 0) {
     return combo.models;
   }

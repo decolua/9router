@@ -5,6 +5,7 @@ import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { isClaudeClassifierRequest, openAICompletionToClaudeMessage } from "./claudeMessageResponse.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -17,6 +18,20 @@ function textFromResponsesMessageItem(item) {
   const anyText = item.content.find((c) => typeof c.text === "string");
   if (typeof anyText?.text === "string") return anyText.text;
   return "";
+}
+
+function reasoningTextFromResponsesOutput(output) {
+  if (!Array.isArray(output)) return "";
+  return output
+    .filter((item) => item?.type === "reasoning")
+    .flatMap((item) => Array.isArray(item.summary) ? item.summary : [])
+    .map((part) => {
+      if (typeof part?.text === "string") return part.text;
+      if (typeof part?.summary === "string") return part.summary;
+      return "";
+    })
+    .filter(Boolean)
+    .join("\n");
 }
 
 /**
@@ -213,13 +228,14 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         + (usage.cache_read_input_tokens || usage.cached_tokens || 0)
         + (usage.cache_creation_input_tokens || 0);
       const { msgItem, textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
+      const reasoningText = reasoningTextFromResponsesOutput(jsonResponse.output);
       const totalLatency = Date.now() - requestStartTime;
 
       saveRequestDetail(buildRequestDetail({
         ...ctx,
         latency: { ttft: totalLatency, total: totalLatency },
         tokens: { prompt_tokens: inTokensForLog, completion_tokens: usage.output_tokens || 0 },
-        response: { content: textContent, thinking: null, finish_reason: jsonResponse.status || "unknown" },
+        response: { content: textContent, thinking: reasoningText || null, finish_reason: jsonResponse.status || "unknown" },
         status: "success"
       }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
 
@@ -268,6 +284,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         };
       } else {
         const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
+        if (reasoningText) message.reasoning_content = reasoningText;
         if (hasToolCalls) message.tool_calls = toolCalls;
         const responseDone = jsonResponse.status === "completed" || jsonResponse.status === "done";
         const finishReason = hasToolCalls ? "tool_calls" : (responseDone ? "stop" : (jsonResponse.status || "stop"));
@@ -279,6 +296,16 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
           choices: [{ index: 0, message, finish_reason: finishReason }],
           usage: { prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: inTokens + outTokens, ...cacheDetails }
         };
+      }
+
+      if (sourceFormat === FORMATS.CLAUDE) {
+        try {
+          finalResp = openAICompletionToClaudeMessage(finalResp, {
+            classifierMode: isClaudeClassifierRequest(body),
+          });
+        } catch (err) {
+          return createErrorResult(HTTP_STATUS.BAD_GATEWAY, err.message || "Claude classifier returned an invalid decision");
+        }
       }
 
       return { success: true, response: new Response(JSON.stringify(finalResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
@@ -328,6 +355,17 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     // must not be left unable to account for its own token spend: a caller cannot tell
     // a 90%-cached request from a cheap one without this.
     if (usage && Object.keys(usage).length > 0) parsed.usage = usage;
+
+    if (sourceFormat === FORMATS.CLAUDE) {
+      try {
+        const finalResp = openAICompletionToClaudeMessage(parsed, {
+          classifierMode: isClaudeClassifierRequest(body),
+        });
+        return { success: true, response: new Response(JSON.stringify(finalResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+      } catch (err) {
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, err.message || "Claude classifier returned an invalid decision");
+      }
+    }
 
     // Strip reasoning_content only when content is non-empty.
     // When content is empty (e.g. thinking models that used all tokens for reasoning),
