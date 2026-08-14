@@ -221,11 +221,14 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   // Try with available accounts (fallback on errors)
   const excludeConnectionIds = new Set();
+  const excludeProxyPoolIds = new Set();
   let lastError = null;
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = excludeProxyPoolIds.size > 0
+      ? await getProviderCredentials(provider, excludeConnectionIds, model, { excludeProxyPoolIds })
+      : await getProviderCredentials(provider, excludeConnectionIds, model);
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -294,18 +297,28 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         });
       },
       onRequestSuccess: async () => {
-        await clearAccountError(credentials.connectionId, credentials, model);
+        if (credentials.connectionId === "noauth") {
+          await clearAccountError(credentials.connectionId, credentials, model, provider);
+        } else {
+          await clearAccountError(credentials.connectionId, credentials, model);
+        }
       }
     });
 
     if (result.success) return result.response;
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
+    const proxyPoolId = credentials.connectionId === "noauth"
+      ? credentials.providerSpecificData?.connectionProxyPoolId
+      : null;
+    const { shouldFallback } = proxyPoolId
+      ? await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs, proxyPoolId)
+      : await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
 
     if (shouldFallback) {
       log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
       excludeConnectionIds.add(credentials.connectionId);
+      if (proxyPoolId) excludeProxyPoolIds.add(proxyPoolId);
       lastError = result.error;
       lastStatus = result.status;
       continue;

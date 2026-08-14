@@ -1,6 +1,6 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
+import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools, getProxyPoolById, updateProxyPool } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
-import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
+import { formatRetryAfter, checkFallbackError, isRateLimitError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
@@ -17,18 +17,80 @@ function githubMonthlyResetMs(status, errorText, provider) {
   return Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
 }
 
+function getProxyPoolProviderState(pool, providerId) {
+  const state = pool?.rateLimitState?.[providerId];
+  if (!state || typeof state !== "object") return null;
+  const cooldownUntilMs = new Date(state.cooldownUntil || 0).getTime();
+  if (!Number.isFinite(cooldownUntilMs)) return null;
+  return { ...state, cooldownUntilMs };
+}
+
+function isProxyPoolCoolingDown(pool, providerId) {
+  const state = getProxyPoolProviderState(pool, providerId);
+  return Boolean(state && state.cooldownUntilMs > Date.now());
+}
+
+function getEarliestProxyPoolCooldown(pools, providerId) {
+  let earliestMs = Infinity;
+  for (const pool of pools || []) {
+    const state = getProxyPoolProviderState(pool, providerId);
+    if (state && state.cooldownUntilMs > Date.now() && state.cooldownUntilMs < earliestMs) {
+      earliestMs = state.cooldownUntilMs;
+    }
+  }
+  return Number.isFinite(earliestMs) ? new Date(earliestMs).toISOString() : null;
+}
+
+function getProxyPoolLastError(pools, providerId) {
+  return (pools || [])
+    .map((pool) => getProxyPoolProviderState(pool, providerId)?.lastError)
+    .find(Boolean) || null;
+}
+
+function buildProxyPoolUnavailable(pools, providerId) {
+  const earliest = getEarliestProxyPoolCooldown(pools, providerId);
+  const retryAfter = earliest || new Date(Date.now() + 1000).toISOString();
+  return {
+    allRateLimited: true,
+    retryAfter,
+    retryAfterHuman: earliest ? formatRetryAfter(retryAfter) : "retry after 1s",
+    lastError: getProxyPoolLastError(pools, providerId) || "All proxy pools are unavailable",
+    lastErrorCode: 429,
+  };
+}
+
+function normalizeProxyPoolExclusions(value) {
+  if (value instanceof Set) return value;
+  if (Array.isArray(value)) return new Set(value);
+  return value ? new Set([value]) : new Set();
+}
+
+async function clearProxyPoolRateLimit(proxyPoolId, provider) {
+  if (!proxyPoolId || !provider) return;
+  const providerId = resolveProviderId(provider);
+  const pool = await getProxyPoolById(proxyPoolId);
+  if (!pool?.rateLimitState?.[providerId]) return;
+
+  const rateLimitState = { ...pool.rateLimitState };
+  delete rateLimitState[providerId];
+  await updateProxyPool(proxyPoolId, { rateLimitState });
+  log.info("PROXY", `${providerId} pool ${proxyPoolId.slice(0, 8)} cooldown cleared after success`);
+}
+
 /**
  * Get provider credentials from localDb
  * Filters out unavailable accounts and returns the selected account based on strategy
  * @param {string} provider - Provider name
  * @param {Set<string>|string|null} excludeConnectionIds - Connection ID(s) to exclude (for retry with next account)
  * @param {string|null} model - Model name for per-model rate limit filtering
+ * @param {object} options - Selection options, including no-auth proxy-pool exclusions
  */
 export async function getProviderCredentials(provider, excludeConnectionIds = null, model = null, options = {}) {
   // Normalize to Set for consistent handling
   const excludeSet = excludeConnectionIds instanceof Set
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
+  const excludeProxyPoolIds = normalizeProxyPoolExclusions(options?.excludeProxyPoolIds);
   const preferredConnectionId = options?.preferredConnectionId || null;
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
@@ -46,15 +108,37 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       const settings = await getSettings();
       const override = (settings.providerStrategies || {})[providerId] || {};
       const strategy = override.rotateStrategy || "none";
-      let pickedId = override.proxyPoolId || null;
-      if (strategy !== "none") {
+      const configuredPoolId = override.proxyPoolId || null;
+      let pickedId = configuredPoolId;
+
+      if (strategy !== "none" || configuredPoolId) {
         const allPools = await getProxyPools({ isActive: true });
-        const poolIds = allPools.filter(p => p.proxyUrl).map(p => p.id);
-        pickedId = pickProxyPoolId(poolIds, strategy, providerId);
+        const usablePools = allPools.filter((pool) => String(pool.proxyUrl || "").trim());
+
+        if (strategy !== "none") {
+          const availablePools = usablePools.filter((pool) =>
+            !excludeProxyPoolIds.has(pool.id) && !isProxyPoolCoolingDown(pool, providerId)
+          );
+
+          if (usablePools.length > 0 && availablePools.length === 0) {
+            return buildProxyPoolUnavailable(usablePools, providerId);
+          }
+
+          pickedId = pickProxyPoolId(availablePools.map((pool) => pool.id), strategy, providerId);
+        } else if (configuredPoolId) {
+          const configuredPool = usablePools.find((pool) => pool.id === configuredPoolId);
+          if (configuredPool && (excludeProxyPoolIds.has(configuredPoolId) || isProxyPoolCoolingDown(configuredPool, providerId))) {
+            return buildProxyPoolUnavailable([configuredPool], providerId);
+          }
+          // Preserve the existing behavior for a deleted/inactive fixed pool:
+          // resolveConnectionProxyConfig will fall back to no proxy.
+          pickedId = configuredPool ? configuredPoolId : null;
+        }
       }
       const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: pickedId || "" });
       return {
         id: "noauth",
+        connectionId: "noauth",
         connectionName: "Public",
         isActive: true,
         accessToken: "public",
@@ -214,10 +298,52 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
  * @param {string} errorText
  * @param {string|null} provider
  * @param {string|null} model - The specific model that triggered the error
+ * @param {number|null} resetsAtMs - Optional provider-reported reset time
+ * @param {string|null} proxyPoolId - Proxy pool used by a no-auth request
  * @returns {{ shouldFallback: boolean, cooldownMs: number }}
  */
-export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null) {
-  if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
+export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null, proxyPoolId = null) {
+  if (connectionId === "noauth") {
+    if (!proxyPoolId || !provider || !isRateLimitError(status, errorText)) {
+      return { shouldFallback: false, cooldownMs: 0 };
+    }
+
+    const providerId = resolveProviderId(provider);
+    const pool = await getProxyPoolById(proxyPoolId);
+    if (!pool || pool.isActive !== true) return { shouldFallback: false, cooldownMs: 0 };
+
+    const previousState = getProxyPoolProviderState(pool, providerId);
+    const backoffLevel = Number(previousState?.backoffLevel) || 0;
+    let shouldFallback;
+    let cooldownMs;
+    let newBackoffLevel;
+
+    if (resetsAtMs && resetsAtMs > Date.now()) {
+      shouldFallback = true;
+      cooldownMs = Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
+      newBackoffLevel = 0;
+    } else {
+      ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));
+    }
+    if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
+
+    const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider rate limit";
+    const rateLimitState = { ...(pool.rateLimitState || {}) };
+    rateLimitState[providerId] = {
+      cooldownUntil: new Date(Date.now() + cooldownMs).toISOString(),
+      backoffLevel: newBackoffLevel ?? backoffLevel,
+      lastError: reason,
+      errorCode: status,
+      lastErrorAt: new Date().toISOString(),
+    };
+
+    await updateProxyPool(proxyPoolId, { rateLimitState });
+    log.warn("PROXY", `${providerId} pool ${proxyPoolId.slice(0, 8)} unavailable for ${Math.round(cooldownMs / 1000)}s [${status}]`);
+    console.error(`❌ ${provider} proxy pool [${status}]: ${reason}`);
+    return { shouldFallback: true, cooldownMs };
+  }
+
+  if (!connectionId) return { shouldFallback: false, cooldownMs: 0 };
   const connections = await getProviderConnections({ provider });
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
@@ -271,10 +397,15 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
  * @param {string} connectionId
  * @param {object} currentConnection - credentials object (has _connection) or raw connection
  * @param {string|null} model - model that succeeded
+ * @param {string|null} provider - provider ID, used for no-auth proxy-pool state
  */
-export async function clearAccountError(connectionId, currentConnection, model = null) {
-  if (!connectionId || connectionId === "noauth") return;
-  const conn = currentConnection._connection || currentConnection;
+export async function clearAccountError(connectionId, currentConnection, model = null, provider = null) {
+  if (connectionId === "noauth") {
+    await clearProxyPoolRateLimit(currentConnection?.providerSpecificData?.connectionProxyPoolId, provider);
+    return;
+  }
+  if (!connectionId) return;
+  const conn = currentConnection?._connection || currentConnection;
   const now = Date.now();
   const allLockKeys = Object.keys(conn).filter(k => k.startsWith("modelLock_"));
 
