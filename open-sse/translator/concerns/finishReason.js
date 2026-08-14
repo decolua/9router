@@ -13,16 +13,6 @@ export function toOpenAIFinish(reason, format) {
         case CLAUDE_STOP.STOP_SEQUENCE: return OPENAI_FINISH.STOP;
         default: return OPENAI_FINISH.STOP;
       }
-    case "commandcode":
-      switch (reason) {
-        case "stop": return OPENAI_FINISH.STOP;
-        case "length": return OPENAI_FINISH.LENGTH;
-        case "tool-calls":
-        case "tool_use": return OPENAI_FINISH.TOOL_CALLS;
-        case "content-filter": return OPENAI_FINISH.CONTENT_FILTER;
-        case "error": return OPENAI_FINISH.STOP;
-        default: return reason || OPENAI_FINISH.STOP;
-      }
     case "gemini":
       switch (String(reason).toUpperCase()) {
         case GEMINI_FINISH.STOP: return OPENAI_FINISH.STOP;

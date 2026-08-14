@@ -22,8 +22,12 @@ import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
+import ImportModelsModal from "./ImportModelsModal";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
+
+// Qoder upstream ids may carry a "qoder/" prefix that the router does not expect.
+const stripQoderPrefix = (id) => id.replace(/^qoder\//, "");
 
 const AUTO_PING_SETTINGS_KEYS = {
   claude: "claudeAutoPing",
@@ -78,7 +82,8 @@ export default function ProviderDetailPage() {
   const [oneByOneResults, setOneByOneResults] = useState({});
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
-  const [importingQoderModels, setImportingQoderModels] = useState(false);
+  const [showImportModels, setShowImportModels] = useState(false);
+  const [importSupported, setImportSupported] = useState(false);
   const { copied, copy } = useCopyToClipboard();
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
@@ -193,6 +198,23 @@ export default function ProviderDetailPage() {
   const providerDisplayAlias = isCompatible
     ? (providerNode?.prefix || providerId)
     : providerAlias;
+
+  // Ids already present for this provider (built-in, custom, alias targets) —
+  // shown as disabled rows in the import modal.
+  const importExistingIds = (() => {
+    const set = new Set();
+    for (const m of models) set.add(m.id);
+    for (const m of kiloFreeModels) set.add(m.id);
+    for (const m of customModels) {
+      if (m.providerAlias === providerStorageAlias && (m.kind || m.type || "llm") === "llm") set.add(m.id);
+    }
+    for (const target of Object.values(modelAliases)) {
+      if (typeof target === "string" && target.startsWith(`${providerStorageAlias}/`)) {
+        set.add(target.slice(providerStorageAlias.length + 1));
+      }
+    }
+    return set;
+  })();
 
   const fetchDisabledModels = useCallback(async () => {
     try {
@@ -493,6 +515,21 @@ export default function ProviderDetailPage() {
     fetchSuggestedModels(fetcher).then(setSuggestedModels);
   }, [providerId]);
 
+  // Probe whether this provider supports upstream models listing (?check=1,
+  // no upstream call). Drives visibility of the "Import Models" button. For
+  // compatible providers the check requires a Base URL on the connection.
+  const activeConnectionId = connections.find((conn) => conn.isActive !== false)?.id || null;
+  useEffect(() => {
+    setImportSupported(false);
+    if (!activeConnectionId) return;
+    let cancelled = false;
+    fetch(`/api/providers/${activeConnectionId}/models?check=1`)
+      .then((res) => res.json())
+      .then((data) => { if (!cancelled) setImportSupported(data.supported === true); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [activeConnectionId]);
+
   const handleSetAlias = async (modelId, alias, providerAliasOverride = providerAlias) => {
     const fullModel = `${providerAliasOverride}/${modelId}`;
     try {
@@ -554,60 +591,6 @@ export default function ProviderDetailPage() {
       }
     } catch (error) {
       console.log("Error deleting custom model:", error);
-    }
-  };
-
-  // Fetch Qoder model list and automatically add to available models
-  const handleImportQoderModels = async () => {
-    if (importingQoderModels) return;
-    const activeConnection = connections.find((conn) => conn.isActive !== false);
-    if (!activeConnection) {
-      alert(translate("Please add an active Qoder connection first"));
-      return;
-    }
-
-    setImportingQoderModels(true);
-    try {
-      const res = await fetch(`/api/providers/${activeConnection.id}/models`);
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data.error || translate("Failed to fetch models"));
-        return;
-      }
-      const models = data.models || [];
-      if (models.length === 0) {
-        alert(translate("No models returned"));
-        return;
-      }
-
-      let importedCount = 0;
-      for (const model of models) {
-        const modelId = model.id || model.name;
-        if (!modelId) continue;
-        
-        // Qoder model ID format may be "qoder/auto" or "auto", need to remove prefix
-        const cleanModelId = modelId.replace(/^qoder\//, "");
-        const alreadyExists = customModels.some(
-          (entry) => entry.providerAlias === providerStorageAlias && entry.id === cleanModelId && (entry.kind || entry.type || "llm") === "llm"
-        ) || Object.values(modelAliases).includes(`${providerStorageAlias}/${cleanModelId}`);
-        if (alreadyExists) {
-          continue;
-        }
-
-        await handleAddCustomModel(cleanModelId, "llm", providerStorageAlias);
-        importedCount += 1;
-      }
-      
-      if (importedCount === 0) {
-        alert(translate("All models already exist, no new models added"));
-      } else {
-        alert(translate("Successfully added") + ` ${importedCount} ` + translate("models"));
-      }
-    } catch (error) {
-      console.log("Error importing Qoder models:", error);
-      alert(translate("Error fetching models") + ": " + error.message);
-    } finally {
-      setImportingQoderModels(false);
     }
   };
 
@@ -1086,6 +1069,8 @@ export default function ProviderDetailPage() {
           onDeleteCustomModel={(modelId) => handleDeleteCustomModel(modelId, "llm", providerStorageAlias)}
           connections={connections}
           isAnthropic={isAnthropicCompatible}
+          onModelsChanged={fetchCustomModels}
+          importSupported={importSupported}
         />
       );
     }
@@ -1171,17 +1156,14 @@ export default function ProviderDetailPage() {
           Add Model
         </button>
 
-        {/* Import Qoder models button — only show for qoder provider */}
-        {providerId === "qoder" && connections.some((conn) => conn.isActive !== false) && (
+        {/* Import models from the provider's /models endpoint — only when supported */}
+        {importSupported && activeConnectionId && (
           <button
-            onClick={handleImportQoderModels}
-            disabled={importingQoderModels}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-500/40 px-3 py-2 text-xs text-blue-600 dark:text-blue-400 transition-colors hover:border-blue-500 hover:bg-blue-500/5 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={() => setShowImportModels(true)}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-500/40 px-3 py-2 text-xs text-blue-600 dark:text-blue-400 transition-colors hover:border-blue-500 hover:bg-blue-500/5 sm:w-auto"
           >
-            <span className="material-symbols-outlined text-sm" style={importingQoderModels ? { animation: "spin 1s linear infinite" } : undefined}>
-              {importingQoderModels ? "progress_activity" : "download"}
-            </span>
-            {importingQoderModels ? translate("Fetching...") : translate("Fetch Qoder Models")}
+            <span className="material-symbols-outlined text-sm">download</span>
+            Import Models
           </button>
         )}
 
@@ -1769,6 +1751,16 @@ export default function ProviderDetailPage() {
           onClose={() => setShowAddCustomModel(false)}
         />
       )}
+
+      <ImportModelsModal
+        isOpen={showImportModels}
+        onClose={() => setShowImportModels(false)}
+        connectionId={activeConnectionId}
+        providerStorageAlias={providerStorageAlias}
+        existingIds={importExistingIds}
+        transformId={providerId === "qoder" ? stripQoderPrefix : undefined}
+        onImported={fetchCustomModels}
+      />
 
       {providerId === "codex" && (
         <BulkImportCodexModal

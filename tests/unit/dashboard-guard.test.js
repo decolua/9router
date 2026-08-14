@@ -197,6 +197,59 @@ describe("dashboard guard public LLM API access", () => {
   });
 });
 
+describe("dashboard guard always-protected auto-import routes", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+    mocks.validateApiKey.mockResolvedValue(false);
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+  });
+
+  // After GHSA-pjm4-8fpg-f9p6, isLocalRequest requires the per-process peer token
+  // stamped by custom-server.js. The plain `request()` helper has no peer headers, so
+  // the local-only gate rejects before the always-protected branch can run. Use
+  // localRequest() to model a real loopback request that came through the server.
+  it("allows local auto-import without JWT when requireLogin=false", async () => {
+    const response = await proxy(localRequest("/api/oauth/cursor/auto-import", {
+      host: "localhost:20128",
+      origin: "http://localhost:20128",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+
+  it("allows local kiro auto-import without JWT when requireLogin=false", async () => {
+    const response = await proxy(localRequest("/api/oauth/kiro/auto-import", {
+      host: "localhost:20128",
+      origin: "http://localhost:20128",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+
+  it("blocks local auto-import without JWT when requireLogin=true", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+
+    const response = await proxy(localRequest("/api/oauth/cursor/auto-import", {
+      host: "localhost:20128",
+      origin: "http://localhost:20128",
+    }));
+
+    // local-only gate (403) fires before the always-protected gate (401)
+    expect([401, 403]).toContain(response.status);
+  });
+
+  it("blocks remote auto-import even when requireLogin=false", async () => {
+    const response = await proxy(request("/api/oauth/cursor/auto-import", {
+      host: "router.example.com",
+    }));
+
+    expect([401, 403]).toContain(response.status);
+  });
+});
+
 describe("dashboard guard local-only access", () => {
   beforeEach(() => {
     vi.clearAllMocks();

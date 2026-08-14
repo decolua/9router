@@ -315,6 +315,29 @@ export function stripThinkingSuffix(model) {
 }
 
 /**
+ * Normalize a 9router-registry model id to the wire format the Kiro API
+ * accepts. The Kiro / CodeWhisperer backend uses dashes everywhere except
+ * for dotted version numbers (claude-sonnet-4.5 is fine, claude-sonnet.5 is
+ * not). This function only touches letter-dot-digit runs — the only
+ * transformations that matter for Kiro — and leaves digit-dot-digit
+ * version separators and non-Claude ids untouched.
+ *
+ *   toKiroWireModelId("claude-sonnet-4.5")    // "claude-sonnet-4.5"
+ *   toKiroWireModelId("claude-sonnet.5")      // "claude-sonnet-5"
+ *   toKiroWireModelId("claude-opus-4.8")      // "claude-opus-4.8"
+ *   toKiroWireModelId("deepseek-3.2")         // "deepseek-3.2" (non-Claude)
+ *
+ * @param {string} modelId 9router-registry model id (post-resolveKiroModel)
+ * @returns {string} Kiro wire-format model id
+ */
+export function toKiroWireModelId(modelId) {
+  if (typeof modelId !== "string") return modelId;
+  if (!modelId.startsWith("claude")) return modelId;
+  // sonnet.5 → sonnet-5, opus.4 → opus-4 — but 4.5 stays 4.5
+  return modelId.replace(/([a-z])\.(\d)/g, "$1-$2");
+}
+
+/**
  * Resolve a 9router model id to the real upstream Kiro model id, plus flags
  * describing which behaviours the suffixes implied.
  *

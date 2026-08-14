@@ -533,6 +533,25 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "glm":
+      case "glm-cn":
+      case "opencode-go":
+      case "ocg":
+      case "commandcode":
+      case "cmc":
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 100,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+            });
+          });
+        }
+        break;
+
       case "ollama":
         // Session (5h) / Weekly (7d) usage % from ollama.com/api/usage.
         // remainingPercentage only — no absolute remaining (UI treats remaining as %).

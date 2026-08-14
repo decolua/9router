@@ -7,6 +7,7 @@ import {
 } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
+import { getCapsOverrides } from "@/lib/db/index.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
@@ -17,7 +18,7 @@ import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
-import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { capabilitiesFromServiceKind, getCapabilitiesForModel, getConservativeComboCapabilities } from "open-sse/providers/capabilities.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -281,6 +282,13 @@ export async function buildModelsList(kindFilter, options = {}) {
   } catch (e) {
     console.log("Could not fetch disabled models");
   }
+
+  let capsOverrides = {};
+  try {
+    capsOverrides = await getCapsOverrides();
+  } catch (e) {
+    console.log("Could not fetch caps overrides");
+  }
   const isDisabled = (alias, modelId) => Array.isArray(disabledByAlias[alias]) && disabledByAlias[alias].includes(modelId);
 
   const activeConnectionByProvider = new Map();
@@ -302,6 +310,16 @@ export async function buildModelsList(kindFilter, options = {}) {
     };
     if (combo.kind === "webSearch" || combo.kind === "webFetch") {
       entry.kind = combo.kind;
+    } else if (!combo.kind || combo.kind === LLM_KIND) {
+      // Conservative minimal capabilities: minimum context window, minimum max output,
+      // and intersection (all must support) for boolean modalities (vision, tools, reasoning).
+      const comboModelsList = Array.isArray(combo.models) ? combo.models : [];
+      const comboCaps = getConservativeComboCapabilities(comboModelsList, capsOverrides);
+      if (comboCaps) {
+        entry.capabilities = comboCaps;
+        if (Number.isFinite(comboCaps.contextWindow)) entry.context_length = comboCaps.contextWindow;
+        if (Number.isFinite(comboCaps.maxOutput)) entry.max_completion_tokens = comboCaps.maxOutput;
+      }
     }
     models.push(entry);
   }
@@ -317,11 +335,17 @@ export async function buildModelsList(kindFilter, options = {}) {
       for (const model of providerModels) {
         if (!kindFilter.includes(modelKind(model))) continue;
         if (isDisabled(alias, model.id)) continue;
-        models.push({
+        const override = capsOverrides[`${alias}|${model.id}`] || capsOverrides[`${providerId}|${model.id}`];
+        const staticCaps = { ...(getCapabilitiesForModel(providerId, model.id) || {}), ...(override || {}) };
+        const entry = {
           id: `${alias}/${model.id}`,
           object: "model",
           owned_by: alias,
-        });
+        };
+        if (staticCaps.contextWindow) entry.context_length = staticCaps.contextWindow;
+        if (staticCaps.maxOutput) entry.max_completion_tokens = staticCaps.maxOutput;
+        entry.capabilities = staticCaps;
+        models.push(entry);
       }
     }
 
@@ -477,14 +501,15 @@ export async function buildModelsList(kindFilter, options = {}) {
           object: "model",
           owned_by: outputAlias,
         };
-        // Live-catalog resolvers (kiro/qoder/github/clinepass) mostly only return
-        // { id, name } — no per-model capability data. Fall back to the same
-        // pattern-matched capabilities the dashboard uses (useModelCaps.js) so
-        // dynamically-discovered LLM models still surface vision/reasoning/search/tools.
-        const caps = liveCapabilitiesById.get(modelId)
+        // User overrides (models.dev import / manual edits) win over static & live caps
+        const override = capsOverrides[`${outputAlias}|${modelId}`]
+          || capsOverrides[`${staticAlias}|${modelId}`]
+          || capsOverrides[`${providerId}|${modelId}`];
+        const baseCaps = liveCapabilitiesById.get(modelId)
           || capabilitiesFromServiceKind(customKind || liveKind)
           || (kind === LLM_KIND ? getCapabilitiesForModel(providerId, modelId) : null);
-        if (caps) model.capabilities = caps;
+        const caps = { ...(baseCaps || {}), ...(override || {}) };
+        if (caps && Object.keys(caps).length > 0) model.capabilities = caps;
         // Token limits under the snake_case names the OpenAI/OpenRouter
         // convention uses. `capabilities.contextWindow` is camelCase and nested,
         // so clients matching context_length find nothing, fall back to guessing
@@ -500,8 +525,8 @@ export async function buildModelsList(kindFilter, options = {}) {
           // table rather than emitting null and leaving clients to guess.
           if (!Number.isFinite(contextWindow) || !Number.isFinite(maxOutput)) {
             const fallback = getCapabilitiesForModel(providerId, modelId);
-            if (!Number.isFinite(contextWindow)) contextWindow = fallback.contextWindow;
-            if (!Number.isFinite(maxOutput)) maxOutput = fallback.maxOutput;
+            if (!Number.isFinite(contextWindow)) contextWindow = fallback?.contextWindow;
+            if (!Number.isFinite(maxOutput)) maxOutput = fallback?.maxOutput;
           }
           if (Number.isFinite(contextWindow)) model.context_length = contextWindow;
           if (Number.isFinite(maxOutput)) model.max_completion_tokens = maxOutput;
@@ -527,6 +552,29 @@ export async function buildModelsList(kindFilter, options = {}) {
           owned_by: outputAlias,
         });
       }
+    }
+  }
+
+  // Model aliases exposed as top-level model entries
+  if (kindFilter.includes(LLM_KIND)) {
+    for (const [alias, targetModel] of Object.entries(modelAliases || {})) {
+      if (!alias || typeof alias !== "string" || !targetModel) continue;
+      const aliasEntry = {
+        id: alias,
+        object: "model",
+        owned_by: "alias",
+      };
+      const [targetProvider, targetId] = targetModel.includes("/")
+        ? [targetModel.slice(0, targetModel.indexOf("/")), targetModel.slice(targetModel.indexOf("/") + 1)]
+        : [null, targetModel];
+      if (targetProvider && targetId) {
+        const targetOverride = capsOverrides[`${targetProvider}|${targetId}`];
+        const targetCaps = { ...(getCapabilitiesForModel(targetProvider, targetId) || {}), ...(targetOverride || {}) };
+        if (Number.isFinite(targetCaps.contextWindow)) aliasEntry.context_length = targetCaps.contextWindow;
+        if (Number.isFinite(targetCaps.maxOutput)) aliasEntry.max_completion_tokens = targetCaps.maxOutput;
+        if (Object.keys(targetCaps).length > 0) aliasEntry.capabilities = targetCaps;
+      }
+      models.push(aliasEntry);
     }
   }
 

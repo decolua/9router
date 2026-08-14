@@ -18,14 +18,9 @@ export default {
     },
   },
   category: "apikey",
+  modelsFetcher: { url: "https://api.commandcode.ai/provider/v1/models" },
   transport: {
-    baseUrl: "https://api.commandcode.ai/alpha/generate",
-    format: "commandcode",
-    forceStream: true,
-    headers: {
-      "x-command-code-version": "0.25.7",
-      "x-cli-environment": "cli",
-    },
+    baseUrl: "https://api.commandcode.ai/provider/v1/chat/completions",
   },
   models: [
     { id: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro" },
@@ -40,4 +35,8 @@ export default {
     { id: "Qwen/Qwen3.6-Plus", name: "Qwen 3.6 Plus" },
     { id: "stepfun/Step-3.5-Flash", name: "Step 3.5 Flash" },
   ],
+  features: {
+    usage: true,
+    usageApikey: true,
+  },
 };
