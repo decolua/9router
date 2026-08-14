@@ -7,6 +7,7 @@ import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 import { OMP_MODEL_ROLES, emptyOmpRoleAssignments } from "@/shared/constants/ompRoles";
+import { persistOmpModelSelection } from "./ompModelSelection";
 
 
 export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
@@ -26,6 +27,7 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
   const [catalogModels, setCatalogModels] = useState([]);
   const [roleAssignments, setRoleAssignments] = useState(emptyOmpRoleAssignments);
   const selectedModelsRef = useRef([]);
+  const modalInitialModelsRef = useRef([]);
   const effectiveSelectedApiKey = selectedApiKey || apiKeys?.[0]?.key || "";
 
 
@@ -66,30 +68,33 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
   };
 
   const saveModels = async (models) => {
+    const keyToUse = (effectiveSelectedApiKey && effectiveSelectedApiKey.trim())
+      ? effectiveSelectedApiKey
+      : (!cloudEnabled ? "sk_9router" : effectiveSelectedApiKey);
+    const capabilities = {};
+    for (const id of models || []) {
+      const m = catalogModels.find((x) => x.fullModel === id);
+      if (!m?.caps) continue;
+      capabilities[id] = { vision: !!m.caps.vision, search: !!m.caps.search, reasoning: !!m.caps.reasoning };
+    }
+    const roles = pruneRoleAssignments(roleAssignments, models);
+
     try {
-      const keyToUse = (effectiveSelectedApiKey && effectiveSelectedApiKey.trim())
-        ? effectiveSelectedApiKey
-        : (!cloudEnabled ? "sk_9router" : effectiveSelectedApiKey);
-      const capabilities = {};
-      for (const id of models || []) {
-        const m = catalogModels.find((x) => x.fullModel === id);
-        if (!m?.caps) continue;
-        capabilities[id] = { vision: !!m.caps.vision, search: !!m.caps.search, reasoning: !!m.caps.reasoning };
-      }
-      const roles = pruneRoleAssignments(roleAssignments, models);
-      await fetch("/api/cli-tools/omp-settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      await persistOmpModelSelection({
+        request: fetch,
+        previousModels: modalInitialModelsRef.current,
+        models,
+        payload: {
           baseUrl: getEffectiveBaseUrl(),
           apiKey: keyToUse,
-          models,
           capabilities,
           roles,
-        }),
+        },
       });
     } catch (error) {
-      console.log("Error saving models:", error);
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      await checkStatus();
     }
   };
 
@@ -375,7 +380,7 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`px-2 py-1 rounded border text-xs transition-colors ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Add Model</button>
+                      <button onClick={() => { modalInitialModelsRef.current = [...selectedModelsRef.current]; setModalOpen(true); }} disabled={!activeProviders?.length} className={`px-2 py-1 rounded border text-xs transition-colors ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Add Model</button>
                       <span className="text-xs text-text-muted">
                         {selectedModels.length > 0 && roleAssignments.default ? (
                           <>Default: <span className="text-primary">{roleAssignments.default}</span></>
