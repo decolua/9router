@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import Link from "next/link";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
 import SubscriptionValueBadge from "./SubscriptionValueBadge";
@@ -44,7 +45,6 @@ import {
   writeSubValueWindow,
 } from "./utils";
 import Card from "@/shared/components/Card";
-import { ConfirmModal, EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
@@ -58,16 +58,6 @@ const KIRO_METHOD_LABELS = {
   github: "GitHub",
   imported: "Imported Token",
   api_key: "API Key",
-};
-
-const AUTO_PING_SETTINGS_KEYS = {
-  claude: "claudeAutoPing",
-  codex: "codexAutoPing",
-};
-
-const AUTO_PING_TOOLTIPS = {
-  claude: "When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.",
-  codex: "Auto-starts the next 5h Codex window after reset by sending a tiny gpt-5.5 request. Consumes a small amount of quota.",
 };
 
 function kiroMethodLabel(conn) {
@@ -105,36 +95,6 @@ function kiroRegion(conn) {
   return seg || "";
 }
 
-function getCodexResetCreditCount(quota) {
-  const value = quota?.raw?.resetCredits?.availableCount;
-  const count = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(count) ? Math.max(0, count) : 0;
-}
-
-function formatCreditDate(value) {
-  if (!value) return "N/A";
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return "N/A";
-  return date.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function formatTimeRemaining(value) {
-  if (!value) return "N/A";
-  const diffMs = new Date(value).getTime() - Date.now();
-  if (!Number.isFinite(diffMs)) return "N/A";
-  if (diffMs <= 0) return "Expired";
-  const totalHours = Math.ceil(diffMs / (60 * 60 * 1000));
-  const days = Math.floor(totalHours / 24);
-  const hours = totalHours % 24;
-  return days > 0 ? `${days}d ${hours}h` : `${hours}h`;
-}
-
 export default function ProviderLimits() {
   const { copied, copy } = useCopyToClipboard();
   const { blurClass } = useBlurEmails();
@@ -143,22 +103,14 @@ export default function ProviderLimits() {
   const [loading, setLoading] = useState({});
   const [errors, setErrors] = useState({});
   const [autoRefresh, setAutoRefresh] = useState(true);
-  const [autoPingMaps, setAutoPingMaps] = useState({ claude: {}, codex: {} });
   const [lastUpdated, setLastUpdated] = useState(null);
   const [hasHydratedAutoRefresh, setHasHydratedAutoRefresh] = useState(false);
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [countdown, setCountdown] = useState(60);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
-  const [deletingId, setDeletingId] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
-  const [resettingLimitId, setResettingLimitId] = useState(null);
-  const [resetConfirmState, setResetConfirmState] = useState(null);
-  const [resetCreditsState, setResetCreditsState] = useState(null);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [selectedConnection, setSelectedConnection] = useState(null);
   const [connectionValues, setConnectionValues] = useState({});
   const [valueWindow, setValueWindow] = useState(SUB_VALUE_DEFAULT_WINDOW);
-  const [proxyPools, setProxyPools] = useState([]);
   const [providerFilter, setProviderFilter] = useState("all");
   const [providerOptions, setProviderOptions] = useState([]);
   const [accountFilter, setAccountFilter] = useState("all");
@@ -315,192 +267,6 @@ export default function ProviderLimits() {
     [fetchQuota],
   );
 
-  const handleResetCodexLimit = useCallback(
-    async (connectionId, provider) => {
-      if (provider !== "codex" || resettingLimitId) return;
-
-      setResettingLimitId(connectionId);
-      setErrors((prev) => ({ ...prev, [connectionId]: null }));
-
-      try {
-        const response = await fetch(`/api/usage/${connectionId}/codex-reset-credits`, { method: "POST" });
-        const result = await response.json().catch(() => ({}));
-
-        if (!response.ok) {
-          throw new Error(result.message || result.error || result.code || "Failed to reset Codex limit");
-        }
-
-        await fetchQuota(connectionId, provider);
-        setLastUpdated(new Date());
-      } catch (error) {
-        setErrors((prev) => ({ ...prev, [connectionId]: error.message || "Failed to reset Codex limit" }));
-      } finally {
-        setResettingLimitId(null);
-      }
-    },
-    [fetchQuota, resettingLimitId],
-  );
-
-  const handleViewCodexResetCredits = useCallback(async (connection) => {
-    setResetCreditsState({ connection, loading: true, error: null, data: null });
-    try {
-      const response = await fetch(`/api/usage/${connection.id}/codex-reset-credits`, { cache: "no-store" });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(result.error || result.message || "Failed to load Codex reset credits");
-      }
-      const credits = Array.isArray(result.credits) ? [...result.credits] : [];
-      credits.sort((a, b) => {
-        const aTime = a.expiresAt ? new Date(a.expiresAt).getTime() : Number.POSITIVE_INFINITY;
-        const bTime = b.expiresAt ? new Date(b.expiresAt).getTime() : Number.POSITIVE_INFINITY;
-        return aTime - bTime;
-      });
-      setResetCreditsState({ connection, loading: false, error: null, data: { ...result, credits } });
-    } catch (error) {
-      setResetCreditsState({ connection, loading: false, error: error.message || "Failed to load Codex reset credits", data: null });
-    }
-  }, []);
-
-  const handleDeleteConnection = useCallback(
-    async (id) => {
-      if (!confirm("Delete this connection?")) return;
-      setDeletingId(id);
-      try {
-        const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
-        if (res.ok) {
-          setQuotaData((prev) => {
-            const next = { ...prev };
-            delete next[id];
-            return next;
-          });
-          setLoading((prev) => {
-            const next = { ...prev };
-            delete next[id];
-            return next;
-          });
-          setErrors((prev) => {
-            const next = { ...prev };
-            delete next[id];
-            return next;
-          });
-
-          if (typeof window !== "undefined") {
-            try {
-              const cache = getQuotaCache();
-              if (cache[id]) {
-                delete cache[id];
-                window.localStorage.setItem(
-                  QUOTA_CACHE_KEY,
-                  JSON.stringify(cache),
-                );
-              }
-            } catch (e) {
-              console.error("Error deleting cache entry:", e);
-            }
-          }
-
-          await reconcileConnectionsPage(fetchConnections, page);
-        }
-      } catch (error) {
-        console.error("Error deleting connection:", error);
-      } finally {
-        setDeletingId(null);
-      }
-    },
-    [fetchConnections, page],
-  );
-
-  const handleToggleConnectionActive = useCallback(
-    async (id, isActive) => {
-      setTogglingId(id);
-      try {
-        const res = await fetch(`/api/providers/${id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ isActive }),
-        });
-        if (res.ok) {
-          setQuotaData((prev) => {
-            const next = { ...prev };
-            return next;
-          });
-          await reconcileConnectionsPage(fetchConnections, page);
-        }
-      } catch (error) {
-        console.error("Error updating connection status:", error);
-      } finally {
-        setTogglingId(null);
-      }
-    },
-    [fetchConnections, page],
-  );
-
-  const fetchConnectionValues = useCallback(async () => {
-    try {
-      const res = await fetch("/api/usage/connection-value", { cache: "no-store" });
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data?.connections) setConnectionValues(data.connections);
-    } catch {
-      // The badge is supplementary — a failed fetch just leaves it hidden.
-    }
-  }, []);
-
-  const handleUpdateConnection = useCallback(
-    async (formData) => {
-      if (!selectedConnection?.id) return;
-      const connectionId = selectedConnection.id;
-      const provider = selectedConnection.provider;
-      try {
-        const res = await fetch(`/api/providers/${connectionId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formData),
-        });
-        if (res.ok) {
-          await fetchConnections();
-          setShowEditModal(false);
-          setSelectedConnection(null);
-          await fetchConnectionValues();
-          if (USAGE_SUPPORTED_PROVIDERS.includes(provider)) {
-            await fetchQuota(connectionId, provider);
-          }
-        }
-      } catch (error) {
-        console.error("Error saving connection:", error);
-      }
-    },
-    [selectedConnection, fetchConnections, fetchQuota, fetchConnectionValues],
-  );
-
-  useEffect(() => {
-    setValueWindow(readSubValueWindow());
-    fetchConnectionValues();
-  }, [fetchConnectionValues]);
-
-  const handleToggleValueWindow = useCallback(() => {
-    setValueWindow((prev) => {
-      const next = prev === "lifetime" ? "month" : "lifetime";
-      writeSubValueWindow(next);
-      return next;
-    });
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/proxy-pools?isActive=true", { cache: "no-store" })
-      .then((res) => res.json())
-      .then((data) => {
-        if (!cancelled && data?.proxyPools) {
-          setProxyPools(data.proxyPools);
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const refreshAll = useCallback(async (force = false) => {
     if (refreshingAll) return;
 
@@ -538,6 +304,51 @@ export default function ProviderLimits() {
     }
   }, [refreshingAll, fetchConnections, fetchQuota, page]);
 
+  const handleToggleConnectionActive = useCallback(
+    async (id, isActive) => {
+      setTogglingId(id);
+      try {
+        const res = await fetch(`/api/providers/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ isActive }),
+        });
+        if (res.ok) {
+          await reconcileConnectionsPage(fetchConnections, page);
+        }
+      } catch (error) {
+        console.error("Error updating connection status:", error);
+      } finally {
+        setTogglingId(null);
+      }
+    },
+    [fetchConnections, page],
+  );
+
+  const fetchConnectionValues = useCallback(async () => {
+    try {
+      const res = await fetch("/api/usage/connection-value", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data?.connections) setConnectionValues(data.connections);
+    } catch {
+      // The badge is supplementary — a failed fetch just leaves it hidden.
+    }
+  }, []);
+
+  useEffect(() => {
+    setValueWindow(readSubValueWindow());
+    fetchConnectionValues();
+  }, [fetchConnectionValues]);
+
+  const handleToggleValueWindow = useCallback(() => {
+    setValueWindow((prev) => {
+      const next = prev === "lifetime" ? "month" : "lifetime";
+      writeSubValueWindow(next);
+      return next;
+    });
+  }, []);
+
   useEffect(() => {
     const initializeData = async () => {
       setConnectionsLoading(true);
@@ -574,42 +385,6 @@ export default function ProviderLimits() {
     if (typeof window === "undefined" || !hasHydratedAutoRefresh) return;
     window.localStorage.setItem(AUTO_REFRESH_STORAGE_KEY, String(autoRefresh));
   }, [autoRefresh, hasHydratedAutoRefresh]);
-
-  // Load auto-ping per-connection maps
-  useEffect(() => {
-    fetch("/api/settings", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : {}))
-      .then((s) => {
-        setAutoPingMaps({
-          claude: s?.claudeAutoPing?.connections || {},
-          codex: s?.codexAutoPing?.connections || {},
-        });
-        setQuotaVisibility(s?.quotaVisibility || {});
-      })
-      .catch(() => {});
-  }, []);
-
-  const toggleAutoPing = useCallback(async (connectionId, provider, on) => {
-    const settingsKey = AUTO_PING_SETTINGS_KEYS[provider];
-    if (!settingsKey) return;
-
-    const previous = autoPingMaps;
-    const nextProviderMap = { ...(autoPingMaps[provider] || {}), [connectionId]: on };
-    const nextMaps = { ...autoPingMaps, [provider]: nextProviderMap };
-    setAutoPingMaps(nextMaps);
-    try {
-      const r = await fetch("/api/settings", { cache: "no-store" });
-      const s = r.ok ? await r.json() : {};
-      const cfg = { ...(s[settingsKey] || {}), connections: nextProviderMap };
-      await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [settingsKey]: cfg }),
-      });
-    } catch {
-      setAutoPingMaps(previous);
-    }
-  }, [autoPingMaps]);
 
   const updateQuotaVisibility = useCallback(async (nextVisibility, previousVisibility) => {
     setQuotaVisibility(nextVisibility);
@@ -1066,10 +841,7 @@ export default function ProviderLimits() {
 
           // Use table layout for all providers
           const isInactive = conn.isActive === false;
-          const isCodex = conn.provider === "codex";
-          const resetCreditCount = getCodexResetCreditCount(quota);
-          const isResettingLimit = resettingLimitId === conn.id;
-          const rowBusy = deletingId === conn.id || togglingId === conn.id || isResettingLimit;
+          const rowBusy = togglingId === conn.id;
           const rawQuotas = quota?.quotas || [];
           const visibleQuotas = filterQuotasByVisibility(conn.provider, rawQuotas, quotaVisibility);
           const hiddenQuotaRows = getHiddenQuotaRows(conn.provider, rawQuotas, quotaVisibility);
@@ -1095,9 +867,16 @@ export default function ProviderLimits() {
                       />
                     </div>
                     <div className="min-w-0">
-                      <h3 className="text-sm font-semibold text-text-primary capitalize truncate">
-                        {conn.provider}
-                      </h3>
+                      <Link
+                        href={`/dashboard/accounts/${conn.id}`}
+                        className="group/link inline-flex max-w-full items-center gap-1 text-sm font-semibold text-text-primary transition-colors hover:text-primary"
+                        title="Open account detail"
+                      >
+                        <span className="capitalize truncate">{conn.provider}</span>
+                        <span className="material-symbols-outlined shrink-0 text-[16px] text-text-muted transition-transform group-hover/link:translate-x-0.5 group-hover/link:text-primary">
+                          chevron_right
+                        </span>
+                      </Link>
                       {getConnectionLabel(conn) ? (
                         <p className={`text-xs text-text-muted truncate ${isConnectionEmail(conn, getConnectionLabel(conn)) ? blurClass : ""}`}>
                           {getConnectionLabel(conn)}
@@ -1161,61 +940,6 @@ export default function ProviderLimits() {
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
-                    {isCodex && (
-                      <>
-                        <Tooltip
-                          text={
-                            resetCreditCount > 0
-                              ? `Use one Codex reset credit. Available: ${resetCreditCount}`
-                              : "No Codex reset credits available"
-                          }
-                        >
-                          <button
-                            type="button"
-                            onClick={() => setResetConfirmState({ connection: conn, resetCreditCount })}
-                            disabled={resetCreditCount <= 0 || isLoading || rowBusy}
-                            aria-label={
-                              resetCreditCount > 0
-                                ? `Use one Codex reset credit. ${resetCreditCount} available.`
-                                : "No Codex reset credits available"
-                            }
-                            className={`flex h-8 min-w-10 items-center justify-center gap-1 rounded-lg border px-2 text-[11px] font-medium tabular-nums transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary/60 disabled:cursor-not-allowed disabled:opacity-60 ${
-                              resetCreditCount > 0
-                                ? "border-primary/30 bg-primary/5 text-primary hover:bg-primary/10"
-                                : "border-black/10 bg-black/[0.02] text-text-muted dark:border-white/10 dark:bg-white/[0.03]"
-                            }`}
-                          >
-                            <span className={`material-symbols-outlined text-[15px] ${isResettingLimit ? "animate-spin" : ""}`}>
-                              {isResettingLimit ? "progress_activity" : "restart_alt"}
-                            </span>
-                            <span>{resetCreditCount}</span>
-                          </button>
-                        </Tooltip>
-                        <Tooltip text="View Codex reset credit expiry">
-                          <button
-                            type="button"
-                            onClick={() => handleViewCodexResetCredits(conn)}
-                            disabled={isLoading || rowBusy}
-                            aria-label="View Codex reset credit expiry"
-                            className="flex h-8 w-8 items-center justify-center rounded-lg border border-black/10 text-text-muted transition-colors hover:bg-black/5 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:hover:bg-white/5"
-                          >
-                            <span className="material-symbols-outlined text-[17px]">schedule</span>
-                          </button>
-                        </Tooltip>
-                      </>
-                    )}
-                    {AUTO_PING_SETTINGS_KEYS[conn.provider] && conn.authType === "oauth" && (
-                      <Tooltip text={AUTO_PING_TOOLTIPS[conn.provider]}>
-                        <button
-                          type="button"
-                          onClick={() => toggleAutoPing(conn.id, conn.provider, !(autoPingMaps[conn.provider]?.[conn.id] === true))}
-                          aria-label="Toggle auto-ping"
-                          className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${autoPingMaps[conn.provider]?.[conn.id] === true ? "text-primary" : "text-text-muted"}`}
-                        >
-                          <span className="material-symbols-outlined text-[18px]">bolt</span>
-                        </button>
-                      </Tooltip>
-                    )}
                     <Tooltip text="Refresh quota">
                       <button
                         type="button"
@@ -1228,37 +952,6 @@ export default function ProviderLimits() {
                           className={`material-symbols-outlined text-[18px] text-text-muted ${isLoading ? "animate-spin" : ""}`}
                         >
                           refresh
-                        </span>
-                      </button>
-                    </Tooltip>
-                    <Tooltip text="Edit connection">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedConnection(conn);
-                          setShowEditModal(true);
-                        }}
-                        disabled={rowBusy}
-                        aria-label="Edit connection"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary transition-colors disabled:opacity-50"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">
-                          edit
-                        </span>
-                      </button>
-                    </Tooltip>
-                    <Tooltip text="Delete connection">
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteConnection(conn.id)}
-                        disabled={rowBusy}
-                        aria-label="Delete connection"
-                        className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-red-500/10 text-red-500 transition-colors disabled:opacity-50"
-                      >
-                        <span
-                          className={`material-symbols-outlined text-[18px] ${deletingId === conn.id ? "animate-pulse" : ""}`}
-                        >
-                          delete
                         </span>
                       </button>
                     </Tooltip>
@@ -1462,120 +1155,6 @@ export default function ProviderLimits() {
           </div>
         </div>
 
-      <ConfirmModal
-        isOpen={Boolean(resetConfirmState)}
-        onClose={() => {
-          if (!resettingLimitId) setResetConfirmState(null);
-        }}
-        onConfirm={async () => {
-          const connection = resetConfirmState?.connection;
-          if (!connection) return;
-          await handleResetCodexLimit(connection.id, connection.provider);
-          setResetConfirmState(null);
-        }}
-        title="Reset Codex limit?"
-        message={(() => {
-          const conn = resetConfirmState?.connection || {};
-          const label = getConnectionLabel(conn);
-          return (
-            <>
-              {"Use 1 Codex reset credit for "}
-              <span className={isConnectionEmail(conn, label) ? blurClass : ""}>
-                {label || "this account"}
-              </span>
-              {`. This cannot be undone. Remaining credits: ${resetConfirmState?.resetCreditCount ?? 0}.`}
-            </>
-          );
-        })()}
-        confirmText="Reset limit"
-        cancelText="Cancel"
-        variant="danger"
-        loading={Boolean(resettingLimitId)}
-      />
-
-      {resetCreditsState && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-black/15 bg-white shadow-2xl ring-1 ring-black/10 dark:border-white/15 dark:bg-neutral-950 dark:ring-white/10">
-            <div className="flex items-start justify-between gap-3 border-b border-black/10 bg-black/[0.03] px-4 py-3 dark:border-white/10 dark:bg-white/[0.04]">
-              <div className="min-w-0">
-                <h3 className="text-base font-semibold text-text-primary">Codex Reset Credit Expiry</h3>
-                <p className={`mt-0.5 truncate text-xs text-text-muted ${isConnectionEmail(resetCreditsState.connection, getConnectionLabel(resetCreditsState.connection)) ? blurClass : ""}`}>
-                  {getConnectionLabel(resetCreditsState.connection) || "Codex account"}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setResetCreditsState(null)}
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-black/5 hover:text-text-primary dark:hover:bg-white/5"
-                aria-label="Close reset credit expiry modal"
-              >
-                <span className="material-symbols-outlined text-[18px]">close</span>
-              </button>
-            </div>
-
-            <div className="max-h-[70vh] overflow-auto bg-white p-4 dark:bg-neutral-950">
-              {resetCreditsState.loading ? (
-                <div className="flex items-center justify-center gap-2 py-10 text-sm text-text-muted">
-                  <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
-                  Loading reset credits...
-                </div>
-              ) : resetCreditsState.error ? (
-                <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-300">
-                  {resetCreditsState.error}
-                </div>
-              ) : resetCreditsState.data?.credits?.length ? (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2 text-xs text-text-muted dark:border-white/10 dark:bg-white/[0.03]">
-                    <span>{resetCreditsState.data.credits.length} reset credit{resetCreditsState.data.credits.length === 1 ? "" : "s"}</span>
-                    <span>{resetCreditsState.data.availableCount ?? 0} available</span>
-                  </div>
-                  <div className="overflow-x-auto rounded-xl border border-black/10 dark:border-white/10">
-                    <table className="w-full min-w-[560px] text-left text-sm">
-                      <thead className="bg-black/[0.03] text-xs uppercase tracking-wide text-text-muted dark:bg-white/[0.04]">
-                        <tr>
-                          <th className="px-3 py-2 font-medium">Status</th>
-                          <th className="px-3 py-2 font-medium">Granted At</th>
-                          <th className="px-3 py-2 font-medium">Expires At</th>
-                          <th className="px-3 py-2 font-medium">Remaining</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {resetCreditsState.data.credits.map((credit, index) => (
-                          <tr key={`${credit.status}-${credit.expiresAt || index}`} className="border-t border-black/5 dark:border-white/5">
-                            <td className="px-3 py-2">
-                              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                                {credit.status || "unknown"}
-                              </span>
-                            </td>
-                            <td className="px-3 py-2 text-text-muted">{formatCreditDate(credit.grantedAt)}</td>
-                            <td className="px-3 py-2 text-text-primary">{formatCreditDate(credit.expiresAt)}</td>
-                            <td className="px-3 py-2 font-medium text-text-primary">{formatTimeRemaining(credit.expiresAt)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : (
-                <div className="rounded-xl border border-black/10 bg-black/[0.02] px-3 py-8 text-center text-sm text-text-muted dark:border-white/10 dark:bg-white/[0.03]">
-                  No reset credit details returned for this account.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <EditConnectionModal
-        isOpen={showEditModal}
-        connection={selectedConnection}
-        proxyPools={proxyPools}
-        onSave={handleUpdateConnection}
-        onClose={() => {
-          setShowEditModal(false);
-          setSelectedConnection(null);
-        }}
-      />
     </div>
   );
 }

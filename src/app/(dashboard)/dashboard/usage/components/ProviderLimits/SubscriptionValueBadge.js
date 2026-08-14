@@ -72,13 +72,20 @@ export default function SubscriptionValueBadge({ value, window: windowMode, onTo
     .filter(Boolean)
     .join(" ");
 
+  // Deliberately not red — this is a positive stat, and red on the card reads
+  // as an error state next to the genuine error styling elsewhere. Free rides
+  // on the success token; anything priced uses the brand tint.
+  const tone = isFree
+    ? "bg-green-500/12 text-green-600 dark:text-green-400"
+    : "bg-brand-500/12 text-brand-600 dark:text-brand-300";
+
   return (
     <Tooltip text={tooltip}>
       <button
         type="button"
         onClick={onToggleWindow}
         aria-label={`${label}, ${windowText}. Click to switch window.`}
-        className="shrink-0 rounded-full bg-red-500 px-2.5 py-1 text-[11px] font-bold text-white transition-opacity hover:opacity-85"
+        className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums transition-colors hover:brightness-95 ${tone}`}
       >
         {label}
       </button>
