@@ -36,6 +36,7 @@ function injectMessagesSystem(body, prompt) {
     return;
   }
 
+  const isResponsesShape = Array.isArray(body.input) && !Array.isArray(body.messages);
   const arr = Array.isArray(body.messages) ? body.messages
     : Array.isArray(body.input) ? body.input
     : null;
@@ -43,18 +44,22 @@ function injectMessagesSystem(body, prompt) {
 
   const idx = arr.findIndex(m => m && (m.role === "system" || m.role === "developer"));
   if (idx >= 0) {
-    appendToOpenAIMessage(arr[idx], prompt);
+    // Chat content parts use {type:"text"}, Responses content parts use {type:"input_text"}
+    appendToOpenAIMessage(arr[idx], prompt, isResponsesShape ? "input_text" : "text");
+  } else if (isResponsesShape) {
+    // Responses input[] items must be typed; a bare {role,content} item is rejected upstream
+    arr.unshift({ type: "message", role: "system", content: [{ type: "input_text", text: prompt }] });
   } else {
     arr.unshift({ role: "system", content: prompt });
   }
 }
 
-function appendToOpenAIMessage(msg, prompt) {
+function appendToOpenAIMessage(msg, prompt, partType) {
   if (typeof msg.content === "string") {
     msg.content = `${msg.content}${SEP}${prompt}`;
   } else if (Array.isArray(msg.content)) {
-    // Responses-style array of parts {type:"input_text"|"text", text}
-    msg.content.push({ type: "input_text", text: prompt });
+    // Chat arrays expect {type:"text"}; Responses arrays expect {type:"input_text"}
+    msg.content.push({ type: partType || "text", text: prompt });
   } else {
     msg.content = prompt;
   }
