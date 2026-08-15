@@ -1,3 +1,15 @@
+# v0.5.55-local.1 (2026-08-15)
+
+Local install only — not an upstream release.
+
+## Fixes
+- **OpenCode-Go**: DeepSeek stays on `/zen/go/v1/chat/completions`. Claude-format
+  clients no longer hit `/messages` (400). `model(max)` is a thinking override
+  and is stripped before metadata lookup.
+- **OpenCode Free**: send official `User-Agent: opencode/1.18.18` and keep
+  session ids per request. Did **not** take PR #3321 egress switching or
+  `x-real-ip` forwarding (loopback would share one quota bucket).
+
 # v0.5.55 (2026-08-14)
 
 ## Features

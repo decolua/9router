@@ -4,7 +4,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
-const OPENCODE_UA = "opencode";
+const OPENCODE_UA = "opencode/1.18.18";
 const MESSAGES_MODELS = new Set();
 
 function generateRequestId() {
@@ -33,11 +33,10 @@ function resolveOpencodeSession(body, credentials) {
 export class OpenCodeExecutor extends BaseExecutor {
   constructor() {
     super("opencode", PROVIDERS.opencode);
-    this._currentSessionId = null;
   }
 
   transformRequest(model, body, stream, credentials) {
-    this._currentSessionId = resolveOpencodeSession(body, credentials);
+    if (credentials) credentials._ocSession = resolveOpencodeSession(body, credentials);
     return injectReasoningContent({ provider: this.provider, model, body });
   }
 
@@ -61,7 +60,7 @@ export class OpenCodeExecutor extends BaseExecutor {
       "Authorization": "Bearer public",
       "User-Agent": isOpencodeDownstream ? downstreamUa : OPENCODE_UA,
       "x-opencode-client": lower["x-opencode-client"] || "desktop",
-      "x-opencode-session": lower["x-opencode-session"] || this._currentSessionId || generateSessionId(),
+      "x-opencode-session": lower["x-opencode-session"] || credentials?._ocSession || generateSessionId(),
       "x-opencode-request": lower["x-opencode-request"] || generateRequestId(),
       "x-opencode-project": lower["x-opencode-project"] || "global",
       "Accept": stream ? "text/event-stream" : "*/*",
