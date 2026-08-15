@@ -118,7 +118,16 @@ export default {
     { id: "qwen/qwen3.6-plus", name: "Qwen3.6 Plus" },
     { id: "qwen/qwen3.7-max", name: "Qwen3.7 Max" },
     { id: "qwen/qwen3.7-plus", name: "Qwen3.7 Plus" },
-    { id: "qwen/qwen3.8-max", name: "Qwen3.8 Max" },
+    { id: "qwen/qwen3.8-max", name: "Qwen3.8 Max", family: "qwen3.8-max" },
+    // Declared like moonshotai/kimi-k3-free above, and for the same reason: a
+    // bare id carries no family, identityOf returns family null, bandOf returns
+    // null, and tune.mjs's pool filter drops it from every combo — so the model
+    // is reachable by direct request and invisible to the tuner. Observed
+    // 2026-08-15: added via the dashboard, served two successful calls, and
+    // still reported band=none with "Not present in any combo's current or
+    // desired order". A mode never moves a band (CONTEXT.md), so the free
+    // variant inherits whatever qwen3.8-max is banded at.
+    { id: "qwen/qwen3.8-max-free", name: "Qwen3.8 Max Free", family: "qwen3.8-max", mode: "free" },
     { id: "qwen3.5-omni-plus", name: "Qwen3.5 Omni Plus" },
     { id: "qwen3.6-flash", name: "Qwen3.6 Flash" },
     { id: "sakana/fugu-ultra", name: "Fugu Ultra" },
