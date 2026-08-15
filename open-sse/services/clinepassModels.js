@@ -30,7 +30,7 @@ export async function resolveClinepassModels(credentials) {
   if (!token) return null;
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   try {
     const headers = buildModelListHeaders(token, isApiKey);
@@ -41,6 +41,8 @@ export async function resolveClinepassModels(credentials) {
       signal: controller.signal,
     });
 
+    clearTimeout(timeoutId);
+    
     if (!response.ok) return null;
 
     const json = await response.json();
@@ -58,6 +60,6 @@ export async function resolveClinepassModels(credentials) {
   } catch {
     return null;
   } finally {
-    clearTimeout(timer);
+    clearTimeout(timeoutId);
   }
 }

@@ -1,8 +1,24 @@
 import { describe, it, expect } from "vitest";
 
-import { stripUnsupportedParams } from "../../open-sse/translator/concerns/paramSupport.js";
+import { stripUnsupportedParams, STRIP_RULES } from "../../open-sse/translator/concerns/paramSupport.js";
 
 describe("stripUnsupportedParams", () => {
+  it("truncates tools for providers with a truncateTools rule", () => {
+    STRIP_RULES.push({ provider: "test-truncate", truncateTools: 5 });
+
+    const body = {
+      tools: Array.from({ length: 200 }, (_, i) => ({ type: "function", function: { name: `tool_${i}` } })),
+      messages: [{ role: "user", content: "hi" }],
+    };
+
+    stripUnsupportedParams("test-truncate", "some-model", body);
+
+    expect(body.tools).toHaveLength(5);
+
+    STRIP_RULES.pop();
+  });
+
+
   it("flattens Cloudflare AI OpenAI content-part arrays", () => {
     const body = {
       messages: [
@@ -51,5 +67,14 @@ describe("stripUnsupportedParams", () => {
     stripUnsupportedParams("volcengine-ark", "GLM-5.2", body);
 
     expect(body.max_tokens).toBe(64000);
+  });
+
+  it("does not modify body for unknown provider", () => {
+    const body = { tools: Array.from({ length: 200 }, (_, i) => ({ type: "function", function: { name: `tool_${i}` } })), messages: [{ role: "user", content: "hi" }] };
+
+    stripUnsupportedParams("unknown-provider", "some-model", body);
+
+    expect(body.tools).toHaveLength(200);
+    expect(body.messages).toHaveLength(1);
   });
 });

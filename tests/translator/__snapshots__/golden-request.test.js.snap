@@ -233,7 +233,9 @@ exports[`GOLDEN request: OpenAI → Gemini > full body (system/image/tool/tool_r
 
 exports[`GOLDEN request: OpenAI → Kiro > full body (image base64 + tool_result) 1`] = `
 {
+  "agentMode": "vibe",
   "conversationState": {
+    "agentTaskType": "vibe",
     "chatTriggerType": "MANUAL",
     "currentMessage": {
       "userInputMessage": {
@@ -281,7 +283,11 @@ continue",
     "history": [
       {
         "userInputMessage": {
-          "content": "You are helpful.
+          "content": "[Context: Current time is <TS>
+
+<instructions>
+You are helpful.
+</instructions>
 
 What's in this image?",
           "images": [

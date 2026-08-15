@@ -353,7 +353,6 @@ export async function POST(request) {
         }
 
         case "deepseek":
-        case "groq":
         case "xai":
         case "mistral":
         case "perplexity":

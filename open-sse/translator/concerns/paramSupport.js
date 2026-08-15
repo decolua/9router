@@ -5,7 +5,7 @@ import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 
 // Each rule: optional provider, regex match on model, list of params to drop.
 // A param is removed only when it is present (!== undefined).
-const STRIP_RULES = [
+export const STRIP_RULES = [
   // All Claude models: temperature deprecated/rejected upstream (Anthropic 400). #1748
   { match: /claude/i, drop: ["temperature"] },
   // GitHub Copilot gpt-5.4: temperature unsupported.
@@ -68,6 +68,11 @@ export function stripUnsupportedParams(provider, model, body) {
         clampNumber(body, "max_tokens", ceiling);
         clampNumber(body, "max_completion_tokens", ceiling);
         clampNumber(body, "max_output_tokens", ceiling);
+      }
+    }
+    if (Number.isFinite(rule.truncateTools) && rule.truncateTools > 0 && Array.isArray(body.tools)) {
+      if (body.tools.length > rule.truncateTools) {
+        body.tools = body.tools.slice(0, rule.truncateTools);
       }
     }
   }

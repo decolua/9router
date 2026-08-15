@@ -38,6 +38,11 @@ export default {
   models: [
     { id: "gemini-3.7-flash", name: "Gemini 3.7 Flash" },
     { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash" },
+    // `gemini-3-flash` is the bare alias advertised/used as the default
+    // (OPENAI_MODEL in cliTools.js) and via antigravity, but the real
+    // Google generativelanguage model id is `gemini-3-flash-preview`.
+    // Without this mapping, gemini/gemini-3-flash 404s every time.
+    { id: "gemini-3-flash", name: "Gemini 3 Flash", upstreamModelId: "gemini-3-flash-preview", thinking: false },
     { id: "gemini-3.5-flash-lite", name: "Gemini 3.5 Flash Lite" },
     { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview" },
     { id: "gemini-3.1-flash-lite-preview", name: "Gemini 3.1 Flash Lite Preview" },

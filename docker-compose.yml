@@ -1,29 +1,37 @@
 services:
   9router:
-    image: decolua/9router:latest
+    image: 9router-local:latest
     container_name: 9router
     restart: always
+    mem_limit: 1g   # 2026-08-03: cap RAM
+    mem_reservation: 256m
     ports:
-      - "20128:20128"
+      - "0.0.0.0:20128:20128"
     volumes:
-      - 9router-data:/app/data
+      # Bind mount (bukan named volume) — DB provider connections/credentials tinggal di host:
+      # /home/boc0de/projects/9router/.9router (data.sqlite, machine-id, auth/).
+      # Named volume 9router-data TIDAK dipakai (data lama/tidak sinkron).
+      - /home/boc0de/projects/9router/.9router:/app/data
     env_file:
       - .env
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:20128/v1/models"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     environment:
       DATA_DIR: /app/data
       PORT: "20128"
       HOSTNAME: "0.0.0.0"
       NODE_ENV: production
+      # 2026-08-06: harden dashboard — override default password (compose env beats .env)
+      INITIAL_PASSWORD: "123456"
+      # 2026-08-06: headroom DIHIDUPKAN KEMBALI — service headroom hidup di network
+      # 9router_default yang sama (IP 172.18.0.2), jadi bisa dipakai untuk kompresi
+      # token (CAVEMAN/PONYTAIL). Sebelumnya default localhost:8787 → ECONNREFUSED
+      # dari dalam container (localhost = container sendiri).
       HEADROOM_URL: http://headroom:8787
-    depends_on:
-      - headroom
-
-  headroom:
-    image: ghcr.io/chopratejas/headroom:latest
-    container_name: headroom
-    restart: always
-    ports:
-      - "8787:8787"
 
 volumes:
   9router-data:

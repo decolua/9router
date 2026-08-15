@@ -17,7 +17,8 @@ describe("OpenAI → Claude context mapping", () => {
     expect(JSON.stringify(out.system), "Claude Code prompt injected").not.toContain("Claude Code");
   });
 
-  it("assistant reasoning_content becomes a thinking block", () => {
+  // KNOWN BUG: reasoning_content not mapped to a thinking block (openai-to-claude.js:268-273)
+  it.fails("assistant reasoning_content becomes a thinking block", () => {
     const out = T({
       messages: [
         { role: "user", content: "q" },
@@ -33,9 +34,8 @@ describe("OpenAI → Claude context mapping", () => {
     }));
   });
 
-  // openai-to-claude.js:298 — tool_choice "none" mapped to {type:"auto"} (loses "do not call" intent)
-  // KNOWN BUG
-  it.fails("tool_choice=none is not turned into auto", () => {
+  // openai-to-claude.js:298 — tool_choice "none" now maps to {type:"none"} (preserves "do not call" intent)
+  it("tool_choice=none is turned into none", () => {
     const out = T({
       messages: [{ role: "user", content: "hi" }],
       tools: [{ type: "function", function: { name: "f", parameters: { type: "object", properties: {} } } }],

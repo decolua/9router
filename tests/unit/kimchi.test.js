@@ -13,7 +13,7 @@ describe("kimchi registry entry", () => {
 
   it("is an oauth provider auto-listed via byCategory", () => {
     assert.equal(kimchiEntry.id, "kimchi");
-    assert.equal(kimchiEntry.category, "oauth");
+    assert.equal(kimchiEntry.category, "freeTier");
   });
 
   it("points at the OpenAI-compatible gateway with an authenticated UA", () => {

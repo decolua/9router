@@ -5,9 +5,12 @@ WORKDIR /app
 
 FROM base AS builder
 
-RUN apk --no-cache upgrade && apk --no-cache add python3 make g++ linux-headers
+RUN apk --no-cache upgrade && apk --no-cache add python3 make g++ linux-headers bash
 
 COPY package.json ./
+# postinstall only needs tests/setup-aliases.sh — copy that single file
+# (not the whole tests/ dir) to preserve layer cache on npm install.
+COPY tests/setup-aliases.sh ./tests/setup-aliases.sh
 RUN --mount=type=cache,target=/root/.npm \
   npm install
 

@@ -86,3 +86,7 @@ graphify-out/*
 .codegraph/
 .PR/
 .next-analyze/*
+
+# Local runtime data + secrets (jwt-secret, machine-id, DB with provider keys)
+.9router/
+.worktrees
