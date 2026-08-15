@@ -1,12 +1,14 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mkdtempSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, afterEach } from "vitest";
 import { copyStandaloneAssets } from "../../scripts/copy-standalone-assets.mjs";
 
+let projectRoot;
+
 function createBuildFixture(distDir) {
-  const projectRoot = mkdtempSync(join(tmpdir(), "9router-standalone-assets-"));
+  projectRoot = mkdtempSync(join(tmpdir(), "9router-standalone-assets-"));
   const buildRoot = join(projectRoot, distDir);
   mkdirSync(join(buildRoot, "standalone"), { recursive: true });
   mkdirSync(join(buildRoot, "static", "chunks"), { recursive: true });
@@ -15,6 +17,12 @@ function createBuildFixture(distDir) {
   writeFileSync(join(projectRoot, "public", "favicon.svg"), "public asset");
   return projectRoot;
 }
+
+afterEach(() => {
+  if (projectRoot) {
+    rmSync(projectRoot, { recursive: true, force: true });
+  }
+});
 
 describe("standalone build assets", () => {
   it("copies static and public assets into the default standalone layout", () => {
