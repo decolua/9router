@@ -13,5 +13,10 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "dependencies": {
+    "sql.js": "^1.14.1",
+    "undici": "^8.10.0",
+    "uuid": "^13.0.0"
   }
 }

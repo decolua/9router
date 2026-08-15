@@ -4,6 +4,7 @@ import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
+import { canonicalEchoModel } from "../services/model.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
@@ -114,6 +115,18 @@ export function createSSEStream(options = {}) {
 
               // Ensure OpenAI-required fields are present on streaming chunks (Letta compat)
               let fieldsInjected = false;
+              // Echo a stable, listing-valid model name instead of the upstream
+              // id. Passthrough providers (opencode free tier) echo the bare
+              // resolved model with the provider prefix stripped; clients that
+              // trust the echo re-send it on the next hop. Prefixed requests
+              // keep their exact form; bare requests resolved to a
+              // connection-less catalog provider get the listing form
+              // re-injected (OpenRouter-style proxy echo).
+              const echoModel = canonicalEchoModel({ requestedModel: body?.model, provider, model });
+              if (typeof parsed.model === "string" && echoModel && parsed.model !== echoModel) {
+                parsed.model = echoModel;
+                fieldsInjected = true;
+              }
               if (parsed.choices !== undefined) {
                 if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
                 if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }

@@ -1,4 +1,5 @@
 import REGISTRY from "../providers/registry/index.js";
+import { PROVIDER_MODELS } from "../config/providerModels.js";
 
 // Alias→id derived from registry single-source: id→id, alias→id, aliases[]→id.
 // Media-only providers without a registry transport entry keep explicit aliases here.
@@ -21,11 +22,59 @@ const BUILTIN_MODEL_ALIASES = {
   "grok-build": "gcli/grok-build",
 };
 
+// Connection-less catalog providers (noAuth + live modelsFetcher) strip their
+// provider prefix upstream and echo the bare id back. The listing emits their
+// models as `${alias}/${id}`, so the response echo must use the same form for
+// clients that validate the echo against /v1/models.
+const CONNECTIONLESS_CATALOG_ALIASES = new Map();
+for (const entry of REGISTRY) {
+  if (entry.noAuth && entry.modelsFetcher && entry.alias) {
+    CONNECTIONLESS_CATALOG_ALIASES.set(entry.id, entry.alias);
+  }
+}
+
+/**
+ * Model name a response should echo back to the client. Prefixed requests keep
+ * their exact form (already listing-valid). Bare requests that resolved to a
+ * connection-less catalog provider get the listing form re-injected — e.g.
+ * bare "big-pickle" → "oc/big-pickle" — so re-sending the echoed name routes
+ * again and passes listing validation instead of triggering client warnings.
+ */
+export function canonicalEchoModel({ requestedModel, provider, model }) {
+  if (!requestedModel || requestedModel.includes("/")) return requestedModel;
+  const alias = CONNECTIONLESS_CATALOG_ALIASES.get(provider);
+  if (alias) return `${alias}/${model}`;
+  return requestedModel;
+}
+
 /**
  * Resolve provider alias to provider ID
  */
 export function resolveProviderAlias(aliasOrId) {
   return ALIAS_TO_PROVIDER_ID[aliasOrId] || aliasOrId;
+}
+
+/**
+ * Deterministic owner for a bare model name from the static registry catalog.
+ * Returns the provider ID that declares `modelStr`, or null when no static
+ * provider declares it. Collisions (glm-5.2 is declared by glm, opencode-go,
+ * qianfan, etc.) resolve to the provider whose id/alias is a name prefix of
+ * the model (glm-5.2 → glm); when no prefix matches, no owner is returned so
+ * callers can apply their own fallback.
+ */
+export function resolveBareModelStaticOwner(modelStr) {
+  if (!modelStr) return null;
+  const owners = [];
+  for (const [alias, models] of Object.entries(PROVIDER_MODELS)) {
+    if (Array.isArray(models) && models.some((m) => m && m.id === modelStr)) {
+      owners.push(alias);
+    }
+  }
+  if (owners.length === 0) return null;
+  if (owners.length === 1) return resolveProviderAlias(owners[0]);
+  const byPrefix = owners.find((alias) => modelStr.startsWith(alias));
+  if (byPrefix) return resolveProviderAlias(byPrefix);
+  return null;
 }
 
 /**
@@ -123,6 +172,10 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
 }
 
 // Config-driven prefix → provider inference (first match wins, fallback "openai").
+// NOTE: this only fires for bare names that survive the full resolution chain in
+// src/sse/services/model.js (resolveBareModelToProvider) — custom models, user
+// aliases, static registry declarations, and the live opencode catalog all win
+// first. Names that genuinely belong to openrouter hit the deepseek rule here.
 const MODEL_PREFIX_PROVIDERS = [
   [/^claude-/, "anthropic"],
   [/^gemini-/, "gemini"],

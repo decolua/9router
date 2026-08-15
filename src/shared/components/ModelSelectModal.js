@@ -579,15 +579,9 @@ export default function ModelSelectModal({
                           <span className="material-symbols-outlined text-[11px]">edit</span>
                           {model.name}
                         </>
-                      ) : model.isCustom ? (
-                        <>
-                          {model.name}
-                          <span className="text-[9px] opacity-60 font-normal">custom</span>
-                          <CapacityBadges caps={getCaps(model.value)} />
-                        </>
                       ) : (
                         <>
-                          {model.name}
+                          {model.value}
                           <CapacityBadges caps={getCaps(model.value)} />
                         </>
                       )}

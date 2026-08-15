@@ -4,6 +4,7 @@ import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
+import { canonicalEchoModel } from "../../services/model.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
@@ -318,7 +319,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   const usage = extractUsageFromResponse(responseBody);
   appendLog({ tokens: usage, status: "200 OK" });
-  saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
+  saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, requestedModel: clientRawRequest?.body?.model, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
   const translatedResponse = needsTranslation(targetFormat, sourceFormat)
@@ -369,6 +370,17 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }
 
   reqLogger.logConvertedResponse(translatedResponse);
+
+  // Echo a stable, listing-valid model name instead of the upstream id.
+  // Passthrough providers (opencode free tier) return the bare resolved model
+  // with the provider prefix stripped; clients that trust the echo re-send the
+  // bare name, which then mis-routes on the next hop. Prefixed requests keep
+  // their exact form; bare requests resolved to a connection-less catalog
+  // provider get the listing form re-injected (OpenRouter-style proxy echo).
+  const echoModel = canonicalEchoModel({ requestedModel: body?.model, provider, model });
+  if (echoModel && translatedResponse && typeof translatedResponse === "object" && !Array.isArray(translatedResponse)) {
+    translatedResponse.model = echoModel;
+  }
 
   const totalLatency = Date.now() - requestStartTime;
   saveRequestDetail(buildRequestDetail({

@@ -1,6 +1,7 @@
 // Re-export from open-sse with localDb integration
-import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
-import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
+import { getModelAliases, getCustomModels, getComboByName, getProviderNodes } from "@/lib/localDb";
+import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore, resolveProviderAlias, resolveBareModelStaticOwner } from "open-sse/services/model.js";
+import { lookupBareModel as lookupOpencodeBareModel } from "@/lib/opencodeCatalog";
 import REGISTRY from "open-sse/providers/registry/index.js";
 
 // Local provider alias overrides (HMR-friendly, applied on top of open-sse map)
@@ -75,7 +76,65 @@ export async function getModelInfo(modelStr) {
     return { provider: null, model: parsed.model };
   }
 
+  // Bare (provider-less) model name: resolve to whichever provider actually
+  // serves it (custom registry → static catalog → opencode free catalog),
+  // before the generic prefix-inference fallback can blind-route it to the
+  // wrong provider.
+  const dynamic = await resolveBareModelToProvider(parsed.model);
+  if (dynamic) {
+    return dynamic;
+  }
+
   return getModelInfoCore(modelStr, getModelAliases);
+}
+
+/**
+ * Dynamic fallback for bare (provider-less) model names, in priority order:
+ * 1. admin-registered custom models (explicit intent — wins over everything),
+ * 2. user-defined model aliases (explicit intent — wins over catalog hits),
+ * 3. static registry declarations (deterministic, no admin data needed),
+ * 4. connection-less live catalogs (opencode free tier — fetched + cached).
+ * This replaces the brittle hardcoded prefix→provider inference for opencode
+ * free tier, mimo, and any other connection-less/providerless provider — a
+ * bare name resolves to the real owner instead of being blind-routed to a
+ * provider that will reject it.
+ */
+export async function resolveBareModelToProvider(modelStr) {
+  try {
+    const custom = await getCustomModels();
+    const hit = custom.find(
+      (m) => m && m.id === modelStr && (m.type === "llm" || !m.type)
+    );
+    if (hit && hit.providerAlias) {
+      const provider = resolveProviderAlias(hit.providerAlias);
+      return { provider, model: hit.id };
+    }
+  } catch {
+    /* fail open: fall through to normal resolution */
+  }
+
+  // 2) user-defined model aliases — explicit intent, must win over catalog hits
+  try {
+    const aliases = await getModelAliases();
+    const aliasHit = resolveModelAliasFromMap(modelStr, aliases);
+    if (aliasHit) return aliasHit;
+  } catch {
+    /* fail open: fall through to normal resolution */
+  }
+
+  const staticOwner = resolveBareModelStaticOwner(modelStr);
+  if (staticOwner) {
+    return { provider: staticOwner, model: modelStr };
+  }
+
+  try {
+    const oc = await lookupOpencodeBareModel(modelStr);
+    if (oc) return oc;
+  } catch {
+    /* fail open: fall through to normal resolution */
+  }
+
+  return null;
 }
 
 /**

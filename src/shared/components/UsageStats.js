@@ -3,12 +3,26 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
+import { PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 
 // Keep providers without serviceKinds (default LLM) or with "llm" in serviceKinds
 function isLLMProvider(id) {
   const p = AI_PROVIDERS[id];
   if (!p?.serviceKinds) return true;
   return p.serviceKinds.includes("llm");
+}
+
+// Both display forms for a recent-request row. The resolved `model` is the bare
+// name; the prefixed form is whatever the client actually sent when it was
+// prefixed (e.g. `oc/big-pickle`), derived from the provider alias otherwise.
+function requestModelForms(r) {
+  const bare = r.model || r.requestedModel || "—";
+  const prefixed = r.requestedModel && r.requestedModel.includes("/")
+    ? r.requestedModel
+    : r.model && r.provider
+      ? `${PROVIDER_ID_TO_ALIAS[r.provider] || r.provider}/${r.model}`
+      : bare;
+  return { bare, prefixed };
 }
 import Badge from "./Badge";
 import Card from "./Card";
@@ -40,11 +54,33 @@ function TimeAgo({ timestamp }) {
 }
 
 function RecentRequests({ requests = [] }) {
+  const [showPrefixed, setShowPrefixed] = useState(false);
   return (
     <Card className="flex min-w-0 flex-col overflow-hidden" padding="sm" style={{ height: 480 }}>
       {/* Header */}
-      <div className="px-1 py-2 border-b border-border shrink-0">
+      <div className="flex items-center justify-between px-1 py-2 border-b border-border shrink-0">
         <span className="text-xs font-semibold text-text-muted uppercase tracking-wide">Recent Requests</span>
+        <div
+          className="relative grid grid-cols-2 items-center rounded-lg border border-border bg-bg-subtle p-0.5 text-[11px] font-medium"
+          title="Model ID shows the provider/model id (oc/big-pickle); Model Name shows the bare name (big-pickle)"
+        >
+          <span
+            aria-hidden
+            className={`absolute inset-y-0.5 rounded-md bg-primary shadow-sm transition-all duration-200 ease-in-out ${showPrefixed ? "left-0.5 right-1/2" : "left-1/2 right-0.5"}`}
+          />
+          <button
+            onClick={() => setShowPrefixed(true)}
+            className={`relative z-10 rounded-md px-2 py-0.5 transition-colors ${showPrefixed ? "text-white" : "text-text-muted hover:text-text"}`}
+          >
+            Model ID
+          </button>
+          <button
+            onClick={() => setShowPrefixed(false)}
+            className={`relative z-10 rounded-md px-2 py-0.5 transition-colors ${showPrefixed ? "text-text-muted hover:text-text" : "text-white"}`}
+          >
+            Model Name
+          </button>
+        </div>
       </div>
 
       {!requests.length ? (
@@ -63,12 +99,14 @@ function RecentRequests({ requests = [] }) {
             <tbody className="divide-y divide-border/50">
               {requests.map((r, i) => {
                 const ok = !r.status || r.status === "ok" || r.status === "success";
+                const { bare, prefixed } = requestModelForms(r);
+                const shown = showPrefixed ? prefixed : bare;
                 return (
                   <tr key={i} className="hover:bg-bg-subtle transition-colors">
                     <td className="py-1.5">
                       <span className={`block w-1.5 h-1.5 rounded-full ${ok ? "bg-success" : "bg-error"}`} />
                     </td>
-                    <td className="py-1.5 font-mono truncate max-w-[120px]" title={r.model}>{r.model}</td>
+                    <td className="py-1.5 font-mono truncate max-w-[120px]" title={showPrefixed ? bare : prefixed}>{shown}</td>
                     <td className="py-1.5 text-right whitespace-nowrap">
                       <span className="text-primary">{fmt(r.promptTokens)}↑</span>
                       {" "}

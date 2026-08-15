@@ -11,7 +11,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
-import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
+import { trackPendingRequest, appendRequestLog, saveRequestDetail, saveRequestUsage } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
 import { supportsGrokCliReasoningEffort } from "../config/grokCli.js";
 import { buildRequestDetail, extractRequestConfig } from "./chatCore/requestDetail.js";
@@ -299,6 +299,21 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const streamController = createStreamController({
     onDisconnect: (reason) => {
       trackPendingRequest(model, provider, connectionId, false);
+      // Client aborted mid-stream (e.g. tool-call loops that close the SSE as
+      // soon as the tool_call delta arrives). The final usage chunk never
+      // arrives, so no row would be persisted — record the abort with the
+      // requested model name so the activity log still shows the request.
+      saveRequestUsage({
+        provider: provider || "unknown",
+        model: model || "unknown",
+        tokens: { prompt_tokens: 0, completion_tokens: 0 },
+        timestamp: new Date().toISOString(),
+        connectionId: connectionId || undefined,
+        apiKey: apiKey || undefined,
+        endpoint: clientRawRequest?.endpoint || null,
+        requestedModel: clientRawRequest?.body?.model || undefined,
+        status: "aborted",
+      }).catch(() => { });
       if (onDisconnect) onDisconnect(reason);
     },
     onError: () => trackPendingRequest(model, provider, connectionId, false),

@@ -6,6 +6,7 @@ import {
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getListedModels as getOpencodeCatalog } from "@/lib/opencodeCatalog";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -15,6 +16,7 @@ import { resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
+import REGISTRY from "open-sse/providers/registry/index.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
@@ -247,10 +249,12 @@ export async function buildModelsList(kindFilter, options = {}) {
   // cross-instance recursive loops.
   const skipDynamicFetch = options.skipDynamicFetch === true;
   let connections = [];
+  let connectionsFailed = false;
   try {
     connections = await getProviderConnections();
     connections = connections.filter(c => c.isActive !== false);
   } catch (e) {
+    connectionsFailed = true;
     console.log("Could not fetch providers, returning all models");
   }
 
@@ -307,13 +311,26 @@ export async function buildModelsList(kindFilter, options = {}) {
   }
 
   if (connections.length === 0) {
-    // DB unavailable -> return static models, filtered by per-model kind
+    // No configured connections. When the DB itself is unavailable we degrade
+    // to the full static catalog; when the DB is healthy but empty (fresh
+    // install) only connection-less noAuth providers are listed — those work
+    // with zero setup — so clients auto-detecting models don't see hundreds of
+    // entries that would all reject their requests.
     const aliasToProviderId = Object.fromEntries(
       Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id])
     );
+    const noAuthProviderIds = new Set();
+    if (!connectionsFailed) {
+      for (const entry of REGISTRY) {
+        if (entry.noAuth === true || entry.transport?.noAuth === true) {
+          noAuthProviderIds.add(entry.id);
+        }
+      }
+    }
     for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
       const providerId = aliasToProviderId[alias] || alias;
       if (!providerMatchesKinds(providerId, kindFilter)) continue;
+      if (!connectionsFailed && !noAuthProviderIds.has(providerId)) continue;
       for (const model of providerModels) {
         if (!kindFilter.includes(modelKind(model))) continue;
         if (isDisabled(alias, model.id)) continue;
@@ -536,6 +553,85 @@ export async function buildModelsList(kindFilter, options = {}) {
     if (!model?.id || seenModelIds.has(model.id)) continue;
     seenModelIds.add(model.id);
     dedupedModels.push(model);
+  }
+
+  // Custom models on connection-less providers (e.g. opencode's noAuth free
+  // tier, bazaarlink aliases) never enter the per-connection loop above —
+  // they route fine (ACC:Public / passthroughModels) but vanish from
+  // /v1/models, so OpenAI-compatible clients that validate against the
+  // listing reject or warn on them. Surface them here, once, after the
+  // dedupe pass so connection-backed duplicates collapse naturally.
+  if (kindFilter.includes(LLM_KIND)) {
+    const connectedAliases = new Set();
+    for (const conn of connections) {
+      const providerId = conn.provider;
+      const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
+      const outputAlias = (
+        conn?.providerSpecificData?.prefix
+        || getProviderAlias(providerId)
+        || staticAlias
+      ).trim();
+      connectedAliases.add(outputAlias);
+      connectedAliases.add(staticAlias);
+      connectedAliases.add(providerId);
+    }
+
+    for (const customModel of customModels) {
+      if (!customModel?.id) continue;
+      const kind = getModelKind(customModel) || LLM_KIND;
+      // imageToText custom models are vision-capable chat models — include
+      // in the LLM list, same as the per-connection branch above.
+      const allowAsLlm = kind === "imageToText";
+      if (!kindFilter.includes(kind) && !allowAsLlm) continue;
+      const providerAlias = customModel.providerAlias;
+      if (!providerAlias) continue;
+      // Skip providers already handled by the per-connection loop (their
+      // custom models are merged there); only backfill the connection-less.
+      if (connectedAliases.has(providerAlias)) continue;
+
+      const modelId = String(customModel.id).trim();
+      if (!modelId || isDisabled(providerAlias, modelId)) continue;
+
+      const id = `${providerAlias}/${modelId}`;
+      if (seenModelIds.has(id)) continue;
+      seenModelIds.add(id);
+
+      const model = {
+        id,
+        object: "model",
+        owned_by: providerAlias,
+      };
+      const caps = getCapabilitiesForModel(providerAlias, modelId);
+      if (caps) model.capabilities = caps;
+      if (Number.isFinite(caps?.contextWindow)) model.context_length = caps.contextWindow;
+      if (Number.isFinite(caps?.maxOutput)) model.max_completion_tokens = caps.maxOutput;
+      dedupedModels.push(model);
+    }
+
+    // Connection-less providers with a live catalog (opencode free tier) don't
+    // even need admin custom-model rows: the catalog IS the source of truth.
+    // Without this, new upstream models stayed invisible until an admin added
+    // them by hand — the failure mode where free models "work then break".
+    const catalogEntries = await getOpencodeCatalog();
+    for (const entry of catalogEntries) {
+      if (!entry?.id) continue;
+      const modelId = String(entry.id).trim();
+      if (!modelId) continue;
+      if (isDisabled("oc", modelId)) continue;
+      const id = `oc/${modelId}`;
+      if (seenModelIds.has(id)) continue;
+      seenModelIds.add(id);
+      const model = {
+        id,
+        object: "model",
+        owned_by: "oc",
+      };
+      const caps = getCapabilitiesForModel("oc", modelId);
+      if (caps) model.capabilities = caps;
+      if (Number.isFinite(caps?.contextWindow)) model.context_length = caps.contextWindow;
+      if (Number.isFinite(caps?.maxOutput)) model.max_completion_tokens = caps.maxOutput;
+      dedupedModels.push(model);
+    }
   }
 
   return dedupedModels;
