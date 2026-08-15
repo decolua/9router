@@ -1,6 +1,6 @@
 services:
   9router:
-    image: decolua/9router:latest
+    image: 9router-local:latest
     container_name: 9router
     restart: always
     mem_limit: 1g   # 2026-08-03: cap RAM
@@ -8,7 +8,10 @@ services:
     ports:
       - "0.0.0.0:20128:20128"
     volumes:
-      - 9router-data:/app/data
+      # Bind mount (bukan named volume) — DB provider connections/credentials tinggal di host:
+      # /home/boc0de/projects/9router/.9router (data.sqlite, machine-id, auth/).
+      # Named volume 9router-data TIDAK dipakai (data lama/tidak sinkron).
+      - /home/boc0de/projects/9router/.9router:/app/data
     env_file:
       - .env
     healthcheck:

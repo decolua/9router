@@ -327,10 +327,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.45",
+    "User-Agent": "9Router/0.5.50",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.45",
-    "X-CORE-VERSION": "0.5.45",
+    "X-CLIENT-VERSION": "0.5.50",
+    "X-CORE-VERSION": "0.5.50",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
     "X-PLATFORM-VERSION": "v24.18.0",
@@ -340,10 +340,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.45",
+    "User-Agent": "9Router/0.5.50",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.45",
-    "X-CORE-VERSION": "0.5.45",
+    "X-CLIENT-VERSION": "0.5.50",
+    "X-CORE-VERSION": "0.5.50",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
     "X-PLATFORM-VERSION": "v24.18.0",
@@ -354,10 +354,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.45",
+    "User-Agent": "9Router/0.5.50",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.45",
-    "X-CORE-VERSION": "0.5.45",
+    "X-CLIENT-VERSION": "0.5.50",
+    "X-CORE-VERSION": "0.5.50",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
     "X-PLATFORM-VERSION": "v24.18.0",
@@ -373,10 +373,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > clinepass → header
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.45",
+    "User-Agent": "9Router/0.5.50",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.45",
-    "X-CORE-VERSION": "0.5.45",
+    "X-CLIENT-VERSION": "0.5.50",
+    "X-CORE-VERSION": "0.5.50",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
     "X-PLATFORM-VERSION": "v24.18.0",
@@ -386,10 +386,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > clinepass → header
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.45",
+    "User-Agent": "9Router/0.5.50",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.45",
-    "X-CORE-VERSION": "0.5.45",
+    "X-CLIENT-VERSION": "0.5.50",
+    "X-CORE-VERSION": "0.5.50",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
     "X-PLATFORM-VERSION": "v24.18.0",
@@ -400,10 +400,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > clinepass → header
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.45",
+    "User-Agent": "9Router/0.5.50",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.45",
-    "X-CORE-VERSION": "0.5.45",
+    "X-CLIENT-VERSION": "0.5.50",
+    "X-CORE-VERSION": "0.5.50",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
     "X-PLATFORM-VERSION": "v24.18.0",
@@ -710,25 +710,6 @@ exports[`GOLDEN buildHeaders (default executor providers) > grok-cli → headers
 }
 `;
 
-exports[`GOLDEN buildHeaders (default executor providers) > groq → headers (apiKey / oauth) 1`] = `
-{
-  "apiKey": {
-    "Accept": "text/event-stream",
-    "Authorization": "Bearer <TOK>",
-    "Content-Type": "application/json",
-  },
-  "nonStream": {
-    "Authorization": "Bearer <TOK>",
-    "Content-Type": "application/json",
-  },
-  "oauth": {
-    "Accept": "text/event-stream",
-    "Authorization": "Bearer <TOK>",
-    "Content-Type": "application/json",
-  },
-}
-`;
-
 exports[`GOLDEN buildHeaders (default executor providers) > hyperbolic → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -819,7 +800,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi → headers (ap
     "X-Msh-Device-Model": "Linux x64",
     "X-Msh-Device-Name": "boc0dev",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "0.5.45",
+    "X-Msh-Version": "0.5.50",
     "x-api-key": "<CRED>",
   },
   "nonStream": {
@@ -830,7 +811,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi → headers (ap
     "X-Msh-Device-Model": "Linux x64",
     "X-Msh-Device-Name": "boc0dev",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "0.5.45",
+    "X-Msh-Version": "0.5.50",
     "x-api-key": "<CRED>",
   },
   "oauth": {
@@ -842,7 +823,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi → headers (ap
     "X-Msh-Device-Model": "Linux x64",
     "X-Msh-Device-Name": "boc0dev",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "0.5.45",
+    "X-Msh-Version": "0.5.50",
     "x-api-key": "<CRED>",
   },
 }
@@ -1544,13 +1525,6 @@ exports[`GOLDEN buildUrl (default executor providers) > grok-cli → url (stream
 {
   "nonStream": "https://cli-chat-proxy.grok.com/v1/responses",
   "stream": "https://cli-chat-proxy.grok.com/v1/responses",
-}
-`;
-
-exports[`GOLDEN buildUrl (default executor providers) > groq → url (stream + non-stream) 1`] = `
-{
-  "nonStream": "https://api.groq.com/openai/v1/chat/completions",
-  "stream": "https://api.groq.com/openai/v1/chat/completions",
 }
 `;
 

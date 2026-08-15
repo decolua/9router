@@ -5,7 +5,7 @@ import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 
 // Each rule: optional provider, regex match on model, list of params to drop.
 // A param is removed only when it is present (!== undefined).
-const STRIP_RULES = [
+export const STRIP_RULES = [
   // All Claude models: temperature deprecated/rejected upstream (Anthropic 400). #1748
   { match: /claude/i, drop: ["temperature"] },
   // GitHub Copilot gpt-5.4: temperature unsupported.
@@ -21,9 +21,6 @@ const STRIP_RULES = [
   // "integer above maximum value, expected <= 32768". Pin an explicit endpoint cap;
   // min() with the model ceiling still applies if a variant's own limit is lower.
   { provider: "volcengine-ark", match: /kimi/i, maxOutputCap: 32768, clampToModelMaxOutput: true },
-  // Groq hard-limits tools at 128; requests exceeding this get a 400
-  // "'tools' : maximum number of items is 128". Truncate to the cap silently.
-  { provider: "groq", truncateTools: 128 },
 ];
 
 // Test a rule's match (regex or predicate) against the model id.

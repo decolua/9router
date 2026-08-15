@@ -1,8 +1,24 @@
 import { describe, it, expect } from "vitest";
 
-import { stripUnsupportedParams } from "../../open-sse/translator/concerns/paramSupport.js";
+import { stripUnsupportedParams, STRIP_RULES } from "../../open-sse/translator/concerns/paramSupport.js";
 
 describe("stripUnsupportedParams", () => {
+  it("truncates tools for providers with a truncateTools rule", () => {
+    STRIP_RULES.push({ provider: "test-truncate", truncateTools: 5 });
+
+    const body = {
+      tools: Array.from({ length: 200 }, (_, i) => ({ type: "function", function: { name: `tool_${i}` } })),
+      messages: [{ role: "user", content: "hi" }],
+    };
+
+    stripUnsupportedParams("test-truncate", "some-model", body);
+
+    expect(body.tools).toHaveLength(5);
+
+    STRIP_RULES.pop();
+  });
+
+
   it("flattens Cloudflare AI OpenAI content-part arrays", () => {
     const body = {
       messages: [
@@ -53,29 +69,12 @@ describe("stripUnsupportedParams", () => {
     expect(body.max_tokens).toBe(64000);
   });
 
-  it("truncates Groq tools to 128 when exceeding the limit", () => {
-    const body = { tools: Array.from({ length: 150 }, (_, i) => ({ type: "function", function: { name: `tool_${i}` } })) };
+  it("does not modify body for unknown provider", () => {
+    const body = { tools: Array.from({ length: 200 }, (_, i) => ({ type: "function", function: { name: `tool_${i}` } })), messages: [{ role: "user", content: "hi" }] };
 
-    stripUnsupportedParams("groq", "llama-3.3-70b-versatile", body);
+    stripUnsupportedParams("unknown-provider", "some-model", body);
 
-    expect(body.tools).toHaveLength(128);
-    expect(body.tools[0].function.name).toBe("tool_0");
-    expect(body.tools[127].function.name).toBe("tool_127");
-  });
-
-  it("preserves Groq tools when under the limit", () => {
-    const body = { tools: Array.from({ length: 50 }, (_, i) => ({ type: "function", function: { name: `tool_${i}` } })) };
-
-    stripUnsupportedParams("groq", "llama-3.3-70b-versatile", body);
-
-    expect(body.tools).toHaveLength(50);
-  });
-
-  it("does not modify tools when no tools present", () => {
-    const body = { messages: [{ role: "user", content: "hi" }] };
-
-    stripUnsupportedParams("groq", "llama-3.3-70b-versatile", body);
-
-    expect(body.tools).toBeUndefined();
+    expect(body.tools).toHaveLength(200);
+    expect(body.messages).toHaveLength(1);
   });
 });

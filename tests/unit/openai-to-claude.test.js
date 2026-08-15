@@ -143,7 +143,7 @@ describe("openaiToClaudeRequest", () => {
 
     it("maps string tool_choice values", () => {
       expect(choiceOf("auto")).toEqual({ type: "auto" });
-      expect(choiceOf("none")).toEqual({ type: "auto" });
+      expect(choiceOf("none")).toEqual({ type: "none" });
       expect(choiceOf("required")).toEqual({ type: "any" });
     });
 
