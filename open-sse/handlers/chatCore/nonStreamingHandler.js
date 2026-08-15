@@ -84,6 +84,12 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
   const message = choice.message || {};
   const output = [];
 
+  // The request translator exports the collected custom tool names as an array
+  // (translator/request/openai-responses.js) and chatCore.js forwards that value
+  // verbatim, while direct callers pass a Set. Accept either, without mutating
+  // the caller's collection.
+  const customToolNameSet = customToolNames instanceof Set ? customToolNames : new Set(customToolNames || []);
+
   // Reasoning → a reasoning item (summary text), mirroring the streaming path.
   const reasoning = message.reasoning_content || message.reasoning;
   if (typeof reasoning === "string" && reasoning.length > 0) {
@@ -106,7 +112,7 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
   // tool_calls → function_call/custom_tool_call items (Responses-native tool shape).
   for (const tc of message.tool_calls || []) {
     const fn = tc.function || {};
-    const custom = customToolNames?.has(fn.name);
+    const custom = customToolNameSet.has(fn.name);
     output.push({
       type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
       id: `${custom ? "ctc" : "fc"}_${tc.id || ""}`,
