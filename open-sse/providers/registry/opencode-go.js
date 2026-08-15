@@ -35,8 +35,8 @@ export default {
     { id: "glm-5.1", name: "GLM 5.1", supportedFormats: ["openai"] },
     { id: "kimi-k2.7-code", name: "Kimi K2.7 Code", supportedFormats: ["openai"] },
     { id: "kimi-k2.6", name: "Kimi K2.6", supportedFormats: ["openai"] },
-    // DeepSeek stays on /chat/completions: the /messages shim returns 400
-    // for real Claude Code payloads (duplicate tools etc.), matching pre-#3278.
+    // Official docs expose DeepSeek through /chat/completions only; the
+    // /messages shim rejects real Claude Code parallel tool_use history.
     { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", supportedFormats: ["openai"] },
     { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", supportedFormats: ["openai"] },
     { id: "mimo-v2.5", name: "MiMo V2.5", supportedFormats: ["openai"] },

@@ -10,11 +10,8 @@ const CHAT_ONLY = [
 ];
 // Models that also expose the Anthropic /messages endpoint
 const CLAUDE_CAPABLE = ["minimax-m3", "minimax-m2.7", "minimax-m2.5", "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus"];
-// DeepSeek is chat-completions only: despite a live matrix passing simple
-// /messages probes, real Claude Code payloads (duplicate tool names, rich
-// tools) get 400 from the /messages shim. Keep it on /chat/completions
-// (pre-#3278 behavior).
-const DEEPSEEK_CAPABLE = ["deepseek-v4-pro", "deepseek-v4-flash"];
+// Official OpenCode Go docs expose DeepSeek only through /chat/completions.
+const DEEPSEEK_CHAT_ONLY = ["deepseek-v4-pro", "deepseek-v4-flash"];
 
 // Mirror of chatCore's per-model transport guard: use the sourceFormat-matched
 // transport only when the model declares support for that sourceFormat.
@@ -45,14 +42,14 @@ describe("OpenCode Go per-model supportedFormats", () => {
     }
   });
 
-  it("declares [openai] only for chat-only models (GLM/Kimi/MiMo) → guards /messages routing", () => {
+  it("declares [openai] only for chat-only models (GLM/Kimi/MiMo)", () => {
     for (const m of CHAT_ONLY) {
       expect(getModelSupportedFormats("opencode-go", m)).toEqual(["openai"]);
     }
   });
 
-  it("declares [openai] only for DeepSeek — /messages shim breaks on real payloads", () => {
-    for (const m of DEEPSEEK_CAPABLE) {
+  it("declares [openai] only for DeepSeek until other endpoints are officially supported", () => {
+    for (const m of DEEPSEEK_CHAT_ONLY) {
       expect(getModelSupportedFormats("opencode-go", m)).toEqual(["openai"]);
     }
   });
@@ -96,17 +93,19 @@ describe("OpenCode Go per-model transport guard (chatCore logic)", () => {
     }
   });
 
-  it("does NOT route DeepSeek to /messages on a claude-format request", () => {
-    for (const m of DEEPSEEK_CAPABLE) {
+  it("does NOT route DeepSeek to /messages or /responses", () => {
+    for (const m of DEEPSEEK_CHAT_ONLY) {
       expect(pickTransport("opencode-go", "claude", "opencode-go", m)).toBeNull();
+      expect(pickTransport("opencode-go", "openai-responses", "opencode-go", m)).toBeNull();
     }
   });
 
-  it("does NOT route DeepSeek(max) to /messages on a claude-format request", () => {
+  it("does NOT route DeepSeek(max) to /messages or /responses", () => {
     expect(pickTransport("opencode-go", "claude", "opencode-go", "deepseek-v4-flash(max)")).toBeNull();
+    expect(pickTransport("opencode-go", "openai-responses", "opencode-go", "deepseek-v4-flash(max)")).toBeNull();
   });
 
-  it("does NOT route GLM(max) to /messages on a claude-format request (suffix bypass fix)", () => {
+  it("does NOT route GLM(max) to /messages on a claude-format request", () => {
     expect(pickTransport("opencode-go", "claude", "opencode-go", "glm-5.2(max)")).toBeNull();
   });
 
@@ -117,12 +116,6 @@ describe("OpenCode Go per-model transport guard (chatCore logic)", () => {
 
   it("does NOT route GLM/Kimi/MiniMax to /responses", () => {
     for (const m of [...CHAT_ONLY, ...CLAUDE_CAPABLE]) {
-      expect(pickTransport("opencode-go", "openai-responses", "opencode-go", m)).toBeNull();
-    }
-  });
-
-  it("does NOT route DeepSeek to /responses", () => {
-    for (const m of DEEPSEEK_CAPABLE) {
       expect(pickTransport("opencode-go", "openai-responses", "opencode-go", m)).toBeNull();
     }
   });
