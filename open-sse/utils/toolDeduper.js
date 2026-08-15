@@ -41,9 +41,22 @@ function dedupeTools(tools) {
       if (rule.strip.some((p) => matches(n, p))) toStrip.add(n);
     }
   }
-  if (toStrip.size === 0) return { tools, stripped: [] };
-  const out = tools.filter((t) => !toStrip.has(getToolName(t)));
-  return { tools: out, stripped: Array.from(toStrip) };
+  // Exact-name duplicates: keep the first occurrence, drop the rest. DeepSeek /
+  // some OpenAI-compatible upstreams reject duplicate tool names with 400
+  // ("{model:...}"), and Claude Code regularly emits e.g. two Bash tools.
+  const seen = new Set();
+  const out = [];
+  const stripped = Array.from(toStrip);
+  for (const t of tools) {
+    const n = getToolName(t);
+    if (toStrip.has(n) || seen.has(n)) {
+      if (!toStrip.has(n)) stripped.push(n);
+      continue;
+    }
+    seen.add(n);
+    out.push(t);
+  }
+  return { tools: out, stripped };
 }
 
 export { dedupeTools };
