@@ -195,8 +195,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     stripContinuityFields(translatedBody);
   }
 
-  // Dedupe duplicate built-in tools when equivalent MCP tools are present (Claude clients only).
-  if (clientTool === "claude" && Array.isArray(translatedBody.tools)) {
+  // Dedupe duplicate built-in tools when equivalent MCP tools are present.
+  // Runs for every request (not just Claude clients): exact-name duplicates
+  // break some OpenAI-compatible upstreams (e.g. OpenCode Go /messages 400
+  // {"model":"..."}), and client-tool detection can miss for wrapped clients.
+  if (Array.isArray(translatedBody.tools)) {
     const { tools: deduped, stripped } = dedupeTools(translatedBody.tools);
     if (stripped.length > 0) {
       translatedBody.tools = deduped;
