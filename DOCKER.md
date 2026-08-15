@@ -64,6 +64,25 @@ docker run -d \
   decolua/9router:latest
 ```
 
+### Configure 429 account backoff
+
+When an upstream rate limit is detected, 9Router temporarily locks the affected
+account/model using exponential backoff. The default is unchanged: `2s`, `4s`,
+`8s` and so on, capped at `5 minutes` for up to `15` levels. Operators can tune
+that schedule for providers with different quota-reset windows:
+
+```bash
+-e BACKOFF_BASE_MS=2000 \
+-e BACKOFF_MAX_MS=300000 \
+-e BACKOFF_MAX_LEVEL=15
+```
+
+Each value is optional and must be a positive integer. Malformed values use
+that knob's default; a cap below the base is rejected as a contradictory
+schedule and uses the unchanged defaults. These settings govern account/model
+locks after rate-limit fallback, not provider-specific retry mechanisms or
+provider `Retry-After` hints.
+
 ## Optional Headroom sidecar
 
 The 9Router image does not bundle Python or Headroom. To use Headroom in Docker, run it as a separate service and point 9Router at that proxy:
