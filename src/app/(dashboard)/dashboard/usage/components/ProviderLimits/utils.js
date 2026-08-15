@@ -518,8 +518,13 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "opencode-go":
       case "deepseek":
-        // Credit balance — remainingPercentage only (no absolute remaining).
+        // Credit balance, and OpenCode Go's percent-per-window: forward
+        // remainingPercentage and never an absolute `remaining` (the UI reads
+        // `remaining` as a 0-100 percentage). For a used=percent/total=100 row
+        // the default branch happens to compute the same number, so this case
+        // is for intent and for staying correct if the shape ever changes.
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([name, quota]) => {
             normalizedQuotas.push({
