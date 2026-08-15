@@ -3,6 +3,7 @@
 // native-passthrough flows. Used by caveman.js and ponytail.js.
 
 import { FORMATS } from "../translator/formats.js";
+import { ROLE, RESPONSES_ITEM } from "../translator/schema/index.js";
 
 const SEP = "\n\n";
 
@@ -22,12 +23,12 @@ export function injectSystemPrompt(body, format, prompt) {
       return;
     default:
       // OpenAI and OpenAI-shaped formats (responses/codex/cursor/kiro/ollama)
-      injectMessagesSystem(body, prompt);
+      injectMessagesSystem(body, format, prompt);
   }
 }
 
 // OpenAI-shaped: messages[] (chat) or input[] (responses) or instructions (responses string)
-function injectMessagesSystem(body, prompt) {
+function injectMessagesSystem(body, format, prompt) {
   // OpenAI Responses API: top-level string field
   if (typeof body.instructions === "string") {
     body.instructions = body.instructions
@@ -41,15 +42,36 @@ function injectMessagesSystem(body, prompt) {
     : null;
   if (!arr) return;
 
-  const idx = arr.findIndex(m => m && (m.role === "system" || m.role === "developer"));
+  const isResponses = format === FORMATS.OPENAI_RESPONSES;
+  const idx = arr.findIndex(m => m && (m.role === ROLE.SYSTEM || m.role === ROLE.DEVELOPER));
   if (idx >= 0) {
-    appendToOpenAIMessage(arr[idx], prompt);
+    appendToOpenAIMessage(arr[idx], prompt, isResponses);
   } else {
-    arr.unshift({ role: "system", content: prompt });
+    arr.unshift(isResponses
+      ? {
+          type: RESPONSES_ITEM.MESSAGE,
+          role: ROLE.SYSTEM,
+          content: [{ type: RESPONSES_ITEM.INPUT_TEXT, text: prompt }],
+        }
+      : { role: ROLE.SYSTEM, content: prompt });
   }
 }
 
-function appendToOpenAIMessage(msg, prompt) {
+function appendToOpenAIMessage(msg, prompt, isResponses) {
+  if (isResponses) {
+    // Responses API message items must carry both a message type and typed content.
+    // This path is used when a native Responses request has no top-level instructions.
+    msg.type = RESPONSES_ITEM.MESSAGE;
+    if (typeof msg.content === "string") {
+      msg.content = [{ type: RESPONSES_ITEM.INPUT_TEXT, text: `${msg.content}${SEP}${prompt}` }];
+    } else if (Array.isArray(msg.content)) {
+      msg.content.push({ type: RESPONSES_ITEM.INPUT_TEXT, text: prompt });
+    } else {
+      msg.content = [{ type: RESPONSES_ITEM.INPUT_TEXT, text: prompt }];
+    }
+    return;
+  }
+
   if (typeof msg.content === "string") {
     msg.content = `${msg.content}${SEP}${prompt}`;
   } else if (Array.isArray(msg.content)) {

@@ -6,6 +6,7 @@ import {
   shouldRefreshCredentials,
 } from "../services/oauthCredentialManager.js";
 import { normalizeResponsesInput } from "../translator/formats/responsesApi.js";
+import { ROLE, RESPONSES_ITEM } from "../translator/schema/index.js";
 import { fetchImageAsBase64 } from "../translator/concerns/image.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
 import { getThinkingLevels } from "../providers/thinkingLevels.js";
@@ -52,6 +53,22 @@ function convertSystemToDeveloperRole(body) {
     if (!item || typeof item !== "object" || Array.isArray(item)) continue;
     const isSystemMsg = item.role === "system" && (!item.type || item.type === "message");
     if (isSystemMsg) item.role = "developer";
+  }
+}
+
+// Native Responses message items require an explicit type and typed text parts.
+// Keep this narrow: it only repairs role-bearing message-shaped items, leaving
+// tool calls, reasoning items, and already-valid typed content untouched.
+function normalizeCodexMessageItems(body) {
+  if (!Array.isArray(body.input)) return;
+  for (const item of body.input) {
+    if (!item || typeof item !== "object" || Array.isArray(item) || !item.role) continue;
+    if (!item.type) item.type = RESPONSES_ITEM.MESSAGE;
+    if (item.type !== RESPONSES_ITEM.MESSAGE || typeof item.content !== "string") continue;
+    item.content = [{
+      type: item.role === ROLE.ASSISTANT ? RESPONSES_ITEM.OUTPUT_TEXT : RESPONSES_ITEM.INPUT_TEXT,
+      text: item.content,
+    }];
   }
 }
 
@@ -406,6 +423,8 @@ export class CodexExecutor extends BaseExecutor {
 
     // Keep system prompts in body.input as role=developer so they stay in the cacheable prefix
     convertSystemToDeveloperRole(body);
+    // Repair legacy role/content shapes before the strict Codex Responses request is sent.
+    normalizeCodexMessageItems(body);
     // Strip server-generated item IDs (rs_/fc_/resp_/msg_) — Codex /responses can't resolve when store=false
     stripStoredItemReferences(body);
     // Flatten function tools + drop unsupported types
