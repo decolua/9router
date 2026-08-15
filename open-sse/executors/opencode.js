@@ -3,8 +3,14 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { applyOcEgress, flipOcEgress } from "../utils/ocEgress.js";
 
-const OPENCODE_UA = "opencode/1.18.18";
+// Official opencode CLI sends "opencode/<version>" (e.g. opencode/1.18.18).
+// OpenCode Zen's free-tier ("-free") models gate anonymous capacity on this
+// User-Agent — a bare "opencode" or any non-opencode UA is still classified
+// as unidentified and gets FreeUsageLimitError/429 immediately. Keep the
+// version in sync with opencode releases when it bumps.
+const OPENCODE_UA = "opencode/latest/1.18.18/cli";
 const MESSAGES_MODELS = new Set();
 
 function generateRequestId() {
@@ -36,6 +42,10 @@ export class OpenCodeExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
+    // Stash the resolved session on the per-request credentials object instead
+    // of an instance field: OpenCodeExecutor is a module-level singleton and
+    // concurrent requests used to overwrite _currentSessionId between
+    // transformRequest and buildHeaders, bleeding sessions across requests.
     if (credentials) credentials._ocSession = resolveOpencodeSession(body, credentials);
     return injectReasoningContent({ provider: this.provider, model, body });
   }
@@ -47,6 +57,20 @@ export class OpenCodeExecutor extends BaseExecutor {
       : `${base}/zen/v1/chat/completions`;
   }
 
+  // OpenCode Zen's free tier is rate-limited per real egress IP (daily
+  // budget per IP, reset at UTC midnight). There is NO automatic switching:
+  // when the current IP's budget is exhausted the gateway answers
+  // 429 FreeUsageLimitError and it stays exhausted until midnight — the user
+  // picks another node/egress themselves (Clash UI or oc-egress.mjs
+  // switch/flip/set) and the SAME conversation continues from the new IP.
+  // applyOcEgress() only honors the manually chosen mode from the state file
+  // (<APPDATA>/9router/oc-egress.json) so a manual switch works without
+  // restarting 9router. Errors propagate untouched.
+  async execute(args) {
+    applyOcEgress();
+    return super.execute(args);
+  }
+
   buildHeaders(credentials, stream = true) {
     const raw = credentials?.rawHeaders || {};
     const lower = {};
@@ -54,6 +78,18 @@ export class OpenCodeExecutor extends BaseExecutor {
 
     const downstreamUa = lower["user-agent"] || "";
     const isOpencodeDownstream = downstreamUa.toLowerCase().includes("opencode");
+
+    // OpenCode Zen's free-tier IP rate limiter reads the x-real-ip request
+    // header (ipRateLimiter.ts: rawIp = headers.get("x-real-ip") ?? "" →
+    // ip = "unknown"; no header = ONE global bucket shared with every other
+    // anonymous client). NOTE: in front of opencode.ai the CDN stamps
+    // x-real-ip from the real TCP peer and strips client-supplied values, so
+    // this header is best-effort — the reliable per-user isolation comes from
+    // real egress IPs (see utils/ocEgress.js rotation). We still forward the
+    // sanitized peer IP (x-9r-real-ip stamped by custom-server.js from the
+    // unspoofable TCP socket) because it is harmless and helps when the
+    // upstream is reached through a pass-through proxy.
+    const clientIp = lower["x-9r-real-ip"] || lower["x-real-ip"] || "";
 
     return {
       "Content-Type": "application/json",
@@ -63,6 +99,7 @@ export class OpenCodeExecutor extends BaseExecutor {
       "x-opencode-session": lower["x-opencode-session"] || credentials?._ocSession || generateSessionId(),
       "x-opencode-request": lower["x-opencode-request"] || generateRequestId(),
       "x-opencode-project": lower["x-opencode-project"] || "global",
+      ...(clientIp ? { "x-real-ip": clientIp } : {}),
       "Accept": stream ? "text/event-stream" : "*/*",
     };
   }
