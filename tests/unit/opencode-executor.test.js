@@ -26,6 +26,21 @@ describe("OpenCodeExecutor fingerprint (free-tier 429 fix)", () => {
     expect(headers["x-real-ip"]).toBe("203.0.113.7");
   });
 
+  it("never forwards loopback x-real-ip (local users would share one bucket)", () => {
+    const ex = new OpenCodeExecutor();
+    const headers = ex.buildHeaders({ rawHeaders: { "x-9r-real-ip": "127.0.0.1" } });
+    // public-IP discovery is async; until it resolves there is no header at all
+    expect(headers["x-real-ip"]).toBeUndefined();
+  });
+
+  it("never forwards private/LAN x-real-ip either", () => {
+    const ex = new OpenCodeExecutor();
+    for (const ip of ["192.168.1.5", "10.0.0.8", "172.16.4.4", "::1"]) {
+      const headers = ex.buildHeaders({ rawHeaders: { "x-9r-real-ip": ip } });
+      expect(headers["x-real-ip"]).toBeUndefined();
+    }
+  });
+
   it("falls back to the client-supplied x-real-ip when the server did not stamp one", () => {
     const ex = new OpenCodeExecutor();
     const headers = ex.buildHeaders({ rawHeaders: { "x-real-ip": "198.51.100.9" } });

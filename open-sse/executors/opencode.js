@@ -1,9 +1,54 @@
 import crypto from "crypto";
+import https from "https";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
-import { applyOcEgress, flipOcEgress } from "../utils/ocEgress.js";
+import { applyOcEgress } from "../utils/ocEgress.js";
+
+// Machine's real public IPv4, discovered once (direct https — intentionally
+// NOT the patched proxy-aware fetch, so we learn the home/public egress even
+// while the outbound proxy is enabled).
+let _publicIp = null;
+let _publicIpFetching = false;
+const PUBLIC_IP_PROBES = ["https://4.icanhazip.com", "https://ip.sb", "https://ifconfig.me/ip"];
+
+function discoverPublicIp() {
+  if (_publicIp || _publicIpFetching) return _publicIp;
+  _publicIpFetching = true;
+  const probe = (url, cb) => {
+    https.get(url, { timeout: 4000 }, (res) => {
+      let d = "";
+      res.on("data", (c) => (d += c));
+      res.on("end", () => cb(d.trim()));
+    }).on("error", () => cb(""));
+  };
+  const accept = (v) => /^(\d{1,3}\.){3}\d{1,3}$/.test(v);
+  probe(PUBLIC_IP_PROBES[0], (v) => {
+    if (accept(v)) { _publicIp = v; _publicIpFetching = false; }
+    else probe(PUBLIC_IP_PROBES[1], (v2) => {
+      if (accept(v2)) { _publicIp = v2; _publicIpFetching = false; }
+      else probe(PUBLIC_IP_PROBES[2], (v3) => {
+        if (accept(v3)) _publicIp = v3;
+        _publicIpFetching = false;
+      });
+    });
+  });
+  return _publicIp;
+}
+
+// Never forward loopback/private IPs upstream: the Zen rate limiter would put
+// every local 9router user into one shared "127.0.0.1"/LAN bucket that
+// exhausts immediately. Only real public IPs are forwarded as x-real-ip; for
+// loopback/private peers we fall back to the machine's own public IP.
+function isPrivateIp(ip) {
+  if (!ip) return true;
+  if (ip === "127.0.0.1" || ip === "::1" || ip.startsWith("::ffff:127.")) return true;
+  if (ip.startsWith("10.") || ip.startsWith("192.168.")) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return true;
+  if (ip.startsWith("fc00:") || ip.startsWith("fe80:")) return true;
+  return false;
+}
 
 // Official opencode CLI sends "opencode/<version>" (e.g. opencode/1.18.18).
 // OpenCode Zen's free-tier ("-free") models gate anonymous capacity on this
@@ -85,11 +130,13 @@ export class OpenCodeExecutor extends BaseExecutor {
     // anonymous client). NOTE: in front of opencode.ai the CDN stamps
     // x-real-ip from the real TCP peer and strips client-supplied values, so
     // this header is best-effort — the reliable per-user isolation comes from
-    // real egress IPs (see utils/ocEgress.js rotation). We still forward the
-    // sanitized peer IP (x-9r-real-ip stamped by custom-server.js from the
-    // unspoofable TCP socket) because it is harmless and helps when the
-    // upstream is reached through a pass-through proxy.
-    const clientIp = lower["x-9r-real-ip"] || lower["x-real-ip"] || "";
+    // real egress IPs (see utils/ocEgress.js). Only real PUBLIC IPs are
+    // forwarded: custom-server.js stamps the unspoofable TCP peer as
+    // x-9r-real-ip, which is 127.0.0.1 for local clients — forwarding that
+    // would put every local 9router user into one shared loopback bucket.
+    // For loopback/private peers we fall back to the machine's own public IP.
+    const rawIp = (lower["x-9r-real-ip"] || lower["x-real-ip"] || "").trim();
+    const clientIp = rawIp && !isPrivateIp(rawIp) ? rawIp : (rawIp ? discoverPublicIp() : "");
 
     return {
       "Content-Type": "application/json",
