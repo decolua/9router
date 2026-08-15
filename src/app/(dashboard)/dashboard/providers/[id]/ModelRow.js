@@ -1,8 +1,13 @@
 import PropTypes from "prop-types";
 import { CapacityBadges } from "@/shared/components";
+import { usePricing } from "@/shared/hooks/usePricing";
+import { formatModelMeta } from "@/shared/utils/modelMeta";
 
 export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable, caps, thinkingSuffix }) {
+  const { getPricing } = usePricing();
   const displayModel = thinkingSuffix ? `${fullModel}(${thinkingSuffix})` : fullModel;
+  const providerKey = fullModel.includes("/") ? fullModel.slice(0, fullModel.indexOf("/")) : null;
+  const meta = formatModelMeta(caps, getPricing(providerKey, model.id));
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
@@ -29,6 +34,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
           <span className="flex min-w-0 items-center text-[9px] gap-1 pl-1">
             {model.name && <span className="truncate text-[9px] italic text-text-muted/70">{model.name}</span>}
             <CapacityBadges caps={caps} colorOverride="text-text-muted/70" size={12} />
+            {meta && <span className="truncate text-[9px] text-text-muted/70">{meta}</span>}
           </span>
         </div>
         {onTest && (

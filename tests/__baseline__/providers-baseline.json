@@ -210,13 +210,8 @@
     "format": "openai"
   },
   "commandcode": {
-    "baseUrl": "https://api.commandcode.ai/alpha/generate",
-    "format": "commandcode",
-    "forceStream": true,
-    "headers": {
-      "x-command-code-version": "0.25.7",
-      "x-cli-environment": "cli"
-    }
+    "baseUrl": "https://api.commandcode.ai/provider/v1/chat/completions",
+    "format": "openai"
   },
   "cursor": {
     "baseUrl": "https://api2.cursor.sh",

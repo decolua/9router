@@ -14,6 +14,7 @@ import { getCodeBuddyCnUsage, getCodeBuddyIntlUsage } from "./usage/codebuddy-cn
 import { getGrokCliUsage } from "./usage/grok-cli.js";
 import { getKimiUsage } from "./usage/kimi.js";
 import { getDeepseekUsage } from "./usage/deepseek.js";
+import { getCloudflareUsage } from "./usage/cloudflare.js";
 import { resolveQoderCredentials } from "./qoderModels.js";
 import {
   getIflowUsage,
@@ -21,6 +22,8 @@ import {
   getGlmUsage,
   getVercelAiGatewayUsage,
   getQoderUsage,
+  getOpencodeGoUsage,
+  getCommandCodeUsage,
 } from "./usage/misc.js";
 
 /**
@@ -54,6 +57,11 @@ const USAGE_HANDLERS = {
   "grok-cli": (c) => getGrokCliUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   kimi: (c) => getKimiUsage(c.accessToken, c.apiKey, c.proxyOptions, c.providerSpecificData),
   deepseek: (c) => getDeepseekUsage(c.apiKey, c.proxyOptions),
+  "opencode-go": (c) => getOpencodeGoUsage(c.apiKey, c.proxyOptions),
+  ocg: (c) => getOpencodeGoUsage(c.apiKey, c.proxyOptions),
+  commandcode: (c) => getCommandCodeUsage(c.apiKey, c.proxyOptions),
+  cmc: (c) => getCommandCodeUsage(c.apiKey, c.proxyOptions),
+  "cloudflare-ai": (c) => getCloudflareUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),
 };
 
 export async function getUsageForProvider(connection, proxyOptions = null, options = {}) {

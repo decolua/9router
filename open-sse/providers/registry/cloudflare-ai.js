@@ -54,4 +54,8 @@ export default {
   ],
   serviceKinds: ["llm","image"],
   imageConfig: { baseUrl: "https://api.cloudflare.com/client/v4/accounts" },
+  features: {
+    usage: true,
+    usageApikey: true,
+  },
 };

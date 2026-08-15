@@ -45,15 +45,6 @@ describe("toOpenAIFinish - claude", () => {
   });
 });
 
-describe("toOpenAIFinish - commandcode", () => {
-  it("tool-calls -> tool_calls", () => {
-    expect(toOpenAIFinish("tool-calls", "commandcode")).toBe("tool_calls");
-  });
-  it("unknown passthrough", () => {
-    expect(toOpenAIFinish("xyz", "commandcode")).toBe("xyz");
-  });
-});
-
 describe("fromOpenAIFinish round-trip - claude", () => {
   it("tool_calls -> tool_use", () => {
     expect(fromOpenAIFinish("tool_calls", "claude")).toBe("tool_use");

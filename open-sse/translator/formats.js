@@ -11,8 +11,7 @@ export const FORMATS = {
   ANTIGRAVITY: "antigravity",
   KIRO: "kiro",
   CURSOR: "cursor",
-  OLLAMA: "ollama",
-  COMMANDCODE: "commandcode"
+  OLLAMA: "ollama"
 };
 
 /**

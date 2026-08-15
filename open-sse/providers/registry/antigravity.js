@@ -52,7 +52,7 @@ export default {
     { id: "gemini-3.6-flash-medium", name: "Gemini 3.6 Flash (Medium)", upstreamModelId: "gemini-3.6-flash-tiered(medium)" },
     { id: "gemini-3.6-flash-low", name: "Gemini 3.6 Flash (Low)", upstreamModelId: "gemini-3.6-flash-tiered(low)" },
     { id: "gemini-3.5-flash-high", name: "Gemini 3.5 Flash (High)" },
-    { id: "gemini-3-flash-agent", name: "Gemini 3.5 Flash (High)" },
+    { id: "gemini-3-flash-agent", name: "Gemini 3.5 Flash Agent (High)" },
     { id: "gemini-3.5-flash-low", name: "Gemini 3.5 Flash (Medium)" },
     { id: "gemini-3.5-flash-extra-low", name: "Gemini 3.5 Flash (Low)" },
     { id: "gemini-pro-agent", name: "Gemini 3.1 Pro (High)" },

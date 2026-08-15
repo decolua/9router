@@ -107,6 +107,8 @@ export const captureThinking = extractThinking;
 
 // Resolve thinking format: provider override > capability > derive(targetFormat).
 function resolveFormat(targetFormat, model, provider) {
+  // OpenAI-compatible nodes reject provider-native thinking fields.
+  if (typeof provider === "string" && provider.startsWith("openai-compatible-")) return "openai";
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   if (providerFmt) return providerFmt;
   const caps = getCapabilitiesForModel(provider, model);

@@ -93,48 +93,23 @@ function buildKiroFingerprintHeaders(credentials) {
 }
 
 /**
- * Build the synthetic 9router variant set for a single upstream Kiro model.
+ * Build the 9router catalog entry for a single upstream Kiro model.
  *
- * Returns objects shaped for `PROVIDER_MODELS` (`{ id, name }`) so they can
- * be slotted directly into the existing model registry.
- *
- * The `auto` model is special: Kiro picks the underlying model server-side,
- * so the chunked-write `-agentic` prompt is not meaningful (the prompt
- * targets coding-agent file writes). Match CLIProxyAPIPlus and skip
- * `-agentic` / `-thinking-agentic` for `auto`.
+ * One upstream model → one clean id. Thinking / agentic behavior is driven
+ * by request parameters (reasoning_effort, thinking budget) and translator
+ * suffix handling — not by duplicated model slots.
  */
 function buildVariants(upstream, displayName) {
   const safeUpstream = stripSyntheticSuffixes(upstream);
   const display = displayName || `Kiro ${safeUpstream}`;
-  const isAuto = safeUpstream === "auto";
 
-  const variants = [
+  return [
     {
       id: safeUpstream,
       name: display,
-      capabilities: { thinking: false, agentic: false }
-    },
-    {
-      id: `${safeUpstream}-thinking`,
-      name: `${display} (Thinking)`,
       capabilities: { thinking: true, agentic: false }
     }
   ];
-
-  if (!isAuto) {
-    variants.push({
-      id: `${safeUpstream}-agentic`,
-      name: `${display} (Agentic)`,
-      capabilities: { thinking: false, agentic: true }
-    });
-    variants.push({
-      id: `${safeUpstream}-thinking-agentic`,
-      name: `${display} (Thinking + Agentic)`,
-      capabilities: { thinking: true, agentic: true }
-    });
-  }
-
-  return variants;
 }
 
 /**

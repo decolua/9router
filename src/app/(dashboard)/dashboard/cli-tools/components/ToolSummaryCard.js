@@ -5,7 +5,8 @@ import Image from "next/image";
 import { Card } from "@/shared/components";
 
 // Derive simple connected/configured/not-installed status from API payload
-function getStatus(status) {
+function getStatus(tool, status) {
+  if (tool.unsupported) return { label: "Unsupported", cls: "bg-red-500/10 text-red-600 dark:text-red-400" };
   if (!status) return { label: "Unknown", cls: "bg-gray-500/10 text-gray-500" };
   if (!status.installed) return { label: "Not installed", cls: "bg-gray-500/10 text-gray-500" };
   if (status.has9Router) return { label: "Connected", cls: "bg-green-500/10 text-green-600 dark:text-green-400" };
@@ -13,7 +14,7 @@ function getStatus(status) {
 }
 
 export default function ToolSummaryCard({ toolId, tool, status }) {
-  const s = getStatus(status);
+  const s = getStatus(tool, status);
   return (
     <Link href={`/dashboard/cli-tools/${toolId}`} className="block">
       <Card padding="sm" className="h-full overflow-hidden hover:border-primary/50 transition-colors cursor-pointer">

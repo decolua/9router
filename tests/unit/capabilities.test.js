@@ -51,8 +51,7 @@ describe("getCapabilitiesForModel", () => {
   it("reports Kiro GPT 5.6 models with the Kiro 272k context window", () => {
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-sol")).toMatchObject(kiroGpt56Expected);
     expect(getCapabilitiesForModel("kiro", "openai/gpt-5.6-sol")).toMatchObject(kiroGpt56Expected);
-    expect(getCapabilitiesForModel("kiro", "gpt-5.6-terra-thinking")).toMatchObject(kiroGpt56Expected);
-    expect(getCapabilitiesForModel("kiro", "gpt-5.6-luna-agentic")).toMatchObject(kiroGpt56Expected);
-    expect(getCapabilitiesForModel("kiro", "gpt-5.6-sol-thinking-agentic")).toMatchObject(kiroGpt56Expected);
+    expect(getCapabilitiesForModel("kiro", "gpt-5.6-terra")).toMatchObject(kiroGpt56Expected);
+    expect(getCapabilitiesForModel("kiro", "gpt-5.6-luna")).toMatchObject(kiroGpt56Expected);
   });
 });

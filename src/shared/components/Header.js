@@ -77,6 +77,13 @@ const getPageInfo = (pathname) => {
       icon: "dns",
       breadcrumbs: [],
     };
+  if (pathname.includes("/models"))
+    return {
+      title: "Models",
+      description: "Browse and edit models across all providers",
+      icon: "smart_toy",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/combos"))
     return {
       title: "Combos",

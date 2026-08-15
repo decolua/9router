@@ -86,3 +86,8 @@ graphify-out/*
 .codegraph/
 .PR/
 .next-analyze/*
+
+# Local-only wiki (LLM Wiki Compiler)
+wiki/
+.wiki-compiler.json
+wiki-log.md

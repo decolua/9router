@@ -55,13 +55,6 @@ describe("toOpenAIUsage", () => {
     expect(u.total_tokens).toBe(11);
   });
 
-  it("commandcode: keeps totalTokens fallback", () => {
-    const u = toOpenAIUsage({ inputTokens: 8, outputTokens: 2, totalTokens: 99 }, "commandcode");
-    expect(u.prompt_tokens).toBe(8);
-    expect(u.completion_tokens).toBe(2);
-    expect(u.total_tokens).toBe(99);
-  });
-
   it("unknown kind / null raw -> null", () => {
     expect(toOpenAIUsage({}, "nope")).toBeNull();
     expect(toOpenAIUsage(null, "claude")).toBeNull();
