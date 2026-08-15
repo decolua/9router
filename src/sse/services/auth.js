@@ -18,6 +18,19 @@ function githubMonthlyResetMs(status, errorText, provider) {
 }
 
 /**
+ * Detect Qoder account-wide quota exhaustion.
+ * Qoder delivers it as an HTTP-200 SSE payload whose first envelope carries
+ * statusCodeValue 403 and a body containing "code":"112"; the qoder executor
+ * converts that billing block into a plain 403 error before we get here.
+ * Unlike transient billing blocks (queue throttle code 10605 / pricingUrl
+ * nudges), code 112 does not recover on its own.
+ */
+function isQoderQuotaExhausted(status, errorText, provider) {
+  if (resolveProviderId(provider) !== "qoder" || Number(status) !== 403) return false;
+  return /"code"\s*:\s*"112"/.test(String(errorText || ""));
+}
+
+/**
  * Get provider credentials from localDb
  * Filters out unavailable accounts and returns the selected account based on strategy
  * @param {string} provider - Provider name
@@ -221,6 +234,25 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const connections = await getProviderConnections({ provider });
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
+
+  // Qoder code 112 is an account-wide quota signal. A timed lock alone would
+  // keep retrying a dead account after the cooldown, so deactivate the
+  // connection (what an operator would do manually) and let selection move to
+  // the next Qoder account or the next combo fallback model.
+  if (isQoderQuotaExhausted(status, errorText, provider)) {
+    const reason = typeof errorText === "string" ? errorText.slice(0, 200) : "Qoder quota exhausted (code 112)";
+    await updateProviderConnection(connectionId, {
+      isActive: false,
+      testStatus: "unavailable",
+      lastError: reason,
+      errorCode: 403,
+      lastErrorAt: new Date().toISOString(),
+      backoffLevel: 0,
+    });
+    const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
+    log.warn("AUTH", `${connName} disabled: Qoder quota exhausted [403/code 112]`);
+    return { shouldFallback: true, cooldownMs: 0 };
+  }
 
   // GitHub premium-request exhaustion is account-wide until the next UTC month.
   const githubResetAtMs = githubMonthlyResetMs(status, errorText, provider);
