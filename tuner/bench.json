@@ -91,19 +91,12 @@
       "family": "kimi-k3",
       "mode": "free"
     },
-    "tr/qwen/qwen3.8-max": {
-      "family": "qwen3.8-max"
-    },
-    "tr/qwen/qwen3.8-max-free": {
+    "tokenrouter/qwen/qwen3.8-max-free": {
       "family": "qwen3.8-max",
       "mode": "free"
     },
-    "qwen/qwen3.8-max": {
+    "tokenrouter/qwen/qwen3.8-max": {
       "family": "qwen3.8-max"
-    },
-    "qwen/qwen3.8-max-free": {
-      "family": "qwen3.8-max",
-      "mode": "free"
     }
   },
   "_comboBand": {
@@ -375,7 +368,7 @@
     "cmc": 2,
     "cx": 2,
     "ocg": 2,
-    "tr": 0
+    "tokenrouter": 0
   },
   "providerByPrefix": {
     "oc": "opencode",
@@ -395,7 +388,7 @@
     "xai": "xai",
     "kc": "kilocode",
     "cmc": "commandcode",
-    "tr": "tokenrouter"
+    "tokenrouter": "tokenrouter"
   },
   "quotaScope": {
     "_comment": "account = one shared pool, all models die together. family = one pool per model family within the provider (antigravity meters anthropic and gemini separately). model = per base model. Default when a prefix is absent is account (safe assumption).",
@@ -416,13 +409,15 @@
     "gcli": "model",
     "gemini": "model",
     "gc": "account",
-    "openrouter": "account",
-    "tr": "account"
+    "openrouter": "account"
   },
   "_pins": {
     "Fenrir": {
-      "cx/gpt-5.6-terra": 1,
-      "tr/qwen/qwen3.8-max-free": 0
+      "tokenrouter/qwen/qwen3.8-max-free": 0,
+      "cx/gpt-5.6-terra": 1
+    },
+    "Odin": {
+      "tokenrouter/qwen/qwen3.8-max-free": 0
     }
   },
   "_costOverride": {
