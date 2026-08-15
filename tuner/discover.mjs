@@ -8,6 +8,8 @@ const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'db/data.sqlite');
 const STATE_PATH = process.env.DISCOVER_STATE || path.join(DATA_DIR, 'tuner/discover-state.json');
 const BASE_URL = process.env.NINEROUTER_URL || 'https://9r.inyund.xyz';
 const WEBHOOK = process.env.DISCORD_WEBHOOK_URL || '';
+const REGISTRY_DIR = process.env.REGISTRY_DIR || path.join(import.meta.dirname, '../open-sse/providers/registry');
+const DISCOVERY_EXPIRY_HOURS = 12;
 
 const README_URLS = [
   'https://raw.githubusercontent.com/cheahjs/free-llm-api-resources/main/README.md',
@@ -76,6 +78,22 @@ function isRegistered(name, registered) {
   return false;
 }
 
+function getRegistryProviders() {
+  try {
+    const files = fs.readdirSync(REGISTRY_DIR);
+    const providers = new Set();
+    for (const file of files) {
+      if (!file.endsWith('.js')) continue;
+      if (file === 'index.js' || file === 'REGISTRY_TEMPLATE.js') continue;
+      const name = file.slice(0, -3).toLowerCase();
+      providers.add(name);
+    }
+    return providers;
+  } catch {
+    return new Set();
+  }
+}
+
 // The domain regex cannot distinguish an API provider from a desktop app or a
 // self-hosted runtime — gpt4all, jan and lmstudio all surfaced as "free
 // provider candidates" when none of them expose a hosted API to route to.
@@ -85,9 +103,16 @@ const NOT_A_PROVIDER = /\b(desktop app|desktop gui|gui\b|offline|self-?host|loca
 function loadState() {
   try {
     const s = JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
-    return { knownModels: s.knownModels || [], knownProviders: s.knownProviders || [], lastRun: s.lastRun || null };
+    return {
+      knownModels: s.knownModels || [],
+      knownProviders: s.knownProviders || [],
+      pendingProviders: s.pendingProviders || {},
+      pendingModels: s.pendingModels || {},
+      discoveredProviders: s.discoveredProviders || {},
+      lastRun: s.lastRun || null,
+    };
   } catch {
-    return { knownModels: [], knownProviders: [], lastRun: null };
+    return { knownModels: [], knownProviders: [], pendingProviders: {}, pendingModels: {}, discoveredProviders: {}, lastRun: null };
   }
 }
 
@@ -153,12 +178,32 @@ async function main() {
 
   const current = await currentModels(db, token);
   const registered = registeredProviders(db);
+  const registryFiles = getRegistryProviders();
   const state = loadState();
 
   const knownModelsSet = new Set(state.knownModels);
   const allNewModels = [...current].filter((id) => !knownModelsSet.has(id)).sort();
 
   const discovered = await discoverProviders();
+  const now = Date.now();
+  const expiryMs = DISCOVERY_EXPIRY_HOURS * 60 * 60 * 1000;
+
+  // Clean up expired discovered items (12 hours old, not yet registered)
+  const activeSuspects = {};
+  for (const [name, timestamp] of Object.entries(state.discoveredProviders)) {
+    // Keep item if it was discovered recently OR if it's still unregistered
+    if (now - timestamp < expiryMs || !isRegistered(name, registered)) {
+      activeSuspects[name] = timestamp;
+    }
+  }
+
+  // Add newly discovered items (not yet registered, not dismissed)
+  for (const name of discovered.keys()) {
+    if (!activeSuspects[name] && !isRegistered(name, registered)) {
+      activeSuspects[name] = now;
+    }
+  }
+
   const knownProvidersSet = new Set(state.knownProviders);
   // FIRST-SEEN delta, kept for the "what changed" line.
   const newProviders = [...discovered.keys()].filter((n) => !isRegistered(n, registered) && !knownProvidersSet.has(n)).sort();
@@ -171,10 +216,35 @@ async function main() {
     .filter(([n, v]) => !isRegistered(n, registered) && !NOT_A_PROVIDER.test(v.line))
     .sort((a, b) => (b[1].score - a[1].score) || a[0].localeCompare(b[0]));
 
+  // Split candidates by status: no registry file vs no credentials
+  const noRegistry = candidates.filter(([n]) => !isRegistered(n, registryFiles));
+  const noCredentials = candidates.filter(([n]) => isRegistered(n, registryFiles) && !isRegistered(n, registered));
+
+  // Track pending providers: discovered items not yet registered
+  const nextPendingProviders = {};
+  for (const name of discovered.keys()) {
+    if (!isRegistered(name, registered)) {
+      // Keep existing date if already pending, otherwise use current run date
+      nextPendingProviders[name] = state.pendingProviders[name] || new Date().toISOString();
+    }
+  }
+
+  // Track pending models: models in current but not yet seen before
+  const nextPendingModels = {};
+  for (const modelId of current) {
+    if (!knownModelsSet.has(modelId)) {
+      // Keep existing date if already pending, otherwise use current run date
+      nextPendingModels[modelId] = state.pendingModels[modelId] || new Date().toISOString();
+    }
+  }
+
   saveState({
     lastRun: new Date().toISOString(),
     knownModels: [...current].sort(),
-    knownProviders: [...new Set([...state.knownProviders, ...discovered.keys()])].sort(),
+    knownProviders: [...new Set([...state.knownProviders, ...registered.keys()])].sort(),
+    pendingProviders: nextPendingProviders,
+    pendingModels: nextPendingModels,
+    discoveredProviders: activeSuspects,
   });
 
   // Always report. The old version posted only on a delta and printed
@@ -184,12 +254,19 @@ async function main() {
   const lines = [];
   lines.push(`9r-tuner discover: ${allNewModels.length} new model(s), ${newProviders.length} first-seen provider(s), ${candidates.length} unregistered candidate(s), ${registered.size} provider(s) registered`);
 
-  if (allNewModels.length > 0) {
+  // Show all pending models, not just today's new ones
+  const pendingModelsList = Object.entries(nextPendingModels).sort();
+  if (pendingModelsList.length > 0) {
     lines.push('');
     lines.push('NEW MODELS (not probed - registration required before the tuner can use them)');
-    const displayedModels = allNewModels.slice(0, 25);
-    for (const id of displayedModels) lines.push(id);
-    const omittedModels = allNewModels.length - displayedModels.length;
+    const runDate = new Date().toISOString().split('T')[0];
+    const displayedModels = pendingModelsList.slice(0, 25);
+    for (const [id, pendingDate] of displayedModels) {
+      const pendingDateOnly = pendingDate.split('T')[0];
+      const pendingLabel = pendingDateOnly !== runDate ? ` (pending since ${pendingDateOnly})` : '';
+      lines.push(`${id}${pendingLabel}`);
+    }
+    const omittedModels = pendingModelsList.length - displayedModels.length;
     if (omittedModels > 0) lines.push(`... and ${omittedModels} more`);
   }
 
@@ -204,6 +281,38 @@ async function main() {
       lines.push(`- ${name} <${v.url}>`);
       lines.push(`    ${v.line}`);
     }
+  }
+
+  // Report providers needing registry file
+  if (noRegistry.length > 0) {
+    lines.push('');
+    lines.push(`NEW PROVIDER (top ${Math.min(noRegistry.length, 10)} of ${noRegistry.length}):`);
+    const displayedRegistry = noRegistry.slice(0, 10);
+    for (const [name, v] of displayedRegistry) {
+      const pendingDate = nextPendingProviders[name];
+      const runDate = new Date().toISOString().split('T')[0];
+      const pendingDateOnly = pendingDate.split('T')[0];
+      const pendingLabel = pendingDateOnly !== runDate ? ` (pending since ${pendingDateOnly})` : '';
+      lines.push(`- ${name}${pendingLabel} — write an executor from REGISTRY_TEMPLATE.js`);
+    }
+    const omitted = noRegistry.length - displayedRegistry.length;
+    if (omitted > 0) lines.push(`... and ${omitted} more`);
+  }
+
+  // Report providers needing credentials
+  if (noCredentials.length > 0) {
+    lines.push('');
+    lines.push(`NEEDS CREDENTIALS (top ${Math.min(noCredentials.length, 10)} of ${noCredentials.length}):`);
+    const displayedCreds = noCredentials.slice(0, 10);
+    for (const [name, v] of displayedCreds) {
+      const pendingDate = nextPendingProviders[name];
+      const runDate = new Date().toISOString().split('T')[0];
+      const pendingDateOnly = pendingDate.split('T')[0];
+      const pendingLabel = pendingDateOnly !== runDate ? ` (pending since ${pendingDateOnly})` : '';
+      lines.push(`- ${name}${pendingLabel} — add credentials in the dashboard`);
+    }
+    const omitted = noCredentials.length - displayedCreds.length;
+    if (omitted > 0) lines.push(`... and ${omitted} more`);
   }
 
   const report = lines.join('\n');
