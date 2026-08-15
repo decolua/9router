@@ -118,7 +118,18 @@ export default {
     { id: "qwen/qwen3.6-plus", name: "Qwen3.6 Plus" },
     { id: "qwen/qwen3.7-max", name: "Qwen3.7 Max" },
     { id: "qwen/qwen3.7-plus", name: "Qwen3.7 Plus" },
-    { id: "qwen/qwen3.8-max", name: "Qwen3.8 Max", family: "qwen3.8-max" },
+    // STOPGAP, and it is a compromise worth naming. These should carry
+    // family "qwen3.8-max", but no such family exists in the live bench.json,
+    // so bandOf() returns null and tune.mjs's pool filter drops them from every
+    // combo -- the model serves requests fine and is invisible to the tuner.
+    // Adding the family band needs a bench.json write, which no MCP tool
+    // exposes and which the dashboard API refuses on a stale password.
+    //
+    // qwen3.7-max IS banded (it is why ocg/qwen3.7-max sits in Fenrir), and the
+    // 3.8 models are the same capability class one revision on, so borrowing it
+    // gets the right band today. Correct this to a real qwen3.8-max family the
+    // moment bench.json is writable again.
+    { id: "qwen/qwen3.8-max", name: "Qwen3.8 Max", family: "qwen3.7-max" },
     // Declared like moonshotai/kimi-k3-free above, and for the same reason: a
     // bare id carries no family, identityOf returns family null, bandOf returns
     // null, and tune.mjs's pool filter drops it from every combo — so the model
@@ -127,7 +138,7 @@ export default {
     // still reported band=none with "Not present in any combo's current or
     // desired order". A mode never moves a band (CONTEXT.md), so the free
     // variant inherits whatever qwen3.8-max is banded at.
-    { id: "qwen/qwen3.8-max-free", name: "Qwen3.8 Max Free", family: "qwen3.8-max", mode: "free" },
+    { id: "qwen/qwen3.8-max-free", name: "Qwen3.8 Max Free", family: "qwen3.7-max", mode: "free" },
     { id: "qwen3.5-omni-plus", name: "Qwen3.5 Omni Plus" },
     { id: "qwen3.6-flash", name: "Qwen3.6 Flash" },
     { id: "sakana/fugu-ultra", name: "Fugu Ultra" },
