@@ -50,6 +50,13 @@ export default {
   // Where an id token and the display name disagree, the display name wins - it is
   // the tier the vendor actually sells.
   models: [
+    // 3.7 Flash comes from upstream v0.5.55. The family/effort keys are ours:
+    // without them a tiered variant matches no bench key and stays invisible to
+    // every combo, which is the same defect the gemini-pro-agent comment below
+    // records. Added here so the new models are not silently unrankable.
+    { id: "gemini-3.7-flash-high", name: "Gemini 3.7 Flash (High)", upstreamModelId: "gemini-3.7-flash-tiered(high)", family: "gemini-3.7-flash", effort: "high" },
+    { id: "gemini-3.7-flash-medium", name: "Gemini 3.7 Flash (Medium)", upstreamModelId: "gemini-3.7-flash-tiered(medium)", family: "gemini-3.7-flash", effort: "medium" },
+    { id: "gemini-3.7-flash-low", name: "Gemini 3.7 Flash (Low)", upstreamModelId: "gemini-3.7-flash-tiered(low)", family: "gemini-3.7-flash", effort: "low" },
     { id: "gemini-3.6-flash-high", name: "Gemini 3.6 Flash (High)", upstreamModelId: "gemini-3.6-flash-tiered(high)", family: "gemini-3.6-flash", effort: "high" },
     { id: "gemini-3.6-flash-medium", name: "Gemini 3.6 Flash (Medium)", upstreamModelId: "gemini-3.6-flash-tiered(medium)", family: "gemini-3.6-flash", effort: "medium" },
     { id: "gemini-3.6-flash-low", name: "Gemini 3.6 Flash (Low)", upstreamModelId: "gemini-3.6-flash-tiered(low)", family: "gemini-3.6-flash", effort: "low" },
