@@ -151,3 +151,113 @@ export function fixMissingToolResponses(body) {
   return body;
 }
 
+/**
+ * Strip orphaned tool results — results that reference a tool call no longer
+ * present in the same request. Client-side history truncation/summarisation can
+ * remove an assistant turn that contained tool_calls while leaving the
+ * corresponding tool result in the history; strict upstream APIs then reject
+ * the whole request with a 400 before the model ever executes.
+ *
+ * Handles all four wire formats used by 9router:
+ *   - OpenAI Chat Completions : messages[role=tool].tool_call_id
+ *   - Anthropic Messages      : messages[role=user].content[type=tool_result].tool_use_id
+ *   - OpenAI Responses API    : input[type=function_call_output].call_id
+ *   - Gemini / Antigravity    : contents[].parts[].functionResponse.id|name
+ *
+ * Mutates body in-place (same pattern as fixMissingToolResponses).
+ * Returns the number of orphaned items removed (0 = nothing changed).
+ */
+export function stripOrphanedToolResults(body) {
+  let stripped = 0;
+
+  // ── 1. OpenAI Chat Completions + Anthropic Messages (share body.messages) ──
+  if (Array.isArray(body.messages)) {
+    // Collect every live tool-call id from the full message list.
+    const liveIds = new Set();
+    for (const msg of body.messages) {
+      // OpenAI assistant turn: tool_calls[].id
+      if (msg.role === "assistant" && Array.isArray(msg.tool_calls)) {
+        for (const tc of msg.tool_calls) {
+          if (tc.id) liveIds.add(tc.id);
+        }
+      }
+      // Anthropic assistant turn: content[type=tool_use].id
+      if (Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if (block.type === "tool_use" && block.id) liveIds.add(block.id);
+        }
+      }
+    }
+
+    // Remove orphaned role:"tool" messages (OpenAI).
+    const beforeMsgs = body.messages.length;
+    body.messages = body.messages.filter(msg => {
+      if (msg.role === "tool" && msg.tool_call_id) {
+        return liveIds.has(msg.tool_call_id);
+      }
+      return true;
+    });
+    stripped += beforeMsgs - body.messages.length;
+
+    // Remove orphaned tool_result content blocks from user messages (Anthropic).
+    for (const msg of body.messages) {
+      if (msg.role === "user" && Array.isArray(msg.content)) {
+        const beforeBlocks = msg.content.length;
+        msg.content = msg.content.filter(block => {
+          if (block.type === "tool_result" && block.tool_use_id) {
+            return liveIds.has(block.tool_use_id);
+          }
+          return true;
+        });
+        stripped += beforeBlocks - msg.content.length;
+      }
+    }
+  }
+
+  // ── 2. OpenAI Responses API: input[] ──────────────────────────────────────
+  if (Array.isArray(body.input)) {
+    const liveIds = new Set();
+    for (const item of body.input) {
+      if (item.type === "function_call" && item.call_id) liveIds.add(item.call_id);
+    }
+    if (liveIds.size > 0 || body.input.some(i => i.type === "function_call_output")) {
+      const before = body.input.length;
+      body.input = body.input.filter(item => {
+        if (item.type === "function_call_output" && item.call_id) {
+          return liveIds.has(item.call_id);
+        }
+        return true;
+      });
+      stripped += before - body.input.length;
+    }
+  }
+
+  // ── 3. Gemini / Antigravity: contents[] ───────────────────────────────────
+  if (Array.isArray(body.contents)) {
+    const liveIds = new Set();
+    for (const turn of body.contents) {
+      if (!Array.isArray(turn.parts)) continue;
+      for (const part of turn.parts) {
+        if (!part.functionCall) continue;
+        // Prefer explicit id; fall back to name when id is absent (older Gemini shapes).
+        const key = part.functionCall.id ?? part.functionCall.name;
+        if (key) liveIds.add(key);
+      }
+    }
+    if (liveIds.size > 0 || body.contents.some(t => Array.isArray(t.parts) && t.parts.some(p => p.functionResponse))) {
+      for (const turn of body.contents) {
+        if (!Array.isArray(turn.parts)) continue;
+        const before = turn.parts.length;
+        turn.parts = turn.parts.filter(part => {
+          if (!part.functionResponse) return true;
+          const key = part.functionResponse.id ?? part.functionResponse.name;
+          return key ? liveIds.has(key) : true;
+        });
+        stripped += before - turn.parts.length;
+      }
+    }
+  }
+
+  return stripped;
+}
+
