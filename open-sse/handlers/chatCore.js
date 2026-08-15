@@ -1,6 +1,7 @@
 import { detectFormat, getTargetFormat, resolveTransport } from "../services/provider.js";
 import { translateRequest } from "../translator/index.js";
 import { applyThinking, extractThinking, stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
+import { applySpeed, hasSpeedSuffix, stripSpeedSuffix } from "../translator/concerns/speedTier.js";
 import { FORMATS } from "../translator/formats.js";
 import { normalizeClaudePassthrough, anchorClaudeCache } from "../translator/formats/claude.js";
 import { createStreamController } from "../utils/streamHandler.js";
@@ -93,7 +94,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const targetFormat = modelTargetFormat || useTransport?.format || getTargetFormat(provider, credentials);
   if (useTransport && credentials) credentials.runtimeTransport = useTransport;
   const stripList = getModelStrip(alias, model);
-  const upstreamModel = getModelUpstreamId(alias, model);
+  // "-fast" opts into the provider's faster tier. Strip it before every model lookup
+  // so capabilities/thinking/upstream-id all resolve against the real model id; the
+  // provider-native field is set on the translated body further down.
+  const wantsFasterTier = hasSpeedSuffix(model);
+  const upstreamModel = getModelUpstreamId(alias, stripSpeedSuffix(model));
 
   // Inject provider-level thinking config override (only if client hasn't set)
   // on/off → extended type (body.thinking), none/low/medium/high → effort type (body.reasoning_effort)
@@ -193,6 +198,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     delete translatedBody._customToolNames;
     translatedBody.model = stripThinkingSuffix(upstreamModel);
     stripContinuityFields(translatedBody);
+  }
+
+  // Faster-tier opt-in: body.model is the real upstream id by now, so the capability
+  // lookup resolves. No-op when the model has no faster tier.
+  if (wantsFasterTier && applySpeed(provider, translatedBody)) {
+    log?.debug?.("SPEED", `${provider}/${translatedBody.model} → faster tier`);
   }
 
   // Dedupe duplicate built-in tools when equivalent MCP tools are present (Claude clients only).
