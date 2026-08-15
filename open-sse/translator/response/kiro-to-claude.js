@@ -67,7 +67,12 @@ export function kiroToClaudeResponse(chunk, state) {
 
   const results = [];
   const choice = data.choices[0];
-  const delta = choice.delta || {};
+  // `let`, not `const`: the echo guards below rebind this after filtering. The
+  // upstream v0.5.55 merge brought in a `const` declaration here while our echo
+  // filtering kept its reassignment further down, and git merged both without
+  // reporting a conflict — leaving a TypeError on every text chunk through this
+  // path. Nothing catches that at review time; only running it does.
+  let delta = choice.delta || {};
 
   // Track usage if present on the chunk.
   if (data.usage && typeof data.usage === "object") {
