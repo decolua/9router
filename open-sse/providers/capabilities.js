@@ -96,6 +96,8 @@ export const MODEL_CAPABILITIES = {
 
   // GLM vision variant (text GLM has no vision)
   "glm-4.6v":          { vision: true, reasoning: true, thinkingFormat: "zai", contextWindow: 128000 },
+  // GLM-5.2 has 1M context — pattern *glm-5* only gives 200k, so override here
+  "glm-5.2":           { reasoning: true, thinkingFormat: "zai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 131072 },
 
   // Qwen plain coder/text (no vision) — registry "vision-model" / "coder-model" aliases
   "vision-model":      { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 },
@@ -170,8 +172,8 @@ export const PROVIDER_CAPABILITIES = {
     "kimi-k2.6":          { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 256000, maxOutput: 32000 },
     "kimi-k2.5":          { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 164000, maxOutput: 32000 },
     "hy3-preview":        { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 192000, maxOutput: 64000 },
-    "deepseek-v4-pro":    { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
-    "deepseek-v4-flash":  { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
+    "deepseek-v4-pro":    { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
+    "deepseek-v4-flash":  { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
     "deepseek-v3-2-volc": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 96000, maxOutput: 32000 },
   },
   // Poolside Laguna — OpenAI-compatible, all reasoning-capable (32K max output).
@@ -244,7 +246,7 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*qwen*vl*",       caps: { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 262144 } },
   { pattern: "*qwen*omni*",     caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 262144, maxOutput: 65536 } },
   { pattern: "*qwen*coder*",    caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 } },
-  { pattern: "*qwen*max*",      caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
+  { pattern: "*qwen*max*",      caps: { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
   { pattern: "*qwen3.5*",       caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
   { pattern: "*qwen3.6*",       caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
   { pattern: "*qwen3.7*",       caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
@@ -275,14 +277,15 @@ export const PATTERN_CAPABILITIES = [
 
   // ── MiniMax (M3 = adaptive; M2.x cannot disable) ─────────────────
   { pattern: "*minimax*image*", caps: { imageOutput: true } },
-  { pattern: "*minimax-m3*",    caps: { vision: true, reasoning: true, thinkingFormat: "minimax", contextWindow: 1048576, maxOutput: 512000 } },
-  { pattern: "*minimax-m2.7*",  caps: { reasoning: true, thinkingFormat: "minimax", thinkingCanDisable: false, contextWindow: 204800, maxOutput: 131072 } },
+  { pattern: "*minimax-m3*",    caps: { vision: true, reasoning: true, thinkingFormat: "minimax", contextWindow: 1000000, maxOutput: 131072 } },
+  { pattern: "*minimax-m2.7*",  caps: { vision: true, reasoning: true, thinkingFormat: "minimax", thinkingCanDisable: false, contextWindow: 204800, maxOutput: 131072 } },
+  { pattern: "*minimax-m2.5*",  caps: { vision: true, reasoning: true, thinkingFormat: "minimax", thinkingCanDisable: false, contextWindow: 204800, maxOutput: 131072 } },
   { pattern: "*minimax*",       caps: { reasoning: true, thinkingFormat: "minimax", thinkingCanDisable: false, contextWindow: 200000, maxOutput: 131072 } },
 
-  // ── Xiaomi MiMo (vision, 1M / 262K ctx) ──────────────────────────
-  { pattern: "*mimo*v2.5*",     caps: { vision: true, audioInput: true, videoInput: true, contextWindow: 1048576, maxOutput: 131072 } },
-  { pattern: "*mimo*omni*",     caps: { vision: true, audioInput: true, contextWindow: 262144, maxOutput: 131072 } },
-  { pattern: "*mimo*",          caps: { vision: true, contextWindow: 262144, maxOutput: 131072 } },
+  // ── Xiaomi MiMo (vision + <think>-tag reasoning, always-on, can't disable) ──
+  { pattern: "*mimo*v2.5*",     caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 } },
+  { pattern: "*mimo*omni*",     caps: { vision: true, audioInput: true, reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 131072 } },
+  { pattern: "*mimo*",          caps: { vision: true, reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 131072 } },
 
   // ── Llama (4 = vision/1M; 3.x = text-only/128K) ──────────────────
   { pattern: "*llama-4*",       caps: { vision: true, contextWindow: 1000000 } },
@@ -316,6 +319,52 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*nemotron*",      caps: { reasoning: true, contextWindow: 128000 } },
   { pattern: "*ling-*",         caps: { reasoning: true, contextWindow: 128000 } },
 ];
+
+/**
+ * Aggregate capabilities for a combo from its constituent model IDs.
+ * Each entry in comboModels is a fully-qualified "provider/model" string.
+ *
+ * Union:        vision, pdf, audioInput, videoInput, imageOutput, audioOutput, search
+ * Intersection: tools
+ * Primary:      reasoning fields from the first (primary) model
+ * Conservative: contextWindow = min; maxOutput = max
+ *
+ * @param {string[]} comboModels
+ * @param {Object|null} [comboLookup] optional map of combo name → models array for nested resolution
+ * @param {number} [_depth] internal recursion depth guard
+ * @returns {object|null} full capabilities object, or null for empty input
+ */
+export function aggregateComboCapabilities(comboModels, comboLookup = null, _depth = 0) {
+  if (!comboModels?.length || _depth > 6) return null;
+  const allCaps = comboModels.map((fullId) => {
+    // Nested combo: bare name (no slash) that exists in the lookup — recurse
+    if (!fullId.includes("/") && comboLookup?.[fullId]) {
+      return aggregateComboCapabilities(comboLookup[fullId], comboLookup, _depth + 1)
+          ?? getCapabilitiesForModel(null, fullId);
+    }
+    const slash = fullId.indexOf("/");
+    const provider = slash === -1 ? null : fullId.slice(0, slash);
+    const model = slash === -1 ? fullId : fullId.slice(slash + 1);
+    return getCapabilitiesForModel(provider, model);
+  });
+  const first = allCaps[0];
+  return {
+    vision:      allCaps.some((c) => c.vision),
+    pdf:         allCaps.some((c) => c.pdf),
+    audioInput:  allCaps.some((c) => c.audioInput),
+    videoInput:  allCaps.some((c) => c.videoInput),
+    imageOutput: allCaps.some((c) => c.imageOutput),
+    audioOutput: allCaps.some((c) => c.audioOutput),
+    search:      allCaps.some((c) => c.search),
+    tools:       allCaps.every((c) => c.tools),
+    reasoning:          first.reasoning,
+    thinkingFormat:     first.thinkingFormat,
+    thinkingCanDisable: first.thinkingCanDisable,
+    thinkingRange:      first.thinkingRange,
+    contextWindow: Math.min(...allCaps.map((c) => c.contextWindow)),
+    maxOutput:     Math.max(...allCaps.map((c) => c.maxOutput)),
+  };
+}
 
 /**
  * Resolve capabilities for a model using the 4-step fallback chain,
