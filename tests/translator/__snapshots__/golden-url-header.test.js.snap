@@ -565,6 +565,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > deepseek → headers
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > devin-cli → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > featherless → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -613,6 +632,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > gemini → headers (
   "nonStream": {
     "Content-Type": "application/json",
     "x-goog-api-key": "<CRED>",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > ghm → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
   },
   "oauth": {
     "Accept": "text/event-stream",
@@ -1176,6 +1214,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > poolside → headers
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > qwen → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > sambanova → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1271,6 +1328,34 @@ exports[`GOLDEN buildHeaders (default executor providers) > tokenrouter → head
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > trae → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "<CRED>",
+    "Content-Type": "application/json",
+    "Referer": "https://solo.trae.ai/",
+    "X-Preferenced-Language": "en",
+    "X-Trae-Client-Type": "web",
+  },
+  "nonStream": {
+    "Authorization": "<CRED>",
+    "Content-Type": "application/json",
+    "Referer": "https://solo.trae.ai/",
+    "X-Preferenced-Language": "en",
+    "X-Trae-Client-Type": "web",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "<CRED>",
+    "Content-Type": "application/json",
+    "Referer": "https://solo.trae.ai/",
+    "X-Preferenced-Language": "en",
+    "X-Trae-Client-Type": "web",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > venice → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1324,6 +1409,29 @@ exports[`GOLDEN buildHeaders (default executor providers) > volcengine-ark → h
     "Accept": "text/event-stream",
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > windsurf → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "<CRED>",
+    "Content-Type": "application/grpc-web+proto",
+    "X-Grpc-Web": "1",
+  },
+  "nonStream": {
+    "Accept": "application/grpc-web+proto",
+    "Authorization": "<CRED>",
+    "Content-Type": "application/grpc-web+proto",
+    "X-Grpc-Web": "1",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "<CRED>",
+    "Content-Type": "application/grpc-web+proto",
+    "X-Grpc-Web": "1",
   },
 }
 `;
@@ -1542,6 +1650,13 @@ exports[`GOLDEN buildUrl (default executor providers) > deepseek → url (stream
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > devin-cli → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "devin://acp/stdio",
+  "stream": "devin://acp/stdio",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > featherless → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.featherless.ai/v1/chat/completions",
@@ -1560,6 +1675,13 @@ exports[`GOLDEN buildUrl (default executor providers) > gemini → url (stream +
 {
   "nonStream": "https://generativelanguage.googleapis.com/v1beta/models/test-model:generateContent",
   "stream": "https://generativelanguage.googleapis.com/v1beta/models/test-model:streamGenerateContent?alt=sse",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > ghm → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://models.github.ai/inference/chat/completions",
+  "stream": "https://models.github.ai/inference/chat/completions",
 }
 `;
 
@@ -1745,6 +1867,13 @@ exports[`GOLDEN buildUrl (default executor providers) > poolside → url (stream
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > qwen → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+  "stream": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > sambanova → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.sambanova.ai/v1/chat/completions",
@@ -1780,6 +1909,13 @@ exports[`GOLDEN buildUrl (default executor providers) > tokenrouter → url (str
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > trae → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://core-normal.trae.ai/api/remote/v1",
+  "stream": "https://core-normal.trae.ai/api/remote/v1",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > venice → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.venice.ai/api/v1/chat/completions",
@@ -1798,6 +1934,13 @@ exports[`GOLDEN buildUrl (default executor providers) > volcengine-ark → url (
 {
   "nonStream": "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions",
   "stream": "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > windsurf → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://server.codeium.com/exa.language_server_pb.LanguageServerService/GetChatMessage",
+  "stream": "https://server.codeium.com/exa.language_server_pb.LanguageServerService/GetChatMessage",
 }
 `;
 
