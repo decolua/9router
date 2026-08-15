@@ -88,5 +88,56 @@ describe("Hermes Cloaking / System Prompt Sanitization", () => {
       expect(transformed.request.systemInstruction.parts[0].text).toBe(" " + SANITIZED_HERMES_PROMPT);
     });
   });
+
+  describe("Anthropic API Surface -> Antigravity", () => {
+    it("sanitizes system prompt when client connects via Anthropic format (/v1/messages)", async () => {
+      const { translateRequest } = await import("../../open-sse/translator/index.js");
+      const { FORMATS } = await import("../../open-sse/translator/formats.js");
+      await import("../translator/registerAll.js");
+
+      const claudeRequest = {
+        model: "ag/gemini-3.7-flash-high",
+        system: HERMES_PROMPT,
+        messages: [{ role: "user", content: "hello" }],
+      };
+
+      const out = translateRequest(
+        FORMATS.CLAUDE,
+        FORMATS.ANTIGRAVITY,
+        "gemini-3.7-flash-high",
+        claudeRequest,
+        true,
+        { projectId: "test-proj", connectionId: "test-conn" },
+        "antigravity"
+      );
+
+      expect(out.request.systemInstruction?.parts?.[0]?.text).toBe(SANITIZED_HERMES_PROMPT);
+    });
+
+    it("sanitizes system array blocks when client connects via Anthropic format", async () => {
+      const { translateRequest } = await import("../../open-sse/translator/index.js");
+      const { FORMATS } = await import("../../open-sse/translator/formats.js");
+      await import("../translator/registerAll.js");
+
+      const claudeRequest = {
+        model: "ag/gemini-3.7-flash-high",
+        system: [{ type: "text", text: HERMES_PROMPT }],
+        messages: [{ role: "user", content: "hello" }],
+      };
+
+      const out = translateRequest(
+        FORMATS.CLAUDE,
+        FORMATS.ANTIGRAVITY,
+        "gemini-3.7-flash-high",
+        claudeRequest,
+        true,
+        { projectId: "test-proj", connectionId: "test-conn" },
+        "antigravity"
+      );
+
+      expect(out.request.systemInstruction?.parts?.[0]?.text).toBe(SANITIZED_HERMES_PROMPT);
+    });
+  });
 });
+
 
