@@ -1,4 +1,15 @@
 import { DefaultExecutor } from "./default.js";
+import { CODEBUDDY_INTL_SYSTEM_PROMPT } from "../config/appConstants.js";
+import { ROLE } from "../translator/schema/index.js";
+
+function contentToText(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((block) => (typeof block?.text === "string" ? block.text : ""))
+    .filter((text) => text.trim())
+    .join("\n");
+}
 
 /**
  * CodeBuddyIntlExecutor — talks to https://www.codebuddy.ai/v2/chat/completions
@@ -24,13 +35,21 @@ export class CodeBuddyIntlExecutor extends DefaultExecutor {
       transformed.reasoning_summary = "auto";
     }
 
-    // CodeBuddy rejects plain OpenAI shape (11101 invalid request): needs a
+    // CodeBuddy rejects plain OpenAI shape (11101 invalid request): it needs a
     // leading system prompt + user content as typed blocks, not a bare string.
+    // Keep the required identity first, but do not discard caller instructions.
     const source = Array.isArray(transformed.messages) ? transformed.messages : [];
-    transformed.messages = [{ role: "system", content: "You are CodeBuddy Code." }];
+    const callerInstructions = source
+      .filter((message) => message && [ROLE.SYSTEM, ROLE.DEVELOPER].includes(message.role))
+      .map((message) => contentToText(message.content))
+      .filter((text) => text.trim());
+    transformed.messages = [{
+      role: ROLE.SYSTEM,
+      content: [CODEBUDDY_INTL_SYSTEM_PROMPT, ...callerInstructions].join("\n\n"),
+    }];
     for (const message of source) {
-      if (!message || typeof message !== "object" || ["system", "developer"].includes(message.role)) continue;
-      if (message.role === "user" && typeof message.content === "string") {
+      if (!message || typeof message !== "object" || [ROLE.SYSTEM, ROLE.DEVELOPER].includes(message.role)) continue;
+      if (message.role === ROLE.USER && typeof message.content === "string") {
         transformed.messages.push({ ...message, content: [{ type: "text", text: message.content }] });
       } else {
         transformed.messages.push({ ...message });
