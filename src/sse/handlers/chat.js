@@ -4,6 +4,7 @@ import {
   getProviderCredentials,
   markAccountUnavailable,
   clearAccountError,
+  classifySessionAffinityFailure,
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
@@ -19,6 +20,7 @@ import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActi
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
+import { resolveClientSessionId } from "open-sse/utils/sessionManager.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
@@ -218,14 +220,24 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   // Extract userAgent from request
   const userAgent = request?.headers?.get("user-agent") || "";
+  const routingSessionId = resolveClientSessionId({
+    headers: clientRawRequest?.headers,
+    body,
+    scope: provider,
+  });
 
   // Try with available accounts (fallback on errors)
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
+  let affinityFailure = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
+      sessionId: routingSessionId,
+      affinityFailure,
+    });
+    affinityFailure = null;
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -304,6 +316,14 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
 
     if (shouldFallback) {
+      const classifiedFailure = classifySessionAffinityFailure(result.status, result.error);
+      affinityFailure = {
+        ...classifiedFailure,
+        mode: classifiedFailure.mode === "hard-rebind" && credentials._sessionAffinity?.selectedFromAffinity
+          ? "hard-rebind"
+          : "soft-escape",
+        connectionId: credentials.connectionId,
+      };
       log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
       excludeConnectionIds.add(credentials.connectionId);
       lastError = result.error;

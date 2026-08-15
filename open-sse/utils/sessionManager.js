@@ -153,6 +153,10 @@ function extractClientSessionId(headers, body, scope = "") {
     return fromBody || null;
 }
 
+export function resolveClientSessionId({ headers, body, scope = "" } = {}) {
+    return extractClientSessionId(headers, body, scope);
+}
+
 function requestMessages(body) {
     if (Array.isArray(body?.messages)) return body.messages;
     if (Array.isArray(body?.input)) return body.input;
