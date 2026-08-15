@@ -1,11 +1,32 @@
 tests/translator/bugs-toClaude-context.test.js :: OpenAI → Claude context mapping assistant reasoning_content becomes a thinking block
-tests/translator/claude-kiro-direct.test.js :: Kiro → Claude (direct route, OpenAI-shaped chunks from executor) finish chunk emits message_delta + message_stop with stop_reason
-tests/translator/claude-kiro-direct.test.js :: Kiro → Claude (direct route, OpenAI-shaped chunks from executor) first text chunk emits message_start + content_block_start + text_delta
 tests/translator/golden-request.test.js :: GOLDEN request: OpenAI → Kiro full body (image base64 + tool_result)
-tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default executor providers) anthropic → headers (apiKey / oauth)
-tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default executor providers) cline → headers (apiKey / oauth)
-tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default executor providers) kimi → headers (apiKey / oauth)
-tests/translator/golden-url-header.test.js :: GOLDEN buildUrl (default executor providers) blackbox → url (stream + non-stream)
+tests/unit/background-token-refresh.test.js :: runBackgroundTokenRefreshTick calls refresh only for due connections and swallows per-connection errors
+tests/unit/background-token-refresh.test.js :: runBackgroundTokenRefreshTick does not call refresh when nothing is due
+tests/unit/background-token-refresh.test.js :: runBackgroundTokenRefreshTick swallows top-level load errors
+tests/unit/background-token-refresh.test.js :: selectConnectionsNeedingRefresh never selects apikey connections
+tests/unit/background-token-refresh.test.js :: selectConnectionsNeedingRefresh selects already-expired oauth connection
+tests/unit/background-token-refresh.test.js :: selectConnectionsNeedingRefresh selects oauth grok-cli connection expiring in 10 minutes
+tests/unit/background-token-refresh.test.js :: selectConnectionsNeedingRefresh skips connection expiring in 2 hours
+tests/unit/background-token-refresh.test.js :: selectConnectionsNeedingRefresh skips oauth connection without refreshToken
+tests/unit/background-token-refresh.test.js :: start/stop guards honors DISABLE_BACKGROUND_TOKEN_REFRESH kill-switch
+tests/unit/background-token-refresh.test.js :: start/stop guards is idempotent: second start is no-op
+tests/unit/claude-header-forwarding.test.js :: DefaultExecutor.buildHeaders() — anthropic-compatible stripping does NOT strip headers when baseUrl is api.anthropic.com
+tests/unit/claude-header-forwarding.test.js :: DefaultExecutor.buildHeaders() — anthropic-compatible stripping does NOT strip headers when baseUrl is empty (defaults to Anthropic)
+tests/unit/claude-header-forwarding.test.js :: DefaultExecutor.buildHeaders() — anthropic-compatible stripping keeps other beta flags intact after stripping
+tests/unit/claude-header-forwarding.test.js :: DefaultExecutor.buildHeaders() — anthropic-compatible stripping removes claude-code-20250219 from anthropic-beta for non-Anthropic host
+tests/unit/claude-header-forwarding.test.js :: DefaultExecutor.buildHeaders() — anthropic-compatible stripping strips x-app and anthropic-dangerous-direct-browser-access for non-Anthropic host
+tests/unit/claude-header-forwarding.test.js :: DefaultExecutor.buildHeaders() — claude provider does not throw when no model is given
+tests/unit/claude-header-forwarding.test.js :: DefaultExecutor.buildHeaders() — claude provider includes Accept: text/event-stream when stream=true
+tests/unit/claude-header-forwarding.test.js :: DefaultExecutor.buildHeaders() — claude provider includes heavy-agent beta flags for claude-opus-5
+tests/unit/claude-header-forwarding.test.js :: DefaultExecutor.buildHeaders() — claude provider includes heavy-agent beta flags for claude-sonnet-5
+tests/unit/claude-header-forwarding.test.js :: DefaultExecutor.buildHeaders() — claude provider omits Accept: text/event-stream when stream=false
+tests/unit/claude-header-forwarding.test.js :: DefaultExecutor.buildHeaders() — claude provider omits heavy-agent beta flags for claude-fable-5
+tests/unit/claude-header-forwarding.test.js :: DefaultExecutor.buildHeaders() — claude provider omits heavy-agent beta flags for claude-haiku-4-5-20251001
+tests/unit/claude-header-forwarding.test.js :: DefaultExecutor.buildHeaders() — claude provider sets Bearer Authorization when only accessToken is provided
+tests/unit/claude-header-forwarding.test.js :: DefaultExecutor.buildHeaders() — claude provider sets x-api-key auth when apiKey is provided
+tests/unit/claude-header-forwarding.test.js :: DefaultExecutor.buildHeaders() — claude provider uses static provider defaults when no model is given
+tests/unit/claude-header-forwarding.test.js :: proxyAwareFetch — api.anthropic.com routing does NOT route non-Anthropic hosts through gotScraping
+tests/unit/claude-header-forwarding.test.js :: proxyAwareFetch — api.anthropic.com routing falls back gracefully when got-scraping throws on non-streaming path
 tests/unit/claude-header-forwarding.test.js :: proxyAwareFetch — api.anthropic.com routing routes api.anthropic.com to gotScraping (non-streaming) and returns ok response
 tests/unit/cli-xai-video.test.js :: downloadToFile downloads via .part and renames atomically
 tests/unit/cli-xai-video.test.js :: downloadToFile follows redirects
@@ -16,9 +37,15 @@ tests/unit/cli-xai-video.test.js :: run (against a mock gateway) exits non-zero 
 tests/unit/cli-xai-video.test.js :: run (against a mock gateway) reports a helpful error when no xAI account is connected
 tests/unit/codex-image-fetch.test.js :: CodexExecutor image handling execute() prefetches images before sending to upstream
 tests/unit/codex-image-fetch.test.js :: CodexExecutor image handling fetches 1MB remote image and inlines it as base64 data URI
+tests/unit/codex-reset-credits.test.js :: Codex reset credits GET force-refreshes OAuth credentials when reset credit fetch reports expired auth
+tests/unit/codex-reset-credits.test.js :: Codex reset credits GET refreshes OAuth credentials before returning reset credit details
+tests/unit/codex-reset-credits.test.js :: Codex reset credits POST returns 409 when there are no reset credits to consume
+tests/unit/codex-reset-credits.test.js :: Codex reset credits returns normalized reset credit expiry details
 tests/unit/combo-autoswitch.test.js :: detectRequiredCapabilities web_search tool -> search
 tests/unit/combo-autoswitch.test.js :: reorderByCapabilities keeps order when no model matches
-tests/unit/combo-stream-fallback.test.js :: combo streaming fallback does not cascade after the first chunk reaches the response
+tests/unit/compatible-provider-connections.test.js :: compatible provider connections API allows multiple connections on the same compatible node
+tests/unit/compatible-provider-connections.test.js :: compatible provider connections API creates one API-key connection for an Anthropic-compatible node
+tests/unit/compatible-provider-connections.test.js :: compatible provider connections API creates one API-key connection for an OpenAI-compatible node
 tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpArgs decode decodes name, toolName, toolCallId, and typed args map
 tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpArgs decode handles empty args map
 tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult error / toolNotFound builds error result (field 2)
@@ -55,16 +82,33 @@ tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (c
 tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest rejects missing messages
 tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest rejects non-text (image) content
 tests/unit/cursor-models.test.js :: Cursor live model catalog fetches the account-specific catalog and caches it
-tests/unit/db-concurrent.test.js :: DB Concurrency — atomic safety 100 parallel saveRequestUsage → no count loss
-tests/unit/db-concurrent.test.js :: DB Concurrency — atomic safety daily summary aggregates correctly under parallel writes
-tests/unit/db-concurrent.test.js :: DB Concurrency — atomic safety mixed concurrent: usage + details + connections + aliases
+tests/unit/db-driver-chain.test.js :: Driver fallback chain default → picks better-sqlite3 when available
+tests/unit/db-driver-chain.test.js :: Driver fallback chain falls back to node:sqlite when better-sqlite3 unavailable
+tests/unit/db-driver-chain.test.js :: Driver fallback chain falls back to sql.js when both native drivers unavailable
+tests/unit/db-migration-chain.test.js :: Schema migrations auto-sync re-creates missing index when DB lacks it
+tests/unit/db-migration-chain.test.js :: Schema migrations existing DB at older schemaVersion → re-applies pending migrations on restart
+tests/unit/db-migration-chain.test.js :: Schema migrations fresh DB + legacy db.json → imports data automatically
+tests/unit/db-migration-chain.test.js :: Schema migrations fresh DB → applies migrations & stamps schemaVersion
 tests/unit/executor-const-guard.test.js :: antigravity retry (intentional change: 429=6, 503=3) 429 attempts = 6
 tests/unit/force-stream-config.test.js :: forceStream provider config keeps forced-stream providers streaming for JSON clients when body.stream is false
 tests/unit/force-stream-config.test.js :: forceStream provider config keeps forced-stream providers streaming for JSON clients when body.stream is undefined
+tests/unit/force-stream-config.test.js :: forceStream provider config only openai/codex/commandcode force streaming
 tests/unit/image-fetch-hardening.test.js :: fetchImageAsBase64 hardening accepts valid PNG from public host
+tests/unit/kiro-external-idp.test.js :: Kiro external_idp (CLIProxyAPI) import and refresh imports CLIProxyAPI external_idp JSON as a Kiro OAuth connection
+tests/unit/kiro-external-idp.test.js :: Kiro external_idp (CLIProxyAPI) import and refresh refreshes Microsoft external_idp tokens with form-encoded OAuth body
 tests/unit/kiro-terminal-integrity.test.js :: Kiro terminal integrity recovery bounds the retry HTTP error body
 tests/unit/kiro-terminal-integrity.test.js :: Kiro terminal integrity recovery surfaces retry HTTP failures as SSE after heartbeat commits headers
 tests/unit/mimo-free.live.test.js :: MiMo Free anti-abuse gate (live) chat WITH Chrome User-Agent → 200
+tests/unit/minimax-tts.test.js :: MiniMax TTS sends MiniMax T2A payload and converts hex audio to base64 JSON
+tests/unit/minimax-tts.test.js :: MiniMax TTS surfaces MiniMax base_resp errors
+tests/unit/minimax-tts.test.js :: MiniMax TTS uses the default MiniMax voice when no voice is provided
+tests/unit/model-routing.test.js :: model routing keeps built-in provider aliases ahead of compatible node prefixes
+tests/unit/model-routing.test.js :: model routing still routes non-reserved compatible node prefixes
+tests/unit/model-test-routing.test.js :: model test route kind routing fails embedding model tests when provider returns no embedding data
+tests/unit/model-test-routing.test.js :: model test route kind routing returns formatted HTTP errors for non-2xx embedding responses
+tests/unit/model-test-routing.test.js :: model test route kind routing routes embedding model tests to /api/v1/embeddings
+tests/unit/model-test-routing.test.js :: model test route kind routing routes image model tests to /api/v1/images/generations
+tests/unit/model-test-routing.test.js :: model test route kind routing routes stt model tests to /api/v1/audio/transcriptions
 tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import extracts tokens using exact keys
 tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import falls back to fuzzy key matching on macOS when exact keys are missing
 tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import linux uses single hardcoded path and original error message
@@ -74,14 +118,26 @@ tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import
 tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import unsupported platform returns 400
 tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import unwraps JSON-encoded string values
 tests/unit/openai-to-claude.test.js :: openaiToClaudeResponse omits empty Read pages tool argument before emitting Claude input deltas
-tests/unit/request-details-tab.test.js :: getDistinctProviders — providers route (no full-row parse) returns unique provider list without parsing data blobs
-tests/unit/request-details-tab.test.js :: request details — tab crash-risk cases oversized field → stored truncated + reparseable (no circular)
+tests/unit/provider-display-split.test.js :: provider display split (E1) AI_PROVIDERS entries still carry merged display + transport
+tests/unit/provider-display-split.test.js :: provider display split (E1) Cloudflare exposes API-key authentication on its free-tier card
+tests/unit/provider-display-split.test.js :: provider display split (E1) display fields source from providersDisplay.js
+tests/unit/provider-display-split.test.js :: provider display split (E1) helpers still work after split
+tests/unit/provider-test-models-routing.test.js :: provider test-models route kind routing routes huggingface image models to /api/v1/images/generations
+tests/unit/token-refresh-generic.test.js :: refreshAccessToken — config-driven profiles claude: JSON body, client_id only (no client_secret)
+tests/unit/token-refresh-generic.test.js :: refreshAccessToken — config-driven profiles dedupes concurrent calls with same refresh token (same dedupKey)
+tests/unit/token-refresh-generic.test.js :: refreshAccessToken — config-driven profiles github: omits client_secret when config has none
+tests/unit/token-refresh-generic.test.js :: refreshAccessToken — config-driven profiles iflow: Basic Auth header from clientId:clientSecret, form body keeps client_secret
+tests/unit/token-refresh-generic.test.js :: refreshAccessToken — config-driven profiles kimi: merges X-Msh-* headers from credentials.providerSpecificData.deviceId
+tests/unit/token-refresh-generic.test.js :: refreshAccessToken — config-driven profiles returns null on non-ok response
+tests/unit/token-refresh-generic.test.js :: refreshAccessToken — config-driven profiles returns null when refreshToken missing
+tests/unit/token-refresh-generic.test.js :: refreshAccessToken — legacy generic path (no profile) still works for an unprofiled provider via config.refreshUrl/clientId/clientSecret
 tests/unit/translator-request-normalization.test.js :: request normalization claudeToOpenAIRequest flattens text-only content arrays into string
 tests/unit/translator-request-normalization.test.js :: request normalization filterToOpenAIFormat flattens text-only arrays to string
 tests/unit/translator-request-normalization.test.js :: request normalization parseSSELine supports provider raw NDJSON stream lines
 tests/unit/translator-request-normalization.test.js :: request normalization translateRequest keeps /v1/messages Claude->OpenAI text payloads string-safe
-tests/unit/windsurf-executor.test.js :: WindsurfExecutor class PROVIDERS.windsurf baseUrl is the chat endpoint (registry in sync)
-tests/unit/windsurf-executor.test.js :: WindsurfExecutor class buildUrl returns the GetChatMessage endpoint
-tests/unit/windsurf-executor.test.js :: WindsurfExecutor class constructor wires config from PROVIDERS.windsurf
+tests/unit/tunnel-pid-ownership.test.js :: cloudflared PID ownership does not let an old child clear its successor PID
+tests/unit/xai-oauth-service.test.js :: xai/oauth service builds authorize URLs with CLIProxyAPI query extras
+tests/unit/xai-oauth-service.test.js :: xai/oauth service discovers endpoints without custom user-agent headers
 tests/unit/xai-oauth-service.test.js :: xai/oauth service exchanges dashboard codes against the discovered xAI token endpoint
 tests/unit/xai-oauth-service.test.js :: xai/oauth service generates dashboard auth data with CLIProxyAPI PKCE size and discovered endpoints
+tests/unit/xai-oauth-service.test.js :: xai/oauth service validates discovered endpoints are https x.ai URLs
