@@ -103,6 +103,26 @@ export const ERROR_RULES = [
   // upgrade for higher limits" · reset after 1m 4s, retried until the client
   // gave up at attempt 6/10. Ahead of the backoff rules so it wins the match.
   { text: "usage limit",              cooldownMs: COOLDOWN.quota },
+  // The same condition also arrives as a typed error name with no space, which
+  // the rule above cannot see: ollama sends GoUsageLimitError and opencode
+  // sends FreeUsageLimitError, both 429, both retried every few seconds because
+  // "GoUsageLimitError" does not contain "usage limit". Matching the suffix
+  // catches every *UsageLimitError without guessing at vendor prefixes.
+  { text: "usagelimiterror",          cooldownMs: COOLDOWN.quota },
+  // A DAILY allowance, not congestion. openrouter's free tier answers 429 with
+  // "Rate limit exceeded: free-models-per-day", limit_source
+  // "openrouter_free_tier_daily", an absolute X-RateLimit-Reset, and a
+  // remedy_hint that says "Wait for the daily reset" -- and because the message
+  // contains the words "rate limit" it matched the backoff rule below and was
+  // retried every couple of minutes. Observed 2026-08-15 on nvidia/z-ai/glm-5.2,
+  // retried to attempt 8/10. These two markers must be checked BEFORE the
+  // generic "rate limit" rule, since text rules match in order.
+  { text: "per-day",                  cooldownMs: COOLDOWN.quota },
+  { text: "_daily",                   cooldownMs: COOLDOWN.quota },
+  // opencode's monthly wall, seen 2026-08-15 on ocg/qwen3.7-max: "Monthly usage
+  // limit reached. Resets in 15 days." Already covered by "usage limit" above,
+  // but the quota reset is fifteen days out and twelve hours is the right
+  // ceiling either way -- noted so the next reader does not add a fourth rule.
   { text: "rate limit",               backoff: true },
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },
