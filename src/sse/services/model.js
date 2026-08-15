@@ -92,3 +92,48 @@ export async function getComboModels(modelStr) {
   }
   return null;
 }
+
+/**
+ * Resolve band names (e.g. "haiku", "claude-haiku-4-5") to combo names.
+ * Maps Anthropic model IDs to operator combos for agent-team support.
+ * Only applies the mapping if the target combo actually exists; returns
+ * the original string unchanged if not found (safety property).
+ *
+ * @param {string} modelStr - Model string (bare band name or Anthropic model ID)
+ * @param {Function} comboChecker - Optional async function to check combo existence (for testing)
+ * @returns {Promise<string>} Resolved combo name or original string
+ */
+export async function resolveBandToCombo(modelStr, comboChecker = null) {
+  if (!modelStr || modelStr.includes("/")) return modelStr;
+
+  const lower = modelStr.toLowerCase();
+
+  let band, defaultCombo;
+
+  if (lower === "fable" || lower.startsWith("claude-fable-")) {
+    band = "NINER_BAND_FABLE";
+    defaultCombo = "Odin";
+  } else if (lower === "haiku" || lower.startsWith("claude-haiku-")) {
+    band = "NINER_BAND_HAIKU";
+    defaultCombo = "Sleipnir";
+  } else if (lower === "sonnet" || lower.startsWith("claude-sonnet-")) {
+    band = "NINER_BAND_SONNET";
+    defaultCombo = "Valkyrie";
+  } else if (lower === "opus" || lower.startsWith("claude-opus-")) {
+    band = "NINER_BAND_OPUS";
+    defaultCombo = "Fenrir";
+  } else {
+    return modelStr;
+  }
+
+  const mappedCombo = process.env[band] || defaultCombo;
+
+  // Verify the mapped combo actually exists before applying
+  const checker = comboChecker || getComboModels;
+  const exists = await checker(mappedCombo);
+  if (exists) {
+    return mappedCombo;
+  }
+
+  return modelStr;
+}

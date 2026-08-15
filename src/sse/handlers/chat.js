@@ -10,7 +10,7 @@ import {
 } from "../services/auth.js";
 import { buildDisciplineLock } from "open-sse/utils/disciplineLock.js";
 import { getSettings } from "@/lib/localDb";
-import { getModelInfo, getComboModels } from "../services/model.js";
+import { getModelInfo, getComboModels, resolveBandToCombo } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
@@ -74,7 +74,9 @@ export async function handleChat(request, clientRawRequest = null) {
       headers: Object.fromEntries(request.headers.entries())
     };
   }
-  const modelStr = body.model;
+  let modelStr = body.model;
+  // Resolve band names (e.g. "haiku") to combo names (e.g. "Sleipnir") for agent-team support
+  modelStr = await resolveBandToCombo(modelStr);
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
 
