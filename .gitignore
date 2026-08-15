@@ -89,3 +89,4 @@ graphify-out/*
 
 # Local runtime data + secrets (jwt-secret, machine-id, DB with provider keys)
 .9router/
+.worktrees
