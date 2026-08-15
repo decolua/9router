@@ -55,6 +55,12 @@ const COOLDOWN = {
   // minutes changes it — the account needs an operator. Long enough to stop the
   // retry treadmill, short enough that a re-authorized account returns on its own.
   forbidden: 30 * 60 * 1000,
+  // A region block is a 403 whose premise the reasoning above does not hold for:
+  // there is no re-authorization, because the model is not served here at all.
+  // Thirty minutes just puts it back in rotation to fail identically — the retry
+  // treadmill the comment above is trying to prevent, at half-hour intervals.
+  // Long enough to stop that, still self-healing if the account opts in.
+  region: 24 * 60 * 60 * 1000,
 };
 
 /**
@@ -68,6 +74,13 @@ const COOLDOWN = {
  */
 export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
+  // Ahead of the 403 status rule on purpose: a region block is permanent for
+  // this deployment, so it must not inherit the transient-forbidden cooldown.
+  // Observed 2026-08-15 — ocg/deepseek-v4-pro returned
+  //   {"type":"RegionError","message":"The latest version of this model is only
+  //    available hosted in China and requires explicit opt in: ..."}
+  // which exhausted the Odin combo and surfaced the 403 to the client.
+  { text: "regionerror",              cooldownMs: COOLDOWN.region },
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   { text: "improperly formed request", cooldownMs: COOLDOWN.long },
