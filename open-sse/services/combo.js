@@ -486,7 +486,15 @@ export async function shouldSkipModel(modelStr, { inputTokens = 0, canServe = nu
   // it says so upstream and the cascade falls through on a real answer.
   const contextWindow = getCapabilitiesForModel(provider, model).contextWindow;
   if (contextWindow && inputTokens > contextWindow) {
-    return { reason: `request needs ~${inputTokens} tokens but window is ${contextWindow}` };
+    // Flagged, because this skip is the one kind that waiting cannot fix. Every
+    // other skip and failure here is a supply problem that resolves on its own;
+    // an oversized request is a property of the request and is still oversized
+    // in an hour. The tail uses this to answer 413 instead of a retryable 503.
+    return {
+      reason: `request needs ~${inputTokens} tokens but window is ${contextWindow}`,
+      tooLarge: true,
+      window: contextWindow,
+    };
   }
 
   if (canServe) {
@@ -568,6 +576,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   // failure so a permanent-looking code from a trailing entry cannot bury the
   // fact that an earlier one was merely busy.
   let lastRetryable = null;
+  // Did EVERY entry drop out purely because the request does not fit it? Only
+  // then is the request itself the problem. One real attempt, or one skip for
+  // any supply reason, means the combo still had somewhere to go and the answer
+  // stays retryable. Starts true and is cleared by the first counter-example.
+  let onlyTooLarge = true;
+  let widestWindow = 0;
   const inputTokens = estimateInputTokens(body);
 
   for (let i = 0; i < rotatedModels.length; i++) {
@@ -579,6 +593,11 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     const skip = await shouldSkipModel(modelStr, { inputTokens, canServe });
     if (skip) {
       log.warn("COMBO", `Skipping ${modelStr}, ${skip.reason}`);
+      if (skip.tooLarge) {
+        if (skip.window > widestWindow) widestWindow = skip.window;
+      } else {
+        onlyTooLarge = false;
+      }
       if (skip.retryAfter && (!earliestRetryAfter || new Date(skip.retryAfter) < new Date(earliestRetryAfter))) {
         earliestRetryAfter = skip.retryAfter;
       }
@@ -593,6 +612,9 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       }
       continue;
     }
+    // Reached only when the entry was actually attempted: whatever happens next
+    // is a supply failure, not a sizing one.
+    onlyTooLarge = false;
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
@@ -702,6 +724,24 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   // agent loop that a 429 from an earlier one would have survived, so when the
   // trailing failure looks permanent but an earlier one was transient, the
   // transient one is reported — status and message together, still one failure.
+  // Nothing in the combo was even tried, and every entry was passed over for the
+  // same reason: the request is bigger than the model. Reporting that as 503 —
+  // which is what the skip path records at `lastStatus` — tells the client the
+  // providers are down and invites a retry, so the agent loops on a condition
+  // that cannot change until the conversation is compacted. 413 is the honest
+  // code: not retryable, and the message says what to do about it.
+  if (onlyTooLarge && widestWindow > 0) {
+    const msg =
+      `Request is ~${estimateInputTokens(body)} tokens; the largest context window in ` +
+      `combo "${comboName}" is ${widestWindow}. No model in this combo can serve it — ` +
+      `compact the conversation or switch to a combo with a larger window.`;
+    log.warn("COMBO", `All models skipped for context size | ${msg}`);
+    return new Response(
+      JSON.stringify({ error: { message: msg, type: "invalid_request_error", code: "context_length_exceeded" } }),
+      { status: 413, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
   const quoted = (lastRetryable && !isRetryableStatus(lastStatus))
     ? lastRetryable
     : { status: lastStatus, error: lastError };

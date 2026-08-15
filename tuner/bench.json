@@ -24,23 +24,87 @@
   "_modelIdentity": {
     "_comment": "Declared (family, effort, mode) for candidate ids that have NO registry entry to carry them - custom models registered against a provider node, which reach the tuner from the DB rather than from /v1/models. Same role as _costOverride, and checked before every other rule, so it can also correct a registry declaration without a redeploy. Registry models declare their identity in open-sse/providers/registry/*.js instead; do not duplicate them here.",
     "_comment2": "Every entry below is a FREE-TIER id: the same model served on a free quota, not a weaker variant. A free tier is not an effort - it costs less, it does not think less - so these carry their family's band unshifted and mode:free records the tier. They were added 2026-08-11 after deleting substring inference dropped all of them out of their combos at once, including the free heads of Odin and Sleipnir. See docs/adr/0001.",
-    "nvidia/nemotron-3-ultra-550b-a55b": { "family": "nemotron-3-ultra" },
-    "oc/deepseek-v4-flash-free": { "family": "deepseek-v4-flash", "mode": "free" },
-    "oc/laguna-s-2.1-free": { "family": "laguna-s-2.1", "mode": "free" },
-    "oc/ling-3.0-flash-free": { "family": "ling-3.0-flash", "mode": "free" },
-    "oc/mimo-v2.5-free": { "family": "mimo-v2.5", "mode": "free" },
-    "oc/nemotron-3-ultra-free": { "family": "nemotron-3-ultra", "mode": "free" },
-    "oc/north-mini-code-free": { "family": "north-mini-code", "mode": "free" },
-    "openrouter/cohere/north-mini-code:free": { "family": "north-mini-code", "mode": "free" },
-    "openrouter/google/gemma-4-26b-a4b-it:free": { "family": "gemma-4-26b", "mode": "free" },
-    "openrouter/google/gemma-4-31b-it:free": { "family": "gemma-4-31b", "mode": "free" },
-    "openrouter/inclusionai/ling-3.0-flash:free": { "family": "ling-3.0-flash", "mode": "free" },
-    "openrouter/nvidia/nemotron-3-nano-30b-a3b:free": { "family": "nemotron-3-nano-30b", "mode": "free" },
-    "openrouter/nvidia/nemotron-3-super-120b-a12b:free": { "family": "nemotron-3-super-120b", "mode": "free" },
-    "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free": { "family": "nemotron-3-ultra", "mode": "free" },
-    "openrouter/poolside/laguna-s-2.1:free": { "family": "laguna-s-2.1", "mode": "free" },
-    "openrouter/poolside/laguna-xs-2.1:free": { "family": "laguna-xs-2.1", "mode": "free" },
-    "tokenrouter/moonshotai/kimi-k3-free": { "family": "kimi-k3", "mode": "free" }
+    "nvidia/nemotron-3-ultra-550b-a55b": {
+      "family": "nemotron-3-ultra"
+    },
+    "oc/deepseek-v4-flash-free": {
+      "family": "deepseek-v4-flash",
+      "mode": "free"
+    },
+    "oc/laguna-s-2.1-free": {
+      "family": "laguna-s-2.1",
+      "mode": "free"
+    },
+    "oc/ling-3.0-flash-free": {
+      "family": "ling-3.0-flash",
+      "mode": "free"
+    },
+    "oc/mimo-v2.5-free": {
+      "family": "mimo-v2.5",
+      "mode": "free"
+    },
+    "oc/nemotron-3-ultra-free": {
+      "family": "nemotron-3-ultra",
+      "mode": "free"
+    },
+    "oc/north-mini-code-free": {
+      "family": "north-mini-code",
+      "mode": "free"
+    },
+    "openrouter/cohere/north-mini-code:free": {
+      "family": "north-mini-code",
+      "mode": "free"
+    },
+    "openrouter/google/gemma-4-26b-a4b-it:free": {
+      "family": "gemma-4-26b",
+      "mode": "free"
+    },
+    "openrouter/google/gemma-4-31b-it:free": {
+      "family": "gemma-4-31b",
+      "mode": "free"
+    },
+    "openrouter/inclusionai/ling-3.0-flash:free": {
+      "family": "ling-3.0-flash",
+      "mode": "free"
+    },
+    "openrouter/nvidia/nemotron-3-nano-30b-a3b:free": {
+      "family": "nemotron-3-nano-30b",
+      "mode": "free"
+    },
+    "openrouter/nvidia/nemotron-3-super-120b-a12b:free": {
+      "family": "nemotron-3-super-120b",
+      "mode": "free"
+    },
+    "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free": {
+      "family": "nemotron-3-ultra",
+      "mode": "free"
+    },
+    "openrouter/poolside/laguna-s-2.1:free": {
+      "family": "laguna-s-2.1",
+      "mode": "free"
+    },
+    "openrouter/poolside/laguna-xs-2.1:free": {
+      "family": "laguna-xs-2.1",
+      "mode": "free"
+    },
+    "tokenrouter/moonshotai/kimi-k3-free": {
+      "family": "kimi-k3",
+      "mode": "free"
+    },
+    "tr/qwen/qwen3.8-max": {
+      "family": "qwen3.8-max"
+    },
+    "tr/qwen/qwen3.8-max-free": {
+      "family": "qwen3.8-max",
+      "mode": "free"
+    },
+    "qwen/qwen3.8-max": {
+      "family": "qwen3.8-max"
+    },
+    "qwen/qwen3.8-max-free": {
+      "family": "qwen3.8-max",
+      "mode": "free"
+    }
   },
   "_comboBand": {
     "Odin": "fable",
@@ -285,6 +349,12 @@
     "gemma4:31b": {
       "band": "below",
       "note": "ollama colon-form id; live 200"
+    },
+    "qwen3.8-max": {
+      "band": "opus",
+      "swe_verified": 80.4,
+      "swe_pro": 60.6,
+      "note": "TokenRouter qwen3.8 line; band mirrors qwen3.7-max (same class, one revision on)"
     }
   },
   "costClass": {
@@ -304,7 +374,8 @@
     "ag": 2,
     "cmc": 2,
     "cx": 2,
-    "ocg": 2
+    "ocg": 2,
+    "tr": 0
   },
   "providerByPrefix": {
     "oc": "opencode",
@@ -323,7 +394,8 @@
     "ollama": "ollama",
     "xai": "xai",
     "kc": "kilocode",
-    "cmc": "commandcode"
+    "cmc": "commandcode",
+    "tr": "tokenrouter"
   },
   "quotaScope": {
     "_comment": "account = one shared pool, all models die together. family = one pool per model family within the provider (antigravity meters anthropic and gemini separately). model = per base model. Default when a prefix is absent is account (safe assumption).",
@@ -344,11 +416,13 @@
     "gcli": "model",
     "gemini": "model",
     "gc": "account",
-    "openrouter": "account"
+    "openrouter": "account",
+    "tr": "account"
   },
   "_pins": {
     "Fenrir": {
-      "cx/gpt-5.6-terra": 1
+      "cx/gpt-5.6-terra": 1,
+      "tr/qwen/qwen3.8-max-free": 0
     }
   },
   "_costOverride": {
@@ -358,7 +432,10 @@
   },
   "_bottomPrefixes": {
     "_comment": "Providers that always sort last in every combo regardless of score/health. These are duplicate deepseek accounts (cmc, ocg) we keep for backup but should never burn quota while other providers work.",
-    "prefixes": ["cmc", "ocg"]
+    "prefixes": [
+      "cmc",
+      "ocg"
+    ]
   },
   "_deadCredentials": [
     "kc",
