@@ -61,6 +61,11 @@ const COOLDOWN = {
   // treadmill the comment above is trying to prevent, at half-hour intervals.
   // Long enough to stop that, still self-healing if the account opts in.
   region: 24 * 60 * 60 * 1000,
+  // A daily or weekly allowance is not congestion either, and backing off in
+  // seconds against it is just a slower treadmill. Twelve hours is long enough
+  // to stop the retrying and short enough that an upgraded plan returns the
+  // model the same day.
+  quota: 12 * 60 * 60 * 1000,
 };
 
 /**
@@ -81,9 +86,23 @@ export const ERROR_RULES = [
   //    available hosted in China and requires explicit opt in: ..."}
   // which exhausted the Odin combo and surfaced the 403 to the client.
   { text: "regionerror",              cooldownMs: COOLDOWN.region },
+  // commandcode returns billing failures as 400 BAD_REQUEST, and 400 has no
+  // status rule at all — so it fell to the transient default and was retried
+  // every 30 seconds indefinitely. Observed 2026-08-15: 25+ identical locks on
+  // cmc/deepseek/deepseek-v4-pro in twelve minutes, each one a round trip
+  // spent to be told the account has no credits. Nothing about waiting changes
+  // that; the account needs an operator, which is exactly COOLDOWN.forbidden.
+  { text: "insufficient credits",     cooldownMs: COOLDOWN.forbidden },
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   { text: "improperly formed request", cooldownMs: COOLDOWN.long },
+  // "weekly usage limit" matched none of the rules below — not "rate limit",
+  // not "quota exceeded" — so it fell through to { status: 429, backoff: true }
+  // and got a 64-SECOND cooldown for a limit that resets in days. Observed
+  // 2026-08-15 on ollama/minimax-m3: "you have reached your weekly usage limit,
+  // upgrade for higher limits" · reset after 1m 4s, retried until the client
+  // gave up at attempt 6/10. Ahead of the backoff rules so it wins the match.
+  { text: "usage limit",              cooldownMs: COOLDOWN.quota },
   { text: "rate limit",               backoff: true },
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },
