@@ -57,4 +57,36 @@ describe("Hermes Cloaking / System Prompt Sanitization", () => {
       expect(req.request.systemInstruction?.parts?.[0]?.text).toBe(SANITIZED_HERMES_PROMPT);
     });
   });
+
+  describe("AntigravityExecutor.transformRequest", () => {
+    it("sanitizes Hermes system prompt in transformRequest", () => {
+      const executor = new AntigravityExecutor();
+      const transformed = executor.transformRequest("gemini-3.7-flash-high", {
+        request: {
+          contents: [{ role: "user", parts: [{ text: "hi" }] }],
+          systemInstruction: {
+            parts: [{ text: HERMES_PROMPT }]
+          }
+        }
+      }, false, { projectId: "test-proj", connectionId: "test-conn" });
+
+      expect(transformed.request.systemInstruction.parts[0].text).toBe(SANITIZED_HERMES_PROMPT);
+    });
+
+    it("strips Zed Claude agent system prompt while also sanitizing", () => {
+      const executor = new AntigravityExecutor();
+      const zedPrompt = "You are a Claude agent, built on Anthropic's Claude Agent SDK. " + HERMES_PROMPT;
+      const transformed = executor.transformRequest("gemini-3.7-flash-high", {
+        request: {
+          contents: [{ role: "user", parts: [{ text: "hi" }] }],
+          systemInstruction: {
+            parts: [{ text: zedPrompt }]
+          }
+        }
+      }, false, { projectId: "test-proj", connectionId: "test-conn" });
+
+      expect(transformed.request.systemInstruction.parts[0].text).toBe(" " + SANITIZED_HERMES_PROMPT);
+    });
+  });
 });
+
