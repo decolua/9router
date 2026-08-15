@@ -22,6 +22,7 @@ import {
   getOllamaUsage,
   getVercelAiGatewayUsage,
   getQoderUsage,
+  getOpencodeGoUsage,
 } from "./usage/misc.js";
 
 /**
@@ -56,6 +57,7 @@ const USAGE_HANDLERS = {
   kimi: (c) => getKimiUsage(c.accessToken, c.apiKey, c.proxyOptions, c.providerSpecificData),
   deepseek: (c) => getDeepseekUsage(c.apiKey, c.proxyOptions),
   zed: (c) => getZedUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
+  "opencode-go": (c) => getOpencodeGoUsage(c.apiKey, c.proxyOptions),
 };
 
 export async function getUsageForProvider(connection, proxyOptions = null, options = {}) {
