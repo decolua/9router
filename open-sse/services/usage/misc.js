@@ -81,10 +81,24 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
 
     // Ollama `usage` is a 0..1 ratio (1.0 = limit reached). Convert to a 0..100
     // bar. Do NOT set absolute `remaining` — QuotaTable reads remainingPercentage.
-    function ratioQuota(usageRatio, resetAt = null) {
+    function ratioQuota(usageRatio, windowSeconds = null, endingAt = null) {
       const ratio = Math.max(0, Math.min(1, Number(usageRatio) || 0));
       const usedPct = Math.round(ratio * 100);
-      return { used: usedPct, total: 100, remainingPercentage: 100 - usedPct, resetAt, unlimited: false };
+      let resetAt = null;
+      if (endingAt && windowSeconds && ratio > 0) {
+        const endMs = new Date(endingAt).getTime();
+        if (Number.isFinite(endMs)) {
+          resetAt = new Date(endMs + (windowSeconds * 1000)).toISOString();
+        }
+      }
+      return {
+        used: usedPct,
+        total: 100,
+        remainingPercentage: 100 - usedPct,
+        resetAt,
+        windowSeconds,
+        unlimited: false,
+      };
     }
 
     const sessionRaw = limits.session?.usage;
@@ -93,6 +107,8 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
     const weeklyNum = Number(weeklyRaw);
     const hasSession = sessionRaw !== undefined && sessionRaw !== null && !Number.isNaN(sessionNum);
     const hasWeekly = weeklyRaw !== undefined && weeklyRaw !== null && !Number.isNaN(weeklyNum);
+
+    const endingAt = data?.activity?.period?.ending_at || null;
 
     if (!hasSession && !hasWeekly) {
       return {
@@ -103,8 +119,8 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
     }
 
     const quotas = {};
-    if (hasSession) quotas["Session (5h)"] = ratioQuota(sessionNum);
-    if (hasWeekly) quotas["Weekly (7d)"] = ratioQuota(weeklyNum);
+    if (hasSession) quotas["Session (5h)"] = ratioQuota(sessionNum, 18000, endingAt);
+    if (hasWeekly) quotas["Weekly (7d)"] = ratioQuota(weeklyNum, 604800, endingAt);
 
     return { plan, quotas };
   } catch (error) {
@@ -121,7 +137,7 @@ export async function getGlmUsage(apiKey, provider, proxyOptions = null) {
   }
 
   const region = provider === "glm-cn" ? "china" : "international";
-  const quotaUrl = GLM_QUOTA_URLS[region];
+  const quotaUrl = GLM_QUOTA_URLS[region] || "https://api.z.ai/api/monitor/usage/quota/limit";
 
   try {
     const response = await proxyAwareFetch(quotaUrl, {
@@ -144,12 +160,14 @@ export async function getGlmUsage(apiKey, provider, proxyOptions = null) {
     const quotas = {};
 
     for (const limit of limits) {
-      if (!limit || limit.type !== "TOKENS_LIMIT") continue;
+      if (!limit) continue;
       const usedPercent = Number(limit.percentage) || 0;
       const resetMs = Number(limit.nextResetTime) || 0;
       const remaining = Math.max(0, 100 - usedPercent);
+      const unit = Number(limit.unit);
+      const name = unit === 3 ? "5-Hour Limit" : unit === 6 ? "Monthly Limit" : `Limit (${limit.type || "Quota"})`;
 
-      quotas["session"] = {
+      quotas[name] = {
         used: usedPercent,
         total: 100,
         remaining,
@@ -162,11 +180,147 @@ export async function getGlmUsage(apiKey, provider, proxyOptions = null) {
     const levelRaw = typeof data.level === "string" ? data.level : "";
     const plan = levelRaw
       ? levelRaw.charAt(0).toUpperCase() + levelRaw.slice(1).toLowerCase()
-      : "Unknown";
+      : "GLM Coding";
 
     return { plan, quotas };
   } catch (error) {
     return { message: `GLM error: ${error.message}` };
+  }
+}
+
+/**
+ * OpenCode Go usage (Rolling, Weekly, Monthly limits)
+ * GET https://opencode.ai/zen/go/v1/usage
+ */
+export async function getOpencodeGoUsage(apiKey, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "OpenCode Go API key not available." };
+  }
+
+  try {
+    const response = await proxyAwareFetch("https://opencode.ai/zen/go/v1/usage", {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+    }, proxyOptions);
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        return { message: "OpenCode Go API key invalid or expired." };
+      }
+      return { message: `OpenCode Go usage error (${response.status}).` };
+    }
+
+    const json = await response.json();
+    const usage = json?.usage || {};
+    const quotas = {};
+
+    if (usage.rolling) {
+      const p = Math.min(100, Math.max(0, Number(usage.rolling.percent) || 0));
+      quotas["Rolling (5h)"] = {
+        used: p,
+        total: 100,
+        remaining: Math.max(0, 100 - p),
+        remainingPercentage: Math.max(0, 100 - p),
+        resetAt: usage.rolling.resetsAt || null,
+        unlimited: false,
+      };
+    }
+    if (usage.weekly) {
+      const p = Math.min(100, Math.max(0, Number(usage.weekly.percent) || 0));
+      quotas["Weekly"] = {
+        used: p,
+        total: 100,
+        remaining: Math.max(0, 100 - p),
+        remainingPercentage: Math.max(0, 100 - p),
+        resetAt: usage.weekly.resetsAt || null,
+        unlimited: false,
+      };
+    }
+    if (usage.monthly) {
+      const p = Math.min(100, Math.max(0, Number(usage.monthly.percent) || 0));
+      quotas["Monthly"] = {
+        used: p,
+        total: 100,
+        remaining: Math.max(0, 100 - p),
+        remainingPercentage: Math.max(0, 100 - p),
+        resetAt: usage.monthly.resetsAt || null,
+        unlimited: false,
+      };
+    }
+
+    return { plan: "OpenCode Go", quotas };
+  } catch (error) {
+    return { message: `OpenCode Go error: ${error.message}` };
+  }
+}
+
+/**
+ * Command Code credits and 5-hour / weekly usage limits
+ * GET https://api.commandcode.ai/alpha/billing/credits
+ */
+export async function getCommandCodeUsage(apiKey, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "Command Code API key not available." };
+  }
+
+  try {
+    const response = await proxyAwareFetch("https://api.commandcode.ai/alpha/billing/credits", {
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "x-cli-environment": "cli",
+        "x-command-code-version": "1.25.0",
+        Accept: "application/json",
+      },
+    }, proxyOptions);
+
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        return { message: "Command Code API key invalid or expired." };
+      }
+      return { message: `Command Code usage error (${response.status}).` };
+    }
+
+    const json = await response.json();
+    const limits = json?.windowLimits || {};
+    const quotas = {};
+
+    if (limits.fiveHour) {
+      const used = Number(limits.fiveHour.used) || 0;
+      const cap = Number(limits.fiveHour.cap) || 100;
+      const resetAt = limits.fiveHour.resetAt ? new Date(limits.fiveHour.resetAt).toISOString() : null;
+      const remaining = Math.max(0, cap - used);
+      const remainingPercentage = Math.round((remaining / cap) * 100);
+      quotas["Session (5h)"] = {
+        used: Math.round(used * 100) / 100,
+        total: cap,
+        remaining: Math.round(remaining * 100) / 100,
+        remainingPercentage,
+        resetAt,
+        unlimited: false,
+      };
+    }
+
+    if (limits.weekly) {
+      const used = Number(limits.weekly.used) || 0;
+      const cap = Number(limits.weekly.cap) || 100;
+      const resetAt = limits.weekly.resetAt ? new Date(limits.weekly.resetAt).toISOString() : null;
+      const remaining = Math.max(0, cap - used);
+      const remainingPercentage = Math.round((remaining / cap) * 100);
+      quotas["Weekly"] = {
+        used: Math.round(used * 100) / 100,
+        total: cap,
+        remaining: Math.round(remaining * 100) / 100,
+        remainingPercentage,
+        resetAt,
+        unlimited: false,
+      };
+    }
+
+    return { plan: "Command Code", quotas };
+  } catch (error) {
+    return { message: `Command Code error: ${error.message}` };
   }
 }
 

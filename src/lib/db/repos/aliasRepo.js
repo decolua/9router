@@ -48,6 +48,27 @@ export async function deleteCustomModel({ providerAlias, id, type = "llm" }) {
   await customKv.remove(customKey(providerAlias, id, type));
 }
 
+// Bulk insert in one transaction; existing keys are skipped (same rule as addCustomModel)
+export async function addCustomModelsBulk({ providerAlias, type = "llm", ids = [] }) {
+  const db = await getAdapter();
+  let added = 0;
+  let skipped = 0;
+  db.transaction(() => {
+    for (const id of ids) {
+      const k = customKey(providerAlias, id, type);
+      const row = db.get(`SELECT 1 FROM kv WHERE scope = 'customModels' AND key = ?`, [k]);
+      if (row) {
+        skipped += 1;
+        continue;
+      }
+      const value = stringifyJson({ providerAlias, id, type, name: id });
+      db.run(`INSERT INTO kv(scope, key, value) VALUES('customModels', ?, ?)`, [k, value]);
+      added += 1;
+    }
+  });
+  return { added, skipped };
+}
+
 // mitmAlias: key=toolName, value=mappings object
 export async function getMitmAlias(toolName) {
   if (toolName) {

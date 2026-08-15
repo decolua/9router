@@ -261,6 +261,8 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*kimi*",          caps: { reasoning: true, thinkingFormat: "kimi", contextWindow: 262144 } },
 
   // ── GLM / Z.ai (thinking.enabled; disable via enable_thinking:false) ─
+  // GLM-5.2 jumps to a 1M context (5.0/5.1 stay at 200K); 128K output.
+  { pattern: "*glm-5.2*",       caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 1000000, maxOutput: 131072 } },
   { pattern: "*glm-5*",         caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000, maxOutput: 128000 } },
   { pattern: "*glm-4.7*",       caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000, maxOutput: 128000 } },
   { pattern: "*glm-4*",         caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000 } },
@@ -351,4 +353,60 @@ export function getCapabilitiesForModel(provider, model) {
 
   // 4. Floor
   return { ...DEFAULT_CAPABILITIES };
+}
+
+/**
+ * Compute the conservative (minimal / intersection) capabilities for a combo of models.
+ * - contextWindow: minimum across all models (or default floor)
+ * - maxOutput: minimum across all models (or default floor)
+ * - boolean capabilities (vision, tools, reasoning, pdf, etc.): true only if ALL models support it
+ *
+ * @param {Array<string|object>} models - array of model identifiers (e.g. "openai/gpt-4o") or objects
+ * @param {object} [capsOverrides] - optional { "provider|model": overrideObj }
+ * @returns {object} minimal capabilities object
+ */
+export function getConservativeComboCapabilities(models, capsOverrides = {}) {
+  if (!Array.isArray(models) || models.length === 0) {
+    return { ...DEFAULT_CAPABILITIES };
+  }
+
+  const allCaps = [];
+
+  for (const item of models) {
+    const modelStr = typeof item === "string" ? item : item?.id || item?.model || "";
+    if (!modelStr) continue;
+    const slash = modelStr.indexOf("/");
+    const provider = slash > 0 ? modelStr.slice(0, slash) : "";
+    const model = slash > 0 ? modelStr.slice(slash + 1) : modelStr;
+
+    const override = capsOverrides[`${provider}|${model}`];
+    const baseCaps = getCapabilitiesForModel(provider, model);
+    const effective = { ...baseCaps, ...(override || {}) };
+    allCaps.push(effective);
+  }
+
+  if (allCaps.length === 0) return { ...DEFAULT_CAPABILITIES };
+
+  // Numeric fields: minimal across all models
+  const contextWindows = allCaps.map((c) => c.contextWindow).filter((n) => Number.isFinite(n) && n > 0);
+  const maxOutputs = allCaps.map((c) => c.maxOutput).filter((n) => Number.isFinite(n) && n > 0);
+
+  const contextWindow = contextWindows.length ? Math.min(...contextWindows) : DEFAULT_CAPABILITIES.contextWindow;
+  const maxOutput = maxOutputs.length ? Math.min(...maxOutputs) : DEFAULT_CAPABILITIES.maxOutput;
+
+  // Boolean capabilities: true only if ALL models in combo support it
+  return {
+    vision: allCaps.every((c) => c.vision === true),
+    pdf: allCaps.every((c) => c.pdf === true),
+    audioInput: allCaps.every((c) => c.audioInput === true),
+    videoInput: allCaps.every((c) => c.videoInput === true),
+    imageOutput: allCaps.every((c) => c.imageOutput === true),
+    audioOutput: allCaps.every((c) => c.audioOutput === true),
+    search: allCaps.every((c) => c.search === true),
+    tools: allCaps.every((c) => c.tools === true),
+    reasoning: allCaps.every((c) => c.reasoning === true),
+    thinkingCanDisable: allCaps.every((c) => c.thinkingCanDisable === true),
+    contextWindow,
+    maxOutput,
+  };
 }

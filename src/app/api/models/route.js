@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getModelAliases, setModelAlias } from "@/models";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
+import { getCapsOverrides } from "@/lib/db/index.js";
 import { AI_MODELS } from "@/shared/constants/config";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
@@ -10,6 +11,7 @@ export async function GET() {
   try {
     const modelAliases = await getModelAliases();
     const disabled = await getDisabledModels();
+    const capsOverrides = await getCapsOverrides();
 
     const models = AI_MODELS
       .filter((m) => {
@@ -21,7 +23,9 @@ export async function GET() {
         const fullModel = `${m.provider}/${m.model}`;
         const providerAlias = getProviderAlias(m.provider) || m.provider;
         const routedModel = `${providerAlias}/${m.model}`;
-        const c = getCapabilitiesForModel(m.provider, m.model);
+        // User overrides (models.dev import / manual edits) win over static caps
+        const override = capsOverrides[`${providerAlias}|${m.model}`] || capsOverrides[`${m.provider}|${m.model}`];
+        const c = { ...getCapabilitiesForModel(m.provider, m.model), ...(override || {}) };
         return {
           ...m,
           fullModel,
@@ -31,9 +35,13 @@ export async function GET() {
             vision: c.vision,
             search: c.search,
             reasoning: c.reasoning,
+            tools: c.tools,
+            pdf: c.pdf,
+            imageOutput: c.imageOutput,
             contextWindow: c.contextWindow,
             maxOutput: c.maxOutput,
           },
+          ...(override ? { capsOverridden: true } : {}),
         };
       });
 

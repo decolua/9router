@@ -4,13 +4,14 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, refreshCodexToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
-import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
+import { resolveClinepassModels, resolveClineModels } from "open-sse/services/clinepassModels.js";
+import { getRegistryEntry, deriveModelsEndpoint, fetchViaDerivedEndpoint, parseOpenAIStyleModels, getStaticProviderModels } from "@/lib/providerModels/deriveModelsEndpoint.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -20,11 +21,6 @@ const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fe
 // back 200 with those entries quietly missing instead of erroring.
 const CODEX_CLIENT_VERSION = "0.144.6";
 const CODEX_MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${CODEX_CLIENT_VERSION}`;
-
-const parseOpenAIStyleModels = (data) => {
-  if (Array.isArray(data)) return data;
-  return data?.data || data?.models || data?.results || [];
-};
 
 const parseGeminiCliModels = (data) => {
   if (Array.isArray(data?.models)) {
@@ -78,13 +74,6 @@ const createOpenAIModelsConfig = (url) => ({
   authPrefix: "Bearer ",
   parseResponse: parseOpenAIStyleModels
 });
-
-const getStaticProviderModels = (providerId) =>
-  getModelsByProviderId(providerId).map((model) => ({
-    ...model,
-    id: model.id,
-    name: model.name || model.id,
-  }));
 
 // Generic custom resolver for OAuth providers that need refresh-on-401 + token persist.
 // Receives a `fetchFn(token)` and returns parsed models or throws.
@@ -418,6 +407,34 @@ const PROVIDER_MODELS_CONFIG = {
       };
     },
   },
+  clinepass: {
+    customResolver: async (connection) => {
+      const result = await resolveClinepassModels({
+        accessToken: connection.accessToken,
+        apiKey: connection.apiKey,
+      });
+      if (result?.models?.length) return { models: result.models };
+      return {
+        models: getStaticProviderModels("clinepass"),
+        warning: "ClinePass returned no live models; falling back to static catalog.",
+      };
+    },
+  },
+  // Cline shares the upstream /models endpoint with ClinePass, but `cline-pass/*`
+  // ids are valid only for ClinePass connections — resolveClineModels excludes them.
+  cline: {
+    customResolver: async (connection) => {
+      const result = await resolveClineModels({
+        accessToken: connection.accessToken,
+        apiKey: connection.apiKey,
+      });
+      if (result?.models?.length) return { models: result.models };
+      return {
+        models: getStaticProviderModels("cline"),
+        warning: "Cline returned no live models; falling back to static catalog.",
+      };
+    },
+  },
   "ollama-local": {
     customResolver: async (connection) => {
       const url = `${resolveOllamaLocalHost(connection)}/api/tags`;
@@ -446,6 +463,28 @@ export async function GET(request, { params }) {
 
     if (!connection) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+    }
+
+    // Lightweight capability probe (?check=1) — no upstream call. Lets the UI
+    // decide whether to show the "Import Models" button for this provider.
+    if (new URL(request.url).searchParams.get("check") === "1") {
+      if (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider)) {
+        const hasBaseUrl = !!connection.providerSpecificData?.baseUrl;
+        return NextResponse.json({
+          supported: hasBaseUrl,
+          ...(hasBaseUrl ? {} : { reason: "No base URL configured for compatible provider" }),
+        });
+      }
+      if (PROVIDER_MODELS_CONFIG[connection.provider]) {
+        return NextResponse.json({ supported: true });
+      }
+      if (deriveModelsEndpoint(getRegistryEntry(connection.provider))) {
+        return NextResponse.json({ supported: true });
+      }
+      return NextResponse.json({
+        supported: false,
+        reason: `Provider ${connection.provider} does not support models listing`,
+      });
     }
 
     if (isOpenAICompatibleProvider(connection.provider)) {
@@ -524,10 +563,20 @@ export async function GET(request, { params }) {
 
     const config = PROVIDER_MODELS_CONFIG[connection.provider];
     if (!config) {
-      return NextResponse.json(
-        { error: `Provider ${connection.provider} does not support models listing` },
-        { status: 400 }
-      );
+      const endpoint = deriveModelsEndpoint(getRegistryEntry(connection.provider));
+      if (!endpoint) {
+        return NextResponse.json(
+          { error: `Provider ${connection.provider} does not support models listing` },
+          { status: 400 }
+        );
+      }
+      const result = await fetchViaDerivedEndpoint(endpoint, connection);
+      return NextResponse.json({
+        provider: connection.provider,
+        connectionId: connection.id,
+        models: result.models,
+        ...(result.warning ? { warning: result.warning } : {})
+      });
     }
 
     // Config-driven custom resolver path (OAuth refresh, non-OpenAI shape, etc.)

@@ -41,9 +41,14 @@ export {
 // Aliases (model + custom + mitm)
 export {
   getModelAliases, setModelAlias, deleteModelAlias,
-  getCustomModels, addCustomModel, deleteCustomModel,
+  getCustomModels, addCustomModel, deleteCustomModel, addCustomModelsBulk,
   getMitmAlias, setMitmAliasAll,
 } from "./repos/aliasRepo.js";
+
+// Model capability overrides
+export {
+  getCapsOverrides, getCapsOverride, setCapsOverride, deleteCapsOverride, setCapsOverridesBulk,
+} from "./repos/capsRepo.js";
 
 // Pricing
 export {
@@ -83,12 +88,14 @@ export async function exportDb() {
     customModels: [],
     mitmAlias: {},
     pricing: {},
+    modelCaps: {},
   };
 
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'modelAliases'`)) out.modelAliases[r.key] = parseJson(r.value);
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'customModels'`)) out.customModels.push(parseJson(r.value));
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'mitmAlias'`)) out.mitmAlias[r.key] = parseJson(r.value);
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'pricing'`)) out.pricing[r.key] = parseJson(r.value);
+  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'modelCaps'`)) out.modelCaps[r.key] = parseJson(r.value);
 
   return out;
 }
@@ -107,7 +114,7 @@ export async function importDb(payload) {
     db.run(`DELETE FROM proxyPools`);
     db.run(`DELETE FROM apiKeys`);
     db.run(`DELETE FROM combos`);
-    db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing')`);
+    db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing', 'modelCaps')`);
 
     // Settings
     if (payload.settings) {
@@ -159,6 +166,9 @@ export async function importDb(payload) {
     }
     for (const [provider, models] of Object.entries(payload.pricing || {})) {
       db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('pricing', ?, ?)`, [provider, stringifyJson(models || {})]);
+    }
+    for (const [key, caps] of Object.entries(payload.modelCaps || {})) {
+      db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelCaps', ?, ?)`, [key, stringifyJson(caps || {})]);
     }
   });
 
