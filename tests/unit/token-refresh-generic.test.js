@@ -1,8 +1,8 @@
 /**
  * Generic OAuth2 token refresh — config-driven profiles.
  *
- * Verifies refreshAccessToken() handles the 5 foldable providers
- * (qwen, iflow, github, kimi, claude) via a REFRESH_PROFILES table,
+ * Verifies refreshAccessToken() handles the 4 foldable providers
+ * (iflow, github, kimi, claude) via a REFRESH_PROFILES table,
  * while preserving the legacy generic path for unknown providers.
  */
 
@@ -24,32 +24,6 @@ function mockFetchOnce(payload, { ok = true, status = 200 } = {}) {
 describe("refreshAccessToken — config-driven profiles", () => {
   beforeEach(() => { vi.clearAllMocks(); vi.resetModules(); global.fetch = originalFetch; });
   afterEach(() => { global.fetch = originalFetch; });
-
-  it("qwen: form body + clientId, surfaces resource_url as providerSpecificData", async () => {
-    const fm = mockFetchOnce({
-      access_token: "qw-acc",
-      refresh_token: "qw-refresh-rotated",
-      expires_in: 7200,
-      resource_url: "https://dashscope.aliyuncs.com",
-    });
-    const { refreshAccessToken } = await import("open-sse/services/tokenRefresh/providers.js");
-
-    const out = await refreshAccessToken("qwen", "qw-old-refresh", {}, console);
-
-    expect(out).toEqual({
-      accessToken: "qw-acc",
-      refreshToken: "qw-refresh-rotated",
-      expiresIn: 7200,
-      providerSpecificData: { resourceUrl: "https://dashscope.aliyuncs.com" },
-    });
-    const [url, init] = fm.mock.calls[0];
-    expect(init.method).toBe("POST");
-    expect(init.headers["Content-Type"]).toBe("application/x-www-form-urlencoded");
-    const body = new URLSearchParams(init.body);
-    expect(body.get("grant_type")).toBe("refresh_token");
-    expect(body.get("refresh_token")).toBe("qw-old-refresh");
-    expect(body.get("client_id")).toBeTruthy();
-  });
 
   it("iflow: Basic Auth header from clientId:clientSecret, form body keeps client_secret", async () => {
     const fm = mockFetchOnce({ access_token: "if-acc", refresh_token: "if-rot", expires_in: 3600 });
@@ -107,13 +81,13 @@ describe("refreshAccessToken — config-driven profiles", () => {
   it("returns null on non-ok response", async () => {
     mockFetchOnce({ error: "invalid_grant" }, { ok: false, status: 400 });
     const { refreshAccessToken } = await import("open-sse/services/tokenRefresh/providers.js");
-    const out = await refreshAccessToken("qwen", "dead", {}, console);
+    const out = await refreshAccessToken("iflow", "dead", {}, console);
     expect(out).toBeNull();
   });
 
   it("returns null when refreshToken missing", async () => {
     const { refreshAccessToken } = await import("open-sse/services/tokenRefresh/providers.js");
-    const out = await refreshAccessToken("qwen", "", {}, console);
+    const out = await refreshAccessToken("iflow", "", {}, console);
     expect(out).toBeNull();
   });
 

@@ -36,6 +36,7 @@ export default {
     },
   },
   models: [
+    { id: "gemini-3.7-flash", name: "Gemini 3.7 Flash" },
     { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash" },
     // `gemini-3-flash` is the bare alias advertised/used as the default
     // (OPENAI_MODEL in cliTools.js) and via antigravity, but the real

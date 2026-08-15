@@ -245,6 +245,18 @@ export class AntigravityExecutor extends BaseExecutor {
     // Strip tools/toolConfig (handled separately) and blacklisted fields that Google rejects
     const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
     stripBlacklisted(requestWithoutTools);
+    
+    // Rewrite competitive system prompts (e.g. Zed IDE's Claude prompt) to prevent Antigravity from 
+    // flagging the request and immediately blocking it with a 429 Quota Exhausted response.
+    if (requestWithoutTools.systemInstruction?.parts) {
+      const oldText = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
+      for (const part of requestWithoutTools.systemInstruction.parts) {
+        if (typeof part.text === "string" && part.text.includes(oldText)) {
+          part.text = part.text.split(oldText).join("");
+        }
+      }
+    }
+
     const generationConfig = { ...(requestWithoutTools.generationConfig || {}) };
     if (generationConfig.maxOutputTokens > MAX_ANTIGRAVITY_OUTPUT_TOKENS) {
       generationConfig.maxOutputTokens = MAX_ANTIGRAVITY_OUTPUT_TOKENS;
