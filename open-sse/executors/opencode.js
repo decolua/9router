@@ -3,6 +3,7 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { applyOcEgress, flipOcEgress } from "../utils/ocEgress.js";
 
 // Official opencode CLI sends "opencode/<version>" (e.g. opencode/1.18.18).
 // OpenCode Zen's free-tier ("-free") models gate anonymous capacity on this
@@ -54,6 +55,20 @@ export class OpenCodeExecutor extends BaseExecutor {
     return MESSAGES_MODELS.has(model)
       ? `${base}/zen/v1/messages`
       : `${base}/zen/v1/chat/completions`;
+  }
+
+  // OpenCode Zen's free tier is rate-limited per real egress IP (daily
+  // budget per IP, reset at UTC midnight). There is NO automatic switching:
+  // when the current IP's budget is exhausted the gateway answers
+  // 429 FreeUsageLimitError and it stays exhausted until midnight — the user
+  // picks another node/egress themselves (Clash UI or oc-egress.mjs
+  // switch/flip/set) and the SAME conversation continues from the new IP.
+  // applyOcEgress() only honors the manually chosen mode from the state file
+  // (<APPDATA>/9router/oc-egress.json) so a manual switch works without
+  // restarting 9router. Errors propagate untouched.
+  async execute(args) {
+    applyOcEgress();
+    return super.execute(args);
   }
 
   buildHeaders(credentials, stream = true) {
