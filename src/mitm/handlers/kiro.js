@@ -341,6 +341,7 @@ function convertOpenAIToKiro(chunk, state) {
       const thinking = state.thinkBuf;
       state.thinkBuf = "";
       return withInitialFrame(state, buildEventStreamFrame("reasoningContentEvent", {
+        text: thinking,
         content: thinking,
         modelId: state.modelId || "kiro-unknown"
       }));
@@ -395,6 +396,7 @@ function convertOpenAIToKiro(chunk, state) {
   // Handle explicit reasoning_content (type-specific thinking channel)
   if (delta.reasoning_content) {
     frames.push(buildEventStreamFrame("reasoningContentEvent", {
+      text: delta.reasoning_content,
       content: delta.reasoning_content,
       modelId
     }));
@@ -406,6 +408,7 @@ function convertOpenAIToKiro(chunk, state) {
 
     if (thinking) {
       frames.push(buildEventStreamFrame("reasoningContentEvent", {
+        text: thinking,
         content: thinking,
         modelId
       }));
