@@ -23,6 +23,9 @@ export default {
     baseUrl: "https://api.tokenrouter.com/v1/chat/completions",
     validateUrl: "https://api.tokenrouter.com/v1/models",
     thinkingFormat: "tokenrouter",
+    usage: {
+      url: "https://api.tokenrouter.com/api/management",
+    },
   },
   // Seed snapshot from live /v1/models (120 entries). Latest catalogue is
   // fetched via modelsFetcher; other ids still accepted via passthroughModels.
@@ -159,4 +162,8 @@ export default {
   },
   modelsFetcher: { url: "https://api.tokenrouter.com/v1/models", type: "openai" },
   passthroughModels: true,
+  features: {
+    usage: true,
+    usageApikey: true,
+  },
 };

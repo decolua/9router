@@ -549,6 +549,32 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "tokenrouter":
+        // TokenRouter Management API — account wallet + one quota row per API key.
+        // Keys may be unlimited (no bar) or limited (remain_quota). Forward
+        // `status`/`expiresAt` so QuotaTable can show enable state & expiry.
+        // `remaining` is forwarded only when it's a finite number: for unlimited
+        // keys it's null, and getRemainingPercentage would round(null) to 0% —
+        // fall back to remainingPercentage (100) instead. The account-balance
+        // row carries unit:"USD" so QuotaTable renders a currency value, not a %.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              remaining: Number.isFinite(quota.remaining) ? quota.remaining : undefined,
+              remainingPercentage: quota.remainingPercentage,
+              unlimited: quota.unlimited !== false,
+              resetAt: quota.expiresAt || quota.resetAt || null,
+              status: quota.status,
+              unit: quota.unit,
+              plan: quota.plan,
+            });
+          });
+        }
+        break;
+
       default:
         // Generic fallback for unknown providers
         if (data.quotas) {
