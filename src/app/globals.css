@@ -602,3 +602,75 @@ button:disabled,
   border-top: 1px solid var(--color-border);
   margin: 1.5rem 0;
 }
+
+/* Quota tracker: intrinsic-height cards and subtle usage context. */
+.quota-masonry-9r {
+  column-count: 1;
+  column-gap: 0.75rem;
+}
+
+.quota-masonry-9r > * {
+  display: inline-block;
+  width: 100%;
+  height: max-content;
+  margin-bottom: 0.75rem;
+  break-inside: avoid;
+  vertical-align: top;
+}
+
+.quota-card-9r {
+  height: max-content;
+}
+
+.quota-remain-track-9r {
+  position: absolute;
+  inset: auto 2px 2px;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-text-muted) 16%, transparent);
+}
+
+.quota-remain-fill-9r {
+  height: 100%;
+  border-radius: inherit;
+  opacity: 0.75;
+}
+
+.quota-daybars-bg-9r {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: stretch;
+  gap: 1px;
+  overflow: hidden;
+  opacity: 0.13;
+  pointer-events: none;
+}
+
+.quota-daybars-bg-9r i {
+  display: block;
+  flex: 1 1 0;
+  min-width: 0;
+  max-height: 36px;
+  border-radius: 1px 1px 0 0;
+  background: var(--color-primary);
+}
+
+.quota-daybars-bg-9r i.off {
+  opacity: 0.18;
+}
+
+@media (min-width: 680px) {
+  .quota-masonry-9r {
+    column-count: 2;
+  }
+}
+
+@media (min-width: 1800px) {
+  .quota-masonry-9r {
+    column-count: 3;
+  }
+}

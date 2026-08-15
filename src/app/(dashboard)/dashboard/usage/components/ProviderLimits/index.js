@@ -7,17 +7,14 @@ import Toggle from "@/shared/components/Toggle";
 import Tooltip from "@/shared/components/Tooltip";
 import {
   parseQuotaData,
-  calculatePercentage,
   filterQuotasByVisibility,
   getHiddenQuotaRows,
   getQuotaVisibilityKey,
   getConnectionLabel,
-  getConnectionQuotaRemaining,
   sortVisibleConnections,
   buildLoadingState,
   filterQuotaStateByConnections,
   getConnectionsEmptyMessage,
-  getPageSizeLabel,
   getConnectionsPaginationSummary,
   getSafePagination,
   getSafeTotals,
@@ -27,10 +24,11 @@ import {
   reconcileConnectionsPage,
   getQuotaCache,
   setQuotaCache,
+  classifyConnectionAvailability,
+  getUsageMaxFromDayBars,
   QUOTA_CACHE_KEY,
   REFRESH_INTERVAL_MS,
   CLAUDE_REFRESH_INTERVAL_MS,
-  DEPLETED_QUOTA_THRESHOLD,
   AUTO_REFRESH_STORAGE_KEY,
   CONNECTIONS_PAGE_SIZE,
   ACCOUNT_PAGE_SIZE_OPTIONS,
@@ -168,6 +166,8 @@ export default function ProviderLimits() {
     eligibleConnections: 0,
     providerFilteredConnections: 0,
   });
+  const [dayBarsById, setDayBarsById] = useState({});
+  const dayBarsFetchRef = useRef(0);
 
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
@@ -176,10 +176,13 @@ export default function ProviderLimits() {
   const fetchConnections = useCallback(
     async (targetPage = page) => {
       try {
+        // Available is quota-aware and filtered client-side after live usage loads.
+        const accountStatus =
+          accountFilter === "available" ? "all" : accountFilter;
         const params = new URLSearchParams({
           page: String(targetPage),
           pageSize: String(pageSize),
-          accountStatus: accountFilter,
+          accountStatus,
           sort: "priority",
         });
 
@@ -212,7 +215,7 @@ export default function ProviderLimits() {
         return [];
       }
     },
-    [accountFilter, expiringFirst, page, pageSize, providerFilter],
+    [accountFilter, page, pageSize, providerFilter],
   );
 
   // Fetch quota for a specific connection
@@ -503,26 +506,70 @@ export default function ProviderLimits() {
   useEffect(() => {
     const initializeData = async () => {
       setConnectionsLoading(true);
-      const visibleConnections = await fetchConnections(page);
-      setConnectionsLoading(false);
+      try {
+        const visibleConnections = await fetchConnections(page);
 
-      // Always fetch fresh quota on mount, no cache display
-      setLoading(buildLoadingState(visibleConnections));
-      setErrors((prev) =>
-        filterQuotaStateByConnections(prev, visibleConnections),
-      );
-      setQuotaData((prev) =>
-        filterQuotaStateByConnections(prev, visibleConnections),
-      );
+        // Always fetch fresh quota on mount, no cache display
+        setLoading(buildLoadingState(visibleConnections));
+        setErrors((prev) =>
+          filterQuotaStateByConnections(prev, visibleConnections),
+        );
+        setQuotaData((prev) =>
+          filterQuotaStateByConnections(prev, visibleConnections),
+        );
 
-      await Promise.all(
-        visibleConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
-      );
-      setLastUpdated(new Date());
+        await Promise.all(
+          visibleConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
+        );
+        setLastUpdated(new Date());
+      } finally {
+        setConnectionsLoading(false);
+      }
     };
 
     initializeData();
   }, [fetchConnections, fetchQuota, page]);
+
+  // Per-connection last-7-days hourly usage bars (168 slots).
+  useEffect(() => {
+    let alive = true;
+    const tick = ++dayBarsFetchRef.current;
+    const ids = (connections || []).map((c) => c.id);
+    if (!ids.length) {
+      setDayBarsById({});
+      return undefined;
+    }
+
+    Promise.all(
+      ids.map((id) =>
+        fetch(
+          `/api/usage/chart?period=7d-hourly&connectionId=${encodeURIComponent(id)}`,
+          { cache: "no-store" },
+        )
+          .then((res) => (res.ok ? res.json() : []))
+          .then((data) => {
+            const arr = Array.isArray(data)
+              ? data
+              : Array.isArray(data?.data)
+                ? data.data
+                : [];
+            return [id, arr];
+          })
+          .catch(() => [id, []]),
+      ),
+    )
+      .then((pairs) => {
+        if (!alive || tick !== dayBarsFetchRef.current) return;
+        const next = {};
+        for (const [id, bars] of pairs) next[id] = bars;
+        setDayBarsById(next);
+      })
+      .catch(() => {});
+
+    return () => {
+      alive = false;
+    };
+  }, [connections]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -696,15 +743,24 @@ export default function ProviderLimits() {
     [connections, quotaData, expiringFirst, providerFilter, quotaSortMode],
   );
 
-  // Connection is depleted when any quota entry hit the threshold
-  const isConnectionDepleted = (conn) => {
-    const quotas = quotaData[conn.id]?.quotas;
-    if (!quotas?.length) return false;
-    return quotas.some((q) => {
-      if (!q.total || q.total <= 0) return false;
-      return calculatePercentage(q.used, q.total) <= DEPLETED_QUOTA_THRESHOLD;
-    });
-  };
+  const getAvailability = useCallback(
+    (conn) =>
+      classifyConnectionAvailability(conn, quotaData[conn.id], {
+        loading: Boolean(loading[conn.id]),
+        error: errors[conn.id] || null,
+      }),
+    [quotaData, loading, errors],
+  );
+
+  const displayedConnections = useMemo(() => {
+    if (accountFilter !== "available") return sortedConnections;
+    return sortedConnections.filter((conn) => getAvailability(conn) === "available");
+  }, [accountFilter, sortedConnections, getAvailability]);
+
+  const usageMax = useMemo(
+    () => getUsageMaxFromDayBars(dayBarsById),
+    [dayBarsById],
+  );
 
   const bulkSetActive = useCallback(
     async (targetIds, isActive) => {
@@ -731,15 +787,17 @@ export default function ProviderLimits() {
   );
 
   const handleDisableDepleted = () => {
+    // Empty = depleted finite quota on the current backend page.
     const ids = sortedConnections
-      .filter((c) => (c.isActive ?? true) && isConnectionDepleted(c))
+      .filter((c) => (c.isActive ?? true) && getAvailability(c) === "empty")
       .map((c) => c.id);
     bulkSetActive(ids, false);
   };
 
   const handleEnableAvailable = () => {
+    // Only enable accounts that are explicitly available (not unknown/loading/error).
     const ids = sortedConnections
-      .filter((c) => !(c.isActive ?? true) && !isConnectionDepleted(c))
+      .filter((c) => !(c.isActive ?? true) && getAvailability(c) === "available")
       .map((c) => c.id);
     bulkSetActive(ids, true);
   };
@@ -747,15 +805,18 @@ export default function ProviderLimits() {
   const selectedProviderLabel =
     providerFilter === "all" ? "All providers" : providerFilter;
   const hasEligibleConnections = totals.eligibleConnections > 0;
-  const hasVisibleConnections = sortedConnections.length > 0;
+  const hasVisibleConnections = displayedConnections.length > 0;
   const emptyState = getConnectionsEmptyMessage(
     totals,
     providerFilter,
     accountFilter,
   );
-  const connectionsPageSummary = getConnectionsPaginationSummary(pagination);
+  const basePageSummary = getConnectionsPaginationSummary(pagination);
+  const connectionsPageSummary =
+    accountFilter === "available"
+      ? `${basePageSummary} · ${displayedConnections.length} available on this page`
+      : basePageSummary;
   const isCustomPageSize = !ACCOUNT_PAGE_SIZE_OPTIONS.includes(pageSize);
-  const pageSizeLabel = getPageSizeLabel(pageSize, isCustomPageSize);
 
   if (!connectionsLoading && !hasEligibleConnections) {
     return (
@@ -770,24 +831,6 @@ export default function ProviderLimits() {
           <p className="mt-2 text-sm text-text-muted max-w-md mx-auto">
             Connect to providers with OAuth to track your API quota limits and
             usage.
-          </p>
-        </div>
-      </Card>
-    );
-  }
-
-  if (!connectionsLoading && !hasVisibleConnections) {
-    return (
-      <Card padding="lg">
-        <div className="text-center py-12">
-          <span className="material-symbols-outlined text-[64px] text-text-muted opacity-20">
-            {emptyState.icon}
-          </span>
-          <h3 className="mt-4 text-lg font-semibold text-text-primary">
-            {emptyState.title}
-          </h3>
-          <p className="mt-2 text-sm text-text-muted max-w-md mx-auto">
-            {emptyState.description}
           </p>
         </div>
       </Card>
@@ -1012,16 +1055,38 @@ export default function ProviderLimits() {
         </div>
       </div>
 
-      {/* Provider cards: 2 columns, compact */}
+      {/* Provider cards: responsive masonry, intrinsic height */}
       {expiringFirst && (
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
           Expiring-first currently reorders accounts inside the current page.
           Cross-page ordering still follows backend pagination.
         </div>
       )}
+      {accountFilter === "available" && (
+        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-700 dark:text-emerald-300">
+          Available filters this page after live quota loads. Accounts with
+          remaining quota (or explicit unlimited) are shown; loading/error
+          accounts stay hidden until classified.
+        </div>
+      )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {sortedConnections.map((conn) => {
+      {!connectionsLoading && !hasVisibleConnections ? (
+        <Card padding="lg">
+          <div className="text-center py-12">
+            <span className="material-symbols-outlined text-[64px] text-text-muted opacity-20">
+              {emptyState.icon}
+            </span>
+            <h3 className="mt-4 text-lg font-semibold text-text-primary">
+              {emptyState.title}
+            </h3>
+            <p className="mt-2 text-sm text-text-muted max-w-md mx-auto">
+              {emptyState.description}
+            </p>
+          </div>
+        </Card>
+      ) : (
+        <div className="quota-masonry-9r">
+          {displayedConnections.map((conn) => {
           const quota = quotaData[conn.id];
           const isLoading = loading[conn.id];
           const error = errors[conn.id];
@@ -1040,16 +1105,16 @@ export default function ProviderLimits() {
             <Card
               key={conn.id}
               padding="none"
-              className={`min-w-0 ${isInactive ? "opacity-60" : ""}`}
+              className={`quota-card-9r min-w-0 h-auto self-start ${isInactive ? "opacity-60" : ""}`}
             >
-              <div className="px-3 py-2 border-b border-black/10 dark:border-white/10">
+              <div className="px-2.5 py-1.5 border-b border-black/10 dark:border-white/10">
                 <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-8 h-8 shrink-0 rounded-md flex items-center justify-center overflow-hidden">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="w-6 h-6 shrink-0 rounded-md flex items-center justify-center overflow-hidden">
                       <ProviderIcon
                         src={`/providers/${conn.provider}.png`}
                         alt={conn.provider}
-                        size={32}
+                        size={24}
                         className="object-contain"
                         fallbackText={
                           conn.provider?.slice(0, 2).toUpperCase() || "PR"
@@ -1057,9 +1122,17 @@ export default function ProviderLimits() {
                       />
                     </div>
                     <div className="min-w-0">
-                      <h3 className="text-sm font-semibold text-text-primary capitalize truncate">
-                        {conn.provider}
-                      </h3>
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <h3 className="text-sm font-semibold text-text-primary capitalize truncate">
+                          {conn.provider}
+                        </h3>
+                        <span
+                          className="shrink-0 rounded-full bg-black/5 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-text-muted dark:bg-white/10"
+                          title="Quota rows"
+                        >
+                          {visibleQuotas.length || rawQuotas.length || 0}
+                        </span>
+                      </div>
                       {getConnectionLabel(conn) ? (
                         <p className="text-xs text-text-muted truncate">
                           {getConnectionLabel(conn)}
@@ -1263,6 +1336,8 @@ export default function ProviderLimits() {
                       conn.provider === "codex" && quotaSortMode !== "default"
                     }
                     onHideQuota={(quotaRow) => handleHideQuota(conn.provider, quotaRow)}
+                    dayBars={dayBarsById[conn.id]}
+                    usageMax={usageMax}
                   />
                 )}
                 {hiddenQuotaRows.length > 0 && (
@@ -1288,9 +1363,10 @@ export default function ProviderLimits() {
                 )}
               </div>
             </Card>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       <div className="rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]">
           <div className="flex flex-wrap items-center justify-between gap-2">

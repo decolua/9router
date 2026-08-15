@@ -658,9 +658,88 @@ export async function getUsageStats(period = "all") {
   return stats;
 }
 
-export async function getChartData(period = "7d") {
+function emptyHourlyBucket(ts) {
+  return {
+    label:
+      new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric" }) +
+      " " +
+      new Date(ts).toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }),
+    tokens: 0,
+    cost: 0,
+    requests: 0,
+  };
+}
+
+export function buildHourlyUsageBuckets(rows, now = Date.now(), bucketCount = 168) {
+  const safeBucketCount = Math.max(1, Math.floor(Number(bucketCount) || 168));
+  const bucketMs = 3600000;
+  const startHour =
+    Math.floor(now / bucketMs) * bucketMs - (safeBucketCount - 1) * bucketMs;
+  const endTime = startHour + safeBucketCount * bucketMs;
+  const buckets = Array.from({ length: safeBucketCount }, (_, i) =>
+    emptyHourlyBucket(startHour + i * bucketMs),
+  );
+
+  for (const row of rows || []) {
+    const timestamp = new Date(row.timestamp).getTime();
+    if (timestamp < startHour || timestamp >= endTime) continue;
+    const index = Math.floor((timestamp - startHour) / bucketMs);
+    if (index >= 0 && index < safeBucketCount) {
+      buckets[index].tokens +=
+        (row.promptTokens || 0) + (row.completionTokens || 0);
+      buckets[index].cost += row.cost || 0;
+      buckets[index].requests += 1;
+    }
+  }
+
+  return { buckets, startHour, endTime };
+}
+
+function queryUsageHistoryRows(db, startIso, endIso = null, connectionId = null) {
+  const cid = connectionId ? String(connectionId) : null;
+  if (cid && endIso) {
+    return db.all(
+      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND timestamp < ? AND connectionId = ?`,
+      [startIso, endIso, cid],
+    );
+  }
+  if (cid) {
+    return db.all(
+      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND connectionId = ?`,
+      [startIso, cid],
+    );
+  }
+  if (endIso) {
+    return db.all(
+      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND timestamp < ?`,
+      [startIso, endIso],
+    );
+  }
+  return db.all(
+    `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
+    [startIso],
+  );
+}
+
+export async function getChartData(period = "7d", connectionId = null) {
   const db = await getAdapter();
   const now = Date.now();
+  const cid = connectionId ? String(connectionId) : null;
+
+  if (period === "7d-hourly") {
+    const emptyRange = buildHourlyUsageBuckets([], now);
+    const rows = queryUsageHistoryRows(
+      db,
+      new Date(emptyRange.startHour).toISOString(),
+      new Date(emptyRange.endTime).toISOString(),
+      cid,
+    );
+    return buildHourlyUsageBuckets(rows, now).buckets;
+  }
 
   if (period === "today") {
     const bucketCount = 24;
@@ -670,11 +749,18 @@ export async function getChartData(period = "7d") {
     const startTime = startOfDay.getTime();
     const endTime = startTime + bucketCount * bucketMs;
     const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
+    const buckets = Array.from({ length: bucketCount }, (_, i) => ({
+      label: labelFn(startTime + i * bucketMs),
+      tokens: 0,
+      cost: 0,
+      requests: 0,
+    }));
 
-    const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
-      [new Date(startTime).toISOString()]
+    const rows = queryUsageHistoryRows(
+      db,
+      new Date(startTime).toISOString(),
+      new Date(endTime).toISOString(),
+      cid,
     );
     for (const r of rows) {
       const t = new Date(r.timestamp).getTime();
@@ -683,6 +769,7 @@ export async function getChartData(period = "7d") {
       if (idx >= 0 && idx < bucketCount) {
         buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
         buckets[idx].cost += r.cost || 0;
+        buckets[idx].requests += 1;
       }
     }
     return buckets;
@@ -693,18 +780,21 @@ export async function getChartData(period = "7d") {
     const bucketMs = 3600000;
     const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
     const startTime = now - bucketCount * bucketMs;
-    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
+    const buckets = Array.from({ length: bucketCount }, (_, i) => ({
+      label: labelFn(startTime + i * bucketMs),
+      tokens: 0,
+      cost: 0,
+      requests: 0,
+    }));
 
-    const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
-      [new Date(startTime).toISOString()]
-    );
+    const rows = queryUsageHistoryRows(db, new Date(startTime).toISOString(), null, cid);
     for (const r of rows) {
       const t = new Date(r.timestamp).getTime();
       if (t < startTime || t > now) continue;
       const idx = Math.min(Math.floor((t - startTime) / bucketMs), bucketCount - 1);
       buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
       buckets[idx].cost += r.cost || 0;
+      buckets[idx].requests += 1;
     }
     return buckets;
   }
@@ -723,10 +813,26 @@ export async function getChartData(period = "7d") {
     d.setDate(d.getDate() - (bucketCount - 1 - i));
     const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const dayData = dayMap[dateKey];
+    let tokens = 0;
+    let cost = 0;
+    let requests = 0;
+    if (dayData) {
+      if (cid && dayData.byAccount?.[cid]) {
+        const ac = dayData.byAccount[cid];
+        tokens = (ac.promptTokens || 0) + (ac.completionTokens || 0);
+        cost = ac.cost || 0;
+        requests = ac.requests || 0;
+      } else if (!cid) {
+        tokens = (dayData.promptTokens || 0) + (dayData.completionTokens || 0);
+        cost = dayData.cost || 0;
+        requests = dayData.requests || 0;
+      }
+    }
     return {
       label: labelFn(d),
-      tokens: dayData ? (dayData.promptTokens || 0) + (dayData.completionTokens || 0) : 0,
-      cost: dayData ? (dayData.cost || 0) : 0,
+      tokens,
+      cost,
+      requests,
     };
   });
 }
