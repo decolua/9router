@@ -358,7 +358,14 @@ export default function AccountDetailPage({ params }) {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.45fr_1fr]">
         {/* Month by month */}
         <Card padding="none" className="px-4 py-4 sm:px-5">
-          <SectionHeading title="Month by month" subtitle="Usage and value for every month on record." />
+          <SectionHeading
+            title="Month by month"
+            subtitle={
+              value.anyAssumedPrice
+                ? "Usage and value per month. * marks months priced from a nearest-known figure."
+                : "Usage and value for every month on record."
+            }
+          />
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm tabular-nums">
               <thead>
@@ -367,7 +374,8 @@ export default function AccountDetailPage({ params }) {
                   <th className="pb-2 px-3 text-right font-semibold">Requests</th>
                   <th className="pb-2 px-3 text-right font-semibold">Tokens</th>
                   <th className="pb-2 px-3 text-right font-semibold">API value</th>
-                  {value.monthlyCost > 0 && <th className="pb-2 pl-3 text-right font-semibold">Return</th>}
+                  <th className="pb-2 px-3 text-right font-semibold">Paid</th>
+                  <th className="pb-2 pl-3 text-right font-semibold">Return</th>
                 </tr>
               </thead>
               <tbody>
@@ -380,11 +388,20 @@ export default function AccountDetailPage({ params }) {
                     <td className="py-2 px-3 text-right text-text-muted">{fmtCount(m.requests)}</td>
                     <td className="py-2 px-3 text-right text-text-muted">{fmtCount(m.tokens)}</td>
                     <td className="py-2 px-3 text-right">{fmtMoney(m.cost)}</td>
-                    {value.monthlyCost > 0 && (
-                      <td className="py-2 pl-3 text-right font-semibold text-primary">
-                        {Math.round(m.cost / value.monthlyCost)}×
-                      </td>
-                    )}
+                    <td className="py-2 px-3 text-right text-text-muted">
+                      {typeof m.paid === "number" ? fmtMoney(m.paid) : "—"}
+                      {m.paidAssumed && (
+                        <span
+                          className="ml-1 cursor-help text-text-subtle"
+                          title="Price not recorded for this month — assumed from the nearest known price."
+                        >
+                          *
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 pl-3 text-right font-semibold text-primary">
+                      {typeof m.paid === "number" && m.paid > 0 ? `${Math.round(m.cost / m.paid)}×` : "—"}
+                    </td>
                   </tr>
                 ))}
               </tbody>

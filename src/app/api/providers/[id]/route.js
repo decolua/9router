@@ -131,14 +131,25 @@ export async function PUT(request, { params }) {
     // comparison); anything non-numeric or negative is rejected rather than
     // silently stored, since it would divide the value ratio.
     if (monthlyCost !== undefined) {
-      if (monthlyCost === null) {
-        updateData.monthlyCost = null;
-      } else {
+      let nextCost = null;
+      if (monthlyCost !== null) {
         const parsed = Number(monthlyCost);
         if (!Number.isFinite(parsed) || parsed < 0) {
           return NextResponse.json({ error: "Invalid monthlyCost" }, { status: 400 });
         }
-        updateData.monthlyCost = parsed;
+        nextCost = parsed;
+      }
+      updateData.monthlyCost = nextCost;
+
+      // Record the change so past months keep the price they were actually
+      // billed at. Without this, upgrading a plan silently rewrites every
+      // earlier month's cost to the new figure.
+      if (nextCost !== existing.monthlyCost) {
+        const history = Array.isArray(existing.monthlyCostHistory) ? existing.monthlyCostHistory : [];
+        updateData.monthlyCostHistory = [
+          ...history,
+          { amount: nextCost, effectiveFrom: new Date().toISOString() },
+        ];
       }
     }
 
