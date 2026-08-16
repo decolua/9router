@@ -518,6 +518,20 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "cursor":
+        // Percent-of-limit quotas (Total/Auto/API usage) — same shape as claude.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+            });
+          });
+        }
+        break;
+
       case "deepseek":
         // Credit balance — remainingPercentage only (no absolute remaining).
         if (data.quotas) {
