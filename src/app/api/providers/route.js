@@ -7,7 +7,9 @@ import {
   getProxyPoolById,
 } from "@/models";
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
-import { AI_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers";
+import { AI_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider, isCustomAdapterProvider } from "@/shared/constants/providers";
+import { getCustomAdapterById } from "@/models";
+import { getCustomAdapter } from "open-sse/custom-adapters/loader.js";
 import { normalizeProviderId, normalizeProviderSpecificData } from "@/lib/providerNormalization";
 
 export const dynamic = "force-dynamic";
@@ -62,7 +64,7 @@ export async function GET() {
 
     // Hide sensitive fields, enrich name for compatible providers
     const safeConnections = connections.map(c => {
-      const isCompatible = isOpenAICompatibleProvider(c.provider) || isAnthropicCompatibleProvider(c.provider);
+      const isCompatible = isOpenAICompatibleProvider(c.provider) || isAnthropicCompatibleProvider(c.provider) || isCustomAdapterProvider(c.provider);
       const name = isCompatible
         ? (c.name || nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
         : c.name;
@@ -102,6 +104,7 @@ export async function POST(request) {
 
     // Validation
     const isWebCookieProvider = !!WEB_COOKIE_PROVIDERS[provider];
+    const isCustomAdapter = isCustomAdapterProvider(provider) || !!getCustomAdapter(provider);
     // Dual-auth providers (e.g. codebuddy-cn, xai) live under category "oauth" but also
     // accept an API key via authModes — they aren't in APIKEY_PROVIDERS, so allow them here.
     const supportsApiKeyMode = !!AI_PROVIDERS[provider]?.authModes?.includes("apikey");
@@ -111,15 +114,18 @@ export async function POST(request) {
       isWebCookieProvider ||
       isOpenAICompatibleProvider(provider) ||
       isAnthropicCompatibleProvider(provider) ||
-      isCustomEmbeddingProvider(provider);
+      isCustomEmbeddingProvider(provider) ||
+      isCustomAdapter;
 
     if (!provider || !isValidProvider) {
       return NextResponse.json({ error: "Invalid provider" }, { status: 400 });
     }
-    if (!apiKey && provider !== "ollama-local") {
+    const customAdapterObj = isCustomAdapter ? (await getCustomAdapterById(provider) || getCustomAdapter(provider)) : null;
+    const allowsNoAuth = provider === "ollama-local" || customAdapterObj?.authType === "none";
+    if (!apiKey && !allowsNoAuth) {
       return NextResponse.json({ error: `${isWebCookieProvider ? "Cookie value" : "API Key"} is required` }, { status: 400 });
     }
-    const connectionName = name || displayName || AI_PROVIDERS[provider]?.name;
+    const connectionName = name || displayName || customAdapterObj?.name || AI_PROVIDERS[provider]?.name;
     if (!connectionName) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
     }
@@ -158,6 +164,17 @@ export async function POST(request) {
         prefix: node.prefix,
         baseUrl: node.baseUrl,
         nodeName: node.name,
+      };
+    } else if (isCustomAdapter) {
+      const adapter = customAdapterObj;
+      if (!adapter) {
+        return NextResponse.json({ error: "Custom adapter not found" }, { status: 404 });
+      }
+      providerSpecificData = {
+        prefix: adapter.prefix,
+        baseUrl: adapter.baseUrl,
+        nodeName: adapter.name,
+        isCustomAdapter: true,
       };
     }
 
