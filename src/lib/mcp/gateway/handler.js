@@ -90,7 +90,7 @@ export async function handleJsonRpc(request, body, opts = {}) {
     case "tools/list": {
       const { aggregateTools } = await import("./aggregator");
       const { tools, errors } = await aggregateTools(instances, grants);
-      return respond(jsonRpcOk(obj.id, { tools, nextCursor: null, _gateway: { errors } }));
+      return respond(jsonRpcOk(obj.id, { tools, _gateway: { errors } }));
     }
     case "tools/call": {
       const params = isRecord(obj.params) ? obj.params : {};
