@@ -16,6 +16,11 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 // SSE error patterns inside 200-OK bodies. Some retry same account first; capacity rotates accounts.
 const CODEX_SSE_RETRY_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
 const CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS = ["selected model is at capacity", "model_at_capacity"];
+const CODEX_SSE_CONTEXT_OVERFLOW_PATTERNS = [
+  "exceeds the context window",
+  "maximum context length",
+  "context_length_exceeded",
+];
 const CODEX_SSE_USER_OUTPUT_PATTERNS = [
   "event: response.output_text.delta",
   "event: response.function_call_arguments.delta",
@@ -172,12 +177,55 @@ function extractSseErrorMessage(text, fallback) {
   return fallback || CODEX_MODEL_CAPACITY_MESSAGE;
 }
 
-function codexSseErrorResponse(status, message) {
+function findSseContextOverflow(text) {
+  const failureTypes = new Set(["error", "response.failed", "failed"]);
+  let eventType = null;
+  let dataLines = [];
+
+  const inspectBlock = () => {
+    if (dataLines.length === 0) return null;
+    let payload;
+    try {
+      payload = JSON.parse(dataLines.join("\n"));
+    } catch {
+      return null;
+    }
+
+    const payloadType = String(payload?.type || payload?.response?.status || "").toLowerCase();
+    if (!failureTypes.has(eventType) && !failureTypes.has(payloadType)) return null;
+
+    const error = payload?.response?.error || payload?.error;
+    const message = typeof error?.message === "string" ? error.message.trim() : "";
+    const code = typeof error?.code === "string" ? error.code.toLowerCase() : "";
+    const matched = code
+      ? (code === "context_length_exceeded" ? code : null)
+      : CODEX_SSE_CONTEXT_OVERFLOW_PATTERNS.find(pattern => message.toLowerCase().includes(pattern));
+    return matched ? { matched, message: message || matched } : null;
+  };
+
+  for (const rawLine of String(text || "").split("\n")) {
+    const line = rawLine.trimEnd();
+    if (!line) {
+      const match = inspectBlock();
+      if (match) return match;
+      eventType = null;
+      dataLines = [];
+    } else if (line.startsWith("event:")) {
+      eventType = line.slice(6).trim().toLowerCase();
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice(5).trimStart());
+    }
+  }
+
+  return inspectBlock();
+}
+
+function codexSseErrorResponse(status, message, code = null) {
   return new Response(JSON.stringify({
     error: {
       message,
       type: status >= 500 ? "server_error" : "invalid_request_error",
-      code: status === HTTP_STATUS.SERVICE_UNAVAILABLE ? "service_unavailable" : "upstream_error",
+      code: code || (status === HTTP_STATUS.SERVICE_UNAVAILABLE ? "service_unavailable" : "upstream_error"),
     }
   }), {
     status,
@@ -286,6 +334,11 @@ export class CodexExecutor extends BaseExecutor {
         }
         return result;
       }
+      if (peek.contextOverflow) {
+        args.log?.warn?.("CODEX", `SSE context overflow "${peek.message}"`);
+        result.response = codexSseErrorResponse(HTTP_STATUS.PAYLOAD_TOO_LARGE, peek.message || peek.matched, "context_length_exceeded");
+        return result;
+      }
       if (peek.accountFallback) {
         args.log?.warn?.("RETRY", `CODEX | SSE account fallback "${peek.message}"`);
         result.response = codexSseErrorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, peek.message || CODEX_MODEL_CAPACITY_MESSAGE);
@@ -304,16 +357,19 @@ export class CodexExecutor extends BaseExecutor {
   }
 
   // Peek first N bytes of SSE body to detect upstream transient errors.
-  // Returns { matched: string|null, message: string|null, accountFallback: boolean, replacementBody: ReadableStream|null }.
+  // Returns { matched: string|null, message: string|null, accountFallback: boolean,
+  // contextOverflow: boolean, replacementBody: ReadableStream|null }.
   // Caller must use replacementBody when no error matched (original body has been read).
   async _peekSseTransientError(response) {
-    if (!response || !response.ok || !response.body) return { matched: null, message: null, accountFallback: false, replacementBody: null };
+    if (!response || !response.ok || !response.body) return { matched: null, message: null, accountFallback: false, contextOverflow: false, replacementBody: null };
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     const chunks = [];
     let text = "";
     let matched = null;
+    let matchedMessage = null;
     let accountFallback = false;
+    let contextOverflow = false;
     try {
       while (text.length < CODEX_SSE_PEEK_BYTES) {
         const { done, value } = await reader.read();
@@ -321,11 +377,18 @@ export class CodexExecutor extends BaseExecutor {
         chunks.push(value);
         text += decoder.decode(value, { stream: true });
         const lowerText = text.toLowerCase();
-        const accountHit = CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS.find(p => lowerText.includes(p));
+        const accountHit = CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS.find(pattern => lowerText.includes(pattern));
         if (accountHit) { matched = accountHit; accountFallback = true; break; }
-        const retryHit = CODEX_SSE_RETRY_PATTERNS.find(p => lowerText.includes(p));
+        const contextHit = findSseContextOverflow(text);
+        if (contextHit) {
+          matched = contextHit.matched;
+          matchedMessage = contextHit.message;
+          contextOverflow = true;
+          break;
+        }
+        const retryHit = CODEX_SSE_RETRY_PATTERNS.find(pattern => lowerText.includes(pattern));
         if (retryHit) { matched = retryHit; break; }
-        if (CODEX_SSE_USER_OUTPUT_PATTERNS.some(p => lowerText.includes(p))) break;
+        if (CODEX_SSE_USER_OUTPUT_PATTERNS.some(pattern => lowerText.includes(pattern))) break;
       }
     } catch (e) {
       dbg("CODEX", `peek read error: ${e.message}`);
@@ -334,7 +397,13 @@ export class CodexExecutor extends BaseExecutor {
     if (matched) {
       try { await reader.cancel(); } catch { /* noop */ }
       try { reader.releaseLock(); } catch { /* noop */ }
-      return { matched, message: extractSseErrorMessage(text, matched), accountFallback, replacementBody: null };
+      return {
+        matched,
+        message: matchedMessage || extractSseErrorMessage(text, matched),
+        accountFallback,
+        contextOverflow,
+        replacementBody: null,
+      };
     }
 
     reader.releaseLock();
@@ -358,7 +427,7 @@ export class CodexExecutor extends BaseExecutor {
         try { upstreamReader?.cancel(reason); } catch { /* noop */ }
       },
     });
-    return { matched: null, message: null, accountFallback: false, replacementBody };
+    return { matched: null, message: null, accountFallback: false, contextOverflow: false, replacementBody };
   }
 
   // Parse Codex usage_limit_reached to extract precise resetsAtMs; fallback to default otherwise
