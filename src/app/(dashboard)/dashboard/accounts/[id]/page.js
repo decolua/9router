@@ -13,7 +13,7 @@ import AccountActions from "./AccountActions";
 import ActivityChart from "./ActivityChart";
 import ValueChart from "./ValueChart";
 import {
-  fmtMoney, fmtCount, fmtRelative, fmtMonthLabel, fmtTimeOfDay,
+  fmtMoney, fmtCount, fmtRelative, fmtMonthLabel, fmtTimeOfDay, looksLikeEmail,
 } from "./formatters";
 
 function Tile({ label, value, foot }) {
@@ -115,7 +115,7 @@ export default function AccountDetailPage({ params }) {
 
   const { connection: conn, tokenStatus, usage, value } = data;
   const title = conn.name?.trim() || conn.email?.trim() || conn.provider;
-  const titleIsEmail = !!conn.email && title === conn.email.trim();
+  const titleIsEmail = looksLikeEmail(title);
   const totals = usage?.totals || {};
   const quotas = quota?.quotas || [];
 

@@ -22,6 +22,19 @@ export function fmtCount(value) {
   return `${(n / 1_000_000_000).toFixed(2)}B`;
 }
 
+/**
+ * Does this string look like an email address?
+ *
+ * Matching on shape rather than comparing against the connection's `email`
+ * field: an account's `name` is very often the address too, and comparing
+ * fields misses it whenever the two differ by case or whitespace. Anything
+ * shaped like an address gets blurred and never title-cased.
+ */
+export function looksLikeEmail(text) {
+  if (!text || typeof text !== "string") return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text.trim());
+}
+
 /** Coarse duration for countdowns: "3h 12m", "6d 13h", "45m". */
 export function fmtDuration(ms) {
   const mins = Math.max(0, Math.floor(ms / 60000));
