@@ -42,7 +42,7 @@ export const DEFAULT_CAPABILITIES = {
   tools: true,          // function / tool calling
   reasoning: false,     // thinking / reasoning
   // thinking wire format (only meaningful when reasoning:true). null → derive from transport.format.
-  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|hunyuan|step
+  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|hunyuan|step|nous
   thinkingFormat: null,
   thinkingCanDisable: true,  // false → model cannot turn thinking off (clamp to min instead of disable)
   thinkingRange: null,       // { min, max } for budget formats; null = no clamp
@@ -178,6 +178,13 @@ export const PROVIDER_CAPABILITIES = {
   "poolside": {
     "laguna-s-2.1":  { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 32000 },
     "laguna-xs-2.1": { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 },
+  },
+  // The current Nous catalogue does not advertise tools/tool_choice for Hermes
+  // 4. Its first-party client sends reasoning as a nested object and omits that
+  // object when disabled; the public API documents a 32K output ceiling.
+  "nous": {
+    "nousresearch/hermes-4-70b":  { tools: false, reasoning: true, thinkingFormat: "nous", contextWindow: 131072, maxOutput: 32000 },
+    "nousresearch/hermes-4-405b": { tools: false, reasoning: true, thinkingFormat: "nous", contextWindow: 131072, maxOutput: 32000 },
   },
 };
 

@@ -9,6 +9,11 @@ import {
   shouldRefreshCredentials,
 } from "open-sse/services/oauthCredentialManager.js";
 import {
+  createNousApiKeyProbe,
+  getNousApiKeyValidationError,
+  isNousApiKeyAccepted,
+} from "open-sse/services/nous.js";
+import {
   GEMINI_CONFIG,
   ANTIGRAVITY_CONFIG,
   KIRO_CONFIG,
@@ -563,6 +568,20 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       case "openrouter": {
         const res = await fetchWithConnectionProxy("https://openrouter.ai/api/v1/auth/key", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "nous": {
+        // /models is public on Nous; a minimal chat request is required to
+        // distinguish an accepted Portal key from an arbitrary Bearer value.
+        const probe = createNousApiKeyProbe(connection.apiKey);
+        const res = await fetchWithConnectionProxy(probe.url, {
+          ...probe.options,
+          signal: AbortSignal.timeout(8000),
+        }, effectiveProxy);
+        const valid = isNousApiKeyAccepted(res.status);
+        return {
+          valid,
+          error: valid ? null : getNousApiKeyValidationError(res.status),
+        };
       }
       case "glm": {
         const res = await fetchWithConnectionProxy("https://api.z.ai/api/anthropic/v1/messages", {

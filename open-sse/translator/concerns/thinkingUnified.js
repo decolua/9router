@@ -319,6 +319,18 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       if (level) body.reasoning_effort = level;
       break;
     }
+    case "nous": {
+      // Nous's first-party client omits `reasoning` when disabled and sends a
+      // nested object when enabled. The API does not advertise top-level
+      // `reasoning_effort`, so never forward that OpenAI-specific field.
+      if (none && canDisable) break;
+      const level = eff.mode === "auto" ? "medium" : toLevel(eff);
+      body.reasoning = {
+        enabled: true,
+        ...(level ? { effort: level } : {}),
+      };
+      break;
+    }
     case "kiro":
       // Kiro thinking handled via system-tag injection in openai-to-kiro.js; no body field here.
       break;
