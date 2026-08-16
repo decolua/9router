@@ -144,6 +144,7 @@ export async function POST(request) {
     // Add subagent configuration
     const effectiveSubagentModel = subagentModel || model;
     setNestedSection(parsed, "agents.subagent", {
+      description: "Fast subagent for delegated Codex tasks",
       model: effectiveSubagentModel,
     });
 

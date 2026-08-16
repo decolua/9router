@@ -173,6 +173,7 @@ base_url = "${getEffectiveBaseUrl()}"
 wire_api = "responses"
 
 [agents.subagent]
+description = "Fast subagent for delegated Codex tasks"
 model = "${effectiveSubagentModel}"
 `;
 
