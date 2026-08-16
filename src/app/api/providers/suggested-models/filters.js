@@ -1,3 +1,5 @@
+import { normalizeNousFreeModels } from "open-sse/services/nous.js";
+
 // Free OpenCode models that don't use the "-free" id suffix
 const KNOWN_FREE_OPENCODE_MODELS = ["big-pickle"];
 
@@ -23,4 +25,6 @@ export const FILTERS = {
     (Array.isArray(models) ? models : [])
       .filter((m) => m.id?.startsWith("mimo") || m.name?.toLowerCase().includes("mimo"))
       .map((m) => ({ id: m.id, name: m.name || m.id })),
+
+  "nous-free": normalizeNousFreeModels,
 };
