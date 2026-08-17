@@ -37,6 +37,17 @@ describe("standalone build assets", () => {
       .toBe("static asset");
   });
 
+  // Without the wrapper beside server.js nothing can prove a request is local.
+  it("copies the request-sanitizing server wrapper into the standalone output", () => {
+    const projectRoot = createBuildFixture(".next");
+    writeFileSync(join(projectRoot, "custom-server.js"), "wrapper");
+
+    copyStandaloneAssets({ projectRoot, distDir: ".next" });
+
+    expect(readFileSync(join(projectRoot, ".next", "standalone", "custom-server.js"), "utf8"))
+      .toBe("wrapper");
+  });
+
   it("does not modify workspace-traced CLI builds", () => {
     const projectRoot = createBuildFixture(".next-cli-build");
     const previousMode = process.env.NEXT_TRACING_ROOT_MODE;
