@@ -87,6 +87,10 @@
       "family": "laguna-xs-2.1",
       "mode": "free"
     },
+    "tokenrouter/deepseek/deepseek-v4-pro-0813-free": {
+      "family": "deepseek-v4-pro",
+      "mode": "free"
+    },
     "tokenrouter/moonshotai/kimi-k3-free": {
       "family": "kimi-k3",
       "mode": "free"
@@ -391,7 +395,7 @@
     "tokenrouter": "tokenrouter"
   },
   "quotaScope": {
-    "_comment": "account = one shared pool, all models die together. family = one pool per model family within the provider (antigravity meters anthropic and gemini separately). model = per base model. Default when a prefix is absent is account (safe assumption).",
+    "_comment": "account = one shared pool, all models die together. family = one pool per model family within the provider (antigravity meters anthropic and gemini separately). model = per base model. Default when a prefix is absent is account (safe assumption). tokenrouter moved account -> model on 2026-08-17, user-confirmed: each free model registered on the node carries its own allowance, so MAX_PER_POOL=1 no longer lets one TokenRouter id evict another from a combo.",
     "oc": "account",
     "ocg": "account",
     "bb": "account",
@@ -405,9 +409,9 @@
     "cmc": "account",
     "kc": "account",
     "xai": "account",
-    "tokenrouter": "account",
     "gcli": "model",
     "gemini": "model",
+    "tokenrouter": "model",
     "gc": "account",
     "openrouter": "account"
   },
@@ -417,7 +421,8 @@
       "cx/gpt-5.6-terra": 1
     },
     "Odin": {
-      "tokenrouter/qwen/qwen3.8-max-free": 0
+      "tokenrouter/qwen/qwen3.8-max-free": 0,
+      "tokenrouter/deepseek/deepseek-v4-pro-0813-free": 1
     }
   },
   "_costOverride": {
