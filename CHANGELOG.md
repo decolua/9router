@@ -23,6 +23,11 @@
   tabs tripping 429; manual refresh (↻) sends `force=1` to bypass the cache
 
 ## Fixes
+- **NVIDIA**: drop three models NVIDIA has retired and repoint DeepSeek V4 Flash
+  at its live id — `minimaxai/minimax-m2.7` (EOL 2026-07-27),
+  `deepseek-ai/deepseek-v4-pro` and `deepseek-ai/deepseek-v4-flash` (both EOL
+  2026-08-07) answer `410 Gone`, so the catalog advertised them and every route
+  to them failed at call time
 - **Docker**: ship `sql.js` in the image so the pure-JS DB fallback can start —
   file tracing carried the package's JS without `dist/sql-wasm.wasm`, so a
   container with no native driver aborted with ENOENT and never got a database
