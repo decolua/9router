@@ -8,6 +8,28 @@ import { resolveOpenAICompatibleApiType } from "../services/provider.js";
 /**
  * BaseExecutor - Base class for provider executors
  */
+function parseDurationToMs(durationStr) {
+  if (!durationStr || typeof durationStr !== "string") return null;
+  
+  // Format 1: "547098.015490101s" (seconds only, with decimals)
+  const secondsMatch = durationStr.match(/^([\d.]+)\s*s$/i);
+  if (secondsMatch) {
+    const secs = parseFloat(secondsMatch[1]);
+    return isNaN(secs) ? null : Math.round(secs * 1000);
+  }
+
+  // Format 2: "151h58m18.015490101s" (hours, minutes, seconds with decimals)
+  const match = durationStr.match(/(?:(\d+)h)?\s*(?:(\d+)m)?\s*(?:([\d.]+)s)?/i);
+  if (!match) return null;
+
+  let totalMs = 0;
+  if (match[1]) totalMs += parseInt(match[1], 10) * 3600 * 1000;
+  if (match[2]) totalMs += parseInt(match[2], 10) * 60 * 1000;
+  if (match[3]) totalMs += Math.round(parseFloat(match[3]) * 1000);
+
+  return totalMs > 0 ? totalMs : null;
+}
+
 export class BaseExecutor {
   constructor(provider, config) {
     this.provider = provider;
@@ -94,7 +116,74 @@ export class BaseExecutor {
   }
 
   parseError(response, bodyText) {
-    return { status: response.status, message: bodyText || `HTTP ${response.status}` };
+    let message = bodyText || `HTTP ${response.status}`;
+    let resetsAtMs = null;
+
+    if (bodyText) {
+      try {
+        const json = JSON.parse(bodyText);
+        message = json.error?.message || json.message || json.error || message;
+
+        // Parse Google RPC error details
+        const details = json?.error?.details;
+        if (Array.isArray(details)) {
+          for (const d of details) {
+            // ErrorInfo: quotaResetTimeStamp (ISO) or quotaResetDelay
+            if (d?.["@type"] === "type.googleapis.com/google.rpc.ErrorInfo") {
+              if (d.reason) {
+                if (!message.includes(d.reason)) {
+                  message += ` [${d.reason}]`;
+                }
+              }
+              const metadata = d.metadata;
+              if (metadata) {
+                if (metadata.quotaResetTimeStamp) {
+                  const t = new Date(metadata.quotaResetTimeStamp).getTime();
+                  if (!isNaN(t) && t > Date.now()) {
+                    resetsAtMs = t;
+                  }
+                }
+                if (!resetsAtMs && metadata.quotaResetDelay) {
+                  const delayMs = parseDurationToMs(metadata.quotaResetDelay);
+                  if (delayMs) {
+                    resetsAtMs = Date.now() + delayMs;
+                  }
+                }
+              }
+            }
+            // RetryInfo: retryDelay
+            if (!resetsAtMs && d?.["@type"] === "type.googleapis.com/google.rpc.RetryInfo" && d?.retryDelay) {
+              const delayMs = parseDurationToMs(d.retryDelay);
+              if (delayMs) {
+                resetsAtMs = Date.now() + delayMs;
+              }
+            }
+          }
+        }
+      } catch {
+        // ignore parse error
+      }
+    }
+
+    // Try to parse from message string using regex (e.g. "Resets in 151h58m18s" or "reset after 2h7m23s")
+    if (!resetsAtMs && message && typeof message === "string" && response.status === 429) {
+      const match = message.match(/reset(?:s)?\s+(?:after|in)\s+(\d+h)?\s*(\d+m)?\s*(\d+s)?/i);
+      if (match) {
+        let totalMs = 0;
+        if (match[1]) totalMs += parseInt(match[1], 10) * 3600 * 1000;
+        if (match[2]) totalMs += parseInt(match[2], 10) * 60 * 1000;
+        if (match[3]) totalMs += parseInt(match[3], 10) * 1000;
+        if (totalMs > 0) {
+          resetsAtMs = Date.now() + totalMs;
+        }
+      }
+    }
+
+    return {
+      status: response.status,
+      message,
+      ...(resetsAtMs && { resetsAtMs })
+    };
   }
 
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
