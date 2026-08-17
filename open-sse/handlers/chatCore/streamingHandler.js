@@ -22,6 +22,15 @@ const CODEX_SOURCE_TO_TARGET = {
 
 /**
  * Determine which SSE transform stream to use based on provider/format.
+ *
+ * Returns the emitted format alongside the stream. Anything inspecting the
+ * CLIENT-facing frames must key off that, not off `targetFormat`: the three
+ * branches below emit three different formats, and translation runs
+ * targetFormat → sourceFormat, so the provider's format is the wrong one in two
+ * of them. Returning it here keeps the two in lockstep instead of asking callers
+ * to re-derive the branch condition.
+ *
+ * @returns {{stream: TransformStream, emittedFormat: string}}
  */
 function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey }) {
   const isDroidCLI = userAgent?.toLowerCase().includes("droid") || userAgent?.toLowerCase().includes("codex-cli");
@@ -31,14 +40,24 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 
   if (needsCodexTranslation) {
     const codexTarget = CODEX_SOURCE_TO_TARGET[sourceFormat] || FORMATS.OPENAI;
-    return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames);
+    return {
+      stream: createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames),
+      emittedFormat: codexTarget,
+    };
   }
 
   if (needsTranslation(targetFormat, sourceFormat)) {
-    return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames);
+    return {
+      stream: createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames),
+      emittedFormat: sourceFormat,
+    };
   }
 
-  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey);
+  // Passthrough: the provider's own frames reach the client unchanged.
+  return {
+    stream: createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey),
+    emittedFormat: targetFormat,
+  };
 }
 
 /**
@@ -80,7 +99,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     };
   }
 
-  const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey });
+  const { stream: transformStream, emittedFormat } = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey });
 
   // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event
   const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
@@ -90,7 +109,14 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   // dies mid-response closes with an explicit error instead of a truncated body
   // the caller cannot distinguish from a normal finish. Null for formats whose
   // terminal marker is ambiguous, which leaves those unchanged.
-  const terminalTracker = createTerminalTracker(targetFormat);
+  //
+  // Keyed on emittedFormat, NOT targetFormat. Translation runs
+  // targetFormat → sourceFormat, so using the provider's format made the tracker
+  // watch for a marker that never appears — e.g. a /v1/responses client never
+  // shows response.completed once the frames have been translated — and every
+  // healthy stream got a spurious "ended without a terminal event" frame
+  // appended. Reported by @chisewaguri on #3222.
+  const terminalTracker = createTerminalTracker(emittedFormat);
   const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs, terminalTracker);
 
   saveRequestDetail(buildRequestDetail({
