@@ -1,50 +1,12 @@
-import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
-import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
+import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE, selectAnthropicBeta } from "../providers/shared.js";
+import { resolveOpenAICompatibleApiType } from "../services/provider.js";
 import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../shared/clineAuth.js";
-import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
-import { resolveSessionId } from "../utils/sessionManager.js";
-import { getOpenAICompatibleType } from "../services/provider.js";
-
-// Opt-in prompt-cache key injection for openai-compatible providers.
-// OpenAI-style upstreams (Chat Completions + Responses) accept an optional
-// `prompt_cache_key` routing hint that pins a conversation to a cache shard,
-// the same mechanism the Codex executor uses. We do NOT enable it by default:
-// some strict openai-compatible gateways reject unknown fields. A custom
-// provider opts in via providerSpecificData.enablePromptCacheKey === true.
-export function normalizePromptCacheKey(provider, sessionId) {
-  if (!sessionId) return "";
-  const scoped = `${provider || "openai-compatible"}:${sessionId}`;
-  return `cc_${crypto.createHash("sha256").update(scoped).digest("hex").slice(0, 32)}`;
-}
-
-export function injectPromptCacheKey(provider, body, credentials) {
-  if (!body || typeof body !== "object") return body;
-  if (credentials?.providerSpecificData?.enablePromptCacheKey !== true) return body;
-  if (typeof body.prompt_cache_key === "string" && body.prompt_cache_key) return body;
-
-  // translateRequest() already captured a conversation-stable id into
-  // credentials._clientSessionId; fall back to resolving one here so this
-  // also works on the same-format fast path (openai→openai) where capture
-  // may not have run. The upstream key is a short provider-scoped hash rather
-  // than a raw client/session identifier, keeping it stable but provider-safe.
-  const sessionId = credentials?._clientSessionId || resolveSessionId({
-    headers: credentials?.rawHeaders,
-    body,
-    connectionId: credentials?.connectionId,
-    workspaceId: credentials?.providerSpecificData?.workspaceId,
-    scope: provider,
-  });
-
-  const promptCacheKey = normalizePromptCacheKey(provider, sessionId);
-  if (promptCacheKey) body.prompt_cache_key = promptCacheKey;
-  return body;
-}
 
 // Auth header descriptors — derived from registry transport.auth, fallback to hardcoded defaults.
 const BEARER = { combined: true, header: "Authorization", scheme: "bearer" };
@@ -80,21 +42,6 @@ const HEADER_HOOKS = {
   kimiHeaders: (h, c) => Object.assign(h, buildKimiHeaders(c?.providerSpecificData?.deviceId)),
   clineHeaders: (h, c) => Object.assign(h, buildClineHeaders(c.apiKey || c.accessToken)),
   kilocodeOrg: (h, c) => { if (c.providerSpecificData?.orgId) h["X-Kilocode-OrganizationID"] = c.providerSpecificData.orgId; },
-  claudeOverlay: (h) => {
-    const cached = getCachedClaudeHeaders();
-    if (!cached) return;
-    for (const lcKey of Object.keys(cached)) {
-      const titleKey = lcKey.replace(/(^|-)([a-z])/g, (_, sep, ch) => sep + ch.toUpperCase());
-      if (lcKey === "anthropic-beta") {
-        const staticBetaStr = h[titleKey] || h[lcKey] || "";
-        const flags = new Set(staticBetaStr.split(",").map(f => f.trim()).filter(Boolean));
-        for (const f of cached[lcKey].split(",").map(f => f.trim()).filter(Boolean)) flags.add(f);
-        cached[lcKey] = Array.from(flags).join(",");
-      }
-      if (titleKey !== lcKey && h[titleKey] !== undefined) delete h[titleKey];
-    }
-    Object.assign(h, cached);
-  },
 };
 
 // Config-driven OAuth refresh grants — derived from registry oauth.refresh.
@@ -120,7 +67,7 @@ export class DefaultExecutor extends BaseExecutor {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
-  transformRequest(model, body, stream, credentials) {
+  transformRequest(model, body) {
     const transformed = this.applyJsonSchemaFallback(body);
 
     if (transformed && typeof transformed === "object") {
@@ -128,7 +75,6 @@ export class DefaultExecutor extends BaseExecutor {
       if (this.config.quirks?.dropClientMetadata) {
         delete transformed.client_metadata;
       }
-      injectPromptCacheKey(this.provider, transformed, credentials);
       stripUnsupportedParams(this.provider, model, transformed);
     }
 
@@ -164,8 +110,7 @@ export class DefaultExecutor extends BaseExecutor {
     if (this.provider?.startsWith?.("openai-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || OPENAI_COMPAT_BASE;
       const normalized = baseUrl.replace(/\/$/, "");
-      const apiType = getOpenAICompatibleType(this.provider, credentials);
-      const path = apiType === "responses" ? "/responses" : "/chat/completions";
+      const path = resolveOpenAICompatibleApiType(this.provider, credentials) === "responses" ? "/responses" : "/chat/completions";
       return `${normalized}${path}`;
     }
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
@@ -201,13 +146,17 @@ export class DefaultExecutor extends BaseExecutor {
     return BEARER;
   }
 
-  buildHeaders(credentials, stream = true) {
+  buildHeaders(credentials, stream = true, url, model) {
     const rt = credentials?.runtimeTransport;
     const headers = { "Content-Type": "application/json", ...(rt ? rt.headers : this.config.headers) };
     const desc = rt?.auth || AUTH_DESCRIPTORS[this.provider] || this.resolveAuthDescriptor();
-    // Hooks run BEFORE auth so dynamic overlays (claude cached headers) can't clobber the token.
+    // Hooks run BEFORE auth so dynamic overlays can't clobber the token.
     for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);
     applyAuth(headers, desc, credentials);
+
+    if (this.provider === "claude" && model) {
+      headers["Anthropic-Beta"] = selectAnthropicBeta(model);
+    }
 
     // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
@@ -262,7 +211,6 @@ export class DefaultExecutor extends BaseExecutor {
     const refreshers = {
       claude: () => this.refreshFromGrant(credentials, proxyOptions),
       codex: () => this.refreshFromGrant(credentials, proxyOptions),
-      qwen: () => this.refreshWithForm(OAUTH_ENDPOINTS.qwen.token, { grant_type: "refresh_token", refresh_token: credentials.refreshToken, client_id: PROVIDERS.qwen.clientId }, proxyOptions),
       iflow: () => this.refreshIflow(credentials.refreshToken, proxyOptions),
       gemini: () => this.refreshFromGrant(credentials, proxyOptions),
       kiro: () => this.refreshKiro(credentials.refreshToken, proxyOptions),
