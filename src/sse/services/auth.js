@@ -14,6 +14,15 @@ import {
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
 
+const GITHUB_MONTHLY_USAGE_LIMIT = "you've reached your additional usage limit for your plan";
+
+function githubMonthlyResetMs(status, errorText, provider) {
+  if (resolveProviderId(provider) !== "github" || Number(status) !== 402) return null;
+  if (!String(errorText || "").toLowerCase().includes(GITHUB_MONTHLY_USAGE_LIMIT)) return null;
+  const now = new Date();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+}
+
 /**
  * Get provider credentials from localDb
  * Filters out unavailable accounts and returns the selected account based on strategy
@@ -244,9 +253,16 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     return { shouldFallback: true, cooldownMs: KIRO_SUSPENSION_RETRY_MS };
   }
 
+  // GitHub premium-request exhaustion is account-wide until the next UTC month.
+  const githubResetAtMs = githubMonthlyResetMs(status, errorText, provider);
+
   // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
   let shouldFallback, cooldownMs, newBackoffLevel;
-  if (resetsAtMs && resetsAtMs > Date.now()) {
+  if (githubResetAtMs) {
+    shouldFallback = true;
+    cooldownMs = githubResetAtMs - Date.now();
+    newBackoffLevel = 0;
+  } else if (resetsAtMs && resetsAtMs > Date.now()) {
     shouldFallback = true;
     cooldownMs = Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
     newBackoffLevel = 0;
@@ -256,7 +272,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
-  const lockUpdate = buildModelLockUpdate(model, cooldownMs);
+  const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
 
   await updateProviderConnection(connectionId, {
     ...lockUpdate,
