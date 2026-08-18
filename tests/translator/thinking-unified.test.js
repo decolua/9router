@@ -46,6 +46,12 @@ describe("extractThinking", () => {
   it("openai reasoning_effort", () => {
     expect(extractThinking({ reasoning_effort: "high" })).toEqual({ mode: "level", level: "high" });
   });
+  it("wrapper variant option overrides top-level default", () => {
+    expect(extractThinking({
+      options: { reasoningEffort: "xhigh" },
+      reasoning_effort: "medium",
+    })).toEqual({ mode: "level", level: "xhigh" });
+  });
   it("responses reasoning.effort none", () => {
     expect(extractThinking({ reasoning: { effort: "none" } })).toEqual({ mode: "none" });
   });
@@ -163,6 +169,16 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "xhigh" }, "codex");
     expect(out.reasoning_effort).toBe("xhigh");
   });
+  it.each(["low", "medium", "high", "xhigh", "max", "ultra"])(
+    "openai-compatible preserves explicit %s effort",
+    (level) => {
+      const out = apply("openai", "gpt-5.6-luna", {
+        options: { reasoningEffort: level },
+        reasoning_effort: "medium",
+      }, "openai-compatible-chat-test");
+      expect(out.reasoning_effort).toBe(level);
+    },
+  );
   it.each([
     ["gpt-5.6-sol", "max", "max"],
     ["gpt-5.6-sol", "ultra", "ultra"],
