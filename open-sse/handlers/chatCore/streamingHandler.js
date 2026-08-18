@@ -44,14 +44,6 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
 export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, pxpipe, reqTag, log }) {
-  if (onRequestSuccess) {
-    Promise.resolve()
-      .then(onRequestSuccess)
-      .catch(err => {
-        console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
-      });
-  }
-
   // When upstream returns HTML/text instead of SSE (e.g. Cloudflare 5xx error
   // page), piping it through the SSE transform stream causes Next.js
   // "failed to pipe response" and crashes the chat router. Read the body,
@@ -59,8 +51,14 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   // return a clean JSON error instead. The message is stripped of HTML tags
   // and clamped so untrusted upstream text never reaches the client verbatim
   // (the UI may render error.message as HTML).
-  const upstreamContentType = (providerResponse.headers.get('content-type') || '').toLowerCase();
-  if (upstreamContentType && !upstreamContentType.includes('text/event-stream') && !upstreamContentType.includes('application/json')) {
+  const upstreamContentType = (providerResponse.headers?.get?.('content-type') || '').toLowerCase();
+  if (
+    upstreamContentType &&
+    !upstreamContentType.includes('text/event-stream') &&
+    !upstreamContentType.includes('application/json') &&
+    !upstreamContentType.includes('application/x-ndjson') &&
+    !upstreamContentType.includes('application/stream+json')
+  ) {
     const bodyText = await providerResponse.text().catch(() => '');
     const titleMatch = bodyText.match(/<title>([^<]+)<\/title>/i);
     const sanitizedTitle = (titleMatch?.[1] || '').replace(/<[^>]*>/g, '').replace(/[\r\n]+/g, ' ').trim().slice(0, 160);
@@ -72,11 +70,121 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     streamController?.handleError?.(new Error(`upstream non-SSE: ${status}`));
     return {
       success: false,
+      status,
+      error: shortMsg,
       response: new Response(JSON.stringify({ error: { message: `[${status}]: ${shortMsg}` } }), {
         status,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       }),
     };
+  }
+
+  // First-valid-event gate: buffer the first chunk from upstream before confirming success.
+  // This prevents empty streams (0 bytes) or immediate error objects disguised as 200 OK
+  // from falsely clearing account errors or committing an unusable stream to the client.
+  let reader = null;
+  let firstChunk = null;
+  if (providerResponse.body) {
+    try {
+      reader = providerResponse.body.getReader();
+      const { done, value } = await reader.read();
+      if (done || !value || value.length === 0) {
+        try { reader.releaseLock?.(); } catch {}
+        const status = 502;
+        const shortMsg = "Upstream stream ended before a valid event (empty stream)";
+        if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · ${shortMsg}`);
+        streamController?.handleError?.(new Error(shortMsg));
+        return {
+          success: false,
+          status,
+          error: shortMsg,
+          response: new Response(JSON.stringify({ error: { message: `[${status}]: ${shortMsg}` } }), {
+            status,
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+          }),
+        };
+      }
+      firstChunk = value;
+    } catch (readErr) {
+      const status = 502;
+      const shortMsg = `Upstream stream read error: ${readErr?.message || readErr}`;
+      if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · ${shortMsg}`);
+      streamController?.handleError?.(readErr);
+      return {
+        success: false,
+        status,
+        error: shortMsg,
+        response: new Response(JSON.stringify({ error: { message: `[${status}]: ${shortMsg}` } }), {
+          status,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        }),
+      };
+    }
+  }
+
+  // Check if first chunk contains a structured JSON error object
+  if (firstChunk) {
+    const chunkStr = new TextDecoder().decode(firstChunk);
+    const trimmed = chunkStr.trim();
+    if (trimmed.startsWith("{") && (trimmed.includes('"error"') || trimmed.includes('"error_code"'))) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed.error || parsed.error_code) {
+          const errMsg = parsed.error?.message || parsed.error || parsed.message || JSON.stringify(parsed);
+          const status = parsed.error?.status || 502;
+          if (log?.errorLine) log.errorLine(reqTag, "✗", `ERROR ${status} · ${provider}/${model} · ${errMsg}`);
+          streamController?.handleError?.(new Error(errMsg));
+          return {
+            success: false,
+            status,
+            error: errMsg,
+            response: new Response(JSON.stringify({ error: { message: `[${status}]: ${errMsg}` } }), {
+              status,
+              headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+            }),
+          };
+        }
+      } catch {
+        // Not a pure JSON error object, treat as valid streaming content
+      }
+    }
+  }
+
+  // First valid event/chunk confirmed — notify request success callback
+  if (onRequestSuccess) {
+    Promise.resolve()
+      .then(onRequestSuccess)
+      .catch(err => {
+        console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
+      });
+  }
+
+  // Reconstruct ReadableStream with the buffered firstChunk prepended
+  let responseBodyStream = providerResponse.body;
+  if (reader && firstChunk) {
+    let yieldedFirst = false;
+    responseBodyStream = new ReadableStream({
+      async pull(controller) {
+        if (!yieldedFirst) {
+          yieldedFirst = true;
+          controller.enqueue(firstChunk);
+          return;
+        }
+        try {
+          const { done, value } = await reader.read();
+          if (done) {
+            controller.close();
+            return;
+          }
+          controller.enqueue(value);
+        } catch (err) {
+          controller.error(err);
+        }
+      },
+      cancel(reason) {
+        reader.cancel(reason);
+      }
+    });
   }
 
   const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey });
@@ -85,7 +193,12 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
   const onAbortTerminal = isResponsesPassthrough ? buildAbortedResponsesTerminalBytes : null;
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
-  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
+  const wrappedResponse = {
+    ...providerResponse,
+    body: responseBodyStream,
+    headers: providerResponse.headers,
+  };
+  const transformedBody = pipeWithDisconnect(wrappedResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
 
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,
