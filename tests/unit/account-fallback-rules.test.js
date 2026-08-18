@@ -19,8 +19,23 @@ describe("accountFallback: checkFallbackError rules", () => {
       expect(res).toEqual({ shouldFallback: false, cooldownMs: 0 });
     });
 
-    it("does not fallback or lock account when message contains 'exceeds the limit'", () => {
-      const res = checkFallbackError(400, "Request input tokens exceeds the limit of 64000.");
+    it("does not fallback or lock account on status 400 (Bad Request)", () => {
+      const res = checkFallbackError(400, "Bad Request");
+      expect(res).toEqual({ shouldFallback: false, cooldownMs: 0 });
+    });
+
+    it("does not fallback or lock account when message contains 'invalid_request_error'", () => {
+      const res = checkFallbackError(400, JSON.stringify({ error: { type: "invalid_request_error", message: "tools[0].function.parameters is invalid" } }));
+      expect(res).toEqual({ shouldFallback: false, cooldownMs: 0 });
+    });
+
+    it("does not fallback or lock account when message contains 'improperly formed request'", () => {
+      const res = checkFallbackError(400, "Improperly formed request");
+      expect(res).toEqual({ shouldFallback: false, cooldownMs: 0 });
+    });
+
+    it("does not fallback or lock account when message contains 'unsupported parameter'", () => {
+      const res = checkFallbackError(400, "Unsupported parameter: reasoning_effort");
       expect(res).toEqual({ shouldFallback: false, cooldownMs: 0 });
     });
   });
