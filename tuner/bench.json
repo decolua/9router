@@ -107,19 +107,22 @@
     "Odin": "fable",
     "Fenrir": "opus",
     "Valkyrie": "sonnet",
-    "Sleipnir": "haiku"
+    "Sleipnir": "haiku",
+    "Yggdrasil": "fable"
   },
   "_comboDepth": {
-    "_comment": "How many bands BELOW the target band a combo may fall back to. 0 = strict, only the target band. Odin is 1 because only 2 fable-band models exist and both sit on one account (cx); strict would kill Odin whenever codex quota dies. Sleipnir is 1 because it is the system's last-resort tier where availability beats purity. Fenrir and Valkyrie are strict: they have 8 and 12 target-band members respectively and do not need the crutch.",
+    "_comment": "How many bands BELOW the target band a combo may fall back to. 0 = strict, only the target band. Odin is 1 because only 2 fable-band models exist and both sit on one account (cx); strict would kill Odin whenever codex quota dies. Sleipnir is 1 because it is the system's last-resort tier where availability beats purity. Fenrir and Valkyrie are strict: they have 8 and 12 target-band members respectively and do not need the crutch. Yggdrasil is 4: it starts at fable and falls through every band (fable->opus->sonnet->haiku->below), so it is the union of all four combos and cannot run dry. It exists so DSH has one model id that never stops; the four banded combos keep their guarantees.",
     "Odin": 1,
     "Fenrir": 0,
     "Valkyrie": 0,
-    "Sleipnir": 1
+    "Sleipnir": 1,
+    "Yggdrasil": 4
   },
   "_comboRequires": {
     "_comment": "Capability flags a model must have (from /v1/models capabilities) to be eligible for this combo. A model whose capabilities are unknown - not present in /v1/models - is treated as NOT having the capability, so it is excluded. Currently EMPTY for all combos: the user cleared the vision requirement on 2026-08-01 to regain depth, accepting that an image request may land on a non-vision model. Re-enable by setting a combo's list back to [\"vision\"].",
     "Odin": [],
-    "Fenrir": []
+    "Fenrir": [],
+    "Yggdrasil": []
   },
   "_anthropicAnchors": {
     "claude-fable-5": {
