@@ -62,6 +62,11 @@ PUBLIC.en.md
 PR/*
 package-lock.json
 
+# bun (bun install / bun run dev generate these)
+bun.lock
+bun.lockb
+bun.lock.text
+
 
 #Ignore vscode AI rules
 .github/instructions/codacy.instructions.md
