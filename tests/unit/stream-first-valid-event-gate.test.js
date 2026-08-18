@@ -143,4 +143,111 @@ describe("Streaming first-valid-event gate (Issue 2951 Finding 3)", () => {
     const text = new TextDecoder().decode(value);
     expect(text).toContain("data:");
   });
+
+  it("Case 5: Null body returns success=false and 502", async () => {
+    const onRequestSuccess = vi.fn();
+    const mockProviderResponse = {
+      status: 200,
+      headers: new Map([["content-type", "text/event-stream"]]),
+      body: null,
+    };
+    mockProviderResponse.headers.get = (k) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null);
+
+    const res = await handleStreamingResponse({
+      ...baseParams,
+      providerResponse: mockProviderResponse,
+      onRequestSuccess,
+    });
+
+    expect(res.success).toBe(false);
+    expect(res.status).toBe(502);
+    expect(res.error).toMatch(/no response body/i);
+    expect(onRequestSuccess).not.toHaveBeenCalled();
+  });
+
+  it("Case 6: Raw string error in JSON returns success=false and 502", async () => {
+    const onRequestSuccess = vi.fn();
+    const rawErrorJson = JSON.stringify({ error: "Invalid API key format" });
+    const mockProviderResponse = {
+      status: 200,
+      headers: new Map([["content-type", "text/event-stream"]]),
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(rawErrorJson));
+          controller.close();
+        },
+      }),
+    };
+    mockProviderResponse.headers.get = (k) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null);
+
+    const res = await handleStreamingResponse({
+      ...baseParams,
+      providerResponse: mockProviderResponse,
+      onRequestSuccess,
+    });
+
+    expect(res.success).toBe(false);
+    expect(res.status).toBe(502);
+    expect(res.error).toBe("Invalid API key format");
+    expect(onRequestSuccess).not.toHaveBeenCalled();
+  });
+
+  it("Case 7: FastAPI detail error payload returns success=false and 502", async () => {
+    const onRequestSuccess = vi.fn();
+    const detailJson = JSON.stringify({ detail: "Gateway timeout upstream" });
+    const mockProviderResponse = {
+      status: 200,
+      headers: new Map([["content-type", "text/event-stream"]]),
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(detailJson));
+          controller.close();
+        },
+      }),
+    };
+    mockProviderResponse.headers.get = (k) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null);
+
+    const res = await handleStreamingResponse({
+      ...baseParams,
+      providerResponse: mockProviderResponse,
+      onRequestSuccess,
+    });
+
+    expect(res.success).toBe(false);
+    expect(res.status).toBe(502);
+    expect(res.error).toBe("Gateway timeout upstream");
+    expect(onRequestSuccess).not.toHaveBeenCalled();
+  });
+
+  it("Case 8: Assistant output containing the word 'error' in normal payload is NOT treated as an error", async () => {
+    const onRequestSuccess = vi.fn();
+    const normalPayload = JSON.stringify({
+      id: "chatcmpl-1",
+      choices: [{ delta: { content: "Here is how to fix the error in your code" } }]
+    });
+    const sseChunk = `data: ${normalPayload}\n\n`;
+
+    const mockProviderResponse = {
+      status: 200,
+      headers: new Map([["content-type", "text/event-stream"]]),
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(sseChunk));
+          controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+          controller.close();
+        },
+      }),
+    };
+    mockProviderResponse.headers.get = (k) => (k.toLowerCase() === "content-type" ? "text/event-stream" : null);
+
+    const res = await handleStreamingResponse({
+      ...baseParams,
+      providerResponse: mockProviderResponse,
+      onRequestSuccess,
+    });
+
+    expect(res.success).toBe(true);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(onRequestSuccess).toHaveBeenCalledTimes(1);
+  });
 });
