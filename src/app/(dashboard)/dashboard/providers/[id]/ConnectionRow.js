@@ -6,7 +6,15 @@ import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
+const HOT_RELOAD_BADGE_VARIANTS = {
+  queued: "default",
+  testing: "primary",
+  success: "success",
+  failed: "error",
+  partial: "warning",
+};
+
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null, hotReload = null, hotReloadStatus = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null);
@@ -135,6 +143,16 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     return null;
   };
 
+  const getHotReloadLabel = () => {
+    if (!hotReloadStatus) return null;
+    if (hotReloadStatus.state === "queued") return "queued";
+    if (hotReloadStatus.state === "testing") return "reloading";
+    if (hotReloadStatus.state === "success") return "reloaded";
+    if (hotReloadStatus.state === "partial") return hotReloadStatus.error ? `partial: ${hotReloadStatus.error}` : "partial";
+    if (hotReloadStatus.state === "failed") return hotReloadStatus.error ? `failed: ${hotReloadStatus.error}` : "failed";
+    return null;
+  };
+
   return (
     <div className={`group flex min-w-0 flex-col gap-3 rounded-lg p-2 transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02] sm:flex-row sm:items-center sm:justify-between ${connection.isActive === false ? "opacity-60" : ""}`}>
       <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center sm:gap-3">
@@ -188,6 +206,15 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             {getOneByOneLabel() && (
               <Badge variant={getOneByOneVariant()} size="sm">
                 {getOneByOneLabel()}
+              </Badge>
+            )}
+            {getHotReloadLabel() && (
+              <Badge
+                variant={HOT_RELOAD_BADGE_VARIANTS[hotReloadStatus.state] || "default"}
+                size="sm"
+                title={hotReloadStatus.error || undefined}
+              >
+                {getHotReloadLabel()}
               </Badge>
             )}
           </div>
@@ -257,6 +284,19 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
               </button>
             </Tooltip>
           )}
+          {hotReload && (
+            <Tooltip text="Hot reload: poke both quota models so the pending 7-day countdown starts now">
+              <button
+                onClick={hotReload.onRun}
+                disabled={hotReload.running}
+                title={hotReloadStatus?.state === "failed" ? hotReloadStatus.error : undefined}
+                className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
+              >
+                <span className={`material-symbols-outlined text-[18px] ${hotReloadStatus?.state === "testing" ? "animate-spin" : ""}`}>{hotReloadStatus?.state === "testing" ? "progress_activity" : "rocket_launch"}</span>
+                <span className="text-[10px] leading-tight">{hotReloadStatus?.state === "testing" ? "Reloading" : "Hot reload"}</span>
+              </button>
+            </Tooltip>
+          )}
           <button onClick={onEdit} className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5">
             <span className="material-symbols-outlined text-[18px]">edit</span>
             <span className="text-[10px] leading-tight">Edit</span>
@@ -314,5 +354,13 @@ ConnectionRow.propTypes = {
     on: PropTypes.bool,
     onToggle: PropTypes.func,
     provider: PropTypes.string,
+  }),
+  hotReload: PropTypes.shape({
+    running: PropTypes.bool,
+    onRun: PropTypes.func,
+  }),
+  hotReloadStatus: PropTypes.shape({
+    state: PropTypes.string,
+    error: PropTypes.string,
   }),
 };
