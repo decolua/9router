@@ -102,7 +102,10 @@ function cleanUsagePayload(payload) {
 
 // Format output as SSE
 export function formatSSE(data, sourceFormat) {
-  if (data === null || data === undefined) return "data: null\n\n";
+  // Skip null/undefined events entirely. Emitting "data: null" breaks
+  // AI SDK clients (Vercel @ai-sdk/openai expects every SSE data payload to
+  // be a JSON object and fails zod validation on bare null).
+  if (data === null || data === undefined) return "";
   if (data && data.done) return "data: [DONE]\n\n";
 
   // OpenAI Responses API format

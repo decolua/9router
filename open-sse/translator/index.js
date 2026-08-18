@@ -161,9 +161,13 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
 // Translate response chunk: target -> openai -> source
 export function translateResponse(targetFormat, sourceFormat, chunk, state) {
   ensureInitialized();
-  // If same format, return as-is
+  // If same format, pass through — but never wrap a null flush chunk into
+  // an array. Callers signal "no more chunks, emit any state-derived final
+  // events" by passing chunk=null; for same-format streams there is nothing
+  // to emit, and leaking `null` downstream produces `data: null` SSE frames
+  // that crash strict clients (Vercel AI SDK zod, Factory Droid #1052).
   if (sourceFormat === targetFormat) {
-    return [chunk];
+    return chunk == null ? [] : [chunk];
   }
 
   let results = [chunk];
