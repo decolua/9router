@@ -170,15 +170,20 @@ describe("applyThinking per provider format", () => {
     expect(out.reasoning_effort).toBe("xhigh");
   });
   it.each(["low", "medium", "high", "xhigh", "max", "ultra"])(
-    "openai-compatible preserves explicit %s effort",
+    "openai-compatible preserves wrapper %s effort without duplicate field",
     (level) => {
       const out = apply("openai", "gpt-5.6-luna", {
         options: { reasoningEffort: level },
         reasoning_effort: "medium",
       }, "openai-compatible-chat-test");
-      expect(out.reasoning_effort).toBe(level);
+      expect(out.options.reasoningEffort).toBe(level);
+      expect(out.reasoning_effort).toBeUndefined();
     },
   );
+  it("openai-compatible keeps a top-level effort when no wrapper option exists", () => {
+    const out = apply("openai", "gpt-5.6-terra", { reasoning_effort: "ultra" }, "openai-compatible-chat-test");
+    expect(out.reasoning_effort).toBe("ultra");
+  });
   it.each([
     ["gpt-5.6-sol", "max", "max"],
     ["gpt-5.6-sol", "ultra", "ultra"],

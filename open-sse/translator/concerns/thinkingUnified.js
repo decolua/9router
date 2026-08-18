@@ -350,6 +350,8 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   if (!body || typeof body !== "object") return body;
 
   const { cleanModel, override } = parseSuffix(model);
+  const hasProviderOptionEffort = provider?.startsWith("openai-compatible-")
+    && typeof (body.options?.reasoningEffort ?? body.options?.reasoning_effort) === "string";
   const cfg = override || intent || extractThinking(body);
   const caps = getCapabilitiesForModel(provider, cleanModel);
 
@@ -366,5 +368,10 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
     : getThinkingLevels(provider, cleanModel);
   stripAll(body);
   applyFormat(fmt, body, cfg, caps, supportedLevels);
+
+  // OpenCode-compatible gateways consume the selected effort from their
+  // provider-options envelope. Sending a second top-level field is rejected
+  // by gateways such as codex-everywhere, especially for max/ultra.
+  if (hasProviderOptionEffort && fmt === "openai") delete body.reasoning_effort;
   return body;
 }
