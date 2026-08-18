@@ -369,9 +369,18 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   stripAll(body);
   applyFormat(fmt, body, cfg, caps, supportedLevels);
 
-  // OpenCode-compatible gateways consume the selected effort from their
-  // provider-options envelope. Sending a second top-level field is rejected
-  // by gateways such as codex-everywhere, especially for max/ultra.
-  if (hasProviderOptionEffort && fmt === "openai") delete body.reasoning_effort;
+  // Promote AI SDK wrapper options to the OpenAI-compatible wire shape. The
+  // chat API accepts standard levels (including max) as reasoning_effort,
+  // while newer levels such as ultra use the nested reasoning object.
+  if (hasProviderOptionEffort && fmt === "openai") {
+    const level = toLevel(cfg);
+    if (level === "ultra") {
+      delete body.reasoning_effort;
+      body.reasoning = { effort: level };
+    }
+    delete body.options.reasoningEffort;
+    delete body.options.reasoning_effort;
+    if (Object.keys(body.options).length === 0) delete body.options;
+  }
   return body;
 }
