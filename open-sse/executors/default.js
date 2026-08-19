@@ -79,7 +79,12 @@ export class DefaultExecutor extends BaseExecutor {
       // Ask OpenAI-compatible upstreams to include usage in the final stream
       // chunk so /v1 streaming requests record real token counts instead of
       // IN 0 · OUT 0 (issue #3017). Same approach as the iflow executor.
-      if (stream && transformed.messages && !transformed.stream_options) {
+      // Only inject when the body itself streams: the executor-level stream
+      // flag can be true while the body omits stream (Responses->chat path,
+      // Accept: text/event-stream clients), and strict upstreams (deepseek)
+      // 400 with "stream_options should be set along with stream = true".
+      const bodyStream = transformed.stream === true;
+      if (stream && bodyStream && transformed.messages && !transformed.stream_options) {
         transformed.stream_options = { include_usage: true };
       }
     }

@@ -35,4 +35,16 @@ describe("DefaultExecutor stream_options injection (#3017)", () => {
     const out = executor.transformRequest("deepseek-v4-flash-free", body, true);
     expect(out.stream_options).toEqual({ include_usage: false });
   });
+
+  it("does not inject when the body omits stream (Responses->chat path)", () => {
+    // Responses-API clients convert to chat without a stream field while the
+    // executor-level stream flag is true (Accept: text/event-stream). Strict
+    // upstreams (deepseek) 400 on stream_options without stream: true.
+    const body = {
+      model: "deepseek-v4-flash-free",
+      messages: [{ role: "user", content: "hi" }],
+    };
+    const out = executor.transformRequest("deepseek-v4-flash-free", body, true);
+    expect(out.stream_options).toBeUndefined();
+  });
 });
