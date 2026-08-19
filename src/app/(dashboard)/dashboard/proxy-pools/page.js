@@ -34,14 +34,12 @@ export default function ProxyPoolsPage() {
   const [showBatchImportModal, setShowBatchImportModal] = useState(false);
   const [showVercelModal, setShowVercelModal] = useState(false);
   const [showCloudflareModal, setShowCloudflareModal] = useState(false);
-  const [showDenoModal, setShowDenoModal] = useState(false);
   const [showRelayMenu, setShowRelayMenu] = useState(false);
   const [editingProxyPool, setEditingProxyPool] = useState(null);
   const [formData, setFormData] = useState(normalizeFormData());
   const [batchImportText, setBatchImportText] = useState("");
   const [vercelForm, setVercelForm] = useState({ vercelToken: "", projectName: "vercel-relay" });
   const [cloudflareForm, setCloudflareForm] = useState({ accountId: "", apiToken: "", projectName: "cloudflare-relay" });
-  const [denoForm, setDenoForm] = useState({ denoToken: "", orgDomain: "", projectName: "" });
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [deploying, setDeploying] = useState(false);
@@ -51,6 +49,8 @@ export default function ProxyPoolsPage() {
   const [healthProgress, setHealthProgress] = useState({ current: 0, total: 0 });
   const [bulkBusy, setBulkBusy] = useState(false);
   const [confirmState, setConfirmState] = useState(null);
+  const [showDeleteDeadModal, setShowDeleteDeadModal] = useState(false);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState(new Set());
   const relayMenuRef = useRef(null);
   const notify = useNotificationStore();
 
@@ -180,7 +180,11 @@ export default function ProxyPoolsPage() {
       }
 
       await fetchProxyPools();
-      notify.success(data.ok ? "Proxy test passed" : "Proxy test failed");
+        if (data.ok) {
+          notify.success("Proxy test passed");
+        } else {
+          notify.error("Proxy test failed");
+        }
     } catch (error) {
       console.log("Error testing proxy pool:", error);
       notify.error("Failed to test proxy");
@@ -362,16 +366,6 @@ export default function ProxyPoolsPage() {
     setShowCloudflareModal(false);
   };
 
-  const openDenoModal = () => {
-    setDenoForm({ denoToken: "", orgDomain: "", projectName: "" });
-    setShowDenoModal(true);
-  };
-
-  const closeDenoModal = () => {
-    if (deploying) return;
-    setShowDenoModal(false);
-  };
-
   const handleVercelDeploy = async () => {
     if (!vercelForm.vercelToken.trim()) return;
     setDeploying(true);
@@ -422,31 +416,6 @@ export default function ProxyPoolsPage() {
     }
   };
 
-  const handleDenoDeploy = async () => {
-    if (!denoForm.denoToken.trim()) return;
-    setDeploying(true);
-    try {
-      const res = await fetch("/api/proxy-pools/deno-deploy", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(denoForm),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        await fetchProxyPools();
-        closeDenoModal();
-        notify.success(`Deployed: ${data.deployUrl}`);
-      } else {
-        notify.error(data.error || "Deploy failed");
-      }
-    } catch (error) {
-      console.log("Error deploying Deno relay:", error);
-      notify.error("Deploy failed");
-    } finally {
-      setDeploying(false);
-    }
-  };
-
   const parseProxyLine = (line) => {
     const trimmed = line.trim();
     if (!trimmed) return null;
@@ -471,6 +440,18 @@ export default function ProxyPoolsPage() {
       const parsed = new URL(proxyUrl);
       return {
         proxyUrl: parsed.toString(),
+        name: `Imported ${host}:${port}`,
+      };
+    }
+
+    if (parts.length === 2) {
+      const [host, port] = parts;
+      if (!host || !port) {
+        throw new Error("Invalid host:port format");
+      }
+      const proxyUrl = `http://${host}:${port}`;
+      return {
+        proxyUrl,
         name: `Imported ${host}:${port}`,
       };
     }
@@ -563,6 +544,11 @@ export default function ProxyPoolsPage() {
     [proxyPools]
   );
 
+  const deadProxiesList = useMemo(
+    () => proxyPools.filter((pool) => pool.testStatus === "error"),
+    [proxyPools]
+  );
+
   if (loading) {
     return (
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-1 sm:gap-6 sm:px-0">
@@ -615,16 +601,6 @@ export default function ProxyPoolsPage() {
                   <span className="material-symbols-outlined text-[20px] text-blue-500">cloud_upload</span>
                   Vercel Relay
                 </button>
-                <button
-                  onClick={() => {
-                    openDenoModal();
-                    setShowRelayMenu(false);
-                  }}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-text-main transition-colors hover:bg-black/5 dark:hover:bg-white/5"
-                >
-                  <span className="material-symbols-outlined text-[20px] text-green-500">terminal</span>
-                  Deno Relay
-                </button>
               </div>
             )}
           </div>
@@ -651,6 +627,20 @@ export default function ProxyPoolsPage() {
           )}
           <Badge variant="default">Total: {proxyPools.length}</Badge>
           <Badge variant="success">Active: {activeCount}</Badge>
+          {deadProxiesList.length > 0 && (
+            <Button
+              size="sm"
+              variant="secondary"
+              icon="delete"
+              onClick={() => {
+                setPendingDeleteIds(new Set(deadProxiesList.map((p) => p.id)));
+                setShowDeleteDeadModal(true);
+              }}
+              disabled={bulkBusy || healthChecking}
+            >
+              Delete Dead Proxies ({deadProxiesList.length})
+            </Button>
+          )}
         </div>
 
         {(selectedIds.length > 0 || healthChecking) && (
@@ -789,11 +779,11 @@ export default function ProxyPoolsPage() {
             <textarea
               value={batchImportText}
               onChange={(e) => setBatchImportText(e.target.value)}
-              placeholder={"http://user:pass@127.0.0.1:7897\n127.0.0.1:7897:user:pass"}
+              placeholder={"http://user:pass@127.0.0.1:7897\n127.0.0.1:7897:user:pass\n127.0.0.1:7897"}
               className="w-full min-h-[180px] py-2 px-3 text-sm text-text-main bg-white dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-md focus:ring-1 focus:ring-primary/30 focus:border-primary/50 focus:outline-none transition-all"
             />
             <p className="text-xs text-text-muted mt-1">
-              Supported formats: protocol://user:pass@host:port, host:port:user:pass
+              Supported formats: protocol://user:pass@host:port, host:port:user:pass, host:port
             </p>
           </div>
 
@@ -875,7 +865,7 @@ export default function ProxyPoolsPage() {
             <div className="mt-2 pt-2 border-t border-orange-500/10 text-xs text-text-muted">
               <p className="font-medium text-text-main mb-1">How to generate your API Token:</p>
               <ol className="list-decimal pl-4 space-y-0.5">
-                <li>Go to <b>My Profile</b> → <b>API Tokens</b> → <b>Create Token</b></li>
+                <li>Go to <b>&quot;My Profile&quot;</b> → <b>API Tokens</b> → <b>Create Token</b></li>
                 <li>Scroll down to <b>Custom Token</b> and click <b>Get started</b></li>
                 <li>Under <b>Permissions</b>: Account | Workers Scripts | Edit</li>
                 <li>Under <b>Account Resources</b>: Include | Account | <i>Your Account Name</i></li>
@@ -895,7 +885,7 @@ export default function ProxyPoolsPage() {
             value={cloudflareForm.apiToken}
             onChange={(e) => setCloudflareForm((prev) => ({ ...prev, apiToken: e.target.value }))}
             placeholder="your-cloudflare-api-token"
-            hint={<>Requires "Workers Scripts: Edit" permission. <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Get token →</a></>}
+            hint={<>Requires &quot;Workers Scripts: Edit&quot; permission. <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">Get token →</a></>}
             type="password"
           />
           <Input
@@ -914,70 +904,6 @@ export default function ProxyPoolsPage() {
               {deploying ? "Deploying..." : "Deploy Worker"}
             </Button>
             <Button fullWidth variant="ghost" onClick={closeCloudflareModal} disabled={deploying}>
-              Cancel
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
-        isOpen={showDenoModal}
-        title="Deploy Deno Relay"
-        onClose={closeDenoModal}
-      >
-        <div className="flex flex-col gap-4">
-          <div className="rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 p-3 flex flex-col gap-1.5">
-            <p className="text-sm text-text-main font-medium">What is Deno Relay?</p>
-            <p className="text-xs text-text-muted">
-              Deploys a relay worker to Deno Deploy&apos;s global edge network. All AI provider requests are forwarded through Deno&apos;s edge, masking your real IP.
-            </p>
-            <ul className="text-xs text-text-muted list-disc pl-4 space-y-0.5">
-              <li>Deno Deploy v2 runs on a high-performance global edge network</li>
-              <li>Free tier: 1M requests & 100GiB outbound traffic per month</li>
-              <li>No per-request CPU time limits (unlike Vercel/Cloudflare)</li>
-              <li>Support up to 20 active apps & 50 custom domains</li>
-              <li>Deploy multiple relays for maximum IP diversity</li>
-            </ul>
-            <div className="mt-2 pt-2 border-t border-black/10 dark:border-white/10 text-xs text-text-muted">
-              <p className="font-medium text-text-main mb-1">How to generate API token:</p>
-              <ol className="list-decimal pl-4 space-y-0.5">
-                <li>Go to <b>console.deno.com</b></li>
-                <li>Select your <b>Organization</b> → <b>Settings</b> → <b>Organization Tokens</b></li>
-                <li>Create a <b>Organization Token</b> (prefix <b>ddo_</b>)</li>
-              </ol>
-            </div>
-          </div>
-          <Input
-            label="Deno Deploy API Token"
-            value={denoForm.denoToken}
-            onChange={(e) => setDenoForm((prev) => ({ ...prev, denoToken: e.target.value }))}
-            placeholder="ddo_xxxxxxxxxxxxxxxx"
-            hint={<>Token is used once for deployment, not stored. Found in Organization Settings.</>}
-            type="password"
-          />
-          <Input
-            label="Organization Domain"
-            value={denoForm.orgDomain}
-            onChange={(e) => setDenoForm((prev) => ({ ...prev, orgDomain: e.target.value }))}
-            placeholder="your-org.deno.net"
-            hint="Organization's default domain. Your relay URL will be in the format: https://my-relay.your-org.deno.net"
-          />
-          <Input
-            label="App Name"
-            value={denoForm.projectName}
-            onChange={(e) => setDenoForm((prev) => ({ ...prev, projectName: e.target.value }))}
-            placeholder="deno-relay"
-            hint="Unique app name. Leave empty for auto-generated name."
-          />
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <Button
-              fullWidth
-              onClick={handleDenoDeploy}
-              disabled={!denoForm.denoToken.trim() || !denoForm.orgDomain.trim() || deploying}
-            >
-              {deploying ? "Deploying..." : "Deploy Relay"}
-            </Button>
-            <Button fullWidth variant="ghost" onClick={closeDenoModal} disabled={deploying}>
               Cancel
             </Button>
           </div>
@@ -1045,6 +971,134 @@ export default function ProxyPoolsPage() {
             <Button fullWidth variant="ghost" onClick={closeFormModal} disabled={saving}>
               Cancel
             </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showDeleteDeadModal}
+        title="Delete Dead Proxies"
+        onClose={() => setShowDeleteDeadModal(false)}
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-text-muted">
+            The following proxies failed their last test. Remove any you want
+            to keep, then confirm deletion.
+          </p>
+          <div className="flex max-h-64 flex-col divide-y divide-black/[0.04] overflow-y-auto rounded-lg border border-border/50 dark:divide-white/[0.05]">
+            {deadProxiesList.length === 0 ? (
+              <p className="p-4 text-sm text-text-muted text-center">
+                No dead proxies found.
+              </p>
+            ) : (
+              deadProxiesList.map((proxy) => {
+                const removed = !pendingDeleteIds.has(proxy.id);
+                return (
+                  <div
+                    key={proxy.id}
+                    className={`flex items-center justify-between gap-3 px-4 py-3 ${
+                      removed ? "opacity-40" : ""
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-sm font-medium truncate ${removed ? "line-through" : ""}`}>
+                        {proxy.name}
+                      </p>
+                      <p className="text-xs text-text-muted truncate font-mono">
+                        {proxy.proxyUrl}
+                      </p>
+                      {proxy.lastError && !removed && (
+                        <p className="text-xs text-red-500 truncate mt-0.5">
+                          {proxy.lastError}
+                        </p>
+                      )}
+                    </div>
+                    {!removed && (
+                      <button
+                        onClick={() =>
+                          setPendingDeleteIds((prev) => {
+                            const next = new Set(prev);
+                            next.delete(proxy.id);
+                            return next;
+                          })
+                        }
+                        className="shrink-0 rounded p-1 text-text-muted hover:bg-red-500/10 hover:text-red-500 transition-colors"
+                        title="Remove from deletion list"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">close</span>
+                      </button>
+                    )}
+                    {removed && (
+                      <button
+                        onClick={() =>
+                          setPendingDeleteIds((prev) => {
+                            const next = new Set(prev);
+                            next.add(proxy.id);
+                            return next;
+                          })
+                        }
+                        className="shrink-0 rounded p-1 text-text-muted hover:bg-primary/10 hover:text-primary transition-colors"
+                        title="Add back to deletion list"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">undo</span>
+                      </button>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-text-muted">
+              {deadProxiesList.length - pendingDeleteIds.size} removed ·{" "}
+              {pendingDeleteIds.size} to delete
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => setShowDeleteDeadModal(false)}
+                disabled={bulkBusy}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                icon="delete"
+                onClick={async () => {
+                  setBulkBusy(true);
+                  try {
+                    let ok = 0;
+                    let blocked = 0;
+                    let failed = 0;
+                    for (const id of pendingDeleteIds) {
+                      try {
+                        const res = await fetch(`/api/proxy-pools/${id}`, {
+                          method: "DELETE",
+                        });
+                        if (res.ok) ok += 1;
+                        else if (res.status === 409) blocked += 1;
+                        else failed += 1;
+                      } catch {
+                        failed += 1;
+                      }
+                    }
+                    await fetchProxyPools();
+                    clearSelection();
+                    setShowDeleteDeadModal(false);
+                    notify.success(
+                      `Deleted ${ok}${blocked ? `, ${blocked} bound` : ""}${failed ? `, ${failed} failed` : ""}`
+                    );
+                  } finally {
+                    setBulkBusy(false);
+                  }
+                }}
+                disabled={pendingDeleteIds.size === 0 || bulkBusy}
+              >
+                {bulkBusy
+                  ? "Deleting..."
+                  : `Delete ${pendingDeleteIds.size} Dead Prox${pendingDeleteIds.size === 1 ? "y" : "ies"}`}
+              </Button>
+            </div>
           </div>
         </div>
       </Modal>

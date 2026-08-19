@@ -1,99 +1,126 @@
-import { spawn, execSync } from "child_process";
+import https from "https";
+import { execFileSync, spawn, spawnSync } from "child_process";
 import path from "path";
 import fs from "fs";
 import os from "os";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 
-const KILL_TIMEOUT_MS = 5000;
-const PROCESS_WAIT_MS = 1500;
-
-// Kill MITM server by PID file (MITM may run as admin/sudo)
-function killMitmByPidFile() {
+function isPidAlive(pid) {
   try {
-    const mitmPidFile = path.join(
-      process.platform === "win32"
-        ? path.join(process.env.APPDATA || "", "9router")
-        : path.join(os.homedir(), ".9router"),
-      "mitm",
-      ".mitm.pid"
-    );
-    if (!fs.existsSync(mitmPidFile)) return;
-    const pid = parseInt(fs.readFileSync(mitmPidFile, "utf8").trim(), 10);
-    if (!pid) return;
-
-    if (process.platform === "win32") {
-      // taskkill first (works if same user); fallback to PowerShell Stop-Process which can kill admin process if our token allows
-      try { execSync(`taskkill /F /T /PID ${pid}`, { stdio: "ignore", windowsHide: true, timeout: 3000 }); } catch {
-        try { execSync(`powershell -NonInteractive -WindowStyle Hidden -Command "Stop-Process -Id ${pid} -Force"`, { stdio: "ignore", windowsHide: true, timeout: 3000 }); } catch { /* best effort */ }
-      }
-    } else {
-      try {
-        execSync(`sudo -n kill -9 ${pid} 2>/dev/null`, { stdio: "ignore", timeout: 3000 });
-      } catch {
-        try { process.kill(pid, "SIGKILL"); } catch { /* best effort */ }
-      }
-    }
-    try { fs.unlinkSync(mitmPidFile); } catch { /* best effort */ }
-  } catch { /* best effort */ }
-}
-
-// Collect PIDs of all 9router-related processes (excluding current)
-function collectAppPids() {
-  const pids = [];
-  const platform = process.platform;
-
-  if (platform === "win32") {
-    try {
-      const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command "Get-WmiObject Win32_Process -Filter 'Name=\\"node.exe\\"' | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation"`;
-      const output = execSync(psCmd, { encoding: "utf8", windowsHide: true, timeout: KILL_TIMEOUT_MS });
-      const lines = output.split("\n").slice(1).filter(l => l.trim());
-      lines.forEach(line => {
-        const lower = line.toLowerCase();
-        // Match anything running from 9router install dir or wrapper cli.js
-        const isAppProcess = lower.includes("9router") ||
-          lower.includes("next-server") ||
-          lower.includes("\\bin\\app\\") ||
-          lower.includes("/bin/app/") ||
-          lower.includes("cli.js");
-        if (isAppProcess) {
-          const match = line.match(/^"(\d+)"/);
-          if (match && match[1] && match[1] !== process.pid.toString()) pids.push(match[1]);
-        }
-      });
-    } catch { /* no processes */ }
-
-    // Kill cloudflared + tray binaries (hold app dir lock)
-    for (const procName of ["cloudflared", "tray_windows_release"]) {
-      try {
-        const cmd = `powershell -NonInteractive -WindowStyle Hidden -Command "Get-Process ${procName} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"`;
-        const out = execSync(cmd, { encoding: "utf8", windowsHide: true, timeout: KILL_TIMEOUT_MS });
-        out.split("\n").forEach(l => {
-          const pid = l.trim();
-          if (pid && !isNaN(pid)) pids.push(pid);
-        });
-      } catch { /* not running */ }
-    }
-  } else {
-    try {
-      const output = execSync("ps aux 2>/dev/null", { encoding: "utf8", timeout: KILL_TIMEOUT_MS });
-      output.split("\n").forEach(line => {
-        const isAppProcess = line.includes("9router") ||
-          line.includes("next-server") ||
-          line.includes("cloudflared") ||
-          line.includes("/bin/app/") ||
-          line.includes("tray_darwin") ||
-          line.includes("tray_linux");
-        if (isAppProcess) {
-          const parts = line.trim().split(/\s+/);
-          const pid = parts[1];
-          if (pid && !isNaN(pid) && pid !== process.pid.toString()) pids.push(pid);
-        }
-      });
-    } catch { /* no processes */ }
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
   }
-
-  return pids;
 }
+
+function getProcessName(pid) {
+  try {
+    if (process.platform === "win32") {
+      const output = execFileSync("tasklist.exe", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+        encoding: "utf8",
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 2000,
+      });
+      return output.match(/"([^"]+)"/)?.[1]?.replace(/\.exe$/i, "").toLowerCase() || null;
+    }
+    return execFileSync("ps", ["-p", String(pid), "-o", "comm="], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 2000,
+    }).trim().split(/\s+/).at(-1)?.toLowerCase() || null;
+  } catch {
+    return null;
+  }
+}
+
+function terminatePid(pid) {
+  try {
+    if (process.platform === "win32") {
+      const result = spawnSync("taskkill.exe", ["/T", "/F", "/PID", String(pid)], {
+        windowsHide: true,
+        stdio: "ignore",
+        timeout: 3000,
+      });
+      return result.status === 0;
+    }
+    process.kill(pid, "SIGTERM");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function removePidFile(pidFile) {
+  try { fs.unlinkSync(pidFile); } catch { /* best effort */ }
+}
+
+function readPidFile(pidFile) {
+  try {
+    if (!fs.existsSync(pidFile)) return null;
+    const pid = Number.parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10);
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+function stopExpectedPidFile(pidFile, expectedNames) {
+  const pid = readPidFile(pidFile);
+  if (!pid) return false;
+  if (!isPidAlive(pid)) {
+    removePidFile(pidFile);
+    return false;
+  }
+  const name = getProcessName(pid);
+  if (!name || !expectedNames.includes(name)) {
+    console.warn(`[Updater] Refusing to stop PID ${pid}: expected ${expectedNames.join("/")}, found ${name || "unknown"}`);
+    return false;
+  }
+  const stopped = terminatePid(pid);
+  if (stopped) removePidFile(pidFile);
+  return stopped;
+}
+
+async function isHealthyMitmPid(pid) {
+  return new Promise((resolve) => {
+    let body = "";
+    const request = https.get({
+      hostname: "127.0.0.1",
+      port: 443,
+      path: "/_mitm_health",
+      rejectUnauthorized: false,
+      timeout: 1000,
+      agent: false,
+    }, (response) => {
+      response.on("data", (chunk) => { body = `${body}${chunk}`.slice(0, 4096); });
+      response.on("end", () => {
+        try { resolve(response.statusCode === 200 && JSON.parse(body).pid === pid); }
+        catch { resolve(false); }
+      });
+    });
+    request.once("error", () => resolve(false));
+    request.once("timeout", () => { request.destroy(); resolve(false); });
+  });
+}
+
+async function stopMitmPidFile(pidFile) {
+  const pid = readPidFile(pidFile);
+  if (!pid) return false;
+  if (!isPidAlive(pid)) {
+    removePidFile(pidFile);
+    return false;
+  }
+  if (!(await isHealthyMitmPid(pid))) {
+    console.warn(`[Updater] Refusing to stop unverified MITM PID ${pid}`);
+    return false;
+  }
+  const stopped = terminatePid(pid);
+  if (stopped) removePidFile(pidFile);
+  return stopped;
+}
+
 
 // Copy updater.js into DATA_DIR so npm -g can overwrite node_modules safely
 function getDataDir() {
@@ -135,25 +162,17 @@ function ensureRuntimeUpdater(bundledPath) {
   }
 }
 
-// Kill all app-related processes to release file locks (esp. on Windows)
+// Stop only services explicitly owned by this 9router data directory. The old
+// updater scanned every Node/Next process and could kill unrelated projects.
 export async function killAppProcesses() {
-  killMitmByPidFile();
-  const pids = collectAppPids();
-  const platform = process.platform;
+  const dataDir = getDataDir();
+  const stopped = [
+    await stopMitmPidFile(path.join(dataDir, "mitm", ".mitm.pid")),
+    stopExpectedPidFile(path.join(dataDir, "tunnel", "cloudflared.pid"), ["cloudflared"]),
+    stopExpectedPidFile(path.join(dataDir, "tunnel", "tailscale.pid"), ["tailscale", "tailscaled"]),
+  ].some(Boolean);
 
-  pids.forEach(pid => {
-    try {
-      if (platform === "win32") {
-        execSync(`taskkill /F /PID ${pid} 2>nul`, { stdio: "ignore", shell: true, windowsHide: true, timeout: 3000 });
-      } else {
-        execSync(`kill -9 ${pid} 2>/dev/null`, { stdio: "ignore", timeout: 3000 });
-      }
-    } catch { /* already dead */ }
-  });
-
-  if (pids.length > 0) {
-    await new Promise(r => setTimeout(r, PROCESS_WAIT_MS));
-  }
+  if (stopped) await new Promise((resolve) => setTimeout(resolve, 250));
 }
 
 // Resolve npx/9router binary to relaunch after update (cross-platform)
@@ -164,7 +183,9 @@ function resolveRelaunchCommand() {
   return { cmd: npx, args: [UPDATER_CONFIG.npmPackageName] };
 }
 
-// Spawn detached headless updater (Node process) then exit current server
+// Spawn detached headless updater (Node process) then exit current server.
+// Resolve only after `spawn` succeeds so the API never reports a successful
+// update while shutting down the only running app instance on a bad launch.
 export function spawnUpdaterAndExit(packageName = UPDATER_CONFIG.npmPackageName) {
   const updaterPath = ensureRuntimeUpdater(resolveBundledUpdaterPath());
   const isTray = process.env.TRAY_MODE === "1";
@@ -174,27 +195,51 @@ export function spawnUpdaterAndExit(packageName = UPDATER_CONFIG.npmPackageName)
     ? [...relaunch.args, "--tray", "--skip-update"]
     : [...relaunch.args, "--skip-update"];
 
-  spawn(process.execPath, [updaterPath], {
-    detached: true,
-    stdio: "ignore",
-    windowsHide: true,
-    env: {
-      ...process.env,
-      UPDATER_PKG_NAME: packageName,
-      UPDATER_PORT: String(UPDATER_CONFIG.statusPort),
-      UPDATER_TAIL_LINES: String(UPDATER_CONFIG.statusLogTailLines),
-      UPDATER_RETRIES: String(UPDATER_CONFIG.installRetries),
-      UPDATER_RETRY_DELAY_MS: String(UPDATER_CONFIG.installRetryDelayMs),
-      UPDATER_LINGER_MS: String(UPDATER_CONFIG.lingerAfterDoneMs),
-      UPDATER_WAIT_MIN_MS: String(UPDATER_CONFIG.waitForExitMinMs),
-      UPDATER_WAIT_MAX_MS: String(UPDATER_CONFIG.waitForExitMaxMs),
-      UPDATER_WAIT_CHECK_MS: String(UPDATER_CONFIG.waitForExitCheckMs),
-      UPDATER_APP_PORT: String(UPDATER_CONFIG.appPort),
-      UPDATER_RELAUNCH: "1",
-      UPDATER_RELAUNCH_CMD: relaunch.cmd,
-      UPDATER_RELAUNCH_ARGS: JSON.stringify(relaunchArgs),
-    },
-  }).unref();
+  return new Promise((resolve) => {
+    let child;
+    let settled = false;
+    const finish = (started) => {
+      if (settled) return;
+      settled = true;
+      resolve(started);
+    };
 
-  setTimeout(() => process.exit(0), UPDATER_CONFIG.exitDelayMs);
+    try {
+      child = spawn(process.execPath, [updaterPath], {
+        detached: true,
+        stdio: "ignore",
+        windowsHide: true,
+        env: {
+          ...process.env,
+          UPDATER_PKG_NAME: packageName,
+          UPDATER_PORT: String(UPDATER_CONFIG.statusPort),
+          UPDATER_TAIL_LINES: String(UPDATER_CONFIG.statusLogTailLines),
+          UPDATER_RETRIES: String(UPDATER_CONFIG.installRetries),
+          UPDATER_RETRY_DELAY_MS: String(UPDATER_CONFIG.installRetryDelayMs),
+          UPDATER_LINGER_MS: String(UPDATER_CONFIG.lingerAfterDoneMs),
+          UPDATER_WAIT_MIN_MS: String(UPDATER_CONFIG.waitForExitMinMs),
+          UPDATER_WAIT_MAX_MS: String(UPDATER_CONFIG.waitForExitMaxMs),
+          UPDATER_WAIT_CHECK_MS: String(UPDATER_CONFIG.waitForExitCheckMs),
+          UPDATER_APP_PORT: String(UPDATER_CONFIG.appPort),
+          UPDATER_RELAUNCH: "1",
+          UPDATER_RELAUNCH_CMD: relaunch.cmd,
+          UPDATER_RELAUNCH_ARGS: JSON.stringify(relaunchArgs),
+        },
+      });
+    } catch (error) {
+      console.error(`[Updater] failed to start: ${error.message}`);
+      finish(false);
+      return;
+    }
+
+    child.once("error", (error) => {
+      console.error(`[Updater] failed to start: ${error.message}`);
+      finish(false);
+    });
+    child.once("spawn", () => {
+      child.unref();
+      setTimeout(() => process.exit(0), UPDATER_CONFIG.exitDelayMs);
+      finish(true);
+    });
+  });
 }

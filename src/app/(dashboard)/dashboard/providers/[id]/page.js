@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/providerIcon";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
+import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal, Pagination } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
@@ -18,6 +18,7 @@ import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
 import ConnectionRow from "./ConnectionRow";
+import { CONNECTIONS_PER_PAGE, CONNECTIONS_MAX_PAGE_SIZE, computeConnectionPagination } from "./connectionsPagination";
 import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
@@ -40,6 +41,8 @@ export default function ProviderDetailPage() {
   const providerId = params.id;
   const { getCaps } = useModelCaps();
   const [connections, setConnections] = useState([]);
+  const [connectionPage, setConnectionPage] = useState(1);
+  const [pageSize, setPageSize] = useState(CONNECTIONS_PER_PAGE);
   const [loading, setLoading] = useState(true);
   const [providerNode, setProviderNode] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
@@ -68,6 +71,8 @@ export default function ProviderDetailPage() {
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [liveModels, setLiveModels] = useState([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [fetchModelsNote, setFetchModelsNote] = useState("");
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
@@ -144,11 +149,13 @@ export default function ProviderDetailPage() {
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
   const staticModels = getModelsByProviderId(providerId);
-  const models = providerId === "cursor" && liveModels.length > 0
+  // Live catalogs win over the static registry: cursor loads one automatically,
+  // and any provider can load one on demand via "Fetch Models".
+  const models = liveModels.length > 0
     ? liveModels
     : staticModels;
   const providerAlias = getProviderAlias(providerId);
-  
+
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
   const isAnthropicCompatible = isAnthropicCompatibleProvider(providerId);
   const isCompatible = isOpenAICompatible || isAnthropicCompatible;
@@ -293,7 +300,7 @@ export default function ProviderDetailPage() {
   const fetchConnections = useCallback(async () => {
     try {
       const [connectionsRes, nodesRes, proxyPoolsRes, settingsRes] = await Promise.all([
-        fetch("/api/providers", { cache: "no-store" }),
+        fetch(`/api/providers?provider=${encodeURIComponent(providerId)}`, { cache: "no-store" }),
         fetch("/api/provider-nodes", { cache: "no-store" }),
         fetch("/api/proxy-pools?isActive=true", { cache: "no-store" }),
         fetch("/api/settings", { cache: "no-store" }),
@@ -303,8 +310,7 @@ export default function ProviderDetailPage() {
       const proxyPoolsData = await proxyPoolsRes.json();
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
       if (connectionsRes.ok) {
-        const filtered = (connectionsData.connections || []).filter(c => c.provider === providerId);
-        setConnections(filtered);
+        setConnections(connectionsData.connections || []);
       }
       if (proxyPoolsRes.ok) {
         setProxyPools(proxyPoolsData.proxyPools || []);
@@ -493,6 +499,35 @@ export default function ProviderDetailPage() {
     fetchSuggestedModels(fetcher).then(setSuggestedModels);
   }, [providerId]);
 
+  // Pull the provider's own catalog using an active account's credentials, so the
+  // list reflects what that account can actually reach rather than the static
+  // registry. Falls back to leaving the current list untouched on failure.
+  const handleFetchProviderModels = async () => {
+    const connection = connections.find((item) => item.isActive !== false) || connections[0];
+    if (!connection?.id) {
+      setFetchModelsNote("Connect an account first.");
+      return;
+    }
+    setFetchingModels(true);
+    setFetchModelsNote("");
+    try {
+      const res = await fetch(`/api/providers/${connection.id}/models`, { cache: "no-store" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Provider did not return a model list");
+      const list = Array.isArray(data.models) ? data.models.filter((m) => m?.id) : [];
+      if (!list.length) {
+        setFetchModelsNote("Provider returned no models.");
+        return;
+      }
+      setLiveModels(list);
+      setFetchModelsNote(`Fetched ${list.length} model${list.length === 1 ? "" : "s"} from provider.`);
+    } catch (e) {
+      setFetchModelsNote(e.message || "Failed to fetch models");
+    } finally {
+      setFetchingModels(false);
+    }
+  };
+
   const handleSetAlias = async (modelId, alias, providerAliasOverride = providerAlias) => {
     const fullModel = `${providerAliasOverride}/${modelId}`;
     try {
@@ -584,7 +619,7 @@ export default function ProviderDetailPage() {
       for (const model of models) {
         const modelId = model.id || model.name;
         if (!modelId) continue;
-        
+
         // Qoder model ID format may be "qoder/auto" or "auto", need to remove prefix
         const cleanModelId = modelId.replace(/^qoder\//, "");
         const alreadyExists = customModels.some(
@@ -597,7 +632,7 @@ export default function ProviderDetailPage() {
         await handleAddCustomModel(cleanModelId, "llm", providerStorageAlias);
         importedCount += 1;
       }
-      
+
       if (importedCount === 0) {
         alert(translate("All models already exist, no new models added"));
       } else {
@@ -843,22 +878,12 @@ export default function ProviderDetailPage() {
   };
 
   const selectedConnections = connections.filter((conn) => selectedConnectionIds.includes(conn.id));
-  const allSelected = connections.length > 0 && selectedConnectionIds.length === connections.length;
-
   const toggleSelectConnection = (connectionId) => {
     setSelectedConnectionIds((prev) => (
       prev.includes(connectionId)
         ? prev.filter((id) => id !== connectionId)
         : [...prev, connectionId]
     ));
-  };
-
-  const toggleSelectAllConnections = () => {
-    if (allSelected) {
-      setSelectedConnectionIds([]);
-      return;
-    }
-    setSelectedConnectionIds(connections.map((conn) => conn.id));
   };
 
   const clearSelection = () => {
@@ -940,10 +965,34 @@ export default function ProviderDetailPage() {
 
   const isSelected = (connectionId) => selectedConnectionIds.includes(connectionId);
 
+  const { currentPage: connectionPageClamped, items: pagedConnections, start: pagedStart } = computeConnectionPagination(connections, connectionPage, pageSize);
+
+  const handlePageSizeChange = (nextPageSize) => {
+    setPageSize(nextPageSize);
+    setConnectionPage(1);
+  };
+
+  // Select-all operates on the visible page only; selections persist across pages.
+  const pagedConnectionIds = new Set(pagedConnections.map((conn) => conn.id));
+  const allSelected = pagedConnections.length > 0 && pagedConnections.every((conn) => selectedConnectionIds.includes(conn.id));
+
+  const toggleSelectAllConnections = () => {
+    if (allSelected) {
+      setSelectedConnectionIds((prev) => prev.filter((id) => !pagedConnectionIds.has(id)));
+      return;
+    }
+    setSelectedConnectionIds((prev) => {
+      const next = new Set(prev);
+      for (const id of pagedConnectionIds) next.add(id);
+      return [...next];
+    });
+  };
+
   const connectionsList = (
     <div className="flex min-w-0 flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
-      {connections
-        .map((conn, index) => (
+      {pagedConnections.map((conn, pageIndex) => {
+        const index = pagedStart + pageIndex;
+        return (
           <div key={conn.id} className="flex min-w-0 items-stretch">
             <div className="flex shrink-0 items-center pl-1 sm:pl-2">
               <input
@@ -995,7 +1044,19 @@ export default function ProviderDetailPage() {
               />
             </div>
           </div>
-        ))}
+        );
+      })}
+      {connections.length > CONNECTIONS_PER_PAGE && (
+        <Pagination
+          currentPage={connectionPageClamped}
+          pageSize={pageSize}
+          totalItems={connections.length}
+          onPageChange={setConnectionPage}
+          onPageSizeChange={handlePageSizeChange}
+          allowCustomPageSize
+          maxPageSize={CONNECTIONS_MAX_PAGE_SIZE}
+        />
+      )}
     </div>
   );
 
@@ -1437,14 +1498,44 @@ export default function ProviderDetailPage() {
               {connections.length > 0 && (
                 <>
                   {selectedConnectionIds.length > 0 && (
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      icon="delete"
-                      onClick={handleBulkDelete}
-                    >
-                      Delete Selected ({selectedConnectionIds.length})
-                    </Button>
+                    <>
+                      {selectedConnections.some((c) => c.isActive !== false) && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          icon="block"
+                          onClick={() => {
+                            const ids = [...selectedConnectionIds];
+                            ids.forEach((id) => handleUpdateConnectionStatus(id, false));
+                            setSelectedConnectionIds([]);
+                          }}
+                        >
+                          Disable Selected ({selectedConnectionIds.length})
+                        </Button>
+                      )}
+                      {selectedConnections.some((c) => c.isActive === false) && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          icon="check_circle"
+                          onClick={() => {
+                            const ids = [...selectedConnectionIds];
+                            ids.forEach((id) => handleUpdateConnectionStatus(id, true));
+                            setSelectedConnectionIds([]);
+                          }}
+                        >
+                          Enable Selected ({selectedConnectionIds.length})
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        icon="delete"
+                        onClick={handleBulkDelete}
+                      >
+                        Delete Selected ({selectedConnectionIds.length})
+                      </Button>
+                    </>
                   )}
                   <Button
                     size="sm"
@@ -1662,7 +1753,20 @@ export default function ProviderDetailPage() {
             ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id);
             const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
             return (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="success">{activeIds.length} allowed</Badge>
+                {disabledModelIds.length > 0 && (
+                  <Badge variant="error">{disabledModelIds.length} blocked</Badge>
+                )}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon="cloud_download"
+                  disabled={fetchingModels}
+                  onClick={handleFetchProviderModels}
+                >
+                  {fetchingModels ? "Fetching..." : "Fetch Models"}
+                </Button>
                 {disabledModelIds.length > 0 && (
                   <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
                     Active All
@@ -1679,6 +1783,9 @@ export default function ProviderDetailPage() {
         </div>
         {!!modelsTestError && (
           <p className="text-xs text-red-500 mb-3 break-words">{modelsTestError}</p>
+        )}
+        {!!fetchModelsNote && (
+          <p className="text-xs text-text-muted mb-3 break-words">{fetchModelsNote}</p>
         )}
         {renderModelsSection()}
       </Card>

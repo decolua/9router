@@ -186,3 +186,78 @@ describe("Kiro usage pass-through", () => {
     expect(out.prompt_tokens_details.cache_creation_tokens).toBe(50);
   });
 });
+
+// Second canonical convention, parallel to the cache-inclusive prompt above:
+//   completion_tokens = output INCLUDING reasoning/thinking
+//   reasoning_tokens  = reasoning portion (subset of completion_tokens)
+// Discriminator: OpenAI and Anthropic already fold reasoning into their output count;
+// Gemini reports thoughtsTokenCount OUTSIDE candidatesTokenCount, so we fold it in.
+describe("reasoning-inclusive completion convention", () => {
+  it("surfaces Anthropic thinking tokens without inflating completion_tokens", () => {
+    const out = toOpenAIUsage(
+      { input_tokens: 22, output_tokens: 267, output_tokens_details: { thinking_tokens: 85 } },
+      "claude"
+    );
+    expect(out.completion_tokens).toBe(267); // thinking already inside output_tokens
+    expect(out.completion_tokens_details.reasoning_tokens).toBe(85);
+  });
+
+  it("omits reasoning details when the model reported no thinking", () => {
+    const out = toOpenAIUsage({ input_tokens: 22, output_tokens: 41 }, "claude");
+    expect(out.completion_tokens).toBe(41);
+    expect(out.completion_tokens_details).toBeUndefined();
+  });
+
+  it("extractUsage reads thinking tokens off message_delta", () => {
+    const out = extractUsage({
+      type: "message_delta",
+      usage: { input_tokens: 22, output_tokens: 267, output_tokens_details: { thinking_tokens: 85 } },
+    });
+    expect(out.completion_tokens).toBe(267);
+    expect(out.reasoning_tokens).toBe(85);
+  });
+
+  it("folds Gemini thoughts into completion_tokens so the convention holds", () => {
+    const out = extractUsage({
+      usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 40, thoughtsTokenCount: 10, totalTokenCount: 150 },
+    });
+    expect(out.completion_tokens).toBe(50); // 40 candidates + 10 thoughts
+    expect(out.reasoning_tokens).toBe(10);
+  });
+});
+
+describe("calculateCostFromTokens (reasoning is a subset of completion)", () => {
+  const pricing = { input: 3, output: 15, cached: 0.3, reasoning: 15, cache_creation: 3.75 };
+
+  it("does not bill reasoning twice when it is priced at the output rate", () => {
+    const withThinking = calculateCostFromTokens(
+      { prompt_tokens: 22, completion_tokens: 267, reasoning_tokens: 85 }, pricing);
+    const withoutThinking = calculateCostFromTokens(
+      { prompt_tokens: 22, completion_tokens: 267 }, pricing);
+    expect(withThinking).toBeCloseTo(withoutThinking, 12);
+    expect(withThinking).toBeCloseTo((22 * 3 + 267 * 15) / 1e6, 12);
+  });
+
+  it("bills only the difference when reasoning is priced above output", () => {
+    const cost = calculateCostFromTokens(
+      { prompt_tokens: 22, completion_tokens: 267, reasoning_tokens: 85 },
+      { ...pricing, reasoning: 22.5});
+    expect(cost).toBeCloseTo((22 * 3 + 267 * 15 + 85 * 7.5) / 1e6, 12);
+  });
+
+  it("ignores reasoning tokens when the model declares no reasoning price", () => {
+    const cost = calculateCostFromTokens(
+      { prompt_tokens: 22, completion_tokens: 267, reasoning_tokens: 85 },
+      { input: 3, output: 15 });
+    expect(cost).toBeCloseTo((22 * 3 + 267 * 15) / 1e6, 12);
+  });
+
+  it("keeps Gemini total cost unchanged under the fold", () => {
+    // fold: completion 40+10=50, reasoning 10, reasoning priced above output
+    const folded = calculateCostFromTokens(
+      { prompt_tokens: 100, completion_tokens: 50, reasoning_tokens: 10 },
+      { input: 1, output: 4, reasoning: 10 });
+    // legacy math: candidates at output rate + thoughts at reasoning rate
+    expect(folded).toBeCloseTo((100 * 1 + 40 * 4 + 10 * 10) / 1e6, 12);
+  });
+});

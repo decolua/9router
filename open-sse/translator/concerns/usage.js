@@ -22,7 +22,12 @@ const USAGE_EXTRACTORS = {
     const input = n(raw.input_tokens), output = n(raw.output_tokens);
     const cacheRead = n(raw.cache_read_input_tokens), cacheCreate = n(raw.cache_creation_input_tokens);
     const prompt = input + cacheRead + cacheCreate;
-    return { promptTokens: prompt, completionTokens: output, totalTokens: prompt + output, cachedTokens: cacheRead, cacheCreationTokens: cacheCreate };
+    // Anthropic reports thinking tokens on message_delta as
+    // output_tokens_details.thinking_tokens and counts them INSIDE output_tokens
+    // (unlike gemini's thoughtsTokenCount, which sits outside candidatesTokenCount).
+    // Surface them as reasoning_tokens without re-adding them to completionTokens.
+    const thinking = n(raw.output_tokens_details?.thinking_tokens);
+    return { promptTokens: prompt, completionTokens: output, totalTokens: prompt + output, cachedTokens: cacheRead, cacheCreationTokens: cacheCreate, reasoningTokens: thinking };
   },
   gemini(raw) {
     const cached = n(raw.cachedContentTokenCount);
@@ -57,7 +62,10 @@ const USAGE_EXTRACTORS = {
   commandcode(raw) {
     const input = n(raw.inputTokens), output = n(raw.outputTokens);
     const total = typeof raw.totalTokens === "number" ? raw.totalTokens : input + output;
-    return { promptTokens: input, completionTokens: output, totalTokens: total };
+    const cached = n(raw.cachedInputTokens);
+    const out = { promptTokens: input, completionTokens: output, totalTokens: total };
+    if (cached > 0) out.cachedTokens = cached;
+    return out;
   },
 };
 

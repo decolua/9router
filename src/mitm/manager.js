@@ -1,4 +1,4 @@
-const { exec, spawn, execSync } = require("child_process");
+const { exec, execFile, execFileSync, spawn, execSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -97,18 +97,40 @@ const SERVER_PATH = ensureRuntimeServer(resolveBundledServerPath());
 const ENCRYPT_ALGO = "aes-256-gcm";
 const ENCRYPT_SALT = "9router-mitm-pwd";
 
+function getWindowsListeningPortPid(port) {
+  const output = execFileSync("netstat.exe", ["-ano"], {
+    encoding: "utf8",
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  const line = output.split(/\r?\n/).find((entry) => {
+    const fields = entry.trim().split(/\s+/);
+    if (fields.length < 5 || !fields.includes("LISTENING")) return false;
+    const localAddress = fields[1] || "";
+    const separator = localAddress.lastIndexOf(":");
+    return separator >= 0 && Number(localAddress.slice(separator + 1)) === port;
+  });
+  if (!line) return null;
+  const fields = line.trim().split(/\s+/);
+  const pid = Number(fields.at(-1));
+  return Number.isInteger(pid) && pid > 4 ? pid : null;
+}
+
+function getWindowsProcessName(pid) {
+  const output = execFileSync("tasklist.exe", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+    encoding: "utf8",
+    windowsHide: true,
+    stdio: ["ignore", "pipe", "ignore"],
+  });
+  const match = output.match(/"([^"]+)"/);
+  return match ? match[1].replace(/\.exe$/i, "") : null;
+}
+
 function getProcessUsingPort443() {
   try {
     if (IS_WIN) {
-      const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command ` +
-        `"$c = Get-NetTCPConnection -LocalPort 443 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; if ($c) { $c.OwningProcess } else { 0 }"`;
-      const pidStr = execSync(psCmd, { encoding: "utf8", windowsHide: true }).trim();
-      const pid = parseInt(pidStr, 10);
-      if (pid && pid > 4) {
-        const tasklistResult = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { encoding: "utf8", windowsHide: true });
-        const processMatch = tasklistResult.match(/"([^"]+)"/);
-        if (processMatch) return processMatch[1].replace(".exe", "");
-      }
+      const pid = getWindowsListeningPortPid(MITM_PORT);
+      return pid ? getWindowsProcessName(pid) : null;
     } else {
       const result = execSync(`${LSOF_BIN} -i :443`, { encoding: "utf8", windowsHide: true });
       const lines = result.trim().split("\n");
@@ -137,8 +159,10 @@ function isProcessAlive(pid) {
 
 function killProcess(pid, force = false, sudoPassword = null) {
   if (IS_WIN) {
-    const flag = force ? "/F " : "";
-    exec(`taskkill ${flag}/PID ${pid}`, { windowsHide: true }, () => { });
+    const args = [];
+    if (force) args.push("/F");
+    args.push("/T", "/PID", String(pid));
+    spawn("taskkill.exe", args, { windowsHide: true, stdio: "ignore" }).once("error", () => {});
   } else {
     const sig = force ? "SIGKILL" : "SIGTERM";
     const cmd = `pkill -${sig} -P ${pid} 2>/dev/null; kill -${sig} ${pid} 2>/dev/null`;
@@ -284,20 +308,18 @@ function checkPort443Free() {
 }
 
 function getPort443Owner(sudoPassword) {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
+    const status = await checkPort443Free().catch(() => "free");
+    if (status === "free") return resolve(null);
+
     if (IS_WIN) {
-      const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command "` +
-        `$c = Get-NetTCPConnection -LocalPort 443 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; ` +
-        `if ($c) { $c.OwningProcess } else { 0 }"`;    
-      exec(psCmd, { windowsHide: true }, (err, stdout) => {
-        if (err) return resolve(null);
-        const pid = parseInt(stdout.trim(), 10);
-        if (!pid || pid <= 4) return resolve(null);
-        exec(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { windowsHide: true }, (e2, out2) => {
-          const m = out2?.match(/"([^"]+)"/);
-          resolve({ pid, name: m ? m[1] : "unknown" });
-        });
-      });
+      try {
+        const pid = getWindowsListeningPortPid(MITM_PORT);
+        if (!pid) return resolve(null);
+        resolve({ pid, name: getWindowsProcessName(pid) || "unknown" });
+      } catch {
+        resolve(null);
+      }
     } else {
       // Only find process actually LISTENING on TCP port 443
       exec(`${LSOF_BIN} -nP -iTCP:443 -sTCP:LISTEN -t`, { windowsHide: true }, (err, stdout) => {
@@ -399,6 +421,31 @@ async function getMitmStatus() {
   return { running, pid, certExists, certTrusted, dnsStatus };
 }
 
+function isAlreadyRunningRestartRecovery(error, status) {
+  return error?.message === "MITM server is already running" && status?.running === true;
+}
+
+async function recoverAlreadyRunningRestart(error, sudoPassword) {
+  let status = null;
+  try {
+    status = await getMitmStatus();
+  } catch {
+    return false;
+  }
+
+  if (!isAlreadyRunningRestartRecovery(error, status)) return false;
+
+  // Fixes #1462: a crashed child can schedule a restart while manager state
+  // still points at a live MITM process. Treat that as recovered instead of
+  // recursively scheduling "already running" restart attempts.
+  log("MITM server already running; treating restart as recovered");
+  await saveMitmSettings(true, sudoPassword);
+  if (sudoPassword) setCachedPassword(sudoPassword);
+  mitmRestartCount = 0;
+  mitmIsRestarting = false;
+  return true;
+}
+
 async function scheduleMitmRestart(apiKey) {
   if (mitmIsRestarting) return;
   // Set guard synchronously before any await to prevent concurrent calls
@@ -421,6 +468,7 @@ async function scheduleMitmRestart(apiKey) {
   log(`Restarting in ${delay / 1000}s... (${mitmRestartCount}/${MITM_MAX_RESTARTS})`);
   await new Promise((r) => setTimeout(r, delay));
 
+  let password = null;
   try {
     const settings = _getSettings ? await _getSettings() : null;
     if (settings && !settings.mitmEnabled) {
@@ -428,7 +476,7 @@ async function scheduleMitmRestart(apiKey) {
       mitmIsRestarting = false;
       return;
     }
-    const password = getCachedPassword() || await loadEncryptedPassword();
+    password = getCachedPassword() || await loadEncryptedPassword();
     if (!password && !IS_WIN) {
       err("No cached password, cannot auto-restart");
       mitmIsRestarting = false;
@@ -439,6 +487,7 @@ async function scheduleMitmRestart(apiKey) {
     mitmRestartCount = 0;
     mitmIsRestarting = false;
   } catch (e) {
+    if (await recoverAlreadyRunningRestart(e, password)) return;
     err(`Restart attempt ${mitmRestartCount}/${MITM_MAX_RESTARTS} failed: ${e.message}`);
     mitmIsRestarting = false;
     // Schedule next retry
@@ -453,7 +502,10 @@ async function killPort443Owner(owner, sudoPassword) {
   if (!owner || !owner.pid) return;
   if (IS_WIN) {
     try {
-      execSync(`powershell -NonInteractive -WindowStyle Hidden -Command "Stop-Process -Id ${owner.pid} -Force -ErrorAction SilentlyContinue"`, { windowsHide: true });
+      execFileSync("taskkill.exe", ["/F", "/T", "/PID", String(owner.pid)], {
+        windowsHide: true,
+        stdio: "ignore",
+      });
     } catch { /* best effort */ }
   } else {
     try {
@@ -669,7 +721,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
   } else if (IS_WIN) {
     const rootCAPath = path.join(MITM_DIR, "rootCA.crt");
     if (fs.existsSync(rootCAPath)) {
-      exec(`setx NODE_EXTRA_CA_CERTS "${rootCAPath}"`, { windowsHide: true }, (e) => {
+      execFile("setx.exe", ["NODE_EXTRA_CA_CERTS", rootCAPath], { windowsHide: true }, (e) => {
         if (e) log(`[setx] Failed to set NODE_EXTRA_CA_CERTS: ${e.message}`);
         else log(`[setx] NODE_EXTRA_CA_CERTS set for current user`);
       });
@@ -775,7 +827,7 @@ async function stopServer(sudoPassword) {
         const filtered = content.split(/\r?\n/).filter(l => !allHosts.some(h => l.includes(h))).join("\r\n");
         const next = filtered.replace(/[\r\n\s]+$/g, "") + "\r\n";
         if (next !== content) fs.writeFileSync(hostsFile, next, "utf8");
-        try { require("child_process").execSync("ipconfig /flushdns", { windowsHide: true, stdio: "ignore" }); } catch { /* ignore */ }
+        try { execFileSync("ipconfig.exe", ["/flushdns"], { windowsHide: true, stdio: "ignore" }); } catch { /* ignore */ }
         log("🌐 DNS: ✅ all tool hosts removed");
       } else {
         const hostsList = allHosts.map(quotePs).join(",");
@@ -803,7 +855,7 @@ async function stopServer(sudoPassword) {
       else log(`[launchctl] NODE_EXTRA_CA_CERTS unset`);
     });
   } else if (IS_WIN) {
-    exec(`reg delete HKCU\\Environment /F /V NODE_EXTRA_CA_CERTS`, { windowsHide: true }, (e) => {
+    execFile("reg.exe", ["delete", "HKCU\\Environment", "/F", "/V", "NODE_EXTRA_CA_CERTS"], { windowsHide: true }, (e) => {
       if (e) log(`[reg] Failed to unset NODE_EXTRA_CA_CERTS: ${e.message}`);
       else log(`[reg] NODE_EXTRA_CA_CERTS unset`);
     });
@@ -880,4 +932,7 @@ module.exports = {
   restoreToolDNS,
   hasDnsPrivilege,
   removeAllDNSEntriesSync,
+  __test__: {
+    isAlreadyRunningRestartRecovery,
+  },
 };

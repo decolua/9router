@@ -47,7 +47,7 @@ describe("Gemini Cloud Code endpoint isolation", () => {
     removeConnection(connectionId);
   });
 
-  it("uses the prod cloudcode host for Antigravity discovery but daily for chat", async () => {
+  it("uses the prod cloudcode host for Antigravity discovery but sandbox-first fallbacks for chat", async () => {
     const connectionId = "antigravity-endpoint-test";
     const fetchMock = vi.fn(async () => cloudCodeResponse("antigravity-project"));
     vi.stubGlobal("fetch", fetchMock);
@@ -59,8 +59,12 @@ describe("Gemini Cloud Code endpoint isolation", () => {
       "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
       expect.objectContaining({ method: "POST" })
     );
-    // Chat transport still uses the daily host to bypass prod 429.
-    expect(antigravity.transport.baseUrls).toEqual(["https://daily-cloudcode-pa.googleapis.com"]);
+    // Chat transport prefers sandbox to bypass prod 429, with legacy hosts as fallbacks.
+    expect(antigravity.transport.baseUrls).toEqual([
+      "https://daily-cloudcode-pa.sandbox.googleapis.com",
+      "https://daily-cloudcode-pa.googleapis.com",
+      "https://cloudcode-pa.googleapis.com",
+    ]);
     removeConnection(connectionId);
   });
 });

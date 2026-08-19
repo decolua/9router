@@ -1,34 +1,22 @@
 "use server";
 
 import { NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
-
-const execAsync = promisify(exec);
+import { isCommandAvailable } from "@/lib/cliTools/commandAvailability.js";
 
 const getDataDir = () => path.join(os.homedir(), ".local", "share", "kilo");
 const getAuthPath = () => path.join(getDataDir(), "auth.json");
 const getVscodeSettingsPath = () => path.join(os.homedir(), ".config", "Code", "User", "settings.json");
 
 const checkInstalled = async () => {
+  if (await isCommandAvailable("kilo")) return true;
   try {
-    const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where kilo" : "which kilo";
-    const env = isWindows
-      ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }
-      : process.env;
-    await execAsync(command, { windowsHide: true, env });
+    await fs.access(getAuthPath());
     return true;
   } catch {
-    try {
-      await fs.access(getAuthPath());
-      return true;
-    } catch {
-      return false;
-    }
+    return false;
   }
 };
 

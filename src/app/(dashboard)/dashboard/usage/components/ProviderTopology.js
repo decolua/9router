@@ -7,6 +7,7 @@ import {
   Handle,
   Position,
   Controls,
+  ControlButton,
   BaseEdge,
   getBezierPath,
 } from "@xyflow/react";
@@ -30,34 +31,41 @@ function getProviderImageUrl(providerId) {
   return getProviderIconSrc(providerId);
 }
 
-// Custom provider node - rectangle with image + name
+// Custom Provider Node — connected to router and branching out to models
 function ProviderNode({ data }) {
   const { label, color, imageUrl, textIcon, active } = data;
   const [imgError, setImgError] = useState(false);
   return (
     <div
-      className="flex items-center gap-2.5 px-4 py-2.5 rounded-lg border-2 transition-all duration-300 bg-bg"
+      className="flex items-center gap-2.5 px-3.5 py-2 rounded-lg border-2 transition-all duration-300 bg-bg"
       style={{
         borderColor: active ? color : "var(--color-border)",
-        boxShadow: active ? `0 0 16px ${color}40` : "none",
-        minWidth: "150px",
+        boxShadow: active ? `0 0 18px ${color}50` : "none",
+        minWidth: "140px",
       }}
     >
+      {/* Target handles from Router */}
       <Handle type="target" position={Position.Top} id="top" className="!bg-transparent !border-0 !w-0 !h-0" />
       <Handle type="target" position={Position.Bottom} id="bottom" className="!bg-transparent !border-0 !w-0 !h-0" />
       <Handle type="target" position={Position.Left} id="left" className="!bg-transparent !border-0 !w-0 !h-0" />
       <Handle type="target" position={Position.Right} id="right" className="!bg-transparent !border-0 !w-0 !h-0" />
 
+      {/* Source handles to Model sub-nodes */}
+      <Handle type="source" position={Position.Top} id="s-top" className="!bg-transparent !border-0 !w-0 !h-0" />
+      <Handle type="source" position={Position.Bottom} id="s-bottom" className="!bg-transparent !border-0 !w-0 !h-0" />
+      <Handle type="source" position={Position.Left} id="s-left" className="!bg-transparent !border-0 !w-0 !h-0" />
+      <Handle type="source" position={Position.Right} id="s-right" className="!bg-transparent !border-0 !w-0 !h-0" />
+
       {/* Provider icon */}
       <div
-        className="w-8 h-8 rounded-md flex items-center justify-center shrink-0"
+        className="w-5 h-5 rounded flex items-center justify-center shrink-0"
         style={{ backgroundColor: `${color}15` }}
       >
         {imageUrl && !imgError ? (
           <img
             src={imageUrl}
             alt={label}
-            className="w-6 h-6 rounded-sm object-contain"
+            className="w-3.5 h-3.5 rounded-sm object-contain"
             loading="lazy"
             decoding="async"
             onError={() => {
@@ -67,13 +75,13 @@ function ProviderNode({ data }) {
             }}
           />
         ) : (
-          <span className="text-sm font-bold" style={{ color }}>{textIcon}</span>
+          <span className="text-[9px] font-bold" style={{ color }}>{textIcon}</span>
         )}
       </div>
 
       {/* Provider name */}
       <span
-        className="text-base font-medium truncate"
+        className="text-sm font-semibold truncate"
         style={{ color: active ? color : "var(--color-text)" }}
       >
         {label}
@@ -81,7 +89,7 @@ function ProviderNode({ data }) {
 
       {/* Active indicator */}
       {active && (
-        <span className="relative flex h-2 w-2 shrink-0">
+        <span className="relative flex h-2 w-2 shrink-0 ml-auto">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ backgroundColor: color }} />
           <span className="relative inline-flex rounded-full h-2 w-2" style={{ backgroundColor: color }} />
         </span>
@@ -94,7 +102,55 @@ ProviderNode.propTypes = {
   data: PropTypes.object.isRequired,
 };
 
-// Center 9Router node — pulse/glow on card only (no expanding rings)
+// Custom Model Sub-Node — branches out from Provider
+function ModelNode({ data }) {
+  const { label, active, radialRotation = 0, radialHandle = "left" } = data;
+  return (
+    <div className="relative h-7 w-40">
+      <div
+        className={`absolute left-1/2 top-1/2 flex w-max max-w-40 items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono text-[10px] tracking-tight transition-all duration-300 ${
+          active
+            ? "bg-cyan-950/70 border-cyan-400 text-cyan-200 shadow-[0_0_14px_rgba(34,211,238,0.75)] font-bold animate-pulse z-20 scale-105"
+            : "bg-bg-subtle/95 border-border/80 text-text-muted hover:border-primary/50 hover:text-text shadow-xs"
+        }`}
+        style={{
+          transform: `translate(-50%, -50%) rotate(${radialRotation}deg)`,
+          transformOrigin: "center",
+        }}
+      >
+        {/* Keep the edge attached to the rotated pill side facing 9Router. */}
+        <Handle
+          type="target"
+          position={radialHandle === "right" ? Position.Right : Position.Left}
+          id="radial"
+          className="!bg-transparent !border-0 !w-0 !h-0"
+        />
+
+        {/* Active pulse dot */}
+        <span className="relative flex h-1.5 w-1.5 shrink-0">
+          {active ? (
+            <>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-80" />
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400" />
+            </>
+          ) : (
+            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-text-muted/40" />
+          )}
+        </span>
+
+        <span className="truncate" title={label}>
+          {label}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+ModelNode.propTypes = {
+  data: PropTypes.object.isRequired,
+};
+
+// Center 9Router node — pulse/glow on card only
 function RouterNode({ data }) {
   const powering = (data.activeCount || 0) > 0;
   return (
@@ -133,7 +189,7 @@ RouterNode.propTypes = {
   data: PropTypes.object.isRequired,
 };
 
-// Active: electric kame beam (multi-layer stroke + sparks). Idle/last/error: solid BaseEdge.
+// Topology Edge (Bezier curve with electric Kame animation when active)
 function TopologyEdge({
   id,
   sourceX,
@@ -217,7 +273,7 @@ function TopologyEdge({
           />
         </circle>
       ))}
-      {/* Electric sparks (short-lived blink along path) */}
+      {/* Electric sparks */}
       {Array.from({ length: SPARK_COUNT }, (_, i) => (
         <circle
           key={`${id}-s-${i}`}
@@ -256,29 +312,28 @@ TopologyEdge.propTypes = {
   data: PropTypes.object,
 };
 
-const nodeTypes = { provider: ProviderNode, router: RouterNode };
+const nodeTypes = { provider: ProviderNode, router: RouterNode, model: ModelNode };
 const edgeTypes = { topology: TopologyEdge };
 
-// Place N nodes evenly along an ellipse around the router center.
-function buildLayout(providers, activeSet, lastSet, errorSet) {
-  const nodeW = 180;
-  const nodeH = 30;
+// Place 9Router center, Providers on inner ellipse, Models branching on outer ellipse
+function buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet, modelDisplayMode = "on") {
+  const nodeW = 150;
+  const nodeH = 34;
+  const modelW = 160;
+  const modelH = 28;
   const routerW = 120;
   const routerH = 44;
-  const nodeGap = 24;
-
   const count = providers.length;
 
-  // Compute rx so arc spacing between nodes >= nodeW + nodeGap
-  const minRx = ((nodeW + nodeGap) * count) / (2 * Math.PI);
-  const rx = Math.max(320, minRx);
-  const ry = Math.max(200, rx * 0.55); // ellipse ratio ~0.55
   if (count === 0) {
     return {
-      nodes: [{ id: "router", type: "router", position: { x: 0, y: 0 }, data: { activeCount: 0 }, draggable: false }],
+      nodes: [{ id: "router", type: "router", position: { x: 0, y: 0 }, data: { activeCount: activeSet.size }, draggable: false }],
       edges: [],
     };
   }
+
+  const rx = Math.max(185, (125 * count) / (2 * Math.PI));
+  const ry = Math.max(145, rx * 0.72);
 
   const nodes = [];
   const edges = [];
@@ -300,24 +355,24 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
 
   providers.forEach((p, i) => {
     const config = getProviderConfig(p.provider);
-    const active = activeSet.has(p.provider?.toLowerCase());
-    const last = !active && lastSet.has(p.provider?.toLowerCase());
-    const error = !active && errorSet.has(p.provider?.toLowerCase());
-    const nodeId = `provider-${p.provider}`;
-    const data = {
-      label: (config.name !== p.provider ? config.name : null) || p.nodeName || p.name || p.provider,
-      color: config.color || "#6b7280",
-      imageUrl: getProviderImageUrl(p.provider),
-      textIcon: config.textIcon || (p.provider || "?").slice(0, 2).toUpperCase(),
-      active,
-    };
+    const pKey = p.provider?.toLowerCase();
+    const models = p.models || [];
 
-    // Distribute evenly starting from top (−π/2), clockwise
+    // Check if any model under this provider is active
+    const hasActiveModel = models.some((m) => {
+      const mKey = m.toLowerCase();
+      return activeModelSet.has(mKey) || activeModelSet.has(`${pKey}/${mKey}`);
+    });
+    const active = activeSet.has(pKey) || hasActiveModel;
+    const last = !active && lastSet.has(pKey);
+    const error = !active && errorSet.has(pKey);
+    const nodeId = `provider-${p.provider}`;
+
+    // Angle distribution for providers around router center
     const angle = -Math.PI / 2 + (2 * Math.PI * i) / count;
     const cx = rx * Math.cos(angle);
     const cy = ry * Math.sin(angle);
 
-    // Pick router handle closest to the node direction
     let sourceHandle, targetHandle;
     if (Math.abs(angle + Math.PI / 2) < Math.PI / 4 || Math.abs(angle - 3 * Math.PI / 2) < Math.PI / 4) {
       sourceHandle = "top"; targetHandle = "bottom";
@@ -333,7 +388,13 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
       id: nodeId,
       type: "provider",
       position: { x: cx - nodeW / 2, y: cy - nodeH / 2 },
-      data,
+      data: {
+        label: (config.name !== p.provider ? config.name : null) || p.nodeName || p.name || p.provider,
+        color: config.color || "#6b7280",
+        imageUrl: getProviderImageUrl(p.provider),
+        textIcon: config.textIcon || (p.provider || "?").slice(0, 2).toUpperCase(),
+        active,
+      },
       draggable: false,
     });
 
@@ -344,100 +405,312 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
       sourceHandle,
       target: nodeId,
       targetHandle,
-      // Built-in animated uses stroke-dasharray (CPU-heavy); use particle beam instead
       animated: false,
       data: { active },
       style: edgeStyle(active, last, error),
     });
+
+    // Filter models based on modelDisplayMode ("on" | "auto" | "off")
+    let modelsToRender = [];
+    if (modelDisplayMode === "on") {
+      modelsToRender = models;
+    } else if (modelDisplayMode === "auto") {
+      modelsToRender = models.filter((m) => {
+        const mKey = m.toLowerCase();
+        return activeModelSet.has(mKey) || activeModelSet.has(`${pKey}/${mKey}`);
+      });
+    } else {
+      // "off" mode -> no model sub-nodes
+      modelsToRender = [];
+    }
+
+    // Branch out Model sub-nodes in multi-tier concentric tree arcs to guarantee 0 text overlap
+    if (modelsToRender.length > 0) {
+      const mCount = modelsToRender.length;
+
+      // Determine number of concentric layers based on model count
+      const numLayers = mCount > 9 ? 3 : (mCount > 3 ? 2 : 1);
+
+      modelsToRender.forEach((m, j) => {
+        const modelId = `model-${p.provider}-${m}`;
+        const mKey = m.toLowerCase();
+        const modelActive = activeModelSet.has(mKey) || activeModelSet.has(`${pKey}/${mKey}`);
+
+        // Layer/Row allocation
+        const layerIndex = j % numLayers;
+        const colIndex = Math.floor(j / numLayers);
+        const itemsInThisLayer = Math.ceil((mCount - layerIndex) / numLayers);
+        const midCol = (itemsInThisLayer - 1) / 2;
+        const colOffset = colIndex - midCol;
+
+        // Keep every provider's fan inside its own angular sector. This prevents
+        // neighbouring providers from crossing into each other's radial labels.
+        const providerSector = (2 * Math.PI) / count;
+        const usableFan = providerSector * 0.68;
+        const fanStep = itemsInThisLayer > 1 ? usableFan / (itemsInThisLayer - 1) : 0;
+        const mAngle = angle + colOffset * fanStep;
+
+        // Radial labels use their long axis toward 9Router, so each tier needs
+        // enough depth for the whole pill rather than only its horizontal height.
+        const baseDist = 120;
+        const layerSpacing = 150;
+        const distOffset = baseDist + layerIndex * layerSpacing + Math.abs(colOffset) * 16;
+
+        const mx = (rx + distOffset) * Math.cos(mAngle);
+        const my = (ry + (distOffset * 0.85)) * Math.sin(mAngle);
+
+        // Align the model name's axis to the actual line through the 9Router
+        // center. Flip labels on the left half so their text remains upright.
+        const radialAngle = Math.atan2(my, mx);
+        let radialRotation = (radialAngle * 180) / Math.PI;
+        if (radialRotation > 90) radialRotation -= 180;
+        if (radialRotation < -90) radialRotation += 180;
+        const radialHandle = Math.cos(radialAngle) < 0 ? "right" : "left";
+
+        // Pick handle connections matching the same center-based radial direction
+        let pSourceHandle = "s-right";
+        if (radialAngle < -Math.PI / 4 && radialAngle > -(3 * Math.PI) / 4) {
+          pSourceHandle = "s-top";
+        } else if (radialAngle > Math.PI / 4 && radialAngle < (3 * Math.PI) / 4) {
+          pSourceHandle = "s-bottom";
+        } else if (Math.cos(radialAngle) < 0) {
+          pSourceHandle = "s-left";
+        }
+
+        nodes.push({
+          id: modelId,
+          type: "model",
+          position: { x: mx - modelW / 2, y: my - modelH / 2 },
+          data: {
+            label: m,
+            active: modelActive,
+            color: config.color || "#22d3ee",
+            radialRotation,
+            radialHandle,
+          },
+          draggable: false,
+        });
+
+        edges.push({
+          id: `e-${modelId}`,
+          type: "topology",
+          source: nodeId,
+          sourceHandle: pSourceHandle,
+          target: modelId,
+          targetHandle: "radial",
+          animated: false,
+          data: { active: modelActive },
+          style: edgeStyle(modelActive, false, false),
+        });
+      });
+    }
   });
 
   return { nodes, edges };
 }
 
 export default function ProviderTopology({ providers = [], activeRequests = [], lastProvider = "", errorProvider = "" }) {
-  // Serialize to stable string keys so useMemo only re-runs when values actually change
+  // Stable active tracking
   const activeKey = useMemo(
-    () => activeRequests.map((r) => r.provider?.toLowerCase()).filter(Boolean).sort().join(","),
+    () => (activeRequests || []).map((r) => `${r.provider}:${r.model}`).sort().join(","),
     [activeRequests]
   );
   const lastKey = lastProvider?.toLowerCase() || "";
   const errorKey = errorProvider?.toLowerCase() || "";
 
-  const rawActiveSet = useMemo(() => new Set(activeKey ? activeKey.split(",") : []), [activeKey]);
+  const rawActiveData = useMemo(() => {
+    const pSet = new Set();
+    const mSet = new Set();
+    (activeRequests || []).forEach((r) => {
+      if (r.provider) pSet.add(r.provider.toLowerCase());
+      if (r.model) {
+        const norm = r.model.toLowerCase();
+        mSet.add(norm);
+        if (norm.includes("/")) {
+          mSet.add(norm.split("/").pop());
+        }
+      }
+    });
+    return { pSet, mSet };
+  }, [activeKey]);
+
   const lastSet = useMemo(() => new Set(lastKey ? [lastKey] : []), [lastKey]);
   const errorSet = useMemo(() => new Set(errorKey ? [errorKey] : []), [errorKey]);
 
-  // Track firstSeen per active provider; drop provider if running too long (BE stuck)
   const firstSeenRef = useRef({});
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
     const seen = firstSeenRef.current;
     const now = Date.now();
-    for (const p of rawActiveSet) {
+    for (const p of rawActiveData.pSet) {
       if (!seen[p]) seen[p] = now;
     }
     for (const p of Object.keys(seen)) {
-      if (!rawActiveSet.has(p)) delete seen[p];
+      if (!rawActiveData.pSet.has(p)) delete seen[p];
     }
-  }, [rawActiveSet]);
+  }, [rawActiveData]);
 
   useEffect(() => {
-    if (rawActiveSet.size === 0) return;
+    if (rawActiveData.pSet.size === 0) return;
     const id = setInterval(() => setTick((t) => t + 1), FE_ACTIVE_TICK_MS);
     return () => clearInterval(id);
-  }, [rawActiveSet]);
+  }, [rawActiveData]);
 
   const activeSet = useMemo(() => {
     const now = Date.now();
     const filtered = new Set();
-    for (const p of rawActiveSet) {
+    for (const p of rawActiveData.pSet) {
       const ts = firstSeenRef.current[p];
       if (!ts || now - ts < FE_ACTIVE_TIMEOUT_MS) filtered.add(p);
     }
     return filtered;
-  }, [rawActiveSet, tick]);
+  }, [rawActiveData, tick]);
+
+  const activeModelSet = rawActiveData.mSet;
+
+  // 3-way model display mode ("on" | "auto" | "off")
+  const [modelDisplayMode, setModelDisplayMode] = useState("auto");
+  const [activeView, setActiveView] = useState("providers");
 
   const { nodes, edges } = useMemo(
-    () => buildLayout(providers, activeSet, lastSet, errorSet),
-    [providers, activeSet, lastSet, errorSet]
+    () => buildLayout(providers, activeSet, activeModelSet, lastSet, errorSet, modelDisplayMode),
+    [providers, activeSet, activeModelSet, lastSet, errorSet, modelDisplayMode]
   );
 
-  // Stable key — only remount when provider list changes
   const providersKey = useMemo(
-    () => providers.map((p) => p.provider).sort().join(","),
+    () => providers.map((p) => `${p.provider}:${(p.models || []).join("-")}`).sort().join(","),
     [providers]
   );
 
   const rfInstance = useRef(null);
   const containerRef = useRef(null);
-  const fitOpts = { padding: 0.2, duration: 200 };
+
+  const fitCurrentView = useCallback((view = activeView) => {
+    if (!rfInstance.current || nodes.length === 0) return;
+    if (view === "providers") {
+      const providerNodes = nodes.filter((n) => n.type === "router" || n.type === "provider");
+      rfInstance.current.fitView({ nodes: providerNodes.length > 0 ? providerNodes : nodes, padding: -0.15, duration: 300 });
+    } else {
+      rfInstance.current.fitView({ padding: 0.05, duration: 300 });
+    }
+  }, [nodes, activeView]);
+
   const onInit = useCallback((instance) => {
     rfInstance.current = instance;
-    setTimeout(() => instance.fitView(fitOpts), 50);
-  }, []);
+    setTimeout(() => {
+      const providerNodes = nodes.filter((n) => n.type === "router" || n.type === "provider");
+      instance.fitView({ nodes: providerNodes.length > 0 ? providerNodes : nodes, padding: -0.15, duration: 300 });
+    }, 60);
+  }, [nodes]);
 
-  // Re-fit on container resize
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const ro = new ResizeObserver(() => {
-      if (rfInstance.current) rfInstance.current.fitView(fitOpts);
+      fitCurrentView(activeView);
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [fitCurrentView, activeView]);
 
-  // Re-fit when node count/layout changes
   useEffect(() => {
-    if (rfInstance.current) {
-      const id = setTimeout(() => rfInstance.current.fitView(fitOpts), 50);
+    if (rfInstance.current && nodes.length > 0) {
+      const id = setTimeout(() => fitCurrentView(activeView), 60);
       return () => clearTimeout(id);
     }
-  }, [nodes.length]);
+  }, [nodes.length, activeView, fitCurrentView]);
+
+  const handleFitAllModels = useCallback(() => {
+    setActiveView("models");
+    fitCurrentView("models");
+  }, [fitCurrentView]);
+
+  const handleFitProvidersOnly = useCallback(() => {
+    setActiveView("providers");
+    fitCurrentView("providers");
+  }, [fitCurrentView]);
 
   return (
-    <div ref={containerRef} className="h-[320px] w-full min-w-0 rounded-lg border border-border bg-bg-subtle/30 sm:h-[480px]">
+    <div ref={containerRef} className="relative h-[380px] w-full min-w-0 rounded-lg border border-border bg-bg-subtle/30 sm:h-[540px]">
+      {/* Floating Control Bar */}
+      {providers.length > 0 && (
+        <div className="absolute top-3 right-3 z-10 flex flex-wrap items-center gap-2 rounded-lg border border-border/80 bg-bg/90 p-1.5 backdrop-blur-md shadow-md text-xs">
+          {/* Models 3-Way Toggle (ON / AUTO / OFF) */}
+          <div className="flex items-center gap-1 bg-bg-subtle/90 px-1 py-0.5 rounded-md border border-border/60">
+            <span className="text-[11px] text-text-muted px-1 font-semibold">Models:</span>
+            <button
+              type="button"
+              onClick={() => setModelDisplayMode("on")}
+              className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
+                modelDisplayMode === "on"
+                  ? "bg-primary text-white shadow-xs"
+                  : "text-text-muted hover:text-text hover:bg-bg-hover"
+              }`}
+              title="Munculkan SEMUA cabang model"
+            >
+              ON
+            </button>
+            <button
+              type="button"
+              onClick={() => setModelDisplayMode("auto")}
+              className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
+                modelDisplayMode === "auto"
+                  ? "bg-cyan-500 text-white shadow-xs"
+                  : "text-text-muted hover:text-text hover:bg-bg-hover"
+              }`}
+              title="Model HANYA muncul saat sedang diproses/aktif"
+            >
+              AUTO
+            </button>
+            <button
+              type="button"
+              onClick={() => setModelDisplayMode("off")}
+              className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all ${
+                modelDisplayMode === "off"
+                  ? "bg-stone-700 text-white shadow-xs"
+                  : "text-text-muted hover:text-text hover:bg-bg-hover"
+              }`}
+              title="Sembunyikan SEMUA cabang model"
+            >
+              OFF
+            </button>
+          </div>
+
+          <div className="w-[1px] h-4 bg-border/60" />
+
+          {/* View Fit Zoom Switcher */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={handleFitProvidersOnly}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-md font-medium transition-colors ${
+                activeView === "providers"
+                  ? "bg-primary/20 text-primary border border-primary/30 font-semibold"
+                  : "text-text-muted hover:text-text hover:bg-bg-hover"
+              }`}
+              title="Zoom In 115% Fokus ke Provider"
+            >
+              <span className="material-symbols-outlined text-[14px]">hub</span>
+              <span>Providers</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleFitAllModels}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-md font-medium transition-colors ${
+                activeView === "models"
+                  ? "bg-primary/20 text-primary border border-primary/30 font-semibold"
+                  : "text-text-muted hover:text-text hover:bg-bg-hover"
+              }`}
+              title="Zoom Full semua model"
+            >
+              <span className="material-symbols-outlined text-[14px]">account_tree</span>
+              <span>All</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {providers.length === 0 ? (
         <div className="h-full flex items-center justify-center text-text-muted text-sm">
           No providers connected
@@ -449,10 +722,9 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
           edges={edges}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
-          fitView
-          fitViewOptions={fitOpts}
-          minZoom={0.1}
-          maxZoom={2}
+          fitView={false}
+          minZoom={0.5}
+          maxZoom={2.5}
           onInit={onInit}
           proOptions={{ hideAttribution: true }}
           panOnDrag
@@ -464,7 +736,14 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
           nodesConnectable={false}
           elementsSelectable={false}
         >
-          <Controls showInteractive={false} className="react-flow-controls-custom" />
+          <Controls showInteractive={false} className="react-flow-controls-custom">
+            <ControlButton onClick={handleFitProvidersOnly} title="Zoom In 115% Providers Only">
+              <span className="material-symbols-outlined text-[16px]">hub</span>
+            </ControlButton>
+            <ControlButton onClick={handleFitAllModels} title="Fit All Models">
+              <span className="material-symbols-outlined text-[16px]">fit_screen</span>
+            </ControlButton>
+          </Controls>
         </ReactFlow>
       )}
     </div>
@@ -476,6 +755,7 @@ ProviderTopology.propTypes = {
     id: PropTypes.string,
     provider: PropTypes.string,
     name: PropTypes.string,
+    models: PropTypes.arrayOf(PropTypes.string),
   })),
   activeRequests: PropTypes.arrayOf(PropTypes.shape({
     provider: PropTypes.string,
@@ -485,3 +765,4 @@ ProviderTopology.propTypes = {
   lastProvider: PropTypes.string,
   errorProvider: PropTypes.string,
 };
+

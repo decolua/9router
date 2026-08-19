@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.12.0/.schema/devbox.schema.json",
+  "packages": {
+    "nodejs": {
+      "version": "22.10.0",
+      "platforms": ["aarch64-darwin", "x86_64-darwin", "x86_64-linux", "aarch64-linux"]
+    },
+    "act": {
+      "version": "0.2.62",
+      "platforms": ["x86_64-linux", "aarch64-linux", "aarch64-darwin"]
+    }
+  },
+  "shell": {
+    "init_hook": [
+      "echo '9Router devbox environment (Node.js 22 + npm)'"
+    ],
+    "scripts": {
+      "install": "npm install",
+      "build": "npm run build",
+      "dev": "npm run dev",
+      "start": "npm run start"
+    }
+  }
+}

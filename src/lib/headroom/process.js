@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { spawn } from "child_process";
+import { execFileSync, spawn } from "child_process";
 import { DATA_DIR } from "@/lib/dataDir.js";
 import { findHeadroomBinary, findPython310, HEADROOM_COMPRESSION_EXTRAS, EXTRA_MARKERS, getInstalledHeadroomExtras } from "./detect.js";
 
@@ -10,25 +10,59 @@ const LOG_FILE = path.join(HEADROOM_DIR, "proxy.log");
 const INSTALL_LOG_FILE = path.join(HEADROOM_DIR, "install.log");
 const DEFAULT_PORT = 8787;
 const STARTUP_TIMEOUT_MS = 8000;
+const PROCESS_PROBE_TIMEOUT_MS = 1500;
+
+// Two browser requests can arrive before the first detached proxy has written
+// its PID record. Queue lifecycle mutations so start/stop/restart cannot
+// orphan each other or overwrite each other's PID record.
+let lifecycleTail = Promise.resolve();
+let queuedOperation = null;
 
 function ensureDir() {
   if (!fs.existsSync(HEADROOM_DIR)) fs.mkdirSync(HEADROOM_DIR, { recursive: true });
 }
 
-function readPid() {
+function readPidRecord() {
   try {
-    if (fs.existsSync(PID_FILE)) return parseInt(fs.readFileSync(PID_FILE, "utf8"), 10);
+    if (!fs.existsSync(PID_FILE)) return null;
+    const raw = fs.readFileSync(PID_FILE, "utf8").trim();
+    if (!raw) return null;
+
+    // Older releases stored only a PID. Preserve compatibility, but do not
+    // regard it as proof of ownership because Windows and Unix reuse PIDs.
+    if (/^\d+$/.test(raw)) return { pid: parseInt(raw, 10), binary: null };
+
+    const record = JSON.parse(raw);
+    if (!Number.isInteger(record?.pid) || record.pid <= 0) return null;
+    return {
+      pid: record.pid,
+      binary: typeof record.binary === "string" ? record.binary : null,
+      port: Number.isInteger(record.port) ? record.port : null,
+      startedAt: typeof record.startedAt === "string" ? record.startedAt : null,
+    };
   } catch { /* ignore */ }
   return null;
 }
 
-function writePid(pid) {
+function writePid(pid, binary, port) {
   ensureDir();
-  fs.writeFileSync(PID_FILE, String(pid));
+  fs.writeFileSync(PID_FILE, JSON.stringify({
+    pid,
+    binary: path.basename(binary).toLowerCase(),
+    port,
+    startedAt: new Date().toISOString(),
+  }));
 }
 
-function clearPid() {
-  try { if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE); } catch { /* ignore */ }
+function clearPid(expectedPid = null) {
+  try {
+    if (!fs.existsSync(PID_FILE)) return;
+    if (expectedPid !== null) {
+      const record = readPidRecord();
+      if (!record || record.pid !== expectedPid) return;
+    }
+    fs.unlinkSync(PID_FILE);
+  } catch { /* ignore */ }
 }
 
 // process.kill throws if pid is dead — use this to probe.
@@ -37,9 +71,84 @@ export function isPidAlive(pid) {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
+function getProcessImageName(pid) {
+  try {
+    if (process.platform === "win32") {
+      const output = execFileSync("tasklist.exe", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        windowsHide: true,
+        timeout: PROCESS_PROBE_TIMEOUT_MS,
+      });
+      return output.match(/^"([^"]+)"/m)?.[1]?.trim().toLowerCase() || null;
+    }
+
+    const output = execFileSync("ps", ["-p", String(pid), "-o", "comm="], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: PROCESS_PROBE_TIMEOUT_MS,
+    }).trim();
+    return output ? path.basename(output).toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+function isHeadroomPidOwned(record) {
+  if (!record || !isPidAlive(record.pid)) return false;
+  const imageName = getProcessImageName(record.pid);
+  if (!imageName) return false;
+
+  // Records written by this version must match the exact launched executable.
+  // A legacy bare PID gets the conservative fallback: only an unambiguous
+  // headroom image can be managed, never an arbitrary recycled PID.
+  if (record.binary) return imageName === record.binary.toLowerCase();
+  return /^headroom(?:\.exe)?$/i.test(imageName);
+}
+
+function getManagedRecord() {
+  const record = readPidRecord();
+  if (!record) return null;
+  if (isHeadroomPidOwned(record)) return record;
+  clearPid(record.pid);
+  return null;
+}
+
 export function getManagedPid() {
-  const pid = readPid();
-  return pid && isPidAlive(pid) ? pid : null;
+  return getManagedRecord()?.pid || null;
+}
+
+function closeFdOnce(fd, state) {
+  if (state.closed) return;
+  state.closed = true;
+  try { fs.closeSync(fd); } catch { /* already closed or invalid */ }
+}
+
+function waitForPidExit(pid, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  return new Promise((resolve) => {
+    const poll = () => {
+      if (!isPidAlive(pid)) return resolve(true);
+      if (Date.now() >= deadline) return resolve(false);
+      setTimeout(poll, 100);
+    };
+    poll();
+  });
+}
+
+function queueLifecycle(kind, operation) {
+  if (queuedOperation?.kind === kind) return queuedOperation.promise;
+
+  // Keep the queue live after a rejected operation while still returning the
+  // original rejection to the request that initiated it.
+  const pending = lifecycleTail.then(operation);
+  lifecycleTail = pending.catch(() => {});
+  queuedOperation = { kind, promise: pending };
+  const clear = () => {
+    if (queuedOperation?.promise === pending) queuedOperation = null;
+  };
+  pending.then(clear, clear);
+  return pending;
 }
 
 // Build proxy CLI flags for the active compression extras. `[code]` (AST
@@ -52,7 +161,7 @@ function extrasProxyArgs({ codeAware, kompress } = {}) {
   return args;
 }
 
-export async function startHeadroomProxy({ port = DEFAULT_PORT, codeAware = false, kompress = true } = {}) {
+async function startHeadroomProxyImpl({ port = DEFAULT_PORT, codeAware = false, kompress = true } = {}) {
   const safePort = Number(port) > 0 && Number(port) < 65536 ? Number(port) : DEFAULT_PORT;
   const binary = findHeadroomBinary();
   if (!binary) {
@@ -67,36 +176,69 @@ export async function startHeadroomProxy({ port = DEFAULT_PORT, codeAware = fals
   ensureDir();
   // spawn stdio requires fd numbers, not WriteStream objects.
   const outFd = fs.openSync(LOG_FILE, "a");
+  const fdState = { closed: false };
 
   const args = ["proxy", "--port", String(safePort), ...extrasProxyArgs({ codeAware, kompress })];
-  const child = spawn(binary, args, {
-    stdio: ["ignore", outFd, outFd],
-    detached: true,
-    windowsHide: true,
-    env: { ...process.env },
-  });
+  let child;
+  try {
+    child = spawn(binary, args, {
+      stdio: ["ignore", outFd, outFd],
+      detached: true,
+      windowsHide: true,
+      env: { ...process.env },
+    });
+  } catch (cause) {
+    closeFdOnce(outFd, fdState);
+    const err = new Error(`Failed to spawn headroom proxy: ${cause.message}`);
+    err.code = "SPAWN_FAILED";
+    throw err;
+  }
 
   if (!child.pid) {
-    fs.closeSync(outFd);
+    // An asynchronous spawn error would otherwise be an unhandled EventEmitter
+    // error after this function has returned.
+    child.once("error", () => closeFdOnce(outFd, fdState));
+    closeFdOnce(outFd, fdState);
     const err = new Error("Failed to spawn headroom proxy");
     err.code = "SPAWN_FAILED";
     throw err;
   }
 
   child.unref();
-  writePid(child.pid);
+  writePid(child.pid, binary, safePort);
+
+  // `spawn()` reports missing/broken executables asynchronously. Without an
+  // error listener Node throws an uncaught EventEmitter error and takes the
+  // router down. Reject the pending startup immediately instead.
+  let startupReject = null;
+  let startupTimer = null;
+  let startupSettled = false;
+  child.once("error", (cause) => {
+    clearPid(child.pid);
+    closeFdOnce(outFd, fdState);
+    if (startupReject && !startupSettled) {
+      startupSettled = true;
+      if (startupTimer) clearTimeout(startupTimer);
+      const err = new Error(`Failed to start headroom proxy: ${cause.message}`);
+      err.code = "SPAWN_FAILED";
+      startupReject(err);
+    }
+  });
 
   // Wait until the process either stays alive briefly (success) or exits fast (failure).
   await new Promise((resolve, reject) => {
-    const startupTimer = setTimeout(() => {
+    startupReject = reject;
+    startupTimer = setTimeout(() => {
+      startupSettled = true;
       if (isPidAlive(child.pid)) resolve();
       else reject(new Error("headroom proxy exited during startup — see proxy.log"));
     }, STARTUP_TIMEOUT_MS);
 
     child.once("exit", (code) => {
       clearTimeout(startupTimer);
-      clearPid();
-      fs.closeSync(outFd);
+      startupSettled = true;
+      clearPid(child.pid);
+      closeFdOnce(outFd, fdState);
       const e = new Error(`headroom proxy exited early (code=${code}) — see proxy.log`);
       e.code = "EARLY_EXIT";
       reject(e);
@@ -104,49 +246,63 @@ export async function startHeadroomProxy({ port = DEFAULT_PORT, codeAware = fals
   });
 
   // Close parent's copy of the fd; child retains its own after unref.
-  fs.closeSync(outFd);
+  closeFdOnce(outFd, fdState);
 
   return { pid: child.pid, alreadyRunning: false };
 }
 
-export function stopHeadroomProxy() {
-  const pid = getManagedPid();
-  if (!pid) return { stopped: false, reason: "not_running" };
+export function startHeadroomProxy(options = {}) {
+  return queueLifecycle("start", () => startHeadroomProxyImpl(options));
+}
+
+async function stopHeadroomProxyImpl() {
+  const record = getManagedRecord();
+  if (!record) return { stopped: false, reason: "not_running" };
+  const { pid } = record;
+
   try {
     process.kill(pid, "SIGTERM");
-    // Give it a moment, then force if still alive.
-    setTimeout(() => {
-      if (isPidAlive(pid)) {
-        try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
-      }
-    }, 2000);
-    clearPid();
-    return { stopped: true, pid };
-  } catch (e) {
-    clearPid();
-    const err = new Error(`Failed to stop headroom proxy: ${e.message}`);
+  } catch (cause) {
+    // If the PID has already gone away or been reused, retire our record. If
+    // it is still our process, preserve the record so a later Stop can retry.
+    if (!isHeadroomPidOwned(record)) clearPid(pid);
+    const err = new Error(`Failed to stop headroom proxy: ${cause.message}`);
     err.code = "STOP_FAILED";
     throw err;
   }
+
+  if (!(await waitForPidExit(pid, 2000))) {
+    // A PID may be reused while we wait. Re-check executable ownership before
+    // escalation so SIGKILL can never target an unrelated process.
+    if (!isHeadroomPidOwned(record)) {
+      clearPid(pid);
+      return { stopped: true, pid };
+    }
+    try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
+    if (!(await waitForPidExit(pid, 1000)) && isHeadroomPidOwned(record)) {
+      const err = new Error("Headroom proxy did not exit after a forced stop");
+      err.code = "STOP_TIMEOUT";
+      throw err;
+    }
+  }
+
+  clearPid(pid);
+  return { stopped: true, pid };
 }
 
-// Stop the managed proxy (if any), wait for the pid to die, then start again
-// with the given flags. Used when toggling active extras that require a restart.
-export async function restartHeadroomProxy(opts = {}) {
-  const pid = getManagedPid();
-  if (pid) {
-    try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ }
-    // Wait up to ~3s for graceful exit, force-kill if still alive.
-    for (let i = 0; i < 30 && isPidAlive(pid); i++) {
-      await new Promise((r) => setTimeout(r, 100));
-    }
-    if (isPidAlive(pid)) {
-      try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
-      await new Promise((r) => setTimeout(r, 300));
-    }
-    clearPid();
-  }
-  return startHeadroomProxy(opts);
+export function stopHeadroomProxy() {
+  return queueLifecycle("stop", stopHeadroomProxyImpl);
+}
+
+async function restartHeadroomProxyImpl(opts = {}) {
+  await stopHeadroomProxyImpl();
+  return startHeadroomProxyImpl(opts);
+}
+
+// Stop the managed proxy (if any), then start it with the requested flags.
+// Queueing makes repeated Restart clicks resolve to one controlled operation.
+export function restartHeadroomProxy(opts = {}) {
+  return queueLifecycle("restart", () => restartHeadroomProxyImpl(opts));
 }
 
 export function getHeadroomLogTail(maxLines = 200) {
@@ -180,7 +336,17 @@ export async function installHeadroomExtras(extras = []) {
   // so it cannot be poisoned by caller input — the comma-list is a fixed
   // ['proxy', ...requested]. No shell interpolation.
   const extrasList = ["proxy", ...requested].join(",");
-  const spec = `headroom-ai[${extrasList}]`;
+  // Floor the spec at the installed version. Without it, an extra whose deps are
+  // unsatisfiable on this platform (e.g. `ml` needs torch, which has no
+  // musl/Python-3.14 wheel) makes pip backtrack through older releases hunting
+  // for one where the extra simply doesn't exist — then DOWNGRADE to it. Seen in
+  // the wild: 0.5.4 -> 0.2.2, whose half-finished uninstall removed the
+  // `headroom` console script and left the CLI undetectable. With a floor pip
+  // reports the real conflict instead.
+  const installedVersion = getInstalledHeadroomExtras(py)?.version || null;
+  const spec = installedVersion
+    ? `headroom-ai[${extrasList}]>=${installedVersion}`
+    : `headroom-ai[${extrasList}]`;
   const args = ["-m", "pip", "install", "--upgrade", spec];
 
   ensureDir();
@@ -200,8 +366,16 @@ export async function installHeadroomExtras(extras = []) {
         const status = getInstalledHeadroomExtras(py);
         resolve({ success: true, code, spec, extras: requested, ...status });
       } else {
-        const err = new Error(`pip install exited with code=${code} — see headroom/install.log`);
-        err.code = "INSTALL_FAILED";
+        // Turn pip's resolver wall-of-text into something actionable: the common
+        // failure is an extra that cannot be built for this interpreter/libc.
+        const log = getInstallLogTail(400);
+        const unsatisfiable = /No matching distribution found|does not provide the extra|ResolutionImpossible/i.test(log);
+        const err = new Error(
+          unsatisfiable
+            ? `Could not install headroom extras [${requested.join(", ")}] — a dependency has no wheel for this interpreter/platform (the "ml" extra needs torch, which publishes nothing for musl/Alpine). Existing install left as-is. See headroom/install.log.`
+            : `pip install exited with code=${code} — see headroom/install.log`
+        );
+        err.code = unsatisfiable ? "EXTRA_UNAVAILABLE" : "INSTALL_FAILED";
         reject(err);
       }
     });

@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
 import { getProviderNodeById } from "@/models";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider, AI_PROVIDERS } from "@/shared/constants/providers";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider, isCustomVideoProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from "open-sse/config/providers.js";
 import { openaiToCommandCodeRequest } from "open-sse/translator/request/openai-to-commandcode.js";
 import { resolveQoderCredentials, resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
+
+const HUGGINGFACE_WHOAMI_URL = "https://huggingface.co/api/whoami-v2";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).
@@ -42,6 +44,21 @@ async function probeWebProvider(provider, apiKey) {
   return res.status !== 401 && res.status !== 403;
 }
 
+async function probeHuggingFaceToken(apiKey) {
+  const res = await fetch(HUGGINGFACE_WHOAMI_URL, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(8000),
+  });
+
+  if (res.ok) return true;
+  if (res.status === 401 || res.status === 403) return false;
+
+  // HuggingFace model/task probes can reject valid fine-grained Inference
+  // Provider tokens. Use whoami-v2 strictly as an auth probe and surface
+  // transient upstream failures separately instead of calling the key invalid.
+  throw new Error(`HuggingFace token validation returned HTTP ${res.status}`);
+}
+
 // Probe a media provider (tts/embedding/stt/image/video) using *Config.
 // Returns true if API key is accepted; null to skip (let default handler decide).
 async function probeMediaProvider(provider, apiKey) {
@@ -51,6 +68,7 @@ async function probeMediaProvider(provider, apiKey) {
   const kinds = p.serviceKinds || ["llm"];
   const isMediaOnly = kinds.every((k) => MEDIA_KINDS.has(k));
   if (!isMediaOnly) return null;
+  if (provider === "huggingface") return await probeHuggingFaceToken(apiKey);
   const cfg = p.ttsConfig || p.sttConfig || p.embeddingConfig || p.imageConfig || p.videoConfig || p.musicConfig;
   // No probe config → best-effort accept (validate at usage time)
   if (!cfg) return true;
@@ -139,6 +157,28 @@ export async function POST(request) {
         });
         // 401/403 = bad key; anything else (including 400 "model not found") means key works
         isValid = embedRes.status !== 401 && embedRes.status !== 403;
+        return NextResponse.json({
+          valid: isValid,
+          error: isValid ? null : "Invalid API key",
+        });
+      }
+
+      // Custom Video nodes: async job APIs (xAI-style). Probe POST /generations with an
+      // empty body — 401/403 = bad key; anything else means the key is accepted (no billable
+      // job is created for a malformed/empty request).
+      if (isCustomVideoProvider(provider)) {
+        const node = await getProviderNodeById(provider);
+        if (!node) {
+          return NextResponse.json({ error: "Custom Video node not found" }, { status: 404 });
+        }
+        const baseUrl = node.baseUrl?.trim().replace(/\/$/, "").replace(/\/(generations|edits|extensions)$/, "") || "";
+        const res = await fetch(`${baseUrl}/generations`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+          signal: AbortSignal.timeout(8000),
+        });
+        isValid = res.status !== 401 && res.status !== 403;
         return NextResponse.json({
           valid: isValid,
           error: isValid ? null : "Invalid API key",

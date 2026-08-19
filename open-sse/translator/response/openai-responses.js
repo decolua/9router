@@ -73,6 +73,15 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   if (delta.content) {
     let content = delta.content;
 
+    // Reasoning arrived via reasoning_content (not inline <think> tags) and now
+    // normal text begins → the reasoning section is over. Close it here on the
+    // state transition, so consumers get an explicit "reasoning ended" event
+    // before the first output_text.delta (#454) without translators having to
+    // inject literal tag markers into content.
+    if (state.reasoningId && !state.reasoningDone && !state.inThinking) {
+      closeReasoning(state, emit);
+    }
+
     if (content.includes("<think>")) {
       state.inThinking = true;
       content = content.replace("<think>", "");
@@ -446,6 +455,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     state.created = Math.floor(Date.now() / 1000);
     state.toolCallIndex = 0;
     state.currentToolCallId = null;
+    state.firstContentSent = false; // Track to send role: "assistant" in first delta chunk
   }
 
   // Text content delta
@@ -455,7 +465,10 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
 
     return buildChunk(
       { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
-      { content: delta }
+      Object.assign(
+        !state.firstContentSent ? (state.firstContentSent = true, { role: "assistant" }) : {},
+        { content: delta }
+      )
     );
   }
 
@@ -471,14 +484,17 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
 
     return buildChunk(
       { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
-      {
-        tool_calls: [{
-          index: state.toolCallIndex,
-          id: state.currentToolCallId,
-          type: OPENAI_BLOCK.FUNCTION,
-          function: { name: item.name || "", arguments: "" }
-        }]
-      }
+      Object.assign(
+        !state.firstContentSent ? (state.firstContentSent = true, { role: "assistant", content: null }) : {},
+        {
+          tool_calls: [{
+            index: state.toolCallIndex,
+            id: state.currentToolCallId,
+            type: OPENAI_BLOCK.FUNCTION,
+            function: { name: item.name || "", arguments: "" }
+          }]
+        }
+      )
     );
   }
 

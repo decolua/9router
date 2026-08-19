@@ -5,11 +5,11 @@ import { normalizeModel } from "./models/schema.js";
 import { buildTtsProviderModels } from "../config/ttsModels.js";
 
 // oauth block is canonical for these fields; inject into transport so executors reading
-// this.config.{clientId,clientSecret,tokenUrl} keep working without duplicating in transport
+// this.config.{clientId,clientSecret,tokenUrl} keep working without duplicating in transport.
+// protocolProfile is canonical at entry top level and projected into both runtime views.
 const OAUTH_INJECT_FIELDS = ["clientId", "clientSecret", "tokenUrl"];
 
-// transport: re-apply shared default (format:"openai") + inject oauth-canonical fields
-function buildTransport(transport, oauth) {
+function buildTransport(transport, oauth, protocolProfile) {
   const t = { ...transport };
   if (!t.format) t.format = PROVIDER_DEFAULTS.format;
   if (oauth) {
@@ -17,6 +17,7 @@ function buildTransport(transport, oauth) {
       if (t[f] === undefined && oauth[f] !== undefined) t[f] = oauth[f];
     }
   }
+  if (protocolProfile !== undefined) t.protocolProfile = protocolProfile;
   return t;
 }
 
@@ -24,6 +25,7 @@ const MEDIA_KEYS = new Set([
   "serviceKinds", "ttsConfig", "sttConfig", "embeddingConfig",
   "imageConfig", "imageToTextConfig", "videoConfig", "musicConfig",
   "searchViaChat", "searchConfig", "fetchConfig",
+  "ocrConfig", "moderationConfig",
   "modelsFetcher", "mediaPriority", "hiddenKinds",
 ]);
 
@@ -33,11 +35,16 @@ export const PROVIDER_OAUTH = {};
 export const PROVIDER_MEDIA = {};
 for (const entry of REGISTRY) {
   if (entry.transport) {
-    PROVIDERS[entry.id] = buildTransport(entry.transport, entry.oauth);
+    PROVIDERS[entry.id] = buildTransport(entry.transport, entry.oauth, entry.protocolProfile);
     if (entry.transports) PROVIDERS[entry.id].transports = entry.transports;
   }
   if (entry.models !== undefined) PROVIDER_MODELS[entry.alias || entry.id] = entry.models.map(normalizeModel);
-  if (entry.oauth) PROVIDER_OAUTH[entry.id] = entry.oauth;
+  if (entry.oauth) {
+    PROVIDER_OAUTH[entry.id] = { ...entry.oauth };
+    if (entry.protocolProfile !== undefined) {
+      PROVIDER_OAUTH[entry.id].protocolProfile = entry.protocolProfile;
+    }
+  }
   // Build PROVIDER_MEDIA from top-level fields (post-migration) + legacy entry.media
   const mediaFields = {};
   for (const k of MEDIA_KEYS) {

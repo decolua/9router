@@ -3,7 +3,10 @@
 
 import * as log from "../utils/logger.js";
 import { getRefreshLeadMs } from "open-sse/services/tokenRefresh.js";
-import { getCredentialExpiryMs } from "open-sse/services/oauthCredentialManager.js";
+import {
+  getCredentialExpiryMs,
+  shouldRefreshCredentials,
+} from "open-sse/services/oauthCredentialManager.js";
 
 /** Refresh when expiry is within 30 minutes (or the provider on-request lead, whichever larger). */
 export const BACKGROUND_REFRESH_LEAD_MS = 30 * 60 * 1000;
@@ -56,15 +59,15 @@ export function selectConnectionsNeedingRefresh(connections, nowMs = Date.now())
     if (!conn.refreshToken) continue;
 
     const expiresAtMs = getCredentialExpiryMs(conn);
-    if (expiresAtMs === null) continue;
-
     const providerLead = getRefreshLeadMs(conn.provider);
     const leadMs = Math.max(
       Number.isFinite(providerLead) ? providerLead : 0,
       BACKGROUND_REFRESH_LEAD_MS
     );
 
-    if (expiresAtMs - nowMs < leadMs) {
+    const providerRefreshDue = shouldRefreshCredentials(conn.provider, conn, nowMs);
+    const backgroundWindowDue = expiresAtMs !== null && expiresAtMs - nowMs < leadMs;
+    if (providerRefreshDue || backgroundWindowDue) {
       out.push(conn);
     }
   }
@@ -78,8 +81,8 @@ async function loadActiveConnections() {
 }
 
 async function refreshOne(connection) {
-  const { checkAndRefreshToken } = await import("./tokenRefresh.js");
-  return checkAndRefreshToken(connection.provider, connection, { force: true });
+  const { keepConnectionAlive } = await import("../../shared/services/tokenKeepAlive.js");
+  return keepConnectionAlive(connection, undefined, undefined, true);
 }
 
 /**

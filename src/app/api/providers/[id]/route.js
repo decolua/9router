@@ -167,6 +167,12 @@ export async function PUT(request, { params }) {
     return NextResponse.json({ connection: result });
   } catch (error) {
     console.log("Error updating connection:", error);
+    if (error?.code === "SECRET_DECRYPTION_FAILED") {
+      return NextResponse.json(
+        { error: "Stored credentials cannot be read. Add a new connection to re-authenticate; the original encrypted data was left unchanged." },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ error: "Failed to update connection" }, { status: 500 });
   }
 }

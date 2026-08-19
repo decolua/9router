@@ -12,6 +12,7 @@ import p9 from "./brave-search.js";
 import p10 from "./byteplus.js";
 import p11 from "./cartesia.js";
 import p12 from "./cerebras.js";
+import p12b from "./charm-hyper.js";
 import p13 from "./chutes.js";
 import p14 from "./claude.js";
 import p15 from "./cline.js";
@@ -75,6 +76,7 @@ import p72 from "./perplexity.js";
 import p73 from "./perplexity-agent.js";
 import p74 from "./playht.js";
 import p75 from "./qoder.js";
+import p75b from "./qoderwork-cn.js";
 import p77 from "./recraft.js";
 import p78 from "./runwayml.js";
 import p79 from "./sdwebui.js";
@@ -136,6 +138,7 @@ export default [
   p10,
   p11,
   p12,
+  p12b,
   p13,
   p14,
   p15,
@@ -199,6 +202,7 @@ export default [
   p73,
   p74,
   p75,
+  p75b,
   p77,
   p78,
   p79,

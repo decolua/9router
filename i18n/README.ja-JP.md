@@ -40,25 +40,26 @@
 
 ```
 ┌─────────────┐
-│  あなたの    │  （Claude Code、Codex、Gemini CLI、OpenClaw、Cursor、Cline...）
+│  あなたの    │  （Claude Code、Codex、OpenClaw、Cursor、Cline、Antigravity...）
 │   CLIツール  │
 └──────┬──────┘
        │ http://localhost:20128/v1
        ↓
-┌─────────────────────────────────────────┐
-│        9Router（スマートルーター）        │
-│  • フォーマット変換（OpenAI ↔ Claude）   │
-│  • クオータ追跡                          │
-│  • 自動トークンリフレッシュ               │
-└──────┬──────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│        9Router（スマートルーター）          │
+│  • RTK Token Saver (20-40% トークン削減)    │
+│  • フォーマット変換（OpenAI ↔ Claude）     │
+│  • クオータ追跡                             │
+│  • 自動トークンリフレッシュ                 │
+└──────┬──────────────────────────────────────┘
        │
-       ├─→ [Tier 1: サブスクリプション] Claude Code、Codex、Gemini CLI
+       ├─→ [Tier 1: サブスクリプション] Claude Code、Codex、GitHub Copilot
        │   ↓ クオータ消費済み
        ├─→ [Tier 2: 格安] GLM ($0.6/1M)、MiniMax ($0.2/1M)
        │   ↓ 予算上限
-       └─→ [Tier 3: 無料] iFlow、Qwen、Kiro（無制限）
+       └─→ [Tier 3: 無料] Kiro AI、OpenCode Free、Vertex AI ($300 クレジット)
 
-結果: コーディングが止まらない、最小コスト
+結果: コーディングが止まらない、最小コスト + RTK経由で20-40%トークン削減
 ```
 
 ---
@@ -981,7 +982,7 @@ docker build -t 9router .
 # コンテナを実行（現在のセットアップで使用しているコマンド）
 docker run -d \
   --name 9router \
-  -p 20128:20128 \
+  -p 127.0.0.1:20128:20128 \
   --env-file /root/dev/9router/.env \
   -v 9router-data:/app/data \
   -v 9router-usage:/root/.9router \
@@ -993,7 +994,7 @@ docker run -d \
 ```bash
 docker run -d \
   --name 9router \
-  -p 20128:20128 \
+  -p 127.0.0.1:20128:20128 \
   --env-file ./.env \
   -v 9router-data:/app/data \
   -v 9router-usage:/root/.9router \

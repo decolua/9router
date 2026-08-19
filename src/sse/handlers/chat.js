@@ -4,8 +4,7 @@ import {
   getProviderCredentials,
   markAccountUnavailable,
   clearAccountError,
-  extractApiKey,
-  isValidApiKey,
+  resolveClientApiKey,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
@@ -13,15 +12,17 @@ import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
-import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
+import { errorResponse, unavailableResponse, authErrorResponse } from "open-sse/utils/error.js";
 import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "open-sse/services/combo.js";
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
-import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import { HTTP_STATUS, COMBO_MODEL_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
+import { isRequestReplayBufferError } from "open-sse/services/accountFallback.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { annotateDirectResponse } from "open-sse/services/routeAttribution.js";
 
 /**
  * Handle chat completion request
@@ -50,12 +51,11 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
 
-  // Log API key (masked)
-  const authHeader = request.headers.get("Authorization");
-  const apiKey = extractApiKey(request);
-  if (authHeader && apiKey) {
-    const masked = log.maskKey(apiKey);
-    log.debug("AUTH", `API Key: ${masked}`);
+  // Resolve client API key across all presented credentials (Authorization +
+  // x-api-key) — attribution uses the credential that actually validated.
+  const { apiKey, valid: apiKeyValid } = await resolveClientApiKey(request);
+  if (apiKey) {
+    log.debug("AUTH", `API Key: ${log.maskKey(apiKey)}${apiKeyValid ? "" : " (not recognized)"}`);
   } else {
     log.debug("AUTH", "No API key provided (local mode)");
   }
@@ -65,12 +65,11 @@ export async function handleChat(request, clientRawRequest = null) {
   if (settings.requireApiKey) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
+      return authErrorResponse(clientRawRequest.endpoint, "Missing API key");
     }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
+    if (!apiKeyValid) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+      return authErrorResponse(clientRawRequest.endpoint, "Invalid API key");
     }
   }
 
@@ -117,7 +116,10 @@ export async function handleChat(request, clientRawRequest = null) {
     }
 
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+    const comboConfig = comboStrategies[modelStr];
+    const comboTimeoutMs = comboConfig?.timeoutMs || COMBO_MODEL_TIMEOUT_MS || 0;
+
+    log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit}, timeout: ${comboTimeoutMs || "off"})`);
     return handleComboChat({
       body,
       models: augmentedModels,
@@ -128,7 +130,8 @@ export async function handleChat(request, clientRawRequest = null) {
       log,
       comboName: modelStr,
       comboStrategy,
-      comboStickyLimit
+      comboStickyLimit,
+      comboTimeoutMs,
     });
   }
 
@@ -223,9 +226,20 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
+  let requestReplayConnectionId = null;
+  let requestReplayAttempted = false;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = requestReplayConnectionId
+      ? await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId: requestReplayConnectionId })
+      : await getProviderCredentials(provider, excludeConnectionIds, model);
+
+    // If the model is a bare name (no "/" — e.g. "auto" resolved from a connection alias),
+    // and the connection has a defaultModel, use that so the upstream receives a real model ID
+    let effectiveModel = model;
+    if (!modelStr.includes("/") && credentials?.defaultModel) {
+      effectiveModel = credentials.defaultModel;
+    }
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -260,8 +274,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
     const result = await handleChatCore({
-      body: { ...body, model: `${provider}/${model}` },
-      modelInfo: { provider, model },
+      body: { ...body, model: `${provider}/${effectiveModel}` },
+      modelInfo: { provider, model: effectiveModel },
       credentials: refreshedCredentials,
       log,
       clientRawRequest,
@@ -294,14 +308,26 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         });
       },
       onRequestSuccess: async () => {
-        await clearAccountError(credentials.connectionId, credentials, model);
+        await clearAccountError(credentials.connectionId, credentials, effectiveModel);
       }
     });
 
-    if (result.success) return result.response;
+    if (result.success) {
+      return annotateDirectResponse({
+        requestedModel: modelStr,
+        resolvedModel: `${provider}/${effectiveModel}`,
+      }, result.response);
+    }
+
+    if (!requestReplayAttempted && isRequestReplayBufferError(result.status, result.error)) {
+      requestReplayAttempted = true;
+      requestReplayConnectionId = credentials.connectionId;
+      log.warn("RETRY", `ACC:${credentials.connectionName} replaying once after upstream request-buffer overflow`);
+      continue;
+    }
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
+    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, effectiveModel, result.resetsAtMs);
 
     if (shouldFallback) {
       log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
@@ -311,6 +337,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       continue;
     }
 
-    return result.response;
+    return annotateDirectResponse({
+      requestedModel: modelStr,
+      resolvedModel: `${provider}/${effectiveModel}`,
+    }, result.response);
   }
 }

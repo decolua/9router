@@ -7,8 +7,10 @@ import {
   wrapConnectRPCFrame,
   decodeMessage,
   parseConnectRPCFrame,
-  extractTextFromResponse
+  extractTextFromResponse,
+  parseNativeToolCallsFromText,
 } from "../utils/cursorProtobuf.js";
+import { shouldForceAgentMode } from "../utils/cursorToolMapping.js";
 import { buildCursorHeaders } from "../utils/cursorChecksum.js";
 import { estimateUsage } from "../utils/usageTracking.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
@@ -17,6 +19,7 @@ import { FORMATS } from "../translator/formats.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import zlib from "zlib";
 import crypto from "crypto";
+import { createRequire } from "module";
 
 // Detect cloud environment
 const isCloudEnv = () => {
@@ -25,11 +28,15 @@ const isCloudEnv = () => {
   return false;
 };
 
-// Lazy import http2 (only in Node.js environment)
+// Lazy require http2 (only in Node.js environment). Uses synchronous
+// createRequire instead of a top-level await import so this module stays
+// compatible with CJS-mode transpilation (e.g. tsx/esbuild in the 9router-api
+// standalone server).
 let http2 = null;
 if (!isCloudEnv()) {
   try {
-    http2 = await import("http2");
+    const require = createRequire(import.meta.url);
+    http2 = require("http2");
   } catch {
     // http2 not available
   }
@@ -181,7 +188,23 @@ function visibleComposerContentFromThinking(thinking) {
   const endTag = "</think>";
   const endIdx = thinking.lastIndexOf(endTag);
   if (endIdx < 0) return "";
-  return thinking.slice(endIdx + endTag.length).trimStart();
+  let visible = thinking.slice(endIdx + endTag.length).trimStart();
+  // Strip Composer protocol markers that wrap the final visible answer.
+  // Cursor's Composer protobuf sometimes prefixes the visible suffix with
+  // sentinel tags like `<｜final｜>` (full-width pipes) or `<|final|>` (ASCII)
+  // and may close them with a matching `<｜/final｜>` / `<|/final|>`.
+  // These are protocol-internal and must not leak to OpenAI-compatible clients.
+  const openMarker = /^\s*<[｜|]\s*final\s*[｜|]>\s*/i;
+  const closeMarker = /\s*<[｜|]\s*\/\s*final\s*[｜|]>\s*$/i;
+  if (openMarker.test(visible)) {
+    visible = visible.replace(openMarker, "");
+  } else if (/^\s*<(?![｜|/])/.test(visible) || /^\s*<[｜|][^>]*$/.test(visible)) {
+    // A streaming chunk delivered a partial opening marker like `<` or `<｜fin`.
+    // Wait for more data before emitting anything to avoid leaking the marker.
+    return "";
+  }
+  visible = visible.replace(closeMarker, "").trim();
+  return visible;
 }
 
 function decompressPayload(payload, flags) {
@@ -301,9 +324,8 @@ export class CursorExecutor extends BaseExecutor {
     const messages = body.messages || [];
     const tools = body.tools || [];
     const reasoningEffort = body.reasoning_effort || null;
-    // Detect Claude Code UA to force Agent mode (issue #643)
     const ua = credentials?.rawHeaders?.["user-agent"] || "";
-    const forceAgentMode = ua.includes("claude-cli") || ua.includes("claude-code") || ua.includes("Claude Code");
+    const forceAgentMode = shouldForceAgentMode(ua);
     return generateCursorBody(messages, model, tools, reasoningEffort, forceAgentMode);
   }
 
@@ -846,6 +868,13 @@ export class CursorExecutor extends BaseExecutor {
 
     debugLog(`[CURSOR BUFFER] Final toolCalls count: ${toolCalls.length}`);
 
+    if (toolCalls.length === 0 && finalContent) {
+      const parsedNative = parseNativeToolCallsFromText(finalContent);
+      if (parsedNative.length > 0) {
+        debugLog(`[CURSOR BUFFER] Parsed ${parsedNative.length} native text tool call(s)`);
+        toolCalls.push(...parsedNative);
+      }
+    }
 
     const message = {
       role: "assistant",

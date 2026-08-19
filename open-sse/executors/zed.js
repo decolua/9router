@@ -28,26 +28,14 @@ import {
   resolveZedModels,
   zedLlmFetch,
 } from "../shared/zedAuth.js";
-
-const ZED_PROVIDER = {
-  anthropic: "Anthropic",
-  openai: "OpenAi",
-  google: "Google",
-  xai: "XAi",
-};
+import {
+  ZED_CLIENT_VERSION,
+  ZED_PROVIDER,
+  resolveZedProvider,
+} from "../config/zedConstants.js";
 
 function normalizeZedProvider(value, model) {
-  const raw = String(value || "").toLowerCase();
-  if (raw === "anthropic") return ZED_PROVIDER.anthropic;
-  if (raw === "openai" || raw === "open_ai") return ZED_PROVIDER.openai;
-  if (raw === "google" || raw === "gemini") return ZED_PROVIDER.google;
-  if (raw === "xai" || raw === "x_ai" || raw === "x-ai") return ZED_PROVIDER.xai;
-
-  const m = String(model || "").toLowerCase();
-  if (m.includes("claude")) return ZED_PROVIDER.anthropic;
-  if (m.includes("gemini")) return ZED_PROVIDER.google;
-  if (m.includes("grok") || m.includes("xai")) return ZED_PROVIDER.xai;
-  return ZED_PROVIDER.openai;
+  return resolveZedProvider(value, model);
 }
 
 function buildProviderRequest(provider, model, body, stream, credentials) {
@@ -250,7 +238,7 @@ class ZedExecutor extends BaseExecutor {
           "Content-Type": "application/json",
           Accept: "application/x-ndjson, text/event-stream, */*",
           "User-Agent": "9router/zed",
-          "x-zed-version": this.config?.appVersion?.toString() || "0.200.0",
+          "x-zed-version": this.config?.appVersion?.toString() || ZED_CLIENT_VERSION,
           [ZED_HEADERS.clientSupportsStatus]: "true",
           [ZED_HEADERS.clientSupportsStreamEnded]: "true",
         },

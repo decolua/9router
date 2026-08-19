@@ -3,7 +3,7 @@ import { getProxyPoolById, updateProxyPool } from "@/models";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { fetch as undiciFetch } from "undici";
 
-async function testVercelRelay(relayUrl, timeoutMs = 10000) {
+async function testVercelRelay(relayUrl, timeoutMs = 30000) {
   const controller = new AbortController();
   const startedAt = Date.now();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -11,8 +11,8 @@ async function testVercelRelay(relayUrl, timeoutMs = 10000) {
     const res = await undiciFetch(relayUrl, {
       method: "GET",
       headers: {
-        "x-relay-target": "https://httpbin.org",
-        "x-relay-path": "/get",
+        "x-relay-target": "https://api.ipify.org",
+        "x-relay-path": "/?format=json",
       },
       signal: controller.signal,
     });
@@ -43,7 +43,7 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: "Proxy pool not found" }, { status: 404 });
     }
 
-    const result = proxyPool.type === "vercel" || proxyPool.type === "cloudflare" || proxyPool.type === "deno"
+    const result = proxyPool.type === "vercel" || proxyPool.type === "cloudflare"
       ? await testVercelRelay(proxyPool.proxyUrl)
       : await testProxyUrl({ proxyUrl: proxyPool.proxyUrl });
     const now = new Date().toISOString();

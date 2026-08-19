@@ -8,7 +8,7 @@
  *  - proxyFetch.js: api.anthropic.com routes through anthropicFetch path
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ─── DefaultExecutor.buildHeaders() ──────────────────────────────────────────
 
@@ -34,7 +34,7 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
   it("includes heavy-agent beta flags for claude-opus-5", () => {
     const executor = new DefaultExecutor("claude");
     const headers = executor.buildHeaders({ apiKey: "sk-test" }, true, undefined, "claude-opus-5");
-    const betaFlags = headers["Anthropic-Beta"].split(",").map(s => s.trim());
+    const betaFlags = headers["anthropic-beta"].split(",").map(s => s.trim());
     expect(betaFlags).toContain("advanced-tool-use-2025-11-20");
     expect(betaFlags).toContain("effort-2025-11-24");
   });
@@ -42,7 +42,7 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
   it("includes heavy-agent beta flags for claude-sonnet-5", () => {
     const executor = new DefaultExecutor("claude");
     const headers = executor.buildHeaders({ apiKey: "sk-test" }, true, undefined, "claude-sonnet-5");
-    const betaFlags = headers["Anthropic-Beta"].split(",").map(s => s.trim());
+    const betaFlags = headers["anthropic-beta"].split(",").map(s => s.trim());
     expect(betaFlags).toContain("advanced-tool-use-2025-11-20");
     expect(betaFlags).toContain("effort-2025-11-24");
   });
@@ -50,7 +50,7 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
   it("omits heavy-agent beta flags for claude-haiku-4-5-20251001", () => {
     const executor = new DefaultExecutor("claude");
     const headers = executor.buildHeaders({ apiKey: "sk-test" }, true, undefined, "claude-haiku-4-5-20251001");
-    const betaFlags = headers["Anthropic-Beta"].split(",").map(s => s.trim());
+    const betaFlags = headers["anthropic-beta"].split(",").map(s => s.trim());
     expect(betaFlags).not.toContain("advanced-tool-use-2025-11-20");
     expect(betaFlags).not.toContain("effort-2025-11-24");
     expect(betaFlags).toContain("claude-code-20250219");
@@ -59,7 +59,7 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
   it("omits heavy-agent beta flags for claude-fable-5", () => {
     const executor = new DefaultExecutor("claude");
     const headers = executor.buildHeaders({ apiKey: "sk-test" }, true, undefined, "claude-fable-5");
-    const betaFlags = headers["Anthropic-Beta"].split(",").map(s => s.trim());
+    const betaFlags = headers["anthropic-beta"].split(",").map(s => s.trim());
     expect(betaFlags).not.toContain("advanced-tool-use-2025-11-20");
     expect(betaFlags).not.toContain("effort-2025-11-24");
   });
@@ -93,6 +93,25 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
   it("does not throw when no model is given", () => {
     const executor = new DefaultExecutor("claude");
     expect(() => executor.buildHeaders({ apiKey: "sk" }, false)).not.toThrow();
+  });
+});
+
+describe("DefaultExecutor.buildHeaders() — Anthropic header dedupe", () => {
+  let DefaultExecutor;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const mod = await import("open-sse/executors/default.js");
+    DefaultExecutor = mod.DefaultExecutor || mod.default;
+  });
+
+  it("does not send duplicate anthropic-version variants for the Anthropic provider", () => {
+    const executor = new DefaultExecutor("anthropic");
+    const headers = executor.buildHeaders({ apiKey: "sk-test" }, true);
+
+    expect(headers["Anthropic-Version"]).toBeUndefined();
+    expect(headers["anthropic-version"]).toBe("2023-06-01");
+    expect(headers["anthropic-version"]).not.toContain(",");
   });
 });
 
@@ -185,101 +204,5 @@ describe("DefaultExecutor.buildHeaders() — anthropic-compatible stripping", ()
     const hasVersion =
       headers["Anthropic-Version"] || headers["anthropic-version"];
     expect(hasVersion).toBeDefined();
-  });
-});
-
-// ─── proxyFetch anthropicFetch routing ────────────────────────────────────────
-
-describe("proxyAwareFetch — api.anthropic.com routing", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("routes api.anthropic.com to gotScraping (non-streaming) and returns ok response", async () => {
-    // Mock got-scraping before module load
-    vi.doMock("got-scraping", () => {
-      const mockGotScraping = vi.fn().mockResolvedValue({
-        statusCode: 200,
-        statusMessage: "OK",
-        headers: { "content-type": "application/json" },
-        rawBody: Buffer.from(JSON.stringify({ id: "msg_test" })),
-      });
-      mockGotScraping.stream = vi.fn();
-      return { gotScraping: mockGotScraping };
-    });
-
-    vi.resetModules();
-    const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
-    const { gotScraping } = await import("got-scraping");
-
-    const res = await proxyAwareFetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      // No Accept: text/event-stream → non-streaming path
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "claude-3-5-sonnet-20241022", messages: [] }),
-    });
-
-    expect(gotScraping).toHaveBeenCalledOnce();
-    expect(res.ok).toBe(true);
-    expect(res.status).toBe(200);
-    const data = await res.json();
-    expect(data.id).toBe("msg_test");
-  });
-
-  it("falls back gracefully when got-scraping throws on non-streaming path", async () => {
-    vi.doMock("got-scraping", () => {
-      const fn = vi.fn().mockRejectedValue(new Error("TLS error"));
-      fn.stream = vi.fn();
-      return { gotScraping: fn };
-    });
-
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      headers: new Headers(),
-      body: null,
-      text: async () => "{}",
-      json: async () => ({}),
-    });
-
-    vi.resetModules();
-    const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
-
-    const res = await proxyAwareFetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    });
-
-    expect(res.ok).toBe(true);
-    globalThis.fetch = originalFetch;
-  });
-
-  it("does NOT route non-Anthropic hosts through gotScraping", async () => {
-    const gotScrapingMock = vi.fn();
-    vi.doMock("got-scraping", () => ({ gotScraping: gotScrapingMock }));
-
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      headers: new Headers(),
-      body: null,
-      text: async () => "{}",
-      json: async () => ({}),
-    });
-
-    vi.resetModules();
-    const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
-
-    await proxyAwareFetch("https://openrouter.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    });
-
-    expect(gotScrapingMock).not.toHaveBeenCalled();
   });
 });

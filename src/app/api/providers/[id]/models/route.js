@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { platform, arch } from "os";
 import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
@@ -11,6 +12,13 @@ import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
+
+// Build User-Agent matching the real Antigravity IDE format
+function getAntigravityUserAgent() {
+  const p = platform() === "win32" ? "windows" : platform();
+  const a = arch() === "x64" ? "amd64" : arch();
+  return `antigravity/ide/2.1.1 ${p}/${a}`;
+}
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -379,8 +387,7 @@ const PROVIDER_MODELS_CONFIG = {
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${token}`,
-            "User-Agent": "google-api-nodejs-client/9.15.1",
-            "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1"
+            "User-Agent": getAntigravityUserAgent(),
           },
           body: JSON.stringify(body)
         });

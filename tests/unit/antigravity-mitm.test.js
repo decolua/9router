@@ -4,7 +4,7 @@ import { MITM_TOOLS } from "../../src/shared/constants/cliTools.js";
 
 // config.js is the CJS MITM bundle module (dependency-isolated for the runtime copy).
 const require = createRequire(import.meta.url);
-const { MODEL_NO_MAP } = require("../../src/mitm/config.js");
+const { MODEL_NO_MAP, TARGET_HOSTS, getToolForHost } = require("../../src/mitm/config.js");
 
 // All assertions below are grounded in a live MITM dump capture of Antigravity's
 // streamGenerateContent requests (see AI_JOURNAL): the agent loop sends
@@ -12,6 +12,12 @@ const { MODEL_NO_MAP } = require("../../src/mitm/config.js");
 // `tab_flash_lite_preview`.
 describe("Antigravity MITM model handling", () => {
   const ag = MITM_TOOLS.antigravity;
+
+  it("intercepts the sandbox cloudcode host as Antigravity", () => {
+    const host = "daily-cloudcode-pa.sandbox.googleapis.com";
+    expect(TARGET_HOSTS).toContain(host);
+    expect(getToolForHost(`${host}:443`)).toBe("antigravity");
+  });
 
   it("flags the out-of-box agent/Default model mandatory", () => {
     expect(ag.defaultModels.find((m) => m.id === "gemini-3.5-flash-low")?.mandatory).toBe(true);

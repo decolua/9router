@@ -4,9 +4,11 @@ import {
   getProviderAlias,
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
+  OPENAI_COMPATIBLE_PREFIX,
 } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
+import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
@@ -15,25 +17,106 @@ import { resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
-import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import REGISTRY from "open-sse/providers/registry/index.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
 // Adding a provider here makes /v1/models prefer the live catalog for it.
+// Keys can be exact provider IDs or prefixes (e.g., "openai-compatible-").
 const LIVE_MODEL_RESOLVERS = {
+  opencode: async (conn) => {
+    // Fetch models from OpenCode's /zen/v1/models endpoint
+    const baseUrl = conn?.providerSpecificData?.baseUrl || "https://opencode.ai";
+    const url = `${baseUrl.replace(/\/$/, "")}/zen/v1/models`;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "x-opencode-client": "desktop",
+        },
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!response.ok) return null;
+      const data = await response.json();
+      const rawModels = parseOpenAIStyleModels(data);
+      const models = rawModels
+        .map((model) => model?.id || model?.name || model?.model)
+        .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
+      return models.length ? { models: models.map((id) => ({ id })) } : null;
+    } catch {
+      return null;
+    }
+  },
+  "openai-compatible-": async (conn) => {
+    // Fetch models from OpenAI-compatible provider node's /models endpoint
+    if (!conn?.apiKey) return null;
+    const baseUrl = typeof conn?.providerSpecificData?.baseUrl === "string"
+      ? conn.providerSpecificData.baseUrl.trim().replace(/\/$/, "")
+      : "";
+    if (!baseUrl) return null;
+    const url = `${baseUrl}/models`;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${conn.apiKey}`,
+          [INTERNAL_MODELS_FETCH_HEADER]: "1",
+        },
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (!response.ok) return null;
+      const data = await response.json();
+      const rawModels = parseOpenAIStyleModels(data);
+      const models = rawModels
+        .map((model) => model?.id || model?.name || model?.model)
+        .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
+      return models.length ? { models: models.map((id) => ({ id })) } : null;
+    } catch {
+      return null;
+    }
+  },
   kiro: async (conn) => {
     const result = await resolveKiroModels({
       accessToken: conn.accessToken,
       refreshToken: conn.refreshToken,
       providerSpecificData: conn.providerSpecificData || {}
-    }, { log: console });
+    }, {
+      log: console,
+      onCredentialsRefreshed: async (refreshed) => {
+        if (!refreshed?.accessToken || !conn.id) return;
+        await updateProviderCredentials(conn.id, {
+          ...refreshed,
+          existingProviderSpecificData: conn.providerSpecificData || {},
+          testStatus: "active",
+        });
+        conn.accessToken = refreshed.accessToken;
+        if (refreshed.refreshToken) conn.refreshToken = refreshed.refreshToken;
+        if (refreshed.providerSpecificData) {
+          conn.providerSpecificData = {
+            ...(conn.providerSpecificData || {}),
+            ...refreshed.providerSpecificData,
+          };
+        }
+      }
+    });
     return result?.models?.length ? { models: result.models } : null;
   },
   qoder: async (conn) => {
     const result = await resolveQoderModels({
       accessToken: conn.accessToken,
+      apiKey: conn.apiKey,
       refreshToken: conn.refreshToken,
       email: conn.email,
       displayName: conn.displayName,
@@ -133,7 +216,7 @@ const parseOpenAIStyleModels = (data) => {
 // and break recursive loops between 9router instances connected to each other.
 const INTERNAL_MODELS_FETCH_HEADER = "x-9r-internal-models-fetch";
 
-// LLM kind sentinel — combos/models with no explicit kind default to LLM
+// LLM kind sentinel 閳?combos/models with no explicit kind default to LLM
 const LLM_KIND = "llm";
 
 // Map per-model `type` field (in PROVIDER_MODELS) to service kind.
@@ -243,7 +326,7 @@ function comboMatchesKinds(combo, kindFilter) {
  */
 export async function buildModelsList(kindFilter, options = {}) {
   // When this header is present, the /v1/models request came from another
-  // 9router instance's fetchCompatibleModelIds — skip dynamic fetch to break
+  // 9router instance's fetchCompatibleModelIds 閳?skip dynamic fetch to break
   // cross-instance recursive loops.
   const skipDynamicFetch = options.skipDynamicFetch === true;
   let connections = [];
@@ -375,14 +458,27 @@ export async function buildModelsList(kindFilter, options = {}) {
           )
         : providerModels.map((model) => model.id);
 
-      if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
-        rawModelIds = await fetchCompatibleModelIds(conn);
+      // For compatible providers (OpenAI/Anthropic-compatible), DO NOT fetch from upstream.
+      // Only return user-curated models: custom models added via UI + enabledModels if explicitly set.
+      // If neither is set, return empty list (user must curate their model list).
+      if (!isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
+        // Only non-compatible providers with no static models can use live resolvers
+        // (e.g., Kiro returns dynamic -thinking/-agentic variants per account)
       }
 
       // Config-driven live catalog override (e.g. Kiro returns dynamic
       // -thinking/-agentic variants per account). On failure, fall back to
       // whatever rawModelIds already holds.
-      const liveResolver = LIVE_MODEL_RESOLVERS[providerId];
+      // Support both exact providerId match and prefix matches (e.g., "openai-compatible-")
+      let liveResolver = LIVE_MODEL_RESOLVERS[providerId];
+      if (!liveResolver) {
+        for (const [prefix, resolver] of Object.entries(LIVE_MODEL_RESOLVERS)) {
+          if (prefix.endsWith("-") && providerId.startsWith(prefix)) {
+            liveResolver = resolver;
+            break;
+          }
+        }
+      }
       if (liveResolver && !hasExplicitEnabledModels) {
         try {
           const live = await liveResolver(conn);
@@ -476,9 +572,18 @@ export async function buildModelsList(kindFilter, options = {}) {
           id: `${outputAlias}/${modelId}`,
           object: "model",
           owned_by: outputAlias,
+          supported_reasoning_levels: [
+            { description: "Disable Thinking", effort: "none" },
+            { description: "Low",            effort: "low" },
+            { description: "Medium",         effort: "medium" },
+            { description: "High",           effort: "high" },
+            { description: "Extra High",     effort: "xhigh" },
+            { description: "Ultra",          effort: "ultra" },
+            { description: "Max",            effort: "max" },
+          ],
         };
         // Live-catalog resolvers (kiro/qoder/github/clinepass) mostly only return
-        // { id, name } — no per-model capability data. Fall back to the same
+        // { id, name } 閳?no per-model capability data. Fall back to the same
         // pattern-matched capabilities the dashboard uses (useModelCaps.js) so
         // dynamically-discovered LLM models still surface vision/reasoning/search/tools.
         const caps = liveCapabilitiesById.get(modelId)
@@ -509,7 +614,7 @@ export async function buildModelsList(kindFilter, options = {}) {
         models.push(model);
       }
 
-      // Web search/fetch — provider IS the model, expose as {alias}/search and/or {alias}/fetch with explicit kind
+      // Web search/fetch 閳?provider IS the model, expose as {alias}/search and/or {alias}/fetch with explicit kind
       const providerInfo = AI_PROVIDERS[providerId];
       if (kindFilter.includes("webSearch") && providerInfo?.searchConfig) {
         models.push({
@@ -530,6 +635,41 @@ export async function buildModelsList(kindFilter, options = {}) {
     }
   }
 
+
+  // Passthrough/noAuth providers without DB connections
+  for (const reg of REGISTRY) {
+    if (!reg.noAuth || !reg.modelsFetcher?.url) continue;
+    const alias = reg.alias || reg.id;
+    if (activeConnectionByProvider.has(reg.id)) continue;
+    if (models.some(m => m.owned_by === alias)) continue;
+    try {
+      const resp = await fetch(reg.modelsFetcher.url, { signal: AbortSignal.timeout(5000) });
+      if (!resp.ok) continue;
+      const body = await resp.json();
+      const fetched = body.data || body.models || (Array.isArray(body) ? body : []);
+      if (!Array.isArray(fetched) || fetched.length === 0) continue;
+      for (const item of fetched) {
+        const modelId = typeof item === "string" ? item : (item.id || "");
+        if (!modelId) continue;
+        if (isDisabled(alias, modelId)) continue;
+        models.push({
+          id: alias + "/" + modelId,
+          object: "model",
+          owned_by: alias,
+          supported_reasoning_levels: [
+            { description: "Disable Thinking", effort: "none" },
+            { description: "Low",            effort: "low" },
+            { description: "Medium",         effort: "medium" },
+            { description: "High",           effort: "high" },
+            { description: "Extra High",     effort: "xhigh" },
+            { description: "Ultra",          effort: "ultra" },
+            { description: "Max",            effort: "max" },
+          ],
+        });
+      }
+    } catch(e) {}
+  }
+
   const dedupedModels = [];
   const seenModelIds = new Set();
   for (const model of models) {
@@ -544,14 +684,14 @@ export async function buildModelsList(kindFilter, options = {}) {
 /**
  * Handle CORS preflight
  */
-export async function OPTIONS() {
-  return new Response(null, {
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
-      "Access-Control-Allow-Headers": "*",
-    },
-  });
+export async function OPTIONS(request) {
+  const headers = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+  };
+  const reqHeaders = request?.headers?.get("Access-Control-Request-Headers");
+  if (reqHeaders) headers["Access-Control-Allow-Headers"] = reqHeaders;
+  return new Response(null, { headers });
 }
 
 /**

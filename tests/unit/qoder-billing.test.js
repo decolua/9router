@@ -7,11 +7,9 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { __test__ as qoderExecutorInternals } from "../../open-sse/executors/qoder.js";
+import { isBillingBlock, wrapQoderSSE } from "../../open-sse/protocol/qoder/sse.js";
 
 describe("isBillingBlock", () => {
-  const { isBillingBlock } = qoderExecutorInternals;
-
   it("detects code 112 (quota exhausted)", () => {
     const msg = '{"code":"112","message":"Quota exhausted","pricingUrl":"..."}';
     expect(isBillingBlock(msg)).toBe(true);
@@ -40,8 +38,6 @@ describe("isBillingBlock", () => {
 });
 
 describe("wrapQoderSSE billing detection", () => {
-  const { wrapQoderSSE } = qoderExecutorInternals;
-
   function makeResponse(lines, { status = 200 } = {}) {
     const body = new ReadableStream({
       start(controller) {
@@ -117,7 +113,8 @@ describe("wrapQoderSSE billing detection", () => {
     }
     buf += decoder.decode();
 
-    expect(buf).toContain("[qoder error 500");
+    expect(buf).toContain('"type":"qoder_upstream_error"');
+    expect(buf).toContain("Internal server error");
     expect(buf).toContain("data: [DONE]");
   });
 

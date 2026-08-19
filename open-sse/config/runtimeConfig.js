@@ -58,6 +58,11 @@ export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_M
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
 
+// Per-model timeout for combo fallback. When > 0, each model in a combo
+// gets at most this many ms before the combo falls to the next model.
+// 0 = disabled (use fetch connect timeout + retries). Env: COMBO_MODEL_TIMEOUT_MS.
+export const COMBO_MODEL_TIMEOUT_MS = envMs("COMBO_MODEL_TIMEOUT_MS", 0);
+
 // Gemini native TTS fetch timeout: abort if Google does not return response headers in time.
 export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS", 45 * 1000);
 
@@ -66,6 +71,19 @@ export const DEFAULT_MAX_TOKENS = 64000;
 export const DEFAULT_MIN_TOKENS = 32000;
 
 export const TOKEN_SAVER_HEADER = "x-9router-token-saver";
+
+export const ROUTE_ATTRIBUTION = {
+  maxTokenLength: 160,
+  maxAttempts: 32,
+  headers: {
+    requestedModel: "X-9Router-Requested-Model",
+    routePath: "X-9Router-Route-Path",
+    resolvedProvider: "X-9Router-Resolved-Provider",
+    resolvedModel: "X-9Router-Resolved-Model",
+    fallbackCount: "X-9Router-Fallback-Count",
+    attemptedModels: "X-9Router-Attempted-Models",
+  },
+};
 
 // Retry config for 429 responses (legacy - kept for backward compatibility)
 export const RETRY_CONFIG = {

@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   getProviderCredentials: vi.fn(),
   markAccountUnavailable: vi.fn(),
   clearAccountError: vi.fn(),
+  resolveClientApiKey: vi.fn(),
   extractApiKey: vi.fn(() => null),
   isValidApiKey: vi.fn(),
   getSettings: vi.fn(),
@@ -16,6 +17,7 @@ vi.mock("@/sse/services/auth.js", () => ({
   getProviderCredentials: mocks.getProviderCredentials,
   markAccountUnavailable: mocks.markAccountUnavailable,
   clearAccountError: mocks.clearAccountError,
+  resolveClientApiKey: mocks.resolveClientApiKey,
   extractApiKey: mocks.extractApiKey,
   isValidApiKey: mocks.isValidApiKey,
 }));
@@ -53,6 +55,7 @@ describe("web fetch account state", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getSettings.mockResolvedValue({ requireApiKey: false });
+    mocks.resolveClientApiKey.mockResolvedValue({ apiKey: null, valid: true });
     mocks.getCombos.mockResolvedValue([]);
     mocks.getProviderCredentials.mockResolvedValue({
       apiKey: "jina-test-key",

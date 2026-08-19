@@ -73,7 +73,7 @@ export function filterUsageForFormat(usage, targetFormat) {
   // Define allowed fields for each format
   const formatFields = {
     [FORMATS.CLAUDE]: [
-      'input_tokens', 'output_tokens', 
+      'input_tokens', 'output_tokens', 'output_tokens_details',
       'cache_read_input_tokens', 'cache_creation_input_tokens',
       'estimated'
     ],
@@ -207,6 +207,36 @@ export function canonicalizeUsage(usage) {
 }
 
 /**
+ * Convert Claude's cache-exclusive input accounting to OpenAI's convention,
+ * where prompt_tokens includes cached and newly cached input tokens.
+ */
+export function claudeUsageToOpenAI(usage) {
+  const canonical = canonicalizeUsage({
+    prompt_tokens: usage?.input_tokens,
+    completion_tokens: usage?.output_tokens,
+    cache_read_input_tokens: usage?.cache_read_input_tokens,
+    cache_creation_input_tokens: usage?.cache_creation_input_tokens,
+  });
+  if (!canonical) return null;
+
+  const result = {
+    prompt_tokens: canonical.prompt_tokens,
+    completion_tokens: canonical.completion_tokens,
+    total_tokens: canonical.total_tokens,
+  };
+  if (canonical.cached_tokens > 0 || canonical.cache_creation_input_tokens > 0) {
+    result.prompt_tokens_details = {};
+    if (canonical.cached_tokens > 0) {
+      result.prompt_tokens_details.cached_tokens = canonical.cached_tokens;
+    }
+    if (canonical.cache_creation_input_tokens > 0) {
+      result.prompt_tokens_details.cache_creation_tokens = canonical.cache_creation_input_tokens;
+    }
+  }
+  return result;
+}
+
+/**
  * Check if usage has valid token data
  * Valid = has at least one token field with value > 0
  * Invalid = empty object {}, null, undefined, no token fields, or all zeros
@@ -249,13 +279,15 @@ export function extractUsage(chunk) {
     });
   }
 
-  // Claude format (message_delta event)
+  // Claude format (message_delta event) — the only event carrying
+  // output_tokens_details.thinking_tokens (message_start has no details block).
   if (chunk.type === "message_delta" && chunk.usage && typeof chunk.usage === "object") {
     return normalizeUsage({
       prompt_tokens: chunk.usage.input_tokens || 0,
       completion_tokens: chunk.usage.output_tokens || 0,
       cache_read_input_tokens: chunk.usage.cache_read_input_tokens,
-      cache_creation_input_tokens: chunk.usage.cache_creation_input_tokens
+      cache_creation_input_tokens: chunk.usage.cache_creation_input_tokens,
+      reasoning_tokens: chunk.usage.output_tokens_details?.thinking_tokens
     });
   }
 
@@ -288,9 +320,13 @@ export function extractUsage(chunk) {
   // Antigravity wraps usageMetadata inside response: { response: { usageMetadata: {...} } }
   const usageMeta = chunk.usageMetadata || chunk.response?.usageMetadata;
   if (usageMeta && typeof usageMeta === "object") {
+    // Gemini keeps thoughtsTokenCount OUTSIDE candidatesTokenCount. Fold it in so
+    // completion_tokens stays reasoning-inclusive like every other provider — that
+    // invariant is what lets calculateCostFromTokens avoid double-charging.
+    const thoughts = usageMeta.thoughtsTokenCount || 0;
     return normalizeUsage({
       prompt_tokens: usageMeta.promptTokenCount || 0,
-      completion_tokens: usageMeta.candidatesTokenCount || 0,
+      completion_tokens: (usageMeta.candidatesTokenCount || 0) + thoughts,
       total_tokens: usageMeta.totalTokenCount,
       cached_tokens: usageMeta.cachedContentTokenCount,
       reasoning_tokens: usageMeta.thoughtsTokenCount

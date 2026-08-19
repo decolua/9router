@@ -6,6 +6,7 @@ import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { getThinkingLevels } from "../../providers/thinkingLevels.js";
 import { PROVIDERS } from "../../providers/index.js";
 import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
+import { FORMATS } from "../formats.js";
 
 // Map a target wire-format to its native thinking format (when capability has none).
 const FORMAT_TO_NATIVE = {
@@ -107,6 +108,8 @@ export const captureThinking = extractThinking;
 
 // Resolve thinking format: provider override > capability > derive(targetFormat).
 function resolveFormat(targetFormat, model, provider) {
+  // OpenAI-compatible nodes reject provider-native thinking fields.
+  if (typeof provider === "string" && provider.startsWith("openai-compatible-")) return "openai";
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   if (providerFmt) return providerFmt;
   const caps = getCapabilitiesForModel(provider, model);
@@ -146,6 +149,20 @@ function normalizeOpenAILevel(level, supportedLevels) {
 function toGeminiThinkingLevel(cfg) {
   const raw = cfg.mode === "auto" ? "high" : (toLevel(cfg) || "high");
   return effortToThinkingLevel(raw);
+}
+
+// Unified level → Anthropic's output_config.effort enum [low medium high xhigh max].
+// "auto" (think, level unspecified) and "minimal" are valid unified intents with no
+// value in that enum, and an unmapped value is not ignored — Anthropic rejects the
+// whole request (400 invalid_reasoning_effort) — so they resolve to the nearest
+// supported level, as the gemini-level and kimi branches already do for auto.
+function toClaudeAdaptiveEffort(cfg) {
+  const level = toLevel(cfg);
+  if (level === "auto") return "high";
+  if (level === "minimal") return "low";
+  // Pre-existing downgrade: kept until xhigh is verified across the 4.6+ line.
+  if (level === "xhigh") return "high";
+  return level;
 }
 
 function toKimiReasoningEffort(cfg) {
@@ -235,6 +252,14 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       if (level) body.reasoning_effort = normalizeOpenAILevel(level, supportedLevels);
       break;
     }
+    case "qoder": {
+      // Qoder (intl + CN) accepts the full effort enum none..max verbatim — pure
+      // passthrough, do NOT clamp "max".
+      if (none && canDisable) { body.reasoning_effort = "none"; break; }
+      const level = toLevel(eff);
+      if (level) body.reasoning_effort = level;
+      break;
+    }
     case "claude-adaptive": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
       // output_config.effort alone does NOT turn thinking on: Anthropic requires
@@ -243,8 +268,7 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       // shims (e.g. GitHub Copilot /v1/messages) default thinking off even for
       // Sonnet 5. Send both fields — the documented adaptive-thinking shape.
       body.thinking = { type: "adaptive" };
-      const level = toLevel(eff);
-      body.output_config = { effort: level === "xhigh" ? "high" : level };
+      body.output_config = { effort: toClaudeAdaptiveEffort(eff) };
       break;
     }
     case "claude-budget": {
@@ -270,6 +294,9 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       // Z.ai ignores thinking.disabled → must use enable_thinking:false to turn off.
       if (none && canDisable) { body.enable_thinking = false; delete body.thinking; break; }
       body.thinking = { type: "enabled" };
+      // Z.ai GLM supports high/max reasoning_effort when thinking is enabled.
+      const level = toLevel(eff);
+      if (level) body.reasoning_effort = level === "xhigh" || level === "max" ? "max" : "high";
       break;
     }
     case "qwen": {
@@ -333,6 +360,26 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
 // falls back to extracting from the current body when omitted.
 export function applyThinking(targetFormat, model, body, provider = null, intent = undefined) {
   if (!body || typeof body !== "object") return body;
+
+  // ponytail: ceiling = ollama under claude transport. Lift into PROVIDERS[ollama].quirks
+  // or a capability flag if a second native-claude provider lands.
+  if (provider === "ollama" && targetFormat === FORMATS.CLAUDE) {
+    // WR-01: chatCore.js:66-68 injects `reasoning_effort` (OpenAI field) for level-mode
+    // providerThinking configs. On the Claude wire it is not a valid Messages field.
+    // Normalize to Claude shape: fold into output_config.effort unless a Claude-native
+    // thinking field is already present (let the client's Claude field win). Keep the
+    // early-return so stripAll does not undo Claude-native fields.
+    if (body.reasoning_effort) {
+      if (body.thinking) {
+        delete body.reasoning_effort;
+      } else {
+        body.output_config = body.output_config || {};
+        if (!body.output_config.effort) body.output_config.effort = body.reasoning_effort;
+        delete body.reasoning_effort;
+      }
+    }
+    return body;
+  }
 
   const { cleanModel, override } = parseSuffix(model);
   const cfg = override || intent || extractThinking(body);

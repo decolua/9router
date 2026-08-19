@@ -114,10 +114,42 @@ describe("applyThinking per provider format", () => {
     expect(out.enable_thinking).toBe(false);
     expect(out.thinking).toBeUndefined();
   });
+  it("Z.ai GLM preserves high reasoning_effort when thinking is enabled", () => {
+    const out = apply("openai", "glm-5.2", { reasoning_effort: "high" }, "glm");
+    expect(out.thinking).toEqual({ type: "enabled" });
+    expect(out.reasoning_effort).toBe("high");
+  });
+  it("Z.ai GLM China preserves reasoning_effort when thinking is enabled", () => {
+    const out = apply("openai", "glm-5.2", { reasoning_effort: "max" }, "glm-cn");
+    expect(out.thinking).toEqual({ type: "enabled" });
+    expect(out.reasoning_effort).toBe("max");
+  });
+  it("Z.ai GLM maps max/xhigh reasoning_effort to max", () => {
+    const outMax = apply("openai", "glm-5.2", { reasoning_effort: "max" }, "glm");
+    const outXhigh = apply("openai", "glm-5.2", { reasoning_effort: "xhigh" }, "glm");
+    expect(outMax.thinking).toEqual({ type: "enabled" });
+    expect(outMax.reasoning_effort).toBe("max");
+    expect(outXhigh.thinking).toEqual({ type: "enabled" });
+    expect(outXhigh.reasoning_effort).toBe("max");
+  });
+  it("Z.ai GLM maps lower reasoning_effort levels to high", () => {
+    const outLow = apply("openai", "glm-5.2", { reasoning_effort: "low" }, "glm");
+    const outMedium = apply("openai", "glm-5.2", { reasoning_effort: "medium" }, "glm");
+    expect(outLow.thinking).toEqual({ type: "enabled" });
+    expect(outLow.reasoning_effort).toBe("high");
+    expect(outMedium.thinking).toEqual({ type: "enabled" });
+    expect(outMedium.reasoning_effort).toBe("high");
+  });
   it("Qwen on → enable_thinking + thinking_budget", () => {
     const out = apply("openai", "qwen3-max", { reasoning_effort: "medium" }, "qwen");
     expect(out.enable_thinking).toBe(true);
     expect(out.thinking_budget).toBe(8192);
+  });
+  it("OpenAI-compatible Qwen passthrough keeps standard reasoning_effort", () => {
+    const out = apply("openai", "qwen3.7-plus", { reasoning_effort: "medium" }, "openai-compatible-chat-limitrouter");
+    expect(out.reasoning_effort).toBe("medium");
+    expect(out.enable_thinking).toBeUndefined();
+    expect(out.thinking_budget).toBeUndefined();
   });
   it("QwQ cannot disable → clamp minimal", () => {
     const out = apply("openai", "qwq-32b", { reasoning_effort: "none" }, "qwen");

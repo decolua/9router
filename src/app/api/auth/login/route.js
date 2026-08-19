@@ -82,7 +82,11 @@ export async function POST(request) {
         // oversight: issuing any credential before the default password is
         // rotated re-opens the exact attack chain this branch closes.
         return NextResponse.json(
-          { success: false, error: "Default password must be changed before remote access. Change it from the local machine (or set INITIAL_PASSWORD).", mustChangePassword },
+          {
+            success: false,
+            error: "Default password must be changed before remote access. Change it from the local machine (or set INITIAL_PASSWORD).",
+            mustChangePassword: true,
+          },
           { status: 403, headers: NO_STORE_HEADERS }
         );
       }

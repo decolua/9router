@@ -202,6 +202,41 @@ describe("compressWithHeadroom", () => {
     expect(stats).toBeNull();
     expect(global.fetch).not.toHaveBeenCalled();
   });
+
+  it("skips payloads larger than 256 KiB before calling the proxy", async () => {
+    global.fetch = vi.fn();
+    const body = { messages: [{ role: "user", content: "x".repeat(256 * 1024) }] };
+    const diagnostics = {};
+
+    const stats = await compressWithHeadroom(body, {
+      enabled: true,
+      url: "http://localhost:8787",
+      diagnostics,
+    });
+
+    expect(stats).toBeNull();
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(body.messages[0].content).toHaveLength(256 * 1024);
+    expect(diagnostics.before.bodyBytes).toBeGreaterThan(256 * 1024);
+    expect(diagnostics.reason).toContain("payload too large");
+    expect(diagnostics.reason).toContain("262144B limit");
+  });
+
+  it("uses a 15s default timeout so large prompt compression can finish", async () => {
+    global.fetch = vi.fn(async () => new Response(JSON.stringify({
+      messages: [{ role: "user", content: "short" }],
+      tokens_before: 100,
+      tokens_after: 20,
+      tokens_saved: 80,
+    }), { status: 200 }));
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => new AbortController().signal);
+    const body = { messages: [{ role: "user", content: "long" }] };
+
+    const stats = await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787" });
+
+    expect(stats.tokens_saved).toBe(80);
+    expect(timeoutSpy).toHaveBeenCalledWith(15000);
+  });
 });
 
 describe("formatHeadroomLog", () => {

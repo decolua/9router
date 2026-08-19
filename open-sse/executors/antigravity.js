@@ -1,10 +1,11 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
-import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX } from "../config/appConstants.js";
+import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX, getPlatformEnum } from "../config/appConstants.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { parseGoogleQuotaReset } from "../utils/googleQuota.js";
 import { cleanJSONSchemaForAntigravity } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
 
@@ -112,6 +113,7 @@ function buildIdeRequestId({ body, request, credentials, model, requestType }) {
 export class AntigravityExecutor extends BaseExecutor {
   constructor() {
     super("antigravity", PROVIDERS.antigravity);
+    this._lastSessionId = null;
   }
 
   buildUrl(model, stream, urlIndex = 0) {
@@ -123,13 +125,37 @@ export class AntigravityExecutor extends BaseExecutor {
     return `${baseUrl}/v1internal:${action}`;
   }
 
+  // cloudcode-pa reports exactly when an exhausted quota returns — a real 429 carries
+  // `quotaResetTimeStamp` up to ~150h out. Surface it as resetsAtMs so the model lock
+  // lasts that long instead of expiring on the blind backoff ladder and failing again.
+  // Quotas are per model here, so only the model that ran dry gets locked.
+  parseError(response, bodyText) {
+    if (response.status === 429 && bodyText) {
+      const { resetsAtMs } = parseGoogleQuotaReset(bodyText);
+      if (resetsAtMs) {
+        let message = bodyText;
+        try {
+          message = JSON.parse(bodyText)?.error?.message || bodyText;
+        } catch { /* keep raw body */ }
+        return { status: 429, message, resetsAtMs };
+      }
+    }
+    return super.parseError(response, bodyText);
+  }
+
   // sessionId comes from transformRequest output; base.execute runs transformRequest before
   // buildHeaders, so we read it from instance state cached there (fallback: explicit arg).
   buildHeaders(credentials, stream = true, sessionId = null) {
+    const platformEnum = getPlatformEnum();
+    const clientMetadata = JSON.stringify({ ideType: 9, platform: platformEnum, pluginType: 2 });
     return {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${credentials.accessToken}`,
       "User-Agent": this.config.headers?.["User-Agent"] || ANTIGRAVITY_HEADERS["User-Agent"],
+      "X-Goog-Api-Client": "gl-node/24.14.0 fire/2.1.1",
+      "Client-Metadata": clientMetadata,
+      "x-request-source": "local",
+      "Accept": stream ? "text/event-stream" : "application/json"
     };
   }
 
@@ -146,13 +172,13 @@ export class AntigravityExecutor extends BaseExecutor {
       // Strip model name suffixes for the actual API model name
       const cleanModel = model.replace(/-(\d+)x(\d+)$/, "");
 
-      // Build simplified contents — text-only, merge all user messages
+      // Build simplified contents — text and image parts, merge all user messages
       const contents = [];
       const srcContents = body.request?.contents || body.contents || [];
       for (const c of srcContents) {
-        const textParts = (c.parts || []).filter(p => p.text !== undefined).map(p => ({ text: p.text }));
-        if (textParts.length > 0) {
-          contents.push({ role: c.role || "user", parts: textParts });
+        const validParts = (c.parts || []).filter(p => p.text !== undefined || p.inlineData !== undefined);
+        if (validParts.length > 0) {
+          contents.push({ role: c.role || "user", parts: validParts });
         }
       }
 
@@ -245,8 +271,8 @@ export class AntigravityExecutor extends BaseExecutor {
     // Strip tools/toolConfig (handled separately) and blacklisted fields that Google rejects
     const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
     stripBlacklisted(requestWithoutTools);
-    
-    // Rewrite competitive system prompts (e.g. Zed IDE's Claude prompt) to prevent Antigravity from 
+
+    // Rewrite competitive system prompts (e.g. Zed IDE's Claude prompt) to prevent Antigravity from
     // flagging the request and immediately blocking it with a 429 Quota Exhausted response.
     if (requestWithoutTools.systemInstruction?.parts) {
       const oldText = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";

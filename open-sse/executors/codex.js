@@ -12,6 +12,7 @@ import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { resolveCodexAccountId } from "../services/codexAccount.js";
 
 // SSE error patterns inside 200-OK bodies. Some retry same account first; capacity rotates accounts.
 const CODEX_SSE_RETRY_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
@@ -27,6 +28,12 @@ const CODEX_MODEL_CAPACITY_MESSAGE = "Selected model is at capacity. Please try 
 
 // Server-generated item id prefixes that Codex /responses cannot resolve when store=false
 const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
+const STATELESS_CALL_ITEM_TYPES = new Set([
+  "function_call",
+  "function_call_output",
+  "custom_tool_call",
+  "custom_tool_call_output",
+]);
 
 // Hosted tool types that Codex/OpenAI Responses executes server-side
 const CODEX_HOSTED_TOOL_TYPES = new Set([
@@ -55,17 +62,58 @@ function convertSystemToDeveloperRole(body) {
   }
 }
 
-// Strip server-generated item IDs (rs_/fc_/resp_/msg_) from input — avoids 404 with store=false
+// Strip unresolved stored references and optional call item IDs when store=false.
+// call_id remains the correlation key for call/output pairs.
 function stripStoredItemReferences(body) {
   if (!Array.isArray(body.input)) return;
   body.input = body.input.filter((item) => {
     if (typeof item === "string" && SERVER_ID_PATTERN.test(item)) return false;
     if (item && typeof item === "object" && !Array.isArray(item)) {
       if (item.type === "item_reference") return false;
-      if (typeof item.id === "string" && SERVER_ID_PATTERN.test(item.id)) delete item.id;
+      if (STATELESS_CALL_ITEM_TYPES.has(item.type) && Object.hasOwn(item, "id")) {
+        delete item.id;
+      } else if (typeof item.id === "string" && SERVER_ID_PATTERN.test(item.id)) {
+        delete item.id;
+      }
     }
     return true;
   });
+}
+
+// Strip function_call_output items whose call_id has no matching function_call in input.
+// Prevents Codex 400: "No tool call found for function call output with call_id ..."
+// Orphaned outputs occur when conversation compaction removes original tool calls
+// but leaves their results (e.g., multiple image attachments, compacted tool loops).
+function stripOrphanedToolOutputs(body) {
+  if (!Array.isArray(body.input)) return;
+  const callIds = new Set();
+  let outputCount = 0;
+  for (const item of body.input) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    if (item.type === "function_call" && typeof item.call_id === "string") {
+      callIds.add(item.call_id);
+    }
+    // Chat Completions format: assistant message with embedded tool_calls
+    if (Array.isArray(item.tool_calls)) {
+      for (const tc of item.tool_calls) {
+        if (tc && typeof tc.id === "string") callIds.add(tc.id);
+      }
+    }
+    if (item.type === "function_call_output") outputCount++;
+  }
+  if (outputCount === 0) return;
+  const before = body.input.length;
+  body.input = body.input.filter((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return true;
+    if (item.type === "function_call_output" && typeof item.call_id === "string") {
+      return callIds.has(item.call_id);
+    }
+    return true;
+  });
+  const removed = before - body.input.length;
+  if (removed > 0) {
+    dbg("CODEX", `stripOrphanedToolOutputs | removed ${removed} orphaned function_call_output(s) | call_ids=${callIds.size} outputs=${outputCount}`);
+  }
 }
 
 // Flatten Chat-Completions tool shape into Responses flat format + filter unsupported tools
@@ -185,6 +233,34 @@ function codexSseErrorResponse(status, message) {
   });
 }
 
+async function isInvalidEncryptedContentResponse(response) {
+  if (response?.status !== HTTP_STATUS.BAD_REQUEST || typeof response.clone !== "function") return false;
+  try {
+    const payload = JSON.parse(await response.clone().text());
+    const error = payload?.error || payload;
+    if (error?.code === "invalid_encrypted_content") return true;
+    const message = typeof error?.message === "string" ? error.message.toLowerCase() : "";
+    return message.includes("encrypted content") &&
+      (message.includes("could not be verified") || message.includes("could not be decrypted or parsed"));
+  } catch {
+    return false;
+  }
+}
+
+function removeInvalidEncryptedReasoning(body) {
+  if (!Array.isArray(body?.input)) return 0;
+  let removed = 0;
+  body.input = body.input.filter((item) => {
+    if (!item || item.type !== "reasoning" || !Object.hasOwn(item, "encrypted_content")) return true;
+    delete item.encrypted_content;
+    removed++;
+    const hasSummary = Array.isArray(item.summary) ? item.summary.length > 0 : Boolean(item.summary);
+    const hasContent = Array.isArray(item.content) ? item.content.length > 0 : Boolean(item.content);
+    return hasSummary || hasContent;
+  });
+  return removed;
+}
+
 /**
  * Codex Executor - handles OpenAI Codex API (Responses API format)
  * Automatically injects default instructions if missing
@@ -209,10 +285,7 @@ export class CodexExecutor extends BaseExecutor {
     // older/custom rows may use workspaceId/accountId. Prefer explicit workspaceId
     // but fall back to chatgptAccountId so requests don't cross-bind to the wrong
     // OpenAI account and surface as token_invalid after adding another account.
-    const accountId =
-      credentials?.providerSpecificData?.workspaceId ||
-      credentials?.providerSpecificData?.chatgptAccountId ||
-      credentials?.providerSpecificData?.accountId;
+    const accountId = resolveCodexAccountId(credentials?.providerSpecificData, credentials?.idToken);
     if (typeof accountId === "string" && accountId && !headers["ChatGPT-Account-ID"]) {
       headers["ChatGPT-Account-ID"] = accountId;
     }
@@ -272,8 +345,20 @@ export class CodexExecutor extends BaseExecutor {
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
     const { attempts, delayMs } = resolveRetryEntry(retryConfig[503]);
     let attempt = 0;
+    let encryptedRecoveryAttempted = false;
+    let requestArgs = args;
     while (true) {
-      const result = await super.execute(args);
+      const result = await super.execute(requestArgs);
+      if (!encryptedRecoveryAttempted && await isInvalidEncryptedContentResponse(result.response)) {
+        const recoveryBody = structuredClone(requestArgs.body);
+        const removed = removeInvalidEncryptedReasoning(recoveryBody);
+        if (removed > 0) {
+          encryptedRecoveryAttempted = true;
+          requestArgs = { ...requestArgs, body: recoveryBody };
+          args.log?.warn?.("RETRY", `CODEX | invalid encrypted reasoning; retrying same account without ${removed} encrypted item(s)`);
+          continue;
+        }
+      }
       const peek = await this._peekSseTransientError(result.response);
       if (!peek.matched) {
         // Replace body with re-assembled stream (prefix bytes already read + rest)
@@ -408,11 +493,55 @@ export class CodexExecutor extends BaseExecutor {
     convertSystemToDeveloperRole(body);
     // Strip server-generated item IDs (rs_/fc_/resp_/msg_) — Codex /responses can't resolve when store=false
     stripStoredItemReferences(body);
+    // Strip orphaned function_call_output items (no matching function_call) — prevents 400 error
+    stripOrphanedToolOutputs(body);
     // Flatten function tools + drop unsupported types
     normalizeCodexTools(body);
 
     // Ensure streaming is enabled (Codex API requires it)
     body.stream = true;
+
+    // Extract system messages from input[] and merge into instructions field
+    // Codex does not accept role=system in input[], only via the instructions field
+    if (Array.isArray(body.input)) {
+      const systemItems = body.input.filter(
+        (item) => item.role === "system"
+      );
+      if (systemItems.length > 0) {
+        body.input = body.input.filter(
+          (item) => item.role !== "system"
+        );
+        const systemText = systemItems
+          .map((item) => {
+            if (typeof item.content === "string")
+              return item.content;
+            if (Array.isArray(item.content))
+              return item.content
+                .map((c) => c.text || c.output || "")
+                .filter(Boolean)
+                .join("\n");
+            return "";
+          })
+          .filter(Boolean)
+          .join("\n\n");
+        // Prepend to existing instructions (if any), or set new
+        body.instructions = body.instructions
+          ? `${systemText}\n\n${body.instructions}`
+          : systemText;
+      }
+
+      // Normalize content type for assistant messages:
+      // Codex only accepts "output_text" (not "input_text") for role=assistant
+      for (const item of body.input) {
+        if (item.role === "assistant" && Array.isArray(item.content)) {
+          item.content = item.content.map((c) => {
+            if (c.type === "input_text")
+              return { ...c, type: "output_text" };
+            return c;
+          });
+        }
+      }
+    }
 
     // If no instructions provided, inject default Codex instructions
     if (!body.instructions || body.instructions.trim() === "") {

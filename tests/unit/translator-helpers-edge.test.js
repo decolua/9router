@@ -14,15 +14,99 @@ describe("normalizeClaudePassthrough — haiku adaptive thinking (docs 11 §1)",
     expect(out.thinking).toEqual({ type: "adaptive" });
   });
 
-  it("hoists mid-conversation system messages into top-level system", () => {
+  it("folds mid-conversation system messages in place to preserve cache prefixes", () => {
     const out = normalizeClaudePassthrough({
       messages: [
         { role: "user", content: "hi" },
         { role: "system", content: "be brief" },
       ],
     });
-    expect(out.system).toEqual([{ type: "text", text: "be brief" }]);
-    expect(out.messages.every((m) => m.role !== "system")).toBe(true);
+    expect(out.system).toBeUndefined();
+    expect(out.messages).toEqual([{
+      role: "user",
+      content: [
+        { type: "text", text: "hi" },
+        { type: "text", text: "be brief" },
+      ],
+    }]);
+  });
+});
+
+describe("normalizeClaudePassthrough — server tool models", () => {
+  it("strips 9router's cc/ prefix from an Advisor server tool only", () => {
+    const body = {
+      model: "cc/claude-opus-4-8",
+      tools: [
+        {
+          type: "advisor_20260301",
+          name: "advisor",
+          model: "cc/claude-opus-4-8",
+          input_schema: { type: "object", properties: { question: { type: "string" } } },
+        },
+      ],
+    };
+
+    expect(normalizeClaudePassthrough(body)).toEqual({
+      model: "cc/claude-opus-4-8",
+      tools: [
+        {
+          type: "advisor_20260301",
+          name: "advisor",
+          model: "claude-opus-4-8",
+          input_schema: { type: "object", properties: { question: { type: "string" } } },
+        },
+      ],
+    });
+  });
+
+  it("normalizes a Task/subagent tool using the canonical claude/ provider prefix", () => {
+    const body = {
+      tools: [
+        {
+          name: "Task",
+          description: "Launch a subagent",
+          model: "claude/claude-sonnet-4-6",
+          input_schema: { type: "object", required: ["prompt"] },
+        },
+      ],
+    };
+
+    expect(normalizeClaudePassthrough(body)).toEqual({
+      tools: [
+        {
+          name: "Task",
+          description: "Launch a subagent",
+          model: "claude-sonnet-4-6",
+          input_schema: { type: "object", required: ["prompt"] },
+        },
+      ],
+    });
+  });
+
+  it("is idempotent and preserves missing, non-string, and unrelated models", () => {
+    const body = {
+      model: "claude-opus-4-8",
+      tools: [
+        { type: "advisor_20260301", model: "claude-opus-4-8", cache_control: { type: "ephemeral" } },
+        { name: "without-model", description: "unchanged" },
+        { name: "numeric-model", model: 42 },
+        { name: "other-provider", model: "openrouter/anthropic/claude-opus-4.1" },
+        null,
+      ],
+    };
+    const expected = {
+      model: "claude-opus-4-8",
+      tools: [
+        { type: "advisor_20260301", model: "claude-opus-4-8", cache_control: { type: "ephemeral" } },
+        { name: "without-model", description: "unchanged" },
+        { name: "numeric-model", model: 42 },
+        { name: "other-provider", model: "openrouter/anthropic/claude-opus-4.1" },
+        null,
+      ],
+    };
+
+    expect(normalizeClaudePassthrough(body)).toEqual(expected);
+    expect(normalizeClaudePassthrough(body)).toEqual(expected);
   });
 });
 

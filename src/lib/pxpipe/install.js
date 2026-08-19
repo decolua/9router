@@ -1,15 +1,15 @@
 import fs from "fs";
 import path from "path";
-import { spawn, execSync } from "child_process";
+import { spawn, execFileSync } from "child_process";
 import { DATA_DIR } from "@/lib/dataDir.js";
 
 export const PXPIPE_DIR = path.join(DATA_DIR, "pxpipe");
 export const PXPIPE_PACKAGE = "pxpipe-proxy";
 const INSTALL_LOG = path.join(PXPIPE_DIR, "install.log");
 const INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
+const NPM_PROBE_TTL_MS = 30_000;
 
 const IS_WIN = process.platform === "win32";
-const NPM_CMD = IS_WIN ? "npm.cmd" : "npm";
 
 // Same PATH extension trick as headroom/detect.js: packaged/launchd environments
 // often miss the Node bin dirs.
@@ -19,6 +19,7 @@ const EXTRA_BINS = IS_WIN
 const EXTENDED_PATH = [...EXTRA_BINS, process.env.PATH || ""].filter(Boolean).join(path.delimiter);
 
 let installInFlight = null;
+let npmInvocationCache = { value: undefined, checkedAt: 0 };
 
 function ensureDir() {
   if (!fs.existsSync(PXPIPE_DIR)) fs.mkdirSync(PXPIPE_DIR, { recursive: true });
@@ -32,17 +33,54 @@ export function libraryEntry() {
   return path.join(packageRoot(), "dist", "core", "library.js");
 }
 
-export function findNpm() {
-  try {
-    const out = execSync(`${IS_WIN ? "where" : "which"} npm`, {
-      stdio: ["ignore", "pipe", "ignore"],
-      windowsHide: true,
-      env: { ...process.env, PATH: EXTENDED_PATH },
-    }).toString().trim();
-    return out ? out.split(/\r?\n/)[0].trim() : null;
-  } catch {
-    return null;
+function getNpmInvocation() {
+  const now = Date.now();
+  if (npmInvocationCache.value !== undefined && now - npmInvocationCache.checkedAt < NPM_PROBE_TTL_MS) {
+    return npmInvocationCache.value;
   }
+
+  let invocation = null;
+  try {
+    if (IS_WIN) {
+      // npm.cmd requires cmd.exe, even with windowsHide. Run npm's JavaScript
+      // entry through a known Node executable so status checks and installs
+      // never create a cmd/console child.
+      const nodeCandidates = [process.execPath];
+      try {
+        const discovered = execFileSync("where.exe", ["node.exe"], {
+          encoding: "utf8",
+          stdio: ["ignore", "pipe", "ignore"],
+          windowsHide: true,
+          env: { ...process.env, PATH: EXTENDED_PATH },
+          timeout: 2_000,
+        }).trim().split(/\r?\n/).map((value) => value.trim()).filter(Boolean);
+        nodeCandidates.push(...discovered);
+      } catch { /* process.execPath remains the primary candidate */ }
+
+      for (const nodePath of [...new Set(nodeCandidates)]) {
+        const npmCli = path.join(path.dirname(nodePath), "node_modules", "npm", "bin", "npm-cli.js");
+        if (fs.existsSync(npmCli)) {
+          invocation = { command: nodePath, prefixArgs: [npmCli] };
+          break;
+        }
+      }
+    } else {
+      const npm = execFileSync("which", ["npm"], {
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "ignore"],
+        env: { ...process.env, PATH: EXTENDED_PATH },
+        timeout: 2_000,
+      }).trim().split(/\r?\n/)[0];
+      if (npm) invocation = { command: npm, prefixArgs: [] };
+    }
+  } catch { /* reported as unavailable by callers */ }
+
+  npmInvocationCache = { value: invocation, checkedAt: now };
+  return invocation;
+}
+
+export function findNpm() {
+  return getNpmInvocation()?.command || null;
 }
 
 // { installed, version, path } — installed means the library entry exists on disk.
@@ -72,7 +110,7 @@ export function installPxpipe() {
 }
 
 async function runInstall() {
-  const npm = findNpm();
+  const npm = getNpmInvocation();
   if (!npm) {
     const err = new Error("npm not found on PATH — Node.js/npm is required to install PXPIPE");
     err.code = "NPM_NOT_FOUND";
@@ -89,21 +127,39 @@ async function runInstall() {
   fs.writeSync(outFd, `\n[${new Date().toISOString()}] npm install ${PXPIPE_PACKAGE}@latest\n`);
 
   await new Promise((resolve, reject) => {
-    const child = spawn(npm, ["install", `${PXPIPE_PACKAGE}@latest`, "--no-audit", "--no-fund", "--omit=dev"], {
+    let settled = false;
+    let timer = null;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      if (error) reject(error);
+      else resolve();
+    };
+    const child = spawn(npm.command, [...npm.prefixArgs, "install", `${PXPIPE_PACKAGE}@latest`, "--no-audit", "--no-fund", "--omit=dev"], {
       cwd: PXPIPE_DIR,
       stdio: ["ignore", outFd, outFd],
       windowsHide: true,
       env: { ...process.env, PATH: EXTENDED_PATH },
     });
-    const timer = setTimeout(() => {
-      child.kill("SIGKILL");
-      reject(new Error("npm install timed out after 5 minutes — see install.log"));
+    timer = setTimeout(() => {
+      try {
+        if (IS_WIN && child.pid) {
+          execFileSync("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], {
+            stdio: "ignore",
+            windowsHide: true,
+            timeout: 5_000,
+          });
+        } else {
+          child.kill("SIGKILL");
+        }
+      } catch { /* exit handler will also settle if it wins the race */ }
+      finish(new Error("npm install timed out after 5 minutes — see install.log"));
     }, INSTALL_TIMEOUT_MS);
-    child.once("error", (e) => { clearTimeout(timer); reject(e); });
+    child.once("error", finish);
     child.once("exit", (code) => {
-      clearTimeout(timer);
-      if (code === 0) resolve();
-      else reject(new Error(`npm install exited with code ${code} — see install.log`));
+      if (code === 0) finish();
+      else finish(new Error(`npm install exited with code ${code} — see install.log`));
     });
   }).finally(() => fs.closeSync(outFd));
 

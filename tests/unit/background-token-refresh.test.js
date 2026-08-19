@@ -90,6 +90,21 @@ describe("selectConnectionsNeedingRefresh", () => {
     );
     expect(list).toHaveLength(1);
   });
+
+  it("selects stale Codex credentials even without an expiry timestamp", async () => {
+    const { selectConnectionsNeedingRefresh } = await import(
+      "../../src/sse/services/backgroundTokenRefresh.js"
+    );
+    const list = selectConnectionsNeedingRefresh(
+      [conn({
+        provider: "codex",
+        expiresAt: undefined,
+        lastRefreshAt: new Date(NOW - 9 * 24 * 60 * 60 * 1000).toISOString(),
+      })],
+      NOW
+    );
+    expect(list).toHaveLength(1);
+  });
 });
 
 describe("runBackgroundTokenRefreshTick", () => {

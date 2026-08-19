@@ -60,6 +60,8 @@ const SERVICE_KIND_CAPABILITIES = {
   stt: { audioInput: true },
   tts: { audioOutput: true },
   embedding: { tools: false },
+  ocr: { tools: false },
+  moderation: { tools: false },
 };
 
 export function capabilitiesFromServiceKind(kind) {
@@ -116,6 +118,44 @@ const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true,
 // (lower than OpenAI API's 1.05M). Sol differs from Terra/Luna. #2720
 const CODEX_GPT_56_SOL_CAPS  = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 372000, maxOutput: 128000 };
 const CODEX_GPT_56_DEFAULT_CAPS = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
+
+// Qoder private chat maps Chat `reasoning_effort` → `parameters.reasoning_effort`.
+// Without reasoning:true, applyThinking strips effort. Vision flags follow the
+// live model/list is_vl field.
+const QODER_REASONING_CAPS = {
+  reasoning: true,
+  thinkingFormat: "qoder",
+  thinkingCanDisable: true,
+  maxOutput: 64000,
+};
+const QODER_VL_REASONING_CAPS = {
+  ...QODER_REASONING_CAPS,
+  vision: true,
+};
+/** Shared catalog keys for intl qoder + qoderwork-cn (list still supplies model_config). */
+const QODER_PROVIDER_MODEL_CAPS = {
+  auto: QODER_VL_REASONING_CAPS,
+  qmodel_preview: QODER_VL_REASONING_CAPS,
+  qmodel_latest: QODER_VL_REASONING_CAPS,
+  qmodel: QODER_VL_REASONING_CAPS,
+  "q36fmodel": QODER_VL_REASONING_CAPS,
+  dmodel: QODER_VL_REASONING_CAPS,
+  dfmodel: { ...QODER_VL_REASONING_CAPS, reasoning: false },
+  gm51model: QODER_VL_REASONING_CAPS,
+  kmodel: QODER_VL_REASONING_CAPS,
+  mmodel: {
+    reasoning: false,
+    vision: false,
+    thinkingFormat: "openai",
+    thinkingCanDisable: true,
+    maxOutput: 64000,
+  },
+  // Legacy tier ids still seen on intl catalogs
+  ultimate: QODER_REASONING_CAPS,
+  performance: QODER_REASONING_CAPS,
+  efficient: QODER_REASONING_CAPS,
+  lite: QODER_REASONING_CAPS,
+};
 
 /**
  * Provider-specific capability overrides. Keyed by provider alias/id.
@@ -174,6 +214,9 @@ export const PROVIDER_CAPABILITIES = {
     "deepseek-v4-flash":  { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
     "deepseek-v3-2-volc": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 96000, maxOutput: 32000 },
   },
+  // Qoder family — one caps table; intl + CN share wire (reasoning_effort).
+  qoder: QODER_PROVIDER_MODEL_CAPS,
+  "qoderwork-cn": QODER_PROVIDER_MODEL_CAPS,
   // Poolside Laguna — OpenAI-compatible, all reasoning-capable (32K max output).
   "poolside": {
     "laguna-s-2.1":  { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 32000 },
@@ -198,7 +241,7 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*claude*haiku*",  caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
   { pattern: "*claude*opus*",   caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
   { pattern: "*claude*sonnet*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
-  { pattern: "*claude*fable*",  caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget", contextWindow: 1000000, maxOutput: 128000 } },
+  { pattern: "*claude*fable*",  caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*claude*mythos*", caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget", contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*claude-3*",      caps: { vision: true } },
   { pattern: "*claude*",        caps: { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget" } },
@@ -211,6 +254,8 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*gemini-2.5*",    caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-budget", thinkingRange: { min: 0, max: 24576 }, contextWindow: 1048576, maxOutput: 65536 } },
   { pattern: "*gemini-2*",      caps: { vision: true, audioInput: true, videoInput: true, search: true, contextWindow: 1048576, maxOutput: 65536 } },
   { pattern: "*gemini*",        caps: { vision: true, search: true, contextWindow: 1048576 } },
+  // Gemma 4 on Gemini API accepts thinkingLevel, not Gemini 2.5 thinkingBudget.
+  { pattern: "*gemma-4*",       caps: { vision: true, reasoning: true, thinkingFormat: "gemini-level", contextWindow: 128000 } },
   { pattern: "*gemma*",         caps: { vision: true, contextWindow: 128000 } },
   { pattern: "*nanobanana*",    caps: { vision: true, imageOutput: true } },
 

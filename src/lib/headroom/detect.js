@@ -1,4 +1,5 @@
-import { execFileSync, execSync } from "child_process";
+import fs from "fs";
+import { execFileSync } from "child_process";
 import path from "path";
 
 // Extras that improve headroom compression quality. `proxy` is the base;
@@ -15,9 +16,12 @@ export const EXTRA_MARKERS = {
 };
 
 const HEADROOM_PIP_TIMEOUT_MS = 8000;
+export const HEADROOM_PROBE_TIMEOUT_MS = 2000;
+export const HEADROOM_DETECTION_CACHE_TTL_MS = 10_000;
+const HEADROOM_EXTRAS_CACHE_TTL_MS = 5000;
 
 const IS_WIN = process.platform === "win32";
-const WHICH_CMD = IS_WIN ? "where" : "which";
+const WHICH_CMD = IS_WIN ? "where.exe" : "which";
 
 // Extra bin dirs often missing from a packaged/launchd PATH (Python installs headroom here).
 const EXTRA_BINS = IS_WIN
@@ -48,19 +52,59 @@ const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0
 
 export const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787";
 
+// Dashboard refreshes used to run `where` plus every Python candidate through
+// a shell on every request. Keep both positive and negative results briefly so
+// an unavailable optional integration cannot turn a status poll into a process
+// storm. The short TTL also means a just-installed CLI appears without a
+// restart.
+const binaryCache = { value: undefined, expiresAt: 0 };
+const pythonCache = { value: undefined, expiresAt: 0 };
+const extrasCache = new Map();
+
+function readCache(cache, loader, ttl = HEADROOM_DETECTION_CACHE_TTL_MS) {
+  const now = Date.now();
+  if (cache.value !== undefined && cache.expiresAt > now) return cache.value;
+  const value = loader();
+  cache.value = value;
+  cache.expiresAt = now + ttl;
+  return value;
+}
+
+function commandOptions(timeout = HEADROOM_PROBE_TIMEOUT_MS) {
+  return {
+    stdio: ["ignore", "pipe", "ignore"],
+    windowsHide: true,
+    timeout,
+    maxBuffer: 64 * 1024,
+    env: { ...process.env, PATH: EXTENDED_PATH },
+  };
+}
+
+function isAbsoluteCandidate(candidate) {
+  return path.isAbsolute(candidate) || /^[A-Za-z]:[\\/]/.test(candidate);
+}
+
+// Exported for installation/tests that need to force a fresh result. Normal
+// dashboard status calls intentionally use the bounded cache above.
+export function clearHeadroomDetectionCache() {
+  binaryCache.value = undefined;
+  binaryCache.expiresAt = 0;
+  pythonCache.value = undefined;
+  pythonCache.expiresAt = 0;
+  extrasCache.clear();
+}
+
 // Detect whether the headroom CLI is installed and where its binary lives.
 export function findHeadroomBinary() {
-  try {
-    const out = execSync(`${WHICH_CMD} headroom`, {
-      stdio: ["ignore", "pipe", "ignore"],
-      windowsHide: true,
-      env: { ...process.env, PATH: EXTENDED_PATH },
-    }).toString().trim();
+  return readCache(binaryCache, () => {
+    try {
+      const out = execFileSync(WHICH_CMD, ["headroom"], commandOptions()).toString().trim();
     // Windows `where` may return multiple lines — take the first.
     return out ? out.split(/\r?\n/)[0].trim() : null;
-  } catch {
-    return null;
-  }
+    } catch {
+      return null;
+    }
+  });
 }
 
 // Find a Python interpreter >= 3.10 (headroom-ai requires it). Returns null if none.
@@ -89,26 +133,22 @@ function pythonCandidates() {
 }
 
 export function findPython310() {
-  let fallback = null;
+  return readCache(pythonCache, () => {
+    let fallback = null;
   for (const candidate of pythonCandidates()) {
+    // Do not create a child merely to learn that one of the packaged install
+    // paths does not exist. Bare command names are still checked through the
+    // configured PATH below.
+    if (isAbsoluteCandidate(candidate) && !fs.existsSync(candidate)) continue;
     try {
-      const ver = execSync(`${candidate} --version`, {
-        stdio: ["ignore", "pipe", "ignore"],
-        windowsHide: true,
-        env: { ...process.env, PATH: EXTENDED_PATH },
-      }).toString().trim();
+      const ver = execFileSync(candidate, ["--version"], commandOptions()).toString().trim();
       const match = ver.match(/(\d+)\.(\d+)/);
       if (!match) continue;
       const [major, minor] = [parseInt(match[1], 10), parseInt(match[2], 10)];
       if (!(major > MIN_VERSION[0] || (major === MIN_VERSION[0] && minor >= MIN_VERSION[1]))) continue;
       if (!fallback) fallback = candidate;
       try {
-        execFileSync(candidate, ["-m", "pip", "show", "headroom-ai"], {
-          stdio: ["ignore", "pipe", "ignore"],
-          windowsHide: true,
-          timeout: HEADROOM_PIP_TIMEOUT_MS,
-          env: { ...process.env, PATH: EXTENDED_PATH },
-        });
+        execFileSync(candidate, ["-m", "pip", "show", "headroom-ai"], commandOptions(HEADROOM_PIP_TIMEOUT_MS));
         return candidate;
       } catch {
         // Keep scanning until an interpreter that sees headroom-ai is found.
@@ -117,7 +157,8 @@ export function findPython310() {
       // candidate not present, try next
     }
   }
-  return fallback;
+    return fallback;
+  });
 }
 
 // Probe whether a Headroom proxy is reachable at the given URL by hitting /health.
@@ -166,7 +207,7 @@ export async function getHeadroomStatus(url) {
 // call is enough to answer both questions.
 //
 // Returns: { installed: bool, version: string|null, extras: { code, ml } }
-export function getInstalledHeadroomExtras(python) {
+function getInstalledHeadroomExtrasUncached(python) {
   const py = python || findPython310();
   if (!py) return { installed: false, version: null, extras: { code: false, ml: false } };
   try {
@@ -189,4 +230,17 @@ export function getInstalledHeadroomExtras(python) {
   } catch {
     return { installed: false, version: null, extras: { code: false, ml: false } };
   }
+}
+
+export function getInstalledHeadroomExtras(python) {
+  const py = python || findPython310();
+  if (!py) return { installed: false, version: null, extras: { code: false, ml: false } };
+
+  const cached = extrasCache.get(py);
+  const now = Date.now();
+  if (cached && cached.expiresAt > now) return cached.value;
+
+  const value = getInstalledHeadroomExtrasUncached(py);
+  extrasCache.set(py, { value, expiresAt: now + HEADROOM_EXTRAS_CACHE_TTL_MS });
+  return value;
 }

@@ -5,7 +5,10 @@ import {
   openaiToOpenAIResponsesRequest,
 } from "../translator/request/openai-responses.js";
 
-const DEFAULT_TIMEOUT_MS = 3000;
+const DEFAULT_TIMEOUT_MS = 15000;
+// Compression cost grows non-linearly with payload size. Fail open before the
+// proxy request instead of spending the timeout and CPU on oversized bodies.
+const MAX_COMPRESS_BODY_BYTES = 256 * 1024;
 
 function jsonBytes(value) {
   try {
@@ -254,7 +257,12 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
   }
 
   try {
-    if (diagnostics) diagnostics.before = captureSizeSnapshot(body);
+    const sizeSnapshot = captureSizeSnapshot(body);
+    if (diagnostics) diagnostics.before = sizeSnapshot;
+    if (sizeSnapshot.bodyBytes > MAX_COMPRESS_BODY_BYTES) {
+      setDiagnostic(diagnostics, `skipped: payload too large (${sizeSnapshot.bodyBytes}B > ${MAX_COMPRESS_BODY_BYTES}B limit)`);
+      return null;
+    }
 
     // Claude shape: translate → OpenAI → compress → translate back.
     if (format === "claude") {

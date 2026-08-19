@@ -1,5 +1,5 @@
 import { loadState, generateShortId } from "../shared/state.js";
-import { startFunnel, stopFunnel, isTailscaleRunning, isTailscaleRunningStrict, isTailscaleLoggedIn, isTailscaleLoggedInStrict, startLogin, startDaemonWithPassword, provisionCert } from "./tailscale.js";
+import { startFunnel, stopFunnel, isTailscaleRunning, isTailscaleRunningStrict, isTailscaleLoggedIn, isTailscaleLoggedInStrict, startLogin, startDaemonWithPassword, provisionCert, cancelTailscaleLogin } from "./tailscale.js";
 import { waitForHealth } from "./healthCheck.js";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { getCachedPassword, loadEncryptedPassword, initDbHooks } from "@/mitm/manager";
@@ -9,6 +9,7 @@ initDbHooks(getSettings, updateSettings);
 const svc = {
   cancelToken: { cancelled: false },
   spawnInProgress: false,
+  enablePromise: null,
   lastRestartAt: 0,
   activeLocalPort: null,
 };
@@ -20,7 +21,20 @@ function throwIfCancelled(token) {
   if (token.cancelled) throw new Error("tailscale cancelled");
 }
 
-export async function enableTailscale(localPort = 20128) {
+export function enableTailscale(localPort = 20128) {
+  // Endpoint clicks, watchdog recovery, and startup can all arrive together.
+  // Share one operation so they cannot each start Windows service/status loops.
+  if (svc.enablePromise) return svc.enablePromise;
+
+  const attempt = enableTailscaleImpl(localPort);
+  svc.enablePromise = attempt;
+  attempt.finally(() => {
+    if (svc.enablePromise === attempt) svc.enablePromise = null;
+  }).catch(() => {});
+  return attempt;
+}
+
+async function enableTailscaleImpl(localPort = 20128) {
   console.log(`[Tailscale] enable start (port=${localPort})`);
   svc.cancelToken = { cancelled: false };
   svc.activeLocalPort = localPort;
@@ -49,7 +63,7 @@ export async function enableTailscale(localPort = 20128) {
     }
     throwIfCancelled(token);
 
-    stopFunnel();
+    await stopFunnel();
     let result;
     try {
       console.log("[Tailscale] starting funnel");
@@ -74,7 +88,7 @@ export async function enableTailscale(localPort = 20128) {
     // Strict probe: bypass cache so we don't false-negative on first invocation
     if (!(await isTailscaleLoggedInStrict()) || !(await isTailscaleRunningStrict())) {
       console.error("[Tailscale] strict probe failed (device removed?)");
-      stopFunnel();
+      await stopFunnel();
       return { success: false, error: "Tailscale not connected. Device may have been removed. Please re-login." };
     }
 
@@ -107,7 +121,8 @@ export async function enableTailscale(localPort = 20128) {
 export async function disableTailscale() {
   console.log("[Tailscale] disable");
   svc.cancelToken.cancelled = true;
-  stopFunnel();
+  cancelTailscaleLogin("Tailscale disabled");
+  await stopFunnel();
   await updateSettings({ tailscaleEnabled: false, tailscaleUrl: "" });
   return { success: true };
 }

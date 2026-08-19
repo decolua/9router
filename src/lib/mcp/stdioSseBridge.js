@@ -3,6 +3,8 @@
 
 const { spawn } = require("child_process");
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 const { LOCAL_STDIO_PLUGINS } = require("@/shared/constants/coworkPlugins");
 
 const G_KEY = "__9routerMcpBridges";
@@ -106,6 +108,30 @@ function findPlugin(name) {
   return LOCAL_STDIO_PLUGINS.find((p) => p.name === name) || null;
 }
 
+// The built-in browser MCP uses `npx`. On Windows, npx.cmd needs cmd.exe and
+// would create a console host. Invoke npm's JavaScript entrypoint with Node
+// directly so the bridge remains headless.
+function resolvePluginCommand(plugin) {
+  if (process.platform !== "win32") {
+    return { command: plugin.command, args: plugin.args };
+  }
+
+  const base = path.basename(plugin.command).toLowerCase().replace(/\.cmd$/, "");
+  if (base !== "npm" && base !== "npx") {
+    return { command: plugin.command, args: plugin.args };
+  }
+
+  const cliName = `${base}-cli.js`;
+  const candidates = [
+    process.env.npm_execpath ? path.join(path.dirname(process.env.npm_execpath), cliName) : null,
+    path.join(path.dirname(process.execPath), "node_modules", "npm", "bin", cliName),
+  ].filter(Boolean);
+  const cli = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!cli) throw new Error(`Cannot locate ${cliName} next to ${process.execPath}`);
+
+  return { command: process.execPath, args: [cli, ...plugin.args] };
+}
+
 function getOrSpawn(name) {
   const store = getStore();
   let entry = store.get(name);
@@ -114,12 +140,22 @@ function getOrSpawn(name) {
   const plugin = findPlugin(name);
   if (!plugin) throw new Error(`Unknown local plugin: ${name}`);
 
-  const proc = spawn(plugin.command, plugin.args, { stdio: ["pipe", "pipe", "pipe"], env: process.env });
+  const invocation = resolvePluginCommand(plugin);
+  const proc = spawn(invocation.command, invocation.args, {
+    stdio: ["pipe", "pipe", "pipe"],
+    env: process.env,
+    shell: false,
+    windowsHide: true,
+  });
   entry = { proc, sessions: new Map(), buffer: "" };
   store.set(name, entry);
 
+  const clearIfCurrent = () => {
+    if (store.get(name) === entry) store.delete(name);
+  };
+
   // Parse newline-delimited JSON-RPC from child stdout, broadcast to all sessions.
-  proc.stdout.on("data", (chunk) => {
+  proc.stdout?.on("data", (chunk) => {
     entry.buffer += chunk.toString("utf8");
     let idx;
     while ((idx = entry.buffer.indexOf("\n")) >= 0) {
@@ -133,10 +169,19 @@ function getOrSpawn(name) {
     }
   });
 
-  proc.stderr.on("data", (d) => console.log(`[mcp:${name}]`, d.toString().trim()));
+  proc.stdout?.on("error", (error) => console.warn(`[mcp:${name}] stdout error:`, error.message));
+  proc.stderr?.on("data", (d) => console.log(`[mcp:${name}]`, d.toString().trim()));
+  proc.stderr?.on("error", (error) => console.warn(`[mcp:${name}] stderr error:`, error.message));
+  proc.stdin?.on("error", (error) => console.warn(`[mcp:${name}] stdin error:`, error.message));
+  proc.on("error", (error) => {
+    console.warn(`[mcp:${name}] spawn error:`, error.message);
+    entry.sessions.clear();
+    clearIfCurrent();
+  });
   proc.on("exit", (code) => {
     console.log(`[mcp:${name}] exited`, code);
-    store.delete(name);
+    entry.sessions.clear();
+    clearIfCurrent();
   });
 
   return entry;

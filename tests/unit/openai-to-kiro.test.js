@@ -283,6 +283,40 @@ describe("openaiToKiroRequest", () => {
       // ...but the content is preserved as salvaged text, not discarded.
       expect(allJson).toContain("[Tool result: important orphaned output]");
     });
+
+    it("does not inject a fake 'continue' user message on a tool-result-only turn", () => {
+      // Regression: in an agentic loop the turn after an assistant tool_use is
+      // tool-results-only with no user text. The translator must NOT substitute
+      // the literal word "continue" (the current-time context prefix is still
+      // intentional). See openai-to-kiro.js flushPending.
+      const body = {
+        messages: [
+          { role: "user", content: "What is 2+2? Use the calc tool." },
+          {
+            role: "assistant",
+            content: null,
+            tool_calls: [
+              { id: "call_1", type: "function", function: { name: "calc", arguments: '{"expr":"2+2"}' } }
+            ]
+          },
+          { role: "tool", tool_call_id: "call_1", content: "4" }
+        ],
+        tools: [
+          { type: "function", function: { name: "calc", description: "Eval", parameters: { type: "object", properties: { expr: { type: "string" } }, required: ["expr"] } } }
+        ]
+      };
+
+      const result = openaiToKiroRequest("claude-sonnet-4.5", body, true, {});
+      const current = result.conversationState.currentMessage.userInputMessage;
+
+      // The current (tool-result) turn carries the tool results...
+      expect(current.userInputMessageContext.toolResults).toBeDefined();
+      expect(current.userInputMessageContext.toolResults[0].toolUseId).toBe("call_1");
+      // ...and its body is only the intentional current-time context, never the
+      // literal "continue" as if the user had typed it.
+      expect(current.content).toMatch(/^\[Context: Current time is .+\]$/);
+      expect(current.content).not.toMatch(/(^|\n)continue$/);
+    });
   });
 
   describe("thinking budget", () => {

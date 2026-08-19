@@ -20,6 +20,37 @@ const PROVIDER_ORDER = [
 // Providers that need no auth — always show in model selector
 const NO_AUTH_PROVIDER_IDS = Object.keys(FREE_PROVIDERS).filter(id => FREE_PROVIDERS[id].noAuth);
 
+function getCircularComboNames(combos, comboContext) {
+  const targetName = comboContext?.name?.trim();
+  const targetId = comboContext?.id;
+  if (!targetName && !targetId) return new Set();
+
+  const graph = new Map(
+    combos
+      .filter((combo) => combo.id !== targetId)
+      .map((combo) => [combo.name, Array.isArray(combo.models) ? combo.models : []])
+  );
+
+  const reachesTarget = (name, visiting = new Set()) => {
+    if (targetName && name === targetName) return true;
+    if (visiting.has(name)) return false;
+
+    const models = graph.get(name);
+    if (!models) return false;
+
+    visiting.add(name);
+    const reaches = models.some((model) => reachesTarget(model, visiting));
+    visiting.delete(name);
+    return reaches;
+  };
+
+  return new Set(
+    combos
+      .filter((combo) => combo.id === targetId || reachesTarget(combo.name))
+      .map((combo) => combo.name)
+  );
+}
+
 export default function ModelSelectModal({
   isOpen,
   onClose,
@@ -33,6 +64,7 @@ export default function ModelSelectModal({
   capFilter = null,
   addedModelValues = [],
   closeOnSelect = true,
+  comboContext = null,
 }) {
   // Filter activeProviders by serviceKinds when kindFilter set (e.g. "webSearch", "webFetch")
   const filteredActiveProviders = useMemo(() => {
@@ -187,10 +219,11 @@ export default function ModelSelectModal({
       ? NO_AUTH_PROVIDER_IDS.filter((id) => (AI_PROVIDERS[id]?.serviceKinds || ["llm"]).includes(kindFilter))
       : NO_AUTH_PROVIDER_IDS;
 
-    // Only show connected providers (including both standard and custom)
+    // Show connected providers, no-auth providers, and custom provider nodes
     const providerIdsToShow = new Set([
-      ...activeConnectionIds,  // Only connected providers
-      ...noAuthIds,            // No-auth providers (kind-filtered)
+      ...activeConnectionIds,           // Connected providers
+      ...noAuthIds,                     // No-auth providers (kind-filtered)
+      ...providerNodes.map(n => n.id),  // Custom provider nodes (openai-compatible, etc.)
     ]);
 
     // Sort by PROVIDER_ORDER
@@ -218,7 +251,7 @@ export default function ModelSelectModal({
 
       if (providerInfo.passthroughModels) {
         const aliasModels = Object.entries(modelAliases)
-          .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
+          .filter(([, fullModel]) => typeof fullModel === "string" && fullModel.startsWith(`${alias}/`))
           .map(([aliasName, fullModel]) => ({
             id: fullModel.replace(`${alias}/`, ""),
             name: aliasName,
@@ -285,7 +318,7 @@ export default function ModelSelectModal({
         // Aliases are stored using the raw providerId as key (e.g. "openai-compatible-chat-<uuid>/glm-4.7"),
         // so we must filter by providerId, not by the display prefix.
         const nodeModels = Object.entries(modelAliases)
-          .filter(([, fullModel]) => fullModel.startsWith(`${providerId}/`))
+          .filter(([, fullModel]) => typeof fullModel === "string" && fullModel.startsWith(`${providerId}/`))
           .map(([aliasName, fullModel]) => ({
             id: fullModel.replace(`${providerId}/`, ""),
             name: aliasName,
@@ -333,6 +366,7 @@ export default function ModelSelectModal({
         const hasHardcoded = hardcodedModels.length > 0;
         const customAliasModels = Object.entries(modelAliases)
           .filter(([aliasName, fullModel]) =>
+            typeof fullModel === "string" &&
             fullModel.startsWith(`${alias}/`) &&
             (hasHardcoded ? aliasName === fullModel.replace(`${alias}/`, "") : true) &&
             !hardcodedIds.has(fullModel.replace(`${alias}/`, ""))
@@ -403,6 +437,8 @@ export default function ModelSelectModal({
     const query = searchQuery.toLowerCase();
     return combos.filter(c => c.name.toLowerCase().includes(query));
   }, [combos, searchQuery, kindFilter]);
+
+  const circularComboNames = getCircularComboNames(combos, comboContext);
 
   // Sort models alphabetically, with added models floated to top
   const sortModels = (models) => {
@@ -504,21 +540,29 @@ export default function ModelSelectModal({
             <div className="flex flex-wrap gap-1.5">
               {filteredCombos.map((combo) => {
                 const isSelected = selectedModel === combo.name;
+                const isAdded = addedModelValues.includes(combo.name);
+                const isDisabled = !isAdded && circularComboNames.has(combo.name);
                 return (
                   <button
                     key={combo.id}
+                    disabled={isDisabled}
                     onClick={() => handleSelect({ id: combo.name, name: combo.name, value: combo.name })}
+                    title={isDisabled ? "Selecting this combo would create a circular reference" : undefined}
                     className={`
-                      px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer flex items-center gap-1
-                      ${isSelected
+                      px-2 py-1 rounded-xl text-xs font-medium transition-all border flex items-center gap-1
+                      ${isDisabled
+                        ? "bg-surface border-border text-text-muted opacity-50 cursor-not-allowed"
+                        : isSelected
                         ? "bg-primary text-white border-primary"
-                        : addedModelValues.includes(combo.name)
+                        : isAdded
                           ? "bg-primary border-primary text-white hover:bg-primary-hover"
-                          : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
+                          : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5 hover:cursor-pointer"
                       }
                     `}
                   >
-                    {addedModelValues.includes(combo.name) && (
+                    {isDisabled ? (
+                      <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>block</span>
+                    ) : isAdded && (
                       <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>check</span>
                     )}
                     {combo.name}
@@ -628,4 +672,8 @@ ModelSelectModal.propTypes = {
   kindFilter: PropTypes.string,
   addedModelValues: PropTypes.arrayOf(PropTypes.string),
   closeOnSelect: PropTypes.bool,
+  comboContext: PropTypes.shape({
+    id: PropTypes.string,
+    name: PropTypes.string,
+  }),
 };

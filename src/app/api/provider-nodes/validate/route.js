@@ -23,10 +23,21 @@ const isValidUrl = (url) => {
 };
 
 // Parse error details for user-friendly messages
-const getErrorMessage = (error) => {
-  if (error.cause?.code === "ECONNREFUSED") return "Connection refused - provider node offline or unreachable";
+const getErrorMessage = (error, baseUrl) => {
+  if (error.cause?.code === "ECONNREFUSED") {
+    // Check if user is trying to use localhost inside Docker
+    if (baseUrl && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/.test(baseUrl)) {
+      return "Connection refused — are you running 9router in Docker? localhost points to the container, not your host. Use your host IP (e.g. http://192.168.x.x:11434) or http://host.docker.internal:11434 on Linux/Mac.";
+    }
+    return "Connection refused - provider node offline or unreachable";
+  }
   if (error.cause?.code === "ENOTFOUND") return "DNS lookup failed - invalid domain or network issue";
-  if (error.cause?.code === "ETIMEDOUT") return "Connection timeout - provider node too slow";
+  if (error.cause?.code === "ETIMEDOUT") {
+    if (baseUrl && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/.test(baseUrl)) {
+      return "Connection timeout — are you running 9router in Docker? Use your host IP (e.g. http://192.168.x.x:11434) or http://host.docker.internal:11434 on Linux/Mac.";
+    }
+    return "Connection timeout - provider node too slow";
+  }
   if (error.message.includes("timeout")) return "Request timeout (>10s) - provider node not responding";
   if (error.cause?.code === "CERT_HAS_EXPIRED") return "SSL certificate expired";
   if (error.cause?.code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE") return "SSL certificate verification failed";
@@ -103,6 +114,34 @@ export async function POST(request) {
         error: `Embeddings request failed (${embedRes.status})${errBody ? `: ${errBody.slice(0, 200)}` : ""}`,
         method: "embeddings"
       });
+    }
+
+    // Custom Video Validation — xAI-style async job endpoint.
+    // We can't run a real generation (billable job), so probe POST {base}/generations
+    // with an empty body: a 401/403 means the key is bad; any other status (400/422
+    // for missing params, or 2xx) means the endpoint is reachable and the key is authorized.
+    if (type === "custom-video") {
+      let normalizedBase = baseUrl.trim().replace(/\/$/, "");
+      normalizedBase = normalizedBase.replace(/\/(generations|edits|extensions)$/, "");
+      const probeRes = await fetchWithTimeout(`${normalizedBase}/generations`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({})
+      });
+      if (probeRes.status === 401 || probeRes.status === 403) {
+        return NextResponse.json({ valid: false, error: "API key unauthorized" });
+      }
+      if (probeRes.status === 404) {
+        return NextResponse.json({ valid: false, error: "/generations endpoint not found - check Base URL" });
+      }
+      if (probeRes.status >= 500) {
+        return NextResponse.json({ valid: false, error: "Server error - try again later" });
+      }
+      // Reachable + authorized (params likely rejected, which is expected for an empty probe body)
+      return NextResponse.json({ valid: true, method: "generations-probe" });
     }
 
     // Anthropic Compatible Validation
@@ -197,16 +236,16 @@ export async function POST(request) {
 
     return NextResponse.json({ valid: false, error: getModelsErrorMessage(res.status) });
   } catch (error) {
-    const errorMessage = getErrorMessage(error);
+    const errorMessage = getErrorMessage(error, baseUrl);
     console.error("Error validating provider node:", {
       message: error.message,
       cause: error.cause,
       code: error.cause?.code,
       userMessage: errorMessage
     });
-    return NextResponse.json({ 
+    return NextResponse.json({
       valid: false,
-      error: errorMessage 
+      error: errorMessage
     }, { status: 500 });
   }
 }

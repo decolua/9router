@@ -136,19 +136,30 @@ function isPublicLlmApi(pathname) {
 }
 
 function extractApiKey(request) {
+  return extractApiKeyCandidates(request)[0] || null;
+}
+
+// All credentials the client presented, in precedence order. Anthropic clients
+// (e.g. Claude Code with an active claude.ai session or ANTHROPIC_AUTH_TOKEN)
+// can send an unrelated Authorization header ALONGSIDE a valid x-api-key —
+// api.anthropic.com still authenticates on x-api-key, so we must validate every
+// presented credential, not just the first one found.
+function extractApiKeyCandidates(request) {
+  const candidates = [];
+  const push = (v) => { if (v && !candidates.includes(v)) candidates.push(v); };
   const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
-  const apiKeyHeader = request.headers.get("x-api-key");
-  if (apiKeyHeader) return apiKeyHeader;
-  const googleApiKeyHeader = request.headers.get("x-goog-api-key");
-  if (googleApiKeyHeader) return googleApiKeyHeader;
-  return request.nextUrl.searchParams?.get("key") || null;
+  if (authHeader?.startsWith("Bearer ")) push(authHeader.slice(7));
+  push(request.headers.get("x-api-key"));
+  push(request.headers.get("x-goog-api-key"));
+  push(request.nextUrl.searchParams?.get("key"));
+  return candidates;
 }
 
 async function hasValidApiKey(request) {
-  const apiKey = extractApiKey(request);
-  if (!apiKey) return false;
-  return await validateApiKey(apiKey);
+  for (const apiKey of extractApiKeyCandidates(request)) {
+    if (await validateApiKey(apiKey)) return true;
+  }
+  return false;
 }
 
 async function canAccessPublicLlmApi(request) {
@@ -190,16 +201,39 @@ function isPublicApi(pathname) {
   return PUBLIC_API_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
+// Build a basePath-aware URL for redirects (works behind reverse proxy at /9router).
+// request.nextUrl.basePath is populated when basePath is set in next.config.mjs;
+// falls back to env var for cases where basePath isn't configured yet.
+function basePathUrl(path, request) {
+  const bp = request.nextUrl?.basePath
+    || process.env.NINEROUTER_BASE_PATH
+    || process.env.NEXT_PUBLIC_BASE_PATH
+    || "";
+  return new URL(bp + path, request.url);
+}
+
 export const __test__ = {
   isLocalRequest,
   isPublicLlmApi,
   extractApiKey,
+  extractApiKeyCandidates,
   canAccessPublicLlmApi,
   canAccessLocalOnlyRoute,
 };
 
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
+
+  // Process-local Codex gateway control plane. The secret is generated at
+  // server start and the TCP peer is stamped by custom-server.js.
+  if (
+    pathname.startsWith("/api/internal/codex-native/")
+    && process.env.CODEX_NATIVE_INTERNAL_SECRET
+    && request.headers.get("x-9r-internal-secret") === process.env.CODEX_NATIVE_INTERNAL_SECRET
+    && isLocalRequest(request)
+  ) {
+    return NextResponse.next();
+  }
 
   // Local-only gate for spawn-capable / host-secret routes.
   if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
@@ -208,15 +242,44 @@ export async function proxy(request) {
     }
   }
 
-  // Always protected - require valid JWT or local CLI token (machineId-based)
+  // Always protected - require valid JWT or local CLI token (machineId-based).
+  // Local requests also pass when login is disabled (requireLogin=false) —
+  // otherwise no-login users can never auto-import (issue #115).
   if (ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {
     if (await hasValidCliToken(request) || await hasValidToken(request))
+      return NextResponse.next();
+    if (isLocalRequest(request) && (await isAuthenticated(request)))
       return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // CORS preflight: browsers send OPTIONS without auth headers by design.
+  // Short-circuit before the auth check so cross-origin browser/WebView clients
+  // (e.g. extensions, Claude for Office) can reach /v1/* endpoints.
+  // GET/POST auth is fully preserved — only OPTIONS is exempted. (#1381)
+  if (request.method === "OPTIONS" && isPublicLlmApi(pathname)) {
+    const reqHeaders = request.headers.get("access-control-request-headers");
+    return NextResponse.json(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": reqHeaders || "*",
+        "Access-Control-Max-Age": "86400",
+      },
+    });
+  }
+
   if (isPublicLlmApi(pathname)) {
     if (await canAccessPublicLlmApi(request)) return NextResponse.next();
+    // Anthropic clients (Claude Code, anthropic SDKs) parse the standard error
+    // envelope; other endpoints keep the legacy flat shape.
+    if (pathname.includes("/v1/messages")) {
+      return NextResponse.json(
+        { type: "error", error: { type: "authentication_error", message: "API key required for remote API access" } },
+        { status: 401 }
+      );
+    }
     return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
   }
 
@@ -245,7 +308,7 @@ export async function proxy(request) {
           const tunnelHost = settings.tunnelUrl ? new URL(settings.tunnelUrl).hostname.toLowerCase() : "";
           const tailscaleHost = settings.tailscaleUrl ? new URL(settings.tailscaleUrl).hostname.toLowerCase() : "";
           if ((tunnelHost && host === tunnelHost) || (tailscaleHost && host === tailscaleHost)) {
-            return NextResponse.redirect(new URL("/login", request.url));
+            return NextResponse.redirect(basePathUrl("/login", request));
           }
         }
       }
@@ -262,16 +325,16 @@ export async function proxy(request) {
       if (await verifyDashboardAuthToken(token)) {
         return NextResponse.next();
       } else {
-        return NextResponse.redirect(new URL("/login", request.url));
+        return NextResponse.redirect(basePathUrl("/login", request));
       }
     }
 
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.redirect(basePathUrl("/login", request));
   }
 
   // Redirect / to /dashboard if logged in, or /dashboard if it's the root
   if (pathname === "/") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return NextResponse.redirect(basePathUrl("/dashboard", request));
   }
 
   return NextResponse.next();

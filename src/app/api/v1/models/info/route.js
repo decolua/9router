@@ -1,4 +1,5 @@
 import { PROVIDER_MODELS } from "open-sse/config/providerModels.js";
+import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 import { getModelKind } from "@/shared/constants/models";
 
@@ -13,7 +14,7 @@ const KIND_ENDPOINT = {
   webFetch: "/v1/fetch",
 };
 
-const TTS_VOICES_API = new Set(["elevenlabs", "edge-tts", "deepgram", "inworld", "local-device"]);
+const TTS_VOICES_API = new Set(["elevenlabs", "edge-tts", "deepgram", "inworld", "local-device", "minimax", "minimax-cn"]);
 
 function buildInfo({ alias, providerId, model, kind, providerInfo }) {
   const out = {
@@ -24,10 +25,21 @@ function buildInfo({ alias, providerId, model, kind, providerInfo }) {
     endpoint: KIND_ENDPOINT[kind] || null,
   };
   if (model.params) out.params = model.params;
-  if (model.capabilities) out.capabilities = model.capabilities;
+  if (kind === "llm") {
+    const runtimeCapabilities = getCapabilitiesForModel(providerId, model.id);
+    out.capabilities = Array.isArray(model.capabilities)
+      ? model.capabilities
+      : { ...runtimeCapabilities, ...model.capabilities };
+    const contextWindow = model.contextWindow
+      ?? model.capabilities?.contextWindow
+      ?? runtimeCapabilities.contextWindow;
+    if (contextWindow != null) out.contextWindow = contextWindow;
+  } else if (model.capabilities) {
+    out.capabilities = model.capabilities;
+  }
   if (model.options) out.options = model.options;
   if (model.dimensions) out.dimensions = model.dimensions;
-  if (model.contextWindow) out.contextWindow = model.contextWindow;
+  if (kind !== "llm" && model.contextWindow) out.contextWindow = model.contextWindow;
   if (kind === "tts" && TTS_VOICES_API.has(providerId)) {
     out.voicesUrl = `/v1/audio/voices?provider=${providerId}`;
   }

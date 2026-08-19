@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import https from "https";
 import os from "os";
-import { execSync, spawn } from "child_process";
+import { execFileSync, execSync, spawn } from "child_process";
 import { savePid, loadPid, clearPid } from "./pid.js";
 import { DATA_DIR } from "@/lib/dataDir.js";
 
@@ -11,7 +11,6 @@ const BINARY_NAME = "cloudflared";
 const IS_WINDOWS = os.platform() === "win32";
 const BIN_NAME = IS_WINDOWS ? `${BINARY_NAME}.exe` : BINARY_NAME;
 const BIN_PATH = path.join(BIN_DIR, BIN_NAME);
-const POWERSHELL_HIDDEN_COMMAND = "powershell -NoProfile -NonInteractive -WindowStyle Hidden -Command";
 const DEFAULT_QUICK_TUNNEL_PROTOCOL = "http2";
 const QUICK_TUNNEL_PROTOCOLS = new Set(["http2", "quic", "auto"]);
 
@@ -185,7 +184,24 @@ async function _ensureCloudflared() {
 
 let cloudflaredProcess = null;
 let unexpectedExitHandler = null;
-let intentionalKill = false; // suppress unexpected-exit callback during deliberate kill
+const intentionalExitPids = new Set();
+
+function markIntentionalExit(childOrPid) {
+  const pid = typeof childOrPid === "number" ? childOrPid : childOrPid?.pid;
+  if (!Number.isInteger(pid) || pid <= 0) return;
+  intentionalExitPids.add(pid);
+  // A failed spawn or an externally killed stale PID might never emit the
+  // expected child `exit` event. Expire the marker to avoid retaining it or
+  // suppressing a future process that happens to reuse the PID.
+  const expiry = setTimeout(() => intentionalExitPids.delete(pid), 10000);
+  if (typeof expiry.unref === "function") expiry.unref();
+}
+
+function terminateChild(child) {
+  if (!child || child.exitCode !== null || child.killed) return;
+  markIntentionalExit(child);
+  try { child.kill(); } catch { /* process already gone */ }
+}
 
 /** Register a callback to be called when cloudflared exits unexpectedly after connecting */
 export function setUnexpectedExitHandler(handler) {
@@ -262,7 +278,7 @@ export async function spawnCloudflared(tunnelToken) {
         return;
       }
       // Watchdog (initializeApp) handles recovery — no auto-reconnect here
-      if (intentionalKill) { intentionalKill = false; return; }
+      if (intentionalExitPids.delete(child.pid)) return;
       if (wasConnected && unexpectedExitHandler) unexpectedExitHandler();
     });
   });
@@ -329,6 +345,7 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
     const timeout = setTimeout(() => {
       if (resolved) return;
       resolved = true;
+      terminateChild(child);
       cleanup();
       reject(new Error(`Quick tunnel timed out. Last log: ${logTail.slice(-800) || "(empty)"}`));
     }, 90000);
@@ -356,7 +373,11 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
       if (tunnelUrl !== lastUrl) {
         console.log(`[Tunnel] cloudflared URL changed: ${tunnelUrl}`);
         lastUrl = tunnelUrl;
-        if (onUrlUpdate) onUrlUpdate(tunnelUrl);
+        if (onUrlUpdate) {
+          Promise.resolve(onUrlUpdate(tunnelUrl)).catch((error) => {
+            console.warn(`[Tunnel] url update failed: ${error.message}`);
+          });
+        }
       }
     };
 
@@ -366,6 +387,7 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
     child.on("error", (err) => {
       if (resolved) return;
       resolved = true;
+      terminateChild(child);
       clearTimeout(timeout);
       cleanup();
       reject(err);
@@ -375,8 +397,7 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
       if (cloudflaredProcess === child) cloudflaredProcess = null;
       clearPid(child.pid);
       // Deliberate kill (restart/disable) — exit silently, no error noise
-      if (intentionalKill) {
-        intentionalKill = false;
+      if (intentionalExitPids.delete(child.pid)) {
         clearTimeout(timeout);
         cleanup();
         if (!resolved) { resolved = true; reject(new Error("cloudflared killed")); }
@@ -410,7 +431,11 @@ function killCloudflaredByPort(port) {
   try {
     if (IS_WINDOWS) {
       const psCmd = `Get-CimInstance Win32_Process -Filter \\"Name='cloudflared.exe'\\" | Where-Object { $_.CommandLine -match ':${port}(\\D|$)' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`;
-      execSync(`${POWERSHELL_HIDDEN_COMMAND} "${psCmd}"`, { stdio: "ignore", windowsHide: true });
+      execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", psCmd], {
+        stdio: "ignore",
+        windowsHide: true,
+        timeout: 5000,
+      });
     } else {
       execSync(`pkill -f "cloudflared.*:${port}([^0-9]|$)" 2>/dev/null || true`, { stdio: "ignore", windowsHide: true });
     }
@@ -418,16 +443,14 @@ function killCloudflaredByPort(port) {
 }
 
 export function killCloudflared(localPort) {
-  intentionalKill = true;
   if (cloudflaredProcess) {
-    try {
-      cloudflaredProcess.kill();
-    } catch (e) { /* ignore */ }
+    terminateChild(cloudflaredProcess);
     cloudflaredProcess = null;
   }
 
   const pid = loadPid();
   if (pid) {
+    markIntentionalExit(pid);
     try {
       process.kill(pid);
     } catch (e) { /* ignore */ }

@@ -1,7 +1,9 @@
+import { platform, arch } from "os";
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import { hasUsableConnectionCredentials } from "@/lib/db/helpers/connectionCredentials";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomVideoProvider } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import {
@@ -16,8 +18,11 @@ import {
   CLINE_CONFIG,
   KILOCODE_CONFIG,
   KIMCHI_CONFIG,
+  ZED_HOSTED_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
+
+const HUGGINGFACE_WHOAMI_URL = "https://huggingface.co/api/whoami-v2";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -125,6 +130,23 @@ const OAUTH_TEST_CONFIG = {
       402: "Connected, but Grok Build credits are exhausted (spending limit). Add credits or upgrade SuperGrok.",
     },
   },
+  // Zed Hosted AI — probe /client/users/me with "userId accessToken" user auth
+  // (same scheme as open-sse/shared/zedAuth.buildZedUserAuthHeader). LLM bearer
+  // tokens are minted on demand and must not be stored as accessToken.
+  zed: {
+    url: `${(ZED_HOSTED_CONFIG.cloudBaseUrl || "https://cloud.zed.dev").replace(/\/$/, "")}/client/users/me`,
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "",
+    // buildAuth overrides the default `${prefix}${accessToken}` composition
+    buildAuth: (accessToken, connection) => {
+      const userId = connection?.providerSpecificData?.userId;
+      if (!userId || !accessToken) return null;
+      return `${userId} ${accessToken}`;
+    },
+    extraHeaders: { Accept: "application/json" },
+    refreshable: false,
+  },
 };
 
 /**
@@ -191,8 +213,10 @@ function parseProviderErrorMessage(bodyText, fallback) {
 }
 
 async function probeCloudCodeAssistAccess(connection, accessToken, effectiveProxy = null) {
+  const _p = platform() === "win32" ? "windows" : platform();
+  const _a = arch() === "x64" ? "amd64" : arch();
   const userAgent = connection.provider === "antigravity"
-    ? "google-api-nodejs-client/9.15.1 vscode-antigravity/1.107.0"
+    ? `antigravity/ide/2.1.1 ${_p}/${_a}`
     : "google-api-nodejs-client/9.15.1 gemini-cli/0.34.0";
 
   const res = await fetchWithConnectionProxy(CLOUD_CODE_ASSIST_TEST_URL, {
@@ -393,9 +417,15 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
 
   try {
     const testUrl = config.buildUrl ? config.buildUrl(accessToken) : config.url;
+    const authValue = config.buildAuth
+      ? config.buildAuth(accessToken, connection)
+      : `${config.authPrefix}${accessToken}`;
+    if (config.buildAuth && !authValue) {
+      return { valid: false, error: "Zed credential is missing userId or accessToken", refreshed };
+    }
     const headers = config.noAuth
       ? { ...config.extraHeaders }
-      : { [config.authHeader]: `${config.authPrefix}${accessToken}`, ...config.extraHeaders };
+      : { [config.authHeader]: authValue, ...config.extraHeaders };
     const fetchOpts = { method: config.method, headers };
     if (config.body) fetchOpts.body = config.body;
     const res = await fetchWithConnectionProxy(testUrl, fetchOpts, effectiveProxy);
@@ -417,9 +447,12 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
       const tokens = await refreshOAuthToken(connection);
       if (tokens) {
         const retryUrl = config.buildUrl ? config.buildUrl(tokens.accessToken) : testUrl;
+        const retryAuth = config.buildAuth
+          ? config.buildAuth(tokens.accessToken, { ...connection, ...tokens, providerSpecificData: { ...(connection.providerSpecificData || {}), ...(tokens.providerSpecificData || {}) } })
+          : `${config.authPrefix}${tokens.accessToken}`;
         const retryHeaders = config.noAuth
           ? { ...config.extraHeaders }
-          : { [config.authHeader]: `${config.authPrefix}${tokens.accessToken}`, ...config.extraHeaders };
+          : { [config.authHeader]: retryAuth, ...config.extraHeaders };
         const retryOpts = { method: config.method, headers: retryHeaders };
         if (config.body) retryOpts.body = config.body;
         const retryRes = await fetchWithConnectionProxy(retryUrl, retryOpts, effectiveProxy);
@@ -465,6 +498,19 @@ async function fetchWithConnectionProxy(url, options = {}, effectiveProxy = null
   });
 }
 
+async function testHuggingFaceToken(apiKey, effectiveProxy = null) {
+  const res = await fetchWithConnectionProxy(HUGGINGFACE_WHOAMI_URL, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  }, effectiveProxy);
+
+  if (res.ok) return { valid: true, error: null };
+  if (res.status === 401 || res.status === 403) return { valid: false, error: "Invalid API key" };
+
+  // HuggingFace fine-grained Inference Provider tokens can be valid even when
+  // task/model endpoints are unavailable. Only auth failures should invalidate.
+  return { valid: false, error: `HuggingFace token check returned ${res.status}` };
+}
+
 async function testApiKeyConnection(connection, effectiveProxy = null) {
   if (isOpenAICompatibleProvider(connection.provider)) {
     const modelsBase = connection.providerSpecificData?.baseUrl;
@@ -504,6 +550,28 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       // 400/529 still confirms key accepted; only 401/403 = bad key
       const valid = res.status !== 401 && res.status !== 403;
       return { valid, error: valid ? null : "Invalid API key or base URL" };
+    } catch (err) {
+      return { valid: false, error: err.message };
+    }
+  }
+
+  if (isCustomVideoProvider(connection.provider)) {
+    // xAI-style async video node — no /models endpoint. Probe POST {base}/generations
+    // with an empty body: 401/403 = bad key; any other status (400/422 missing params,
+    // or 2xx) = reachable + authorized. Mirrors /api/provider-nodes/validate.
+    let base = connection.providerSpecificData?.baseUrl;
+    if (!base) return { valid: false, error: "Missing base URL" };
+    try {
+      base = base.replace(/\/$/, "").replace(/\/(generations|edits|extensions)$/, "");
+      const res = await fetchWithConnectionProxy(`${base}/generations`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${connection.apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }, effectiveProxy);
+      if (res.status === 401 || res.status === 403) return { valid: false, error: "Invalid API key" };
+      if (res.status === 404) return { valid: false, error: "/generations endpoint not found — check Base URL" };
+      if (res.status >= 500) return { valid: false, error: "Server error" };
+      return { valid: true, error: null };
     } catch (err) {
       return { valid: false, error: err.message };
     }
@@ -707,6 +775,9 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
       }
+      case "huggingface": {
+        return await testHuggingFaceToken(connection.apiKey, effectiveProxy);
+      }
       case "chutes": {
         const res = await fetchWithConnectionProxy("https://llm.chutes.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
@@ -823,6 +894,14 @@ case "llm7": {
 export async function testSingleConnection(id) {
   const connection = await getProviderConnectionById(id);
   if (!connection) return { valid: false, error: "Connection not found", latencyMs: 0, testedAt: new Date().toISOString() };
+  if (!hasUsableConnectionCredentials(connection)) {
+    return {
+      valid: false,
+      error: "Credentials are unavailable. Add a new connection to re-authenticate.",
+      latencyMs: 0,
+      testedAt: new Date().toISOString(),
+    };
+  }
 
   const effectiveProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
 

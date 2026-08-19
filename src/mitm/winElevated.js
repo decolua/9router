@@ -1,4 +1,4 @@
-const { exec, execSync } = require("child_process");
+const { execFile, execFileSync } = require("child_process");
 
 const IS_WIN = process.platform === "win32";
 
@@ -9,7 +9,7 @@ const IS_WIN = process.platform === "win32";
 function isAdmin() {
   if (IS_WIN) {
     try {
-      execSync("net session >nul 2>&1", { windowsHide: true, stdio: "ignore" });
+      execFileSync("fltmc.exe", [], { windowsHide: true, stdio: "ignore" });
       return true;
     } catch {
       return false;
@@ -40,8 +40,9 @@ function runElevatedPowerShell(script) {
   // If already admin, run directly — zero popup
   if (isAdmin()) {
     return new Promise((resolve, reject) => {
-      exec(
-        `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${encoded}`,
+      execFile(
+        "powershell.exe",
+        ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded],
         { windowsHide: true },
         (error, stdout, stderr) => {
           if (error) reject(new Error(stderr || error.message));
@@ -53,7 +54,7 @@ function runElevatedPowerShell(script) {
 
   // Not admin — wrap with Start-Process -Verb RunAs (UAC popup)
   const wrapper = `
-    $proc = Start-Process powershell -ArgumentList @(
+    $proc = Start-Process powershell -WindowStyle Hidden -ArgumentList @(
       '-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass',
       '-WindowStyle','Hidden','-EncodedCommand','${encoded}'
     ) -Verb RunAs -Wait -PassThru -WindowStyle Hidden;
@@ -61,8 +62,9 @@ function runElevatedPowerShell(script) {
   `;
 
   return new Promise((resolve, reject) => {
-    exec(
-      `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ${quotePs(wrapper)}`,
+    execFile(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", wrapper],
       { windowsHide: true },
       (error, stdout, stderr) => {
         if (error) {

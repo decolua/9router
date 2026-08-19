@@ -160,11 +160,16 @@ function convertClaudeMessage(msg) {
     const parts = [];
     const toolCalls = [];
     const toolResults = [];
+    let reasoningContent = "";
 
     for (const block of msg.content) {
       switch (block.type) {
         case CLAUDE_BLOCK.TEXT:
           parts.push({ type: OPENAI_BLOCK.TEXT, text: block.text });
+          break;
+
+        case CLAUDE_BLOCK.THINKING:
+          if (block.thinking) reasoningContent += block.thinking;
           break;
 
         case CLAUDE_BLOCK.IMAGE:
@@ -194,10 +199,25 @@ function convertClaudeMessage(msg) {
           if (typeof block.content === "string") {
             resultContent = block.content;
           } else if (Array.isArray(block.content)) {
-            resultContent = block.content
-              .filter(c => c.type === CLAUDE_BLOCK.TEXT)
-              .map(c => c.text)
-              .join("\n") || JSON.stringify(block.content);
+            // Keep text in the tool message; lift any images out as a following user
+            // turn (OpenAI `tool` messages can't carry images). Without this, an
+            // image-only tool_result is JSON.stringify'd -> base64 as text -> Codex
+            // "input exceeds the context window".
+            const textParts = [];
+            let hasImage = false;
+            for (const c of block.content) {
+              if (c.type === CLAUDE_BLOCK.TEXT) {
+                textParts.push(c.text);
+              } else if (c.type === CLAUDE_BLOCK.IMAGE && c.source?.type === "base64") {
+                parts.push({
+                  type: OPENAI_BLOCK.IMAGE_URL,
+                  image_url: { url: encodeDataUri(c.source.media_type, c.source.data) }
+                });
+                hasImage = true;
+              }
+            }
+            resultContent = textParts.join("\n")
+              || (hasImage ? "[tool returned an image; see attached]" : JSON.stringify(block.content));
           } else if (block.content) {
             resultContent = JSON.stringify(block.content);
           }
@@ -225,16 +245,23 @@ function convertClaudeMessage(msg) {
       if (parts.length > 0) {
         result.content = collapseTextParts(parts);
       }
+      if (reasoningContent) {
+        result.reasoning_content = reasoningContent;
+      }
       result.tool_calls = toolCalls;
       return result;
     }
 
     // Return content
-    if (parts.length > 0) {
-      return {
-        role,
-        content: collapseTextParts(parts)
-      };
+    if (parts.length > 0 || reasoningContent) {
+      const result2 = { role };
+      if (parts.length > 0) {
+        result2.content = collapseTextParts(parts);
+      }
+      if (reasoningContent) {
+        result2.reasoning_content = reasoningContent;
+      }
+      return result2;
     }
     
     // Empty content array

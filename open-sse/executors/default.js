@@ -6,7 +6,7 @@ import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../shared/clineAuth.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
-import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
+import { stripUnsupportedParams, applyParamRenames } from "../translator/concerns/paramSupport.js";
 
 // Auth header descriptors — derived from registry transport.auth, fallback to hardcoded defaults.
 const BEARER = { combined: true, header: "Authorization", scheme: "bearer" };
@@ -62,19 +62,51 @@ const REFRESH_GRANTS = Object.fromEntries(
     })
 );
 
+function uniqueCommaValues(values) {
+  return [...new Set(values
+    .filter(value => value !== undefined && value !== null && value !== "")
+    .flatMap(value => String(value).split(","))
+    .map(value => value.trim())
+    .filter(Boolean))];
+}
+
+function normalizeAnthropicHeaderVariants(headers) {
+  const versionValues = uniqueCommaValues([headers["anthropic-version"], headers["Anthropic-Version"]]);
+  delete headers["Anthropic-Version"];
+  delete headers["anthropic-version"];
+  if (versionValues.length > 0) {
+    // Fixes #1475: Node/fetch combines case variants into "v, v", which Anthropic rejects.
+    headers["anthropic-version"] = versionValues[0];
+  }
+
+  const betaValues = uniqueCommaValues([headers["anthropic-beta"], headers["Anthropic-Beta"]]);
+  delete headers["Anthropic-Beta"];
+  delete headers["anthropic-beta"];
+  if (betaValues.length > 0) headers["anthropic-beta"] = betaValues.join(",");
+}
+
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
   transformRequest(model, body) {
-    const transformed = this.applyJsonSchemaFallback(body);
+    let transformed = this.applyJsonSchemaFallback(body);
 
     if (transformed && typeof transformed === "object") {
+      transformed = { ...transformed };
+      if (this.requiresMaxCompletionTokens(model) && transformed.max_tokens !== undefined) {
+        transformed.max_completion_tokens = transformed.max_tokens;
+        delete transformed.max_tokens;
+      }
+      if (!this.supportsTemperature(model) && transformed.temperature !== undefined) {
+        delete transformed.temperature;
+      }
       // quirk: some openai-compatible providers reject Anthropic's client_metadata field
       if (this.config.quirks?.dropClientMetadata) {
         delete transformed.client_metadata;
       }
+      applyParamRenames(this.provider, model, transformed);
       stripUnsupportedParams(this.provider, model, transformed);
     }
 
@@ -99,6 +131,36 @@ export class DefaultExecutor extends BaseExecutor {
       messages.unshift({ role: "system", content: prompt });
     }
     return { ...body, messages, response_format: { type: "json_object" } };
+  }
+
+  /**
+   * Override parseError to extract precise resetsAtMs from MiniMax 429 errors.
+   * MiniMax returns: { error: { message: "...", retryAfter: "2025-05-02T12:00:00Z", ... } }
+   * Without this, the base class returns no resetsAtMs → exponential backoff instead of precise wait.
+   */
+  parseError(response, bodyText) {
+    if (response.status === 429 && bodyText) {
+      try {
+        const json = JSON.parse(bodyText);
+        const err = json?.error || json;
+        const now = Date.now();
+        const retryAfter = err?.retryAfter;
+        if (retryAfter) {
+          const ms = new Date(retryAfter).getTime();
+          if (ms > now) {
+            return { status: 429, message: err.message || bodyText, resetsAtMs: ms };
+          }
+        }
+        const retryMs = err?.retry_after_ms || err?.retryAfterMs;
+        if (typeof retryMs === "number" && retryMs > 0) {
+          const resetsAtMs = now + retryMs;
+          if (resetsAtMs > now) {
+            return { status: 429, message: err.message || bodyText, resetsAtMs };
+          }
+        }
+      } catch { /* fall through to default */ }
+    }
+    return super.parseError(response, bodyText);
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
@@ -153,6 +215,10 @@ export class DefaultExecutor extends BaseExecutor {
     // Hooks run BEFORE auth so dynamic overlays can't clobber the token.
     for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);
     applyAuth(headers, desc, credentials);
+    if (this.provider === "claude" && credentials?._clientSessionId) {
+      delete headers["x-claude-code-session-id"];
+      headers["X-Claude-Code-Session-Id"] = credentials._clientSessionId;
+    }
 
     if (this.provider === "claude" && model) {
       headers["Anthropic-Beta"] = selectAnthropicBeta(model);
@@ -190,6 +256,8 @@ export class DefaultExecutor extends BaseExecutor {
         }
       }
     }
+
+    normalizeAnthropicHeaderVariants(headers);
 
     if (stream) headers["Accept"] = "text/event-stream";
     return headers;
@@ -320,6 +388,16 @@ export class DefaultExecutor extends BaseExecutor {
   async refreshKilocode(refreshToken, proxyOptions = null) {
     // Kilocode uses device code flow, no refresh token support
     return null;
+  }
+
+  // Newer OpenAI models (gpt-5+, o1, o3, o4) require max_completion_tokens instead of max_tokens
+  requiresMaxCompletionTokens(model) {
+    return /gpt-5|o[134]-/i.test(model);
+  }
+
+  // Some models (like gpt-5.4) don't support the temperature parameter
+  supportsTemperature(model) {
+    return !/gpt-5\.4/i.test(model);
   }
 }
 

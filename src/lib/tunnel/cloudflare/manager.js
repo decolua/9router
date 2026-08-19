@@ -2,12 +2,14 @@ import { loadState, saveState, generateShortId } from "../shared/state.js";
 import { spawnQuickTunnel, killCloudflared, isCloudflaredRunning, setUnexpectedExitHandler } from "./cloudflared.js";
 import { clearPid } from "./pid.js";
 import { waitForHealth, probeUrlAlive } from "./healthCheck.js";
-import { WORKER_URL } from "./config.js";
+import { WORKER_URL, INSECURE_WORKER } from "./config.js";
+import { workerFetch } from "./workerFetch.js";
 import { getSettings, updateSettings } from "@/lib/localDb";
 
 const svc = {
   cancelToken: { cancelled: false },
   spawnInProgress: false,
+  enablePromise: null,
   lastRestartAt: 0,
   activeLocalPort: null,
 };
@@ -20,10 +22,10 @@ let onUnexpectedExit = null;
 export function setTunnelUnexpectedExitCallback(cb) { onUnexpectedExit = cb; }
 
 async function registerTunnelUrl(shortId, tunnelUrl) {
-  await fetch(`${WORKER_URL}/api/tunnel/register`, {
+  await workerFetch(`${WORKER_URL}/api/tunnel/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ shortId, tunnelUrl })
+    body: JSON.stringify({ shortId, tunnelUrl }),
   });
 }
 
@@ -31,13 +33,34 @@ function throwIfCancelled(token) {
   if (token.cancelled) throw new Error("tunnel cancelled");
 }
 
-export async function enableTunnel(localPort = 20128) {
+export function enableTunnel(localPort = 20128) {
+  // A dashboard click, startup, and watchdog recovery can race. They must
+  // share one cloudflared lifecycle instead of killing and respawning each
+  // other's child process.
+  if (svc.enablePromise) {
+    if (!svc.cancelToken.cancelled && svc.activeLocalPort === localPort) {
+      return svc.enablePromise;
+    }
+    // A disable may have cancelled the previous operation. Let it release its
+    // child/PID state before a new explicit enable takes ownership.
+    return svc.enablePromise.catch(() => undefined).then(() => enableTunnel(localPort));
+  }
+
   console.log(`[Tunnel] enable start (port=${localPort})`);
   svc.cancelToken = { cancelled: false };
   svc.activeLocalPort = localPort;
   svc.spawnInProgress = true;
   const token = svc.cancelToken;
 
+  const attempt = enableTunnelImpl(localPort, token);
+  svc.enablePromise = attempt;
+  attempt.finally(() => {
+    if (svc.enablePromise === attempt) svc.enablePromise = null;
+  }).catch(() => {});
+  return attempt;
+}
+
+async function enableTunnelImpl(localPort, token) {
   try {
     if (isCloudflaredRunning()) {
       const existing = loadState();
@@ -67,7 +90,9 @@ export async function enableTunnel(localPort = 20128) {
       if (token.cancelled) return;
       console.log(`[Tunnel] url updated: ${url}`);
       await registerTunnelUrl(shortId, url);
+      if (token.cancelled) return;
       saveState({ shortId, tunnelUrl: url });
+      if (token.cancelled) return;
       await updateSettings({ tunnelEnabled: true, tunnelUrl: url });
     };
 
@@ -83,8 +108,11 @@ export async function enableTunnel(localPort = 20128) {
 
     const publicUrl = `https://r${shortId}.abc-tunnel.us`;
     await registerTunnelUrl(shortId, tunnelUrl);
+    throwIfCancelled(token);
     saveState({ shortId, tunnelUrl });
+    throwIfCancelled(token);
     await updateSettings({ tunnelEnabled: true, tunnelUrl });
+    throwIfCancelled(token);
     console.log(`[Tunnel] registered shortId=${shortId} publicUrl=${publicUrl}`);
 
     // Verify publicUrl first (worker route is reliable; direct *.trycloudflare.com DNS may lag)
@@ -103,6 +131,9 @@ export async function enableTunnel(localPort = 20128) {
     // Suppress noise when spawn was deliberately killed (restart/disable superseded it)
     if (!/cloudflared killed|tunnel cancelled/.test(e.message)) {
       console.error(`[Tunnel] enable error: ${e.message}`);
+      if (/fetch failed|self signed|self-signed|certificate/i.test(e.message) && !INSECURE_WORKER) {
+        console.error("[Tunnel] hint: worker TLS rejected. Set TUNNEL_WORKER_INSECURE=1 to bypass cert check for the worker host.");
+      }
     }
     throw e;
   } finally {

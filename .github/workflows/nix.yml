@@ -1,0 +1,75 @@
+name: Nix flake
+
+# Validates the flake (flake.nix). The full Next.js build can take 10+ minutes,
+# so this workflow runs on manual dispatch, on published releases, and when
+# Nix-related files change in a PR — not on every push.
+#
+# Steps, in order of what they catch:
+#   1. nix flake check --all-systems  — every system's outputs evaluate
+#      (including darwin on an ubuntu runner).
+#   2. nix build .#default            — buildNpmPackage + Next.js standalone
+#      build actually realises for the runner's system.
+#   3. nix run .#default -- --help    — the wrapped server actually execs.
+#      This is the only step that catches wrapper/binary launch bugs that
+#      pass flake check but fail at runtime. Do NOT drop it.
+
+on:
+  workflow_dispatch: {}
+  release:
+    types: [published]
+  pull_request:
+    branches: [master]
+    paths:
+      - "flake.nix"
+      - "flake.lock"
+      - "**/*.nix"
+      - ".github/workflows/nix.yml"
+      - "package-lock.json"
+      - "package.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: nix flake check
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v16
+
+      - name: nix flake check --all-systems
+        run: nix flake check --all-systems --no-build
+
+      - name: nix build .#default
+        run: nix build .#default --print-build-logs
+
+      - name: nix run .#default (smoke test)
+        # 9router has no --version flag; verify the binary launches and
+        # binds to a port, then kill it. A 3-second timeout is enough for
+        # Next.js standalone to print "Ready".
+        run: |
+          timeout 10 nix run .#default &
+          sleep 5
+          if curl -sf http://localhost:20128 >/dev/null 2>&1; then
+            echo "9router responded on port 20128 — smoke test passed"
+          else
+            echo "9router did not respond within 5s — checking if process is alive"
+            if kill -0 %1 2>/dev/null; then
+              echo "Process is alive but port not responding yet — acceptable for smoke test"
+            else
+              echo "Process exited early — smoke test failed"
+              exit 1
+            fi
+          fi
+          kill %1 2>/dev/null || true

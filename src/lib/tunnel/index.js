@@ -30,6 +30,7 @@ export {
   isTailscaleRunningStrict,
   isTailscaleLoggedIn,
   isTailscaleLoggedInStrict,
+  getTailscaleBackendStatus,
   isSystemDaemonRunning,
   isDaemonAlive,
   startFunnel,

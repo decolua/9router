@@ -3,6 +3,7 @@
 const fs = require("fs");
 const path = require("path");
 const { execSync } = require("child_process");
+const { copyRuntimePackages } = require("../../scripts/copy-runtime-packages.cjs");
 
 const cliDir = path.resolve(__dirname, "..");
 const appDir = path.resolve(cliDir, "..");
@@ -169,6 +170,10 @@ function buildCliPackage() {
   }
 
   // Step 1: Build app with Next.js (workspace tracing root → traced node_modules in standalone).
+  // Persistent build caches can retain modules from another linked worktree.
+  if (fs.existsSync(buildDistDir)) {
+    fs.rmSync(buildDistDir, { recursive: true, force: true });
+  }
   console.log("1️⃣  Building Next.js app...");
   try {
     execSync("npm run build", {
@@ -214,7 +219,8 @@ function buildCliPackage() {
   const customServerSrc = path.join(appDir, "custom-server.js");
   if (fs.existsSync(customServerSrc)) {
     fs.copyFileSync(customServerSrc, path.join(cliAppDir, "custom-server.js"));
-    console.log("✅ Copied custom-server.js\n");
+    copyRecursive(path.join(appDir, "server"), path.join(cliAppDir, "server"));
+    console.log("✅ Copied custom-server.js and server files\n");
   } else {
     console.error("❌ custom-server.js not found — without it no request can be proven local,");
     console.error("   so the packaged CLI would demand an API key for its own dashboard and /v1.");
@@ -226,9 +232,9 @@ function buildCliPackage() {
   // Windows EBUSY during global CLI updates. node:sqlite (Node ≥22.5) is also
   // available as a no-install middle tier.
   console.log("3️⃣ b Configuring SQLite drivers...");
-  function ensureModuleInBundle(pkg) {
+  function ensureModuleInBundle(pkg, requiredFiles = []) {
     const dest = path.join(cliAppDir, "node_modules", pkg);
-    if (fs.existsSync(dest)) {
+    if (fs.existsSync(dest) && requiredFiles.every((file) => fs.existsSync(path.join(dest, file)))) {
       console.log(`✅ ${pkg} already bundled`);
       return;
     }
@@ -241,15 +247,33 @@ function buildCliPackage() {
       console.warn(`⚠️  ${pkg} not found locally — bundle will rely on node:sqlite or runtime install`);
       return;
     }
+    fs.rmSync(dest, { recursive: true, force: true });
     fs.mkdirSync(path.dirname(dest), { recursive: true });
     copyRecursive(src, dest);
+    const missing = requiredFiles.filter((file) => !fs.existsSync(path.join(dest, file)));
+    if (missing.length > 0) {
+      throw new Error(`Incomplete ${pkg} bundle; missing: ${missing.join(", ")}`);
+    }
     console.log(`✅ Bundled ${pkg}`);
   }
-  ensureModuleInBundle("sql.js");
+  ensureModuleInBundle("sql.js", ["dist/sql-wasm.wasm"]);
   // `open` is external (see serverExternalPackages in next.config.mjs), so it must exist in
   // the bundle's node_modules or every importer throws MODULE_NOT_FOUND at runtime. Output
   // tracing normally copies it; this is the same belt-and-braces guard used for sql.js.
   ensureModuleInBundle("open");
+  // custom-server.js loads the native gateway outside Next's traced module graph.
+  copyRuntimePackages(
+    ["ws", "https-proxy-agent", "socks-proxy-agent"],
+    path.join(cliAppDir, "node_modules"),
+    {
+      searchPaths: [appDir, rootDir],
+      storeDirs: [
+        path.join(appDir, "node_modules", ".pnpm"),
+        path.join(rootDir, "node_modules", ".pnpm"),
+      ],
+      onCopy: (pkg, version) => console.log(`✅ Bundled ${pkg}@${version}`),
+    }
+  );
   const betterDir = path.join(cliAppDir, "node_modules", "better-sqlite3");
   if (fs.existsSync(betterDir)) {
     fs.rmSync(betterDir, { recursive: true, force: true });

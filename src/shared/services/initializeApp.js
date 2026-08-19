@@ -240,9 +240,10 @@ async function safeRestartTailscale(reason) {
 
 function startWatchdog() {
   if (g.watchdogInterval) return;
-  g.watchdogInterval = setInterval(() => {
-    safeRestartTunnel("watchdog").catch(() => {});
-    safeRestartTailscale("watchdog").catch(() => {});
+  g.watchdogInterval = setInterval(async () => {
+    const settings = await getSettings().catch(() => null);
+    if (settings?.tunnelEnabled) safeRestartTunnel("watchdog").catch(() => {});
+    if (settings?.tailscaleEnabled) safeRestartTailscale("watchdog").catch(() => {});
   }, WATCHDOG_INTERVAL_MS);
   if (g.watchdogInterval.unref) g.watchdogInterval.unref();
 }

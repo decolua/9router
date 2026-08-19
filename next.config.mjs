@@ -11,6 +11,7 @@ const proxyClientMaxBodySize = process.env.NINEROUTER_PROXY_CLIENT_MAX_BODY_SIZE
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  basePath: process.env.NINEROUTER_BASE_PATH || "",
   distDir: process.env.NEXT_DIST_DIR || ".next",
   output: "standalone",
   // `open` must stay external. It derives its own directory from `import.meta.url`, and
@@ -31,7 +32,9 @@ const nextConfig = {
   images: {
     unoptimized: true
   },
-  env: {},
+  env: {
+    NEXT_PUBLIC_BASE_PATH: process.env.NINEROUTER_BASE_PATH || "",
+  },
   experimental: {
     // #1529/#1572: LLM clients can send long context or base64 image payloads through /v1 rewrites.
     proxyClientMaxBodySize,
@@ -48,6 +51,19 @@ const nextConfig = {
         fs: false,
         path: false,
       };
+    }
+    // better-sqlite3 is an OPTIONAL native dep. On hosts without a C++ toolchain
+    // (e.g. Hostinger Node hosting) its native build is skipped and the module is
+    // absent — serverExternalPackages then can't externalize it (it resolves the
+    // package first) and webpack fails with "Can't resolve 'better-sqlite3'".
+    // Force-externalize so webpack never resolves it at build; driver.js catches the
+    // missing require at runtime and falls back to node:sqlite (Node >=22.5) / sql.js.
+    if (isServer) {
+      const prev = config.externals;
+      config.externals = [
+        ({ request }, cb) => (request === "better-sqlite3" ? cb(null, "commonjs better-sqlite3") : cb()),
+        ...(Array.isArray(prev) ? prev : prev ? [prev] : []),
+      ];
     }
     // Exclude non-source dirs from watcher to reduce inotify load
     config.watchOptions = {

@@ -1,8 +1,10 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
+import { CLAUDE_BLOCK } from "../translator/schema/index.js";
+import { PROVIDERS } from "../config/providers.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
-import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
+import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE, decloakClaudeToolUseEvent } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
@@ -110,10 +112,29 @@ export function createSSEStream(options = {}) {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
 
+              // Some Anthropic-compatible providers omit `signature` from the
+              // thinking block start. Strict Messages clients deserialize that
+              // field before later signature_delta events arrive.
+              let fieldsInjected = false;
+              if (
+                PROVIDERS[provider]?.quirks?.ensureThinkingSignature &&
+                parsed.type === "content_block_start" &&
+                parsed.content_block?.type === CLAUDE_BLOCK.THINKING &&
+                parsed.content_block.signature === undefined
+              ) {
+                parsed.content_block.signature = "";
+                fieldsInjected = true;
+              }
+
               const idFixed = fixInvalidId(parsed);
 
+              // Decloak tool names in Claude content_block_start events.
+              // claude→claude passthrough doesn't go through translateResponse (which
+              // applies toolNameMap in TRANSLATE mode), so without this the client
+              // receives suffixed names (e.g. "Execute_ide") it doesn't recognize.
+              const toolNameDecloaked = decloakClaudeToolUseEvent(parsed, toolNameMap);
+
               // Ensure OpenAI-required fields are present on streaming chunks (Letta compat)
-              let fieldsInjected = false;
               if (parsed.choices !== undefined) {
                 if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
                 if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
@@ -184,6 +205,10 @@ export function createSSEStream(options = {}) {
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               }
+              if (toolNameDecloaked && !injectedUsage) {
+                output = `data: ${JSON.stringify(parsed)}\n`;
+                injectedUsage = true;
+              }
             } catch {
               // Skip non-JSON data lines silently — don't forward garbage to clients.
               // Upstream providers sometimes return plain-text errors (HTML, rate-limit
@@ -206,7 +231,18 @@ export function createSSEStream(options = {}) {
         }
 
         // Translate mode
-        if (!trimmed) continue;
+        // Responses API SSE: buffer "event:" lines (Codex uses multi-line format "event:\ndata:\n\n")
+        // parseSSELine only reads "data:" lines → "event:" lines get dropped → event type lost during translate
+        if (trimmed.startsWith("event:")) {
+          if (state) state._lastEventType = trimmed.slice(6).trim();
+          // When both formats are OPENAI_RESPONSES → forward event line as-is
+          if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+            const output = line + "\n";
+            reqLogger?.appendConvertedChunk?.(output);
+            controller.enqueue(sharedEncoder.encode(output));
+          }
+          continue;
+        }
 
         const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
@@ -253,6 +289,16 @@ export function createSSEStream(options = {}) {
         if (parsed.delta?.thinking) {
           totalContentLength += parsed.delta.thinking.length;
           accumulatedThinking += parsed.delta.thinking;
+        }
+
+        // Ollama native format
+        if (typeof parsed.message?.content === "string" && parsed.message.content) {
+          totalContentLength += parsed.message.content.length;
+          accumulatedContent += parsed.message.content;
+        }
+        if (typeof parsed.message?.thinking === "string" && parsed.message.thinking) {
+          totalContentLength += parsed.message.thinking.length;
+          accumulatedThinking += parsed.message.thinking;
         }
         
         // OpenAI format - content
@@ -484,11 +530,12 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
     reqLogger,
+    toolNameMap,
     model,
     connectionId,
     body,

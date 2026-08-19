@@ -57,12 +57,13 @@ export const API_ENDPOINTS = {
 export const CONSOLE_LOG_CONFIG = {
   maxLines: 200,
   pollIntervalMs: 1000,
+  streamTimeoutMs: 5000,
 };
 
 // Client-side store TTL: how long fetched data stays fresh before re-fetching
 export const CLIENT_STORE_TTL_MS = 60000;
 
-// Quota auto-ping: keep 5h windows warm by sending a tiny request right after reset.
+// Quota auto-ping: send tiny opt-in requests around resets or to start guarded inactive windows.
 export const QUOTA_AUTOPING_CONFIG = {
   tickIntervalMs: 60000,                // scheduler tick
   pingLeadMs: 5000,                     // fire once reset passes (within tolerance)
@@ -72,6 +73,8 @@ export const QUOTA_AUTOPING_CONFIG = {
     claude: {
       settingsKey: "claudeAutoPing",    // preserve existing settings contract
       quotaKey: "session (5h)",         // quota key returned by usage handler
+      pingInactiveSession: true,
+      inactiveMinPingIntervalMs: 5 * 60 * 60 * 1000,
       pingModel: "claude-haiku-4-5-20251001",
       pingText: "hi",
       pingMaxTokens: 1,
@@ -90,6 +93,14 @@ export const QUOTA_AUTOPING_CONFIG = {
       pingReasoningEffort: "none",
     },
   },
+};
+
+// OAuth token keep-alive: refresh access tokens before they expire so idle connections
+// never need re-authorization. Each tick is a no-op unless a token is inside the refresh
+// window its executor defines, so a healthy install makes no upstream calls.
+export const TOKEN_KEEPALIVE_CONFIG = {
+  tickIntervalMs: 300000,               // 5 min — well inside the shortest refreshLeadMs
+  failureCooldownMs: 1800000,           // 30 min before retrying a connection that failed
 };
 
 // Re-export from providers.js for backward compatibility

@@ -17,7 +17,8 @@ beforeAll(async () => {
   await db.initDb();
 });
 
-afterAll(() => {
+afterAll(async () => {
+  await db?.closeAdapter?.();
   if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
   if (originalDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = originalDataDir;
@@ -121,6 +122,31 @@ describe("DB Concurrency — atomic safety", () => {
       expect(after[`marker${i}`]).toBe(i); // no field lost
     }
     expect(after.refreshToken).toBe("rt-initial"); // base preserved
+  });
+
+  it("never overwrites encrypted credentials when their key is unavailable", async () => {
+    const originalKey = process.env.DB_ENCRYPTION_KEY;
+    try {
+      process.env.DB_ENCRYPTION_KEY = "test-key-before-loss";
+      const conn = await db.createProviderConnection({
+        provider: "oauth-locked", authType: "oauth", email: "locked@example.test",
+        accessToken: "access-before-loss", refreshToken: "refresh-before-loss",
+      });
+      const { getAdapter } = await import("@/lib/db/driver.js");
+      const adapter = await getAdapter();
+      const before = adapter.get("SELECT data FROM providerConnections WHERE id = ?", [conn.id]).data;
+
+      process.env.DB_ENCRYPTION_KEY = "different-key-that-cannot-decrypt";
+      await expect(db.updateProviderConnection(conn.id, { testStatus: "unavailable" }))
+        .rejects.toMatchObject({ code: "SECRET_DECRYPTION_FAILED" });
+
+      const after = adapter.get("SELECT data FROM providerConnections WHERE id = ?", [conn.id]).data;
+      expect(after).toBe(before);
+      expect(after).toContain("enc1:");
+    } finally {
+      if (originalKey === undefined) delete process.env.DB_ENCRYPTION_KEY;
+      else process.env.DB_ENCRYPTION_KEY = originalKey;
+    }
   });
 
   it("addCustomModel race: parallel duplicate adds → only 1 inserted", async () => {

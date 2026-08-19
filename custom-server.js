@@ -1,10 +1,36 @@
 const http = require("http");
+const crypto = require("crypto");
+const { attachCodexNativeGateway } = require("./server/codexNativeGateway.cjs");
 const path = require("path");
 const fs = require("fs");
-const crypto = require("crypto");
 const { pathToFileURL } = require("url");
 
+// Renaming next-server process to a unique name while keeping "next-server"
+// in the name for backward compatibility with existing process-matching whitelists.
+process.title = "9router next-server";
+Object.defineProperty(process, "title", {
+  get: () => "9router next-server",
+  set: () => {},
+  configurable: true
+});
+
 const origCreate = http.createServer.bind(http);
+process.env.CODEX_NATIVE_INTERNAL_SECRET ||= crypto.randomBytes(32).toString("hex");
+
+function skipClaimedUpgrade(server, gateway) {
+  const originalOn = server.on.bind(server);
+  const originalOnce = server.once.bind(server);
+  const wrap = (listener) => (request, socket, head) => {
+    if (!gateway.handles(request)) return listener(request, socket, head);
+  };
+  server.on = function on(event, listener) {
+    return originalOn(event, event === "upgrade" ? wrap(listener) : listener);
+  };
+  server.addListener = server.on;
+  server.once = function once(event, listener) {
+    return originalOnce(event, event === "upgrade" ? wrap(listener) : listener);
+  };
+}
 
 // Per-process secret proving x-9r-real-ip was stamped below rather than sent by the client.
 // A bare `next start` / `next dev` never loads this file, so it cannot produce a matching
@@ -73,6 +99,10 @@ http.createServer = (...args) => {
     return handler(req, res);
   };
   const server = origCreate(...rest, wrapped);
+  const gateway = attachCodexNativeGateway(server, {
+    secret: process.env.CODEX_NATIVE_INTERNAL_SECRET,
+  });
+  skipClaimedUpgrade(server, gateway);
   server.once("listening", () => {
     startBackgroundTokenRefreshFromCustomServer();
   });

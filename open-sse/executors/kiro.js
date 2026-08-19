@@ -7,13 +7,13 @@ import {
 } from "../config/kiroConstants.js";
 import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
+import { resolveKiroDataPlaneUrl } from "../config/kiroConstants.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
 
 const KIRO_REPAIR_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
 const KIRO_REPAIR_HEARTBEAT_MS = 10_000;
-const KIRO_SHORT_FINAL_MAX_CHARS = 800;
 const EVENTSTREAM_MAX_MESSAGE_BYTES = 24 * 1024 * 1024;
 const EVENTSTREAM_MAX_HEADERS_BYTES = 128 * 1024;
 const KIRO_EVENT_TYPES = new Set([
@@ -38,22 +38,7 @@ const CRC32_TABLE = Uint32Array.from({ length: 256 }, (_, index) => {
   return value >>> 0;
 });
 
-const REPAIR_INSTRUCTIONS = Object.freeze({
-  tool: "Retry the previous response because its Kiro tool_call wrapper was malformed. If you use the wrapper tool named tool_call, its input must contain a non-empty name and an arguments field.",
-  ellipsis: "Retry the previous response because it ended with only an ellipsis. Return the complete final answer, not only ... or ….",
-  short_final: "Retry the previous response because its final only announced a future action. Complete the check now and return the result or a concrete blocker."
-});
-const SHORT_FUTURE_ACTION = /^(?:(?:(?:現在|接著|接下來|下一步)[，,:：\s]*(?:我(?:只)?(?:會|要|將|再)?\s*)?|我只再)(?:補|查|確認|驗證|追(?:查|蹤)?|繼續|檢查|測試)|我(?:會|要|將)(?:再|重新)?(?:補(?:齊|查)?|抓取|查(?:詢)?|確認|驗證|追(?:查|蹤)?|繼續|檢查|測試)|(?:(?:next|now|then)\b[\s,:-]*)?(?:i(?:'ll| will| am going to| need to)|let me)\s+(?:verify|check|confirm|validate|investigate|trace|continue|follow up|test)\b)/iu;
-// Keep this tied to the observed whole-response signature. Broader Chinese
-// result/progress heuristics create false positives for completed findings.
-const OBSERVED_TRAILING_FUTURE_ACTION = /^目前證據顯示[\s\S]{1,700}[。.!?；;]\s*最後補查\s+504\s+access\s+log[，,]\s*確認\s+host[／/]路徑與是否為集中流量[。.!]?$/iu;
-const ENGLISH_FUTURE_ACTION = /^(?:(?:next|now|then)\b[\s,:-]*)?(?:i(?:'ll| will| am going to| need to)|let me)\s+(?:verify|check|confirm|validate|investigate|trace|continue|follow up|test)\b/iu;
-const ENGLISH_RESULT_CLAUSE = /(?:[:;\n]|[.!?]\s+\S|\b(?:status|checksum|response|deployment)\s+(?:is|are|was|were|matches?|equals?|returned)\b)/iu;
-const CHINESE_FUTURE_ACTION = /^(?:(?:現在|接著|接下來|下一步)[，,:：\s]*(?:我(?:只)?(?:會|要|將|再)?\s*)?|我只再|我(?:會|要|將)(?:再|重新)?)(?:補|抓取|查|確認|驗證|追|繼續|檢查|測試)/u;
-const CHINESE_RESULT_CLAUSE = /(?:[。！？]\s*\S|(?:版本|狀態|回應|結果|部署|校驗碼)(?:是|為|等於|顯示))/u;
-const USER_WAIT = /(?:請(?:你|先)|你(?:先|需要|可以|提供|確認|批准|允許)|等待(?:你|使用者)|等你|核准|同意|授權|\b(?:after|when|once)\s+you\b|\byour\s+(?:approval|confirmation|permission|input)\b|\bwait(?:ing)?\s+for\s+you\b|\bplease\s+(?:approve|confirm|provide|send)\b)/iu;
-const COMPLETED_FINAL = /(?:已(?:經)?完成|完成(?:了|驗證|確認)|修復完成|確認無誤|驗證(?:完成|通過)|測試(?:均)?通過|結論|總結|\b(?:done|completed|fixed|verified|confirmed|passed|in conclusion|summary)\b|\b(?:is|are) complete\b)/iu;
-const RESULT_EVIDENCE = /(?:顯示|發現|因此|成功|失敗|正常|無錯誤|沒有錯誤|\b(?:found|shows?|showed|because|therefore|succeeded|failed|healthy|green|no errors?)\b)/iu;
+const TOOL_CALL_REPAIR_INSTRUCTION = "Retry the previous response because its Kiro tool_call wrapper was malformed. If you use the wrapper tool named tool_call, its input must contain a non-empty name and an arguments field.";
 
 function crc32(bytes) {
   let crc = 0xffffffff;
@@ -127,12 +112,11 @@ async function readResponsePrefix(response, signal, maxBytes, timeoutMs) {
   return decoder.decode(concatChunks(chunks, totalBytes));
 }
 
-function appendRepairInstruction(body, kind) {
+function appendToolCallRepairInstruction(body) {
   const repaired = structuredClone(body || {});
-  const instruction = REPAIR_INSTRUCTIONS[kind] || "Retry the previous incomplete Kiro response.";
   repaired.systemPrompt = repaired.systemPrompt
-    ? `${repaired.systemPrompt}\n\n${instruction}`
-    : instruction;
+    ? `${repaired.systemPrompt}\n\n${TOOL_CALL_REPAIR_INSTRUCTION}`
+    : TOOL_CALL_REPAIR_INSTRUCTION;
   return repaired;
 }
 
@@ -176,20 +160,6 @@ function mergeStopReason(current, incoming) {
   return severity(incoming) > severity(current) ? incoming : current;
 }
 
-function isEllipsisOnly(value) {
-  return ["...", "…"].includes(String(value || "").trim());
-}
-
-function isShortFutureAction(value) {
-  const text = String(value || "").trim().replaceAll("’", "'");
-  if (OBSERVED_TRAILING_FUTURE_ACTION.test(text)) return true;
-  if (ENGLISH_FUTURE_ACTION.test(text) && ENGLISH_RESULT_CLAUSE.test(text)) return false;
-  if (CHINESE_FUTURE_ACTION.test(text) && CHINESE_RESULT_CLAUSE.test(text)) return false;
-  return text.length > 0 && text.length <= KIRO_SHORT_FINAL_MAX_CHARS &&
-    SHORT_FUTURE_ACTION.test(text) && !USER_WAIT.test(text) &&
-    !COMPLETED_FINAL.test(text) && !RESULT_EVIDENCE.test(text);
-}
-
 function encodeSSEError(code, message, details) {
   return encoder.encode(`data: ${JSON.stringify({ error: {
     message,
@@ -207,12 +177,6 @@ function inspectSSEChunk(chunk, state) {
     try {
       const event = JSON.parse(data);
       if (event.error) state.error = event.error;
-      for (const choice of event.choices || []) {
-        const delta = choice.delta || {};
-        if (typeof delta.content === "string") state.content += delta.content;
-        if (typeof delta.reasoning_content === "string") state.reasoning += delta.reasoning_content;
-        if (delta.tool_calls?.length) state.hasToolCalls = true;
-      }
     } catch { /* a malformed SSE line is diagnosed by the transformer */ }
   }
 }
@@ -224,6 +188,25 @@ function inspectSSEChunk(chunk, state) {
 export class KiroExecutor extends BaseExecutor {
   constructor() {
     super("kiro", PROVIDERS.kiro);
+  }
+
+  // Kiro splits its errors into a human `message` plus a machine `reason`, and the
+  // reason is the only part that says which allowance ran out — a spent monthly quota
+  // is `402 {"message":"You have reached the limit.","reason":"MONTHLY_REQUEST_COUNT"}`.
+  // Default parsing keeps only `message`, so the reason never reached the cooldown
+  // rules and a month-long outage was treated as a generic 2 min 402.
+  parseError(response, bodyText) {
+    if (bodyText) {
+      try {
+        const json = JSON.parse(bodyText);
+        const message = json?.message || json?.error || "";
+        const reason = typeof json?.reason === "string" ? json.reason : "";
+        if (message && reason) {
+          return { status: response.status, message: `${message} (${reason})` };
+        }
+      } catch { /* fall through to default */ }
+    }
+    return super.parseError(response, bodyText);
   }
 
   buildHeaders(credentials, stream = true, url = "") {
@@ -278,6 +261,13 @@ export class KiroExecutor extends BaseExecutor {
    * tokens are what that gateway accepts.
    */
   getOrderedBaseUrls(credentials) {
+    // IAM Identity Center accounts can be homed outside us-east-1. Their token is
+    // rejected by the hardcoded us-east-1 registry baseUrls (403 "bearer token
+    // invalid"), so route to the account's regional Amazon Q endpoint. us-east-1
+    // (Builder ID / social / unset) keeps the registry baseUrls + 429 rotation.
+    const regional = resolveKiroDataPlaneUrl(credentials?.providerSpecificData?.region);
+    if (regional) return [regional];
+
     const baseUrls = this.getBaseUrls();
     const authMethod = credentials?.providerSpecificData?.authMethod;
     // IAM Identity Center (idc) tokens are AWS SSO access tokens — the same
@@ -310,7 +300,11 @@ export class KiroExecutor extends BaseExecutor {
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     const baseUrls = this.getOrderedBaseUrls(credentials);
-    return baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;
+    const url = baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;
+    // Stash the target URL so transformRequest (called next in the base loop,
+    // without a url arg) can shape the wire body per-surface.
+    this._currentTargetUrl = url;
+    return url;
   }
 
   // Retry only endpoint/auth-surface failures. Payload-invalid HTTP 400 must be
@@ -322,6 +316,17 @@ export class KiroExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
+    // The Kiro IDE gateway (runtime.*.kiro.dev) rejects a top-level `systemPrompt`
+    // field with 400 REQUEST_BODY_INVALID, breaking every -thinking / -agentic
+    // variant (and any Claude request carrying a `system`). The CodeWhisperer /
+    // Amazon Q surfaces (*.amazonaws.com) accept it. The translator always
+    // duplicates the same prompt into the current message content (contentPrefix),
+    // so dropping the top-level field for the kiro.dev surface preserves behaviour.
+    const url = this._currentTargetUrl || "";
+    if (url.includes(".kiro.dev") && body && typeof body === "object" && body.systemPrompt !== undefined) {
+      const { systemPrompt, ...rest } = body;
+      return rest;
+    }
     return body;
   }
 
@@ -429,11 +434,8 @@ export class KiroExecutor extends BaseExecutor {
       return encodeSSEError("invalid_kiro_tool_call", first.message, first.diagnostics);
     }
 
-    const repairKind = ["ellipsis", "short_final", "invalid_tool"].includes(first.kind)
-      ? first.kind
-      : null;
-    const repairBody = repairKind
-      ? appendRepairInstruction(args.body, repairKind === "invalid_tool" ? "tool" : repairKind)
+    const repairBody = first.kind === "invalid_tool"
+      ? appendToolCallRepairInstruction(args.body)
       : structuredClone(args.body || {});
 
     const retry = await BaseExecutor.prototype.execute.call(this, {
@@ -470,13 +472,9 @@ export class KiroExecutor extends BaseExecutor {
     if (second.kind === "terminal_stop" || second.kind === "upstream_error") {
       return this.integrityFailureSSE(second);
     }
-    const code = second.kind === "ellipsis"
-      ? "kiro_ellipsis_retry_failed"
-      : second.kind === "short_final"
-        ? "kiro_short_final_retry_failed"
-        : second.kind === "invalid_tool"
-          ? "kiro_tool_call_repair_retry_failed"
-          : "kiro_missing_terminal_retry_failed";
+    const code = second.kind === "invalid_tool"
+      ? "kiro_tool_call_repair_retry_failed"
+      : "kiro_missing_terminal_retry_failed";
     return encodeSSEError(
       code,
       `Kiro integrity validation failed after one bounded retry: ${second.message || second.kind}`,
@@ -532,7 +530,7 @@ export class KiroExecutor extends BaseExecutor {
     const chunks = [];
     let totalBytes = 0;
     let sawChunk = false;
-    const output = { content: "", reasoning: "", hasToolCalls: false, error: null };
+    const output = { error: null };
 
     try {
       while (true) {
@@ -593,15 +591,6 @@ export class KiroExecutor extends BaseExecutor {
     }
     if (output.error) {
       return { kind: "missing_terminal", message: output.error.message, diagnostics: safeDiagnostics };
-    }
-    if (!output.hasToolCalls) {
-      if (isEllipsisOnly(output.content) ||
-          (!output.content.trim() && isEllipsisOnly(output.reasoning))) {
-        return { kind: "ellipsis", diagnostics: safeDiagnostics };
-      }
-      if (isShortFutureAction(output.content)) {
-        return { kind: "short_final", diagnostics: safeDiagnostics };
-      }
     }
     return { kind: "complete", bytes: concatChunks(chunks, totalBytes), diagnostics: safeDiagnostics };
   }

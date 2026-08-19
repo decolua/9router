@@ -156,6 +156,14 @@ function formatDisplayName(modelName, modelId, rateMultiplier) {
  * Fetch the raw model catalog from Kiro. Returns the array under `.models`
  * from the API response, or throws on network/HTTP error.
  */
+function isRefreshableAuthError(err) {
+  if (!err) return false;
+  if (err.status === 401) return true;
+  if (err.status !== 403) return false;
+  const body = String(err.body || err.message || "").toLowerCase();
+  return body.includes("bearer token") && body.includes("invalid");
+}
+
 async function fetchKiroCatalogRaw(credentials, signal) {
   const profileArn = credentials?.providerSpecificData?.profileArn || "";
   const region = regionFromProfileArn(profileArn);
@@ -252,8 +260,8 @@ export async function resolveKiroModels(credentials, options = {}) {
   try {
     raw = await fetchKiroCatalogRaw(credentials, options.signal);
   } catch (err) {
-    if (err && err.status === 401 && credentials.refreshToken) {
-      options.log?.info?.("KIRO_MODELS", "Got 401 from Kiro; refreshing token");
+    if (isRefreshableAuthError(err) && credentials.refreshToken) {
+      options.log?.info?.("KIRO_MODELS", `Got ${err.status} auth failure from Kiro; refreshing token`);
       const refreshed = await refreshKiroToken(
         credentials.refreshToken,
         credentials.providerSpecificData,

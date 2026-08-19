@@ -391,10 +391,25 @@ export class DevinCliExecutor extends BaseExecutor {
       mcpConfigDir = null;
     };
 
+    let cancelActiveChild = null;
     const sseStream = new ReadableStream({
       start(controller) {
         const enc = new TextEncoder();
-        const emit = (data) => controller.enqueue(enc.encode(data));
+        let streamClosed = false;
+        const emit = (data) => {
+          if (streamClosed) return;
+          try {
+            controller.enqueue(enc.encode(data));
+          } catch {
+            streamClosed = true;
+            cancelActiveChild?.();
+          }
+        };
+        const closeStream = () => {
+          if (streamClosed) return;
+          streamClosed = true;
+          try { controller.close(); } catch { /* already cancelled */ }
+        };
 
         // Inherit the parent environment so devin resolves stored CLI credentials
         // (~/.local/share/devin/credentials.toml from `devin auth login`). Do NOT
@@ -424,31 +439,43 @@ export class DevinCliExecutor extends BaseExecutor {
           env,
           cwd: workspaceCwd,
           stdio: ["pipe", "pipe", "pipe"],
-          // On Windows, devin.exe may need shell resolution
-          shell: process.platform === "win32",
+          windowsHide: true,
+          shell: false,
         });
 
         let spawnError = null;
         let stdinClosed = false;
-
-        child.on("error", (err) => {
-          spawnError = err;
-          const msg =
-            err.message.includes("ENOENT") || err.message.includes("not found")
-              ? `Devin CLI not found: ${devinBin}. Install via https://cli.devin.ai or set CLI_DEVIN_BIN env var.`
-              : `Devin CLI spawn error: ${err.message}`;
-          emit(
-            `data: ${JSON.stringify({ error: { message: msg, type: "devin_cli_error", code: "spawn_failed" } })}\n\n`
-          );
-          emit("data: [DONE]\n\n");
-          controller.close();
-        });
-
-        if (signal) {
-          signal.addEventListener("abort", () => {
-            if (!child.killed) child.kill("SIGTERM");
-          });
-        }
+        let killTimer = null;
+        let abortHandler = null;
+        const removeAbortListener = () => {
+          if (abortHandler && signal) signal.removeEventListener("abort", abortHandler);
+          abortHandler = null;
+        };
+        const childHasExited = () => (
+          (child.exitCode !== null && child.exitCode !== undefined)
+          || (child.signalCode !== null && child.signalCode !== undefined)
+        );
+        const stopChild = (killSignal = "SIGTERM") => {
+          try {
+            // `child.killed` flips as soon as SIGTERM is sent, not when the
+            // child has actually exited. Check terminal state instead so the
+            // scheduled SIGKILL fallback remains reachable.
+            if (!childHasExited()) child.kill(killSignal);
+          } catch {
+            /* process already gone */
+          }
+        };
+        const scheduleForceKill = () => {
+          if (spawnError || killTimer || childHasExited()) return;
+          killTimer = setTimeout(() => stopChild("SIGKILL"), 2000);
+          killTimer.unref?.();
+        };
+        cancelActiveChild = () => {
+          removeAbortListener();
+          stopChild();
+          scheduleForceKill();
+          cleanupMcp();
+        };
 
         // ── JSON-RPC state machine ──────────────────────────────────────────
         let idCounter = 1;
@@ -463,7 +490,7 @@ export class DevinCliExecutor extends BaseExecutor {
         let finished = false;
 
         const sendRpc = (method, params) => {
-          if (stdinClosed || child.stdin.destroyed) return;
+          if (stdinClosed || !child.stdin || child.stdin.destroyed || child.stdin.writable === false) return;
           const id = idCounter++;
           try {
             child.stdin.write(rpc(method, params, id));
@@ -546,13 +573,13 @@ export class DevinCliExecutor extends BaseExecutor {
           );
         };
 
-        const finish = (error, finishReason = "stop") => {
+        const finish = (error, finishReason = "stop", errorCode) => {
           if (finished) return;
           finished = true;
 
           if (error) {
             emit(
-              `data: ${JSON.stringify({ error: { message: error, type: "devin_cli_error" } })}\n\n`
+              `data: ${JSON.stringify({ error: { message: error, type: "devin_cli_error", ...(errorCode ? { code: errorCode } : {}) } })}\n\n`
             );
           } else {
             // Emit finish chunk
@@ -584,20 +611,44 @@ export class DevinCliExecutor extends BaseExecutor {
             /* ignore */
           }
 
-          // Give it 2s to exit cleanly, then SIGKILL
-          const killTimer = setTimeout(() => {
-            if (!child.killed) child.kill("SIGKILL");
-          }, 2000);
-          killTimer.unref?.();
+          // Give it 2s to exit cleanly, then SIGKILL. Keep one timer per child
+          // and clear it when the child closes so requests do not retain timers.
+          scheduleForceKill();
 
-          controller.close();
+          removeAbortListener();
+          closeStream();
           cleanupMcp();
         };
+
+        child.on("error", (err) => {
+          spawnError = err;
+          const msg =
+            err.message.includes("ENOENT") || err.message.includes("not found")
+              ? `Devin CLI not found: ${devinBin}. Install via https://cli.devin.ai or set CLI_DEVIN_BIN env var.`
+              : `Devin CLI spawn error: ${err.message}`;
+          finish(msg, "stop", "spawn_failed");
+        });
+        child.stdout?.on("error", (err) => {
+          if (!finished) finish(`Devin CLI stdout error: ${err.message}`);
+        });
+        child.stderr?.on("error", (err) => {
+          log?.debug?.("DEVIN", `stderr error: ${err.message}`);
+        });
+        child.stdin?.on("error", (err) => {
+          log?.debug?.("DEVIN", `stdin error: ${err.message}`);
+        });
+        if (signal) {
+          abortHandler = () => {
+            stopChild();
+            scheduleForceKill();
+          };
+          signal.addEventListener("abort", abortHandler, { once: true });
+        }
 
         // ── stdout reader (NDJSON) ──────────────────────────────────────────
         let buffer = "";
 
-        child.stdout.on("data", (chunk) => {
+        child.stdout?.on("data", (chunk) => {
           buffer += chunk.toString("utf8");
           let nl;
           // Each ACP message is a newline-terminated JSON line
@@ -677,13 +728,19 @@ export class DevinCliExecutor extends BaseExecutor {
               const allow =
                 options.find((o) => /allow/i.test(String(o.kind || ""))) || options[0];
               if (allow) {
-                child.stdin.write(
-                  JSON.stringify({
-                    jsonrpc: "2.0",
-                    id: msg.id,
-                    result: { outcome: { outcome: "selected", optionId: allow.optionId } },
-                  }) + "\n"
-                );
+                try {
+                  if (!stdinClosed && child.stdin && child.stdin.writable !== false) {
+                    child.stdin.write(
+                      JSON.stringify({
+                        jsonrpc: "2.0",
+                        id: msg.id,
+                        result: { outcome: { outcome: "selected", optionId: allow.optionId } },
+                      }) + "\n"
+                    );
+                  }
+                } catch {
+                  /* ignore write errors after close */
+                }
               }
               continue;
             }
@@ -770,11 +827,17 @@ export class DevinCliExecutor extends BaseExecutor {
           }
         });
 
-        child.stderr.on("data", (chunk) => {
+        child.stderr?.on("data", (chunk) => {
           log?.debug?.("DEVIN", `stderr: ${chunk.toString("utf8").slice(0, 200)}`);
         });
 
         child.on("close", (code) => {
+          if (killTimer) {
+            clearTimeout(killTimer);
+            killTimer = null;
+          }
+          removeAbortListener();
+          cancelActiveChild = null;
           if (!finished) {
             if (code !== 0 && !spawnError) {
               finish(roleEmitted ? undefined : `Devin CLI exited with code ${code}`);
@@ -792,6 +855,11 @@ export class DevinCliExecutor extends BaseExecutor {
           clientInfo: { name: "9router", version: "1.0" },
           capabilities: {},
         });
+      },
+      cancel() {
+        const cancel = cancelActiveChild;
+        cancelActiveChild = null;
+        cancel?.();
       },
     });
 

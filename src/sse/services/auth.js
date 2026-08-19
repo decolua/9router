@@ -1,5 +1,6 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
+import { hasUsableConnectionCredentials } from "@/lib/db/helpers/connectionCredentials";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
@@ -76,9 +77,14 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
+    // A row that has lost or cannot read its tokens is shown in the dashboard
+    // for recovery, but must not enter the runtime retry pool.
+    const credentialedConnections = connections.filter(hasUsableConnectionCredentials);
+
     // Filter out model-locked and excluded connections
-    const availableConnections = connections.filter(c => {
+    const availableConnections = credentialedConnections.filter(c => {
       if (excludeSet.has(c.id)) return false;
+      if (!hasUsableConnectionCredentials(c)) return false;
       if (isModelLockActive(c, model)) return false;
       return true;
     });
@@ -95,7 +101,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
     if (availableConnections.length === 0) {
       // Find earliest lock expiry across all connections for retry timing
-      const lockedConns = connections.filter(c => isModelLockActive(c, model));
+      const lockedConns = credentialedConnections.filter(c => isModelLockActive(c, model));
       const expiries = lockedConns.map(c => getEarliestModelLockUntil(c)).filter(Boolean);
       const earliest = expiries.sort()[0] || null;
       if (earliest) {
@@ -186,6 +192,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       projectId: connection.projectId,
       connectionName: connection.displayName || connection.name || connection.email || connection.id,
       copilotToken: connection.providerSpecificData?.copilotToken,
+      defaultModel: connection.defaultModel || null,
       providerSpecificData: {
         ...(connection.providerSpecificData || {}),
         connectionProxyEnabled: resolvedProxy.connectionProxyEnabled,
@@ -203,6 +210,23 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     };
   } finally {
     if (resolveMutex) resolveMutex();
+  }
+}
+
+/**
+ * Best-effort stringification of a non-string error value (Error without a
+ * usable .message, plain object, etc.) so the real cause can still be logged
+ * instead of silently collapsing to a generic placeholder.
+ * @param {*} err
+ * @returns {string}
+ */
+function safeStringifyError(err) {
+  if (err === null || err === undefined) return "";
+  try {
+    const json = JSON.stringify(err);
+    return typeof json === "string" ? json : String(err);
+  } catch {
+    return String(err);
   }
 }
 
@@ -240,7 +264,15 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
-  const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
+  // errorText is usually a string, but callers can pass an Error (or omit it
+  // entirely, e.g. when a caught exception isn't a string). Falling straight
+  // back to a generic "Provider error" without ever logging the real value
+  // hides the actual cause server-side (no status, no trace). Extract the
+  // best available message before giving up, and always log the raw cause.
+  const reasonRaw = typeof errorText === "string"
+    ? errorText
+    : (errorText?.message || safeStringifyError(errorText) || "Provider error");
+  const reason = String(reasonRaw).slice(0, 100);
   const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
 
   await updateProviderConnection(connectionId, {
@@ -254,10 +286,13 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
 
   const lockKey = Object.keys(lockUpdate)[0];
   const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
-  log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
+  log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status ?? "no-status"}]`);
 
-  if (provider && status && reason) {
-    console.error(`❌ ${provider} [${status}]: ${reason}`);
+  // Log the real cause even when there's no numeric HTTP status (e.g. a stream
+  // parsing crash rather than an upstream HTTP error) — a status-only gate here
+  // means non-HTTP failures never surface a usable server-side trace.
+  if (provider && reason) {
+    console.error(`❌ ${provider} [${status ?? "no-status"}]: ${reason}`);
   }
 
   return { shouldFallback: true, cooldownMs };
@@ -314,22 +349,40 @@ export async function clearAccountError(connectionId, currentConnection, model =
 }
 
 /**
- * Extract API key from request headers
+ * Extract API key from request headers (first presented credential).
  */
 export function extractApiKey(request) {
-  // Check Authorization header first
+  return extractApiKeyCandidates(request)[0] || null;
+}
+
+/**
+ * All credentials the client presented, in precedence order.
+ * Anthropic clients (e.g. Claude Code with an active claude.ai session or
+ * ANTHROPIC_AUTH_TOKEN set) can send an unrelated Authorization header
+ * ALONGSIDE a valid x-api-key — api.anthropic.com still authenticates on
+ * x-api-key, so every presented credential must be checked.
+ */
+export function extractApiKeyCandidates(request) {
+  const candidates = [];
+  const push = (v) => { if (v && !candidates.includes(v)) candidates.push(v); };
   const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) {
-    return authHeader.slice(7);
-  }
+  if (authHeader?.startsWith("Bearer ")) push(authHeader.slice(7));
+  push(request.headers.get("x-api-key"));
+  return candidates;
+}
 
-  // Check Anthropic x-api-key header
-  const xApiKey = request.headers.get("x-api-key");
-  if (xApiKey) {
-    return xApiKey;
+/**
+ * Resolve the client's API key against the apiKeys table.
+ * Returns { apiKey, valid }: when valid, apiKey is the credential that
+ * actually validated (use it for usage attribution); otherwise apiKey is the
+ * first presented credential (or null if none).
+ */
+export async function resolveClientApiKey(request) {
+  const candidates = extractApiKeyCandidates(request);
+  for (const key of candidates) {
+    if (await validateApiKey(key)) return { apiKey: key, valid: true };
   }
-
-  return null;
+  return { apiKey: candidates[0] || null, valid: false };
 }
 
 /**

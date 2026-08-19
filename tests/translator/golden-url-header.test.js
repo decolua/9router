@@ -27,6 +27,16 @@ const SPECIALIZED = new Set([
 function sanitize(headers) {
   const out = {};
   for (const [k, v] of Object.entries(headers)) {
+    const dynamic = {
+      "x-platform": "<PLATFORM>",
+      "x-platform-version": "<PLATFORM-VERSION>",
+      "x-msh-device-model": "<DEVICE-MODEL>",
+      "x-msh-device-name": "<DEVICE-NAME>",
+    }[k.toLowerCase()];
+    if (dynamic) {
+      out[k] = dynamic;
+      continue;
+    }
     out[k] = typeof v === "string"
       ? v.replace(/Bearer .+/, "Bearer <TOK>")
           .replace(/sk-test-APIKEY|tok-test-ACCESS/g, "<CRED>")

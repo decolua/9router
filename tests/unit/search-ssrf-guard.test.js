@@ -1,49 +1,41 @@
-import { describe, it, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { resolveBaseUrl } from "../../open-sse/handlers/search/callers.js";
 
 const CONFIG = { id: "searxng", baseUrl: "https://searxng.example.com" };
 
-describe("resolveBaseUrl SSRF guard", () => {
-  it("uses provider default when no override", () => {
+describe("search baseUrl SSRF guard", () => {
+  it("uses the provider default when the client sends no override", () => {
     expect(resolveBaseUrl(CONFIG, {})).toBe("https://searxng.example.com");
   });
 
-  it("allows public https override", () => {
-    const params = { providerOptions: { baseUrl: "https://my-searxng.example.com" } };
-    expect(resolveBaseUrl(CONFIG, params)).toBe("https://my-searxng.example.com");
+  it.each([
+    "https://search.example.net/",
+    "http://search.example.net/",
+  ])("allows public HTTP(S) client override %s", (baseUrl) => {
+    expect(resolveBaseUrl(CONFIG, {
+      providerOptions: { baseUrl },
+    })).toBe(baseUrl.slice(0, -1));
   });
 
-  it("allows public http override", () => {
-    const params = { providerOptions: { baseUrl: "http://searxng.example.net" } };
-    expect(resolveBaseUrl(CONFIG, params)).toBe("http://searxng.example.net");
+  it.each([
+    "http://127.0.0.1:18999",
+    "http://10.0.0.1",
+    "http://172.16.0.1",
+    "http://192.168.1.1",
+    "http://169.254.169.254/latest/meta-data",
+    "http://localhost:8080",
+    "file:///etc/passwd",
+    "gopher://127.0.0.1:70",
+    "ftp://10.0.0.1",
+  ])("rejects unsafe client override %s", (baseUrl) => {
+    expect(() => resolveBaseUrl(CONFIG, {
+      providerOptions: { baseUrl },
+    })).toThrow();
   });
 
-  it("rejects loopback override", () => {
-    const params = { providerOptions: { baseUrl: "http://127.0.0.1:18999" } };
-    expect(() => resolveBaseUrl(CONFIG, params)).toThrow();
-  });
-
-  it("rejects private IP override", () => {
-    for (const ip of ["10.0.0.1", "192.168.1.1", "172.16.0.1"]) {
-      const params = { providerOptions: { baseUrl: `http://${ip}` } };
-      expect(() => resolveBaseUrl(CONFIG, params), `should reject ${ip}`).toThrow();
-    }
-  });
-
-  it("rejects localhost hostname override", () => {
-    const params = { providerOptions: { baseUrl: "http://localhost:8080" } };
-    expect(() => resolveBaseUrl(CONFIG, params)).toThrow();
-  });
-
-  it("rejects cloud metadata override", () => {
-    const params = { providerOptions: { baseUrl: "http://169.254.169.254/latest/meta-data" } };
-    expect(() => resolveBaseUrl(CONFIG, params)).toThrow();
-  });
-
-  it("rejects non-http protocols", () => {
-    for (const proto of ["file:///etc/passwd", "gopher://127.0.0.1:70", "ftp://10.0.0.1"]) {
-      const params = { providerOptions: { baseUrl: proto } };
-      expect(() => resolveBaseUrl(CONFIG, params), `should reject ${proto}`).toThrow();
-    }
+  it("keeps admin-configured private search endpoints usable", () => {
+    expect(resolveBaseUrl(CONFIG, {
+      providerSpecificData: { baseUrl: "http://127.0.0.1:8080/" },
+    })).toBe("http://127.0.0.1:8080");
   });
 });

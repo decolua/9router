@@ -76,6 +76,33 @@ export const MITM_TOOLS = {
       { id: "simple-task", name: "Qwen3 Coder Next", alias: "simple-task" },
     ],
   },
+  zed: {
+    id: "zed",
+    name: "Zed Hosted AI",
+    image: "/providers/zed.png",
+    color: "#084D91",
+    description: "Zed Editor Hosted AI with MITM",
+    configType: "mitm",
+    mitmDomain: "cloud.zed.dev",
+    modelAliases: [
+      "claude-sonnet-5",
+      "claude-sonnet-4-6",
+      "claude-haiku-4-5",
+      "gpt-5-mini",
+      "gpt-5.6-luna",
+      "gemini-3.5-flash",
+      "gemini-3-flash",
+    ],
+    defaultModels: [
+      { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", alias: "claude-sonnet-4-6" },
+      { id: "claude-sonnet-5", name: "Claude Sonnet 5", alias: "claude-sonnet-5" },
+      { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", alias: "claude-haiku-4-5" },
+      { id: "gpt-5-mini", name: "GPT-5 mini", alias: "gpt-5-mini" },
+      { id: "gpt-5.6-luna", name: "GPT-5.6 Luna", alias: "gpt-5.6-luna" },
+      { id: "gemini-3.5-flash", name: "Gemini 3.5 Flash", alias: "gemini-3.5-flash" },
+      { id: "gemini-3-flash", name: "Gemini 3 Flash", alias: "gemini-3-flash" },
+    ],
+  },
   // cursor: {
   //   id: "cursor",
   //   name: "Cursor",
@@ -247,31 +274,13 @@ export const CLI_TOOLS = {
     name: "Amp CLI",
     image: "/providers/amp.png",
     color: "#F97316",
-    description: "Sourcegraph Amp coding assistant CLI",
-    docsUrl: "/docs?section=cli-tools&tool=amp",
+    description: "Amp coding agent — custom API endpoints unsupported",
+    docsUrl: "https://ampcode.com/manual",
     configType: "guide",
-    defaultCommand: "amp",
-    modelAliases: ["g25p", "g25f", "cs45", "g54"],
+    unsupported: true,
     notes: [
-      { type: "info", text: "Use 9Router model aliases to keep Amp shorthand mappings stable across provider updates." },
-      { type: "warning", text: "Suggested shorthand examples: g25p → gemini/gemini-2.5-pro, g25f → gemini/gemini-2.5-flash, cs45 → cc/claude-sonnet-4-5-20250929." },
+      { type: "error", text: "Amp does not support custom OpenAI-compatible base URLs. AMP_URL configures the Amp service, not the model inference endpoint, so Amp cannot connect directly to 9Router." },
     ],
-    guideSteps: [
-      { step: 1, title: "Install Amp", desc: "Install the Amp CLI using the package manager supported by your environment." },
-      { step: 2, title: "API Key", type: "apiKeySelector" },
-      { step: 3, title: "Base URL", value: "{{baseUrl}}", copyable: true },
-      { step: 4, title: "Select Model", type: "modelSelector" },
-      { step: 5, title: "Add Shorthands", desc: "Map Amp shorthand names such as g25p or cs45 to 9Router aliases in your local config." },
-    ],
-    codeBlock: {
-      language: "bash",
-      code: `export OPENAI_API_KEY="{{apiKey}}"
-export OPENAI_BASE_URL="{{baseUrl}}"
-amp --model "{{model}}"
-# Example shorthand aliases you can map locally:
-# g25p -> gemini/gemini-2.5-pro
-# cs45 -> cc/claude-sonnet-4-5-20250929`,
-    },
   },
   qwen: {
     id: "qwen",

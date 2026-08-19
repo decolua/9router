@@ -1,17 +1,16 @@
 <div align="center">
-  <img src="./images/9router.png?1" alt="9Router Dashboard" width="800"/>
-  
+
   # 9Router - FREE AI Router & Token Saver
   
   **Never stop coding. Save 20-40% tokens with RTK + auto-fallback to FREE & cheap AI models.**
   
   **Connect All AI Code Tools (Claude Code, Cursor, Antigravity, Copilot, Codex, Gemini, OpenCode, Cline, OpenClaw...) to 40+ AI Providers & 100+ Models.**
   
-  [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
-  [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-  [![Docker Pulls](https://img.shields.io/docker/pulls/decolua/9router.svg?logo=docker&label=Docker%20pulls)](https://hub.docker.com/r/decolua/9router)
-  [![GHCR](https://img.shields.io/badge/GHCR-decolua%2F9router-blue?logo=github)](https://github.com/decolua/9router/pkgs/container/9router)
-  [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
+  [![npm](https://www.npmjs.com/package/9router)
+  [![Downloads](https://www.npmjs.com/package/9router)
+  [![Docker Pulls](https://hub.docker.com/r/decolua/9router)
+  [![GHCR](https://github.com/decolua/9router/pkgs/container/9router)
+  [![License](https://github.com/decolua/9router/blob/main/LICENSE)
 
 <a href="https://trendshift.io/repositories/22628" target="_blank"><img src="https://trendshift.io/api/badge/repositories/22628" alt="decolua%2F9router | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 
@@ -97,6 +96,47 @@ Claude Code/Codex/OpenClaw/Cursor/Cline Settings:
 
 **That's it!** Start coding with FREE AI models.
 
+### Connect a CLI from another computer
+
+If 9Router is self-hosted on a server, run the client-side setup script on the
+computer where Claude Code, Codex, or OpenCode is installed. It configures that
+computer only; it does not install or start another 9Router server.
+
+The easiest option is Dashboard -> CLI Tools -> select a supported tool ->
+The Dashboard detects the client OS. Windows downloads a double-clickable
+`install-9router-<tool>.bat`, macOS downloads a `.command` installer, and Linux
+copies one install command to run in a terminal. The endpoint, tool, selected
+model, and selected API key are included, so installation requires no additional
+input. The generated file or copied command contains the API key and should be
+deleted from Downloads and shell history after use.
+Endpoint selection prefers Cloudflare Tunnel, then Tailscale, then the host used
+to open the Dashboard.
+
+```bash
+curl -fsSLo /tmp/9router-connect.sh \
+  https://router.example.com/9router-connect.sh
+bash /tmp/9router-connect.sh \
+  --tool claude \
+  --url https://router.example.com \
+  --model kr/claude-sonnet-4.5
+```
+
+The script prompts for the API key without displaying it. Use `--tool codex`
+or `--tool opencode` for those clients. It validates the key and model through
+`/v1/models`, preserves unrelated settings, creates a timestamped backup, and
+requires HTTPS for non-local endpoints by default. Bash, `curl`, and `python3`
+are required.
+
+For non-interactive setup, use environment variables instead of putting secrets
+in the download URL:
+
+```bash
+NINEROUTER_URL=https://router.example.com \
+NINEROUTER_KEY=sk_your_key \
+NINEROUTER_MODEL=kr/claude-sonnet-4.5 \
+bash /tmp/9router-connect.sh --tool opencode
+```
+
 **Alternative: run from source (this repository):**
 
 This repository package is private (`9router-app`), so source/Docker execution is the expected local development path.
@@ -119,6 +159,74 @@ Default URLs:
 - Dashboard: `http://localhost:20128/dashboard`
 - OpenAI-compatible API: `http://localhost:20128/v1`
 
+### Nix (Flakes)
+
+The project provides optional Nix flake outputs for users who already use Nix. The flake builds from source.
+
+```bash
+# Latest source from default branch
+nix run github:decolua/9router
+
+# Specific release (uses the flake at that git tag)
+nix run github:decolua/9router/v0.5.55
+
+# Named output
+nix run github:decolua/9router#9router
+
+# Build / develop
+nix build github:decolua/9router
+nix develop github:decolua/9router
+```
+
+The flake exposes `packages.<system>.default`, `packages.<system>.9router`, `apps.<system>.default`, `devShells.<system>.default`, `overlays.default`, `homeModules.default`, and `checks.<system>.smoke` / `checks.<system>.hmModuleStruct`.
+
+Supported platforms: `x86_64-linux`, `aarch64-linux`, `x86_64-darwin`, `aarch64-darwin`.
+
+> **Note:** The Nix build runs in a sandbox with no network access. The `next/font/google` Inter font fetch is neutralized during the Nix build (the font falls back to a system font). The `better-sqlite3` native addon is skipped (`--ignore-scripts`); the app falls back to `sql.js` (pure JavaScript SQLite) at runtime. Both fallbacks are scoped to the Nix derivation only — the Docker and npm build paths are unchanged.
+
+#### Home-Manager
+
+For declarative user-environment management via [Home-Manager](https://nix-community.github.io/home-manager/):
+
+```nix
+# flake.nix (your config)
+inputs.9router.url = "github:decolua/9router";
+
+# home.nix
+{ pkgs, inputs, ... }:
+{
+  imports = [ inputs.9router.homeModules.default ];
+
+  programs."9router" = {
+    enable = true;
+    port = 20128;
+    hostname = "0.0.0.0";
+    dataDir = "~/.9router";
+  };
+}
+```
+
+Or apply the overlay first and let the module pick up the package automatically:
+
+```nix
+nixpkgs.overlays = [ inputs.9router.overlays.default ];
+```
+
+### Devbox
+
+For a reproducible development environment, use Devbox:
+
+```bash
+# Install Devbox first (if not already installed)
+curl -fsSL https://get.jetify.dev/devbox | bash
+
+# Enter the development environment
+devbox shell
+
+# Build the project
+devbox run build
+```
+
 ---
 
 ## Video Guides
@@ -128,11 +236,11 @@ Default URLs:
 <table>
   <tr>
     <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=X69n5Lm06Yw">
-        <img src="https://img.youtube.com/vi/X69n5Lm06Yw/maxresdefault.jpg" alt="Tiết kiệm chi phí LLM với 9Router" width="300"/>
+      <a href="https://www.youtube.com/watch?v=raEyZPg5xE0">
+        <img src="https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg" alt="9Router Setup Tutorial" width="300"/>
       </a><br/>
-      <b>🇻🇳 Tiếng Việt</b><br/>
-      <sub>Tiết kiệm chi phí LLM cho OpenClaw với 9Router<br/>by <a href="https://www.youtube.com/c/M%C3%ACAIblog">Mì AI</a></sub>
+      <b>🇺🇸 English</b><br/>
+      <sub>9Router + Claude Code FREE Setup<br/>by <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
     </td>
     <td align="center" width="320">
       <a href="https://youtu.be/VQAw612S27Y">
@@ -140,13 +248,6 @@ Default URLs:
       </a><br/>
       <b>🇵🇰 اردو / हिन्दी</b><br/>
       <sub>9Router + Claude Code FREE Unlimited Setup<br/>by <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=raEyZPg5xE0">
-        <img src="https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg" alt="9Router Setup Tutorial" width="300"/>
-      </a><br/>
-      <b>🇺🇸 English</b><br/>
-      <sub>9Router + Claude Code FREE Setup<br/>by <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
     </td>
     <td align="center" width="320">
       <a href="https://youtu.be/3dF5GIYMrcQ?si=bAyfyiHbARJQAHj_">
@@ -161,6 +262,13 @@ Default URLs:
       </a><br/>
       <b>🇺🇸 English</b><br/>
       <sub>Claude Code FREE Forever — Unlimited Models<br/>by <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
+    </td>
+    <td align="center" width="320">
+      <a href="https://www.youtube.com/watch?v=X69n5Lm06Yw">
+        <img src="https://img.youtube.com/vi/X69n5Lm06Yw/maxresdefault.jpg" alt="Tiết kiệm chi phí LLM với 9Router" width="300"/>
+      </a><br/>
+      <b>🇻🇳 Tiếng Việt</b><br/>
+      <sub>Tiết kiệm chi phí LLM cho OpenClaw với 9Router<br/>by <a href="https://www.youtube.com/c/M%C3%ACAIblog">Mì AI</a></sub>
     </td>
   </tr>
   <tr>
@@ -215,7 +323,13 @@ Default URLs:
       <b>🇻🇳 Tiếng Việt</b><br/>
       <sub>Hướng Dẫn Setup OpenClaw + 9Router: Tạo Bot Zalo AI Tự Động Từ A-Z<br/>by <a href="https://github.com/tuanminhhole">tuanminhhole</a></sub>
     </td>
-    <td align="center" width="320"></td>
+    <td align="center" width="320">
+      <a href="https://www.youtube.com/watch?v=YwogEX-G2Yw">
+        <img src="https://img.youtube.com/vi/YwogEX-G2Yw/maxresdefault.jpg" alt="9Router video by S. Hossein Mostafavi" width="300"/>
+      </a><br/>
+      <b>🇮🇷 Persian-فارسی</b><br/>
+      <sub dir="rtl">معرفی و آموزش 9Router<br/>by <a href="https://www.youtube.com/@S.HosseinMostafavi">S. Hossein Mostafavi</a></sub>
+    </td>
     <td align="center" width="320"></td>
     <td align="center" width="320"></td>
   </tr>
@@ -273,8 +387,8 @@ Default URLs:
         <b>Droid</b>
       </td>
       <td align="center" width="120">
-        <img src="./public/providers/roo.png" width="60" alt="Roo"/><br/>
-        <b>Roo</b>
+        <a href="https://github.com/Zoo-Code-Org/Zoo-Code"><img src="./public/providers/zoocode.png" width="60" alt="Zoo Code"/></a><br/>
+        <b><a href="https://github.com/Zoo-Code-Org/Zoo-Code">Zoo Code</a></b>
       </td>
       <td align="center" width="120">
         <img src="./public/providers/copilot.png" width="60" alt="Copilot"/><br/>
@@ -1248,7 +1362,7 @@ Published images (multi-platform `linux/amd64` + `linux/arm64`):
 ```bash
 docker run -d \
   --name 9router \
-  -p 20128:20128 \
+  -p 127.0.0.1:20128:20128 \
   -v "$HOME/.9router:/app/data" \
   -e DATA_DIR=/app/data \
   decolua/9router:latest
@@ -1262,7 +1376,7 @@ docker run -d \
 git clone https://github.com/decolua/9router.git
 cd 9router/app
 docker build -t 9router .
-docker run -d --name 9router -p 20128:20128 \
+docker run -d --name 9router -p 127.0.0.1:20128:20128 \
   -v "$HOME/.9router:/app/data" -e DATA_DIR=/app/data 9router
 ```
 
@@ -1285,7 +1399,7 @@ docker pull decolua/9router:latest   # update to latest
 ### Environment Variables
 
 | Variable                                             | Default                                  | Description                                                                         |
-| ---------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------- |
+| ----------------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------|
 | `JWT_SECRET`                                         | Auto-generated (`~/.9router/jwt-secret`) | JWT signing secret for dashboard auth cookie (override to share across instances)   |
 | `INITIAL_PASSWORD`                                   | `123456`                                 | First login password when no saved hash exists                                      |
 | `DATA_DIR`                                           | `~/.9router`                             | Main app data location (SQLite at `$DATA_DIR/db/data.sqlite`)                       |

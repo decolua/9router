@@ -160,6 +160,13 @@
   endpoint that drops packets never returns headers, so the request previously
   hung indefinitely
 
+## Production stability
+- **Provider connections**: send the encoded provider ID correctly, retain unreadable encrypted credentials as **Re-auth required**, and restore provider-aware Test Model routing instead of reporting valid accounts as disconnected.
+- **DB and usage**: shut down and reopen SQLite adapters cleanly, retry native lock contention without overwriting live data, and preserve concurrent usage records created in the same millisecond.
+- **Windows processes**: hide background and elevated windows, stop broad process scans/kills, restrict cleanup to owned or verified processes, and serialize tunnel, tray, and worker lifecycles.
+- **Background work**: use direct executable probes with bounded timeouts, caching, and single-flight guards instead of recurring shell processes.
+- **Codex reliability**: retain native transport and SSE handling, recover unreadable encrypted history safely, and bind usage/quota calls to the selected ChatGPT account.
+
 ## Docs
 - **i18n**: fix port typo, add RTK Token Saver feature descriptions
 
@@ -229,6 +236,7 @@
 - **i18n**: Thai (th) + Persian (fa) translations / README
 
 ## Fixes
+- **MiniMax**: add the required empty signature field to unsigned Anthropic thinking block starts
 - **Providers**: bulk-add API keys no longer overwrite existing keys (gap-fill `Key N`)
 - **Anthropic**: lowercase `anthropic-version` header to prevent duplication on `/v1/messages`
 - **Alicode-intl**: use DashScope compatible-mode endpoint so standard keys work
@@ -497,6 +505,7 @@
 - Qoder: allow `qmodel_latest` model key (#1638)
 - Providers: restore one-connection guard for compatible/embedding nodes
 - Model-test: route image/STT probes to their real endpoints, harden STT ping; add opencode-go + xiaomi-tokenplan to connection test (#1576, #1628)
+- Runtime: stop lazy installs in `~/.9router/runtime` from pruning sibling packages — SQLite (`better-sqlite3`) and tray (`systray2`) now save to `package.json` instead of `--no-save`, so the second install no longer removes the first (#1605)
 
 ## Improvements
 - Dashboard: reorganize menu actions across sidebar/header/profile
@@ -509,6 +518,7 @@
 - Add new models: Claude Opus 4.8 (Claude Code), GPT 5.4 Mini (Codex)
 
 ## Fixes
+- Request debug logs: mask sensitive headers (authorization, API keys, cookies, tokens, secrets) before writing opt-in request/response log files.
 - DeepSeek thinking mode: echo `reasoning_content` back on follow-up/tool-call turns so OpenCode-free and custom providers no longer 400 with "reasoning_content must be passed back" (#1543)
 - Reasoning injector: match deepseek/kimi model ids case-insensitively (covers custom providers using capitalized model names)
 - OpenCode suggested-models: include free models without the `-free` suffix, e.g. `big-pickle` (#1535)

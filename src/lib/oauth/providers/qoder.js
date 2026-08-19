@@ -8,7 +8,9 @@ const qoder = {
   // browser, and we poll openapi.qoder.sh until a `dt-...` token appears.
   requestDeviceCode: async (config) => {
     const { QoderService } = await import("@/lib/oauth/services/qoder");
-    const flow = new QoderService().initiateDeviceFlow();
+    const flow = await new QoderService({
+      profile: config.protocolProfile,
+    }).initiateDeviceFlow();
     // Match the device_code shape the rest of the OAuthModal expects
     // (device_code, user_code, verification_uri[_complete], interval).
     // The poll endpoint identifies us by nonce+verifier, not by a
@@ -25,11 +27,12 @@ const qoder = {
       codeVerifier: flow.codeVerifier,
       _qoderNonce: flow.nonce,
       _qoderMachineId: flow.machineId,
+      _qoderMachineToken: flow.machineToken,
     };
   },
   pollToken: async (config, deviceCode, codeVerifier, extraData) => {
     const { QoderService } = await import("@/lib/oauth/services/qoder");
-    const svc = new QoderService();
+    const svc = new QoderService({ profile: config.protocolProfile });
     const nonce = deviceCode || extraData?._qoderNonce;
     const verifier = codeVerifier || extraData?._qoderVerifier;
     if (!nonce || !verifier) {
@@ -68,6 +71,7 @@ const qoder = {
         expires_in: expiresIn,
         _qoderUserId: result.userId,
         _qoderMachineId: extraData?._qoderMachineId || "",
+        _qoderMachineToken: extraData?._qoderMachineToken || extraData?._qoderMachineId || "",
         _qoderName: userInfo.name,
         _qoderEmail: userInfo.email,
         _qoderOrganizationId: userInfo.organizationId,
@@ -93,6 +97,7 @@ const qoder = {
         authMethod: "device",
         userId,
         machineId: tokens._qoderMachineId || "",
+        machineToken: tokens._qoderMachineToken || tokens._qoderMachineId || "",
         organizationId: tokens._qoderOrganizationId || "",
       },
     };

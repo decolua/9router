@@ -188,6 +188,9 @@ Respond ONLY with the JSON object, no other text.`);
   }
 
   // Thinking is normalized centrally by applyThinking (thinkingUnified.js) after translation.
+  if (body.thinking) {
+    result.thinking = body.thinking;
+  }
 
   // Attach toolNameMap to result for response translation
   if (toolNameMap.size > 0) {
@@ -253,6 +256,10 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
       }
     }
   } else if (msg.role === ROLE.ASSISTANT) {
+    const hasThinkingBlock = Array.isArray(msg.content) && msg.content.some(part => part.type === CLAUDE_BLOCK.THINKING);
+    if (msg.reasoning_content && !hasThinkingBlock) {
+      blocks.push({ type: CLAUDE_BLOCK.THINKING, thinking: msg.reasoning_content });
+    }
     if (Array.isArray(msg.content)) {
       for (const part of msg.content) {
         if (part.type === OPENAI_BLOCK.TEXT && part.text) {

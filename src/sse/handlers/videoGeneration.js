@@ -2,10 +2,10 @@ import {
   getProviderCredentials,
   markAccountUnavailable,
   clearAccountError,
-  extractApiKey,
-  isValidApiKey,
+  resolveClientApiKey,
 } from "../services/auth.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getProviderConnectionById } from "@/lib/localDb";
+import { isCustomVideoProvider } from "@/shared/constants/providers";
 import { getModelInfo } from "../services/model.js";
 import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets } from "open-sse/handlers/videoCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -27,11 +27,10 @@ const CREATE_ROTATION_STATUSES = new Set([
 ]);
 
 async function requireValidApiKey(request) {
-  const apiKey = extractApiKey(request);
   const settings = await getSettings();
   if (settings.requireApiKey) {
+    const { apiKey, valid } = await resolveClientApiKey(request);
     if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    const valid = await isValidApiKey(apiKey);
     if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
   }
   return null;
@@ -67,6 +66,11 @@ async function resolveVideoProvider(parsedBody) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) {
     return { error: errorResponse(HTTP_STATUS.BAD_REQUEST, "Combos are not supported for video generation") };
+  }
+  // Custom video nodes have no registry videoConfig — baseUrl is resolved from the
+  // connection credential at proxy time. Treat them as supported here.
+  if (isCustomVideoProvider(modelInfo.provider)) {
+    return { provider: modelInfo.provider, model: modelInfo.model };
   }
   if (!getVideoConfig(modelInfo.provider)) {
     // Bare model ids (no explicit "provider/" prefix) fall back to the default
@@ -185,8 +189,16 @@ export async function handleVideoGet(request, requestId) {
 
   if (!requestId) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing video request id");
 
-  const provider = DEFAULT_VIDEO_PROVIDER;
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
+
+  // Jobs are account-bound: the client echoes the creating connection via
+  // x-connection-id. Custom video nodes use per-node baseUrls, so the provider
+  // isn't always xAI — derive it from the pinned connection when present.
+  let provider = DEFAULT_VIDEO_PROVIDER;
+  if (preferredConnectionId) {
+    const pinnedConnection = await getProviderConnectionById(preferredConnectionId);
+    if (pinnedConnection?.provider) provider = pinnedConnection.provider;
+  }
 
   const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId });
   if (!credentials || credentials.allRateLimited) {

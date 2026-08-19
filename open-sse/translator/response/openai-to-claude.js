@@ -20,6 +20,12 @@ function sanitizeToolArgs(toolName, argsJson) {
     if (name === "Read") sanitizeReadArgs(args);
     return JSON.stringify(args);
   } catch {
+    // Known non-Anthropic failure: the complete args JSON emitted twice
+    // back-to-back ({...}{...}), which the client cannot parse. Halve and retry.
+    const half = argsJson.length / 2;
+    if (Number.isInteger(half) && argsJson.slice(0, half) === argsJson.slice(half)) {
+      return sanitizeToolArgs(toolName, argsJson.slice(0, half));
+    }
     return argsJson;
   }
 }
@@ -215,14 +221,21 @@ export function openaiToClaudeResponse(chunk, state) {
         if (toolInfo) {
           // Buffer args instead of streaming — sanitize at finish to fix bad params
           if (!state.toolArgBuffers) state.toolArgBuffers = new Map();
-          state.toolArgBuffers.set(idx, (state.toolArgBuffers.get(idx) || "") + tc.function.arguments);
+          const prev = state.toolArgBuffers.get(idx) || "";
+          const inc = tc.function.arguments;
+          // Some providers stream cumulative args (each chunk restates the full
+          // string so far) — appending would duplicate the JSON. Replace when
+          // the new chunk already carries the buffer as its prefix.
+          state.toolArgBuffers.set(idx, prev && inc.startsWith(prev) ? inc : prev + inc);
         }
       }
     }
   }
 
-  // Finish
-  if (choice.finish_reason) {
+  // Finish. Guarded: some providers repeat finish_reason on a trailing usage
+  // chunk — re-running this block would emit the buffered args a second time.
+  if (choice.finish_reason && !state.finishHandled) {
+    state.finishHandled = true;
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
 

@@ -19,6 +19,12 @@ export async function deleteModelAlias(alias) {
   await aliasKv.remove(alias);
 }
 
+// Delete all aliases associated with a given provider node (values start with "{providerId}/")
+export async function deleteModelAliasesByProvider(providerId) {
+  const db = await getAdapter();
+  db.run(`DELETE FROM kv WHERE scope = 'modelAliases' AND value LIKE ?`, [`${providerId}/%`]);
+}
+
 // customModels: key=`${providerAlias}|${id}|${type}`, value=full model object
 function customKey(providerAlias, id, type) {
   return `${providerAlias}|${id}|${type}`;
@@ -30,14 +36,17 @@ export async function getCustomModels() {
 }
 
 // Atomic check-then-insert inside transaction to prevent duplicate races
-export async function addCustomModel({ providerAlias, id, type = "llm", name }) {
+export async function addCustomModel({ providerAlias, id, type = "llm", name, maxInputTokens, maxOutputTokens }) {
   const k = customKey(providerAlias, id, type);
   const db = await getAdapter();
   let added = false;
   db.transaction(() => {
     const row = db.get(`SELECT 1 FROM kv WHERE scope = 'customModels' AND key = ?`, [k]);
     if (row) return;
-    const value = stringifyJson({ providerAlias, id, type, name: name || id });
+    const modelData = { providerAlias, id, type, name: name || id };
+    if (maxInputTokens) modelData.maxInputTokens = maxInputTokens;
+    if (maxOutputTokens) modelData.maxOutputTokens = maxOutputTokens;
+    const value = stringifyJson(modelData);
     db.run(`INSERT INTO kv(scope, key, value) VALUES('customModels', ?, ?)`, [k, value]);
     added = true;
   });

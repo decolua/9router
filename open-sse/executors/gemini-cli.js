@@ -1,6 +1,7 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, GEMINI_CLI_API_CLIENT, geminiCLIUserAgent } from "../config/appConstants.js";
+import { parseGoogleQuotaReset } from "../utils/googleQuota.js";
 
 export class GeminiCLIExecutor extends BaseExecutor {
   constructor() {
@@ -34,22 +35,14 @@ export class GeminiCLIExecutor extends BaseExecutor {
     };
   }
 
-  // Parse RetryInfo.retryDelay from Google API 429 body to surface upstream retry hint
+  // Surface the upstream retry hint and the precise quota reset moment from a
+  // Google API 429 body, so the account lock lasts until the quota actually returns.
   parseError(response, bodyText) {
     const base = super.parseError(response, bodyText);
     if (response.status !== 429 || !bodyText) return base;
-    try {
-      const parsed = JSON.parse(bodyText);
-      const details = parsed?.error?.details;
-      if (Array.isArray(details)) {
-        for (const d of details) {
-          if (d?.["@type"] === "type.googleapis.com/google.rpc.RetryInfo" && d?.retryDelay) {
-            base.retryAfter = d.retryDelay;
-            break;
-          }
-        }
-      }
-    } catch {}
+    const { resetsAtMs, retryAfter } = parseGoogleQuotaReset(bodyText);
+    if (retryAfter) base.retryAfter = retryAfter;
+    if (resetsAtMs) base.resetsAtMs = resetsAtMs;
     return base;
   }
 

@@ -5,6 +5,7 @@ import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
 import Toggle from "@/shared/components/Toggle";
 import Tooltip from "@/shared/components/Tooltip";
+import Badge from "@/shared/components/Badge";
 import {
   parseQuotaData,
   calculatePercentage,
@@ -22,6 +23,7 @@ import {
   getSafePagination,
   getSafeTotals,
   shouldResetPage,
+  sortRequestFromExpiringFirst,
   getPaginationPageValue,
   getProviderOptions,
   reconcileConnectionsPage,
@@ -137,6 +139,7 @@ export default function ProviderLimits() {
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [countdown, setCountdown] = useState(60);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
+  const [connectionsError, setConnectionsError] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
   const [resettingLimitId, setResettingLimitId] = useState(null);
@@ -180,7 +183,7 @@ export default function ProviderLimits() {
           page: String(targetPage),
           pageSize: String(pageSize),
           accountStatus: accountFilter,
-          sort: "priority",
+          sort: sortRequestFromExpiringFirst(expiringFirst),
         });
 
         if (providerFilter !== "all") {
@@ -189,8 +192,12 @@ export default function ProviderLimits() {
 
         const response = await fetch(
           `/api/providers/client?${params.toString()}`,
+          { cache: "no-store" },
         );
-        if (!response.ok) throw new Error("Failed to fetch connections");
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.details || body.error || "Failed to fetch connections");
+        }
 
         const data = await response.json();
         const connectionList = data.connections || [];
@@ -202,13 +209,13 @@ export default function ProviderLimits() {
         setPagination(nextPagination);
         setTotals(nextTotals);
         setPage(getPaginationPageValue(data.pagination, targetPage));
+        setConnectionsError(null);
         return connectionList;
       } catch (error) {
         console.error("Error fetching connections:", error);
-        setConnections([]);
-        setProviderOptions([]);
-        setPagination({ page: 1, pageSize, total: 0, totalPages: 1 });
-        setTotals({ eligibleConnections: 0, providerFilteredConnections: 0 });
+        // Keep a previously loaded list on transient failures. Clearing it
+        // changed a loading error into the misleading "No Providers" state.
+        setConnectionsError(error.message || "Failed to load quota accounts");
         return [];
       }
     },
@@ -757,6 +764,31 @@ export default function ProviderLimits() {
   const isCustomPageSize = !ACCOUNT_PAGE_SIZE_OPTIONS.includes(pageSize);
   const pageSizeLabel = getPageSizeLabel(pageSize, isCustomPageSize);
 
+  if (!connectionsLoading && connectionsError && connections.length === 0) {
+    return (
+      <Card padding="lg">
+        <div className="text-center py-12">
+          <span className="material-symbols-outlined text-[64px] text-warning opacity-60">
+            error_outline
+          </span>
+          <h3 className="mt-4 text-lg font-semibold text-text-primary">
+            Unable to Load Quota Accounts
+          </h3>
+          <p className="mt-2 text-sm text-text-muted max-w-md mx-auto">
+            {connectionsError}
+          </p>
+          <button
+            type="button"
+            onClick={() => fetchConnections(page)}
+            className="mt-5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary/90"
+          >
+            Retry
+          </button>
+        </div>
+      </Card>
+    );
+  }
+
   if (!connectionsLoading && !hasEligibleConnections) {
     return (
       <Card padding="lg">
@@ -1015,8 +1047,8 @@ export default function ProviderLimits() {
       {/* Provider cards: 2 columns, compact */}
       {expiringFirst && (
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-          Expiring-first currently reorders accounts inside the current page.
-          Cross-page ordering still follows backend pagination.
+          Expiring-first uses saved token expiry and rate-limit times across
+          pages. Live quota-reset ordering requires a deeper quota refresh pass.
         </div>
       )}
 
@@ -1029,6 +1061,8 @@ export default function ProviderLimits() {
           // Use table layout for all providers
           const isInactive = conn.isActive === false;
           const isCodex = conn.provider === "codex";
+          const plan = typeof quota?.plan === "string" ? quota.plan.trim() : "";
+          const codexPlan = isCodex && plan && plan.toLowerCase() !== "unknown" ? plan : "";
           const resetCreditCount = getCodexResetCreditCount(quota);
           const isResettingLimit = resettingLimitId === conn.id;
           const rowBusy = deletingId === conn.id || togglingId === conn.id || isResettingLimit;
@@ -1060,6 +1094,11 @@ export default function ProviderLimits() {
                       <h3 className="text-sm font-semibold text-text-primary capitalize truncate">
                         {conn.provider}
                       </h3>
+                      {codexPlan && (
+                        <Badge variant="primary" size="sm" className="capitalize">
+                          {codexPlan}
+                        </Badge>
+                      )}
                       {getConnectionLabel(conn) ? (
                         <p className="text-xs text-text-muted truncate">
                           {getConnectionLabel(conn)}

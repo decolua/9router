@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
-import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { decryptSecretJsonStrict, encryptSecretJson } from "../helpers/secretCol.js";
+import { needsConnectionReauth } from "../helpers/connectionCredentials.js";
 
 const OPTIONAL_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
@@ -12,8 +13,16 @@ const OPTIONAL_FIELDS = [
 
 function rowToConn(row) {
   if (!row) return null;
-  const extra = parseJson(row.data, {});
-  return {
+  let extra = {};
+  let secretReadError = null;
+  try {
+    extra = decryptSecretJsonStrict(row.data, {});
+  } catch (error) {
+    // Keep the row visible so the user can intentionally reauthenticate it,
+    // but never write an unreadable encrypted payload back as an empty one.
+    secretReadError = error;
+  }
+  const connection = {
     ...extra,
     id: row.id,
     provider: row.provider,
@@ -25,10 +34,18 @@ function rowToConn(row) {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+  connection.needsReauth = !!secretReadError || needsConnectionReauth(connection);
+  if (secretReadError) {
+    Object.defineProperty(connection, "_secretReadError", {
+      value: secretReadError,
+      enumerable: false,
+    });
+  }
+  return connection;
 }
 
 function connToRow(c) {
-  const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
+  const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, needsReauth, ...rest } = c;
   return {
     id,
     provider,
@@ -37,7 +54,7 @@ function connToRow(c) {
     email: email ?? null,
     priority: priority ?? null,
     isActive: isActive === false ? 0 : 1,
-    data: stringifyJson(rest),
+    data: encryptSecretJson(rest),
     createdAt,
     updatedAt,
   };
@@ -196,6 +213,11 @@ export async function updateProviderConnection(id, data) {
     const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
     if (!row) { result = null; return; }
     const existing = rowToConn(row);
+    if (existing._secretReadError) {
+      // Do not serialize a partial read of ciphertext. Preserve the original
+      // bytes until a deliberate reauthentication replaces them.
+      throw existing._secretReadError;
+    }
     const merged = { ...existing, ...data, updatedAt: new Date().toISOString() };
     upsert(db, merged);
     if (data.priority !== undefined) reorderInTx(db, existing.provider);

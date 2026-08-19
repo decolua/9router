@@ -1,38 +1,86 @@
-const { exec, spawn, execSync } = require("child_process");
+const { spawn, execSync, execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
 const { log, err } = require("../logger");
 const { TOOL_HOSTS } = require("../../shared/constants/mitmToolHosts.js");
-const { runElevatedPowerShell, isAdmin } = require("../winElevated.js");
+const { runElevatedPowerShell, quotePs } = require("../winElevated.js");
 
-/**
- * Atomic-ish write for Windows hosts file with rollback on failure.
- * Strategy: write `.new` sibling → rename current to `.bak` → rename `.new` to target.
- * If anything fails mid-way, restore from `.bak`. Same-volume renames are atomic on NTFS.
- */
-function atomicWriteHostsWin(target, originalContent, newContent) {
-  const tmpNew = `${target}.9router.new`;
-  const tmpBak = `${target}.9router.bak`;
-  try {
-    fs.writeFileSync(tmpNew, newContent, "utf8");
-    try { fs.unlinkSync(tmpBak); } catch { /* none */ }
-    fs.renameSync(target, tmpBak);
-    try {
-      fs.renameSync(tmpNew, target);
-    } catch (e) {
-      // Rollback: restore original
-      try { fs.renameSync(tmpBak, target); } catch { fs.writeFileSync(target, originalContent, "utf8"); }
-      throw e;
+function psArray(values) {
+  return values.map(quotePs).join(", ");
+}
+
+function buildAddHostsScript(hosts) {
+  return `
+    $hostsPath = ${quotePs(HOSTS_FILE)}
+    $hostsToAdd = @(${psArray(hosts)})
+    $content = if (Test-Path -LiteralPath $hostsPath) { Get-Content -LiteralPath $hostsPath -Raw } else { "" }
+    $lines = if ($content) { $content -split "\\r?\\n" } else { @() }
+    $next = New-Object System.Collections.Generic.List[string]
+    foreach ($line in $lines) {
+      $trimmedRight = $line.TrimEnd()
+      if ($trimmedRight.Trim().Length -gt 0) { [void]$next.Add($trimmedRight) }
     }
-    try { fs.unlinkSync(tmpBak); } catch { /* best effort */ }
-  } finally {
-    try { fs.unlinkSync(tmpNew); } catch { /* already moved or never created */ }
-  }
+    foreach ($hostName in $hostsToAdd) {
+      $exists = $false
+      foreach ($line in $next) {
+        if ($line -match ("(^|\\s)" + [regex]::Escape($hostName) + "(\\s|$)")) { $exists = $true; break }
+      }
+      if (-not $exists) { [void]$next.Add("127.0.0.1 $hostName") }
+    }
+    $newContent = ($next -join [Environment]::NewLine) + [Environment]::NewLine
+    $tmpNew = "$hostsPath.9router.new"
+    $tmpBak = "$hostsPath.9router.bak"
+    Set-Content -LiteralPath $tmpNew -Value $newContent -NoNewline -Encoding utf8
+    Remove-Item -LiteralPath $tmpBak -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $hostsPath) { Rename-Item -LiteralPath $hostsPath -NewName ([System.IO.Path]::GetFileName($tmpBak)) -Force }
+    try {
+      Rename-Item -LiteralPath $tmpNew -NewName ([System.IO.Path]::GetFileName($hostsPath)) -Force
+      Remove-Item -LiteralPath $tmpBak -ErrorAction SilentlyContinue
+    } catch {
+      if (Test-Path -LiteralPath $tmpBak) { Rename-Item -LiteralPath $tmpBak -NewName ([System.IO.Path]::GetFileName($hostsPath)) -Force }
+      throw
+    }
+    ipconfig /flushdns | Out-Null
+  `;
+}
+
+function buildRemoveHostsScript(hosts) {
+  return `
+    $hostsPath = ${quotePs(HOSTS_FILE)}
+    $hostsToRemove = @(${psArray(hosts)})
+    if (-not (Test-Path -LiteralPath $hostsPath)) { exit 0 }
+    $content = Get-Content -LiteralPath $hostsPath -Raw
+    $lines = if ($content) { $content -split "\\r?\\n" } else { @() }
+    $next = New-Object System.Collections.Generic.List[string]
+    foreach ($line in $lines) {
+      $remove = $false
+      foreach ($hostName in $hostsToRemove) {
+        if ($line -match ("(^|\\s)" + [regex]::Escape($hostName) + "(\\s|$)")) { $remove = $true; break }
+      }
+      $trimmedRight = $line.TrimEnd()
+      if (-not $remove -and $trimmedRight.Trim().Length -gt 0) { [void]$next.Add($trimmedRight) }
+    }
+    $newContent = ($next -join [Environment]::NewLine) + [Environment]::NewLine
+    $tmpNew = "$hostsPath.9router.new"
+    $tmpBak = "$hostsPath.9router.bak"
+    Set-Content -LiteralPath $tmpNew -Value $newContent -NoNewline -Encoding utf8
+    Remove-Item -LiteralPath $tmpBak -ErrorAction SilentlyContinue
+    Rename-Item -LiteralPath $hostsPath -NewName ([System.IO.Path]::GetFileName($tmpBak)) -Force
+    try {
+      Rename-Item -LiteralPath $tmpNew -NewName ([System.IO.Path]::GetFileName($hostsPath)) -Force
+      Remove-Item -LiteralPath $tmpBak -ErrorAction SilentlyContinue
+    } catch {
+      if (Test-Path -LiteralPath $tmpBak) { Rename-Item -LiteralPath $tmpBak -NewName ([System.IO.Path]::GetFileName($hostsPath)) -Force }
+      throw
+    }
+    ipconfig /flushdns | Out-Null
+  `;
 }
 
 const IS_WIN = process.platform === "win32";
 const IS_MAC = process.platform === "darwin";
+const WINDOWS_DNS_FLUSH_TIMEOUT_MS = 5000;
 const HOSTS_FILE = IS_WIN
   ? path.join(process.env.SystemRoot || "C:\\Windows", "System32", "drivers", "etc", "hosts")
   : "/etc/hosts";
@@ -155,13 +203,7 @@ async function addDNSEntry(tool, sudoPassword) {
 
   try {
     if (IS_WIN) {
-      // Read → trim → append → atomic write (Node-side, no CLI size limit)
-      const current = fs.readFileSync(HOSTS_FILE, "utf8");
-      const trimmed = current.replace(/[\r\n\s]+$/g, "");
-      const toAppend = entriesToAdd.map(h => `127.0.0.1 ${h}`).join("\r\n");
-      const next = `${trimmed}\r\n${toAppend}\r\n`;
-      atomicWriteHostsWin(HOSTS_FILE, current, next);
-      await runElevatedPowerShell("ipconfig /flushdns | Out-Null");
+      await runElevatedPowerShell(buildAddHostsScript(entriesToAdd));
     } else {
       const current = fs.readFileSync(HOSTS_FILE, "utf8");
       const trimmed = current.replace(/[\r\n\s]+$/g, "");
@@ -194,11 +236,7 @@ async function removeDNSEntry(tool, sudoPassword) {
 
   try {
     if (IS_WIN) {
-      const current = fs.readFileSync(HOSTS_FILE, "utf8");
-      const filtered = current.split(/\r?\n/).filter(l => !entriesToRemove.some(h => l.includes(h))).join("\r\n");
-      const next = filtered.replace(/[\r\n\s]+$/g, "") + "\r\n";
-      atomicWriteHostsWin(HOSTS_FILE, current, next);
-      await runElevatedPowerShell("ipconfig /flushdns | Out-Null");
+      await runElevatedPowerShell(buildRemoveHostsScript(entriesToRemove));
     } else {
       const current = fs.readFileSync(HOSTS_FILE, "utf8");
       const filtered = current.split(/\r?\n/).filter(l => !entriesToRemove.some(h => l.includes(h))).join("\n");
@@ -242,7 +280,16 @@ function removeAllDNSEntriesSync() {
     if (next === content) return;
     fs.writeFileSync(HOSTS_FILE, next, "utf8");
     if (IS_WIN) {
-      try { execSync("ipconfig /flushdns", { windowsHide: true, stdio: "ignore" }); } catch { /* ignore */ }
+      // The previous shell form implicitly starts cmd.exe on Windows. Use the
+      // executable directly so shutdown cannot flash a
+      // console window or leave an unbounded shell child behind.
+      try {
+        execFileSync("ipconfig.exe", ["/flushdns"], {
+          windowsHide: true,
+          stdio: "ignore",
+          timeout: WINDOWS_DNS_FLUSH_TIMEOUT_MS,
+        });
+      } catch { /* best effort during shutdown */ }
     } else if (IS_MAC) {
       try { execSync("dscacheutil -flushcache && killall -HUP mDNSResponder", { stdio: "ignore" }); } catch { /* ignore */ }
     } else {

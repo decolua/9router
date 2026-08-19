@@ -17,7 +17,9 @@ const USAGE_METADATA = {
 
 const EXPECTED = {
   prompt_tokens: 1234,
-  completion_tokens: 56,
+  // Gemini reports thoughts separately, while 9router completion usage is
+  // reasoning-inclusive like the OpenAI/Claude normalized shapes.
+  completion_tokens: 146,
   cached_tokens: 78,
   reasoning_tokens: 90,
 };

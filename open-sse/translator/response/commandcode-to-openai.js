@@ -25,18 +25,16 @@ import { fallbackToolCallId } from "../concerns/toolCall.js";
 import { toOpenAIFinish } from "../concerns/finishReason.js";
 
 function ensureState(state, model) {
-  if (!state.responseId) {
-    state.responseId = `chatcmpl-${Date.now()}`;
-    state.created = Math.floor(Date.now() / 1000);
-    state.model = state.model || model || "commandcode";
-    state.chunkIndex = 0;
-    state.toolIndex = 0;
-    state.toolIndexById = new Map();
-    state.openTools = new Set();
-    state.openText = false;
-    state.finishReason = null;
-    state.usage = null;
-  }
+  state.responseId ??= `chatcmpl-${Date.now()}`;
+  state.created ??= Math.floor(Date.now() / 1000);
+  state.model = state.model || model || "commandcode";
+  state.chunkIndex ??= 0;
+  state.toolIndex ??= 0;
+  state.toolIndexById ??= new Map();
+  state.openTools ??= new Set();
+  state.openText ??= false;
+  state.finishReason ??= null;
+  state.usage ??= null;
 }
 
 function makeChunk(state, delta, finishReason = null) {

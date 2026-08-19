@@ -271,7 +271,7 @@ async function resolveKiroProfileArnPatch(providerSpecificData, accessToken, ref
   let profileArn = refreshedArn?.trim?.() || null;
   if (!profileArn) {
     const { fetchKiroProfileArn } = await import("../../../src/lib/oauth/providers.js");
-    profileArn = await fetchKiroProfileArn(accessToken);
+    profileArn = await fetchKiroProfileArn(accessToken, providerSpecificData?.region);
   }
   return profileArn ? { providerSpecificData: { profileArn } } : {};
 }
@@ -640,10 +640,14 @@ export async function refreshTraeToken(refreshToken, credentials, log) {
   }, log);
 }
 
-// Zed access_token is long-lived; auth flow returns no refresh_token.
-// No refresh possible — re-login required when token expires/revoked.
-// Mirrors cursor/kilocode null-refresh pattern.
-export function refreshZedToken() {
+// Zed user access_token is long-lived (RSA decrypt or CLI import).
+// Short-lived LLM bearer tokens are minted/cached inside open-sse/shared/zedAuth.js
+// (fetchZedLlmToken / zedLlmFetch) — no OAuth refresh_token grant exists.
+export async function refreshZedToken(credentials, log) {
+  log?.info?.(
+    "TOKEN_REFRESH",
+    "zed: user access_token is long-lived; LLM tokens refresh via zedAuth — skipping",
+  );
   return null;
 }
 
@@ -657,4 +661,42 @@ export async function refreshWindsurfToken(credentials, log) {
     "windsurf: apiKey is long-lived (no refresh_token flow) — skipping"
   );
   return null;
+}
+
+// Qoder / QoderWork CN — POST openapi /api/v1/deviceToken/refresh
+// { refresh_token } → device_token|token + refresh_token
+export async function refreshQoderDeviceToken(refreshToken, profileId = "intl", log) {
+  if (!refreshToken) return null;
+  const dedupKey = `qoder:${profileId || "intl"}`;
+  return dedupRefresh(dedupKey, refreshToken, async () => {
+    try {
+      const mod = await import("../../../src/lib/oauth/services/qoder.js");
+      const svc = new mod.QoderService({ profile: profileId });
+      const tokens = await svc.refreshDeviceToken(refreshToken);
+      log?.info?.("TOKEN_REFRESH", "Successfully refreshed Qoder device token", {
+        profile: profileId,
+        hasNewAccessToken: !!tokens.accessToken,
+        hasNewRefreshToken: !!tokens.refreshToken,
+        expiresIn: tokens.expiresIn,
+      });
+      return {
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken || refreshToken,
+        expiresIn: tokens.expiresIn,
+      };
+    } catch (e) {
+      const status = e?.status;
+      log?.error?.("TOKEN_REFRESH", `Qoder device refresh failed (${profileId})`, {
+        error: e?.message || String(e),
+        status,
+      });
+      if (status === 401 || status === 403) {
+        return {
+          error: "invalid_grant",
+          message: e?.message || "Qoder refresh rejected",
+        };
+      }
+      return null;
+    }
+  }, log);
 }

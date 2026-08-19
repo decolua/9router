@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { deleteProviderConnectionsByProvider, deleteProviderNode, getProviderConnections, getProviderNodeById, updateProviderConnection, updateProviderNode } from "@/models";
+import { deleteProviderConnectionsByProvider, deleteProviderNode, deleteModelAliasesByProvider, getProviderConnections, getProviderNodeById, updateProviderConnection, updateProviderNode } from "@/models";
 
 // PUT /api/provider-nodes/[id] - Update provider node
 export async function PUT(request, { params }) {
@@ -48,6 +48,11 @@ export async function PUT(request, { params }) {
       }
     }
 
+    // Sanitize Base URL for Custom Video (strip trailing slash and a trailing action)
+    if (node.type === "custom-video") {
+      sanitizedBaseUrl = sanitizedBaseUrl.replace(/\/$/, "").replace(/\/(generations|edits|extensions)$/, "");
+    }
+
     const updates = {
       name: name.trim(),
       prefix: prefix.trim(),
@@ -91,6 +96,7 @@ export async function DELETE(request, { params }) {
     }
 
     await deleteProviderConnectionsByProvider(id);
+    await deleteModelAliasesByProvider(id);
     await deleteProviderNode(id);
 
     return NextResponse.json({ success: true });

@@ -134,8 +134,8 @@ describe("injectReasoningContent — MiniMax thinking round-trip", () => {
     expect(out.messages[0].reasoning_content).toBe(original);
   });
 
-  it("DefaultExecutor transformRequest runs the injector for minimax", () => {
-    const { DefaultExecutor } = require("../../open-sse/executors/default.js");
+  it("DefaultExecutor transformRequest runs the injector for minimax", async () => {
+    const { DefaultExecutor } = await import("../../open-sse/executors/default.js");
     const executor = new DefaultExecutor("minimax");
     const out = executor.transformRequest(
       "MiniMax-M2.7",

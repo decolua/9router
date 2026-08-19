@@ -1,4 +1,5 @@
 import { KIRO_CONFIG, assertValidAwsRegion } from "../constants/oauth.js";
+import { buildExternalIdpRefreshParams } from "../kiroExternalIdp.js";
 
 /**
  * Kiro OAuth Service
@@ -177,6 +178,33 @@ export class KiroService {
   async refreshToken(refreshToken, providerSpecificData = {}) {
     const { authMethod, clientId, clientSecret, region } = providerSpecificData;
 
+    // Microsoft Entra ID (external_idp) refresh
+    if (authMethod === "external_idp") {
+      const refreshRequest = buildExternalIdpRefreshParams(refreshToken, providerSpecificData);
+      
+      const response = await fetch(refreshRequest.tokenEndpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+        },
+        body: refreshRequest.body,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Token refresh failed for external_idp: ${errorText}`);
+      }
+
+      const data = await response.json();
+      return {
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token || refreshToken,
+        expiresIn: data.expires_in,
+        providerSpecificData: refreshRequest.providerSpecificData,
+      };
+    }
+
     // AWS SSO OIDC refresh (Builder ID or IDC)
     if (clientId && clientSecret) {
       const safeRegion = region || "us-east-1";
@@ -237,6 +265,9 @@ export class KiroService {
 
   /**
    * Validate and import refresh token
+   * Imported tokens (from Kiro IDE / AWS Builder ID) are stored without
+   * clientId/clientSecret, so they cannot use AWS OIDC refresh. Use the
+   * social-auth /refreshToken endpoint which accepts raw refresh tokens.
    */
   async validateImportToken(refreshToken) {
     // Validate token format
@@ -244,19 +275,27 @@ export class KiroService {
       throw new Error("Invalid token format. Token should start with aorAAAAAG...");
     }
 
-    // Try to refresh to validate
-    try {
-      const result = await this.refreshToken(refreshToken);
-      return {
-        accessToken: result.accessToken,
-        refreshToken: result.refreshToken || refreshToken,
-        profileArn: result.profileArn,
-        expiresIn: result.expiresIn,
-        authMethod: "imported",
-      };
-    } catch (error) {
-      throw new Error(`Token validation failed: ${error.message}`);
+    // Imported tokens are stored without clientId/clientSecret, so they must use
+    // the social-auth refresh endpoint that accepts raw refresh tokens.
+    const response = await fetch(`${KIRO_AUTH_SERVICE}/refreshToken`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Token validation failed: ${error}`);
     }
+
+    const data = await response.json();
+    return {
+      accessToken: data.accessToken,
+      refreshToken: data.refreshToken || refreshToken,
+      profileArn: data.profileArn,
+      expiresIn: data.expiresIn || 3600,
+      authMethod: "imported",
+    };
   }
 
   /**
