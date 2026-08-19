@@ -133,7 +133,13 @@ export async function PUT(request, { params }) {
     if (monthlyCost !== undefined) {
       let nextCost = null;
       if (monthlyCost !== null) {
-        const parsed = Number(monthlyCost);
+        // Number("") is 0 and Number(true) is 1, so a blank or boolean body
+        // would quietly store the connection as a free plan. Accept only a
+        // number or a non-empty numeric string.
+        const isNumericInput =
+          typeof monthlyCost === "number"
+          || (typeof monthlyCost === "string" && monthlyCost.trim() !== "");
+        const parsed = isNumericInput ? Number(monthlyCost) : Number.NaN;
         if (!Number.isFinite(parsed) || parsed < 0) {
           return NextResponse.json({ error: "Invalid monthlyCost" }, { status: 400 });
         }
@@ -144,7 +150,11 @@ export async function PUT(request, { params }) {
       // Record the change so past months keep the price they were actually
       // billed at. Without this, upgrading a plan silently rewrites every
       // earlier month's cost to the new figure.
-      if (nextCost !== existing.monthlyCost) {
+      // A connection that never had a price stores `undefined`, so normalise
+      // before comparing — otherwise `null !== undefined` logs a change that
+      // did not happen.
+      const previousCost = typeof existing.monthlyCost === "number" ? existing.monthlyCost : null;
+      if (nextCost !== previousCost) {
         const history = Array.isArray(existing.monthlyCostHistory) ? existing.monthlyCostHistory : [];
         updateData.monthlyCostHistory = [
           ...history,

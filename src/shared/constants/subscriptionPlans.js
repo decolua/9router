@@ -92,12 +92,28 @@ export function getSuggestedMonthlyCost(provider, plan) {
 
   // Providers report tiers inconsistently ("Max 20x", "max_20x", "ChatGPT Pro").
   // Match on a normalized form before giving up.
-  const normalized = key.replace(/[_-]+/g, " ").replace(/\s+/g, " ");
-  for (const [planKey, price] of Object.entries(providerPlans)) {
-    if (planKey === normalized && typeof price === "number") return price;
+  // "+" is spelled both ways in the wild ("Pro+", "Pro Plus"), so fold it on
+  // both sides — otherwise "pro plus" never matches the "pro+" key and falls
+  // through to plain "pro" at half the price.
+  const normalize = (value) => value
+    .replace(/\+/g, " plus")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const normalized = normalize(key);
+  // Longest key first: "pro plus" contains "pro", and insertion order would
+  // otherwise return the Pro price for a Pro+ plan.
+  const candidates = Object.entries(providerPlans)
+    .filter(([, price]) => typeof price === "number")
+    .map(([planKey, price]) => [normalize(planKey), price])
+    .sort((a, b) => b[0].length - a[0].length);
+
+  for (const [planKey, price] of candidates) {
+    if (planKey === normalized) return price;
   }
-  for (const [planKey, price] of Object.entries(providerPlans)) {
-    if (normalized.includes(planKey) && typeof price === "number") return price;
+  for (const [planKey, price] of candidates) {
+    if (normalized.includes(planKey)) return price;
   }
 
   return null;

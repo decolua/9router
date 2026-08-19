@@ -1,82 +1,11 @@
 import { NextResponse } from "next/server";
 import { getConnectionDetail } from "@/lib/db/index.js";
 import { getProviderConnectionById } from "@/lib/db/repos/connectionsRepo.js";
+import {
+  monthsSince, daysSince, priceForMonth, lifetimePaidFor,
+} from "@/shared/utils/subscriptionValue";
 
 export const dynamic = "force-dynamic";
-
-const MS_PER_DAY = 86400000;
-
-/**
- * Whole months elapsed since the connection was created, floored at 1 — a sub
- * billed monthly has been paid for at least once the moment it exists.
- */
-function monthsSince(createdAt) {
-  if (!createdAt) return 1;
-  const start = new Date(createdAt);
-  if (Number.isNaN(start.getTime())) return 1;
-  const days = (Date.now() - start.getTime()) / MS_PER_DAY;
-  if (!Number.isFinite(days) || days < 0) return 1;
-  return Math.max(1, Math.floor(days / 30.44) + 1);
-}
-
-/**
- * Price in force during a given month ("2026-08"), from the recorded change
- * log. Months before the first recorded change are marked `assumed`, because
- * the price then is genuinely unknown — the log only starts when the user
- * first sets a price, and pretending otherwise is what made the old
- * month-by-month numbers wrong after a plan change.
- */
-function priceForMonth(monthKey, history, currentCost) {
-  if (!Array.isArray(history) || history.length === 0) {
-    return { amount: currentCost, assumed: currentCost != null };
-  }
-
-  const sorted = [...history]
-    .filter((h) => h && typeof h.effectiveFrom === "string")
-    .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom));
-
-  if (sorted.length === 0) return { amount: currentCost, assumed: currentCost != null };
-
-  // Compare at the month's end, so a price set mid-month applies to that month.
-  const monthEnd = `${monthKey}-31`;
-  let applicable = null;
-  for (const entry of sorted) {
-    if (entry.effectiveFrom.slice(0, 10) <= monthEnd) applicable = entry;
-    else break;
-  }
-
-  if (!applicable) {
-    // Earlier than any recorded price — fall back to the oldest known one.
-    return { amount: sorted[0].amount, assumed: true };
-  }
-  return { amount: applicable.amount, assumed: false };
-}
-
-/** Every month key ("2026-08") from the connection's creation through today. */
-function monthKeysSince(createdAt) {
-  const now = new Date();
-  const start = createdAt ? new Date(createdAt) : now;
-  const from = Number.isNaN(start.getTime()) ? now : start;
-
-  const keys = [];
-  const cursor = new Date(from.getFullYear(), from.getMonth(), 1);
-  const end = new Date(now.getFullYear(), now.getMonth(), 1);
-  // Guard against a bogus future createdAt producing an empty span.
-  if (cursor > end) return [`${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, "0")}`];
-
-  while (cursor <= end) {
-    keys.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`);
-    cursor.setMonth(cursor.getMonth() + 1);
-  }
-  return keys;
-}
-
-function daysSince(createdAt) {
-  if (!createdAt) return 1;
-  const start = new Date(createdAt);
-  if (Number.isNaN(start.getTime())) return 1;
-  return Math.max(1, Math.round((Date.now() - start.getTime()) / MS_PER_DAY));
-}
 
 export async function GET(_request, { params }) {
   try {
@@ -145,16 +74,7 @@ export async function GET(_request, { params }) {
       return { ...m, paid: amount, paidAssumed: assumed };
     });
 
-    // Lifetime paid spans every month the sub was *held*, not just the months
-    // it was used — you pay for idle months too, and counting only active ones
-    // would understate the cost and inflate the return.
-    const heldMonths = monthKeysSince(connection.createdAt);
-    const pricedHeldMonths = heldMonths
-      .map((mk) => priceForMonth(mk, history, monthlyCost).amount)
-      .filter((amount) => typeof amount === "number");
-    const lifetimePaid = pricedHeldMonths.length === 0
-      ? null
-      : pricedHeldMonths.reduce((sum, amount) => sum + amount, 0);
+    const lifetimePaid = lifetimePaidFor(connection.createdAt, history, monthlyCost);
 
     const value = {
       lifetimeCost,

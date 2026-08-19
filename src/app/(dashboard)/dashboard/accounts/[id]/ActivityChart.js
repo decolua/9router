@@ -26,7 +26,9 @@ export default function ActivityChart({ daily }) {
   const niceMax = (() => {
     const rough = max / 4;
     const mag = 10 ** Math.floor(Math.log10(rough));
-    const step = [1, 2, 5, 10].find((m) => m * mag >= rough) * mag;
+    // Requests are whole numbers, so never step below 1 — a 0.5 step
+    // renders as two identical labels.
+    const step = Math.max(1, [1, 2, 5, 10].find((m) => m * mag >= rough) * mag);
     return step * 4;
   })();
   const bw = PLOT_W / daily.length;
@@ -35,7 +37,9 @@ export default function ActivityChart({ daily }) {
   const y = (v) => PAD_T + PLOT_H - (v / niceMax) * PLOT_H;
 
   const ticks = [0, 1, 2, 3, 4].map((t) => (niceMax / 4) * t);
-  const labelIdx = [0, Math.floor(daily.length / 3), Math.floor((daily.length * 2) / 3), daily.length - 1];
+  // Deduped: a short series collapses these onto the same index, which
+  // would give duplicate React keys and overlapping axis labels.
+  const labelIdx = [...new Set([0, Math.floor(daily.length / 3), Math.floor((daily.length * 2) / 3), daily.length - 1])];
 
   const onMove = (e) => {
     const box = e.currentTarget.getBoundingClientRect();

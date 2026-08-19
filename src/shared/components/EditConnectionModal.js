@@ -31,6 +31,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
   const [suggestedCost, setSuggestedCost] = useState(null);
+  const [costError, setCostError] = useState(null);
 
   useEffect(() => {
     if (connection) {
@@ -79,6 +80,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       }
       setTestResult(null);
       setValidationResult(null);
+      setCostError(null);
     }
   }, [connection]);
 
@@ -147,9 +149,29 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
 
       if (isOAuth) {
         const trimmed = String(formData.monthlyCost).trim();
-        const parsed = trimmed === "" ? null : Number(trimmed);
-        updates.monthlyCost =
-          parsed != null && Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+        // An untouched catalog seed must not be persisted: saving an unrelated
+        // edit would turn a guess into a stored price and log it as a real
+        // price change. Only send the field once the user has altered it.
+        const isUntouchedSuggestion =
+          connection.monthlyCost == null
+          && suggestedCost != null
+          && trimmed === String(suggestedCost);
+
+        if (!isUntouchedSuggestion) {
+          if (trimmed === "") {
+            updates.monthlyCost = null;
+          } else {
+            const parsed = Number(trimmed);
+            if (!Number.isFinite(parsed) || parsed < 0) {
+              // Clearing a stored price because "2O" failed to parse would be
+              // silent data loss — surface it and keep the old value.
+              setCostError("Enter a number, or leave blank to clear.");
+              setSaving(false);
+              return;
+            }
+            updates.monthlyCost = parsed;
+          }
+        }
       }
       if (!isOAuth && formData.apiKey) {
         updates.apiKey = formData.apiKey;
@@ -239,7 +261,11 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
             min="0"
             step="any"
             value={formData.monthlyCost}
-            onChange={(e) => setFormData({ ...formData, monthlyCost: e.target.value })}
+            onChange={(e) => {
+              setCostError(null);
+              setFormData({ ...formData, monthlyCost: e.target.value });
+            }}
+            error={costError}
             placeholder="20"
             hint={
               suggestedCost != null && String(formData.monthlyCost) === String(suggestedCost)

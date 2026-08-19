@@ -67,6 +67,7 @@ export function fmtDayLabel(dateKey) {
   if (!dateKey) return "";
   const [y, m, d] = dateKey.split("-").map(Number);
   const date = new Date(y, (m || 1) - 1, d || 1);
+  if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
@@ -75,6 +76,7 @@ export function fmtMonthLabel(monthKey) {
   if (!monthKey) return "";
   const [y, m] = monthKey.split("-").map(Number);
   const date = new Date(y, (m || 1) - 1, 1);
+  if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleDateString(undefined, { month: "short", year: "numeric" });
 }
 
@@ -83,4 +85,17 @@ export function fmtTimeOfDay(timestamp) {
   const d = new Date(timestamp);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+/**
+ * Return multiple: one decimal below 10x, whole numbers above.
+ *
+ * Shared by the headline, the value panel and the month table — rounding a
+ * 1.4x return to "1x" in one place and "1.4x" in another made the table
+ * disagree with the figure directly above it.
+ */
+export function fmtMultiple(ratio) {
+  const n = Number(ratio);
+  if (!Number.isFinite(n) || n < 0) return "0";
+  return n >= 10 ? String(Math.round(n)) : n.toFixed(1);
 }

@@ -32,6 +32,10 @@ export default function AccountActions({ connection, resetCredits, onChanged }) 
   const [confirmReset, setConfirmReset] = useState(false);
   const [autoPing, setAutoPing] = useState(false);
   const [busy, setBusy] = useState(null);
+  // fetch resolves for 4xx/5xx, so without this every failed action
+  // would look like it succeeded.
+  const [actionError, setActionError] = useState(null);
+  const [nextExpiry, setNextExpiry] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,15 +58,48 @@ export default function AccountActions({ connection, resetCredits, onChanged }) 
     return () => { cancelled = true; };
   }, [settingsKey, connection.id]);
 
+  const creditCount = resetCredits?.available ?? 0;
+
+  // Expiry lives only on the detailed reset-credit endpoint, so it is fetched
+  // lazily — and only when there is actually a credit to expire.
+  useEffect(() => {
+    if (provider !== "codex" || creditCount <= 0) return undefined;
+    let cancelled = false;
+    fetch(`/api/usage/${connection.id}/codex-reset-credits`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((result) => {
+        if (cancelled || !result) return;
+        const soonest = (Array.isArray(result.credits) ? result.credits : [])
+          .map((c) => c?.expiresAt)
+          .filter(Boolean)
+          .sort()[0];
+        if (soonest) {
+          setNextExpiry(new Date(soonest).toLocaleDateString(undefined, { month: "short", day: "numeric" }));
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [provider, creditCount, connection.id]);
+
   const patchConnection = async (body) => {
     setBusy("save");
+    setActionError(null);
     try {
       const res = await fetch(`/api/providers/${connection.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (res.ok) await onChanged?.();
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        setActionError(detail.error || `Could not save (${res.status}).`);
+        return false;
+      }
+      await onChanged?.();
+      return true;
+    } catch {
+      setActionError("Could not reach the server.");
+      return false;
     } finally {
       setBusy(null);
     }
@@ -72,28 +109,39 @@ export default function AccountActions({ connection, resetCredits, onChanged }) 
     if (!settingsKey) return;
     const previous = autoPing;
     setAutoPing(next);
+    setActionError(null);
     try {
       const r = await fetch("/api/settings", { cache: "no-store" });
-      const s = r.ok ? await r.json() : {};
+      const current = r.ok ? await r.json() : {};
       const cfg = {
-        ...(s[settingsKey] || {}),
-        connections: { ...(s[settingsKey]?.connections || {}), [connection.id]: next },
+        ...(current[settingsKey] || {}),
+        connections: { ...(current[settingsKey]?.connections || {}), [connection.id]: next },
       };
-      await fetch("/api/settings", {
+      const res = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ [settingsKey]: cfg }),
       });
+      if (!res.ok) throw new Error("patch failed");
     } catch {
       setAutoPing(previous);
+      setActionError("Could not change auto-ping.");
     }
   };
 
   const handleDelete = async () => {
     setBusy("delete");
+    setActionError(null);
     try {
       const res = await fetch(`/api/providers/${connection.id}`, { method: "DELETE" });
-      if (res.ok) router.push("/dashboard/quota");
+      if (!res.ok) {
+        // Closing the modal on failure would read as a successful delete.
+        setActionError(`Could not delete this connection (${res.status}).`);
+        return;
+      }
+      router.push("/dashboard/quota");
+    } catch {
+      setActionError("Could not reach the server.");
     } finally {
       setBusy(null);
       setConfirmDelete(false);
@@ -102,20 +150,35 @@ export default function AccountActions({ connection, resetCredits, onChanged }) 
 
   const handleUseResetCredit = async () => {
     setBusy("reset");
+    setActionError(null);
     try {
-      await fetch(`/api/usage/${connection.id}/codex-reset-credits`, { method: "POST" });
+      const res = await fetch(`/api/usage/${connection.id}/codex-reset-credits`, { method: "POST" });
+      if (!res.ok) {
+        const detail = await res.json().catch(() => ({}));
+        setActionError(detail.error || `Could not use a reset credit (${res.status}).`);
+        return;
+      }
       await onChanged?.();
+    } catch {
+      setActionError("Could not reach the server.");
     } finally {
       setBusy(null);
       setConfirmReset(false);
     }
   };
 
-  const creditCount = resetCredits?.available ?? 0;
 
   return (
     <>
       <div className="flex flex-col gap-3">
+        {actionError && (
+          <p
+            role="alert"
+            className="rounded-lg bg-red-500/10 px-3 py-2 text-[12.5px] text-red-600 dark:text-red-400"
+          >
+            {actionError}
+          </p>
+        )}
         <div className="flex items-center justify-between gap-4">
           <div className="min-w-0">
             <p className="text-[13px] font-medium">Enabled</p>
@@ -145,7 +208,7 @@ export default function AccountActions({ connection, resetCredits, onChanged }) 
               <p className="text-[13px] font-medium">Usage resets</p>
               <p className="text-[11.5px] text-text-muted">
                 {creditCount > 0
-                  ? `${creditCount} available${resetCredits?.nextExpiry ? ` · next expires ${resetCredits.nextExpiry}` : ""}`
+                  ? `${creditCount} available${nextExpiry ? ` · next expires ${nextExpiry}` : ""}`
                   : "None available"}
               </p>
             </div>
@@ -219,7 +282,6 @@ AccountActions.propTypes = {
   }).isRequired,
   resetCredits: PropTypes.shape({
     available: PropTypes.number,
-    nextExpiry: PropTypes.string,
   }),
   onChanged: PropTypes.func,
 };

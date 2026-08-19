@@ -41,7 +41,7 @@ export default function ValueChart({ daily, monthlyCost }) {
   const crossIdx = showCost ? cum.findIndex((p) => p.value >= monthlyCost) : -1;
   const pts = cum.map((p, i) => `${x(i)},${y(p.value)}`).join(" ");
   const ticks = [0, 1, 2, 3, 4].map((t) => (niceMax / 4) * t);
-  const labelIdx = [0, Math.floor(cum.length / 2), cum.length - 1];
+  const labelIdx = [...new Set([0, Math.floor(cum.length / 2), cum.length - 1])];
 
   const onMove = (e) => {
     const box = e.currentTarget.getBoundingClientRect();

@@ -1,26 +1,9 @@
 import { NextResponse } from "next/server";
 import { getConnectionValue } from "@/lib/db/index.js";
 import { getProviderConnections } from "@/lib/db/repos/connectionsRepo.js";
+import { monthsSince, lifetimePaidFor } from "@/shared/utils/subscriptionValue";
 
 export const dynamic = "force-dynamic";
-
-const MS_PER_DAY = 86400000;
-
-/**
- * Whole months elapsed since a connection was created, floored at 1.
- *
- * A sub billed monthly has been paid for at least once the moment it exists,
- * so a 3-day-old account is "1 month paid", not 0.1 — the alternative divides
- * by a fraction and reports an absurdly inflated multiple in week one.
- */
-function monthsSince(createdAt) {
-  if (!createdAt) return 1;
-  const start = new Date(createdAt);
-  if (Number.isNaN(start.getTime())) return 1;
-  const days = (Date.now() - start.getTime()) / MS_PER_DAY;
-  if (!Number.isFinite(days) || days < 0) return 1;
-  return Math.max(1, Math.floor(days / 30.44) + 1);
-}
 
 export async function GET() {
   try {
@@ -40,6 +23,9 @@ export async function GET() {
       };
       const monthlyCost = typeof conn.monthlyCost === "number" ? conn.monthlyCost : null;
       const months = monthsSince(conn.createdAt);
+      // History-aware, matching the detail page — pricing every month at the
+      // current rate makes the badge disagree with the page after a plan change.
+      const lifetimePaid = lifetimePaidFor(conn.createdAt, conn.monthlyCostHistory, monthlyCost);
 
       result[conn.id] = {
         lifetimeCost: usage.lifetimeCost,
@@ -48,7 +34,7 @@ export async function GET() {
         monthRequests: usage.monthRequests,
         monthlyCost,
         months,
-        lifetimePaid: monthlyCost == null ? null : monthlyCost * months,
+        lifetimePaid,
       };
     }
 

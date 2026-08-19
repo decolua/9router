@@ -13,7 +13,7 @@ import AccountActions from "./AccountActions";
 import ActivityChart from "./ActivityChart";
 import ValueChart from "./ValueChart";
 import {
-  fmtMoney, fmtCount, fmtRelative, fmtMonthLabel, fmtTimeOfDay, looksLikeEmail,
+  fmtMoney, fmtCount, fmtRelative, fmtMonthLabel, fmtTimeOfDay, looksLikeEmail, fmtMultiple,
 } from "./formatters";
 
 function Tile({ label, value, foot }) {
@@ -185,7 +185,7 @@ export default function AccountDetailPage({ params }) {
         <Tile
           label="API value"
           value={fmtMoney(value.lifetimeCost)}
-          foot={multiple ? `${multiple >= 10 ? Math.round(multiple) : multiple.toFixed(1)}× what you paid` : "at list prices"}
+          foot={multiple ? `${fmtMultiple(multiple)}× what you paid` : "at list prices"}
         />
       </div>
 
@@ -278,7 +278,7 @@ export default function AccountDetailPage({ params }) {
             {multiple != null ? (
               <div className="flex items-baseline gap-2.5">
                 <span className="text-3xl font-semibold leading-none tracking-tight tabular-nums text-primary">
-                  {multiple >= 10 ? Math.round(multiple) : multiple.toFixed(1)}×
+                  {fmtMultiple(multiple)}×
                 </span>
                 <span className="max-w-[22ch] text-[12.5px] text-text-muted">return on what you&apos;ve paid</span>
               </div>
@@ -380,7 +380,7 @@ export default function AccountDetailPage({ params }) {
               </thead>
               <tbody>
                 {(usage?.monthly || []).length === 0 && (
-                  <tr><td colSpan={5} className="py-4 text-center text-text-muted">No usage recorded yet.</td></tr>
+                  <tr><td colSpan={6} className="py-4 text-center text-text-muted">No usage recorded yet.</td></tr>
                 )}
                 {(usage?.monthly || []).map((m) => (
                   <tr key={m.month} className="border-t border-border-subtle">
@@ -400,7 +400,7 @@ export default function AccountDetailPage({ params }) {
                       )}
                     </td>
                     <td className="py-2 pl-3 text-right font-semibold text-primary">
-                      {typeof m.paid === "number" && m.paid > 0 ? `${Math.round(m.cost / m.paid)}×` : "—"}
+                      {typeof m.paid === "number" && m.paid > 0 ? `${fmtMultiple(m.cost / m.paid)}×` : "—"}
                     </td>
                   </tr>
                 ))}
