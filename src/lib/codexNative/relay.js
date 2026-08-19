@@ -73,6 +73,7 @@ export function isCodexSemanticEvent(event) {
 }
 
 function inspectSseText(text, leaseId, connectionId) {
+  let terminalOutcome = null;
   for (const line of text.split(/\r?\n/)) {
     if (!line.startsWith("data:")) continue;
     const raw = line.slice(5).trim();
@@ -83,38 +84,74 @@ function inspectSseText(text, leaseId, connectionId) {
         ingestCodexNativeQuota(connectionId, event, "sse");
       }
       if (isCodexSemanticEvent(event)) markCodexNativeSemanticOutput(leaseId);
+      if (["response.completed", "response.done"].includes(event.type)
+        || event.status === "completed"
+        || event.response?.status === "completed") {
+        terminalOutcome = "success";
+      } else if (["response.failed", "response.incomplete", "response.cancelled", "error"].includes(event.type)
+        || ["failed", "incomplete", "cancelled"].includes(event.status)
+        || ["failed", "incomplete", "cancelled"].includes(event.response?.status)) {
+        terminalOutcome = "failure";
+      }
     } catch {
       // Partial SSE records are inspected again after the next chunk.
     }
   }
+  return terminalOutcome;
 }
 
-function monitoredBody(upstream, lease) {
+function monitoredBody(upstream, lease, requestSignal, requireTerminal) {
   if (!upstream.body) return null;
   const reader = upstream.body.getReader();
   const decoder = new TextDecoder();
   let pending = "";
+  let terminalOutcome = null;
   return new ReadableStream({
     async pull(controller) {
       try {
         const { done, value } = await reader.read();
         if (done) {
-          if (pending) inspectSseText(pending, lease.id, lease.connectionId);
-          await succeedCodexNativeLease(lease.id, { headers: upstream.headers });
+          pending += decoder.decode();
+          if (pending) {
+            terminalOutcome = inspectSseText(pending, lease.id, lease.connectionId)
+              || terminalOutcome;
+          }
+          if (!requestSignal?.aborted && (!requireTerminal || terminalOutcome === "success")) {
+            await succeedCodexNativeLease(lease.id, { headers: upstream.headers });
+          } else if (!requestSignal?.aborted) {
+            await failCodexNativeLease(lease.id, {
+              status: 502,
+              error: terminalOutcome === "failure"
+                ? "Codex HTTP compaction returned a terminal failure"
+                : "Codex HTTP compaction ended before a terminal response event",
+            });
+          }
           releaseCodexNativeLease(lease.id);
           controller.close();
           return;
         }
         const text = pending + decoder.decode(value, { stream: true });
-        const boundary = text.lastIndexOf("\n\n");
-        if (boundary >= 0) {
-          inspectSseText(text.slice(0, boundary + 2), lease.id, lease.connectionId);
-          pending = text.slice(boundary + 2);
+        const separator = /\r?\n\r?\n/g;
+        let match;
+        let boundary = 0;
+        while ((match = separator.exec(text))) boundary = separator.lastIndex;
+        if (boundary > 0) {
+          terminalOutcome = inspectSseText(
+            text.slice(0, boundary),
+            lease.id,
+            lease.connectionId
+          ) || terminalOutcome;
+          pending = text.slice(boundary);
         } else {
-          pending = text.slice(-16_384);
+          pending = requireTerminal ? text : text.slice(-16_384);
         }
         controller.enqueue(value);
       } catch (error) {
+        if (requestSignal?.aborted) {
+          releaseCodexNativeLease(lease.id);
+          controller.close();
+          return;
+        }
         await failCodexNativeLease(lease.id, { status: 502, error: error.message });
         releaseCodexNativeLease(lease.id);
         controller.error(error);
@@ -125,6 +162,17 @@ function monitoredBody(upstream, lease) {
       releaseCodexNativeLease(lease.id);
     },
   });
+}
+
+function requestIsCompaction(body) {
+  const raw = body?.client_metadata?.["x-codex-turn-metadata"];
+  let metadata = raw;
+  if (typeof raw === "string") {
+    try { metadata = JSON.parse(raw); } catch { return false; }
+  }
+  return typeof metadata === "object"
+    && metadata !== null
+    && String(metadata.request_kind || "").trim().toLowerCase() === "compaction";
 }
 
 function shouldRetryStatus(status, operation) {
@@ -160,6 +208,7 @@ export async function relayCodexNativeHttp(request, {
   if (routingBody === null) return errorResponse(400, "invalid_json", "Invalid JSON body");
   const model = typeof routingBody?.model === "string" ? routingBody.model.trim() : null;
   const clientVersion = await resolveCodexClientVersion(request);
+  const requireTerminal = operation === "responses" && requestIsCompaction(routingBody);
 
   if (validateModel) {
     if (!model || model.includes("/")) {
@@ -213,21 +262,30 @@ export async function relayCodexNativeHttp(request, {
         signal: request.signal,
       }, proxyOptions(lease.proxy));
     } catch (error) {
+      if (request.signal.aborted) {
+        releaseCodexNativeLease(lease.id);
+        return errorResponse(499, "request_aborted", "Request aborted");
+      }
       await failCodexNativeLease(lease.id, { status: 502, error: error.message });
       releaseCodexNativeLease(lease.id);
       excludeConnectionIds.add(lease.connectionId);
       lastError = error.message;
-      if (allowTransportReplay) continue;
+      if (allowTransportReplay && !requireTerminal) continue;
       return errorResponse(502, "codex_upstream_transport_error", error.message);
     }
 
+    if (request.signal.aborted) {
+      await upstream.body?.cancel().catch(() => {});
+      releaseCodexNativeLease(lease.id);
+      return errorResponse(499, "request_aborted", "Request aborted");
+    }
     ingestCodexNativeQuota(lease.connectionId, upstream.headers, "headers");
     const modelsEtag = upstream.headers.get("x-models-etag");
     if (modelsEtag) {
       invalidateCodexNativeCatalog(lease.connectionId, modelsEtag, clientVersion);
     }
 
-    if (!upstream.ok && shouldRetryStatus(upstream.status, operation)) {
+    if (!upstream.ok && shouldRetryStatus(upstream.status, operation) && !requireTerminal) {
       const bodyBytes = new Uint8Array(await upstream.arrayBuffer());
       const detail = new TextDecoder().decode(bodyBytes).slice(0, 512);
       await failCodexNativeLease(lease.id, { status: upstream.status, error: detail });
@@ -253,6 +311,18 @@ export async function relayCodexNativeHttp(request, {
     }
 
     if (!upstream.body) {
+      if (requireTerminal) {
+        await failCodexNativeLease(lease.id, {
+          status: 502,
+          error: "Codex HTTP compaction ended without a response body",
+        });
+        releaseCodexNativeLease(lease.id);
+        return errorResponse(
+          502,
+          "codex_http_compaction_incomplete",
+          "Codex HTTP compaction ended without a response body"
+        );
+      }
       await succeedCodexNativeLease(lease.id, { headers: upstream.headers });
       releaseCodexNativeLease(lease.id);
       return new Response(null, {
@@ -261,7 +331,7 @@ export async function relayCodexNativeHttp(request, {
         headers: responseHeaders,
       });
     }
-    return new Response(monitoredBody(upstream, lease), {
+    return new Response(monitoredBody(upstream, lease, request.signal, requireTerminal), {
       status: upstream.status,
       statusText: upstream.statusText,
       headers: responseHeaders,

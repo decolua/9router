@@ -148,4 +148,142 @@ describe("Codex Native transparent HTTP transport", () => {
     expect(response.status).toBe(502);
     expect(mocks.fetch).toHaveBeenCalledTimes(1);
   });
+
+  it("releases an aborted Responses request without account failure or transport replay", async () => {
+    const controller = new AbortController();
+    mocks.fetch.mockImplementation(async (_url, options) => {
+      controller.abort();
+      const error = new Error("aborted");
+      error.name = "AbortError";
+      throw error;
+    });
+    const { relayCodexNativeHttp } = await import("@/lib/codexNative/relay.js");
+    const response = await relayCodexNativeHttp(new Request("http://localhost/v1/codex/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: '{"model":"gpt-native","input":[]}',
+      signal: controller.signal,
+    }), {
+      path: "responses",
+      operation: "responses",
+      validateModel: true,
+      allowTransportReplay: true,
+    });
+    expect(response.status).toBe(499);
+    expect(mocks.failure).not.toHaveBeenCalled();
+    expect(mocks.acquire).toHaveBeenCalledTimes(1);
+    expect(mocks.release).toHaveBeenCalledWith("lease-1");
+  });
+
+  it("marks an incomplete HTTP compaction stream as failed instead of successful", async () => {
+    mocks.fetch.mockResolvedValue(new Response(
+      'data: {"type":"response.output_text.delta","delta":"partial"}\n\n',
+      { headers: { "content-type": "text/event-stream" } }
+    ));
+    const { relayCodexNativeHttp } = await import("@/lib/codexNative/relay.js");
+    const response = await relayCodexNativeHttp(new Request("http://localhost/v1/codex/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "gpt-native",
+        input: [],
+        client_metadata: {
+          "x-codex-turn-metadata": JSON.stringify({ request_kind: "compaction" }),
+        },
+      }),
+    }), {
+      path: "responses",
+      operation: "responses",
+      validateModel: true,
+      allowTransportReplay: true,
+    });
+    await response.text();
+    expect(mocks.failure).toHaveBeenCalledWith("lease-1", expect.objectContaining({ status: 502 }));
+    expect(mocks.success).not.toHaveBeenCalled();
+    expect(mocks.release).toHaveBeenCalledWith("lease-1");
+  });
+
+  it("accepts a large CRLF-delimited compaction terminal event split across chunks", async () => {
+    const encoder = new TextEncoder();
+    const terminal = `data: ${JSON.stringify({
+      type: "response.completed",
+      response: { status: "completed", padding: "x".repeat(32_768) },
+    })}\r\n\r\n`;
+    mocks.fetch.mockResolvedValue(new Response(new ReadableStream({
+      start(controller) {
+        for (let offset = 0; offset < terminal.length; offset += 4096) {
+          controller.enqueue(encoder.encode(terminal.slice(offset, offset + 4096)));
+        }
+        controller.close();
+      },
+    }), { headers: { "content-type": "text/event-stream" } }));
+    const { relayCodexNativeHttp } = await import("@/lib/codexNative/relay.js");
+    const response = await relayCodexNativeHttp(new Request("http://localhost/v1/codex/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "gpt-native",
+        input: [],
+        client_metadata: {
+          "x-codex-turn-metadata": JSON.stringify({ request_kind: "compaction" }),
+        },
+      }),
+    }), {
+      path: "responses",
+      operation: "responses",
+      validateModel: true,
+      allowTransportReplay: true,
+    });
+    await response.text();
+    expect(mocks.success).toHaveBeenCalledWith("lease-1", expect.any(Object));
+    expect(mocks.failure).not.toHaveBeenCalled();
+  });
+
+  it("does not replay a failed HTTP compaction through another account", async () => {
+    mocks.fetch.mockRejectedValue(new Error("socket reset"));
+    const { relayCodexNativeHttp } = await import("@/lib/codexNative/relay.js");
+    const response = await relayCodexNativeHttp(new Request("http://localhost/v1/codex/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "gpt-native",
+        input: [],
+        client_metadata: {
+          "x-codex-turn-metadata": JSON.stringify({ request_kind: "compaction" }),
+        },
+      }),
+    }), {
+      path: "responses",
+      operation: "responses",
+      validateModel: true,
+      allowTransportReplay: true,
+    });
+    expect(response.status).toBe(502);
+    expect(mocks.acquire).toHaveBeenCalledTimes(1);
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a successful HTTP compaction response without a body", async () => {
+    mocks.fetch.mockResolvedValue(new Response(null, { status: 200 }));
+    const { relayCodexNativeHttp } = await import("@/lib/codexNative/relay.js");
+    const response = await relayCodexNativeHttp(new Request("http://localhost/v1/codex/responses", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        model: "gpt-native",
+        input: [],
+        client_metadata: {
+          "x-codex-turn-metadata": JSON.stringify({ request_kind: "compaction" }),
+        },
+      }),
+    }), {
+      path: "responses",
+      operation: "responses",
+      validateModel: true,
+      allowTransportReplay: true,
+    });
+    expect(response.status).toBe(502);
+    expect(mocks.failure).toHaveBeenCalledWith("lease-1", expect.objectContaining({ status: 502 }));
+    expect(mocks.success).not.toHaveBeenCalled();
+  });
 });
