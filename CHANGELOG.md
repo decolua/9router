@@ -1,3 +1,25 @@
+# v0.5.55-local.5 (2026-08-15)
+
+Local install only — not an upstream release.
+
+## Features
+- **Muse Code** (`muse`): Meta's terminal coding agent now routes through 9Router.
+  - New provider `muse-code` (alias `mc`, Meta Model API key) speaking the OpenAI
+    Responses API — pick `mc/muse-spark-1.2` (or any other routed model) in `/model`.
+  - New executor `MuseCodeExecutor` flattens Muse's `namespace` tool groups into
+    flat function tools so chat upstreams see every tool; clamps oversized
+    `max_output_tokens`.
+  - New catalog endpoint `GET /v1/muse-code/models` serves Muse's proprietary
+    model schema (`{id, family, reasoning, tool_call, modalities, limit, …}`) with
+    **every** routed 9Router model (841 entries) — Muse's `/model` menu shows all.
+  - New CLI Tools dashboard card (`Muse Code`) with install detection + guided
+    launch command (`META_API_KEY=… muse --provider meta --base-url …/v1`).
+    Windows: no native Muse build — detected via WSL2 (`wsl which muse`) and the
+    guide documents the WSL2 route (host 9Router stays at localhost:20128).
+  - Translator: Responses → Chat now flattens `namespace` tools (matches
+    muse-shim) — fixes tools silently dropped when any Responses client sends
+    Muse-style tool groups.
+
 # v0.5.55-local.1 (2026-08-15)
 
 Local install only — not an upstream release.

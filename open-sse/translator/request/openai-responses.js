@@ -175,10 +175,22 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   // explicit `name` field and cannot be represented as Chat Completions function declarations.
   // Filter them out to avoid sending nameless functionDeclarations to downstream providers
   // such as Gemini, which strictly validates function names.
-  const responseTools = [
-    ...(Array.isArray(body.tools) ? body.tools : []),
-    ...additionalTools,
-  ];
+  // Muse Code bundles tools as { type:"namespace", name, tools:[...] } groups; flatten
+  // children into standalone tools so chat providers see every function (same as muse-shim).
+  const rawTools = Array.isArray(body.tools) ? body.tools : [];
+  const flattenedTools = [];
+  for (const tool of rawTools) {
+    if (tool && typeof tool === "object" && tool.type === "namespace" && Array.isArray(tool.tools)) {
+      for (const child of tool.tools) {
+        if (child && typeof child === "object" && typeof child.name === "string" && child.name.trim()) {
+          flattenedTools.push(child);
+        }
+      }
+    } else {
+      flattenedTools.push(tool);
+    }
+  }
+  const responseTools = [...flattenedTools, ...additionalTools];
   if (responseTools.length > 0) {
     result.tools = responseTools
       .map(tool => {

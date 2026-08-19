@@ -371,6 +371,41 @@ amp --model "{{model}}"
       { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro", alias: "gemini", defaultValue: "gemini/gemini-3.1-pro" },
     ],
   },
+  muse: {
+    id: "muse",
+    name: "Muse Code",
+    image: "/providers/muse.png",
+    color: "#0866FF",
+    description: "Meta Muse Code CLI — terminal coding agent on Muse Spark",
+    docsUrl: "https://dev.meta.ai/docs/muse-code.md",
+    configType: "guide",
+    defaultCommand: "muse",
+    installUrl: "https://dev.meta.ai/docs/muse-code.md",
+    modelAliases: ["muse-spark-1.2", "muse-spark-1.2-contributor", "muse-spark-1.1"],
+    notes: [
+      { type: "info", text: "Muse Code connects to OpenAI-compatible bases. 9Router serves the Muse model catalog at {{baseUrl}}/muse-code/models so /model picks up every routed model." },
+      { type: "info", text: "Launch: META_API_KEY=\"{{apiKey}}\" muse --provider meta --base-url \"{{baseUrl}}\". Use /model inside Muse to pick any 9Router model." },
+      { type: "warning", text: "No native Windows build — install Muse inside WSL2 (macOS/Linux: curl -fsSL https://dev.meta.ai/install.sh | sh). From WSL2, the 9Router endpoint stays reachable at http://localhost:20128." },
+    ],
+    guideSteps: [
+      { step: 1, title: "Install Muse Code", desc: "macOS/Linux: curl -fsSL https://dev.meta.ai/install.sh | sh. Windows: install WSL2, then run the same command inside the Linux distro." },
+      { step: 2, title: "API Key", type: "apiKeySelector" },
+      { step: 3, title: "Base URL", value: "{{baseUrl}}", copyable: true },
+      { step: 4, title: "Select Model", type: "modelSelector" },
+      { step: 5, title: "Launch", desc: "Run Muse with the 9Router endpoint and your key:", value: "META_API_KEY=\"{{apiKey}}\" muse --provider meta --base-url \"{{baseUrl}}\"", copyable: true },
+    ],
+    codeBlock: {
+      language: "bash",
+      code: `# 1) Install Muse Code (once) — macOS/Linux, or inside WSL2 on Windows
+curl -fsSL https://dev.meta.ai/install.sh | sh
+
+# 2) Launch routed through 9Router
+export META_API_KEY="{{apiKey}}"
+muse --provider meta --base-url "{{baseUrl}}"
+
+# Inside Muse: /model → pick any 9Router model (e.g. mc/muse-spark-1.2)`,
+    },
+  },
   "grok-build": {
     id: "grok-build",
     name: "Grok Build",
