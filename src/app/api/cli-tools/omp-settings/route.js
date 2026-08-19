@@ -115,16 +115,34 @@ const resolveProjectTarget = async (projectIndex) => {
   try {
     const stat = await fs.stat(roots[idx]);
     if (!stat.isDirectory()) return { error: "Project root is not a directory" };
+  } catch (err) {
+    const code = err?.code;
+    if (code === "ENOENT") {
+      return { error: "Project root does not exist on this machine", code };
+    }
+    return {
+      error: `Project root is unreadable (${code || "unknown"}): ${roots[idx]}`,
+      code: code || "unknown",
+    };
+  }
+  try {
     realRoot = await fs.realpath(roots[idx]);
-  } catch {
-    return { error: "Project root does not exist on this machine" };
+  } catch (err) {
+    const code = err?.code;
+    if (code === "ENOENT") {
+      return { error: "Project root does not exist on this machine", code };
+    }
+    return {
+      error: `Project root is unreadable (${code || "unknown"}): ${roots[idx]}`,
+      code: code || "unknown",
+    };
   }
 
   const dir = path.join(realRoot, ".omp");
   const configPath = path.join(dir, "config.yml");
 
   if (path.resolve(configPath) === path.resolve(getConfigPath())) {
-    return { error: "Project config resolves to the global agent config; use scope \"global\"" };
+    return { error: "Project config resolves to the global agent config; use scope \"global\"", code: "EGLOBALALIAS" };
   }
 
   return { scope: "project", path: configPath, dir, root: realRoot };
@@ -803,9 +821,20 @@ export async function DELETE(request) {
     // PREFLIGHT: read and validate every role layer before touching anything.
     // Any corrupt/unsafe layer aborts the whole operation with no writes.
     const roleTargets = [{ scope: "global", path: getConfigPath(), root: null }];
-    for (let i = 0; i < getProjectRootCandidates().length; i++) {
+    const projectRoots = getProjectRootCandidates();
+    for (let i = 0; i < projectRoots.length; i++) {
       const target = await resolveProjectTarget(i);
-      if (!target.error) roleTargets.push(target);
+      // This layer IS the global layer, already in roleTargets — skipping it
+      // loses nothing. Every other failure must abort: a configured root we
+      // cannot read keeps a role pointing at the model we are about to delete.
+      if (target.code === "EGLOBALALIAS") continue;
+      if (target.error) {
+        return NextResponse.json(
+          { error: `${projectRoots[i]} could not be resolved (${target.error}). Fix it before reset; nothing was modified.` },
+          { status: 409 }
+        );
+      }
+      roleTargets.push(target);
     }
 
     const layers = [];

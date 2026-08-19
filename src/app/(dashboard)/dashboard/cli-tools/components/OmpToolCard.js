@@ -499,8 +499,10 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
                             key={model}
                             onClick={() => {
                               if (model === roleAssignments.default) {
+                                markRoleTouched(currentScopeKey, "default");
                                 setRoleAssignments((prev) => ({ ...prev, default: "" }));
                               } else {
+                                markRoleTouched(currentScopeKey, "default");
                                 setRoleAssignments((prev) => ({ ...prev, default: model }));
                               }
                             }}
@@ -520,6 +522,12 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
                                   const res = await fetch(`/api/cli-tools/omp-settings?model=${encodeURIComponent(model)}`, { method: "DELETE" });
                                   if (res.ok) {
                                     setSelectedModels((prev) => prev.filter((id) => id !== model));
+                                    // DELETE already blanked these server-side, so
+                                    // this only mirrors disk into the picker. Do NOT
+                                    // markRoleTouched: that would make a later Apply
+                                    // PATCH "" and clobber any external reassignment
+                                    // made since, which checkStatus() cannot correct
+                                    // while the scope is dirty.
                                     setRoleAssignments((prev) => {
                                       const next = { ...prev };
                                       for (const role of Object.keys(next)) {

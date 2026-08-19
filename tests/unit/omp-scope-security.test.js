@@ -337,6 +337,62 @@ describe("DELETE transaction", () => {
     // The catalog never changed.
     expect(readFileSync(modelsFile(), "utf-8")).toBe(modelsBefore);
   });
+
+  // A configured root that cannot be resolved must abort the whole DELETE.
+  // Silently skipping it (the pre-fix `if (!target.error)`) cleaned only the
+  // reachable layers while removing the model from the catalog, leaving the
+  // skipped root pointing at a model that no longer exists.
+  it("aborts with no writes when a configured root is absent", async () => {
+    const globalBefore = readFileSync(globalConfig(), "utf-8");
+    const modelsBefore = readFileSync(modelsFile(), "utf-8");
+    process.env.OMP_PROJECT_ROOTS = join(tmpWork, "no-such-root");
+
+    const res = await del("?model=m1");
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/nothing was modified/);
+    expect(readFileSync(globalConfig(), "utf-8")).toBe(globalBefore);
+    expect(readFileSync(modelsFile(), "utf-8")).toBe(modelsBefore);
+  });
+
+  it("aborts with no writes when a configured root is unreadable", async () => {
+    const globalBefore = readFileSync(globalConfig(), "utf-8");
+    const modelsBefore = readFileSync(modelsFile(), "utf-8");
+    // A regular file as a path component yields ENOTDIR deterministically on
+    // every platform, unlike chmod 000 which is a no-op for root and on Windows.
+    const notADir = join(tmpWork, "regular-file");
+    writeFileSync(notADir, "x");
+    process.env.OMP_PROJECT_ROOTS = join(notADir, "child");
+
+    const res = await del("?model=m1");
+
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toContain(join(notADir, "child"));
+    expect(readFileSync(globalConfig(), "utf-8")).toBe(globalBefore);
+    expect(readFileSync(modelsFile(), "utf-8")).toBe(modelsBefore);
+  });
+
+  // The one legitimate skip: that layer IS the global layer, already cleaned.
+  it("skips a root aliasing the global config and still deletes", async () => {
+    process.env.OMP_PROJECT_ROOTS = tmpHome;
+
+    const res = await del("?model=m1");
+
+    expect(res.status).toBe(200);
+    expect(parseYAML(readFileSync(globalConfig(), "utf-8")).modelRoles.default).toBeUndefined();
+    const ids = parseYAML(readFileSync(modelsFile(), "utf-8")).providers["9router"].models.map((m) => m.id);
+    expect(ids).toEqual(["m2"]);
+  });
+
+  it("deletes against global only when no roots are configured", async () => {
+    delete process.env.OMP_PROJECT_ROOTS;
+
+    const res = await del("?model=m1");
+
+    expect(res.status).toBe(200);
+    const ids = parseYAML(readFileSync(modelsFile(), "utf-8")).providers["9router"].models.map((m) => m.id);
+    expect(ids).toEqual(["m2"]);
+  });
 });
 
 describe("custom role discovery", () => {
