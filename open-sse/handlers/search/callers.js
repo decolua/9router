@@ -29,6 +29,8 @@
  * @property {Record<string,unknown>} [providerSpecificData]
  */
 
+import { assertPublicUrl } from "../../../src/shared/utils/ssrfGuard.js";
+
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 /**
@@ -63,12 +65,31 @@ export function getProviderSetting(params, key) {
 
 /**
  * Resolve base URL with optional override from providerOptions.baseUrl.
+ *
+ * The override is client-controlled and therefore SSRF-hardened: only public
+ * http(s) URLs are accepted (internal/private/loopback/metadata addresses are
+ * rejected via assertPublicUrl). The provider's own configured baseUrl is
+ * trusted as-is (admin-controlled).
+ *
  * @param {SearchProviderConfig} config
  * @param {SearchRequestParams} params
  * @returns {string}
  */
 export function resolveBaseUrl(config, params) {
   const override = getProviderSetting(params, "baseUrl");
+  if (override) {
+    // SSRF guard: client-supplied base URLs must be public http(s) only.
+    let parsed;
+    try {
+      parsed = new URL(override);
+    } catch {
+      throw new Error(`Invalid baseUrl: ${override}`);
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      throw new Error(`Invalid baseUrl protocol: ${parsed.protocol}`);
+    }
+    assertPublicUrl(override);
+  }
   return (override || config.baseUrl).replace(/\/+$/, "");
 }
 
