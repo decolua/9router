@@ -96,6 +96,71 @@ describe("request normalization", () => {
     expect(userMessage.content).toBe("hello\nworld");
   });
 
+  it("translateRequest fills every missing result in a partial parallel tool batch", () => {
+    const body = {
+      messages: [
+        { role: "user", content: "Run both tools." },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            { id: "call_a", type: "function", function: { name: "alpha", arguments: "{}" } },
+            { id: "call_b", type: "function", function: { name: "beta", arguments: "{}" } },
+          ],
+        },
+        { role: "tool", tool_call_id: "call_a", content: "alpha result" },
+      ],
+    };
+
+    const result = translateRequest(FORMATS.OPENAI, FORMATS.OPENAI, "gpt-5.6-luna", body, true);
+    expect(result.messages.slice(2)).toEqual([
+      { role: "tool", tool_call_id: "call_a", content: "alpha result" },
+      { role: "tool", tool_call_id: "call_b", content: "[No response received]" },
+    ]);
+  });
+
+  it("translateRequest preserves duplicate and orphan tool output as user context", () => {
+    const body = {
+      messages: [
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [
+            { id: "call_a", type: "function", function: { name: "alpha", arguments: "{}" } },
+          ],
+        },
+        { role: "tool", tool_call_id: "call_a", content: "first" },
+        { role: "tool", tool_call_id: "call_a", content: "duplicate" },
+        { role: "tool", tool_call_id: "call_unknown", content: "orphan" },
+      ],
+    };
+
+    const result = translateRequest(FORMATS.OPENAI, FORMATS.OPENAI, "gpt-5.6-luna", body, true);
+    expect(result.messages[1]).toEqual({ role: "tool", tool_call_id: "call_a", content: "first" });
+    expect(result.messages.slice(2).map((message) => message.role)).toEqual(["user", "user"]);
+    expect(result.messages[2].content).toContain("duplicate");
+    expect(result.messages[3].content).toContain("orphan");
+  });
+
+  it("translateRequest fills a tool result when history ends on a tool call", () => {
+    const body = {
+      messages: [{
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          { id: "call_a", type: "function", function: { name: "alpha", arguments: "{}" } },
+        ],
+      }],
+    };
+
+    const result = translateRequest(FORMATS.OPENAI, FORMATS.OPENAI, "gpt-5.6-luna", body, true);
+    expect(result.messages[1]).toEqual({
+      role: "tool",
+      tool_call_id: "call_a",
+      content: "[No response received]",
+    });
+  });
+
   it("translateRequest strips unsupported Anthropic output_config for MiniMax Claude-compatible endpoints", () => {
     const body = {
       model: "MiniMax-M2.7",
