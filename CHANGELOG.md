@@ -1,6 +1,17 @@
 # Unreleased
 
 ## Fixes
+- **Router**: `estimateInputTokens` no longer measures inlined images as prose. It
+  stringified the whole body and divided by 4, but base64 runs ~4/3 of the raw bytes, so
+  a 3MB phone photo scored over a million tokens where a provider bills it around a
+  thousand. The estimate feeds the per-model context check in `services/combo.js`, so one
+  image made every model in a combo look too small and the request was refused with
+  `context_length_exceeded` before it was ever sent — observed on Yggdrasil at ~1083798
+  tokens against a 1048576 window, while the client's own meter read ~20K. Compaction was
+  no help: compacting 226 history items moved the total by 1516 tokens, because the bulk
+  was never history. Images are now excluded from the character count and charged a flat
+  1600 each, the ceiling of the published per-image ranges. `estimateUsage` shares the
+  estimator, so recorded usage and cost stop being inflated by attachments too.
 - **Router**: the orchestration nudge is removed (`rtk/orchestrationNudge.js`,
   ADR 0003, now marked superseded). It stated a live novel-context count whenever a
   session passed a delegation cap of 6. Two measurements retired it. The cap was below

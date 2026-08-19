@@ -335,16 +335,50 @@ export function mergeUsage(prev, next) {
  * Estimate input tokens from request body
  * Calculate total body size for more accurate estimation
  */
+/**
+ * Flat per-image cost. Vision models tile an image rather than tokenizing its
+ * bytes, so cost tracks dimensions, not payload size — and dimensions are not
+ * knowable here without decoding. 1600 is the ceiling of the ranges the major
+ * providers publish (Anthropic caps around 1600 for a 1568px edge; OpenAI's
+ * high-detail 1024x1024 lands near 1105), so a request this admits genuinely
+ * fits and the estimate errs toward refusing too little rather than too much.
+ */
+const IMAGE_TOKEN_ESTIMATE = 1600;
+
+/** A long string that is plausibly base64 — the alphabet, allowing wrapped whitespace. */
+function looksBase64(value) {
+  return value.length > 1024 && /^[A-Za-z0-9+/=\s]+$/.test(value.slice(0, 256));
+}
+
 export function estimateInputTokens(body) {
   if (!body || typeof body !== "object") return 0;
 
   try {
-    // Calculate total body size (includes messages, tools, system, thinking config, etc.)
-    const bodyStr = JSON.stringify(body);
-    const totalChars = bodyStr.length;
+    // Images must NOT be measured as text. An inlined image arrives base64 —
+    // `data:image/jpeg;base64,...` in OpenAI content parts, a bare
+    // `source.data` string in Anthropic ones — and base64 is ~4/3 of the raw
+    // bytes, so char/4 scores a 3MB photo at over a million tokens while the
+    // provider bills it around a thousand. That gap is not cosmetic: this
+    // estimate feeds the per-model context check in services/combo.js, so a
+    // single phone photo made every model in a combo look too small and the
+    // request was refused with context_length_exceeded before it was ever
+    // sent. Compaction cannot help, because the bulk was never history.
+    let images = 0;
+    const bodyStr = JSON.stringify(body, (key, value) => {
+      if (typeof value !== "string") return value;
+      if (value.startsWith("data:") && value.includes(";base64,")) {
+        images++;
+        return "";
+      }
+      if (key === "data" && looksBase64(value)) {
+        images++;
+        return "";
+      }
+      return value;
+    });
 
     // Estimate: ~4 chars per token (rough average across all tokenizers)
-    return Math.ceil(totalChars / 4);
+    return Math.ceil(bodyStr.length / 4) + images * IMAGE_TOKEN_ESTIMATE;
   } catch (err) {
     // Fallback if stringify fails
     return 0;
