@@ -106,8 +106,11 @@ export default function AccountActions({ connection, resetCredits, onChanged }) 
   };
 
   const handleToggleAutoPing = async (next) => {
-    if (!settingsKey) return;
+    // Concurrent toggles would each read the same settings object and could
+    // land out of order, persisting a value the user did not pick last.
+    if (!settingsKey || busy === "autoPing") return;
     const previous = autoPing;
+    setBusy("autoPing");
     setAutoPing(next);
     setActionError(null);
     try {
@@ -126,6 +129,8 @@ export default function AccountActions({ connection, resetCredits, onChanged }) 
     } catch {
       setAutoPing(previous);
       setActionError("Could not change auto-ping.");
+    } finally {
+      setBusy(null);
     }
   };
 
@@ -135,16 +140,17 @@ export default function AccountActions({ connection, resetCredits, onChanged }) 
     try {
       const res = await fetch(`/api/providers/${connection.id}`, { method: "DELETE" });
       if (!res.ok) {
-        // Closing the modal on failure would read as a successful delete.
         setActionError(`Could not delete this connection (${res.status}).`);
         return;
       }
+      // Closed only on success — a `finally` here would dismiss the dialog on
+      // failure too, which reads as a delete that worked.
+      setConfirmDelete(false);
       router.push("/dashboard/quota");
     } catch {
       setActionError("Could not reach the server.");
     } finally {
       setBusy(null);
-      setConfirmDelete(false);
     }
   };
 
@@ -198,7 +204,12 @@ export default function AccountActions({ connection, resetCredits, onChanged }) 
               <p className="text-[13px] font-medium">Auto-ping</p>
               <p className="text-[11.5px] text-text-muted">{AUTO_PING_TOOLTIPS[provider]}</p>
             </div>
-            <Toggle size="sm" checked={autoPing} onChange={handleToggleAutoPing} />
+            <Toggle
+              size="sm"
+              checked={autoPing}
+              disabled={busy === "autoPing"}
+              onChange={handleToggleAutoPing}
+            />
           </div>
         )}
 

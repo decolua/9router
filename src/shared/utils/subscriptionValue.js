@@ -8,19 +8,15 @@
 const MS_PER_DAY = 86400000;
 
 /**
- * Whole months elapsed since a connection was created, floored at 1.
+ * Number of calendar months the sub has been held, floored at 1.
  *
- * A sub billed monthly has been paid for at least once the moment it exists,
- * so a 3-day-old account is "1 month paid", not 0.1 — the alternative divides
- * by a fraction and reports an absurdly inflated multiple in week one.
+ * Counted from the same month list that `lifetimePaidFor` charges, so the
+ * figure shown ("$20/mo x 2 months") always matches the amount billed. An
+ * elapsed-days count disagreed with it across a month boundary: a sub created
+ * on 31 July and viewed on 19 August reported one month but charged two.
  */
 export function monthsSince(createdAt) {
-  if (!createdAt) return 1;
-  const start = new Date(createdAt);
-  if (Number.isNaN(start.getTime())) return 1;
-  const days = (Date.now() - start.getTime()) / MS_PER_DAY;
-  if (!Number.isFinite(days) || days < 0) return 1;
-  return Math.max(1, Math.floor(days / 30.44) + 1);
+  return monthKeysSince(createdAt).length;
 }
 
 export function daysSince(createdAt) {
@@ -57,9 +53,13 @@ export function monthKeysSince(createdAt) {
  * numbers wrong after a plan change.
  */
 export function priceForMonth(monthKey, history, currentCost) {
+  // A null amount is a deliberate "price cleared" entry, not junk — dropping
+  // it would leave later months charged at the price that was just removed.
   const sorted = Array.isArray(history)
     ? [...history]
-        .filter((h) => h && typeof h.effectiveFrom === "string" && typeof h.amount === "number")
+        .filter((h) => h
+          && typeof h.effectiveFrom === "string"
+          && (typeof h.amount === "number" || h.amount === null))
         .sort((a, b) => a.effectiveFrom.localeCompare(b.effectiveFrom))
     : [];
 

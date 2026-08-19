@@ -185,7 +185,7 @@ export default function AccountDetailPage({ params }) {
         <Tile
           label="API value"
           value={fmtMoney(value.lifetimeCost)}
-          foot={multiple ? `${fmtMultiple(multiple)}× what you paid` : "at list prices"}
+          foot={multiple != null ? `${fmtMultiple(multiple)}× what you paid` : "at list prices"}
         />
       </div>
 
