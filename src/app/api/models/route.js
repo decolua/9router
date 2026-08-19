@@ -27,12 +27,19 @@ export async function GET() {
           fullModel,
           routedModel,
           alias: modelAliases[fullModel] || m.model,
+          // Pass the thinking capabilities through as well: the CLI-tools
+          // writers (models.yml) need thinkingFormat to pick the right
+          // `thinking.mode`, and narrowing here silently degrades every
+          // adaptive/budget model to a generic `effort` ladder.
           caps: {
             vision: c.vision,
             search: c.search,
             reasoning: c.reasoning,
             contextWindow: c.contextWindow,
             maxOutput: c.maxOutput,
+            thinkingFormat: c.thinkingFormat,
+            thinkingCanDisable: c.thinkingCanDisable,
+            thinkingRange: c.thinkingRange,
           },
         };
       });

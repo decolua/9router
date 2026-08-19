@@ -7,6 +7,7 @@ import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 import { OMP_MODEL_ROLES, emptyOmpRoleAssignments } from "@/shared/constants/ompRoles";
+import { toOmpCapabilityPayload, formatContextWindow } from "@/shared/constants/ompModelSchema";
 import { persistOmpModelSelection } from "./ompModelSelection";
 
 
@@ -25,10 +26,51 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [selectedModels, setSelectedModels] = useState([]);
   const [catalogModels, setCatalogModels] = useState([]);
-  const [roleAssignments, setRoleAssignments] = useState(emptyOmpRoleAssignments);
+  // Role drafts are keyed by scope ("global" | "project:<index>"). A single
+  // shared map would leak edits across layers: editing a project role then
+  // switching to Global would apply it to the wrong file.
+  const [roleDrafts, setRoleDrafts] = useState(() => ({ global: emptyOmpRoleAssignments() }));
+  const [roleScope, setRoleScope] = useState("global");
+  const [projectIndex, setProjectIndex] = useState(0);
+  const [scopeInfo, setScopeInfo] = useState(null);
+  const [scopeTouched, setScopeTouched] = useState(false);
   const selectedModelsRef = useRef([]);
   const modalInitialModelsRef = useRef([]);
+  // Which layers hold unapplied edits, keyed the same way, so a catalog save
+  // never discards pending role changes for any layer.
+  const dirtyRoleKeys = useRef(new Set());
+  // Which individual role ids the user edited, per scope key. Apply sends only
+  // these: shipping the whole map would clear assignments that merely point at
+  // models absent from the current picker (manual catalog entries, roles set
+  // directly in omp), which is silent data loss.
+  const touchedRoleIds = useRef(new Map());
+  const markRoleTouched = (key, roleId) => {
+    if (!touchedRoleIds.current.has(key)) touchedRoleIds.current.set(key, new Set());
+    touchedRoleIds.current.get(key).add(roleId);
+  };
+
+  const scopeKeyFor = (scope, index) => (scope === "project" ? `project:${index}` : "global");
+  const currentScopeKey = scopeKeyFor(roleScope, projectIndex);
+  const roleAssignments = roleDrafts[currentScopeKey] || emptyOmpRoleAssignments();
+  const setRoleAssignments = (next) => {
+    dirtyRoleKeys.current.add(currentScopeKey);
+    setRoleDrafts((prev) => ({
+      ...prev,
+      [currentScopeKey]:
+        typeof next === "function" ? next(prev[currentScopeKey] || emptyOmpRoleAssignments()) : next,
+    }));
+  };
   const effectiveSelectedApiKey = selectedApiKey || apiKeys?.[0]?.key || "";
+  // Async checkStatus() reads scope through refs: by the time a response lands
+  // the user may have switched layers, and a stale closure would write the
+  // fetched roles into the wrong draft.
+  const roleScopeRef = useRef(roleScope);
+  const projectIndexRef = useRef(projectIndex);
+  // Set synchronously by the selectors so an in-flight response cannot
+  // re-apply auto-detection over a choice the user just made.
+  const scopeTouchedRef = useRef(false);
+  useEffect(() => { roleScopeRef.current = roleScope; }, [roleScope]);
+  useEffect(() => { projectIndexRef.current = projectIndex; }, [projectIndex]);
 
 
   useEffect(() => {
@@ -36,12 +78,6 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
   }, [selectedModels]);
 
 
-  useEffect(() => {
-    if (isExpanded) {
-      checkStatus();
-      fetchModelAliases();
-    }
-  }, [isExpanded]);
 
 
   async function fetchModelAliases() {
@@ -58,15 +94,41 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
       console.log("Error fetching model aliases:", error);
     }
   };
+  // Keep only assignments whose model is still selected. Custom roles (omp
+  // supports more than the ten built-ins) must survive the prune, or applying
+  // would silently clear a role the user never touched.
   const pruneRoleAssignments = (assignments, models) => {
     const allowed = new Set(models || []);
     const next = emptyOmpRoleAssignments();
+    for (const role of Object.keys(assignments || {})) {
+      if (!(role in next)) next[role] = "";
+    }
     for (const role of Object.keys(next)) {
       next[role] = allowed.has(assignments?.[role]) ? assignments[role] : "";
     }
     return next;
   };
 
+  // Label a model in the role picker with the capabilities that actually get
+  // written to models.yml, so the assignment is an informed one: context
+  // window first (the field that most often decides a role), then the
+  // capability flags omp keys off.
+  const describeModelOption = (modelId) => {
+    const m = catalogModels.find((x) => x.fullModel === modelId);
+    const caps = m?.caps;
+    if (!caps) return modelId;
+    const parts = [];
+    const ctx = formatContextWindow(caps.contextWindow);
+    if (ctx) parts.push(`${ctx} ctx`);
+    if (caps.reasoning) parts.push("reasoning");
+    if (caps.vision) parts.push("vision");
+    if (caps.search) parts.push("search");
+    return parts.length ? `${modelId} — ${parts.join(" · ")}` : modelId;
+  };
+
+  // Catalog autosave (OpenCode-style): fires on add/remove. Catalog only —
+  // roles are scoped and go through Apply's PATCH, so sending them here would
+  // write to a layer the user never chose.
   const saveModels = async (models) => {
     const keyToUse = (effectiveSelectedApiKey && effectiveSelectedApiKey.trim())
       ? effectiveSelectedApiKey
@@ -74,10 +136,9 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
     const capabilities = {};
     for (const id of models || []) {
       const m = catalogModels.find((x) => x.fullModel === id);
-      if (!m?.caps) continue;
-      capabilities[id] = { vision: !!m.caps.vision, search: !!m.caps.search, reasoning: !!m.caps.reasoning };
+      const payload = toOmpCapabilityPayload(m?.caps);
+      if (payload) capabilities[id] = payload;
     }
-    const roles = pruneRoleAssignments(roleAssignments, models);
 
     try {
       await persistOmpModelSelection({
@@ -88,7 +149,6 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
           baseUrl: getEffectiveBaseUrl(),
           apiKey: keyToUse,
           capabilities,
-          roles,
         },
       });
     } catch (error) {
@@ -115,30 +175,101 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
 
   const getDisplayUrl = () => customBaseUrl || `${baseUrl}/v1`;
 
-  async function checkStatus() {
+  async function checkStatus({ scope, index } = {}) {
     setChecking(true);
     try {
-      const res = await fetch("/api/cli-tools/omp-settings");
+      const wantScope = scope ?? roleScopeRef.current;
+      const wantIndex = index ?? projectIndexRef.current;
+      const requestKey = scopeKeyFor(wantScope, wantIndex);
+      // Only ask for a project layer when one is actually selected — the API
+      // refuses to guess which project is active.
+      const qs = wantScope === "project" ? `?projectIndex=${wantIndex}` : "";
+      const res = await fetch(`/api/cli-tools/omp-settings${qs}`);
       const data = await res.json();
       setStatus(data);
       setSelectedModels(data?.omp?.models || []);
-      const nextRoles = emptyOmpRoleAssignments();
-      const incoming = data?.omp?.roles && typeof data.omp.roles === "object" ? data.omp.roles : {};
-      for (const role of Object.keys(nextRoles)) {
-        if (typeof incoming[role] === "string") nextRoles[role] = incoming[role];
+
+      const info = data?.omp?.roleScope || null;
+      setScopeInfo(info);
+
+      // Follow omp's own storage setting until the user picks a scope. When
+      // detection lands on "project", seed the refs, the index and the draft
+      // together — updating state alone would leave the ref stale and show an
+      // empty draft for a project whose roles we already have in `info`.
+      let effScope = wantScope;
+      let effIndex = wantIndex;
+      if (info && !scopeTouchedRef.current) {
+        const firstAvailable = (info.projects || []).find((p) => p.available && !p.corrupt && !p.unsafe);
+        if (info.storageMode === "project" && info.projectScopeEnabled && firstAvailable) {
+          effScope = "project";
+          effIndex = firstAvailable.index;
+          roleScopeRef.current = effScope;
+          projectIndexRef.current = effIndex;
+          setRoleScope(effScope);
+          setProjectIndex(effIndex);
+        } else {
+          effScope = "global";
+          roleScopeRef.current = effScope;
+          setRoleScope(effScope);
+        }
       }
-      if (!nextRoles.default && data?.omp?.activeModel) nextRoles.default = data.omp.activeModel;
-      setRoleAssignments(nextRoles);
+      const effKey = scopeKeyFor(effScope, effIndex);
+
+      // Read the layer actually in effect, not `omp.roles` — that is the
+      // *effective* layer, which differs whenever the selected scope is not
+      // the one omp currently reads.
+      const layer =
+        effScope === "project"
+          ? (info?.projects || []).find((p) => p.index === effIndex) || {}
+          : info?.global || {};
+      const layerRoles = layer.roles || {};
+      // Roles that exist in the file but are backed by another provider still
+      // need a row in the picker, or they are invisible and unassignable.
+      const layerRoleIds = Array.isArray(layer.availableRoles) ? layer.availableRoles : [];
+
+      // Populate only that layer, and only if it has no pending edits.
+      if (!dirtyRoleKeys.current.has(effKey)) {
+        const nextRoles = emptyOmpRoleAssignments();
+        for (const key of new Set([...Object.keys(nextRoles), ...layerRoleIds, ...Object.keys(layerRoles)])) {
+          if (typeof layerRoles[key] === "string") nextRoles[key] = layerRoles[key];
+          else if (!(key in nextRoles)) nextRoles[key] = "";
+        }
+        setRoleDrafts((prev) => ({ ...prev, [effKey]: nextRoles }));
+      }
     } catch (error) {
       setStatus({ installed: false, error: error.message });
     } finally {
       setChecking(false);
     }
   };
+  useEffect(() => {
+    if (!isExpanded) return undefined;
+    // Defer so the effect body itself performs no synchronous setState;
+    // checkStatus() flips `checking` immediately when called inline.
+    let cancelled = false;
+    const id = setTimeout(() => {
+      if (cancelled) return;
+      checkStatus();
+      fetchModelAliases();
+    }, 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(id);
+    };
+    // checkStatus/fetchModelAliases are stable declarations in this component.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isExpanded]);
 
   const handleApply = async () => {
     setApplying(true);
     setMessage(null);
+    // Snapshot the target layer and its draft at click time: the catalog POST
+    // is awaited, and a scope switch mid-flight would otherwise PATCH roles
+    // into a file the user never chose.
+    const applyScope = roleScope;
+    const applyIndex = projectIndex;
+    const applyKey = scopeKeyFor(applyScope, applyIndex);
+    const applyRoles = roleDrafts[applyKey] || emptyOmpRoleAssignments();
     try {
       const keyToUse = (effectiveSelectedApiKey && effectiveSelectedApiKey.trim())
         ? effectiveSelectedApiKey
@@ -146,28 +277,59 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
       const capabilities = {};
       for (const id of selectedModels || []) {
         const m = catalogModels.find((x) => x.fullModel === id);
-        if (!m?.caps) continue;
-        capabilities[id] = { vision: !!m.caps.vision, search: !!m.caps.search, reasoning: !!m.caps.reasoning };
+        const caps = toOmpCapabilityPayload(m?.caps);
+        if (caps) capabilities[id] = caps;
       }
-      const payload = {
-        baseUrl: getEffectiveBaseUrl(),
-        apiKey: keyToUse,
-        models: selectedModels,
-        capabilities,
-        roles: pruneRoleAssignments(roleAssignments, selectedModels),
-      };
-      const res = await fetch("/api/cli-tools/omp-settings", {
+
+      // 1. Catalog (always global). Roles are rejected by POST by design.
+      const catalogRes = await fetch("/api/cli-tools/omp-settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          baseUrl: getEffectiveBaseUrl(),
+          apiKey: keyToUse,
+          models: selectedModels,
+          capabilities,
+        }),
       });
-      const data = await res.json();
-      if (res.ok) {
-        setMessage({ type: "success", text: "Oh My Pi settings applied successfully!" });
-        checkStatus();
-      } else {
-        setMessage({ type: "error", text: data.error || "Failed to apply settings" });
+      const catalogData = await catalogRes.json();
+      if (!catalogRes.ok) {
+        setMessage({ type: "error", text: catalogData.error || "Failed to apply model catalog" });
+        return;
       }
+
+      // 2. Roles, into the selected layer only.
+      // Delta only: never resend untouched roles, or Apply would clear any
+      // assignment whose model is not in the current picker.
+      const touched = touchedRoleIds.current.get(applyKey) || new Set();
+      const pruned = pruneRoleAssignments(applyRoles, selectedModels);
+      const roles = {};
+      for (const id of touched) roles[id] = pruned[id] ?? "";
+      const roleRes = await fetch("/api/cli-tools/omp-settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope: applyScope,
+          ...(applyScope === "project" ? { projectIndex: applyIndex } : {}),
+          roles,
+        }),
+      });
+      const roleData = await roleRes.json();
+      if (!roleRes.ok) {
+        // The catalog landed; say so rather than implying nothing happened.
+        setMessage({
+          type: "error",
+          text: `Models saved, but roles failed: ${roleData.error || "unknown error"}`,
+        });
+        await checkStatus();
+        return;
+      }
+
+      dirtyRoleKeys.current.delete(applyKey);
+      touchedRoleIds.current.delete(applyKey);
+      const where = applyScope === "project" ? roleData.configPath || "project config" : "global config";
+      setMessage({ type: "success", text: `Applied — roles written to ${where}` });
+      await checkStatus();
     } catch (error) {
       setMessage({ type: "error", text: error.message });
     } finally {
@@ -395,6 +557,77 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
                 </div>
 
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-start sm:gap-2">
+                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right pt-1">Role scope</span>
+                  <span className="material-symbols-outlined text-text-muted text-[14px] mt-1.5">arrow_forward</span>
+                  <div className="flex-1 flex flex-col gap-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <select
+                        value={roleScope}
+                        onChange={(e) => {
+                          const next = e.target.value;
+                          scopeTouchedRef.current = true;
+                          setScopeTouched(true);
+                          roleScopeRef.current = next;
+                          setRoleScope(next);
+                          checkStatus({ scope: next, index: projectIndex });
+                        }}
+                        className="px-2 py-1 rounded border border-border bg-surface text-xs text-text-main"
+                      >
+                        <option value="global">Global (~/.omp/agent/config.yml)</option>
+                        <option value="project" disabled={!scopeInfo?.projectScopeEnabled}>
+                          Project (&lt;project&gt;/.omp/config.yml)
+                        </option>
+                      </select>
+
+                      {roleScope === "project" && (scopeInfo?.projects || []).length > 1 && (
+                        <select
+                          value={projectIndex}
+                          onChange={(e) => {
+                            const idx = Number(e.target.value);
+                            scopeTouchedRef.current = true;
+                          setScopeTouched(true);
+                            projectIndexRef.current = idx;
+                            setProjectIndex(idx);
+                            checkStatus({ scope: "project", index: idx });
+                          }}
+                          className="px-2 py-1 rounded border border-border bg-surface text-xs text-text-main"
+                        >
+                          {(scopeInfo?.projects || []).map((p) => (
+                            <option key={p.index} value={p.index} disabled={!p.available}>
+                              {p.path}{p.available ? "" : " (unavailable)"}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+
+                      {scopeInfo?.storageMode && (
+                        <span className="text-[11px] text-text-muted">
+                          omp reads: <span className="font-medium text-text-main">{scopeInfo.storageMode}</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {!scopeInfo?.projectScopeEnabled && (
+                      <p className="text-[11px] text-text-muted">
+                        Project scope is disabled. Set <code>OMP_PROJECT_ROOTS</code> to the absolute
+                        project path(s) allowed to receive role writes, then restart 9Router.
+                      </p>
+                    )}
+                    {scopeInfo?.storageMode === "project" && roleScope === "global" && (
+                      <p className="text-[11px] text-yellow-500">
+                        omp is reading project roles — assignments written here will not take effect.
+                      </p>
+                    )}
+                    {scopeInfo?.storageMode === "global" && roleScope === "project" && (
+                      <p className="text-[11px] text-yellow-500">
+                        omp is reading global roles — assignments written here will not take effect
+                        until <code>modelRoleStorage: project</code> is set.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-start sm:gap-2">
                   <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right pt-1">OMP roles</span>
                   <span className="material-symbols-outlined text-text-muted text-[14px] mt-1.5">arrow_forward</span>
                   <div className="flex-1 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
@@ -410,17 +643,45 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
                           title={role.hint}
                           onChange={(e) => {
                             const value = e.target.value;
+                            markRoleTouched(currentScopeKey, role.id);
                             setRoleAssignments((prev) => ({ ...prev, [role.id]: value }));
                           }}
                           className="w-full min-w-0 px-2 py-1 rounded border border-border bg-surface text-xs text-text-main disabled:opacity-50"
                         >
                           <option value="">Unset</option>
                           {selectedModels.map((modelId) => (
-                            <option key={modelId} value={modelId}>{modelId}</option>
+                            <option key={modelId} value={modelId}>{describeModelOption(modelId)}</option>
                           ))}
                         </select>
                       </label>
                     ))}
+
+                    {/* Custom roles omp reports beyond the ten built-ins. */}
+                    {Object.keys(roleAssignments)
+                      .filter((id) => !OMP_MODEL_ROLES.some((r) => r.id === id))
+                      .map((id) => (
+                        <label key={id} className="flex flex-col gap-0.5 min-w-0">
+                          <span className="text-[11px] font-medium text-text-main">
+                            {id}
+                            <span className="ml-1 font-normal text-text-muted">(custom)</span>
+                          </span>
+                          <select
+                            value={roleAssignments[id] || ""}
+                            disabled={selectedModels.length === 0}
+                            onChange={(e) => {
+                              const value = e.target.value;
+                              markRoleTouched(currentScopeKey, id);
+                              setRoleAssignments((prev) => ({ ...prev, [id]: value }));
+                            }}
+                            className="w-full min-w-0 px-2 py-1 rounded border border-border bg-surface text-xs text-text-main disabled:opacity-50"
+                          >
+                            <option value="">Unset</option>
+                            {selectedModels.map((modelId) => (
+                              <option key={modelId} value={modelId}>{describeModelOption(modelId)}</option>
+                            ))}
+                          </select>
+                        </label>
+                      ))}
                   </div>
                 </div>
 

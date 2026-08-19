@@ -129,16 +129,19 @@ describe("omp settings route (YAML-aware writer)", () => {
     expect(readFileSync(modelsPath(), "utf-8")).toBe(corrupt);
   });
 
-  it("refuses to write models when config.yml is corrupt and a default is requested", async () => {
-    writeFileSync(modelsPath(), "");
+  it("refuses to write roles when config.yml is corrupt", async () => {
+    writeFileSync(modelsPath(), "providers:\n  9router:\n    baseUrl: http://127.0.0.1:20128/v1\n    api: openai-completions\n    apiKey: sk_x\n    models:\n      - id: cc/claude-opus-5\n        name: cc/claude-opus-5\n");
+    const modelsBefore = readFileSync(modelsPath(), "utf-8");
     const corruptCfg = "modelRoles:\n  default:\n    bad-: ::\n    :::\n  [unclosed\n";
     writeFileSync(configPath(), corruptCfg);
 
-    const req = { json: async () => ({ baseUrl: "http://127.0.0.1:20128", apiKey: "sk_x", models: ["cc/claude-opus-5"], activeModel: "cc/claude-opus-5" }) };
-    const res = await route.POST(req);
+    const res = await route.PATCH({
+      json: async () => ({ scope: "global", roles: { default: "cc/claude-opus-5" } }),
+    });
     expect(res.status).toBe(409);
 
-    expect(readFileSync(modelsPath(), "utf-8")).toBe("");
+    // Neither file is touched when the role layer cannot be parsed.
+    expect(readFileSync(modelsPath(), "utf-8")).toBe(modelsBefore);
     expect(readFileSync(configPath(), "utf-8")).toBe(corruptCfg);
   });
 
@@ -195,23 +198,36 @@ describe("omp settings route (YAML-aware writer)", () => {
     expect(readModelsFile().doc.providers["9router"].baseUrl).toBe("https://my-router.example.com:8443/v1");
   });
 
-  it("writes modelRoles.default only when caller supplies activeModel", async () => {
-    const req = { json: async () => ({ baseUrl: "http://127.0.0.1:20128", apiKey: "sk_x", models: ["cc/claude-opus-5"], activeModel: "cc/claude-opus-5" }) };
-    await route.POST(req);
-
+  it("writes modelRoles.default via PATCH", async () => {
+    await route.POST({
+      json: async () => ({ baseUrl: "http://127.0.0.1:20128", apiKey: "sk_x", models: ["cc/claude-opus-5"] }),
+    });
+    const res = await route.PATCH({
+      json: async () => ({ scope: "global", roles: { default: "cc/claude-opus-5" } }),
+    });
+    expect(res.status).toBe(200);
     expect(readConfig().modelRoles.default).toBe("9router/cc/claude-opus-5");
   });
 
-  it("rejects an activeModel that is not in the provider model list", async () => {
-    const res = await route.POST({ json: async () => ({ baseUrl: "http://127.0.0.1:20128", apiKey: "sk_x", models: ["cc/claude-opus-5"], activeModel: "not-a-model" }) });
+  it("rejects a default role that is not in the provider model list", async () => {
+    await route.POST({
+      json: async () => ({ baseUrl: "http://127.0.0.1:20128", apiKey: "sk_x", models: ["cc/claude-opus-5"] }),
+    });
+    const res = await route.PATCH({
+      json: async () => ({ scope: "global", roles: { default: "not-a-model" } }),
+    });
     expect(res.status).toBe(400);
     expect(existsSync(configPath())).toBe(false);
-    expect(existsSync(modelsPath())).toBe(false);
   });
 
-  it("allows activeModel that already exists on the 9router provider", async () => {
+  it("allows a default role that already exists on the 9router provider", async () => {
     writeFileSync(modelsPath(), "providers:\n  9router:\n    baseUrl: http://127.0.0.1:20128/v1\n    api: openai-completions\n    apiKey: sk_old\n    models:\n      - id: kr/claude-sonnet-4.5\n        name: existing\n");
-    const res = await route.POST({ json: async () => ({ baseUrl: "http://127.0.0.1:20128", apiKey: "sk_x", models: ["cc/claude-opus-5"], activeModel: "kr/claude-sonnet-4.5" }) });
+    await route.POST({
+      json: async () => ({ baseUrl: "http://127.0.0.1:20128", apiKey: "sk_x", models: ["cc/claude-opus-5"] }),
+    });
+    const res = await route.PATCH({
+      json: async () => ({ scope: "global", roles: { default: "kr/claude-sonnet-4.5" } }),
+    });
     expect(res.status).toBe(200);
     expect(readConfig().modelRoles.default).toBe("9router/kr/claude-sonnet-4.5");
   });
@@ -336,12 +352,19 @@ describe("omp settings route (YAML-aware writer)", () => {
     }
   });
 
+  // Roles moved from POST to PATCH: the catalog is always global, roles are
+  // scoped, so a single POST cannot carry both without an implied scope.
+  const applyCatalog = (models, apiKey = "sk_roles") =>
+    route.POST({
+      json: async () => ({ baseUrl: "http://127.0.0.1:20128", apiKey, models }),
+    });
+
   it("writes every official OMP role supplied in roles", async () => {
-    const req = {
+    expect((await applyCatalog(["kimi/kimi-k3", "gcli/grok-4.6"])).status).toBe(200);
+
+    const res = await route.PATCH({
       json: async () => ({
-        baseUrl: "http://127.0.0.1:20128",
-        apiKey: "sk_roles",
-        models: ["kimi/kimi-k3", "gcli/grok-4.6"],
+        scope: "global",
         roles: {
           default: "kimi/kimi-k3",
           smol: "gcli/grok-4.6",
@@ -355,8 +378,7 @@ describe("omp settings route (YAML-aware writer)", () => {
           advisor: "gcli/grok-4.6",
         },
       }),
-    };
-    const res = await route.POST(req);
+    });
     expect(res.status).toBe(200);
     expect(readConfig().modelRoles).toEqual({
       default: "9router/kimi/kimi-k3",
@@ -372,13 +394,13 @@ describe("omp settings route (YAML-aware writer)", () => {
     });
   });
 
-  it("rejects an unknown role before writing models.yml", async () => {
+  it("POST refuses role assignments outright", async () => {
     const res = await route.POST({
       json: async () => ({
         baseUrl: "http://127.0.0.1:20128",
         apiKey: "sk_x",
         models: ["kimi/kimi-k3"],
-        roles: { default: "kimi/kimi-k3", notARole: "kimi/kimi-k3" },
+        roles: { default: "kimi/kimi-k3" },
       }),
     });
     expect(res.status).toBe(400);
@@ -386,17 +408,24 @@ describe("omp settings route (YAML-aware writer)", () => {
     expect(existsSync(configPath())).toBe(false);
   });
 
-  it("rejects a role model that is not selected before writing models.yml", async () => {
-    const res = await route.POST({
+  it("rejects an unknown role without writing config.yml", async () => {
+    await applyCatalog(["kimi/kimi-k3"], "sk_x");
+    const res = await route.PATCH({
       json: async () => ({
-        baseUrl: "http://127.0.0.1:20128",
-        apiKey: "sk_x",
-        models: ["kimi/kimi-k3"],
-        roles: { smol: "gcli/grok-4.6" },
+        scope: "global",
+        roles: { default: "kimi/kimi-k3", notARole: "kimi/kimi-k3" },
       }),
     });
     expect(res.status).toBe(400);
-    expect(existsSync(modelsPath())).toBe(false);
+    expect(existsSync(configPath())).toBe(false);
+  });
+
+  it("rejects a role model that is not in the catalog", async () => {
+    await applyCatalog(["kimi/kimi-k3"], "sk_x");
+    const res = await route.PATCH({
+      json: async () => ({ scope: "global", roles: { smol: "gcli/grok-4.6" } }),
+    });
+    expect(res.status).toBe(400);
     expect(existsSync(configPath())).toBe(false);
   });
 
@@ -443,31 +472,22 @@ describe("omp settings route (YAML-aware writer)", () => {
   it("empty role string clears only that 9Router assignment", async () => {
     writeFileSync(modelsPath(), "providers:\n  9router:\n    baseUrl: http://127.0.0.1:20128/v1\n    api: openai-completions\n    apiKey: sk_old\n    models:\n      - id: kimi/kimi-k3\n        name: kimi/kimi-k3\n");
     writeFileSync(configPath(), "modelRoles:\n  default: 9router/kimi/kimi-k3\n  smol: 9router/kimi/kimi-k3\n  advisor: xai-oauth/grok-4.6\n");
-    const res = await route.POST({
-      json: async () => ({
-        baseUrl: "http://127.0.0.1:20128",
-        apiKey: "sk_x",
-        models: ["kimi/kimi-k3"],
-        roles: { smol: "", advisor: "" },
-      }),
+    const res = await route.PATCH({
+      json: async () => ({ scope: "global", roles: { smol: "", advisor: "" } }),
     });
     expect(res.status).toBe(200);
     const cfg = readConfig();
     expect(cfg.modelRoles.default).toBe("9router/kimi/kimi-k3");
     expect(cfg.modelRoles.smol).toBeUndefined();
+    // A foreign-provider role is not ours to clear.
     expect(cfg.modelRoles.advisor).toBe("xai-oauth/grok-4.6");
   });
 
   it("switches an existing official role to another selected model", async () => {
     writeFileSync(modelsPath(), "providers:\n  9router:\n    baseUrl: http://127.0.0.1:20128/v1\n    api: openai-completions\n    apiKey: sk_old\n    models:\n      - id: kimi/kimi-k3\n        name: kimi/kimi-k3\n      - id: gcli/grok-4.6\n        name: gcli/grok-4.6\n");
     writeFileSync(configPath(), "modelRoles:\n  default: 9router/kimi/kimi-k3\n  task: 9router/kimi/kimi-k3\n");
-    const res = await route.POST({
-      json: async () => ({
-        baseUrl: "http://127.0.0.1:20128",
-        apiKey: "sk_x",
-        models: ["kimi/kimi-k3", "gcli/grok-4.6"],
-        roles: { task: "gcli/grok-4.6" },
-      }),
+    const res = await route.PATCH({
+      json: async () => ({ scope: "global", roles: { task: "gcli/grok-4.6" } }),
     });
     expect(res.status).toBe(200);
     const cfg = readConfig();
@@ -481,6 +501,11 @@ describe("omp settings route (YAML-aware writer)", () => {
         baseUrl: "http://127.0.0.1:20128",
         apiKey: "sk_x",
         models: ["kimi/kimi-k3", "gcli/grok-4.6"],
+      }),
+    });
+    await route.PATCH({
+      json: async () => ({
+        scope: "global",
         roles: { default: "kimi/kimi-k3", smol: "gcli/grok-4.6" },
       }),
     });
@@ -497,20 +522,19 @@ describe("omp settings route (YAML-aware writer)", () => {
     expect(res.status).toBe(200);
     expect(readModelsFile().doc.providers["9router"]).toBeFalsy();
     expect(readModelsFile().doc.providers.other).toBeTruthy();
+    // Foreign-provider roles survive; the custom `reviewer` role pointed at a
+    // 9Router model, so removing the provider must clear it too.
     expect(readConfig().modelRoles).toEqual({
       advisor: "xai-oauth/grok-4.6",
-      reviewer: "9router/kimi/kimi-k3",
     });
   });
 
-  it("POST official roles leaves unofficial custom role keys untouched", async () => {
-    writeFileSync(modelsPath(), "providers:\n  9router:\n    baseUrl: http://127.0.0.1:20128/v1\n    api: openai-completions\n    apiKey: sk_old\n    models:\n      - id: kimi/kimi-k3\n        name: kimi/kimi-k3\n");
+  it("assigning official roles leaves unofficial custom role keys untouched", async () => {
+    writeFileSync(modelsPath(), "providers:\n  9router:\n    baseUrl: http://127.0.0.1:20128/v1\n    api: openai-completions\n    apiKey: sk_old\n    models:\n      - id: kimi/kimi-k3\n        name: kimi/kimi-k3\n      - id: gcli/grok-4.6\n        name: gcli/grok-4.6\n");
     writeFileSync(configPath(), "modelRoles:\n  default: 9router/kimi/kimi-k3\n  reviewer: local/custom-reviewer\n  cycleOrder: [default, smol]\n");
-    const res = await route.POST({
+    const res = await route.PATCH({
       json: async () => ({
-        baseUrl: "http://127.0.0.1:20128",
-        apiKey: "sk_x",
-        models: ["kimi/kimi-k3", "gcli/grok-4.6"],
+        scope: "global",
         roles: { default: "gcli/grok-4.6", smol: "kimi/kimi-k3" },
       }),
     });
@@ -520,6 +544,24 @@ describe("omp settings route (YAML-aware writer)", () => {
     expect(cfg.modelRoles.smol).toBe("9router/kimi/kimi-k3");
     expect(cfg.modelRoles.reviewer).toBe("local/custom-reviewer");
     expect(cfg.modelRoles.cycleOrder).toEqual(["default", "smol"]);
+  });
+
+  it("can assign a custom role that already exists in the config", async () => {
+    writeFileSync(modelsPath(), "providers:\n  9router:\n    baseUrl: http://127.0.0.1:20128/v1\n    api: openai-completions\n    apiKey: sk_old\n    models:\n      - id: kimi/kimi-k3\n        name: kimi/kimi-k3\n");
+    writeFileSync(configPath(), "modelRoles:\n  reviewer: local/custom-reviewer\n");
+    const res = await route.PATCH({
+      json: async () => ({ scope: "global", roles: { reviewer: "kimi/kimi-k3" } }),
+    });
+    expect(res.status).toBe(200);
+    expect(readConfig().modelRoles.reviewer).toBe("9router/kimi/kimi-k3");
+  });
+
+  it("refuses a custom role that does not already exist", async () => {
+    writeFileSync(modelsPath(), "providers:\n  9router:\n    baseUrl: http://127.0.0.1:20128/v1\n    api: openai-completions\n    apiKey: sk_old\n    models:\n      - id: kimi/kimi-k3\n        name: kimi/kimi-k3\n");
+    const res = await route.PATCH({
+      json: async () => ({ scope: "global", roles: { brandNewRole: "kimi/kimi-k3" } }),
+    });
+    expect(res.status).toBe(400);
   });
 
 
