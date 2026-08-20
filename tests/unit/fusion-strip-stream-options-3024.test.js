@@ -20,8 +20,9 @@ function makeBody(extra = {}) {
 
 describe("Fusion strips stream_options (#3024)", () => {
   it("removes stream_options before fanning out to panel models", async () => {
+    const body = makeBody();
     let capturedPanelBody = null;
-    const handleSingleModel = vi.fn(async (panelBody, model, isPanel) => {
+    const handleSingleModel = vi.fn(async (panelBody, model, entry, isPanel) => {
       if (isPanel) capturedPanelBody = panelBody;
       // Simulate a successful non-stream JSON answer for the panel.
       if (isPanel) {
@@ -38,8 +39,11 @@ describe("Fusion strips stream_options (#3024)", () => {
     });
 
     const res = await handleFusionChat({
-      body: makeBody(),
-      models: ["ds/deepseek-v4-flash", "gemini/gemini-3.5-flash-lite"],
+      body,
+      models: [
+        { model: "ds/deepseek-v4-flash", connectionId: "deepseek-account" },
+        { model: "gemini/gemini-3.5-flash-lite", connectionId: "gemini-account" },
+      ],
       handleSingleModel,
       log,
       comboName: "GemSeek",
@@ -52,7 +56,13 @@ describe("Fusion strips stream_options (#3024)", () => {
     expect(capturedPanelBody.stream_options).toBeUndefined();
     expect(capturedPanelBody.stream).toBe(false);
     // Ensure the original client body still had it (proves we stripped deliberately).
-    expect(makeBody().stream_options).toBeDefined();
+    expect(body.stream_options).toEqual({ include_usage: true });
+    expect(handleSingleModel).toHaveBeenCalledWith(
+      capturedPanelBody,
+      "ds/deepseek-v4-flash",
+      { model: "ds/deepseek-v4-flash", connectionId: "deepseek-account" },
+      true
+    );
   });
 
   it("does not throw for a 2-model fusion with stream_options present", async () => {
