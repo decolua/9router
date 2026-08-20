@@ -24,9 +24,15 @@ export const CLAUDE_CONFIG = { ...PROVIDER_OAUTH["claude"] };
 // Codex (OpenAI) OAuth Configuration (Authorization Code Flow with PKCE)
 export const CODEX_CONFIG = { ...PROVIDER_OAUTH["codex"] };
 
+// GapGPT (GapCode, Codex CLI fork) OAuth Configuration (Authorization Code Flow with PKCE)
+export const GAPGPT_CONFIG = { ...PROVIDER_OAUTH["gapgpt"] };
+
 // Gemini (Google) OAuth Configuration (Standard OAuth2)
 // clientId/clientSecret from GOOGLE_OAUTH_CLIENT (shared.js) — not stored in registry
 export const GEMINI_CONFIG = { ...GOOGLE_OAUTH_CLIENT, ...PROVIDER_OAUTH["gemini-cli"] };
+
+// Qwen OAuth Configuration (Device Code Flow)
+export const QWEN_CONFIG = { ...PROVIDER_OAUTH["qwen"] };
 
 // Qoder OAuth Configuration (Device Token Flow with PKCE).
 // Device tokens are long-lived (~30 days for access, ~360 for refresh).
@@ -203,6 +209,7 @@ export const PROVIDERS = {
   CLAUDE: "claude",
   CODEX: "codex",
   GEMINI: "gemini-cli",
+  QWEN: "qwen",
   QODER: "qoder",
   IFLOW: "iflow",
   ANTIGRAVITY: "antigravity",

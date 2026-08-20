@@ -1,6 +1,6 @@
 import http from "http";
 import { URL } from "url";
-import { CODEX_CONFIG, TRAE_CONFIG, WINDSURF_CONFIG, ZED_HOSTED_CONFIG } from "../constants/oauth.js";
+import { CODEX_CONFIG, GAPGPT_CONFIG, TRAE_CONFIG, WINDSURF_CONFIG, ZED_HOSTED_CONFIG } from "../constants/oauth.js";
 
 // Loopback origin guard for local callback proxies.
 // Legit OAuth redirects are top-level navigations (no `Origin` header); a cross-site
@@ -10,7 +10,6 @@ function isLoopbackOrigin(origin) {
   if (!origin) return true; // navigation redirect — allow
   return /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin);
 }
-
 
 /**
  * Start a local HTTP server to receive OAuth callback
@@ -753,5 +752,145 @@ export function stopZedProxy() {
   if (zedProxyTimeout) { clearTimeout(zedProxyTimeout); zedProxyTimeout = null; }
   if (zedProxyServer) { zedProxyServer.close(); zedProxyServer = null; }
   zedProxyPort = null;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// GapGPT (GapCode) fixed-port proxy — same registered redirect_uri/port as
+// Codex (localhost:1455/auth/callback, client_id reused from Codex), so it
+// needs the same fixed-port local-server dance. Parallel implementation,
+// same rationale as the xAI block above.
+// ───────────────────────────────────────────────────────────────────────────
+
+let gapgptProxyServer = null;
+let gapgptProxyTimeout = null;
+const GAPGPT_PROXY_TIMEOUT_MS = 300000; // 5 minutes
+const GAPGPT_PROXY_PORT = GAPGPT_CONFIG.fixedPort;
+const gapgptPendingExchanges = new Map();
+
+export function registerGapgptSession({ state, codeVerifier, redirectUri }) {
+  if (!state || !codeVerifier || !redirectUri) return false;
+  gapgptPendingExchanges.set(state, {
+    codeVerifier,
+    redirectUri,
+    status: "pending",
+    createdAt: Date.now(),
+  });
+  return true;
+}
+
+export function getGapgptSessionStatus(state) {
+  return gapgptPendingExchanges.get(state) || null;
+}
+
+export function clearGapgptSession(state) {
+  gapgptPendingExchanges.delete(state);
+}
+
+function renderGapgptResultPage(success, message) {
+  return renderCodexResultPage(success, message);
+}
+
+/**
+ * Start GapGPT proxy on its fixed port (1455, shared with Codex — mutually exclusive in time).
+ * Mode A (server-side): if any session was registered, proxy auto-exchanges + saves DB.
+ * Mode B (channel fallback): if no session, proxy 302 redirects to app port.
+ */
+export function startGapgptProxy(appPort) {
+  return new Promise((resolve) => {
+    if (gapgptProxyServer) {
+      resolve({ success: true });
+      return;
+    }
+
+    const server = http.createServer(async (req, res) => {
+      const url = new URL(req.url, "http://localhost");
+      if (url.pathname !== "/callback" && url.pathname !== "/auth/callback") {
+        res.writeHead(404);
+        res.end("Not found");
+        return;
+      }
+
+      const state = url.searchParams.get("state");
+      const code = url.searchParams.get("code");
+      const errorParam = url.searchParams.get("error");
+      const session = state ? gapgptPendingExchanges.get(state) : null;
+
+      if (session) {
+        // Mode A: auto exchange server side
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderGapgptResultPage(true, "Authentication successful! You can close this tab and return to 9router."));
+        (async () => {
+          try {
+            if (errorParam) {
+              throw new Error(url.searchParams.get("error_description") || errorParam);
+            }
+            if (!code) throw new Error("No authorization code received");
+
+            const { exchangeTokens } = await import("../providers.js");
+            const { createProviderConnection } = await import("@/models");
+
+            const tokenData = await exchangeTokens(
+              "gapgpt",
+              code,
+              session.redirectUri,
+              session.codeVerifier,
+              state
+            );
+            const connection = await createProviderConnection({
+              provider: "gapgpt",
+              authType: "oauth",
+              ...tokenData,
+              expiresAt: tokenData.expiresIn
+                ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
+                : null,
+              testStatus: "active",
+            });
+
+            session.status = "done";
+            session.connectionId = connection.id;
+            session.email = connection.email;
+
+          } catch (err) {
+            session.status = "error";
+            session.error = err.message;
+          } finally {
+            stopGapgptProxy();
+          }
+        })();
+        return;
+      }
+
+      // Mode B: legacy fallback redirect
+      const redirectUrl = `http://localhost:${appPort}/callback${url.search}`;
+      res.writeHead(302, { Location: redirectUrl });
+      res.end();
+      stopGapgptProxy();
+    });
+
+    server.listen(GAPGPT_PROXY_PORT, "127.0.0.1", () => {
+      gapgptProxyServer = server;
+      gapgptProxyTimeout = setTimeout(() => stopGapgptProxy(), GAPGPT_PROXY_TIMEOUT_MS);
+      resolve({ success: true });
+    });
+
+    server.on("error", (err) => {
+      if (err.code === "EADDRINUSE") {
+        resolve({ success: false, reason: "port_busy" });
+      } else {
+        resolve({ success: false, reason: err.message });
+      }
+    });
+  });
+}
+
+export function stopGapgptProxy() {
+  if (gapgptProxyTimeout) {
+    clearTimeout(gapgptProxyTimeout);
+    gapgptProxyTimeout = null;
+  }
+  if (gapgptProxyServer) {
+    gapgptProxyServer.close();
+    gapgptProxyServer = null;
+  }
 }
 

@@ -490,6 +490,13 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     throw new Error("MITM server is already running");
   }
 
+  // Ensure the MITM state dir exists before writing PID/lock files — on a fresh
+  // install ~/.9router/mitm/ may not exist yet, which would make the lock write
+  // below fail with ENOENT (not EEXIST) and abort startup.
+  try {
+    fs.mkdirSync(MITM_DIR, { recursive: true });
+  } catch { /* best-effort; the writes below will surface any real error */ }
+
   // Atomically claim lock to prevent concurrent startServer across processes.
   // O_EXCL (flag: "wx") fails with EEXIST if the file already exists.
   try {

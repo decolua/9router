@@ -294,7 +294,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       // Authorization code flow - build redirect URI (some providers require fixed ports)
       const appPort = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
       let redirectUri;
-      if (provider === "codex") {
+      if (provider === "codex" || provider === "gapgpt") {
         redirectUri = "http://localhost:1455/auth/callback";
       } else if (provider === "xai") {
         redirectUri = "http://127.0.0.1:56121/callback";
@@ -354,7 +354,30 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         }
       }
 
-      setAuthData({ ...data, redirectUri, codexServerSide, xaiServerSide });
+      // GapGPT: same fixed-port server-side proxy pattern as codex (shares port 1455)
+      let gapgptProxyActive = false;
+      let gapgptServerSide = false;
+      if (provider === "gapgpt") {
+        try {
+          const proxyUrl = new URL(`/api/oauth/gapgpt/start-proxy`, window.location.origin);
+          proxyUrl.searchParams.set("app_port", appPort);
+          proxyUrl.searchParams.set("state", data.state);
+          proxyUrl.searchParams.set("code_verifier", data.codeVerifier);
+          proxyUrl.searchParams.set("redirect_uri", redirectUri);
+          const proxyRes = await fetch(proxyUrl.toString());
+          const proxyData = await proxyRes.json();
+          gapgptProxyActive = proxyData.success;
+          gapgptServerSide = !!proxyData.serverSide;
+          if (!gapgptProxyActive && proxyData.reason === "port_busy") {
+            throw new Error("Port 1455 in use; close the conflicting process and retry");
+          }
+        } catch (e) {
+          if (e?.message) throw e;
+          gapgptProxyActive = false;
+        }
+      }
+
+      setAuthData({ ...data, redirectUri, codexServerSide, xaiServerSide, gapgptServerSide });
 
       // Guard: device_code providers return authUrl:null from /authorize. Never window.open(null)
       // (browsers coerce it to the relative path ".../null").
@@ -380,7 +403,13 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         if (!popupRef.current) {
           setStep("input");
         }
-      } else if (!isLocalhost || provider === "codex" || provider === "xai") {
+      } else if (provider === "gapgpt" && gapgptProxyActive) {
+        setStep("waiting");
+        popupRef.current = window.open(data.authUrl, "oauth_popup", "width=600,height=700");
+        if (!popupRef.current) {
+          setStep("input");
+        }
+      } else if (!isLocalhost || provider === "codex" || provider === "xai" || provider === "gapgpt") {
         // Non-localhost or proxy failed: manual input mode
         setStep("input");
         window.open(data.authUrl, "_blank");
@@ -436,6 +465,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         fetch("/api/oauth/windsurf/stop-proxy").catch(() => {});
       } else if (provider === "zed") {
         fetch("/api/oauth/zed/stop-proxy").catch(() => {});
+      } else if (provider === "gapgpt") {
+        fetch("/api/oauth/gapgpt/stop-proxy").catch(() => {});
       }
     }
   }, [isOpen, provider, startOAuthFlow]);
@@ -447,9 +478,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       ? "codex"
       : authData?.xaiServerSide
         ? "xai"
-        : authData?.proxyProvider
-          ? authData.proxyProvider
-          : null;
+        : authData?.gapgptServerSide
+          ? "gapgpt"
+          : authData?.proxyProvider
+            ? authData.proxyProvider
+            : null;
     if (!pollProvider || !authData?.state) return;
     if (callbackProcessedRef.current) return;
     let cancelled = false;
@@ -664,6 +697,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       fetch("/api/oauth/windsurf/stop-proxy").catch(() => {});
     } else if (provider === "zed") {
       fetch("/api/oauth/zed/stop-proxy").catch(() => {});
+    } else if (provider === "gapgpt") {
+      fetch("/api/oauth/gapgpt/stop-proxy").catch(() => {});
     }
     onClose();
   }, [onClose, provider]);

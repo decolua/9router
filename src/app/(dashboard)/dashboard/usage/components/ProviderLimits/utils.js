@@ -376,6 +376,7 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "gapgpt":
       case "codex":
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([quotaType, quota]) => {
