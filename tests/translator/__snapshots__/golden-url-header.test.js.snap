@@ -38,6 +38,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > alicode-intl → hea
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > alims-intl → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > anthropic → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -66,6 +85,31 @@ exports[`GOLDEN buildHeaders (default executor providers) > anthropic → header
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > api-airforce → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "HTTP-Referer": "https://endpoint-proxy.local",
+    "X-Title": "Endpoint Proxy",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "HTTP-Referer": "https://endpoint-proxy.local",
+    "X-Title": "Endpoint Proxy",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "HTTP-Referer": "https://endpoint-proxy.local",
+    "X-Title": "Endpoint Proxy",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > assemblyai → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -85,7 +129,64 @@ exports[`GOLDEN buildHeaders (default executor providers) > assemblyai → heade
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > baidu → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > bazaarlink → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > blackbox → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > bluesminds → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
     "Accept": "text/event-stream",
@@ -275,26 +376,26 @@ exports[`GOLDEN buildHeaders (default executor providers) > clinepass → header
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.30",
+    "User-Agent": "9Router/0.5.55",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.30",
-    "X-CORE-VERSION": "0.5.30",
+    "X-CLIENT-VERSION": "0.5.55",
+    "X-CORE-VERSION": "0.5.55",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
-    "X-PLATFORM-VERSION": "v24.14.1",
+    "X-PLATFORM-VERSION": "v24.15.0",
     "X-Title": "Cline",
   },
   "nonStream": {
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.30",
+    "User-Agent": "9Router/0.5.55",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.30",
-    "X-CORE-VERSION": "0.5.30",
+    "X-CLIENT-VERSION": "0.5.55",
+    "X-CORE-VERSION": "0.5.55",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
-    "X-PLATFORM-VERSION": "v24.14.1",
+    "X-PLATFORM-VERSION": "v24.15.0",
     "X-Title": "Cline",
   },
   "oauth": {
@@ -302,13 +403,13 @@ exports[`GOLDEN buildHeaders (default executor providers) > clinepass → header
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.30",
+    "User-Agent": "9Router/0.5.55",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.30",
-    "X-CORE-VERSION": "0.5.30",
+    "X-CLIENT-VERSION": "0.5.55",
+    "X-CORE-VERSION": "0.5.55",
     "X-IS-MULTIROOT": "false",
     "X-PLATFORM": "linux",
-    "X-PLATFORM-VERSION": "v24.14.1",
+    "X-PLATFORM-VERSION": "v24.15.0",
     "X-Title": "Cline",
   },
 }
@@ -363,6 +464,43 @@ exports[`GOLDEN buildHeaders (default executor providers) > codebuddy-cn → hea
     "User-Agent": "CLI/2.108.1 CodeBuddy/2.108.1",
     "X-IDE-Name": "CLI",
     "X-IDE-Type": "CLI",
+    "X-Product": "SaaS",
+    "x-codebuddy-request": "1",
+    "x-requested-with": "XMLHttpRequest",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > codebuddy-intl → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "User-Agent": "IDE/2.108.1 CodeBuddy/2.108.1",
+    "X-IDE-Name": "IDE",
+    "X-IDE-Type": "IDE",
+    "X-Product": "SaaS",
+    "x-codebuddy-request": "1",
+    "x-requested-with": "XMLHttpRequest",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "User-Agent": "IDE/2.108.1 CodeBuddy/2.108.1",
+    "X-IDE-Name": "IDE",
+    "X-IDE-Type": "IDE",
+    "X-Product": "SaaS",
+    "x-codebuddy-request": "1",
+    "x-requested-with": "XMLHttpRequest",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "User-Agent": "IDE/2.108.1 CodeBuddy/2.108.1",
+    "X-IDE-Name": "IDE",
+    "X-IDE-Type": "IDE",
     "X-Product": "SaaS",
     "x-codebuddy-request": "1",
     "x-requested-with": "XMLHttpRequest",
@@ -553,30 +691,24 @@ exports[`GOLDEN buildHeaders (default executor providers) > grok-cli → headers
     "Accept": "text/event-stream",
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
-    "User-Agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)",
-    "x-authenticateresponse": "authenticate-response",
-    "x-grok-client-identifier": "grok-pager",
-    "x-grok-client-version": "0.2.93",
-    "x-xai-token-auth": "xai-grok-cli",
+    "User-Agent": "grok-shell/0.2.99 (linux; x86_64)",
+    "x-grok-client-identifier": "grok-shell",
+    "x-grok-client-version": "0.2.99",
   },
   "nonStream": {
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
-    "User-Agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)",
-    "x-authenticateresponse": "authenticate-response",
-    "x-grok-client-identifier": "grok-pager",
-    "x-grok-client-version": "0.2.93",
-    "x-xai-token-auth": "xai-grok-cli",
+    "User-Agent": "grok-shell/0.2.99 (linux; x86_64)",
+    "x-grok-client-identifier": "grok-shell",
+    "x-grok-client-version": "0.2.99",
   },
   "oauth": {
     "Accept": "text/event-stream",
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
-    "User-Agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)",
-    "x-authenticateresponse": "authenticate-response",
-    "x-grok-client-identifier": "grok-pager",
-    "x-grok-client-version": "0.2.93",
-    "x-xai-token-auth": "xai-grok-cli",
+    "User-Agent": "grok-shell/0.2.99 (linux; x86_64)",
+    "x-grok-client-identifier": "grok-shell",
+    "x-grok-client-version": "0.2.99",
   },
 }
 `;
@@ -601,6 +733,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > groq → headers (ap
 `;
 
 exports[`GOLDEN buildHeaders (default executor providers) > hyperbolic → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > kilo-gateway → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
     "Accept": "text/event-stream",
@@ -722,6 +873,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi-coding → head
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > llm7 → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > minimax → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -792,6 +962,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > mistral → headers 
 `;
 
 exports[`GOLDEN buildHeaders (default executor providers) > mmf → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > morph → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
     "Accept": "text/event-stream",
@@ -968,6 +1157,44 @@ exports[`GOLDEN buildHeaders (default executor providers) > perplexity-agent →
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > poolside → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > sambanova → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > siliconflow → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -987,7 +1214,45 @@ exports[`GOLDEN buildHeaders (default executor providers) > siliconflow → head
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > tencent → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > together → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
+exports[`GOLDEN buildHeaders (default executor providers) > tokenrouter → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
     "Accept": "text/event-stream",
@@ -1101,6 +1366,28 @@ exports[`GOLDEN buildHeaders (default executor providers) > xiaomi-mimo → head
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > zed → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "<CRED>",
+    "Content-Type": "application/json",
+    "content-type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "<CRED>",
+    "Content-Type": "application/json",
+    "content-type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "<CRED>",
+    "Content-Type": "application/json",
+    "content-type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > alicode → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://coding.dashscope.aliyuncs.com/v1/chat/completions",
@@ -1115,10 +1402,24 @@ exports[`GOLDEN buildUrl (default executor providers) > alicode-intl → url (st
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > alims-intl → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+  "stream": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > anthropic → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.anthropic.com/v1/messages",
   "stream": "https://api.anthropic.com/v1/messages",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > api-airforce → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.airforce/v1/chat/completions",
+  "stream": "https://api.airforce/v1/chat/completions",
 }
 `;
 
@@ -1129,10 +1430,31 @@ exports[`GOLDEN buildUrl (default executor providers) > assemblyai → url (stre
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > baidu → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://qianfan.baidubce.com/v2/chat/completions",
+  "stream": "https://qianfan.baidubce.com/v2/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > bazaarlink → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://bazaarlink.ai/api/v1/chat/completions",
+  "stream": "https://bazaarlink.ai/api/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > blackbox → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.blackbox.ai/chat/completions",
   "stream": "https://api.blackbox.ai/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > bluesminds → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.bluesminds.com/v1/chat/completions",
+  "stream": "https://api.bluesminds.com/v1/chat/completions",
 }
 `;
 
@@ -1189,6 +1511,13 @@ exports[`GOLDEN buildUrl (default executor providers) > codebuddy-cn → url (st
 {
   "nonStream": "https://copilot.tencent.com/v2/chat/completions",
   "stream": "https://copilot.tencent.com/v2/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > codebuddy-intl → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://www.codebuddy.ai/v2/chat/completions",
+  "stream": "https://www.codebuddy.ai/v2/chat/completions",
 }
 `;
 
@@ -1276,6 +1605,13 @@ exports[`GOLDEN buildUrl (default executor providers) > hyperbolic → url (stre
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > kilo-gateway → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.kilo.ai/api/gateway/chat/completions",
+  "stream": "https://api.kilo.ai/api/gateway/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > kilocode → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.kilo.ai/api/openrouter/chat/completions",
@@ -1304,6 +1640,13 @@ exports[`GOLDEN buildUrl (default executor providers) > kimi-coding → url (str
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > llm7 → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.llm7.io/v1/chat/completions",
+  "stream": "https://api.llm7.io/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > minimax → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.minimax.io/anthropic/v1/messages?beta=true",
@@ -1329,6 +1672,13 @@ exports[`GOLDEN buildUrl (default executor providers) > mmf → url (stream + no
 {
   "nonStream": "https://api.xiaomimimo.com/api/free-ai/openai/chat",
   "stream": "https://api.xiaomimimo.com/api/free-ai/openai/chat",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > morph → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.morphllm.com/v1/chat/completions",
+  "stream": "https://api.morphllm.com/v1/chat/completions",
 }
 `;
 
@@ -1388,6 +1738,20 @@ exports[`GOLDEN buildUrl (default executor providers) > perplexity-agent → url
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > poolside → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://inference.poolside.ai/v1/chat/completions",
+  "stream": "https://inference.poolside.ai/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > sambanova → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.sambanova.ai/v1/chat/completions",
+  "stream": "https://api.sambanova.ai/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > siliconflow → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.siliconflow.com/v1/chat/completions",
@@ -1395,10 +1759,24 @@ exports[`GOLDEN buildUrl (default executor providers) > siliconflow → url (str
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > tencent → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.hunyuan.cloud.tencent.com/v1/chat/completions",
+  "stream": "https://api.hunyuan.cloud.tencent.com/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > together → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.together.xyz/v1/chat/completions",
   "stream": "https://api.together.xyz/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > tokenrouter → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.tokenrouter.com/v1/chat/completions",
+  "stream": "https://api.tokenrouter.com/v1/chat/completions",
 }
 `;
 
@@ -1434,5 +1812,12 @@ exports[`GOLDEN buildUrl (default executor providers) > xiaomi-mimo → url (str
 {
   "nonStream": "https://api.xiaomimimo.com/v1/chat/completions",
   "stream": "https://api.xiaomimimo.com/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > zed → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://cloud.zed.dev/completions",
+  "stream": "https://cloud.zed.dev/completions",
 }
 `;

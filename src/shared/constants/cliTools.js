@@ -8,7 +8,7 @@ export const MITM_TOOLS = {
     description: "Google Antigravity IDE with MITM",
     configType: "mitm",
     mitmDomain: "daily-cloudcode-pa.googleapis.com",
-    modelAliases: ["gemini-3.6-flash-high", "gemini-3.6-flash-medium", "gemini-3.6-flash-low", "gemini-3.5-flash-low", "gemini-3-flash-agent", "gemini-3.5-flash-extra-low", "gemini-3.1-pro-low", "gemini-pro-agent", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium", "gemini-3-flash"],
+    modelAliases: ["gemini-3.7-flash-high", "gemini-3.7-flash-medium", "gemini-3.7-flash-low", "gemini-3.6-flash-high", "gemini-3.6-flash-medium", "gemini-3.6-flash-low", "gemini-3.5-flash-low", "gemini-3-flash-agent", "gemini-3.5-flash-extra-low", "gemini-3.1-pro-low", "gemini-pro-agent", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium", "gemini-3-flash"],
     defaultModels: [
       { id: "gemini-3.6-flash-high", name: "Gemini 3.6 Flash (High)", alias: "gemini-3.6-flash-high" },
       { id: "gemini-3.6-flash-medium", name: "Gemini 3.6 Flash (Medium)", alias: "gemini-3.6-flash-medium" },
@@ -57,8 +57,13 @@ export const MITM_TOOLS = {
     color: "#FF6B00",
     description: "Kiro IDE with MITM",
     configType: "mitm",
-    mitmDomain: "q.us-east-1.amazonaws.com",
+    mitmDomain: "runtime.us-east-1.kiro.dev",
     defaultModels: [
+      // Kiro's agent/"vibe" mode sends modelId "auto" for the main turn and "simple-task"
+      // for background sub-tasks (verified via MITM request dump of generateAssistantResponse).
+      // Both need a mappable slot — otherwise getMappedModel returns null and the chat call
+      // is passed through to AWS instead of being routed to the chosen provider.
+      { id: "auto", name: "Auto (Kiro Agent)", alias: "auto" },
       { id: "claude-sonnet-5", name: "Claude Sonnet 5", alias: "claude-sonnet-5" },
       { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5", alias: "claude-sonnet-4.5" },
       { id: "claude-sonnet-4", name: "Claude Sonnet 4", alias: "claude-sonnet-4" },
