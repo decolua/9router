@@ -24,7 +24,6 @@ import ZedExecutor from "./zed.js";
 import WindsurfExecutor from "./windsurf.js";
 import { DefaultExecutor } from "./default.js";
 import { DevinCliExecutor } from "./devin-cli.js";
-import { MuseCodeExecutor } from "./muse-code.js";
 
 const executors = {
   antigravity: new AntigravityExecutor(),
@@ -57,8 +56,6 @@ const executors = {
   zed: new ZedExecutor(),
   windsurf: new WindsurfExecutor(),
   "devin-cli": new DevinCliExecutor(),
-  "muse-code": new MuseCodeExecutor(),
-  mc: new MuseCodeExecutor(), // Alias
 };
 
 const defaultCache = new Map();
@@ -86,7 +83,6 @@ export { CodexExecutor } from "./codex.js";
 export { CursorExecutor } from "./cursor.js";
 export { VertexExecutor } from "./vertex.js";
 export { DefaultExecutor } from "./default.js";
-export { MuseCodeExecutor } from "./muse-code.js";
 export { OpenCodeExecutor } from "./opencode.js";
 export { GrokWebExecutor } from "./grok-web.js";
 export { GrokCliExecutor } from "./grok-cli.js";

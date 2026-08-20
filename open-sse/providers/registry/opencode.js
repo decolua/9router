@@ -19,7 +19,17 @@ export default {
     },
     noAuth: true,
   },
-  models: [],
+  models: [
+    // Exception to the dynamic catalog: Muse Spark 1.2 Contributor Free is
+    // Responses-only on https://opencode.ai/zen/v1/responses (@ai-sdk/openai).
+    { id: "muse-spark-1.2-contributor-free", name: "Muse Spark 1.2 Contributor Free", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
+  ],
   modelsFetcher: { url: "https://opencode.ai/zen/v1/models", type: "opencode-free" },
   passthroughModels: true,
+  // Responses-only endpoint for the free Muse Spark model. Auth is owned by
+  // OpenCodeExecutor.buildHeaders (Bearer public + opencode UA), so no auth
+  // descriptor is needed here.
+  transports: [
+    { format: "openai-responses", baseUrl: "https://opencode.ai/zen/v1/responses" },
+  ],
 };

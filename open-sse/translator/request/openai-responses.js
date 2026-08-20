@@ -175,22 +175,10 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   // explicit `name` field and cannot be represented as Chat Completions function declarations.
   // Filter them out to avoid sending nameless functionDeclarations to downstream providers
   // such as Gemini, which strictly validates function names.
-  // Muse Code bundles tools as { type:"namespace", name, tools:[...] } groups; flatten
-  // children into standalone tools so chat providers see every function (same as muse-shim).
-  const rawTools = Array.isArray(body.tools) ? body.tools : [];
-  const flattenedTools = [];
-  for (const tool of rawTools) {
-    if (tool && typeof tool === "object" && tool.type === "namespace" && Array.isArray(tool.tools)) {
-      for (const child of tool.tools) {
-        if (child && typeof child === "object" && typeof child.name === "string" && child.name.trim()) {
-          flattenedTools.push(child);
-        }
-      }
-    } else {
-      flattenedTools.push(tool);
-    }
-  }
-  const responseTools = [...flattenedTools, ...additionalTools];
+  const responseTools = [
+    ...(Array.isArray(body.tools) ? body.tools : []),
+    ...additionalTools,
+  ];
   if (responseTools.length > 0) {
     result.tools = responseTools
       .map(tool => {
@@ -428,7 +416,9 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
 
   // Pass through other relevant fields
   if (body.temperature !== undefined) result.temperature = body.temperature;
-  if (body.max_tokens !== undefined) result.max_tokens = body.max_tokens;
+  // Responses schema requires max_output_tokens (Claude Code sends max_tokens)
+  if (body.max_tokens !== undefined) result.max_output_tokens = body.max_tokens;
+  if (body.max_output_tokens !== undefined) result.max_output_tokens = body.max_output_tokens;
   if (body.top_p !== undefined) result.top_p = body.top_p;
   if (body.reasoning !== undefined) result.reasoning = body.reasoning;
   if (body.reasoning_effort !== undefined) result.reasoning = { effort: body.reasoning_effort, summary: "auto" };

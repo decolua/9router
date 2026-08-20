@@ -50,7 +50,11 @@ export class OpenCodeExecutor extends BaseExecutor {
     return injectReasoningContent({ provider: this.provider, model, body });
   }
 
-  buildUrl(model) {
+  buildUrl(model, stream, urlIndex = 0, credentials = null) {
+    // Runtime transport (multi-endpoint): use the sourceFormat-matched endpoint
+    // (e.g. OpenCode Free Muse Spark → /zen/v1/responses).
+    const rt = credentials?.runtimeTransport;
+    if (rt?.baseUrl) return rt.urlSuffix ? `${rt.baseUrl}${rt.urlSuffix}` : rt.baseUrl;
     const base = this.config.baseUrl;
     return MESSAGES_MODELS.has(model)
       ? `${base}/zen/v1/messages`

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { PROVIDER_MODELS, getModelSupportedFormats } from "../../open-sse/config/providerModels.js";
+import { PROVIDER_MODELS, getModelSupportedFormats, getModelTargetFormat } from "../../open-sse/config/providerModels.js";
 import { PROVIDERS } from "../../open-sse/config/providers.js";
 import { resolveTransport } from "../../open-sse/services/provider.js";
+import opencodeRegistry from "../../open-sse/providers/registry/opencode.js";
 
 // Chat-only models (no /messages, no /responses support on opencode-go)
 const CHAT_ONLY = [
@@ -26,16 +27,27 @@ describe("OpenCode Go model catalog", () => {
   it("matches the documented model IDs", () => {
     const ids = (PROVIDER_MODELS["opencode-go"] || []).map((m) => m.id);
     expect(ids).toEqual([
-      "glm-5.2", "glm-5.1", "kimi-k2.7-code", "kimi-k2.6",
+      "grok-4.5", "gpt-5.6-luna", "glm-5.3", "glm-5.2", "glm-5.1",
+      "kimi-k3", "kimi-k2.7-code", "kimi-k2.6",
       "deepseek-v4-pro", "deepseek-v4-flash",
       "mimo-v2.5", "mimo-v2.5-pro",
       "minimax-m3", "minimax-m2.7", "minimax-m2.5",
-      "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus",
+      "muse-spark-1.2-contributor",
+      "qwen3.8-max", "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus",
+      "hy3",
     ]);
   });
 });
 
 describe("OpenCode Go per-model supportedFormats", () => {
+  it("declares Muse Spark 1.2 Contributor as Responses-only", () => {
+    const ids = (PROVIDER_MODELS["opencode-go"] || []).map((m) => m.id);
+    expect(ids).toContain("muse-spark-1.2-contributor");
+    expect(ids).not.toContain("muse-spark-1.2");
+    expect(getModelSupportedFormats("opencode-go", "muse-spark-1.2-contributor")).toEqual(["openai-responses"]);
+    expect(getModelTargetFormat("opencode-go", "muse-spark-1.2-contributor")).toBe("openai-responses");
+  });
+
   it("declares [openai, claude] for MiniMax + Qwen models", () => {
     for (const m of CLAUDE_CAPABLE) {
       expect(getModelSupportedFormats("opencode-go", m)).toEqual(["openai", "claude"]);
@@ -118,5 +130,26 @@ describe("OpenCode Go per-model transport guard (chatCore logic)", () => {
     for (const m of [...CHAT_ONLY, ...CLAUDE_CAPABLE]) {
       expect(pickTransport("opencode-go", "openai-responses", "opencode-go", m)).toBeNull();
     }
+  });
+});
+
+describe("OpenCode Free (oc) registry — Responses-only Muse Spark Free", () => {
+  const FREE_ID = "muse-spark-1.2-contributor-free";
+
+  it("declares the exact free model on the oc alias with openai-responses support", () => {
+    const ids = (PROVIDER_MODELS.oc || []).map((m) => m.id);
+    expect(ids).toEqual([FREE_ID]);
+    expect(getModelSupportedFormats("oc", FREE_ID)).toEqual(["openai-responses"]);
+    expect(getModelTargetFormat("oc", FREE_ID)).toBe("openai-responses");
+  });
+
+  it("keeps dynamic modelsFetcher + passthrough and only the Responses transport (no sibling)", () => {
+    expect(opencodeRegistry.modelsFetcher?.type).toBe("opencode-free");
+    expect(opencodeRegistry.passthroughModels).toBe(true);
+    // single Responses transport; openai/claude formats resolve to no transport
+    expect(PROVIDERS.opencode.transports).toEqual([{ format: "openai-responses", baseUrl: "https://opencode.ai/zen/v1/responses" }]);
+    expect(resolveTransport("opencode", "openai-responses")?.baseUrl).toBe("https://opencode.ai/zen/v1/responses");
+    expect(resolveTransport("opencode", "openai")).toBeNull();
+    expect(resolveTransport("opencode", "claude")).toBeNull();
   });
 });

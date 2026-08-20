@@ -86,10 +86,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const modelSupportedFormats = getModelSupportedFormats(alias, model);
   const runtimeTransport = resolveTransport(provider, sourceFormat);
   // Per-model guard: when a model declares supportedFormats, only use the
-  // sourceFormat-matched transport if that format is declared (opencode-go models
-  // differ — kimi/glm only do /chat/completions). Undeclared models keep the
-  // upstream default (use the transport), preserving behavior for glm/deepseek/...
-  const useTransport = (!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat)) ? runtimeTransport : null;
+  // sourceFormat-matched transport if that format is declared. A model-level
+  // targetFormat selects its required endpoint when the client speaks another format.
+  const sourceTransport = (!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat)) ? runtimeTransport : null;
+  const useTransport = sourceTransport || (modelTargetFormat ? resolveTransport(provider, modelTargetFormat) : null);
   const targetFormat = modelTargetFormat || useTransport?.format || getTargetFormat(provider, credentials);
   if (useTransport && credentials) credentials.runtimeTransport = useTransport;
   const stripList = getModelStrip(alias, model);
