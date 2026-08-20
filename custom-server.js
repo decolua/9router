@@ -270,25 +270,13 @@ function handleCodexUpgrade(req, socket, head, port) {
       }
 
       // Codex opens a second connection at session start carrying
-      // `request_kind: "prewarm"` and sends the full turn payload down it,
-      // waiting for `response.completed` before the first real turn may run.
-      // ChatGPT answers that cheaply to warm its own prompt cache; routing it
-      // upstream instead would spend a real model call on every session start
-      // and blow past the client's websocket_connect_timeout. There is no cache
-      // of ours to warm, so acknowledge it and route nothing.
-      if (isPrewarm) {
-        const responseId = `prewarm_${crypto.randomBytes(12).toString("hex")}`;
-        const usage = {
-          input_tokens: 0,
-          input_tokens_details: null,
-          output_tokens: 0,
-          output_tokens_details: null,
-          total_tokens: 0,
-        };
-        send(JSON.stringify({ type: "response.created", response: { id: responseId } }));
-        send(JSON.stringify({ type: "response.completed", response: { id: responseId, usage } }));
-        return;
-      }
+      // `request_kind: "prewarm"` and sends the full turn payload down it, so
+      // the upstream prompt cache is already warm when the user hits enter.
+      // Answering it locally with a synthetic `response.completed` is what the
+      // client then adopts as the turn's answer — the user sees a blank reply
+      // and nothing is ever routed. Treat it as an ordinary turn instead: the
+      // payload is one, ChatGPT caches it, and the next turn reuses that cache.
+      if (isPrewarm) console.log(`[CodexWS] prewarm turn from ${peerIp} routed upstream`);
       bridgeCodexTurn(request, port, req.headers, peerIp, send, (error, rejectedStatus) => {
         if (error) {
           send(JSON.stringify({ type: "error", error: { message: error.message, type: "server_error" } }));
