@@ -73,7 +73,8 @@ export function createResponsesApiTransformStream(logger = null) {
     funcArgsDone: {},
     funcItemDone: {},
     buffer: "",
-    completedSent: false
+    completedSent: false,
+    usage: null
   };
 
   const encoder = new TextEncoder();
@@ -222,9 +223,28 @@ export function createResponsesApiTransformStream(logger = null) {
     }
   };
 
+  // chat.completions usage -> Responses API shape. Tolerates upstreams that
+  // already speak the Responses names, mirroring the reverse direction in
+  // translator/response/openai-responses.js.
+  const toResponsesUsage = (usage) => {
+    if (!usage || typeof usage !== "object") return null;
+    const inputTokens = usage.input_tokens ?? usage.prompt_tokens ?? 0;
+    const outputTokens = usage.output_tokens ?? usage.completion_tokens ?? 0;
+    const cachedTokens =
+      usage.input_tokens_details?.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? 0;
+    const result = {
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      total_tokens: usage.total_tokens ?? inputTokens + outputTokens
+    };
+    if (cachedTokens) result.input_tokens_details = { cached_tokens: cachedTokens };
+    return result;
+  };
+
   const sendCompleted = (controller) => {
     if (!state.completedSent) {
       state.completedSent = true;
+      const usage = toResponsesUsage(state.usage);
       emit(controller, "response.completed", {
         type: "response.completed",
         response: {
@@ -233,7 +253,8 @@ export function createResponsesApiTransformStream(logger = null) {
           created_at: state.created,
           status: "completed",
           background: false,
-          error: null
+          error: null,
+          ...(usage ? { usage } : {})
         }
       });
     }
@@ -263,6 +284,10 @@ export function createResponsesApiTransformStream(logger = null) {
         } catch {
           continue;
         }
+
+        // The final chat.completions chunk carries usage with an empty choices
+        // array, so this has to be read before the guard below drops it.
+        if (parsed.usage) state.usage = parsed.usage;
 
         if (!parsed.choices?.length) continue;
         
@@ -419,7 +444,12 @@ export function createResponsesApiTransformStream(logger = null) {
           for (const i in state.msgItemAdded) closeMessage(controller, i);
           closeReasoning(controller);
           for (const i in state.funcCallIds) closeToolCall(controller, i);
-          sendCompleted(controller);
+          // With `include_usage`, upstream sends usage in a trailing chunk AFTER
+          // this one, so completing here would always drop it. Wait for flush,
+          // which runs as soon as the upstream stream ends; a stalled upstream is
+          // handled separately by the aborted-terminal synthesis in
+          // utils/responsesStreamHelpers.js, so this cannot hang.
+          if (state.usage) sendCompleted(controller);
         }
       }
     },
