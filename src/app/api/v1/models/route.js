@@ -7,6 +7,7 @@ import {
 } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
+import { getSettings } from "@/lib/db/repos/settingsRepo.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
@@ -237,6 +238,18 @@ function comboMatchesKinds(combo, kindFilter) {
   return kindFilter.includes(kind);
 }
 
+function comboToEntry(combo) {
+  const entry = {
+    id: combo.name,
+    object: "model",
+    owned_by: "combo",
+  };
+  if (combo.kind === "webSearch" || combo.kind === "webFetch") {
+    entry.kind = combo.kind;
+  }
+  return entry;
+}
+
 /**
  * Build OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
@@ -259,6 +272,25 @@ export async function buildModelsList(kindFilter, options = {}) {
     combos = await getCombos();
   } catch (e) {
     console.log("Could not fetch combos");
+  }
+
+  let settings = {};
+  try {
+    settings = await getSettings();
+  } catch (e) {
+    console.log("Could not fetch settings, using defaults");
+  }
+  if (settings.exposeComboOnly) {
+    const seenModelIds = new Set();
+    const comboOnlyModels = [];
+    for (const combo of combos) {
+      if (!comboMatchesKinds(combo, kindFilter)) continue;
+      const entry = comboToEntry(combo);
+      if (seenModelIds.has(entry.id)) continue;
+      seenModelIds.add(entry.id);
+      comboOnlyModels.push(entry);
+    }
+    return comboOnlyModels;
   }
 
   let customModels = [];
@@ -295,15 +327,7 @@ export async function buildModelsList(kindFilter, options = {}) {
   // Combos first (filtered by kind). Web combos expose `kind` so AI knows search vs fetch.
   for (const combo of combos) {
     if (!comboMatchesKinds(combo, kindFilter)) continue;
-    const entry = {
-      id: combo.name,
-      object: "model",
-      owned_by: "combo",
-    };
-    if (combo.kind === "webSearch" || combo.kind === "webFetch") {
-      entry.kind = combo.kind;
-    }
-    models.push(entry);
+    models.push(comboToEntry(combo));
   }
 
   if (connections.length === 0) {
