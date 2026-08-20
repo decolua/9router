@@ -46,9 +46,11 @@ export default {
   models: [
     { id: "gpt-5.6-sol", name: "GPT-5.6 Sol" },
     { id: "kimi-3", name: "Kimi 3" },
-    { id: "glm-5.2", name: "GLM-5.2" },
+    { id: "glm-5.3", name: "GLM-5.3" },
     { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
     { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
+    { id: "grok-4.6", name: "Grok 4.6" },
+    { id: "claude-fable-5", name: "Claude Fable 5" },
     { id: "claude-opus-5", name: "Claude Opus 5" },
     { id: "gapgpt-qwen-3.6", name: "Qwen 3.6" },
     { id: "claude-sonnet-5", name: "Claude Sonnet 5" },
