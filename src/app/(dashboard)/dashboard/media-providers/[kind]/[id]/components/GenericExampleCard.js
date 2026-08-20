@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Card } from "@/shared/components";
 import { MEDIA_PROVIDER_KINDS, getProviderAlias, resolveProviderId } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
+import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { Row, KIND_EXAMPLE_CONFIG } from "./exampleShared";
 
@@ -37,9 +38,14 @@ export function GenericExampleCard({ providerId, kind }) {
   const safeExConfig = exConfig || {};
 
   // Get models for this kind (e.g., type="image")
-  const kindModels = getModelsByProviderId(providerId).filter((m) => getModelKind(m) === kind);
-  // Kinds that need a model identifier in the request (image/video/music)
-  const KIND_NEEDS_MODEL = new Set(["image", "video", "music", "imageToText"]);
+  // For webSearch: use searchViaChat.models from provider registry
+  const providerDef = AI_PROVIDERS[providerId];
+  const searchViaChatModels = (kind === "webSearch" && providerDef?.searchViaChat?.models) || [];
+  const kindModels = searchViaChatModels.length > 0
+    ? searchViaChatModels
+    : getModelsByProviderId(providerId).filter((m) => getModelKind(m) === kind);
+  // Kinds that need a model identifier in the request (image/video/music/webSearch)
+  const KIND_NEEDS_MODEL = new Set(["image", "video", "music", "imageToText", "webSearch"]);
   const needsModel = KIND_NEEDS_MODEL.has(kind);
   const allowManualModel = needsModel && kindModels.length === 0;
   const [selectedModel, setSelectedModel] = useState(kindModels[0]?.id ?? "");
@@ -350,6 +356,8 @@ export function GenericExampleCard({ providerId, kind }) {
                   className="max-h-40 rounded-lg border border-border object-contain bg-sidebar"
                   onError={(e) => { e.currentTarget.style.display = "none"; }}
                   onLoad={(e) => { e.currentTarget.style.display = "block"; }}
+                loading="lazy"
+                decoding="async"
                 />
               )}
             </div>
@@ -383,6 +391,8 @@ export function GenericExampleCard({ providerId, kind }) {
                   className="max-h-40 rounded-lg border border-border object-contain bg-sidebar"
                   onError={(e) => { e.currentTarget.style.display = "none"; }}
                   onLoad={(e) => { e.currentTarget.style.display = "block"; }}
+                loading="lazy"
+                decoding="async"
                 />
               )}
             </div>
@@ -391,7 +401,7 @@ export function GenericExampleCard({ providerId, kind }) {
 
         {/* Extra fields — for kinds without model concept (webSearch/webFetch), show all; otherwise filter by model.params */}
         {(exConfig.extraFields || [])
-          .filter((f) => kindModels.length === 0 || (Array.isArray(selectedModelObj?.params) && selectedModelObj.params.includes(f.key)))
+          .filter((f) => kind === "webSearch" || kind === "webFetch" || kindModels.length === 0 || (Array.isArray(selectedModelObj?.params) && selectedModelObj.params.includes(f.key)))
           .map((f) => (
           <Row key={f.key} label={f.label}>
             {f.type === "select" ? (
@@ -487,6 +497,8 @@ export function GenericExampleCard({ providerId, kind }) {
               src={`data:image/png;base64,${partialImage.b64_json}`}
               alt="Partial"
               className="max-w-full rounded-lg border border-border mt-1.5 opacity-80"
+            loading="lazy"
+            decoding="async"
             />
           </div>
         )}
@@ -529,6 +541,8 @@ export function GenericExampleCard({ providerId, kind }) {
                 src={binaryImageUrl || (result?.data?.data?.[0]?.b64_json ? `data:image/png;base64,${result.data.data[0].b64_json}` : result?.data?.data?.[0]?.url)}
                 alt="Generated"
                 className="max-w-full rounded-lg border border-border"
+              loading="lazy"
+              decoding="async"
               />
             </div>
           )}

@@ -163,7 +163,7 @@ export default function MediaProviderDetailPage() {
       )}
 
       {/* Models - hidden for tts/webSearch/webFetch (provider IS the model); custom uses prefix as alias */}
-      {kind !== "tts" && kind !== "webSearch" && kind !== "webFetch" && (
+      {kind !== "tts" && kind !== "webFetch" && (
         <ModelsCard
           providerId={id}
           kindFilter={kind}

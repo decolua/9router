@@ -31,7 +31,20 @@ export async function handleSearch(request) {
 
   const url = new URL(request.url);
   // Accept either `provider` or `model` (UI sends `model` since provider IS the model for webSearch)
-  const providerInput = body.provider || body.model;
+  // Handle "provider/model" format (e.g. "ag/gemini-3.7-flash-high") from dashboard
+  let providerInput = body.provider || body.model;
+  let explicitModel = null;
+  if (providerInput && providerInput.includes("/")) {
+    const slashIdx = providerInput.indexOf("/");
+    explicitModel = providerInput.slice(slashIdx + 1);
+    providerInput = providerInput.slice(0, slashIdx);
+  }
+  // If body.model was used as providerInput but an explicit model was also split out, prefer the split model
+  if (!body.provider && body.model && explicitModel) {
+    body.model = explicitModel;
+  } else if (explicitModel && !body.model) {
+    body.model = explicitModel;
+  }
   const query = body.query;
 
   log.request("POST", `${url.pathname} | ${providerInput}`);
@@ -115,9 +128,17 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
   }
 
   // Sanitized body forwarded to core
+  // Determine if a model string is actually a provider ID or alias (e.g. "ag" or "antigravity")
+  const isProviderOrAlias = (m) => !m || m === providerId || m === resolvedProvider?.alias || m === resolvedProvider?.uiAlias || !!AI_PROVIDERS[m];
+  
+  // Only use model if it is a real model name, not a provider ID/alias
+  const rawModel = body.model && !isProviderOrAlias(body.model) ? body.model : (!isProviderOrAlias(providerInput) ? providerInput : undefined);
+  const searchModel = rawModel;
+
   const coreBody = {
     query: query.trim(),
     provider: providerId,
+    model: searchModel,
     max_results: body.max_results,
     search_type: body.search_type,
     country: body.country,
@@ -191,7 +212,8 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
 
     if (result.success) return result.response;
 
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, providerId);
+    const failedModel = coreBody.model || resolvedProvider.searchViaChat?.defaultModel || "gemini-2.5-flash";
+    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, providerId, failedModel);
 
     if (shouldFallback) {
       log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);

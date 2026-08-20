@@ -9,7 +9,7 @@ const searchModel = (id) => PROVIDER_MEDIA[id]?.searchViaChat?.defaultModel;
 const searchEndpoint = (id, model) =>
   (PROVIDER_MEDIA[id]?.searchViaChat?.endpoint || "").replace("{model}", model || "");
 
-const REQUEST_TIMEOUT_MS = 15000;
+const REQUEST_TIMEOUT_MS = 60000;
 const DEFAULT_MAX_RESULTS = 10;
 
 /**
@@ -28,7 +28,7 @@ function toResult(c, index, provider, retrievedAt) {
     score: null,
     published_at: null,
     favicon_url: null,
-    content: null,
+    content: c.content || c.snippet || null,
     metadata: {},
     citation: { provider, retrieved_at: retrievedAt, rank: index + 1 },
     provider_raw: null
@@ -69,6 +69,104 @@ const CHAT_SEARCH_CONFIG = {
         .map((w) => ({ url: w.uri || w.url, title: w.title || "" }))
         .filter((c) => c.url);
       const tokens = data?.usageMetadata?.totalTokenCount || 0;
+      return { text, citations, tokens };
+    }
+  },
+
+
+  antigravity: {
+    endpoint: () => searchEndpoint("antigravity"),
+    buildBody: (query, model, credentials) => {
+      // For search/grounding via v1internal:generateContent, use base model names
+      // (tiered names only work on streamGenerateContent)
+      const AG_MODEL_MAP = {
+        "gemini-3.7-flash-high": "gemini-2.5-flash",
+        "gemini-3.7-flash-medium": "gemini-2.5-flash",
+        "gemini-3.7-flash-low": "gemini-2.5-flash",
+        "gemini-3.6-flash-high": "gemini-2.5-flash",
+        "gemini-3.6-flash-medium": "gemini-2.5-flash",
+        "gemini-3.6-flash-low": "gemini-2.5-flash",
+        "gemini-3.5-flash-high": "gemini-2.5-flash",
+        "gemini-3-flash-agent": "gemini-2.5-flash",
+        "gemini-2.5-flash": "gemini-2.5-flash",
+        "gemini-2.5-pro": "gemini-2.5-pro",
+      };
+      const upstreamModel = AG_MODEL_MAP[model] || model || "gemini-2.5-flash";
+      return {
+        project: credentials?.projectId || "unknown",
+        model: upstreamModel,
+      userAgent: "antigravity",
+      requestType: "search",
+      request: {
+        contents: [{ role: "user", parts: [{ text: query }] }],
+        tools: [{ googleSearch: {} }],
+        generationConfig: { temperature: 1.0, maxOutputTokens: 8192 }
+      }
+    };
+    },
+    buildHeaders: (token) => ({
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`,
+      "User-Agent": "antigravity-ide/1.101.0"
+    }),
+    extractAnswer: (data) => {
+      // Antigravity wraps response in {response: {...}}
+      const response = data?.response || data;
+      const candidate = response?.candidates?.[0];
+      const parts = candidate?.content?.parts || [];
+      const text = parts.map(p => p?.text || "").filter(Boolean).join("");
+      const gm = candidate?.groundingMetadata || {};
+      const chunks = gm.groundingChunks || [];
+      const supports = gm.groundingSupports || [];
+
+      // Build two maps per chunk: raw snippets (short) and expanded context (long)
+      const rawSnippetsByChunk = {};
+      const expandedByChunk = {};
+      for (const s of supports) {
+        const seg = s?.segment;
+        const rawText = seg?.text || "";
+        let expandedText = rawText;
+
+        if (seg && typeof seg.startIndex === "number" && typeof seg.endIndex === "number" && text) {
+          // Expanded: grab surrounding paragraph context
+          const start = Math.max(0, seg.startIndex - 150);
+          const end = Math.min(text.length, seg.endIndex + 250);
+          let exp = text.slice(start, end).trim();
+          if (start > 0) exp = "..." + exp.replace(/^[^\s]+/, "");
+          if (end < text.length) exp = exp.replace(/[^\s]+$/, "") + "...";
+          expandedText = exp;
+        }
+
+        for (const idx of (s?.groundingChunkIndices || [])) {
+          if (!rawSnippetsByChunk[idx]) rawSnippetsByChunk[idx] = [];
+          if (!expandedByChunk[idx]) expandedByChunk[idx] = [];
+          if (rawText && !rawSnippetsByChunk[idx].includes(rawText)) {
+            rawSnippetsByChunk[idx].push(rawText);
+          }
+          if (expandedText && !expandedByChunk[idx].includes(expandedText)) {
+            expandedByChunk[idx].push(expandedText);
+          }
+        }
+      }
+
+      const citations = chunks
+        .map((ch, i) => {
+          const w = ch?.web;
+          if (!w) return null;
+          const rawPieces = rawSnippetsByChunk[i] || [];
+          const expPieces = expandedByChunk[i] || [];
+          const snippet = rawPieces.length > 0 ? rawPieces.join(" | ") : (w.title || "");
+          const content = expPieces.length > 0 ? expPieces.join("\n\n") : snippet;
+          return {
+            url: w.uri || w.url || "",
+            title: w.title || "",
+            snippet,
+            content
+          };
+        })
+        .filter(c => c && c.url);
+
+      const tokens = response?.usageMetadata?.totalTokenCount || 0;
       return { text, citations, tokens };
     }
   },
@@ -273,6 +371,53 @@ const CHAT_SEARCH_CONFIG = {
       const tokens = data?.usage?.total_tokens || 0;
       return { text, citations, tokens };
     }
+  },
+
+  "perplexity-agent": {
+    endpoint: () => searchEndpoint("perplexity-agent"),
+    buildBody: (query, model) => ({
+      model,
+      input: query,
+      tools: [{ type: "web_search" }]
+    }),
+    buildHeaders: (token) => ({
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    }),
+    extractAnswer: (data) => {
+      const output = Array.isArray(data?.output) ? data.output : [];
+      let text = "";
+      const citations = [];
+      for (const item of output) {
+        const parts = Array.isArray(item?.content) ? item.content : [];
+        for (const p of parts) {
+          if (typeof p?.text === "string") text += p.text;
+          const anns = Array.isArray(p?.annotations) ? p.annotations : [];
+          for (const a of anns) {
+            const c = normalizeCitation(a?.url ? a : a?.url_citation);
+            if (c) citations.push(c);
+          }
+        }
+        const results = Array.isArray(item?.results) ? item.results : [];
+        for (const r of results) {
+          const url = r?.url || r?.link;
+          if (!url) continue;
+          citations.push({
+            url,
+            title: r?.title || "",
+            snippet: r?.snippet || ""
+          });
+        }
+      }
+      if (!citations.length && Array.isArray(data?.citations)) {
+        for (const c of data.citations) {
+          const n = normalizeCitation(c);
+          if (n) citations.push(n);
+        }
+      }
+      const tokens = data?.usage?.total_tokens || 0;
+      return { text, citations, tokens };
+    }
   }
 };
 
@@ -325,7 +470,7 @@ export async function handleChatSearch({
       : DEFAULT_MAX_RESULTS;
   const useModel = model || searchModel(provider);
   const url = cfg.endpoint(useModel);
-  const body = cfg.buildBody(query, useModel);
+  const body = cfg.buildBody(query, useModel, credentials);
   const headers = cfg.buildHeaders(token);
 
   const controller = new AbortController();
@@ -365,6 +510,34 @@ export async function handleChatSearch({
       status: 502,
       error: `Invalid upstream response (status ${resp.status})`
     };
+  }
+
+  // TEMP DEBUG: log request/response for antigravity search failures
+  if (provider === "antigravity" && !resp.ok) {
+    console.log(`[SEARCH_DEBUG] url=${url} status=${resp.status}`);
+    console.log(`[SEARCH_DEBUG] sent_body=${JSON.stringify(body).slice(0, 500)}`);
+    console.log(`[SEARCH_DEBUG] response=${JSON.stringify(data).slice(0, 500)}`);
+  }
+
+  // Auto-fallback: if model capacity exhausted (503), retry with gemini-2.5-flash
+  if (!resp.ok && resp.status === 503 && provider === "antigravity" && body?.model && body.model !== "gemini-2.5-flash") {
+    console.log(`[SEARCH_FALLBACK] ${body.model} returned 503, falling back to gemini-2.5-flash`);
+    const fallbackBody = { ...body, model: "gemini-2.5-flash" };
+    const fallbackResp = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(fallbackBody),
+      signal: AbortSignal.timeout(60000),
+    });
+    let fallbackData;
+    try { fallbackData = await fallbackResp.json(); } catch { fallbackData = null; }
+    if (fallbackResp.ok && fallbackData) {
+      data = fallbackData;
+      resp = fallbackResp;
+      // Update body.model so the response reflects the fallback model
+      body.model = "gemini-2.5-flash";
+    }
+    // If fallback also fails, fall through to original error handling
   }
 
   if (!resp.ok) {
