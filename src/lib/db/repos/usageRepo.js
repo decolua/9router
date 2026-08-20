@@ -343,6 +343,158 @@ function loadDaysInRange(adapter, maxDays) {
   return adapter.all(`SELECT dateKey, data FROM usageDaily WHERE dateKey >= ?`, [cutoffKey]);
 }
 
+/**
+ * Per-connection API-list-price value, for the subscription value badge.
+ *
+ * The `cost` already accrued in usageDaily.byAccount is computed at canonical
+ * API rates (see open-sse/providers/pricing.js) regardless of whether the
+ * request was billed through a subscription — so summing it answers "what
+ * would this account's traffic have cost on the pay-as-you-go API".
+ *
+ * @returns {Promise<Object>} { [connectionId]: { lifetimeCost, monthCost, lifetimeRequests, monthRequests, firstDateKey } }
+ */
+export async function getConnectionValue() {
+  const db = await getAdapter();
+  const rows = db.all(`SELECT dateKey, data FROM usageDaily`);
+
+  const now = new Date();
+  const monthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+  const out = {};
+  for (const row of rows) {
+    const day = parseJson(row.data, {});
+    const inCurrentMonth = String(row.dateKey || "").startsWith(monthPrefix);
+
+    for (const [connectionId, acct] of Object.entries(day.byAccount || {})) {
+      if (!out[connectionId]) {
+        out[connectionId] = {
+          lifetimeCost: 0, monthCost: 0,
+          lifetimeRequests: 0, monthRequests: 0,
+          firstDateKey: row.dateKey,
+        };
+      }
+      const entry = out[connectionId];
+      entry.lifetimeCost += acct.cost || 0;
+      entry.lifetimeRequests += acct.requests || 0;
+      if (inCurrentMonth) {
+        entry.monthCost += acct.cost || 0;
+        entry.monthRequests += acct.requests || 0;
+      }
+      if (row.dateKey && row.dateKey < entry.firstDateKey) entry.firstDateKey = row.dateKey;
+    }
+  }
+
+  return out;
+}
+
+function monthKeyOf(dateKey) {
+  return String(dateKey || "").slice(0, 7);
+}
+
+/**
+ * Everything the account detail page needs for one connection.
+ *
+ * Aggregates come from usageDaily (already rolled up per connection); the
+ * per-model split, error count and request tail come from usageHistory, which
+ * is the only place model is retained alongside connectionId.
+ *
+ * @param {string} connectionId
+ * @param {{ dailyDays?: number, recentLimit?: number }} [opts]
+ */
+export async function getConnectionDetail(connectionId, opts = {}) {
+  const { dailyDays = 14, recentLimit = 8 } = opts;
+  if (!connectionId) return null;
+
+  const db = await getAdapter();
+
+  // ---- daily / monthly / totals, from the rolled-up day buckets ----------
+  const dayRows = db.all(`SELECT dateKey, data FROM usageDaily ORDER BY dateKey ASC`);
+  const byDate = new Map();
+  const monthly = new Map();
+  const totals = {
+    requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0,
+    firstDateKey: null, lastDateKey: null,
+  };
+
+  for (const row of dayRows) {
+    const acct = parseJson(row.data, {})?.byAccount?.[connectionId];
+    if (!acct) continue;
+
+    byDate.set(row.dateKey, { requests: acct.requests || 0, cost: acct.cost || 0 });
+
+    totals.requests += acct.requests || 0;
+    totals.promptTokens += acct.promptTokens || 0;
+    totals.completionTokens += acct.completionTokens || 0;
+    totals.cachedTokens += acct.cachedTokens || 0;
+    totals.cost += acct.cost || 0;
+    if (!totals.firstDateKey) totals.firstDateKey = row.dateKey;
+    totals.lastDateKey = row.dateKey;
+
+    const mk = monthKeyOf(row.dateKey);
+    const m = monthly.get(mk) || { month: mk, requests: 0, tokens: 0, cost: 0 };
+    m.requests += acct.requests || 0;
+    m.tokens += (acct.promptTokens || 0) + (acct.completionTokens || 0);
+    m.cost += acct.cost || 0;
+    monthly.set(mk, m);
+  }
+
+  // Dense series — a day with no traffic must read as zero, not be dropped,
+  // or the chart silently compresses idle days out of the timeline.
+  const daily = [];
+  const today = new Date();
+  for (let i = dailyDays - 1; i >= 0; i--) {
+    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const hit = byDate.get(key);
+    daily.push({ date: key, requests: hit?.requests || 0, cost: hit?.cost || 0 });
+  }
+
+  // ---- per-model split, errors and tail, from raw history ---------------
+  const byModel = db.all(
+    `SELECT model, COUNT(*) AS requests, SUM(cost) AS cost
+       FROM usageHistory WHERE connectionId = ?
+       GROUP BY model ORDER BY cost DESC LIMIT 8`,
+    [connectionId]
+  ).map((r) => ({ model: r.model || "unknown", requests: r.requests || 0, cost: r.cost || 0 }));
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+  const errRow = db.get(
+    `SELECT COUNT(*) AS errors FROM usageHistory
+       WHERE connectionId = ? AND timestamp >= ? AND status IS NOT NULL AND status != 'ok'`,
+    [connectionId, sevenDaysAgo]
+  );
+  const recentRow = db.get(
+    `SELECT COUNT(*) AS total FROM usageHistory WHERE connectionId = ? AND timestamp >= ?`,
+    [connectionId, sevenDaysAgo]
+  );
+
+  const recent = db.all(
+    `SELECT timestamp, model, promptTokens, completionTokens, cost, status, tokens
+       FROM usageHistory WHERE connectionId = ? ORDER BY id DESC LIMIT ?`,
+    [connectionId, recentLimit]
+  ).map((r) => {
+    const t = parseJson(r.tokens, {}) || {};
+    return {
+      timestamp: r.timestamp,
+      model: r.model,
+      promptTokens: r.promptTokens || t.prompt_tokens || 0,
+      completionTokens: r.completionTokens || t.completion_tokens || 0,
+      cost: r.cost || 0,
+      status: r.status || "ok",
+    };
+  });
+
+  return {
+    totals,
+    daily,
+    monthly: [...monthly.values()].sort((a, b) => b.month.localeCompare(a.month)),
+    byModel,
+    recent,
+    errors7d: errRow?.errors || 0,
+    requests7d: recentRow?.total || 0,
+  };
+}
+
 export async function getUsageStats(period = "all") {
   const db = await getAdapter();
 

@@ -15,6 +15,26 @@ export const ACCOUNT_FILTER_OPTIONS = [
   { value: "active", label: "Active" },
   { value: "inactive", label: "Turned off" },
 ];
+export const SUB_VALUE_WINDOW_KEY = "usage:subValueWindow";
+export const SUB_VALUE_DEFAULT_WINDOW = "lifetime";
+
+export function readSubValueWindow() {
+  if (typeof window === "undefined") return SUB_VALUE_DEFAULT_WINDOW;
+  try {
+    const stored = window.localStorage.getItem(SUB_VALUE_WINDOW_KEY);
+    return stored === "month" || stored === "lifetime" ? stored : SUB_VALUE_DEFAULT_WINDOW;
+  } catch {
+    return SUB_VALUE_DEFAULT_WINDOW;
+  }
+}
+
+export function writeSubValueWindow(value) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SUB_VALUE_WINDOW_KEY, value);
+  } catch {}
+}
+
 export const QUOTA_SORT_OPTIONS = [
   { value: "default", label: "Default quota order" },
   { value: "remaining-asc", label: "% quota: low to high" },

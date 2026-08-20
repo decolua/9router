@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
@@ -164,7 +165,13 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
           {authIcon}
         </span>
         <div className="flex-1 min-w-0">
-          <p className={`text-sm font-medium truncate ${isEmail(displayName) ? blurClass : ""}`}>{displayName}</p>
+          <Link
+            href={`/dashboard/accounts/${connection.id}`}
+            className={`block text-sm font-medium truncate transition-colors hover:text-primary ${isEmail(displayName) ? blurClass : ""}`}
+            title="Open account detail"
+          >
+            {displayName}
+          </Link>
           {secondaryDisplayName && (
             <p className={`text-xs text-text-muted truncate ${isEmail(secondaryDisplayName) ? blurClass : ""}`}>{secondaryDisplayName}</p>
           )}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
 import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal, ConfirmModal } from "@/shared/components";
@@ -118,7 +119,13 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
         </div>
         <span className="material-symbols-outlined text-base text-text-muted">{isOAuth ? "lock" : "key"}</span>
         <div className="flex-1 min-w-0">
-          <p className={`text-sm font-medium truncate ${displayNameIsEmail ? blurClass : ""}`}>{displayName}</p>
+          <Link
+            href={`/dashboard/accounts/${connection.id}`}
+            className={`block text-sm font-medium truncate transition-colors hover:text-primary ${displayNameIsEmail ? blurClass : ""}`}
+            title="Open account detail"
+          >
+            {displayName}
+          </Link>
           <div className="flex flex-wrap items-center gap-2 mt-1">
             <Badge variant={getStatusVariant()} size="sm" dot>
               {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}

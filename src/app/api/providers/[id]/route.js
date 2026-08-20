@@ -98,6 +98,7 @@ export async function PUT(request, { params }) {
       testStatus,
       lastError,
       lastErrorAt,
+      monthlyCost,
       providerSpecificData
     } = body;
 
@@ -126,6 +127,41 @@ export async function PUT(request, { params }) {
     if (testStatus !== undefined) updateData.testStatus = testStatus;
     if (lastError !== undefined) updateData.lastError = lastError;
     if (lastErrorAt !== undefined) updateData.lastErrorAt = lastErrorAt;
+    // Subscription price for the API-value badge. null clears it (hides the
+    // comparison); anything non-numeric or negative is rejected rather than
+    // silently stored, since it would divide the value ratio.
+    if (monthlyCost !== undefined) {
+      let nextCost = null;
+      if (monthlyCost !== null) {
+        // Number("") is 0 and Number(true) is 1, so a blank or boolean body
+        // would quietly store the connection as a free plan. Accept only a
+        // number or a non-empty numeric string.
+        const isNumericInput =
+          typeof monthlyCost === "number"
+          || (typeof monthlyCost === "string" && monthlyCost.trim() !== "");
+        const parsed = isNumericInput ? Number(monthlyCost) : Number.NaN;
+        if (!Number.isFinite(parsed) || parsed < 0) {
+          return NextResponse.json({ error: "Invalid monthlyCost" }, { status: 400 });
+        }
+        nextCost = parsed;
+      }
+      updateData.monthlyCost = nextCost;
+
+      // Record the change so past months keep the price they were actually
+      // billed at. Without this, upgrading a plan silently rewrites every
+      // earlier month's cost to the new figure.
+      // A connection that never had a price stores `undefined`, so normalise
+      // before comparing — otherwise `null !== undefined` logs a change that
+      // did not happen.
+      const previousCost = typeof existing.monthlyCost === "number" ? existing.monthlyCost : null;
+      if (nextCost !== previousCost) {
+        const history = Array.isArray(existing.monthlyCostHistory) ? existing.monthlyCostHistory : [];
+        updateData.monthlyCostHistory = [
+          ...history,
+          { amount: nextCost, effectiveFrom: new Date().toISOString() },
+        ];
+      }
+    }
 
     if (
       shouldMergeProviderSpecificData(
