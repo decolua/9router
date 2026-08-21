@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PROVIDER_MODELS, getModelSupportedFormats, getModelTargetFormat } from "../../open-sse/config/providerModels.js";
+import { PROVIDER_MODELS, getModelSupportedFormats, getModelTargetFormat, getModelUpstreamId } from "../../open-sse/config/providerModels.js";
 import { PROVIDERS } from "../../open-sse/config/providers.js";
 import { resolveTransport } from "../../open-sse/services/provider.js";
 import opencodeRegistry from "../../open-sse/providers/registry/opencode.js";
@@ -107,6 +107,39 @@ describe("OpenCode Go per-model transport guard (chatCore logic)", () => {
 
   it("does NOT route Muse Spark to /messages", () => {
     expect(pickTransport("opencode-go", "claude", "opencode-go", "muse-spark-1.2-contributor")).toBeNull();
+  });
+});
+
+describe("OpenCode Go thinking-suffix metadata lookup (review: generic trailing (level) strip)", () => {
+  it("resolves Responses-only metadata for muse-spark-1.2-contributor(max)", () => {
+    expect(getModelSupportedFormats("opencode-go", "muse-spark-1.2-contributor(max)")).toEqual(["openai-responses"]);
+    expect(getModelTargetFormat("opencode-go", "muse-spark-1.2-contributor(max)")).toBe("openai-responses");
+  });
+
+  it("resolves Responses-only metadata for muse-spark-1.2-contributor(high)", () => {
+    expect(getModelSupportedFormats("opencode-go", "muse-spark-1.2-contributor(high)")).toEqual(["openai-responses"]);
+    expect(getModelTargetFormat("opencode-go", "muse-spark-1.2-contributor(high)")).toBe("openai-responses");
+  });
+
+  it("keeps the suffix on the upstream id so applyThinking still sees it", () => {
+    expect(getModelUpstreamId("opencode-go", "muse-spark-1.2-contributor(max)")).toBe("muse-spark-1.2-contributor(max)");
+  });
+
+  it("free variant suffix still resolves Responses-only metadata on oc alias", () => {
+    expect(getModelSupportedFormats("oc", "muse-spark-1.2-contributor-free(max)")).toEqual(["openai-responses"]);
+    expect(getModelTargetFormat("oc", "muse-spark-1.2-contributor-free(max)")).toBe("openai-responses");
+    expect(getModelUpstreamId("oc", "muse-spark-1.2-contributor-free(high)")).toBe("muse-spark-1.2-contributor-free(high)");
+  });
+
+  it("keeps existing DeepSeek/GLM/MiniMax suffix behavior intact", () => {
+    // DeepSeek: suffix resolves to the same supportedFormats as the base id
+    expect(getModelSupportedFormats("opencode-go", "deepseek-v4-pro(medium)")).toEqual(["openai", "claude", "openai-responses"]);
+    // Chat-only model with suffix still guarded to [openai]
+    expect(getModelSupportedFormats("opencode-go", "glm-5.2(low)")).toEqual(["openai"]);
+    // MiniMax with suffix keeps claude capability
+    expect(getModelSupportedFormats("opencode-go", "minimax-m3(high)")).toEqual(["openai", "claude"]);
+    // Upstream id preserves suffix for non-Muse models too
+    expect(getModelUpstreamId("opencode-go", "glm-5.2(low)")).toBe("glm-5.2(low)");
   });
 });
 
