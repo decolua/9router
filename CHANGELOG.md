@@ -21,7 +21,7 @@
 - **Usage**: dedup + cache Claude quota calls (120s TTL keyed by access token,
   in-flight promise dedup, last-good read on soft failure) to stop multiple
   tabs tripping 429; manual refresh (↻) sends `force=1` to bypass the cache
-- **OpenCode Go**: add Ox Alpha Free (`ocg/ox-alpha-free`) via Chat Completions per docs
+- **OpenCode-Go**: add Ox Alpha Free (`ocg/ox-alpha-free`) via Chat Completions per docs
 
 ## Fixes
 - **Docker**: ship `sql.js` in the image so the pure-JS DB fallback can start —
