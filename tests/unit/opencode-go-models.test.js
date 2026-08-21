@@ -8,6 +8,7 @@ import opencodeRegistry from "../../open-sse/providers/registry/opencode.js";
 const CHAT_ONLY = [
   "glm-5.2", "glm-5.1", "kimi-k2.7-code", "kimi-k2.6",
   "mimo-v2.5", "mimo-v2.5-pro",
+  "ox-alpha-free",
 ];
 // Models that also expose the Anthropic /messages endpoint
 const CLAUDE_CAPABLE = ["minimax-m3", "minimax-m2.7", "minimax-m2.5", "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus"];
@@ -35,6 +36,7 @@ describe("OpenCode Go model catalog", () => {
       "muse-spark-1.2-contributor",
       "qwen3.8-max", "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus",
       "hy3",
+      "ox-alpha-free",
     ]);
   });
 });
@@ -130,6 +132,12 @@ describe("OpenCode Go per-model transport guard (chatCore logic)", () => {
     for (const m of [...CHAT_ONLY, ...CLAUDE_CAPABLE]) {
       expect(pickTransport("opencode-go", "openai-responses", "opencode-go", m)).toBeNull();
     }
+  });
+
+  it("routes Ox Alpha Free + openai-format client to the Go Chat Completions endpoint", () => {
+    const t = pickTransport("opencode-go", "openai", "opencode-go", "ox-alpha-free");
+    expect(t?.baseUrl).toBe("https://opencode.ai/zen/go/v1/chat/completions");
+    expect(getModelTargetFormat("opencode-go", "ox-alpha-free")).toBeNull();
   });
 });
 

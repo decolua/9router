@@ -58,6 +58,7 @@ export default {
     { id: "qwen3.7-plus", name: "Qwen 3.7 Plus", supportedFormats: ["openai", "claude"] },
     { id: "qwen3.6-plus", name: "Qwen 3.6 Plus", supportedFormats: ["openai", "claude"] },
     { id: "hy3", name: "Hy3", supportedFormats: ["openai"] },
+    { id: "ox-alpha-free", name: "Ox Alpha Free", supportedFormats: ["openai"] },
   ],
   features: {
     usage: true,

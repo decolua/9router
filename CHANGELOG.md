@@ -4,6 +4,7 @@ Local install only — not an upstream release.
 
 ## Features
 - **OpenCode Free (oc)**: added Ox Alpha (`oc/x-preview-f-free`) via Chat Completions per Zen docs.
+- **OpenCode-Go**: added Ox Alpha Free (`ocg/ox-alpha-free`) via Go Chat Completions per Zen docs.
 
 ## Fixes
 - **OpenCode-Go**: Muse Spark 1.2 Contributor uses the exact official ID
