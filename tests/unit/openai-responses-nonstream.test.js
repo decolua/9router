@@ -9,6 +9,7 @@ vi.mock("@/lib/usageDb.js", () => ({
 const { FORMATS } = await import("../../open-sse/translator/formats.js");
 const { translateNonStreamingResponse } = await import("../../open-sse/handlers/chatCore/nonStreamingHandler.js");
 const { handleForcedSSEToJson } = await import("../../open-sse/handlers/chatCore/sseToJsonHandler.js");
+const { convertResponsesStreamToJson } = await import("../../open-sse/transformer/streamToJsonConverter.js");
 
 // A chat.completion body as returned by a chat-native upstream (e.g. op-ericding)
 const CHAT_TOOL_BODY = {
@@ -78,10 +79,46 @@ describe("non-stream Chat upstream for a Responses-API client (op-ericding bug)"
     expect(msg.content[0].text).toBe("hello");
   });
 
+  it("preserves cached input tokens when converting Chat usage", () => {
+    const body = {
+      ...CHAT_TOOL_BODY,
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 5,
+        total_tokens: 105,
+        prompt_tokens_details: { cached_tokens: 80, cache_creation_tokens: 7 },
+      },
+    };
+    const out = translateNonStreamingResponse(body, FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES);
+    expect(out.usage).toMatchObject({
+      input_tokens: 100,
+      input_tokens_details: { cached_tokens: 80 },
+      cache_creation_input_tokens: 7,
+    });
+  });
+
   it("leaves chat->chat untouched", () => {
     const out = translateNonStreamingResponse(CHAT_TOOL_BODY, FORMATS.OPENAI, FORMATS.OPENAI);
     expect(out.object).toBe("chat.completion");
     expect(out.choices[0].message.tool_calls[0].function.name).toBe("shell");
+  });
+});
+
+describe("Responses stream JSON usage", () => {
+  it("preserves cache details from response.completed", async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('event: response.completed\ndata: {"type":"response.completed","response":{"usage":{"input_tokens":100,"output_tokens":5,"total_tokens":105,"input_tokens_details":{"cached_tokens":80},"cache_creation_input_tokens":7}}}\n\n'));
+        controller.close();
+      },
+    });
+    const out = await convertResponsesStreamToJson(stream);
+    expect(out.usage).toMatchObject({
+      input_tokens: 100,
+      input_tokens_details: { cached_tokens: 80 },
+      cache_creation_input_tokens: 7,
+    });
   });
 });
 

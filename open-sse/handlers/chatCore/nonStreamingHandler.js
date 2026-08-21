@@ -119,7 +119,27 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
   }
 
   const usage = responseBody.usage || {};
+  const cachedTokens = usage.prompt_tokens_details?.cached_tokens
+    ?? usage.input_tokens_details?.cached_tokens
+    ?? usage.cached_tokens
+    ?? usage.cache_read_input_tokens;
+  const cacheCreationTokens = usage.prompt_tokens_details?.cache_creation_tokens
+    ?? usage.input_tokens_details?.cache_creation_tokens
+    ?? usage.cache_creation_input_tokens
+    ?? usage.cache_write_input_tokens;
   const status = choice.finish_reason === "tool_calls" ? "completed" : (choice.finish_reason === "stop" ? "completed" : (choice.finish_reason || "completed"));
+
+  const responseUsage = {
+    input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
+    output_tokens: usage.completion_tokens || usage.output_tokens || 0,
+    total_tokens: usage.total_tokens || (usage.prompt_tokens || 0) + (usage.completion_tokens || 0),
+    ...(Number.isFinite(Number(cachedTokens)) && Number(cachedTokens) >= 0
+      ? { input_tokens_details: { cached_tokens: Number(cachedTokens) } }
+      : {}),
+    ...(Number.isFinite(Number(cacheCreationTokens)) && Number(cacheCreationTokens) >= 0
+      ? { cache_creation_input_tokens: Number(cacheCreationTokens) }
+      : {}),
+  };
 
   return {
     id: `resp_${responseBody.id || ""}`.replace(/^resp_chatcmpl-/, "resp_"),
@@ -130,11 +150,7 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
     background: false,
     error: null,
     output,
-    usage: {
-      input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
-      output_tokens: usage.completion_tokens || usage.output_tokens || 0,
-      total_tokens: usage.total_tokens || (usage.prompt_tokens || 0) + (usage.completion_tokens || 0),
-    },
+    usage: responseUsage,
   };
 }
 
