@@ -310,7 +310,19 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     connectionProxyUrl: credentials?.providerSpecificData?.connectionProxyUrl || "",
     connectionNoProxy: credentials?.providerSpecificData?.connectionNoProxy || "",
     vercelRelayUrl: credentials?.providerSpecificData?.vercelRelayUrl || "",
+    strictProxy: credentials?.providerSpecificData?.strictProxy === true || provider === "freebuff",
+    proxyPoolId: credentials?.providerSpecificData?.proxyPoolId || credentials?.providerSpecificData?.connectionProxyPoolId || null,
   };
+
+  if (provider === "freebuff" && credentials?.providerSpecificData?.noFitPool === true) {
+    trackPendingRequest(model, provider, connectionId, false, true);
+    return createErrorResult(503, `Freebuff has no healthy proxy pool for ${model}; all assigned pools are cooling down after limited-IP errors.`);
+  }
+
+  if (provider === "freebuff" && !proxyOptions.vercelRelayUrl && !(proxyOptions.connectionProxyEnabled && proxyOptions.connectionProxyUrl)) {
+    trackPendingRequest(model, provider, connectionId, false, true);
+    return createErrorResult(503, `Freebuff requires a configured proxy pool for ${model}; direct egress is disabled to prevent limited-IP rate limits.`);
+  }
 
   if (proxyOptions.vercelRelayUrl) {
     const connectionName = credentials?.connectionName || credentials?.connectionId || "unknown";
@@ -353,27 +365,36 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false, true);
-    appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
+    const upstreamStatus = Number.isInteger(error.status) && error.status >= 400 && error.status <= 599
+      ? error.status
+      : HTTP_STATUS.BAD_GATEWAY;
+    const resetAt = Number.isFinite(error.resetsAtMs) && error.resetsAtMs > 0
+      ? error.resetsAtMs
+      : undefined;
+    const isAborted = error.name === "AbortError";
+    appendRequestLog({ model, provider, connectionId, status: `FAILED ${isAborted ? 499 : upstreamStatus}` }).catch(() => { });
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
       latency: { ttft: 0, total: Date.now() - requestStartTime },
       tokens: { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
       providerRequest: translatedBody || null,
-      response: { error: error.message || String(error), status: error.name === "AbortError" ? 499 : 502, thinking: null },
+      response: { error: error.message || String(error), status: isAborted ? 499 : upstreamStatus, thinking: null },
       pxpipe: pxpipeSummary,
       status: "error"
     })).catch(() => { });
 
-    if (error.name === "AbortError") {
+    if (isAborted) {
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
     }
-    const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
+    const errMsg = formatProviderError(error, provider, model, upstreamStatus);
     if (log?.errorLine) {
-      log.errorLine(reqTag, "✗", `ERROR 502 · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${error.stack ? `\n    ${error.stack}` : ""}`);
+      log.errorLine(reqTag, "✗", `ERROR ${upstreamStatus} · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${error.stack ? `\n    ${error.stack}` : ""}`);
     }
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
+    const errorResult = createErrorResult(upstreamStatus, errMsg, resetAt);
+    if (error.poolScoped) errorResult.poolScoped = error.poolScoped;
+    return errorResult;
   }
 
   // Handle 401/403 - try token refresh (skip for noAuth providers)

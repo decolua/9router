@@ -248,12 +248,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   // Try with available accounts (fallback on errors)
   const excludeConnectionIds = new Set();
+  const excludePoolIds = new Set();
+  const maxPoolRetries = 2;
+  let poolRetries = 0;
   let lastError = null;
   let lastStatus = null;
 
   while (true) {
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
       preferredConnectionId: options.preferredConnectionId,
+      excludePoolIds,
     });
 
     // All accounts unavailable
@@ -270,6 +274,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
       log.warn("CHAT", "No more accounts available", { provider });
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+    }
+    if (credentials.providerSpecificData?.noFitPool === true) {
+      return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, `Freebuff has no eligible proxy pool for ${model}`);
     }
 
     // Account selection shown in the unified "▶" line (acc:...)
@@ -328,6 +335,17 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     });
 
     if (result.success) return result.response;
+
+    const failedPoolId = result.poolScoped?.poolId;
+    if (failedPoolId) {
+      if (poolRetries >= maxPoolRetries) return result.response;
+      excludePoolIds.add(failedPoolId);
+      poolRetries += 1;
+      lastError = result.error;
+      lastStatus = result.status;
+      log.warn("FALLBACK", `⇄ POOL:${failedPoolId} UNAVAILABLE (${result.poolScoped.reason}) → NEXT POOL`);
+      continue;
+    }
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
