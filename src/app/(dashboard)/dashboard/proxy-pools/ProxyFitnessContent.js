@@ -1,5 +1,4 @@
 import { Badge, Button } from "@/shared/components";
-import { TrashIcon } from "@heroicons/react/24/outline";
 
 export default function ProxyFitnessContent({
   clearing,
@@ -133,7 +132,7 @@ export default function ProxyFitnessContent({
                       title="Clear exclusion"
                       aria-label={`Clear exclusion for ${row.poolName} scope ${row.scope}`}
                     >
-                      <TrashIcon className="w-4 h-4" />
+                      <span className="material-symbols-outlined text-[18px]">delete</span>
                     </Button>
                   </td>
                 </tr>

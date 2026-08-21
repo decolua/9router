@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Card, ConfirmModal } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
-import { ChevronDownIcon, ChevronUpIcon } from "@heroicons/react/24/outline";
 import ProxyFitnessContent from "./ProxyFitnessContent";
 import { handleMutationBarrier, optimisticProviderClear } from "./proxyFitnessHelpers";
 export default function ProxyFitnessCard({ proxyPools = [] }) {
@@ -218,7 +217,9 @@ export default function ProxyFitnessCard({ proxyPools = [] }) {
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Active temporary exclusions for proxy pools.</p>
           </div>
           <div className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-            {isOpen ? <ChevronUpIcon className="w-5 h-5" /> : <ChevronDownIcon className="w-5 h-5" />}
+            <span className="material-symbols-outlined text-[20px]">
+              {isOpen ? "expand_less" : "expand_more"}
+            </span>
           </div>
         </button>
 
