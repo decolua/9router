@@ -92,13 +92,28 @@ const OAUTH_TEST_CONFIG = {
   },
   "codebuddy-cn": { tokenExists: true },
   kimchi: {
-    url: KIMCHI_CONFIG.validationUrl || "https://api.cast.ai/v1/llm/openai/supported-providers",
+    url: "https://api.kimchi.org/v1/auth/me",
     method: "GET",
     authHeader: "Authorization",
     authPrefix: "Bearer ",
     extraHeaders: {
       Accept: "application/json",
-      "User-Agent": "kimchi/0.1.40",
+      "User-Agent": getKimchiUserAgent(),
+    },
+    refreshable: false,
+  },
+  freebuff: {
+    url: "https://www.codebuff.com/api/v1/freebuff/session",
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    extraHeaders: {
+      Accept: "application/json",
+      "User-Agent": "codebuff-cli/0.0.138",
+    },
+    acceptStatuses: [403, 404],
+    softFailMessage: {
+      403: "Connected, but Freebuff is gated (403) — country blocked or account banned.",
     },
     refreshable: false,
   },
