@@ -199,6 +199,7 @@ export const __test__ = {
   extractApiKey,
   canAccessPublicLlmApi,
   canAccessLocalOnlyRoute,
+  _resetCachedCliToken: () => { cachedCliToken = null; },
 };
 
 export async function proxy(request) {
