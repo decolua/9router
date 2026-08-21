@@ -5,69 +5,6 @@ import { dbg } from "./debugLog.js";
 const originalFetch = globalThis.fetch;
 const proxyDispatchers = new Map();
 
-// ─── HTTP KEEP-ALIVE AGENTS FOR GOOGLE API HOSTS (Fix #2, #8) ──────────────────
-let _httpsModule = null;
-let _keepAliveAgent = null;
-
-async function getKeepAliveAgent() {
-  if (_keepAliveAgent) return _keepAliveAgent;
-
-  try {
-    const httpsModule = await import("https");
-    _httpsModule = httpsModule.default ?? httpsModule;
-
-    // Create persistent agent with keep-alive enabled
-    _keepAliveAgent = new _httpsModule.Agent({
-      keepAlive: true,                    // Enable connection reuse
-      keepAliveMsecs: 60000,              // Keep alive 60 seconds
-      maxSockets: 50,                     // Max concurrent connections per host
-      maxFreeSockets: 20,                 // Reuse up to 20 idle sockets
-      timeout: 30000,                     // Socket timeout (30s)
-      scheduling: 'fifo',                 // FIFO scheduling
-    });
-
-    console.log("[ProxyFetch] Keep-alive agent initialized for Google APIs");
-  } catch (e) {
-    console.warn(`[ProxyFetch] Failed to create keep-alive agent: ${e.message}`);
-  }
-
-  return _keepAliveAgent;
-}
-
-// Warmup agent at startup for instant first request
-if (typeof window === 'undefined' && global.process?.version) {
-  setTimeout(async () => {
-    try {
-      await getKeepAliveAgent();
-      console.log("[ProxyFetch] Connection pool warmed up successfully");
-    } catch (e) {
-      console.warn("[ProxyFetch] Connection warmup failed:", e.message);
-    }
-  }, 1000);
-}
-
-// For Antigravity specific warmup
-async function prewarmAntigravityConnection() {
-  try {
-    const agent = await getKeepAliveAgent();
-    const url = "https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent?alt=sse";
-
-    const controller = new AbortController();
-    setTimeout(() => controller.abort(), 2000);
-
-    await fetch(url, {
-      method: "POST",
-      signal: controller.signal,
-      agent,
-      body: JSON.stringify({ test: true })
-    }).catch(() => {}); // Ignore errors, just warmup connection
-
-    console.log("[ProxyFetch] Antigravity connection pre-warmed");
-  } catch (e) {
-    console.warn("[ProxyFetch] Antigravity warmup failed:", e.message);
-  }
-}
-
 // ─── TLS fingerprinting via got-scraping (browser-like JA3) ───────────────
 // Disabled: not in use. Kept commented for future re-enable.
 // Restore the original block to re-enable per-host JA3 spoofing.
@@ -174,12 +111,6 @@ const GOOGLE_DNS_SERVERS = ["8.8.8.8", "8.8.4.4"];
 const HTTPS_PORT = 443;
 const HTTP_SUCCESS_MIN = 200;
 const HTTP_SUCCESS_MAX = 300;
-
-// Check if URL is Google API (for keep-alive optimization)
-function isGoogleApiHost(hostname) {
-  return hostname.includes("cloudcode-pa.googleapis.com") ||
-         hostname.includes("daily-cloudcode-pa.googleapis.com");
-}
 
 function normalizeString(value) {
   if (value === undefined || value === null) return "";
@@ -400,28 +331,6 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       if (realIP) return await createBypassRequest(parsedUrl, realIP, options);
     } catch (error) {
       console.warn(`[ProxyFetch] MITM bypass failed: ${error.message}`);
-    }
-  }
-
-  // Check if Google API host - use keep-alive agent for connection reuse (Fix #2, #8)
-  if (isGoogleApiHost(new URL(targetUrl).hostname)) {
-    try {
-      const agent = await getKeepAliveAgent();
-      if (agent) {
-        // Use persistent HTTP agent with keep-alive enabled
-        // Skip DNS lookup overhead since agent maintains connection pool
-        log?.debug?.("FETCH", `[GoogleAPI] Using keep-alive agent for ${new URL(targetUrl).hostname}`);
-
-        const response = await originalFetch(url, {
-          ...options,
-          agent: agent,
-        });
-
-        log?.info?.("FETCH", `[GoogleAPI] Keep-alive connection reused successfully`);
-        return response;
-      }
-    } catch (e) {
-      console.warn(`[ProxyFetch] Keep-alive failed for Google API: ${e.message}, falling through to regular fetch`);
     }
   }
 
