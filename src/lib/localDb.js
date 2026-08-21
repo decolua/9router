@@ -10,6 +10,8 @@ export {
   createProviderNode, updateProviderNode, deleteProviderNode,
   getProxyPools, getProxyPoolById,
   createProxyPool, updateProxyPool, deleteProxyPool,
+  listProxyPoolFitness, upsertProxyPoolFitness, deleteProxyPoolFitness,
+  clearProxyPoolFitness, deleteProxyPoolFitnessByPool,
   getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey, validateApiKey,
   getApiKeyMetadata, touchApiKey, getBulkDailyUsage,
   getCombos, getComboById, getComboByName,
