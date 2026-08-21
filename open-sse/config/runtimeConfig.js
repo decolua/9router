@@ -56,8 +56,13 @@ export const STREAM_STALL_TIMEOUT_MS = envMs("STREAM_STALL_TIMEOUT_MS", 360 * 10
 export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_MS", 200 * 1000);
 
 // SSE keepalive ping interval during upstream silence (e.g. Claude Code ANTHROPIC_BASE_URL). Env: SSE_KEEPALIVE_MS.
-export const SSE_KEEPALIVE_MS = envMs("SSE_KEEPALIVE_MS", 10 * 1000);
-
+// Note: allow explicit `0` to disable keepalives.
+export const SSE_KEEPALIVE_MS = (() => {
+  const raw = process.env.SSE_KEEPALIVE_MS;
+  if (raw == null || raw === "") return 10 * 1000;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? n : 10 * 1000;
+})();
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
 
