@@ -2,6 +2,9 @@
 
 Local install only — not an upstream release.
 
+## Features
+- **OpenCode Free (oc)**: added Ox Alpha (`oc/x-preview-f-free`) via Chat Completions per Zen docs.
+
 ## Fixes
 - **OpenCode-Go**: Muse Spark 1.2 Contributor uses the exact official ID
   `muse-spark-1.2-contributor` and is a Responses-only model — Claude-format

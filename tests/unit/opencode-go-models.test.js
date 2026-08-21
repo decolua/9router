@@ -138,7 +138,7 @@ describe("OpenCode Free (oc) registry — Responses-only Muse Spark Free", () =>
 
   it("declares the exact free model on the oc alias with openai-responses support", () => {
     const ids = (PROVIDER_MODELS.oc || []).map((m) => m.id);
-    expect(ids).toEqual([FREE_ID]);
+    expect(ids).toContain(FREE_ID);
     expect(getModelSupportedFormats("oc", FREE_ID)).toEqual(["openai-responses"]);
     expect(getModelTargetFormat("oc", FREE_ID)).toBe("openai-responses");
   });
