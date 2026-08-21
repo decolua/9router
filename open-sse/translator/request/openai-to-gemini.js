@@ -45,6 +45,18 @@ function normalizeGeminiContents(contents) {
   return out;
 }
 
+// Replace client-identifying "opencode" mentions inside system prompts with
+// provider-neutral naming so Gemini/Antigravity backends don't reject
+// requests carrying another client's branding.
+function sanitizeSystemPrompt(text) {
+  if (typeof text !== "string") return text;
+  return text.replace(/opencode/gi, (match) => {
+    if (match === "OpenCode") return "Antigravity";
+    if (match === "OPENCODE") return "ANTIGRAVITY";
+    return "antigravity";
+  });
+}
+
 // Core: Convert OpenAI request to Gemini format (base for all variants)
 function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG_SIGNATURE) {
   const result = {
@@ -102,7 +114,7 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
       if (role === ROLE.SYSTEM && body.messages.length > 1) {
         result.systemInstruction = {
           role: GEMINI_ROLE.USER,
-          parts: [{ text: typeof content === "string" ? content : extractTextContent(content) }]
+          parts: [{ text: sanitizeSystemPrompt(typeof content === "string" ? content : extractTextContent(content)) }]
         };
       } else if (role === ROLE.USER || (role === ROLE.SYSTEM && body.messages.length === 1)) {
         const parts = convertOpenAIContentToParts(content);
@@ -404,10 +416,10 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
   if (claudeRequest.system) {
     if (Array.isArray(claudeRequest.system)) {
       for (const block of claudeRequest.system) {
-        if (block.text) systemParts.push({ text: block.text });
+        if (block.text) systemParts.push({ text: sanitizeSystemPrompt(block.text) });
       }
     } else if (typeof claudeRequest.system === "string") {
-      systemParts.push({ text: claudeRequest.system });
+      systemParts.push({ text: sanitizeSystemPrompt(claudeRequest.system) });
     }
   }
 
