@@ -18,6 +18,7 @@ import {
   KIMCHI_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
+import { getKimchiUserAgent } from "open-sse/utils/kimchiUserAgent.js";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
