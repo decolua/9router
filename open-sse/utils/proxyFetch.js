@@ -159,6 +159,7 @@ function shouldBypassByNoProxy(targetUrl, noProxyValue) {
 
   return patterns.some((pattern) => {
     if (pattern === "*") return true;
+    if (pattern.startsWith("*.")) return hostname.endsWith(pattern.slice(1));
     if (pattern.startsWith(".")) return hostname.endsWith(pattern) || hostname === pattern.slice(1);
     return hostname === pattern || hostname.endsWith(`.${pattern}`);
   });
@@ -307,6 +308,9 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   }
 
   const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
+  if (proxyOptions?.strictProxy === true && !connectionProxyUrl) {
+    throw new Error("[ProxyFetch] Proxy required but unavailable (strictProxy=true)");
+  }
   const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
   const proxyUrl = connectionProxyUrl || envProxyUrl;
 
