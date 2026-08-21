@@ -390,9 +390,23 @@ export default function ProviderDetailPage() {
 
       const updated = { ...current };
       if (Object.keys(override).length === 0) {
-        delete updated[providerId];
+        // If there's an existing object (like { strictModelAssignment: true }), preserve its other properties
+        if (typeof updated[providerId] === "object") {
+          const { fallbackStrategy, stickyRoundRobinLimit, ...rest } = updated[providerId];
+          if (Object.keys(rest).length === 0) {
+            delete updated[providerId];
+          } else {
+            updated[providerId] = rest;
+          }
+        } else {
+          delete updated[providerId];
+        }
       } else {
-        updated[providerId] = override;
+        // Preserve existing properties (like strictModelAssignment) while updating strategy
+        updated[providerId] = {
+          ...(typeof updated[providerId] === "object" ? updated[providerId] : {}),
+          ...override
+        };
       }
 
       await fetch("/api/settings", {
@@ -414,21 +428,35 @@ export default function ProviderDetailPage() {
   };
 
   const handleStrictAssignmentToggle = async (enabled) => {
+    const previousState = strictModelAssignment;
     setStrictModelAssignment(enabled);
     try {
       const settingsRes = await fetch("/api/settings", { cache: "no-store" });
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
       const current = settingsData?.providerStrategies || {};
-      await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerStrategies: {
+
+      const payload = {
+        providerStrategies: {
           ...current,
-          [providerId]: { ...(current[providerId] || {}), strictModelAssignment: enabled },
-        } }),
+          [providerId]: {
+            ...(typeof current[providerId] === "object" ? current[providerId] : {}),
+            strictModelAssignment: enabled
+          },
+        }
+      };
+
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
+
+      if (!res.ok) {
+        throw new Error(`Settings update failed: ${res.statusText}`);
+      }
     } catch (error) {
       console.log("Error saving Freebuff strict assignment:", error);
+      setStrictModelAssignment(previousState);
     }
   };
 
