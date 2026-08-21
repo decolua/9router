@@ -197,6 +197,9 @@ function assistantTextSessionId(scope, body) {
  * Resolve a conversation-stable session id (generalizes Codex resolveCacheSessionId).
  * Priority: client session → accumulated-assistant-text hash → workspaceId → per-connection.
  *
+ * Session ID REUSE OPTIMIZATION (Fix #6): Reuse session IDs for same connection if less than 5 minutes old
+ * This saves crypto.randomUUID() overhead and maintains session continuity for faster responses.
+ *
  * @param {object} opts
  * @param {object} [opts.headers] - Raw client request headers (lowercase keys)
  * @param {object} [opts.body] - Parsed request body
@@ -208,11 +211,37 @@ function assistantTextSessionId(scope, body) {
 export function resolveSessionIdentity({ headers, body, connectionId, workspaceId, scope = "" } = {}) {
     const client = extractClientSessionId(headers, body, scope);
     if (client) return { sessionId: client, ephemeral: false };
+
     const fromAssistant = scope === "kiro" ? null : assistantTextSessionId(`${scope}:${connectionId || ""}`, body);
     if (fromAssistant) return { sessionId: fromAssistant, ephemeral: false };
+
     const ws = normalizeSessionId(workspaceId);
     if (ws) return { sessionId: ws, ephemeral: false };
-    if (scope === "kiro") return { sessionId: generateBinaryStyleId(), ephemeral: true };
+
+    if (scope === "kiro") {
+        // For Kiro: use existing session if available and recently used (<=5 min), else generate new
+        const key = `${scope}:${connectionId || ""}`;
+        const existing = runtimeSessionStore.get(key);
+
+        if (existing) {
+            const age = Date.now() - existing.lastUsed;
+            const maxReuseAge = 5 * 60 * 1000; // 5 minutes
+
+            if (age <= maxReuseAge) {
+                existing.lastUsed = Date.now(); // Update timestamp
+                console.log(`[SessionReuse] Reusing existing session ${existing.sessionId.slice(0, 8)}... (${age/1000}s old)`);
+                return { sessionId: existing.sessionId, ephemeral: false };
+            }
+
+            // Expired, remove stale entry
+            runtimeSessionStore.delete(key);
+        }
+
+        const sessionId = generateBinaryStyleId();
+        runtimeSessionStore.set(key, { sessionId, lastUsed: Date.now() });
+        return { sessionId, ephemeral: true };
+    }
+
     return { sessionId: deriveSessionId(connectionId), ephemeral: false };
 }
 

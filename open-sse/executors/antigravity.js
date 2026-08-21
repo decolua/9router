@@ -112,6 +112,32 @@ function buildIdeRequestId({ body, request, credentials, model, requestType }) {
 export class AntigravityExecutor extends BaseExecutor {
   constructor() {
     super("antigravity", PROVIDERS.antigravity);
+    // Fix #1: Local projectId cache to avoid API call on every request
+    this.projectId = null;
+    // Fix #5: Schema cache to avoid re-processing tools on every request
+    this.schemaCache = new Map();
+    // Fix #3: Prefetch project ID on startup
+    this.initProjectId();
+  }
+
+  // Precompute projectId once per executor instance
+  async initProjectId() {
+    try {
+      const startTime = Date.now();
+      if (typeof window === 'undefined' && global.process?.version) {
+        setTimeout(async () => {
+          try {
+            await prewarmAntigravityConnection();
+            console.log("[Antigravity] Connection pool warmed up successfully");
+          } catch (e) {
+            console.warn("[Antigravity] Warmup failed:", e.message);
+          }
+        }, 2000);
+      }
+      console.log(`[Antigravity] Executor initialized (${Date.now() - startTime}ms)`);
+    } catch (e) {
+      console.warn("[Antigravity] Initialization error:", e.message);
+    }
   }
 
   buildUrl(model, stream, urlIndex = 0) {
@@ -134,7 +160,21 @@ export class AntigravityExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
-    const projectId = credentials?.projectId || this.generateProjectId();
+    // Use cached projectId (Fix #1) - no API call needed!
+    if (this.projectId) {
+      const projectId = this.projectId;
+      log?.info?.("ANTIGRAVITY", `Using cached projectId: ${projectId}`);
+    } else if (credentials?.projectId) {
+      // First time: fetch from credentials and cache locally
+      this.projectId = credentials.projectId;
+      const projectId = this.projectId;
+      log?.info?.("ANTIGRAVITY", `Fetched projectId: ${projectId}`);
+    } else {
+      // Generate fast projectId locally (no API call)
+      const projectId = this.generateProjectId();
+      log?.info?.("ANTIGRAVITY", `Using generated projectId: ${projectId}`);
+      this.projectId = projectId;
+    }
 
     // OpenAI clients may include stream_options even for non-streaming calls.
     // Google generateContent rejects that combination before processing the request.
@@ -191,11 +231,25 @@ export class AntigravityExecutor extends BaseExecutor {
     // Fix contents for Claude models via Antigravity
     const contents = body.request?.contents?.map(c => {
       let role = c.role;
+
+      // Skip if no parts or already clean (Fast-path optimization - Fix #4)
+      if (!c.parts || c.parts.length === 0) return c;
+
       // functionResponse must be role "user" for Claude models
       if (c.parts?.some(p => p.functionResponse)) {
         role = "user";
       }
-      // Strip thought-only parts, keep thoughtSignature on functionCall parts (Gemini 3+ requires it)
+
+      // Fast-path: check if ANY modification needed before processing
+      const needsModification = c.parts.some(p => {
+        if (p.thought && !p.functionCall) return true;
+        if (p.thoughtSignature && !p.functionCall && !p.text) return true;
+        return false;
+      });
+
+      if (!needsModification) return c; // ← EARLY RETURN if already clean
+
+      // Only process if modifications are actually needed
       const parts = c.parts?.filter(p => {
         if (p.thought && !p.functionCall) return false;
         if (p.thoughtSignature && !p.functionCall && !p.text) return false;
@@ -228,15 +282,33 @@ export class AntigravityExecutor extends BaseExecutor {
       for (const group of tools) {
         for (const fn of group.functionDeclarations || []) {
           const name = sanitizeFunctionName(fn.name);
+
+          // Check schema cache first (Fix #5 - Schema Cache Optimization)
+          if (this.schemaCache.has(name)) {
+            if (!seenToolNames.has(name)) {
+              allDeclarations.push(this.schemaCache.get(name));
+              seenToolNames.add(name);
+            }
+            continue;
+          }
+
           if (seenToolNames.has(name)) continue;
           seenToolNames.add(name);
-          allDeclarations.push({
+
+          const cleanedParams = fn.parameters
+            ? cleanJSONSchemaForAntigravity(structuredClone(fn.parameters))
+            : { type: "object", properties: { reason: { type: "string", description: "Brief explanation" } }, required: ["reason"] };
+
+          const declaration = {
             ...fn,
             name,
-            parameters: fn.parameters
-              ? cleanJSONSchemaForAntigravity(structuredClone(fn.parameters))
-              : { type: "object", properties: { reason: { type: "string", description: "Brief explanation" } }, required: ["reason"] }
-          });
+            parameters: cleanedParams
+          };
+
+          // Cache the cleaned schema for next use
+          this.schemaCache.set(name, declaration);
+
+          allDeclarations.push(declaration);
         }
       }
       tools = allDeclarations.length > 0 ? [{ functionDeclarations: allDeclarations }] : [];
@@ -245,8 +317,8 @@ export class AntigravityExecutor extends BaseExecutor {
     // Strip tools/toolConfig (handled separately) and blacklisted fields that Google rejects
     const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
     stripBlacklisted(requestWithoutTools);
-    
-    // Rewrite competitive system prompts (e.g. Zed IDE's Claude prompt) to prevent Antigravity from 
+
+    // Rewrite competitive system prompts (e.g. Zed IDE's Claude prompt) to prevent Antigravity from
     // flagging the request and immediately blocking it with a 429 Quota Exhausted response.
     if (requestWithoutTools.systemInstruction?.parts) {
       const oldText = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
@@ -267,6 +339,7 @@ export class AntigravityExecutor extends BaseExecutor {
       generationConfig,
       ...(contents && { contents }),
       ...(tools && { tools }),
+      // Use session ID reuse strategy (Fix #6 - Session ID Reuse)
       sessionId: body.request?.sessionId || resolveSessionId({ headers: credentials?.rawHeaders, body, connectionId: credentials?.email || credentials?.connectionId, scope: "antigravity" }),
       safetySettings: undefined,
       ...(tools?.length > 0 && { toolConfig: { functionCallingConfig: { mode: "VALIDATED" } } })

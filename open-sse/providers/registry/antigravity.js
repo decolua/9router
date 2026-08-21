@@ -26,13 +26,16 @@ export default {
     },
     retry: {
       "429": {
-        attempts: 3,
+        attempts: 1,
+        delayMs: 500,  // Fix #3: Fast retry for 429 rate limits
       },
       "500": {
-        attempts: 3,
+        attempts: 1,
+        delayMs: 500,  // Fix #3: Fast failover on server errors
       },
       "503": {
-        attempts: 3,
+        attempts: 1,
+        delayMs: 500,  // Fix #3: Fast failover on service unavailable
       },
     },
     usage: {
