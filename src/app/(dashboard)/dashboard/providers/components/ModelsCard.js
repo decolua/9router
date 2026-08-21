@@ -24,23 +24,17 @@ export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCusto
         </div>
         {onTest && (
           <div className="relative group/btn">
-            <button onClick={onTest} disabled={isTesting} className={`p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-opacity ${isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
+            <button aria-label={isTesting ? "Testing model" : "Test model"} onClick={onTest} disabled={isTesting} className={`p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-opacity ${isTesting ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
               <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
                 {isTesting ? "progress_activity" : "science"}
               </span>
             </button>
-            <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
-              {isTesting ? "Testing..." : "Test"}
-            </span>
           </div>
         )}
         <div className="relative group/btn">
-          <button onClick={() => onCopy(fullModel, `model-${model.id}`)} className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary">
+          <button aria-label="Copy model" onClick={() => onCopy(fullModel, `model-${model.id}`)} className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary">
             <span className="material-symbols-outlined text-sm">{copied === `model-${model.id}` ? "check" : "content_copy"}</span>
           </button>
-          <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover/btn:opacity-100 transition-opacity">
-            {copied === `model-${model.id}` ? "Copied!" : "Copy"}
-          </span>
         </div>
         {isFree && <span className="text-[10px] font-bold text-green-500 bg-green-500/10 px-1.5 py-0.5 rounded">FREE</span>}
         {isCustom && (
@@ -223,7 +217,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
         </div>
         {testError && <p className="text-xs text-red-500 mb-3 break-words">{testError}</p>}
 
-        <div className="flex flex-wrap gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {displayModels.map((model) => {
             const fullModel = `${providerAlias}/${model.id}`;
             const existingAlias = Object.entries(modelAliases).find(([, m]) => m === fullModel)?.[0];

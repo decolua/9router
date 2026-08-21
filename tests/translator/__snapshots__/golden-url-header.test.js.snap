@@ -57,6 +57,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > alims-intl → heade
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > alitp-intl → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > anthropic → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1406,6 +1425,13 @@ exports[`GOLDEN buildUrl (default executor providers) > alims-intl → url (stre
 {
   "nonStream": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
   "stream": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > alitp-intl → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
+  "stream": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
 }
 `;
 

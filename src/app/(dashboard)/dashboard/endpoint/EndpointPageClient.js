@@ -23,6 +23,9 @@ export default function APIPageClient({ machineId }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
+  const [editingKey, setEditingKey] = useState(null);
+  const [allowedModelsText, setAllowedModelsText] = useState("");
+  const [allowedCombosText, setAllowedCombosText] = useState("");
   const [confirmState, setConfirmState] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
@@ -682,6 +685,34 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const openKeyPermissions = (key) => {
+    setEditingKey(key);
+    setAllowedModelsText((key.allowedModels || []).join("\n"));
+    setAllowedCombosText((key.allowedCombos || []).join("\n"));
+  };
+
+  const saveKeyPermissions = async () => {
+    if (!editingKey) return;
+    const splitLines = (value) => [...new Set(value.split(/[\n,]/).map((v) => v.trim()).filter(Boolean))];
+    try {
+      const res = await fetch(`/api/keys/${editingKey.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          allowedModels: splitLines(allowedModelsText),
+          allowedCombos: splitLines(allowedCombosText),
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to update key permissions");
+      const data = await res.json();
+      setKeys((prev) => prev.map((k) => k.id === editingKey.id ? data.key : k));
+      setEditingKey(null);
+    } catch (error) {
+      console.error("Error updating key permissions:", error);
+      alert("Failed to update key permissions");
+    }
+  };
+
   const maskKey = (fullKey) => {
     if (!fullKey || fullKey.length <= 10) return fullKey || "";
     return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
@@ -1039,11 +1070,23 @@ export default function APIPageClient({ machineId }) {
                   <p className="text-xs text-text-muted mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
                   </p>
+                  <p className="text-xs text-text-muted mt-1">
+                    {key.allowedModels?.length || key.allowedCombos?.length
+                      ? `${key.allowedModels?.length || 0} models · ${key.allowedCombos?.length || 0} combos allowed`
+                      : "All models and combos allowed"}
+                  </p>
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => openKeyPermissions(key)}
+                    className="p-2 hover:bg-primary/10 rounded text-text-muted hover:text-primary transition-all"
+                    title="Configure model access"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">tune</span>
+                  </button>
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -1075,6 +1118,42 @@ export default function APIPageClient({ machineId }) {
           </div>
         )}
       </Card>
+
+      <Modal
+        isOpen={!!editingKey}
+        title={editingKey ? `Model access · ${editingKey.name}` : "Model access"}
+        onClose={() => setEditingKey(null)}
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-text-muted">
+            Leave both fields empty to allow every model and combo. Enter one model or combo per line.
+          </p>
+          <label className="text-sm font-medium">
+            Allowed models
+            <textarea
+              value={allowedModelsText}
+              onChange={(e) => setAllowedModelsText(e.target.value)}
+              rows={6}
+              placeholder="openai/gpt-5.6-sol\nanthropic/claude-sonnet-4-6"
+              className="mt-1 w-full rounded-lg border border-border bg-bg-base px-3 py-2 text-sm font-mono outline-none focus:border-primary"
+            />
+          </label>
+          <label className="text-sm font-medium">
+            Allowed combos
+            <textarea
+              value={allowedCombosText}
+              onChange={(e) => setAllowedCombosText(e.target.value)}
+              rows={4}
+              placeholder="coding-combo"
+              className="mt-1 w-full rounded-lg border border-border bg-bg-base px-3 py-2 text-sm font-mono outline-none focus:border-primary"
+            />
+          </label>
+          <div className="flex gap-2">
+            <Button onClick={saveKeyPermissions} fullWidth>Save</Button>
+            <Button onClick={() => setEditingKey(null)} variant="ghost" fullWidth>Cancel</Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Add Key Modal */}
       <Modal

@@ -61,6 +61,11 @@ const DEFAULT_SETTINGS = {
   pxpipeAutoInstall: true,
   pxpipeMinChars: 25000,
   pxpipeTimeoutMs: 15000,
+  pricingAutoSyncEnabled: false,
+  pricingAutoSyncIntervalHours: 24,
+  pricingLastSyncAt: "",
+  pricingLastSyncStatus: "never",
+  pricingLastSyncError: "",
 };
 
 async function readRaw() {

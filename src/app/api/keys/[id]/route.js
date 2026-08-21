@@ -21,7 +21,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive } = body;
+    const { isActive, allowedModels, allowedCombos } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -30,6 +30,18 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (allowedModels !== undefined) {
+      if (!Array.isArray(allowedModels) || allowedModels.some((v) => typeof v !== "string" || !v.trim())) {
+        return NextResponse.json({ error: "allowedModels must be an array of non-empty strings" }, { status: 400 });
+      }
+      updateData.allowedModels = [...new Set(allowedModels.map((v) => v.trim()))];
+    }
+    if (allowedCombos !== undefined) {
+      if (!Array.isArray(allowedCombos) || allowedCombos.some((v) => typeof v !== "string" || !v.trim())) {
+        return NextResponse.json({ error: "allowedCombos must be an array of non-empty strings" }, { status: 400 });
+      }
+      updateData.allowedCombos = [...new Set(allowedCombos.map((v) => v.trim()))];
+    }
 
     const updated = await updateApiKey(id, updateData);
 

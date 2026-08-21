@@ -3,15 +3,20 @@
 import { Suspense, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { UsageStats, RequestLogger, CardSkeleton, SegmentedControl } from "@/shared/components";
-import RequestDetailsTab from "./components/RequestDetailsTab";
 
 const PERIODS = [
   { value: "today", label: "Today" },
-  { value: "24h", label: "24h" },
-  { value: "7d", label: "7D" },
-  { value: "30d", label: "30D" },
-  { value: "60d", label: "60D" },
+  { value: "24h", label: "Last 24h" },
+  { value: "7d", label: "1 Week" },
+  { value: "30d", label: "1 Month" },
+  { value: "custom", label: "Custom" },
 ];
+
+function toDateInputValue(date) {
+  const d = new Date(date);
+  const offset = d.getTimezoneOffset();
+  return new Date(d.getTime() - offset * 60000).toISOString().slice(0, 16);
+}
 
 export default function UsagePage() {
   return (
@@ -26,9 +31,11 @@ function UsageContent() {
   const router = useRouter();
 
   const [period, setPeriod] = useState("today");
+  const [startDate, setStartDate] = useState(() => toDateInputValue(new Date(new Date().setHours(0, 0, 0, 0))));
+  const [endDate, setEndDate] = useState(() => toDateInputValue(new Date()));
 
   const tabFromUrl = searchParams.get("tab");
-  const activeTab = tabFromUrl && ["overview", "logs", "details"].includes(tabFromUrl)
+  const activeTab = tabFromUrl && ["overview", "logs"].includes(tabFromUrl)
     ? tabFromUrl
     : "overview";
 
@@ -39,6 +46,25 @@ function UsageContent() {
     router.push(`/dashboard/usage?${params.toString()}`, { scroll: false });
   };
 
+  const handlePeriodChange = (value) => {
+    const now = new Date();
+    let start = new Date(now);
+    if (value === "today") start.setHours(0, 0, 0, 0);
+    if (value === "24h") start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    if (value === "7d") start = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    if (value === "30d") start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    if (value !== "custom") {
+      setStartDate(toDateInputValue(start));
+      setEndDate(toDateInputValue(now));
+    }
+    setPeriod(value);
+  };
+
+  const handleDateChange = (setter) => (event) => {
+    setter(event.target.value);
+    setPeriod("custom");
+  };
+
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
       {/* Tabs + period selector on same row */}
@@ -46,30 +72,48 @@ function UsageContent() {
         <SegmentedControl
           options={[
             { value: "overview", label: "Overview" },
-            { value: "details", label: "Details" },
+            { value: "logs", label: "Usage Logs" },
           ]}
           value={activeTab}
           onChange={handleTabChange}
           className="w-full sm:w-auto"
         />
         {activeTab === "overview" && (
-          <SegmentedControl
-            options={PERIODS}
-            value={period}
-            onChange={setPeriod}
-            size="sm"
-            className="w-full sm:w-auto"
-          />
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <SegmentedControl
+              options={PERIODS}
+              value={period}
+              onChange={handlePeriodChange}
+              size="sm"
+              className="w-full sm:w-auto"
+            />
+            <div className="flex items-center gap-2">
+              <input
+                type="datetime-local"
+                value={startDate}
+                onChange={handleDateChange(setStartDate)}
+                className="rounded-md border border-border bg-bg-base px-2 py-1 text-xs text-text-main"
+                aria-label="Start date"
+              />
+              <span className="text-xs text-text-muted">to</span>
+              <input
+                type="datetime-local"
+                value={endDate}
+                onChange={handleDateChange(setEndDate)}
+                className="rounded-md border border-border bg-bg-base px-2 py-1 text-xs text-text-main"
+                aria-label="End date"
+              />
+            </div>
+          </div>
         )}
       </div>
 
       {activeTab === "overview" && (
         <Suspense fallback={<CardSkeleton />}>
-          <UsageStats period={period} setPeriod={setPeriod} hidePeriodSelector />
+          <UsageStats period={period} setPeriod={setPeriod} startDate={startDate} endDate={endDate} hidePeriodSelector />
         </Suspense>
       )}
       {activeTab === "logs" && <RequestLogger />}
-      {activeTab === "details" && <RequestDetailsTab />}
     </div>
   );
 }

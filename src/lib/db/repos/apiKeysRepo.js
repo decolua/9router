@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
+import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
 function rowToKey(row) {
   if (!row) return null;
@@ -9,6 +10,8 @@ function rowToKey(row) {
     name: row.name,
     machineId: row.machineId,
     isActive: row.isActive === 1 || row.isActive === true,
+    allowedModels: parseJson(row.allowedModels, []),
+    allowedCombos: parseJson(row.allowedCombos, []),
     createdAt: row.createdAt,
   };
 }
@@ -39,8 +42,8 @@ export async function createApiKey(name, machineId) {
     createdAt: new Date().toISOString(),
   };
   db.run(
-    `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
-    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.createdAt]
+    `INSERT INTO apiKeys(id, key, name, machineId, isActive, allowedModels, allowedCombos, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
+    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, stringifyJson([]), stringifyJson([]), apiKey.createdAt]
   );
   return apiKey;
 }
@@ -53,8 +56,10 @@ export async function updateApiKey(id, data) {
     if (!row) return;
     const merged = { ...rowToKey(row), ...data };
     db.run(
-      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ? WHERE id = ?`,
-      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, id]
+      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, allowedModels = ?, allowedCombos = ? WHERE id = ?`,
+      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0,
+        stringifyJson(Array.isArray(merged.allowedModels) ? merged.allowedModels : []),
+        stringifyJson(Array.isArray(merged.allowedCombos) ? merged.allowedCombos : []), id]
     );
     result = merged;
   });

@@ -13,10 +13,9 @@ describe("Alibaba Token Plan provider", () => {
     expect(PROVIDERS["alitp-intl"].format).toBe("openai");
   });
 
-  it("targets the Singapore Token Plan host in compatible mode", () => {
-    // eu-central-1 answers IllegalEndpoint; the plan is Singapore-only.
+  it("targets the China mainland Token Plan host in compatible mode", () => {
     expect(PROVIDERS["alitp-intl"].baseUrl).toBe(
-      "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
+      "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
     );
   });
 

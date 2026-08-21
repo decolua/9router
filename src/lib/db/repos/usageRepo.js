@@ -343,7 +343,7 @@ function loadDaysInRange(adapter, maxDays) {
   return adapter.all(`SELECT dateKey, data FROM usageDaily WHERE dateKey >= ?`, [cutoffKey]);
 }
 
-export async function getUsageStats(period = "all") {
+export async function getUsageStats(period = "all", range = {}) {
   const db = await getAdapter();
 
   const [{ getProviderConnections }, { getApiKeys }, { getProviderNodes }] = await Promise.all([
@@ -443,7 +443,7 @@ export async function getUsageStats(period = "all") {
     }
   }
 
-  const useDailySummary = period !== "24h" && period !== "today";
+  const useDailySummary = !["24h", "today", "custom"].includes(period);
 
   if (useDailySummary) {
     const periodDays = { "7d": 7, "30d": 30, "60d": 60 };
@@ -566,16 +566,19 @@ export async function getUsageStats(period = "all") {
   } else {
     // 24h / today: live history
     let cutoff;
-    if (period === "today") {
+    if (period === "custom") {
+      cutoff = range.startDate ? new Date(range.startDate).toISOString() : new Date(0).toISOString();
+    } else if (period === "today") {
       const startOfDay = new Date();
       startOfDay.setHours(0, 0, 0, 0);
       cutoff = startOfDay.toISOString();
     } else {
       cutoff = new Date(Date.now() - PERIOD_MS["24h"]).toISOString();
     }
+    const customEnd = period === "custom" && range.endDate ? new Date(range.endDate).toISOString() : new Date().toISOString();
     const filtered = db.all(
-      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ?`,
-      [cutoff]
+      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
+      [cutoff, customEnd]
     );
 
     for (const r of filtered) {
@@ -658,7 +661,7 @@ export async function getUsageStats(period = "all") {
   return stats;
 }
 
-export async function getChartData(period = "7d") {
+export async function getChartData(period = "7d", range = {}) {
   const db = await getAdapter();
   const now = Date.now();
 
@@ -703,6 +706,29 @@ export async function getChartData(period = "7d") {
       const t = new Date(r.timestamp).getTime();
       if (t < startTime || t > now) continue;
       const idx = Math.min(Math.floor((t - startTime) / bucketMs), bucketCount - 1);
+      buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
+      buckets[idx].cost += r.cost || 0;
+    }
+    return buckets;
+  }
+
+  if (period === "custom" && range.startDate) {
+    const startTime = new Date(range.startDate).getTime();
+    const endTime = range.endDate ? new Date(range.endDate).getTime() : now;
+    const span = Math.max(1, endTime - startTime);
+    const bucketCount = Math.min(60, Math.max(1, Math.ceil(span / 86400000)));
+    const bucketMs = span / bucketCount;
+    const buckets = Array.from({ length: bucketCount }, (_, i) => ({
+      label: new Date(startTime + i * bucketMs).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      tokens: 0,
+      cost: 0,
+    }));
+    const rows = db.all(
+      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
+      [new Date(startTime).toISOString(), new Date(endTime).toISOString()]
+    );
+    for (const r of rows) {
+      const idx = Math.min(bucketCount - 1, Math.max(0, Math.floor((new Date(r.timestamp).getTime() - startTime) / bucketMs)));
       buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
       buckets[idx].cost += r.cost || 0;
     }
@@ -769,4 +795,71 @@ export async function getRecentLogs(limit = 200) {
     console.error("[usageRepo] getRecentLogs failed:", e.message);
     return [];
   }
+}
+
+export async function getUsageLogs(filter = {}) {
+  const db = await getAdapter();
+  const conds = [];
+  const params = [];
+  if (filter.provider) { conds.push("provider = ?"); params.push(filter.provider); }
+  if (filter.status) { conds.push("status = ?"); params.push(filter.status); }
+  if (filter.startDate) { conds.push("timestamp >= ?"); params.push(new Date(filter.startDate).toISOString()); }
+  if (filter.endDate) { conds.push("timestamp <= ?"); params.push(new Date(filter.endDate).toISOString()); }
+
+  if (filter.apiKey) {
+    const { getApiKeys } = await import("./apiKeysRepo.js");
+    const keys = await getApiKeys();
+    const selected = keys.find((key) => key.id === filter.apiKey || key.name === filter.apiKey || key.key === filter.apiKey);
+    if (selected) {
+      conds.push("apiKey = ?");
+      params.push(selected.key);
+    } else {
+      return { logs: [], pagination: { page: filter.page || 1, pageSize: filter.pageSize || 50, totalItems: 0, totalPages: 0, hasNext: false, hasPrev: false } };
+    }
+  }
+
+  const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
+  const page = Math.max(1, Number(filter.page) || 1);
+  const pageSize = Math.min(200, Math.max(1, Number(filter.pageSize) || 50));
+  const totalItems = db.get(`SELECT COUNT(*) AS c FROM usageHistory ${where}`, params)?.c || 0;
+  const rows = db.all(
+    `SELECT id, timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens FROM usageHistory ${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
+    [...params, pageSize, (page - 1) * pageSize]
+  );
+  const [{ getProviderConnections }, { getApiKeys }] = await Promise.all([
+    import("./connectionsRepo.js"),
+    import("./apiKeysRepo.js"),
+  ]);
+  const connections = await getProviderConnections();
+  const apiKeys = await getApiKeys();
+  const connMap = Object.fromEntries(connections.map((c) => [c.id, c.name || c.email || c.id]));
+  const keyMap = Object.fromEntries(apiKeys.map((k) => [k.key, k.name || k.id]));
+  const mask = (key) => !key ? null : key.length <= 8 ? `${key[0]}***` : `${key.slice(0, 8)}***`;
+  const logs = rows.map((r) => {
+    const tokens = parseJson(r.tokens, {}) || {};
+    const inputTokens = Number(r.promptTokens ?? tokens.prompt_tokens ?? tokens.input_tokens ?? 0);
+    const cacheReadTokens = Number(tokens.cached_tokens ?? tokens.cache_read_input_tokens ?? tokens.cache_read_tokens ?? 0);
+    const cacheCreationTokens = Number(tokens.cache_creation_input_tokens ?? tokens.cache_creation_tokens ?? 0);
+    const outputTokens = Number(r.completionTokens ?? tokens.completion_tokens ?? tokens.output_tokens ?? 0);
+    return {
+      id: r.id,
+      timestamp: r.timestamp,
+      apiKey: mask(r.apiKey),
+      apiKeyName: r.apiKey ? (keyMap[r.apiKey] || mask(r.apiKey)) : "Local (No API Key)",
+      model: r.model,
+      provider: r.provider,
+      endpoint: r.endpoint,
+      account: r.connectionId ? (connMap[r.connectionId] || r.connectionId) : null,
+      inputTokens,
+      cacheReadTokens,
+      cacheCreationTokens,
+      outputTokens,
+      totalTokens: inputTokens + outputTokens,
+      cost: Number(r.cost || 0),
+      status: r.status || "ok",
+      logType: r.status === "ok" || r.status === "success" ? "success" : (r.status || "unknown"),
+    };
+  });
+  const totalPages = Math.ceil(totalItems / pageSize);
+  return { logs, pagination: { page, pageSize, totalItems, totalPages, hasNext: page < totalPages, hasPrev: page > 1 } };
 }

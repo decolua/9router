@@ -10,9 +10,14 @@ export default function PricingSettingsPage() {
   const [showModal, setShowModal] = useState(false);
   const [currentPricing, setCurrentPricing] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [syncInfo, setSyncInfo] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+  const [autoSync, setAutoSync] = useState(false);
+  const [intervalHours, setIntervalHours] = useState(24);
 
   useEffect(() => {
     loadPricing();
+    loadSyncInfo();
   }, []);
 
   const loadPricing = async () => {
@@ -28,6 +33,42 @@ export default function PricingSettingsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadSyncInfo = async () => {
+    try {
+      const [syncRes, settingsRes] = await Promise.all([fetch("/api/pricing/sync"), fetch("/api/settings")]);
+      if (syncRes.ok) setSyncInfo(await syncRes.json());
+      if (settingsRes.ok) {
+        const settings = await settingsRes.json();
+        setAutoSync(!!settings.pricingAutoSyncEnabled);
+        setIntervalHours(Number(settings.pricingAutoSyncIntervalHours) || 24);
+      }
+    } catch (error) { console.error("Failed to load pricing sync settings:", error); }
+  };
+
+  const syncNow = async () => {
+    setSyncing(true);
+    try {
+      const response = await fetch("/api/pricing/sync", { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to sync pricing");
+      await loadPricing();
+      await loadSyncInfo();
+    } catch (error) {
+      alert(error.message);
+    } finally { setSyncing(false); }
+  };
+
+  const saveAutoSync = async (enabled = autoSync, interval = intervalHours) => {
+    setAutoSync(enabled);
+    setIntervalHours(interval);
+    await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pricingAutoSyncEnabled: enabled, pricingAutoSyncIntervalHours: Math.max(1, Number(interval) || 24) }),
+    });
+    await loadSyncInfo();
   };
 
   const handlePricingUpdated = () => {
@@ -60,13 +101,18 @@ export default function PricingSettingsPage() {
             Configure pricing rates for cost tracking and calculations
           </p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="px-4 py-2 bg-primary text-white rounded hover:bg-primary/90 transition-colors"
-        >
-          Edit Pricing
-        </button>
+        <div className="flex gap-2">
+          <button onClick={syncNow} disabled={syncing} className="px-4 py-2 border border-border rounded hover:bg-bg-hover transition-colors disabled:opacity-50">{syncing ? "Updating..." : "Update from OpenCode"}</button>
+          <button onClick={() => setShowModal(true)} className="px-4 py-2 bg-primary text-white rounded hover:bg-primary/90 transition-colors">Edit Pricing</button>
+        </div>
       </div>
+
+      <Card className="p-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div><h2 className="font-semibold">Automatic price updates</h2><p className="text-sm text-text-muted">Fetch supported model prices from the OpenCode Go pricing table.</p>{syncInfo?.lastSyncAt && <p className="text-xs text-text-muted mt-1">Last sync: {new Date(syncInfo.lastSyncAt).toLocaleString()} · {syncInfo.status}</p>}</div>
+          <div className="flex items-center gap-3"><label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={autoSync} onChange={(e) => saveAutoSync(e.target.checked, intervalHours)} /> Enabled</label><label className="flex items-center gap-2 text-sm">Every <input type="number" min="1" value={intervalHours} onChange={(e) => setIntervalHours(e.target.value)} onBlur={() => saveAutoSync(autoSync, intervalHours)} className="w-16 rounded border border-border bg-bg-base px-2 py-1 text-right" /> hours</label></div>
+        </div>
+      </Card>
 
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

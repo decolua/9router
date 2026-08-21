@@ -6,6 +6,7 @@ import {
   clearAccountError,
   extractApiKey,
   isValidApiKey,
+  isApiKeyModelAllowed,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
@@ -89,6 +90,12 @@ export async function handleChat(request, clientRawRequest = null) {
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
+    const comboAccess = await isApiKeyModelAllowed(apiKey, null, modelStr);
+    if (!comboAccess.allowed) {
+      log.warn("AUTH", comboAccess.reason, { model: modelStr });
+      return errorResponse(HTTP_STATUS.FORBIDDEN, comboAccess.reason);
+    }
+
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
@@ -132,6 +139,12 @@ export async function handleChat(request, clientRawRequest = null) {
     });
   }
 
+  const modelAccess = await isApiKeyModelAllowed(apiKey, modelStr);
+  if (!modelAccess.allowed) {
+    log.warn("AUTH", modelAccess.reason, { model: modelStr });
+    return errorResponse(HTTP_STATUS.FORBIDDEN, modelAccess.reason);
+  }
+
   // Single model request — may still switch to a capacity-adapter model if the
   // target lacks a capability the request needs (e.g. no vision, request has an image).
   const soloAugmented = augmentModelsWithCapacityAdapter([modelStr], requiredCapabilities, settings);
@@ -162,6 +175,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
+    const comboAccess = await isApiKeyModelAllowed(apiKey, null, modelStr);
+    if (!comboAccess.allowed) {
+      log.warn("AUTH", comboAccess.reason, { model: modelStr });
+      return errorResponse(HTTP_STATUS.FORBIDDEN, comboAccess.reason);
+    }
     const comboModels = await getComboModels(modelStr);
     if (comboModels) {
       const chatSettings = await getSettings();
@@ -213,7 +231,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   }
 
   const { provider, model } = modelInfo;
-
+  const modelAccess = await isApiKeyModelAllowed(apiKey, modelStr);
+  if (!modelAccess.allowed) {
+    log.warn("AUTH", modelAccess.reason, { model: modelStr });
+    return errorResponse(HTTP_STATUS.FORBIDDEN, modelAccess.reason);
+  }
   // Routing shown in the unified "▶" line (client model → provider/model)
 
   // Extract userAgent from request

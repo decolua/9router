@@ -1,4 +1,4 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
+import { getProviderConnections, getApiKeys, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
@@ -338,4 +338,22 @@ export function extractApiKey(request) {
 export async function isValidApiKey(apiKey) {
   if (!apiKey) return false;
   return await validateApiKey(apiKey);
+}
+
+/** Enforce optional API-key-specific model and combo allowlists. */
+export async function isApiKeyModelAllowed(apiKey, model, comboName = null) {
+  if (!apiKey) return { allowed: true };
+  const keys = await getApiKeys();
+  const key = keys.find((entry) => entry.key === apiKey);
+  if (!key) return { allowed: false, reason: "Invalid API key" };
+
+  const allowedModels = Array.isArray(key.allowedModels) ? key.allowedModels.filter(Boolean) : [];
+  const allowedCombos = Array.isArray(key.allowedCombos) ? key.allowedCombos.filter(Boolean) : [];
+  if (comboName && allowedCombos.length > 0 && !allowedCombos.includes(comboName)) {
+    return { allowed: false, reason: `API key is not allowed to use combo: ${comboName}` };
+  }
+  if (allowedModels.length > 0 && model && !allowedModels.includes(model)) {
+    return { allowed: false, reason: `API key is not allowed to use model: ${model}` };
+  }
+  return { allowed: true };
 }

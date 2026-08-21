@@ -118,6 +118,10 @@ async function runHeavyStartup() {
   import("@/sse/services/backgroundTokenRefresh.js")
     .then(({ startBackgroundTokenRefresh }) => startBackgroundTokenRefresh())
     .catch((e) => console.log("[BackgroundTokenRefresh] scheduler start failed:", e.message));
+
+  import("@/shared/services/pricingSync")
+    .then(({ startPricingAutoSync }) => startPricingAutoSync())
+    .catch((e) => console.log("[Pricing] scheduler start failed:", e.message));
 }
 
 function hasQuotaAutoPingEnabled(settings) {

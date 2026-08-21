@@ -22,7 +22,7 @@ const fmtTokens = (n) => {
 
 const fmtCost = (n) => `$${(n || 0).toFixed(4)}`;
 
-export default function UsageChart({ period = "7d" }) {
+export default function UsageChart({ period = "7d", startDate = "", endDate = "" }) {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState("tokens");
@@ -30,7 +30,12 @@ export default function UsageChart({ period = "7d" }) {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/usage/chart?period=${period}`);
+      const query = new URLSearchParams({ period });
+      if (period === "custom") {
+        if (startDate) query.set("startDate", startDate);
+        if (endDate) query.set("endDate", endDate);
+      }
+      const res = await fetch(`/api/usage/chart?${query.toString()}`);
       if (res.ok) {
         const json = await res.json();
         setData(json);
@@ -40,7 +45,7 @@ export default function UsageChart({ period = "7d" }) {
     } finally {
       setLoading(false);
     }
-  }, [period]);
+  }, [period, startDate, endDate]);
 
   useEffect(() => {
     fetchData();
@@ -138,4 +143,6 @@ export default function UsageChart({ period = "7d" }) {
 
 UsageChart.propTypes = {
   period: PropTypes.string,
+  startDate: PropTypes.string,
+  endDate: PropTypes.string,
 };
