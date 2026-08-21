@@ -8,6 +8,8 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
+import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
+import { DEFAULT_MIN_TOKENS } from "../../config/runtimeConfig.js";
 
 function extractContent(content) {
   if (typeof content === "string") return content;
@@ -15,7 +17,7 @@ function extractContent(content) {
     return content
       .filter(part => {
         if (!part || typeof part !== "object") return false;
-        return part.type === "text" && typeof part.text === "string";
+        return part.type === OPENAI_BLOCK.TEXT && typeof part.text === "string";
       })
       .map(part => part.text || "")
       .join("");
@@ -63,14 +65,14 @@ function convertMessages(messages) {
   };
 
   for (const msg of messages) {
-    if (msg.role === "assistant" && msg.tool_calls) {
+    if (msg.role === ROLE.ASSISTANT && msg.tool_calls) {
       for (const tc of msg.tool_calls) {
         rememberToolMeta(tc.id || "", tc.function?.name || "tool");
       }
     }
-    if (msg.role === "assistant" && Array.isArray(msg.content)) {
+    if (msg.role === ROLE.ASSISTANT && Array.isArray(msg.content)) {
       for (const part of msg.content) {
-        if (part?.type !== "tool_use") continue;
+        if (part?.type !== CLAUDE_BLOCK.TOOL_USE) continue;
         rememberToolMeta(part.id || "", part.name || "tool");
       }
     }
@@ -79,38 +81,38 @@ function convertMessages(messages) {
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
 
-    if (msg.role === "system") {
+    if (msg.role === ROLE.SYSTEM) {
       result.push({
-        role: "user",
+        role: ROLE.USER,
         content: `[System Instructions]\n${extractContent(msg.content)}`
       });
       continue;
     }
 
-    if (msg.role === "tool") {
+    if (msg.role === ROLE.TOOL) {
       const toolContent = extractContent(msg.content);
       const toolCallId = msg.tool_call_id || "";
       const toolMeta = toolCallMetaMap.get(toolCallId) || {};
       const toolName = msg.name || toolMeta.name || "tool";
       result.push({
-        role: "user",
+        role: ROLE.USER,
         content: buildToolResultBlock(toolName, toolCallId, toolContent)
       });
       continue;
     }
 
-    if (msg.role === "user" || msg.role === "assistant") {
-      if (msg.role === "user" && Array.isArray(msg.content)) {
+    if (msg.role === ROLE.USER || msg.role === ROLE.ASSISTANT) {
+      if (msg.role === ROLE.USER && Array.isArray(msg.content)) {
         const parts = [];
         for (const block of msg.content) {
           if (!block || typeof block !== "object") continue;
-          if (block.type === "text") {
+          if (block.type === CLAUDE_BLOCK.TEXT) {
             if (typeof block.text === "string") {
               parts.push(block.text || "");
             }
             continue;
           }
-          if (block.type === "tool_result") {
+          if (block.type === CLAUDE_BLOCK.TOOL_RESULT) {
             const toolCallId = block.tool_use_id || "";
             const toolMeta =
               toolCallMetaMap.get(toolCallId) ||
@@ -121,25 +123,25 @@ function convertMessages(messages) {
           }
         }
         const joined = parts.filter(Boolean).join("\n");
-        if (joined) result.push({ role: "user", content: joined });
+        if (joined) result.push({ role: ROLE.USER, content: joined });
         continue;
       }
 
       const content = extractContent(msg.content);
 
-      if (msg.role === "assistant" && msg.tool_calls && msg.tool_calls.length > 0) {
-        const assistantMsg = { role: "assistant", content: content || "" };
+      if (msg.role === ROLE.ASSISTANT && msg.tool_calls && msg.tool_calls.length > 0) {
+        const assistantMsg = { role: ROLE.ASSISTANT, content: content || "" };
         assistantMsg.tool_calls = msg.tool_calls.map(tc => {
           const { index, ...rest } = tc || {};
           return rest;
         });
         result.push(assistantMsg);
-      } else if (msg.role === "assistant" && Array.isArray(msg.content)) {
+      } else if (msg.role === ROLE.ASSISTANT && Array.isArray(msg.content)) {
         const extractedToolCalls = msg.content
-          .filter(b => b?.type === "tool_use")
+          .filter(b => b?.type === CLAUDE_BLOCK.TOOL_USE)
           .map(b => ({
             id: b.id || "",
-            type: "function",
+            type: OPENAI_BLOCK.FUNCTION,
             function: {
               name: b.name || "tool",
               arguments: JSON.stringify(b.input || {})
@@ -149,12 +151,12 @@ function convertMessages(messages) {
 
         if (extractedToolCalls.length > 0) {
           result.push({
-            role: "assistant",
+            role: ROLE.ASSISTANT,
             content: content || "",
             tool_calls: extractedToolCalls
           });
         } else if (content) {
-          result.push({ role: "assistant", content });
+          result.push({ role: ROLE.ASSISTANT, content });
         }
       } else {
         if (content) {
@@ -167,7 +169,7 @@ function convertMessages(messages) {
   return result;
 }
 
-export function buildCursorRequest(model, body, stream, credentials) {
+export function openaiToCursorRequest(model, body, stream, credentials) {
   const messages = convertMessages(body.messages || []);
 
   // Strip fields irrelevant to Cursor (OpenAI/Anthropic-specific)
@@ -176,8 +178,8 @@ export function buildCursorRequest(model, body, stream, credentials) {
   return {
     ...rest,
     messages,
-    max_tokens: 32000
+    max_tokens: DEFAULT_MIN_TOKENS
   };
 }
 
-register(FORMATS.OPENAI, FORMATS.CURSOR, buildCursorRequest, null);
+register(FORMATS.OPENAI, FORMATS.CURSOR, openaiToCursorRequest, null);

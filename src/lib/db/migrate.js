@@ -1,10 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
-import { LEGACY_FILES, DB_DIR, DATA_FILE } from "./paths.js";
-import { TABLES, buildCreateTableSql } from "./schema.js";
+import { LEGACY_FILES, DB_DIR } from "./paths.js";
+import { TABLES, buildCreateTableSql, SCHEMA_VERSION } from "./schema.js";
 import { MIGRATIONS, latestVersion } from "./migrations/index.js";
 import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
-import { makeBackupDir, backupFile, pruneOldBackups } from "./backup.js";
+import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
 import { getAppVersion } from "./version.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
 
@@ -13,6 +13,30 @@ const MIGRATED_MARKER = path.join(DB_DIR, ".migrated-from-json");
 
 // Track per-adapter so reusing same adapter skips re-run, but new adapter (after reset) re-runs.
 const _migratedAdapters = new WeakSet();
+
+// Thrown when row-count assertion fails. Outer transaction rolls back,
+// legacy db.json kept intact, marker not written → next boot retries.
+export class MigrationAborted extends Error {
+  constructor(message, droppedRows) {
+    super(message);
+    this.name = "MigrationAborted";
+    this.droppedRows = droppedRows;
+  }
+}
+
+// Insert rows one-by-one, collect failures, then assert COUNT(*) matches input length.
+function importWithAssertion(adapter, tableName, rows, insertFn, rowMeta) {
+  const dropped = [];
+  for (const row of rows) {
+    try { insertFn(row); }
+    catch (err) { dropped.push({ ...rowMeta(row), reason: err.message }); }
+  }
+  const inserted = adapter.get(`SELECT COUNT(*) as c FROM ${tableName}`)?.c ?? 0;
+  if (inserted !== rows.length) {
+    console.warn(`[DB][migrate] ${tableName} row-count mismatch: expected ${rows.length}, got ${inserted}. Dropped:`, dropped);
+    throw new MigrationAborted(`${tableName} row-count mismatch: expected ${rows.length}, got ${inserted}`, dropped);
+  }
+}
 
 function readJsonSafe(file) {
   if (!fs.existsSync(file)) return null;
@@ -91,39 +115,45 @@ function importLegacyMain(adapter, data) {
   if (data.settings) {
     adapter.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(data.settings)]);
   }
-  for (const c of data.providerConnections || []) {
+
+  importWithAssertion(adapter, "providerConnections", data.providerConnections || [], (c) => {
     const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
     adapter.run(
       `INSERT OR REPLACE INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, provider, authType || "oauth", name || null, email || null, priority || null, isActive === false ? 0 : 1, stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
     );
-  }
-  for (const n of data.providerNodes || []) {
+  }, (c) => ({ id: c.id ?? null, provider: c.provider ?? null, name: c.name ?? null }));
+
+  importWithAssertion(adapter, "providerNodes", data.providerNodes || [], (n) => {
     const { id, type, name, createdAt, updatedAt, ...rest } = n;
     adapter.run(
       `INSERT OR REPLACE INTO providerNodes(id, type, name, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
       [id, type || null, name || null, stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
     );
-  }
-  for (const p of data.proxyPools || []) {
+  }, (n) => ({ id: n.id ?? null, type: n.type ?? null, name: n.name ?? null }));
+
+  importWithAssertion(adapter, "proxyPools", data.proxyPools || [], (p) => {
     const { id, isActive, testStatus, createdAt, updatedAt, ...rest } = p;
     adapter.run(
       `INSERT OR REPLACE INTO proxyPools(id, isActive, testStatus, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
       [id, isActive === false ? 0 : 1, testStatus || "unknown", stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
     );
-  }
-  for (const k of data.apiKeys || []) {
+  }, (p) => ({ id: p.id ?? null }));
+
+  importWithAssertion(adapter, "apiKeys", data.apiKeys || [], (k) => {
     adapter.run(
       `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
       [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, k.createdAt || new Date().toISOString()]
     );
-  }
-  for (const c of data.combos || []) {
+  }, (k) => ({ id: k.id ?? null, name: k.name ?? null }));
+
+  importWithAssertion(adapter, "combos", data.combos || [], (c) => {
     adapter.run(
       `INSERT OR REPLACE INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
       [c.id, c.name, c.kind || null, stringifyJson(c.models || []), c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
     );
-  }
+  }, (c) => ({ id: c.id ?? null, name: c.name ?? null }));
+
   for (const [alias, model] of Object.entries(data.modelAliases || {})) {
     adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)`, [alias, stringifyJson(model)]);
   }
@@ -191,11 +221,36 @@ export async function runMigrationOnce(adapter) {
   // a brand-new DB as non-fresh once schemaVersion is written).
   const fresh = isFreshDb(adapter);
 
+  // Prune stale backups every boot so old oversized backups shrink to KEEP.
+  pruneOldBackups();
+
+  // Bootstrap _meta so we can read the stored backup schema version below
+  // (runVersionedMigrations also ensures this, but we need it earlier here).
+  adapter.exec(buildCreateTableSql("_meta", TABLES._meta));
+
+  // Detect a pending schema change via the central SCHEMA_VERSION const.
+  // A lightweight backup is taken BEFORE any schema mutation below.
+  const storedSchemaVer = parseInt(getMetaSync(adapter, "backupSchemaVersion", "0"), 10) || 0;
+  const schemaChanging = !fresh && storedSchemaVer < SCHEMA_VERSION;
+  if (schemaChanging) {
+    try {
+      const backupDir = makeBackupDir(`schema-${storedSchemaVer}-to-${SCHEMA_VERSION}`);
+      backupDbLite(adapter, backupDir);
+      pruneOldBackups();
+      console.log(`[DB][migrate] pre-schema backup ${storedSchemaVer} → ${SCHEMA_VERSION}: ${backupDir}`);
+    } catch (e) {
+      console.warn(`[DB][migrate] pre-schema backup failed (continuing): ${e.message}`);
+    }
+  }
+
   // 1. Always run versioned migrations chain (skip-version safe)
   const migInfo = runVersionedMigrations(adapter);
 
   // 2. Additive sync (auto add missing columns/indexes declared in TABLES)
   syncSchemaFromTables(adapter);
+
+  // Stamp the schema version we just reached so future boots skip re-backup.
+  setMetaSync(adapter, "backupSchemaVersion", SCHEMA_VERSION);
 
   // 3. One-time legacy JSON import (only if DB was fresh on entry)
   const alreadyImported = fs.existsSync(MIGRATED_MARKER);
@@ -210,14 +265,23 @@ export async function runMigrationOnce(adapter) {
     const backupDir = makeBackupDir("migrate-from-json");
     for (const f of Object.values(LEGACY_FILES)) backupFile(f, backupDir);
 
-    adapter.transaction(() => {
-      importLegacyMain(adapter, legacyMain);
-      importLegacyUsage(adapter, legacyUsage);
-      importLegacyDisabled(adapter, legacyDisabled);
-      importLegacyDetails(adapter, legacyDetails);
-      setMetaSync(adapter, "appVersion", getAppVersion());
-      setMetaSync(adapter, "migratedAt", new Date().toISOString());
-    });
+    try {
+      adapter.transaction(() => {
+        importLegacyMain(adapter, legacyMain);
+        importLegacyUsage(adapter, legacyUsage);
+        importLegacyDisabled(adapter, legacyDisabled);
+        importLegacyDetails(adapter, legacyDetails);
+        setMetaSync(adapter, "appVersion", getAppVersion());
+        setMetaSync(adapter, "backupSchemaVersion", SCHEMA_VERSION);
+        setMetaSync(adapter, "migratedAt", new Date().toISOString());
+      });
+    } catch (err) {
+      if (err instanceof MigrationAborted) {
+        console.error(`[DB][migrate] aborted: ${err.message} | legacy JSON kept | backup: ${backupDir}`);
+        return;
+      }
+      throw err;
+    }
 
     try { fs.writeFileSync(MIGRATED_MARKER, new Date().toISOString()); } catch {}
     pruneOldBackups();
@@ -225,24 +289,9 @@ export async function runMigrationOnce(adapter) {
     return;
   }
 
-  if (fresh) {
-    setMetaSync(adapter, "appVersion", getAppVersion());
-    return;
-  }
-
-  // 4. App version bump → backup data.sqlite (safety net before user-side upgrade)
-  const oldVer = getMetaSync(adapter, "appVersion", null);
+  // Track app version for informational purposes only. App version bumps no
+  // longer trigger a DB backup — only real schema changes (SCHEMA_VERSION) do.
   const newVer = getAppVersion();
-  if (oldVer && oldVer !== newVer) {
-    const backupDir = makeBackupDir(`upgrade-${oldVer}-to-${newVer}`);
-    try { backupFile(DATA_FILE, backupDir); } catch {}
-    setMetaSync(adapter, "appVersion", newVer);
-    pruneOldBackups();
-    console.log(`[DB][migrate] App ${oldVer} → ${newVer} | schema ${migInfo.from} → ${migInfo.to} | backup: ${backupDir}`);
-  } else if (migInfo.applied > 0) {
-    // Schema upgrade without app version bump — still backup
-    const backupDir = makeBackupDir(`schema-${migInfo.from}-to-${migInfo.to}`);
-    try { backupFile(DATA_FILE, backupDir); } catch {}
-    pruneOldBackups();
-  }
+  const oldVer = getMetaSync(adapter, "appVersion", null);
+  if (oldVer !== newVer) setMetaSync(adapter, "appVersion", newVer);
 }

@@ -5,19 +5,29 @@ services:
       dockerfile: Dockerfile
     image: 9router:local
     container_name: 9router
-    restart: unless-stopped
+    restart: always
     ports:
       - "20128:20128"
+    volumes:
+      - 9router-data:/app/data
     env_file:
       - .env
     environment:
-      # Override DATA_DIR for in-container path (host bind below).
       DATA_DIR: /app/data
-    volumes:
-      - ./data:/app/data
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:20128/api/settings >/dev/null 2>&1 || exit 1"]
-      interval: 30s
-      timeout: 5s
-      start_period: 20s
-      retries: 3
+      PORT: "20128"
+      HOSTNAME: "0.0.0.0"
+      NODE_ENV: production
+      HEADROOM_URL: http://headroom:8787
+    depends_on:
+      - headroom
+
+  headroom:
+    image: ghcr.io/chopratejas/headroom:latest
+    container_name: headroom
+    restart: always
+    ports:
+      - "8787:8787"
+
+volumes:
+  9router-data:
+    name: 9router-data

@@ -9,6 +9,16 @@ import { matchKnownEndpoint } from "./cliEndpointMatch";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
 
+// Context window presets. UI shows the round number; the value written is nudged
+// down 2K to stay safely under the upstream hard cap.
+const CONTEXT_OPTIONS = [
+  { label: "Default", value: "" },
+  { label: "200K", value: "198000" },
+  { label: "300K", value: "298000" },
+  { label: "500K", value: "498000" },
+  { label: "1M", value: "998000" },
+];
+
 export default function ClaudeToolCard({
   tool,
   isExpanded,
@@ -39,6 +49,8 @@ export default function ClaudeToolCard({
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [ccFilterNaming, setCcFilterNaming] = useState(false);
+  const [exaMcpEnabled, setExaMcpEnabled] = useState(false);
+  const [maxContextTokens, setMaxContextTokens] = useState("");
   const hasInitializedModels = useRef(false);
 
   const getConfigStatus = () => {
@@ -58,15 +70,22 @@ export default function ClaudeToolCard({
   }, [apiKeys, selectedApiKey]);
 
   useEffect(() => {
-    if (initialStatus) setClaudeStatus(initialStatus);
+    if (initialStatus) {
+      setClaudeStatus(initialStatus);
+      setExaMcpEnabled(!!initialStatus.exaMcpEnabled);
+    }
   }, [initialStatus]);
 
   useEffect(() => {
-    if (isExpanded && !claudeStatus) {
-      checkClaudeStatus();
+    const v = claudeStatus?.settings?.env?.CLAUDE_CODE_MAX_CONTEXT_TOKENS;
+    setMaxContextTokens(v || "");
+  }, [claudeStatus?.settings?.env?.CLAUDE_CODE_MAX_CONTEXT_TOKENS]);
+
+  useEffect(() => {
+    if (isExpanded) {
+      if (!claudeStatus) checkClaudeStatus();
       fetchModelAliases();
     }
-    if (isExpanded) fetchModelAliases();
   }, [isExpanded]);
 
   useEffect(() => {
@@ -123,6 +142,7 @@ export default function ClaudeToolCard({
       const res = await fetch("/api/cli-tools/claude-settings");
       const data = await res.json();
       setClaudeStatus(data);
+      setExaMcpEnabled(!!data.exaMcpEnabled);
     } catch (error) {
       setClaudeStatus({ installed: false, error: error.message });
     } finally {
@@ -159,15 +179,18 @@ export default function ClaudeToolCard({
         const targetModel = modelMappings[model.alias];
         if (targetModel && model.envKey) env[model.envKey] = targetModel;
       });
+      if (maxContextTokens) {
+        env.CLAUDE_CODE_MAX_CONTEXT_TOKENS = maxContextTokens;
+      }
       const res = await fetch("/api/cli-tools/claude-settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ env }),
+        body: JSON.stringify({ env, exaMcpEnabled, maxContextTokens }),
       });
       const data = await res.json();
       if (res.ok) {
         setMessage({ type: "success", text: "Settings applied successfully!" });
-        setClaudeStatus(prev => ({ ...prev, hasBackup: true, settings: { ...prev?.settings, env } }));
+        setClaudeStatus(prev => ({ ...prev, hasBackup: true, settings: { ...prev?.settings, env }, exaMcpEnabled }));
       } else {
         setMessage({ type: "error", text: data.error || "Failed to apply settings" });
       }
@@ -188,6 +211,8 @@ export default function ClaudeToolCard({
         setMessage({ type: "success", text: "Settings reset successfully!" });
         tool.defaultModels.forEach((model) => onModelMappingChange(model.alias, model.defaultValue || ""));
         setSelectedApiKey("");
+        setExaMcpEnabled(false);
+        setMaxContextTokens("");
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings" });
       }
@@ -217,6 +242,9 @@ export default function ClaudeToolCard({
       const targetModel = modelMappings[model.alias];
       if (targetModel && model.envKey) env[model.envKey] = targetModel;
     });
+    if (maxContextTokens) {
+      env.CLAUDE_CODE_MAX_CONTEXT_TOKENS = maxContextTokens;
+    }
 
     return [
       {
@@ -231,7 +259,7 @@ export default function ClaudeToolCard({
       <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
-            <Image src="/providers/claude.png" alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
+            <Image src="/providers/claude.png" alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} loading="lazy" decoding="async" />
           </div>
           <div className="min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -340,6 +368,17 @@ export default function ClaudeToolCard({
                   </div>
                 ))}
 
+                {/* Context Window */}
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
+                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Context window</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                  <select value={maxContextTokens} onChange={(e) => setMaxContextTokens(e.target.value)} className="w-full min-w-0 px-2 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5">
+                    {CONTEXT_OPTIONS.map((opt) => (
+                      <option key={opt.label} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+
                 {/* CC Filter Naming */}
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Filter naming</span>
@@ -347,10 +386,23 @@ export default function ClaudeToolCard({
                   <label className="flex items-center gap-1.5 cursor-pointer select-none">
                     <input type="checkbox" checked={ccFilterNaming} onChange={handleCcFilterNamingToggle} className="w-3.5 h-3.5 accent-primary cursor-pointer" />
                     <span className="text-xs text-text-muted">Filter naming requests</span>
+                    <Tooltip text="Intercepts Claude Code's topic-naming requests and returns a fake response locally, saving API tokens.">
+                      <span className="material-symbols-outlined text-text-muted text-[14px] cursor-help">info</span>
+                    </Tooltip>
                   </label>
-                  <Tooltip text="Intercepts Claude Code's topic-naming requests and returns a fake response locally, saving API tokens.">
-                    <span className="material-symbols-outlined text-text-muted text-[14px] cursor-help">info</span>
-                  </Tooltip>
+                </div>
+
+                {/* Exa MCP — ~/.claude.json mcpServers (not settings.json) */}
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
+                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Web Search</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                    <input type="checkbox" checked={exaMcpEnabled} onChange={(e) => setExaMcpEnabled(e.target.checked)} className="w-3.5 h-3.5 accent-primary cursor-pointer" />
+                    <span className="text-xs text-text-muted">Exa MCP</span>
+                    <Tooltip text="Injects Exa MCP into ~/.claude.json so non-Claude models gain web search. Restart Claude Code after Apply.">
+                      <span className="material-symbols-outlined text-text-muted text-[14px] cursor-help">info</span>
+                    </Tooltip>
+                  </label>
                 </div>
               </div>
 
@@ -377,7 +429,9 @@ export default function ClaudeToolCard({
         </div>
       )}
 
-      <ModelSelectModal isOpen={modalOpen} onClose={() => setModalOpen(false)} onSelect={handleModelSelect} selectedModel={currentEditingAlias ? modelMappings[currentEditingAlias] : null} activeProviders={activeProviders} modelAliases={modelAliases} title={`Select model for ${currentEditingAlias}`} />
+      {modalOpen && (
+        <ModelSelectModal isOpen={modalOpen} onClose={() => setModalOpen(false)} onSelect={handleModelSelect} selectedModel={currentEditingAlias ? modelMappings[currentEditingAlias] : null} activeProviders={activeProviders} modelAliases={modelAliases} title={`Select model for ${currentEditingAlias}`} />
+      )}
 
       <ManualConfigModal
         isOpen={showManualConfigModal}

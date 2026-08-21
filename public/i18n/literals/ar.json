@@ -12,6 +12,7 @@
   "Logout": "تسجيل الخروج",
   "Login": "تسجيل الدخول",
   "Providers": "الموفرون",
+  "Style": "النمط",
   "Usage": "الإحصائيات",
   "API Key": "مفتاح API",
   "Connected": "متصل",
@@ -176,6 +177,7 @@
   "How it works:": "كيف يعمل:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "طلب Antigravity/Copilot IDE → إعادة توجيه DNS إلى localhost:443 → يعترض وكيل MITM → 9Router → الرد إلى Antigravity/Copilot",
   "No API keys — create one in Keys page": "لا توجد مفاتيح API — قم بإنشاء واحدة في صفحة المفاتيح",
+  "e.g. a warm, gentle voice, speaking slowly with a British accent": "مثال: صوت دافئ ولطيف، يتحدث ببطء بلهجة بريطانية",
   "sk_9router (default)": "sk_9router (افتراضي)",
   "Server started": "تم بدء الخادم",
   "Failed to start server": "فشل في بدء الخادم",
@@ -190,5 +192,6 @@
   "Sudo Password": "كلمة مرور Sudo",
   "Click to add, click again to remove. Changes are saved automatically.": "انقر للإضافة، انقر مرة أخرى للإزالة. يتم حفظ التغييرات تلقائيًا.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ تنبيه مخاطر: يستخدم هذا الموفر اشتراكًا/جلسة OAuth غير مرخصة رسميًا للاستخدام عبر البروكسي/الراوتر. قد يتم تقييد الحساب أو حظره. الاستخدام على مسؤوليتك الخاصة.",
-  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ يعترض MITM حركة مرور HTTPS لأدوات IDE (Antigravity، GitHub Copilot، Kiro) عبر CA محلية لإعادة توجيه الطلبات إلى مزوديك. قد ينتهك شروط الخدمة → خطر حظر الحساب. الاستخدام على مسؤوليتك الخاصة."
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ يعترض MITM حركة مرور HTTPS لأدوات IDE (Antigravity، GitHub Copilot، Kiro) عبر CA محلية لإعادة توجيه الطلبات إلى مزوديك. قد ينتهك شروط الخدمة → خطر حظر الحساب. الاستخدام على مسؤوليتك الخاصة.",
+  "Endpoint is exposed without an API key.": "نقطة النهاية مكشوفة بدون مفتاح API."
 }

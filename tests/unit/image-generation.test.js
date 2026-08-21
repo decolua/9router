@@ -263,6 +263,38 @@ describe("handleImageGenerationCore", () => {
     );
   });
 
+  it("handles Vercel AI Gateway image generation as OpenAI-compatible", async () => {
+    global.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          created: 1234567890,
+          data: [{ url: "https://example.com/vercel-image.png" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "A watercolor castle", n: 1, size: "1024x1024" },
+      modelInfo: { provider: "vercel-ai-gateway", model: "openai/gpt-image-1" },
+      credentials: { apiKey: "vag-test-key" },
+      log: null,
+    });
+
+    expect(result.success).toBe(true);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://ai-gateway.vercel.sh/v1/images/generations",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
+          Authorization: "Bearer vag-test-key",
+        }),
+        body: expect.stringContaining('"model":"openai/gpt-image-1"'),
+      })
+    );
+  });
+
   it("handles HuggingFace binary response", async () => {
     const imageBuffer = new Uint8Array([0x89, 0x50, 0x4e, 0x47]); // PNG header
     global.fetch.mockResolvedValueOnce(
@@ -319,7 +351,7 @@ describe("handleImageGenerationCore", () => {
         headers: expect.objectContaining({
           authorization: "Bearer codex-token",
           "chatgpt-account-id": "account-123",
-          version: "0.129.0",
+          version: "0.136.0",
         }),
       })
     );

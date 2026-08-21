@@ -1,7 +1,6 @@
 import { Buffer } from "node:buffer";
 import { createErrorResult } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
-import { AI_PROVIDERS } from "../../src/shared/constants/providers.js";
 
 // Build auth headers from sttConfig + token
 function buildAuthHeaders(cfg, token) {
@@ -167,12 +166,20 @@ function jsonResponse(obj) {
  * STT core handler — dispatch by sttConfig.format.
  * @returns {Promise<{success, response, status?, error?}>}
  */
-export async function handleSttCore({ provider, model, formData, credentials }) {
+export async function handleSttCore({ provider, model, formData, credentials, sttConfig }) {
   const file = formData.get("file");
   if (!file) return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing required field: file");
 
-  const cfg = AI_PROVIDERS[provider]?.sttConfig;
+  let cfg = sttConfig;
   if (!cfg) return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Provider '${provider}' does not support STT`);
+
+  // Per-connection endpoint override. Registry entries carry a fixed baseUrl,
+  // which is right for a named cloud service but useless for a self-hosted one
+  // whose address only the operator knows. Opt-in: absent unless the connection
+  // sets it, so cloud providers are untouched. Mirrors the custom embedding
+  // providers, which already resolve baseUrl the same way.
+  const overrideUrl = credentials?.providerSpecificData?.baseUrl;
+  if (overrideUrl) cfg = { ...cfg, baseUrl: String(overrideUrl).replace(/\/+$/, "") };
 
   const token = cfg.authType === "none" ? null : (credentials?.apiKey || credentials?.accessToken);
   if (cfg.authType !== "none" && !token) {

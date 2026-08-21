@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
-import { Badge, Toggle } from "@/shared/components";
+import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null);
@@ -22,6 +23,9 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
       : hasLegacyProxy
         ? `Legacy: ${connection.providerSpecificData?.connectionProxyUrl}`
         : "";
+  const autoPingTooltip = autoPing?.provider === "codex"
+    ? "Auto-starts the next 5h Codex window after reset by sending a tiny gpt-5.5 request. Consumes a small amount of quota."
+    : "When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.";
 
   let maskedProxyUrl = "";
   if (boundProxyPool?.proxyUrl || connection.providerSpecificData?.connectionProxyUrl) {
@@ -65,10 +69,20 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     }
   };
 
-  const isEmail = (v) => typeof v === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-  const displayName = isOAuth
-    ? (isEmail(connection.email) ? connection.email : (isEmail(connection.name) ? connection.name : (connection.name || connection.email || connection.displayName || "OAuth Account")))
-    : connection.name;
+  const rowAuthType = connection.authType || (isOAuth ? "oauth" : "apikey");
+  const isOAuthConnection = rowAuthType === "oauth";
+  const isCookieConnection = rowAuthType === "cookie";
+  const authIcon = isCookieConnection ? "cookie" : isOAuthConnection ? "lock" : "key";
+  const authLabel = isOAuthConnection ? "OAuth" : isCookieConnection ? "Cookie" : "API Key";
+  const displayName = connection.name?.trim()
+    || connection.email?.trim()
+    || connection.displayName?.trim()
+    || (isOAuthConnection ? "OAuth Account" : isCookieConnection ? "Cookie Account" : "API Key");
+  const secondaryDisplayName = connection.name?.trim() && connection.email?.trim() && connection.name.trim() !== connection.email.trim()
+    ? connection.email.trim()
+    : connection.name?.trim() && connection.displayName?.trim() && connection.name.trim() !== connection.displayName.trim()
+      ? connection.displayName.trim()
+      : null;
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
@@ -102,11 +116,23 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     ? "active"  // Cooldown expired u2192 treat as active
     : connection.testStatus;
 
-  const getStatusVariant = () => {
-    if (connection.isActive === false) return "default";
-    if (effectiveStatus === "active" || effectiveStatus === "success") return "success";
-    if (effectiveStatus === "error" || effectiveStatus === "expired" || effectiveStatus === "unavailable") return "error";
+  const getStatusVariant = () => getConnectionStatusVariant(connection.isActive, effectiveStatus);
+
+  const getOneByOneVariant = () => {
+    if (!oneByOneStatus) return "default";
+    if (oneByOneStatus.state === "success") return "success";
+    if (oneByOneStatus.state === "failed") return "error";
+    if (oneByOneStatus.state === "testing") return "primary";
     return "default";
+  };
+
+  const getOneByOneLabel = () => {
+    if (!oneByOneStatus) return null;
+    if (oneByOneStatus.state === "queued") return "queued";
+    if (oneByOneStatus.state === "testing") return "testing";
+    if (oneByOneStatus.state === "success") return "success";
+    if (oneByOneStatus.state === "failed") return oneByOneStatus.error ? `failed: ${oneByOneStatus.error}` : "failed";
+    return null;
   };
 
   return (
@@ -130,13 +156,19 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
           </button>
         </div>
         <span className="material-symbols-outlined shrink-0 text-base text-text-muted">
-          {isOAuth ? "lock" : "key"}
+          {authIcon}
         </span>
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{displayName}</p>
+          {secondaryDisplayName && (
+            <p className="text-xs text-text-muted truncate">{secondaryDisplayName}</p>
+          )}
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
             <Badge variant={getStatusVariant()} size="sm" dot>
               {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
+            </Badge>
+            <Badge variant="default" size="sm">
+              {authLabel}
             </Badge>
             {hasAnyProxy && (
               <Badge variant={proxyBadgeVariant} size="sm">
@@ -152,6 +184,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <span className="text-xs text-text-muted">#{connection.priority}</span>
             {connection.globalPriority && (
               <span className="text-xs text-text-muted">Auto: {connection.globalPriority}</span>
+            )}
+            {getOneByOneLabel() && (
+              <Badge variant={getOneByOneVariant()} size="sm">
+                {getOneByOneLabel()}
+              </Badge>
             )}
           </div>
           {hasAnyProxy && (
@@ -209,6 +246,17 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
               )}
             </div>
           )}
+          {autoPing && (
+            <Tooltip text={autoPingTooltip}>
+              <button
+                onClick={() => autoPing.onToggle(!autoPing.on)}
+                className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${autoPing.on ? "text-primary" : "text-text-muted hover:text-primary"}`}
+              >
+                <span className="material-symbols-outlined text-[18px]">bolt</span>
+                <span className="text-[10px] leading-tight">Auto-ping</span>
+              </button>
+            </Tooltip>
+          )}
           <button onClick={onEdit} className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5">
             <span className="material-symbols-outlined text-[18px]">edit</span>
             <span className="text-[10px] leading-tight">Edit</span>
@@ -258,5 +306,13 @@ ConnectionRow.propTypes = {
   onUpdateProxy: PropTypes.func,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
+  oneByOneStatus: PropTypes.shape({
+    state: PropTypes.string,
+    error: PropTypes.string,
+  }),
+  autoPing: PropTypes.shape({
+    on: PropTypes.bool,
+    onToggle: PropTypes.func,
+    provider: PropTypes.string,
+  }),
 };
-

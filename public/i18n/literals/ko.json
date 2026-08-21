@@ -12,6 +12,7 @@
   "Logout": "로그아웃",
   "Login": "로그인",
   "Providers": "제공자",
+  "Style": "스타일",
   "Usage": "통계",
   "API Key": "API 키",
   "Connected": "연결됨",
@@ -176,6 +177,7 @@
   "How it works:": "작동 방식:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Antigravity/Copilot IDE 요청 → localhost:443로 DNS 리디렉션 → MITM 프록시가 가로챔 → 9Router → Antigravity/Copilot으로 응답",
   "No API keys — create one in Keys page": "API 키 없음 — 키 페이지에서 만들기",
+  "e.g. a warm, gentle voice, speaking slowly with a British accent": "예: 따뜻하고 부드러운 목소리로 영국식 억양을 쓰며 천천히 말하기",
   "sk_9router (default)": "sk_9router (기본값)",
   "Server started": "서버 시작됨",
   "Failed to start server": "서버 시작 실패",
@@ -190,5 +192,6 @@
   "Sudo Password": "Sudo 암호",
   "Click to add, click again to remove. Changes are saved automatically.": "클릭하여 추가, 다시 클릭하여 제거. 변경 사항은 자동으로 저장됩니다.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ 위험 알림: 이 공급자는 프록시/라우터 사용에 대해 공식적으로 라이선스가 부여되지 않은 구독/OAuth 세션을 사용합니다. 계정이 제한되거나 차단될 수 있습니다. 사용에 대한 책임은 본인에게 있습니다.",
-  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM은 로컬 CA를 통해 IDE 도구(Antigravity, GitHub Copilot, Kiro)의 HTTPS 트래픽을 가로채 요청을 공급자로 리다이렉트합니다. ToS 위반 가능성 → 계정 차단 위험. 사용에 대한 책임은 본인에게 있습니다."
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM은 로컬 CA를 통해 IDE 도구(Antigravity, GitHub Copilot, Kiro)의 HTTPS 트래픽을 가로채 요청을 공급자로 리다이렉트합니다. ToS 위반 가능성 → 계정 차단 위험. 사용에 대한 책임은 본인에게 있습니다.",
+  "Endpoint is exposed without an API key.": "API 키 없이 엔드포인트가 노출되어 있습니다."
 }

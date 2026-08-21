@@ -4,42 +4,19 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-
-const TUNNEL_BENEFITS = [
-  { icon: "public", title: "Access Anywhere", desc: "Use your API from any network" },
-  { icon: "group", title: "Share Endpoint", desc: "Share URL with team members" },
-  { icon: "code", title: "Use in Cursor/Cline", desc: "Connect AI tools remotely" },
-  { icon: "lock", title: "Encrypted", desc: "End-to-end TLS via Cloudflare" },
-];
-
-const TUNNEL_PING_INTERVAL_MS = 2000;
-const TUNNEL_PING_MAX_MS = 300000;
-const STATUS_POLL_FAST_MS = 5000;
-const STATUS_POLL_SLOW_MS = 30000;
-const REACHABLE_MISS_THRESHOLD = 5;
-const CLIENT_PING_FAST_MS = 10000;
-const CLIENT_PING_SLOW_MS = 60000;
-const CLIENT_PING_TIMEOUT_MS = 5000;
-
-// Browser-side health probe: bypasses backend DNS issues (1.1.1.1 vs OS resolver).
-// Uses no-cors → opaque response means TLS+DNS reach succeeded, which is enough.
-async function clientPingUrl(url) {
-  if (!url) return false;
-  try {
-    await fetch(`${url}/api/health`, {
-      mode: "no-cors",
-      cache: "no-store",
-      signal: AbortSignal.timeout(CLIENT_PING_TIMEOUT_MS),
-    });
-    return true;
-  } catch { return false; }
-}
-
-const CAVEMAN_LEVELS = [
-  { id: "lite", label: "Lite", desc: "Drop filler, keep grammar" },
-  { id: "full", label: "Full", desc: "Drop articles, fragments OK" },
-  { id: "ultra", label: "Ultra", desc: "Telegraphic, max compression" },
-];
+import {
+  TUNNEL_BENEFITS,
+  TUNNEL_PING_INTERVAL_MS,
+  TUNNEL_PING_MAX_MS,
+  STATUS_POLL_FAST_MS,
+  REACHABLE_MISS_THRESHOLD,
+  CLIENT_PING_FAST_MS,
+} from "./endpointConstants";
+import { clientPingUrl, clientPingAny } from "./endpointPing";
+import EndpointRow from "./components/EndpointRow";
+import StatusAlert from "./components/StatusAlert";
+import Tooltip from "./components/Tooltip";
+import SecurityWarning from "./components/SecurityWarning";
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -51,12 +28,9 @@ export default function APIPageClient({ machineId }) {
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
   const [hasPassword, setHasPassword] = useState(true);
-  const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
-  const [rtkEnabled, setRtkEnabledState] = useState(true);
-  const [cavemanEnabled, setCavemanEnabled] = useState(false);
-  const [cavemanLevel, setCavemanLevel] = useState("full");
+ const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
 
-  // Cloudflare Tunnel state
+ // Cloudflare Tunnel state
   const [tunnelChecking, setTunnelChecking] = useState(true);
   const [tunnelEnabled, setTunnelEnabled] = useState(false);
   const [tunnelReachable, setTunnelReachable] = useState(false);
@@ -103,7 +77,20 @@ export default function APIPageClient({ machineId }) {
   // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
 
+  // Client-side local/remote detection (UI hint only, not a security gate)
+  const [isRemoteHost, setIsRemoteHost] = useState(false);
+  useEffect(() => {
+    if (typeof window !== "undefined")
+      setIsRemoteHost(!["localhost", "127.0.0.1", "::1"].includes(window.location.hostname));
+  }, []);
+
   const { copied, copy } = useCopyToClipboard();
+
+  // Security gate: block remote exposure while dashboard uses default password or login is off.
+  const isLoginUnsafe = !requireLogin || !hasPassword;
+  const unsafeReason = !requireLogin
+    ? "Enable \"Require login\" and set a custom password before activating the tunnel."
+    : "Change the default dashboard password before activating the tunnel.";
 
   // Auto-scroll install log
   useEffect(() => {
@@ -115,21 +102,20 @@ export default function APIPageClient({ machineId }) {
     loadSettings();
   }, []);
 
-  // Adaptive status poll: slow when healthy, fast when degraded; pause when tab hidden.
+  // Status poll: only while degraded (not yet reachable). Stop once healthy to avoid spam.
+  // Visibility re-check: refresh once when tab becomes visible.
   useEffect(() => {
     const anyEnabled = tunnelEnabled || tsEnabled;
     if (!anyEnabled) return;
     const tunnelHealthy = !tunnelEnabled || tunnelReachable;
     const tsHealthy = !tsEnabled || tsReachable;
     const allHealthy = tunnelHealthy && tsHealthy;
-    const delay = allHealthy ? STATUS_POLL_SLOW_MS : STATUS_POLL_FAST_MS;
-    let timer = null;
-    const tick = () => { if (!document.hidden) syncTunnelStatus(); };
-    timer = setInterval(tick, delay);
     const onVisible = () => { if (!document.hidden) syncTunnelStatus(); };
     document.addEventListener("visibilitychange", onVisible);
+    if (allHealthy) return () => document.removeEventListener("visibilitychange", onVisible);
+    const timer = setInterval(() => { if (!document.hidden) syncTunnelStatus(); }, STATUS_POLL_FAST_MS);
     return () => {
-      if (timer) clearInterval(timer);
+      clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [tunnelEnabled, tsEnabled, tunnelReachable, tsReachable]);
@@ -140,10 +126,11 @@ export default function APIPageClient({ machineId }) {
   useEffect(() => {
     const probeBoth = async () => {
       if (document.hidden) return;
-      if (tunnelEnabled && tunnelUrl) {
-        const ok = await clientPingUrl(tunnelUrl);
+      if (tunnelEnabled && (tunnelUrl || tunnelPublicUrl)) {
+        const ok = await clientPingAny(tunnelPublicUrl, tunnelUrl);
         tunnelClientReachableRef.current = ok;
         if (ok) { tunnelMissRef.current = 0; setTunnelReachable(true); if (!tunnelEverReachableRef.current) { tunnelEverReachableRef.current = true; setTunnelEverReachable(true); } }
+        else { tunnelMissRef.current += 1; if (tunnelMissRef.current >= REACHABLE_MISS_THRESHOLD) setTunnelReachable(false); }
       } else {
         tunnelClientReachableRef.current = false;
       }
@@ -151,25 +138,25 @@ export default function APIPageClient({ machineId }) {
         const ok = await clientPingUrl(tsUrl);
         tsClientReachableRef.current = ok;
         if (ok) { tsMissRef.current = 0; setTsReachable(true); if (!tsEverReachableRef.current) { tsEverReachableRef.current = true; setTsEverReachable(true); } }
+        else { tsMissRef.current += 1; if (tsMissRef.current >= REACHABLE_MISS_THRESHOLD) setTsReachable(false); }
       } else {
         tsClientReachableRef.current = false;
       }
     };
-    const anyEnabled = (tunnelEnabled && tunnelUrl) || (tsEnabled && tsUrl);
+    const anyEnabled = (tunnelEnabled && (tunnelUrl || tunnelPublicUrl)) || (tsEnabled && tsUrl);
     if (!anyEnabled) return;
     probeBoth();
     const tunnelHealthy = !tunnelEnabled || tunnelReachable;
     const tsHealthy = !tsEnabled || tsReachable;
-    const allHealthy = tunnelHealthy && tsHealthy;
-    const delay = allHealthy ? CLIENT_PING_SLOW_MS : CLIENT_PING_FAST_MS;
-    const id = setInterval(probeBoth, delay);
+    if (tunnelHealthy && tsHealthy) return;
+    const id = setInterval(probeBoth, CLIENT_PING_FAST_MS);
     return () => clearInterval(id);
-  }, [tunnelEnabled, tunnelUrl, tsEnabled, tsUrl, tunnelReachable, tsReachable]);
+  }, [tunnelEnabled, tunnelUrl, tunnelPublicUrl, tsEnabled, tsUrl, tunnelReachable, tsReachable]);
 
-  // Effective reachable = serverReachable OR clientReachable (1 of 2 is enough).
-  // Miss-debounce: only flip to false after N consecutive misses on BOTH sides.
-  const updateReachable = useCallback((serverReachable, clientRef, missRef, setter, everRef, everSetter) => {
-    const reachable = serverReachable || clientRef.current;
+  // Client-side reachable only (server no longer probes; watchdog handles backend health).
+  // Miss-debounce: only flip to false after N consecutive misses.
+  const updateReachable = useCallback((_unused, clientRef, missRef, setter, everRef, everSetter) => {
+    const reachable = clientRef.current;
     if (reachable) {
       missRef.current = 0;
       setter(true);
@@ -194,13 +181,13 @@ export default function APIPageClient({ machineId }) {
       setTunnelUrl(tUrl);
       setTunnelPublicUrl(data.tunnel?.publicUrl || "");
       setTunnelEnabled(tEnabled);
-      updateReachable(!!data.tunnel?.reachable, tunnelClientReachableRef, tunnelMissRef, setTunnelReachable, tunnelEverReachableRef, setTunnelEverReachable);
+      updateReachable(null, tunnelClientReachableRef, tunnelMissRef, setTunnelReachable, tunnelEverReachableRef, setTunnelEverReachable);
 
       const tsEn = data.tailscale?.settingsEnabled ?? data.tailscale?.enabled ?? false;
       const tsUrlVal = data.tailscale?.tunnelUrl || "";
       setTsUrl(tsUrlVal);
       setTsEnabled(tsEn);
-      updateReachable(!!data.tailscale?.reachable, tsClientReachableRef, tsMissRef, setTsReachable, tsEverReachableRef, setTsEverReachable);
+      updateReachable(null, tsClientReachableRef, tsMissRef, setTsReachable, tsEverReachableRef, setTsEverReachable);
     } catch { /* ignore poll errors */ }
   };
 
@@ -217,9 +204,6 @@ export default function APIPageClient({ machineId }) {
         setRequireLogin(data.requireLogin !== false);
         setHasPassword(data.hasPassword || false);
         setTunnelDashboardAccess(data.tunnelDashboardAccess || false);
-        setRtkEnabledState(data.rtkEnabled !== false);
-        setCavemanEnabled(!!data.cavemanEnabled);
-        setCavemanLevel(data.cavemanLevel || "full");
       }
       if (statusRes.ok) {
         const data = await statusRes.json();
@@ -228,13 +212,13 @@ export default function APIPageClient({ machineId }) {
         setTunnelUrl(tUrl);
         setTunnelPublicUrl(data.tunnel?.publicUrl || "");
         setTunnelEnabled(tEnabled);
-        updateReachable(!!data.tunnel?.reachable, tunnelClientReachableRef, tunnelMissRef, setTunnelReachable, tunnelEverReachableRef, setTunnelEverReachable);
+        updateReachable(null, tunnelClientReachableRef, tunnelMissRef, setTunnelReachable, tunnelEverReachableRef, setTunnelEverReachable);
 
         const tsEn = data.tailscale?.settingsEnabled ?? data.tailscale?.enabled ?? false;
         const tsUrlVal = data.tailscale?.tunnelUrl || "";
         setTsUrl(tsUrlVal);
         setTsEnabled(tsEn);
-        updateReachable(!!data.tailscale?.reachable, tsClientReachableRef, tsMissRef, setTsReachable, tsEverReachableRef, setTsEverReachable);
+        updateReachable(null, tsClientReachableRef, tsMissRef, setTsReachable, tsEverReachableRef, setTsEverReachable);
       }
     } catch (error) {
       console.log("Error loading settings:", error);
@@ -269,48 +253,28 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
-  const handleRtkEnabled = async (value) => {
-    try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rtkEnabled: value }),
-      });
-      if (res.ok) setRtkEnabledState(value);
-    } catch (error) {
-      console.log("Error updating rtkEnabled:", error);
-    }
-  };
-
-  const patchSetting = async (patch) => {
-    try {
-      await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
-      });
-    } catch (error) {
-      console.log("Error updating setting:", error);
-    }
-  };
-
-  const handleCavemanEnabled = (value) => {
-    setCavemanEnabled(value);
-    patchSetting({ cavemanEnabled: value });
-  };
-
-  const handleCavemanLevel = (level) => {
-    setCavemanLevel(level);
-    patchSetting({ cavemanLevel: level });
-  };
-
   const fetchData = async () => {
     try {
-      const keysRes = await fetch("/api/keys");
-      const keysData = await keysRes.json();
-      if (keysRes.ok) {
-        setKeys(keysData.keys || []);
+      const fetchKeys = async () => {
+        const res = await fetch("/api/keys");
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data.keys || [];
+      };
+
+      let existing = await fetchKeys();
+      // Auto-provision a default key for first-time users so the endpoint works out of the box.
+      if (existing.length === 0) {
+        try {
+          const createRes = await fetch("/api/keys", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: "Default Key" }),
+          });
+          if (createRes.ok) existing = await fetchKeys();
+        } catch { /* fall through to empty render */ }
       }
+      setKeys(existing);
     } catch (error) {
       console.log("Error fetching data:", error);
     } finally {
@@ -319,23 +283,25 @@ export default function APIPageClient({ machineId }) {
   };
 
   // u2500u2500u2500 Cloudflare Tunnel handlers
-  // Ping tunnel health until reachable, also check backend status to detect process die
-  const pingTunnelHealth = async (url) => {
+  // Ping tunnel health until reachable. Race multiple URLs (shortlink + direct) — 1 OK is enough.
+  const pingTunnelHealth = async (...urls) => {
     setTunnelLoading(true);
     setTunnelProgress("Waiting for tunnel ready...");
-    const healthUrl = `${url}/api/health`;
+    const targets = urls.filter(Boolean).map((u) => `${u}/api/health`);
     const start = Date.now();
     while (Date.now() - start < TUNNEL_PING_MAX_MS) {
       await new Promise((r) => setTimeout(r, TUNNEL_PING_INTERVAL_MS));
-      try {
-        const ping = await fetch(healthUrl, { mode: "no-cors", cache: "no-store" });
-        if (ping.ok || ping.type === "opaque") {
-          setTunnelEnabled(true);
-          setTunnelLoading(false);
-          setTunnelProgress("");
-          return true;
-        }
-      } catch { /* not ready yet */ }
+      const ok = await Promise.any(targets.map(async (h) => {
+        const p = await fetch(h, { mode: "cors", cache: "no-store" });
+        if (p.ok) return true;
+        throw new Error("not ready");
+      })).catch(() => false);
+      if (ok) {
+        setTunnelEnabled(true);
+        setTunnelLoading(false);
+        setTunnelProgress("");
+        return true;
+      }
       // Every 5 pings (~10s), check if backend process still alive
       if ((Date.now() - start) % 10000 < TUNNEL_PING_INTERVAL_MS) {
         try {
@@ -401,7 +367,7 @@ export default function APIPageClient({ machineId }) {
 
       setTunnelUrl(url);
       setTunnelPublicUrl(data.publicUrl || "");
-      await pingTunnelHealth(url);
+      await pingTunnelHealth(data.publicUrl, url);
     } catch (error) {
       setTunnelStatus({ type: "error", message: error.message });
     } finally {
@@ -717,8 +683,8 @@ export default function APIPageClient({ machineId }) {
   };
 
   const maskKey = (fullKey) => {
-    if (!fullKey) return "";
-    return fullKey.length > 8 ? fullKey.slice(0, 8) + "..." : fullKey;
+    if (!fullKey || fullKey.length <= 10) return fullKey || "";
+    return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
   };
 
   const toggleKeyVisibility = (keyId) => {
@@ -846,6 +812,10 @@ export default function APIPageClient({ machineId }) {
                 size="sm"
                 icon="cloud_upload"
                 onClick={() => {
+                  if (isLoginUnsafe) {
+                    setTunnelStatus({ type: "error", message: `Security required: ${unsafeReason}` });
+                    return;
+                  }
                   if (!requireApiKey) {
                     setTunnelStatus({ type: "error", message: "Security required: Enable \"Require API key\" before activating the tunnel." });
                     return;
@@ -928,7 +898,13 @@ export default function APIPageClient({ machineId }) {
               <Button
                 size="sm"
                 icon="vpn_lock"
-                onClick={handleOpenTsModal}
+                onClick={() => {
+                  if (isLoginUnsafe) {
+                    setTsStatus({ type: "error", message: `Security required: ${unsafeReason}` });
+                    return;
+                  }
+                  handleOpenTsModal();
+                }}
                 className="bg-linear-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white!"
               >
                 Enable
@@ -936,6 +912,16 @@ export default function APIPageClient({ machineId }) {
             )}
           </div>
         </div>
+
+        {/* Pre-enable security gate banner */}
+        {isLoginUnsafe && !tunnelEnabled && !tsEnabled && (
+          <div className="mt-4">
+            <SecurityWarning
+              message={unsafeReason}
+              action={{ label: "Open settings", href: "/dashboard/profile" }}
+            />
+          </div>
+        )}
 
         {/* Security warnings when tunnel or tailscale is active */}
         {(tunnelEnabled || tsEnabled) && (
@@ -977,80 +963,6 @@ export default function APIPageClient({ machineId }) {
         )}
       </Card>
 
-      {/* Token Saver (RTK + Caveman) */}
-      <Card id="rtk">
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <span className="material-symbols-outlined text-primary">bolt</span>
-            Token Saver
-          </h2>
-        </div>
-        <div className="flex items-center justify-between pt-2 pb-4 border-b border-border gap-4">
-          <div className="min-w-0 flex-1">
-            <p className="font-medium">
-              Compress tool output{" "}
-              <a
-                href="https://github.com/rtk-ai/rtk"
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs font-normal text-primary underline hover:opacity-80"
-              >
-                (RTK)
-              </a>
-            </p>
-            <p className="text-sm text-text-muted">
-              git/grep/ls/tree/logs → 60-90% fewer input tokens
-            </p>
-          </div>
-          <Toggle
-            checked={rtkEnabled}
-            onChange={() => handleRtkEnabled(!rtkEnabled)}
-          />
-        </div>
-        <div className="flex items-center justify-between pt-4 gap-4 flex-wrap">
-          <div className="min-w-0 flex-1">
-            <p className="font-medium">
-              Compress LLM output{" "}
-              <a
-                href="https://github.com/JuliusBrussee/caveman"
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs font-normal text-primary underline hover:opacity-80"
-              >
-                (Caveman)
-              </a>
-            </p>
-            <p className="text-sm text-text-muted">
-              Terse-style system prompt → ~65% fewer output tokens (up to 87%)
-            </p>
-          </div>
-          <div className="flex items-center gap-3 shrink-0">
-            {cavemanEnabled && (
-              <div className="flex items-center gap-1.5">
-                {CAVEMAN_LEVELS.map((lvl) => (
-                  <button
-                    key={lvl.id}
-                    onClick={() => handleCavemanLevel(lvl.id)}
-                    className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
-                      cavemanLevel === lvl.id
-                        ? "bg-primary text-white border-primary"
-                        : "bg-transparent border-border text-text-muted hover:bg-surface-2"
-                    }`}
-                    title={lvl.desc}
-                  >
-                    {lvl.label}
-                  </button>
-                ))}
-              </div>
-            )}
-            <Toggle
-              checked={cavemanEnabled}
-              onChange={() => handleCavemanEnabled(!cavemanEnabled)}
-            />
-          </div>
-        </div>
-      </Card>
-
       {/* API Keys */}
       <Card id="require-api-key">
         <div className="flex items-center justify-between mb-4">
@@ -1075,6 +987,12 @@ export default function APIPageClient({ machineId }) {
             onChange={() => handleRequireApiKey(!requireApiKey)}
           />
         </div>
+
+        {isRemoteHost && !requireApiKey && (
+          <div className="mb-4 -mt-2">
+            <SecurityWarning message="Endpoint is exposed without an API key." />
+          </div>
+        )}
 
         {keys.length === 0 ? (
           <div className="text-center py-12">
@@ -1102,7 +1020,7 @@ export default function APIPageClient({ machineId }) {
                     </code>
                     <button
                       onClick={() => toggleKeyVisibility(key.id)}
-                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
                       title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
                     >
                       <span className="material-symbols-outlined text-[14px]">
@@ -1111,7 +1029,7 @@ export default function APIPageClient({ machineId }) {
                     </button>
                     <button
                       onClick={() => copy(key.key, key.id)}
-                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
                     >
                       <span className="material-symbols-outlined text-[14px]">
                         {copied === key.id ? "check" : "content_copy"}
@@ -1386,81 +1304,6 @@ export default function APIPageClient({ machineId }) {
   );
 }
 
-/** Reusable endpoint row component */
-function EndpointRow({ label, url, copyId, copied, onCopy, badge, actions }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className={`text-xs font-mono px-1.5 py-0.5 rounded shrink-0 min-w-[88px] text-center ${
-          (badge === "CF" || badge === "TS") ? "bg-primary/10 text-primary" : "bg-surface-2 text-text-muted"
-        }`}>{label}</span>
-      <Input value={url} readOnly className="flex-1 font-mono text-sm" />
-      <button
-        onClick={() => onCopy(url, copyId)}
-        className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-colors shrink-0"
-      >
-        <span className="material-symbols-outlined text-[18px]">{copied === copyId ? "check" : "content_copy"}</span>
-      </button>
-      {actions}
-    </div>
-  );
-}
-
-/** Reusable status alert */
-function StatusAlert({ status, className = "" }) {
-  // Render URLs in message as clickable links
-  const renderMessage = (msg) => {
-    const parts = msg.split(/(https?:\/\/[^\s]+)/g);
-    return parts.map((part, i) =>
-      /^https?:\/\//.test(part)
-        ? <a key={i} href={part} target="_blank" rel="noreferrer" className="underline font-medium">{part}</a>
-        : part
-    );
-  };
-
-  return (
-    <div className={`p-2 rounded text-sm ${className} ${status.type === "success" ? "bg-green-500/10 text-green-600 dark:text-green-400" :
-        status.type === "warning" ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400" :
-        status.type === "info" ? "bg-blue-500/10 text-blue-600 dark:text-blue-400" :
-          "bg-red-500/10 text-red-600 dark:text-red-400"
-      }`}>
-      {renderMessage(status.message)}
-    </div>
-  );
-}
-
-/** Inline tooltip, Claude Code CLI style */
-function Tooltip({ text }) {
-  return (
-    <span className="relative group inline-flex items-center">
-      <span className="material-symbols-outlined text-[14px] text-text-muted cursor-help">help</span>
-      <span className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 z-50 w-64 rounded bg-gray-900 dark:bg-gray-800 text-white text-xs px-2.5 py-1.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">
-        {text}
-      </span>
-    </span>
-  );
-}
-
-/** Security warning banner with optional action link */
-function SecurityWarning({ message, action }) {
-  return (
-    <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-700 dark:text-amber-400">
-      <span className="material-symbols-outlined text-[16px] shrink-0 mt-0.5">warning</span>
-      <p className="text-xs flex-1">{message}</p>
-      {action && (
-        <a
-          href={action.href}
-          className="text-xs font-medium underline shrink-0 hover:opacity-80"
-          onClick={action.href.startsWith("#") ? (e) => {
-            e.preventDefault();
-            document.getElementById(action.href.slice(1))?.scrollIntoView({ behavior: "smooth" });
-          } : undefined}
-        >
-          {action.label}
-        </a>
-      )}
-    </div>
-  );
-}
 
 APIPageClient.propTypes = {
   machineId: PropTypes.string.isRequired,

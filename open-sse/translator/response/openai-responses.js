@@ -4,6 +4,11 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
+import { buildChunk } from "../concerns/chunk.js";
+import { buildUsage } from "../concerns/usage.js";
+import { fallbackToolCallId } from "../concerns/toolCall.js";
+import { reasoningDelta, extractReasoningText } from "../concerns/reasoning.js";
+import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } from "../schema/index.js";
 
 /**
  * Translate OpenAI chunk to Responses API events
@@ -57,10 +62,11 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
     });
   }
 
-  // Handle reasoning_content
-  if (delta.reasoning_content) {
+  // Handle reasoning across vendor shapes (reasoning_content / reasoning / reasoning_details)
+  const reasoningText = extractReasoningText(delta);
+  if (reasoningText) {
     startReasoning(state, emit, idx);
-    emitReasoningDelta(state, emit, delta.reasoning_content);
+    emitReasoningDelta(state, emit, reasoningText);
   }
 
   // Handle text content
@@ -93,8 +99,8 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
     }
   }
 
-  // Handle tool_calls
-  if (delta.tool_calls) {
+  // Handle tool_calls (empty array is truthy; require a real call)
+  if (delta.tool_calls && delta.tool_calls.length) {
     closeMessage(state, emit, idx);
     for (const tc of delta.tool_calls) {
       emitToolCall(state, emit, tc);
@@ -121,7 +127,7 @@ function startReasoning(state, emit, idx) {
     emit("response.output_item.added", {
       type: "response.output_item.added",
       output_index: idx,
-      item: { id: state.reasoningId, type: "reasoning", summary: [] }
+      item: { id: state.reasoningId, type: RESPONSES_ITEM.REASONING, summary: [] }
     });
 
     emit("response.reasoning_summary_part.added", {
@@ -129,7 +135,7 @@ function startReasoning(state, emit, idx) {
       item_id: state.reasoningId,
       output_index: idx,
       summary_index: 0,
-      part: { type: "summary_text", text: "" }
+      part: { type: RESPONSES_ITEM.SUMMARY_TEXT, text: "" }
     });
     state.reasoningPartAdded = true;
   }
@@ -164,7 +170,7 @@ function closeReasoning(state, emit) {
       item_id: state.reasoningId,
       output_index: state.reasoningIndex,
       summary_index: 0,
-      part: { type: "summary_text", text: state.reasoningBuf }
+      part: { type: RESPONSES_ITEM.SUMMARY_TEXT, text: state.reasoningBuf }
     });
 
     emit("response.output_item.done", {
@@ -172,8 +178,8 @@ function closeReasoning(state, emit) {
       output_index: state.reasoningIndex,
       item: {
         id: state.reasoningId,
-        type: "reasoning",
-        summary: [{ type: "summary_text", text: state.reasoningBuf }]
+        type: RESPONSES_ITEM.REASONING,
+        summary: [{ type: RESPONSES_ITEM.SUMMARY_TEXT, text: state.reasoningBuf }]
       }
     });
   }
@@ -187,7 +193,7 @@ function emitTextContent(state, emit, idx, content) {
     emit("response.output_item.added", {
       type: "response.output_item.added",
       output_index: idx,
-      item: { id: msgId, type: "message", content: [], role: "assistant" }
+      item: { id: msgId, type: RESPONSES_ITEM.MESSAGE, content: [], role: ROLE.ASSISTANT }
     });
   }
 
@@ -199,7 +205,7 @@ function emitTextContent(state, emit, idx, content) {
       item_id: `msg_${state.responseId}_${idx}`,
       output_index: idx,
       content_index: 0,
-      part: { type: "output_text", annotations: [], logprobs: [], text: "" }
+      part: { type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: "" }
     });
   }
 
@@ -236,7 +242,7 @@ function closeMessage(state, emit, idx) {
       item_id: msgId,
       output_index: parseInt(idx),
       content_index: 0,
-      part: { type: "output_text", annotations: [], logprobs: [], text: fullText }
+      part: { type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: fullText }
     });
 
     emit("response.output_item.done", {
@@ -244,12 +250,25 @@ function closeMessage(state, emit, idx) {
       output_index: parseInt(idx),
       item: {
         id: msgId,
-        type: "message",
-        content: [{ type: "output_text", annotations: [], logprobs: [], text: fullText }],
-        role: "assistant"
+        type: RESPONSES_ITEM.MESSAGE,
+        content: [{ type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: fullText }],
+        role: ROLE.ASSISTANT
       }
     });
   }
+}
+
+function isCustomTool(state, name) {
+  return !!name && state.customToolNames?.has(name);
+}
+
+function extractCustomToolInput(argumentsText) {
+  if (typeof argumentsText !== "string") return "";
+  try {
+    const parsed = JSON.parse(argumentsText);
+    if (parsed && typeof parsed === "object" && typeof parsed.input === "string") return parsed.input;
+  } catch { /* incomplete or raw freeform input */ }
+  return argumentsText;
 }
 
 function emitToolCall(state, emit, tc) {
@@ -258,18 +277,24 @@ function emitToolCall(state, emit, tc) {
   const funcName = tc.function?.name;
 
   if (funcName) state.funcNames[tcIdx] = funcName;
+  if (newCallId) state.funcCallIds[tcIdx] = newCallId;
 
-  if (!state.funcCallIds[tcIdx] && newCallId) {
-    state.funcCallIds[tcIdx] = newCallId;
-    
+  // Some compatible providers split the call id and function name across
+  // chunks. Wait for both before deciding whether this is a custom tool;
+  // otherwise an `exec` call can be irreversibly announced as function_call.
+  const callId = state.funcCallIds[tcIdx];
+  if (!state.funcItemAdded[tcIdx] && callId && state.funcNames[tcIdx]) {
+    state.funcItemAdded[tcIdx] = true;
+    const custom = isCustomTool(state, state.funcNames[tcIdx]);
+
     emit("response.output_item.added", {
       type: "response.output_item.added",
       output_index: tcIdx,
       item: {
-        id: `fc_${newCallId}`,
-        type: "function_call",
-        arguments: "",
-        call_id: newCallId,
+        id: `${custom ? "ctc" : "fc"}_${callId}`,
+        type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
+        ...(custom ? { input: "" } : { arguments: "" }),
+        call_id: callId,
         name: state.funcNames[tcIdx] || ""
       }
     });
@@ -279,7 +304,7 @@ function emitToolCall(state, emit, tc) {
 
   if (tc.function?.arguments) {
     const refCallId = state.funcCallIds[tcIdx] || newCallId;
-    if (refCallId) {
+    if (state.funcItemAdded[tcIdx] && refCallId && !isCustomTool(state, state.funcNames[tcIdx])) {
       emit("response.function_call_arguments.delta", {
         type: "response.function_call_arguments.delta",
         item_id: `fc_${refCallId}`,
@@ -287,6 +312,9 @@ function emitToolCall(state, emit, tc) {
         delta: tc.function.arguments
       });
     }
+    // Custom input is emitted once at close, after the Chat JSON wrapper can be
+    // parsed and unwrapped. Streaming the raw JSON fragments would expose
+    // {"input":"..."} instead of the freeform program Codex expects.
     state.funcArgsBuf[tcIdx] += tc.function.arguments;
   }
 }
@@ -295,21 +323,38 @@ function closeToolCall(state, emit, idx) {
   const callId = state.funcCallIds[idx];
   if (callId && !state.funcItemDone[idx]) {
     const args = state.funcArgsBuf[idx] || "{}";
-    
-    emit("response.function_call_arguments.done", {
-      type: "response.function_call_arguments.done",
-      item_id: `fc_${callId}`,
-      output_index: parseInt(idx),
-      arguments: args
-    });
+    const custom = isCustomTool(state, state.funcNames[idx]);
+
+    if (custom) {
+      const input = extractCustomToolInput(args);
+      emit("response.custom_tool_call_input.delta", {
+        type: "response.custom_tool_call_input.delta",
+        item_id: `ctc_${callId}`,
+        output_index: parseInt(idx),
+        delta: input
+      });
+      emit("response.custom_tool_call_input.done", {
+        type: "response.custom_tool_call_input.done",
+        item_id: `ctc_${callId}`,
+        output_index: parseInt(idx),
+        input
+      });
+    } else {
+      emit("response.function_call_arguments.done", {
+        type: "response.function_call_arguments.done",
+        item_id: `fc_${callId}`,
+        output_index: parseInt(idx),
+        arguments: args
+      });
+    }
 
     emit("response.output_item.done", {
       type: "response.output_item.done",
       output_index: parseInt(idx),
       item: {
-        id: `fc_${callId}`,
-        type: "function_call",
-        arguments: args,
+        id: `${custom ? "ctc" : "fc"}_${callId}`,
+        type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
+        ...(custom ? { input: extractCustomToolInput(args) } : { arguments: args }),
         call_id: callId,
         name: state.funcNames[idx] || ""
       }
@@ -359,8 +404,8 @@ function flushEvents(state) {
   // can still finalize as tool_calls even if the tool call was emitted before stream end.
 function computeFinishReason(state) {
    return state.toolCallIndex > 0 || state.currentToolCallId
-    ? "tool_calls"
-    : "stop";
+    ? OPENAI_FINISH.TOOL_CALLS
+    : OPENAI_FINISH.STOP;
 }
 
 /**
@@ -377,17 +422,11 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     state.finishReasonSent = true;
     state.finishReason = finishReason;
 
-    const finalChunk = {
-      id: state.chatId || `chatcmpl-${Date.now()}`,
-      object: "chat.completion.chunk",
-      created: state.created || Math.floor(Date.now() / 1000),
-      model: state.model || "unknown",
-      choices: [{
-        index: 0,
-        delta: {},
-        finish_reason: finishReason
-      }]
-    };
+    const finalChunk = buildChunk(
+      { id: state.chatId || `chatcmpl-${Date.now()}`, created: state.created || Math.floor(Date.now() / 1000), model: state.model || MODEL_FALLBACK },
+      {},
+      finishReason
+    );
 
     if (state.usage && typeof state.usage === "object") {
       finalChunk.usage = state.usage;
@@ -414,17 +453,10 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     const delta = data.delta || "";
     if (!delta) return null;
 
-    return {
-      id: state.chatId,
-      object: "chat.completion.chunk",
-      created: state.created,
-      model: state.model || "unknown",
-      choices: [{
-        index: 0,
-        delta: { content: delta },
-        finish_reason: null
-      }]
-    };
+    return buildChunk(
+      { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
+      { content: delta }
+    );
   }
 
   // Text content done (ignore, we handle via delta)
@@ -433,31 +465,21 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
   }
 
   // Function call started (standard function_call or custom_tool_call)
-  if (eventType === "response.output_item.added" && (data.item?.type === "function_call" || data.item?.type === "custom_tool_call")) {
+  if (eventType === "response.output_item.added" && (data.item?.type === RESPONSES_ITEM.FUNCTION_CALL || data.item?.type === "custom_tool_call")) {
     const item = data.item;
-    state.currentToolCallId = item.call_id || `call_${Date.now()}`;
+    state.currentToolCallId = item.call_id || fallbackToolCallId();
 
-    return {
-      id: state.chatId,
-      object: "chat.completion.chunk",
-      created: state.created,
-      model: state.model || "unknown",
-      choices: [{
-        index: 0,
-        delta: {
-          tool_calls: [{
-            index: state.toolCallIndex,
-            id: state.currentToolCallId,
-            type: "function",
-            function: {
-              name: item.name || "",
-              arguments: ""
-            }
-          }]
-        },
-        finish_reason: null
-      }]
-    };
+    return buildChunk(
+      { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
+      {
+        tool_calls: [{
+          index: state.toolCallIndex,
+          id: state.currentToolCallId,
+          type: OPENAI_BLOCK.FUNCTION,
+          function: { name: item.name || "", arguments: "" }
+        }]
+      }
+    );
   }
 
   // Function call arguments delta (standard or custom_tool_call variant)
@@ -465,32 +487,20 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     const argsDelta = data.delta || "";
     if (!argsDelta) return null;
 
-    return {
-      id: state.chatId,
-      object: "chat.completion.chunk",
-      created: state.created,
-      model: state.model || "unknown",
-      choices: [{
-        index: 0,
-        delta: {
-          tool_calls: [{
-            index: state.toolCallIndex,
-            function: { arguments: argsDelta }
-          }]
-        },
-        finish_reason: null
-      }]
-    };
+    return buildChunk(
+      { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
+      { tool_calls: [{ index: state.toolCallIndex, function: { arguments: argsDelta } }] }
+    );
   }
 
   // Function call done (standard or custom_tool_call variant)
-  if (eventType === "response.output_item.done" && (data.item?.type === "function_call" || data.item?.type === "custom_tool_call")) {
+  if (eventType === "response.output_item.done" && (data.item?.type === RESPONSES_ITEM.FUNCTION_CALL || data.item?.type === "custom_tool_call")) {
     state.toolCallIndex++;
     return null;
   }
 
   // Response completed
-  if (eventType === "response.completed") {
+  if (eventType === "response.completed" || eventType === "response.done") {
     // Extract usage from response.completed event
     const responseUsage = data.response?.usage;
     if (responseUsage && typeof responseUsage === "object") {
@@ -500,18 +510,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
       // Cache info is in input_tokens_details.cached_tokens
       const cacheReadTokens = responseUsage.input_tokens_details?.cached_tokens || responseUsage.cache_read_input_tokens || 0;
       
-      state.usage = {
-        prompt_tokens: inputTokens,
-        completion_tokens: outputTokens,
-        total_tokens: inputTokens + outputTokens
-      };
-      
-      // Add prompt_tokens_details if cache tokens exist
-      if (cacheReadTokens > 0) {
-        state.usage.prompt_tokens_details = {
-          cached_tokens: cacheReadTokens
-        };
-      }
+      state.usage = buildUsage({ promptTokens: inputTokens, completionTokens: outputTokens, totalTokens: inputTokens + outputTokens, cachedTokens: cacheReadTokens });
     }
     
     if (!state.finishReasonSent) {
@@ -520,18 +519,12 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
       state.finishReasonSent = true;
       state.finishReason = finishReason; // Mark for usage injection in stream.js
       
-      const finalChunk = {
-        id: state.chatId,
-        object: "chat.completion.chunk",
-        created: state.created,
-        model: state.model || "unknown",
-        choices: [{
-          index: 0,
-          delta: {},
-          finish_reason: finishReason
-        }]
-      };
-      
+      const finalChunk = buildChunk(
+        { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
+        {},
+        finishReason
+      );
+
       // Include usage in final chunk if available
       if (state.usage && typeof state.usage === "object") {
         finalChunk.usage = state.usage;
@@ -553,25 +546,23 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
       state.finishReasonSent = true;
 
       // Surface the error as an OpenAI-compatible error chunk
-      return {
-        id: state.chatId || `chatcmpl-${Date.now()}`,
-        object: "chat.completion.chunk",
-        created: state.created || Math.floor(Date.now() / 1000),
-        model: state.model || "unknown",
-        choices: [{
-          index: 0,
-          delta: { content: `[Error] ${error.message || JSON.stringify(error)}` },
-          finish_reason: "stop"
-        }]
-      };
+      return buildChunk(
+        { id: state.chatId || `chatcmpl-${Date.now()}`, created: state.created || Math.floor(Date.now() / 1000), model: state.model || MODEL_FALLBACK },
+        { content: `[Error] ${error.message || JSON.stringify(error)}` },
+        OPENAI_FINISH.STOP
+      );
     }
     return null;
   }
 
-  // Reasoning events (convert to content or skip)
+  // Reasoning summary delta → emit as reasoning_content for client thinking display
   if (eventType === "response.reasoning_summary_text.delta") {
-    // Optionally include reasoning as content, or skip
-    return null;
+    const delta = data.delta || "";
+    if (!delta) return null;
+    return buildChunk(
+      { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
+      reasoningDelta(delta)
+    );
   }
 
   // Ignore other events

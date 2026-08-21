@@ -1,8 +1,101 @@
 import { Readable } from "stream";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
+import { dbg } from "./debugLog.js";
 
 const originalFetch = globalThis.fetch;
 const proxyDispatchers = new Map();
+
+// ─── TLS fingerprinting via got-scraping (browser-like JA3) ───────────────
+// Disabled: not in use. Kept commented for future re-enable.
+// Restore the original block to re-enable per-host JA3 spoofing.
+/*
+let _gotScraping = null;
+let _gotScrapingChecked = false;
+const _gotScrapingLoggedHosts = new Set();
+
+async function getGotScraping() {
+  if (_gotScrapingChecked) return _gotScraping;
+  _gotScrapingChecked = true;
+  try {
+    const mod = await import("got-scraping");
+    _gotScraping = typeof mod.gotScraping === "function" ? mod.gotScraping : null;
+    if (_gotScraping) dbg("TLS", "got-scraping loaded (browser-like JA3 enabled)");
+  } catch (e) {
+    console.warn(`[ProxyFetch] got-scraping unavailable, falling back to native fetch: ${e.message}`);
+    _gotScraping = null;
+  }
+  return _gotScraping;
+}
+
+async function gotScrapingFetch(url, options) {
+  const gs = await getGotScraping();
+  if (!gs) return null;
+
+  const method = (options.method || "GET").toUpperCase();
+  const headersInit = options.headers || {};
+  const headers = headersInit instanceof Headers
+    ? Object.fromEntries(headersInit.entries())
+    : { ...headersInit };
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const stream = gs.stream({
+      url,
+      method,
+      headers,
+      body: method === "GET" || method === "HEAD" ? undefined : options.body,
+      throwHttpErrors: false,
+      retry: { limit: 0 },
+      timeout: { request: undefined },
+      followRedirect: false,
+      decompress: true,
+    });
+
+    if (options.signal) {
+      const onAbort = () => { try { stream.destroy(new Error("aborted")); } catch { } };
+      if (options.signal.aborted) onAbort();
+      else options.signal.addEventListener("abort", onAbort, { once: true });
+    }
+
+    stream.once("response", (res) => {
+      if (settled) return;
+      settled = true;
+      const resHeaders = new Headers();
+      for (const [k, v] of Object.entries(res.headers || {})) {
+        if (Array.isArray(v)) v.forEach((x) => resHeaders.append(k, String(x)));
+        else if (v != null) resHeaders.set(k, String(v));
+      }
+      const body = Readable.toWeb(stream);
+      resolve(new Response(body, { status: res.statusCode, statusText: res.statusMessage || "", headers: resHeaders }));
+    });
+
+    stream.once("error", (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    });
+  });
+}
+
+async function tryGotScrapingFetch(url, options) {
+  try {
+    const res = await gotScrapingFetch(url, options);
+    if (res) {
+      try {
+        const host = new URL(typeof url === "string" ? url : url.toString()).hostname;
+        if (!_gotScrapingLoggedHosts.has(host)) {
+          _gotScrapingLoggedHosts.add(host);
+          dbg("TLS", `using got-scraping for ${host}`);
+        }
+      } catch { }
+    }
+    return res;
+  } catch (e) {
+    console.warn(`[ProxyFetch] got-scraping request failed, fallback to native fetch: ${e.message}`);
+    return null;
+  }
+}
+*/
 
 // DNS cache — use Map to avoid prototype pollution via malformed hostnames
 const DNS_CACHE = new Map();
@@ -255,6 +348,8 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     }
   }
 
+  // got-scraping disabled — use native fetch directly
+  // (Re-enable per-host by wrapping with tryGotScrapingFetch when needed)
   return originalFetch(url, options);
 }
 

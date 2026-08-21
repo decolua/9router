@@ -12,6 +12,7 @@
   "Logout": "Kijelentkezés",
   "Login": "Bejelentkezés",
   "Providers": "Szolgáltatók",
+  "Style": "Stílus",
   "Usage": "Használati statisztika",
   "API Key": "API-kulcs",
   "Connected": "Csatlakoztatva",
@@ -176,6 +177,7 @@
   "How it works:": "Hogyan működik:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Antigravity/Copilot IDE kérés → DNS átirányítás a localhost:443-ra → MITM proxy elfogja → 9Router → válasz Antigravity/Copilot-nak",
   "No API keys — create one in Keys page": "Nincsenek API-kulcsok — hozzon létre egyet a Keys oldalon",
+  "e.g. a warm, gentle voice, speaking slowly with a British accent": "pl.: meleg, lágy hang, lassan beszél brit akcentussal",
   "sk_9router (default)": "sk_9router (alapértelmezett)",
   "Server started": "Szerver elindult",
   "Failed to start server": "Nem sikerült elindítani a szervert",
@@ -190,5 +192,6 @@
   "Sudo Password": "Sudo jelszó",
   "Click to add, click again to remove. Changes are saved automatically.": "Kattintson a hozzáadáshoz, kattintson újra az eltávolításhoz. A változtatások automatikusan mentésre kerülnek.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Kockázati figyelmeztetés: Ez a szolgáltató olyan előfizetést/OAuth munkamenetet használ, amely hivatalosan nincs proxy/router használatra engedélyezve. A fiók korlátozható vagy letiltható. Saját felelősségre használja.",
-  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ A MITM elfogja az IDE eszközök (Antigravity, GitHub Copilot, Kiro) HTTPS forgalmát helyi CA-n keresztül, hogy átirányítsa a kéréseket a szolgáltatóidhoz. Megsértheti a ToS-t → fiók letiltási kockázat. Saját felelősségre használja."
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ A MITM elfogja az IDE eszközök (Antigravity, GitHub Copilot, Kiro) HTTPS forgalmát helyi CA-n keresztül, hogy átirányítsa a kéréseket a szolgáltatóidhoz. Megsértheti a ToS-t → fiók letiltási kockázat. Saját felelősségre használja.",
+  "Endpoint is exposed without an API key.": "A végpont API-kulcs nélkül van kitéve."
 }

@@ -12,6 +12,7 @@
   "Logout": "Terminar sessão",
   "Login": "Iniciar sessão",
   "Providers": "Fornecedores",
+  "Style": "Estilo",
   "Usage": "Estatísticas",
   "API Key": "Chave API",
   "Connected": "Ligado",
@@ -176,6 +177,7 @@
   "How it works:": "Como funciona:",
   "Antigravity/Copilot IDE request → DNS redirect to localhost:443 → MITM proxy intercepts → 9Router → response to Antigravity/Copilot": "Pedido do Antigravity/Copilot IDE → Redirecionamento DNS para localhost:443 → Proxy MITM interceta → 9Router → resposta para Antigravity/Copilot",
   "No API keys — create one in Keys page": "Sem chaves de API — crie uma na página Chaves",
+  "e.g. a warm, gentle voice, speaking slowly with a British accent": "ex.: voz quente e suave, a falar devagar com sotaque britânico",
   "sk_9router (default)": "sk_9router (predefinição)",
   "Server started": "Servidor iniciado",
   "Failed to start server": "Falha ao iniciar o servidor",
@@ -190,5 +192,6 @@
   "Sudo Password": "Palavra-passe sudo",
   "Click to add, click again to remove. Changes are saved automatically.": "Clique para adicionar, clique novamente para remover. As alterações são guardadas automaticamente.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Aviso de Risco: Este fornecedor utiliza uma sessão de subscrição/OAuth não licenciada oficialmente para uso de proxy/router. A conta pode ser restringida ou banida. Use por sua conta e risco.",
-  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM interceta tráfego HTTPS de ferramentas IDE (Antigravity, GitHub Copilot, Kiro) via CA local para redirecionar pedidos para os seus fornecedores. Pode violar ToS → risco de banimento de conta. Use por sua conta e risco."
+  "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM interceta tráfego HTTPS de ferramentas IDE (Antigravity, GitHub Copilot, Kiro) via CA local para redirecionar pedidos para os seus fornecedores. Pode violar ToS → risco de banimento de conta. Use por sua conta e risco.",
+  "Endpoint is exposed without an API key.": "O endpoint está exposto sem uma chave de API."
 }

@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import open from "open";
-import { ANTIGRAVITY_CONFIG } from "../constants/oauth.js";
+import { ANTIGRAVITY_CONFIG, getOAuthClientMetadata } from "../constants/oauth.js";
 import { getServerCredentials } from "../config/index.js";
 import { startLocalServer } from "../utils/server.js";
 import { spinner as createSpinner } from "../utils/ui.js";
@@ -85,21 +85,15 @@ export class AntigravityService {
       "Authorization": `Bearer ${accessToken}`,
       "Content-Type": "application/json",
       "User-Agent": this.config.loadCodeAssistUserAgent,
-      "X-Goog-Api-Client": this.config.loadCodeAssistApiClient,
-      "Client-Metadata": this.config.loadCodeAssistClientMetadata,
     };
   }
 
   /**
    * Get metadata object for loadCodeAssist / onboardUser API calls.
-   * Uses string enum values matching CLIProxyAPI Go source.
+   * Uses numeric enum values matching Antigravity binary ClientMetadata.
    */
   getMetadata() {
-    return {
-      ideType: "IDE_UNSPECIFIED",
-      platform: "PLATFORM_UNSPECIFIED",
-      pluginType: "GEMINI",
-    };
+    return getOAuthClientMetadata();
   }
 
   /**
