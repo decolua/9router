@@ -10,8 +10,8 @@ import path from "path";
 function toResponsesUsage(usage) {
   if (!usage || typeof usage !== "object") return null;
 
-  const inputTokens = Number.isFinite(usage.prompt_tokens) ? usage.prompt_tokens : 0;
-  const outputTokens = Number.isFinite(usage.completion_tokens) ? usage.completion_tokens : 0;
+  const inputTokens = [usage.input_tokens, usage.prompt_tokens].find(Number.isFinite) ?? 0;
+  const outputTokens = [usage.output_tokens, usage.completion_tokens].find(Number.isFinite) ?? 0;
   const responseUsage = {
     input_tokens: inputTokens,
     output_tokens: outputTokens,
@@ -19,8 +19,14 @@ function toResponsesUsage(usage) {
       ? usage.total_tokens
       : inputTokens + outputTokens
   };
-  const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
-  const reasoningTokens = usage.completion_tokens_details?.reasoning_tokens;
+  const cachedTokens = [
+    usage.input_tokens_details?.cached_tokens,
+    usage.prompt_tokens_details?.cached_tokens
+  ].find(Number.isFinite);
+  const reasoningTokens = [
+    usage.output_tokens_details?.reasoning_tokens,
+    usage.completion_tokens_details?.reasoning_tokens
+  ].find(Number.isFinite);
 
   if (Number.isFinite(cachedTokens)) {
     responseUsage.input_tokens_details = { cached_tokens: cachedTokens };

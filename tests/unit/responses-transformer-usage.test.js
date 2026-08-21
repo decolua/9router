@@ -11,14 +11,26 @@ const CHAT_COMPLETIONS_STREAM = [
   "",
 ].join("\n\n");
 
-function createChatCompletionsStream() {
+function createChatCompletionsStream(stream = CHAT_COMPLETIONS_STREAM) {
   const encoder = new TextEncoder();
   return new ReadableStream({
     start(controller) {
-      controller.enqueue(encoder.encode(CHAT_COMPLETIONS_STREAM));
+      controller.enqueue(encoder.encode(stream));
       controller.close();
     },
   });
+}
+
+async function readCompletedResponse(stream = CHAT_COMPLETIONS_STREAM) {
+  const output = await readStream(
+    createChatCompletionsStream(stream).pipeThrough(createResponsesApiTransformStream()),
+  );
+  const completedData = output
+    .split("\n\n")
+    .find((event) => event.startsWith("event: response.completed"))
+    ?.match(/^data: (.+)$/m)?.[1];
+
+  return JSON.parse(completedData).response;
 }
 
 async function readStream(stream) {
@@ -36,22 +48,64 @@ async function readStream(stream) {
 }
 
 describe("Responses API transformer usage", () => {
-  it("includes final Chat Completions usage in response.completed", async () => {
-    const output = await readStream(
-      createChatCompletionsStream().pipeThrough(createResponsesApiTransformStream()),
-    );
-    const completedData = output
-      .split("\n\n")
-      .find((event) => event.startsWith("event: response.completed"))
-      ?.match(/^data: (.+)$/m)?.[1];
+  it("includes Chat Completions usage that arrives after finish_reason", async () => {
+    const response = await readCompletedResponse();
 
-    expect(JSON.parse(completedData).response.usage).toEqual({
+    expect(response.usage).toEqual({
       input_tokens: 884,
       output_tokens: 37,
       total_tokens: 921,
       input_tokens_details: { cached_tokens: 256 },
       output_tokens_details: { reasoning_tokens: 12 },
     });
+  });
+
+  it("accepts usage already shaped like a Responses API payload", async () => {
+    const stream = [
+      'data: {"id":"chatcmpl-native","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}',
+      'data: {"id":"chatcmpl-native","choices":[],"usage":{"input_tokens":20,"output_tokens":5,"total_tokens":25,"input_tokens_details":{"cached_tokens":7},"output_tokens_details":{"reasoning_tokens":3}}}',
+      "data: [DONE]",
+      "",
+    ].join("\n\n");
+
+    const response = await readCompletedResponse(stream);
+
+    expect(response.usage).toEqual({
+      input_tokens: 20,
+      output_tokens: 5,
+      total_tokens: 25,
+      input_tokens_details: { cached_tokens: 7 },
+      output_tokens_details: { reasoning_tokens: 3 },
+    });
+  });
+
+  it("omits token detail objects when the upstream usage has no details", async () => {
+    const stream = [
+      'data: {"id":"chatcmpl-no-details","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}',
+      'data: {"id":"chatcmpl-no-details","choices":[],"usage":{"prompt_tokens":8,"completion_tokens":2}}',
+      "data: [DONE]",
+      "",
+    ].join("\n\n");
+
+    const response = await readCompletedResponse(stream);
+
+    expect(response.usage).toEqual({
+      input_tokens: 8,
+      output_tokens: 2,
+      total_tokens: 10,
+    });
+  });
+
+  it("omits usage when the upstream stream sends no usage chunk", async () => {
+    const stream = [
+      'data: {"id":"chatcmpl-no-usage","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}',
+      "data: [DONE]",
+      "",
+    ].join("\n\n");
+
+    const response = await readCompletedResponse(stream);
+
+    expect(response).not.toHaveProperty("usage");
   });
 
   it("preserves transformed usage in a non-streaming Responses body", async () => {
