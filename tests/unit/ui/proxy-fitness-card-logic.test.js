@@ -13,12 +13,12 @@ describe("ProxyFitnessCard UI logic", () => {
         "freebuff::anthropic/claude": { until: 1, reason: "r" },
       }
     };
-    
+
     const next = optimisticProviderClear(snapshot, "freebuff");
-    
+
     // pool-1 should keep "other::model" but lose "freebuff" entries
     expect(next["pool-1"]).toEqual({ "other::model": { until: 1, reason: "r" } });
-    
+
     // pool-2 only had freebuff entries, so it should be deleted entirely
     expect(next["pool-2"]).toBeUndefined();
   });
@@ -30,9 +30,9 @@ describe("ProxyFitnessCard UI logic", () => {
         "freebuff::*": { until: 1, reason: "r" },
       }
     };
-    
+
     const next = optimisticProviderClear(snapshot, "freebuff");
-    
+
     // Should clear freebuff::* but leave freebuff-test::model
     expect(next["pool-1"]).toEqual({
       "freebuff-test::model": { until: 1, reason: "r" }
@@ -45,7 +45,7 @@ describe("ProxyFitnessCard UI logic", () => {
         "freebuff::*": { until: 1, reason: "r" },
       }
     };
-    
+
     const next = optimisticProviderClear(snapshot, "");
     expect(next).toEqual(snapshot);
   });
@@ -54,7 +54,7 @@ describe("ProxyFitnessCard UI logic", () => {
     it("applies fetched snapshot if fetch generation matches mutation generation", () => {
       const current = { "pool-1": { "foo::bar": { until: 1, reason: "r" } } };
       const fetched = { "pool-1": { "foo::bar": { until: 1, reason: "r" }, "new::entry": { until: 1, reason: "r" } } };
-      
+
       const result = handleMutationBarrier(current, fetched, 0, 0);
       expect(result).toBe(fetched);
     });
@@ -62,7 +62,7 @@ describe("ProxyFitnessCard UI logic", () => {
     it("rejects fetched snapshot and preserves optimistic current if a mutation occurred during fetch", () => {
       const current = { "pool-1": { "foo::bar": { until: 1, reason: "r" } } };
       const fetched = { "pool-1": { "foo::bar": { until: 1, reason: "r" }, "stale::entry": { until: 1, reason: "r" } } };
-      
+
       const result = handleMutationBarrier(current, fetched, 0, 1);
       expect(result).toBe(current);
     });
