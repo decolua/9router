@@ -4,6 +4,8 @@ A local-first fork of [`decolua/9router`](https://github.com/decolua/9router) fo
 
 This repository keeps the core 9Router dashboard and OpenAI-compatible gateway from upstream, while carrying fork-specific changes for stricter access control and easier fork maintenance.
 
+[🇧🇷 Português (Brasil)](./i18n/README.pt-BR.md) • [🇻🇳 Tiếng Việt](./i18n/README.vi.md) • [🇨🇳 中文](./i18n/README.zh-CN.md) • [🇯🇵 日本語](./i18n/README.ja-JP.md) • [🇷🇺 Русский](./i18n/README.ru.md) • [🇹🇭 ไทย](./i18n/README.th.md) • [🇮🇷 فارسی](./i18n/README.fa_IR.md) • [🇮🇩 Indonesia](./i18n/README.id-ID.md) • [🇪🇸 Español](./i18n/README.es.md) • [🇫🇷 Français](./i18n/README.fr.md)
+
 ## What This Fork Is
 
 9Router is an OpenAI-compatible routing gateway for AI coding tools and model providers. It sits between clients such as Claude Code, Codex, Cursor, OpenCode, Cline, Continue, Roo, and upstream providers such as Claude, Codex, Kiro, GLM, MiniMax, OpenRouter, and custom-compatible endpoints.
@@ -27,12 +29,12 @@ This fork is useful when you want:
 
 ## Current Base
 
-This fork is currently synced with upstream `decolua/9router` **v0.5.50**.
+This fork is currently synced with upstream `decolua/9router` **v0.5.55**.
 
 Current fork release:
 
 ```text
-fork-v0.5.50
+fork-v0.5.55
 ```
 
 Fork releases use the upstream version as the base version, then prefix it with `fork-`.
