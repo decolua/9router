@@ -1,6 +1,24 @@
 # Unreleased
 
 ## Fixes
+- **Router**: an image request no longer goes to the most expensive member of a combo.
+  `reorderByCapabilities` floated capable models to the front but kept the pool's own
+  order among them, so a capability-first combo handed every screenshot to its priciest
+  entry. Cost now breaks ties **inside** a tier, free before paid — capability is a
+  yes/no question, so once the tier is settled there is nothing left to spend a
+  subscription on. It does not reorder *across* tiers: a free model that cannot read the
+  image is still useless, and promoting it would drop the image to save nothing.
+- **Router**: Claude served through Antigravity is no longer advertised as
+  vision-capable. Measured against the live gateway with a half-red/half-green PNG and a
+  forced answer format: `ag/claude-opus-4-6-thinking` and `ag/claude-sonnet-4-6` both
+  answered `SEEN=NO`, while `ag/gemini-pro-agent` and `ag/gemini-3-flash` — same
+  provider, same request, same translator — answered `SEEN=YES LEFT=red RIGHT=green`.
+  The image is dropped in the Claude-specific branch of `executors/antigravity.js`, so
+  the model answers from the text alone and returns a confident guess (it called a red
+  square "Blue"). Advertising a modality that silently discards data is worse than
+  having none: the combo routed screenshots straight to it. This is a capability
+  correction, not the fix — the executor still needs repairing, and the comment says so.
+
 - **Router**: a combo no longer reports exhaustion while it still holds entries it never
   tried. Every skip in the cascade is a *prediction* — a cooldown guesses when a provider
   recovers, a quota ban defaults to an hour whether or not the provider said so, and the

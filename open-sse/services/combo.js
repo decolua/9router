@@ -12,6 +12,7 @@ import { extractTextContent } from "../translator/formats/gemini.js";
 import { estimateInputTokens } from "../utils/usageTracking.js";
 import { extractVisibleText, findDegeneracy, hasAssistantPrefill, GATE_WINDOW_CHARS, GATE_MIN_JUDGEABLE_CHARS, PREFLIGHT_MAX_READS, HOLD_BACK_MS } from "../utils/degeneracy.js";
 import { COMBO_RESPONSE_TIMEOUT_MS, COMBO_FIRST_EVENT_TIMEOUT_MS } from "../config/errorConfig.js";
+import { isPaidModel } from "../config/costClasses.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -97,6 +98,15 @@ function flattenToolHistory(messages) {
 
 // Reorder combo models by capability fit. Stable; never drops a model (fallback intact).
 // Tier 0: satisfies all hard + all soft. Tier 1: all hard only. Tier 2: rest.
+//
+// Cost breaks ties INSIDE a tier, free before paid. Capability is a yes/no question —
+// a model either reads the image or it does not — so once the tier is settled there is
+// nothing left to spend a subscription on. Without this, a combo ordered
+// capability-first hands every screenshot to its most expensive member, which is
+// backwards: looking at an image is the cheapest thing a vision model does.
+//
+// This does NOT reorder across tiers. A free model that cannot read the image is
+// still useless, and demoting a capable paid model beneath it would drop the image.
 export function reorderByCapabilities(models, required) {
   if (!required || required.size === 0 || !Array.isArray(models) || models.length <= 1) return models;
   const hard = [...required].filter((c) => HARD_CAPS.has(c));
@@ -111,10 +121,11 @@ export function reorderByCapabilities(models, required) {
     return soft.every((c) => caps[c] === true) ? 0 : 1;
   };
 
-  // Stable sort by tier (Array.prototype.sort is stable in modern engines).
+  // Stable sort by tier, then cost class (Array.prototype.sort is stable in modern
+  // engines, so equal-cost entries keep the pool's own order).
   return models
-    .map((m, i) => ({ m, i, t: tierOf(m) }))
-    .sort((a, b) => a.t - b.t || a.i - b.i)
+    .map((m, i) => ({ m, i, t: tierOf(m), paid: isPaidModel(m) ? 1 : 0 }))
+    .sort((a, b) => a.t - b.t || a.paid - b.paid || a.i - b.i)
     .map((x) => x.m);
 }
 

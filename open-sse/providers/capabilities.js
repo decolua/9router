@@ -121,6 +121,33 @@ const CODEX_GPT_56_DEFAULT_CAPS = { vision: true, reasoning: true, search: true,
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
 export const PROVIDER_CAPABILITIES = {
+  // Claude models served through Antigravity never receive the image.
+  //
+  // Measured 2026-08-23 against the live gateway with a 64x64 half-red/half-green
+  // PNG and a forced answer format. `ag/claude-opus-4-6-thinking` and
+  // `ag/claude-sonnet-4-6` both answered `SEEN=NO`; `ag/gemini-pro-agent` and
+  // `ag/gemini-3-flash` — same provider, same request, same translator — answered
+  // `SEEN=YES LEFT=red RIGHT=green`. So this is the Claude-specific branch in
+  // executors/antigravity.js, not Antigravity as a whole and not the OpenAI->Gemini
+  // part conversion.
+  //
+  // Advertising vision here is worse than having none: the combo happily routes a
+  // screenshot to a model that silently answers from the text alone, and the reply
+  // is a confident guess. Declaring it false makes reorderByCapabilities pick a
+  // member that can actually see. Remove this once the executor is fixed — the
+  // capability is real, the transport is not.
+  //
+  // Keyed by BOTH the prefix and the provider name on purpose: the combo cascade
+  // calls getCapabilitiesForModel with the id prefix ("ag"), while provider-name
+  // callers use "antigravity".
+  "ag": {
+    "claude-opus-4-6-thinking": { vision: false, reasoning: true, contextWindow: 200000, maxOutput: 64000 },
+    "claude-sonnet-4-6": { vision: false, reasoning: true, contextWindow: 200000, maxOutput: 64000 },
+  },
+  "antigravity": {
+    "claude-opus-4-6-thinking": { vision: false, reasoning: true, contextWindow: 200000, maxOutput: 64000 },
+    "claude-sonnet-4-6": { vision: false, reasoning: true, contextWindow: 200000, maxOutput: 64000 },
+  },
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue
   "nvidia": {
