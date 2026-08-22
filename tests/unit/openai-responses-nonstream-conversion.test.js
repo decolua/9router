@@ -235,13 +235,14 @@ describe("Responses upstream SSE truncated by max_output_tokens (incomplete stat
   const encoder = new TextEncoder();
   // Terminal event carries the REAL upstream status — response.completed with
   // status:"incomplete" is what OpenAI/opencode emit when max_output_tokens is hit.
-  const truncatedSSE = () => new Response(new ReadableStream({
+  // OpenAI may also terminate with the dedicated `response.incomplete` event.
+  const truncatedSSE = (terminalEvent = "response.completed") => new Response(new ReadableStream({
     start(controller) {
       controller.enqueue(encoder.encode(
         'event: response.output_item.done\n' +
         'data: {"output_index":0,"item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"partial answer","annotations":[]}]}}\n\n' +
-        'event: response.completed\n' +
-        'data: {"type":"response.completed","response":{"id":"resp_trunc","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":3,"output_tokens":7,"total_tokens":10}}}\n\n'
+        `event: ${terminalEvent}\n` +
+        `data: {"type":"${terminalEvent}","response":{"id":"resp_trunc","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":3,"output_tokens":7,"total_tokens":10}}}\n\n`
       ));
       controller.close();
     }
@@ -269,19 +270,36 @@ describe("Responses upstream SSE truncated by max_output_tokens (incomplete stat
     expect(json.status).toBe("completed");
   });
 
-  it("Chat client finish_reason becomes length (not stop)", async () => {
-    const result = await handleNonStreamingResponse(baseCtx(truncatedSSE(), FORMATS.OPENAI));
-    expect(result.success).toBe(true);
-    const json = await result.response.json();
-    expect(json.object).toBe("chat.completion");
-    expect(json.choices[0].finish_reason).toBe("length");
+  // OpenAI can terminate a truncated generation with the dedicated
+  // `response.incomplete` event instead of response.completed — same payload
+  // shape (response.status:"incomplete" + incomplete_details), must be treated
+  // as terminal or clients see status:"in_progress".
+  it("response.incomplete terminal event retains status + incomplete_details", async () => {
+    const { convertResponsesStreamToJson } = await import("../../open-sse/transformer/streamToJsonConverter.js");
+    const json = await convertResponsesStreamToJson(truncatedSSE("response.incomplete").body);
+    expect(json.status).toBe("incomplete");
+    expect(json.incomplete_details).toEqual({ reason: "max_output_tokens" });
   });
 
-  it("Claude client stop_reason becomes max_tokens (not end_turn)", async () => {
-    const result = await handleNonStreamingResponse(baseCtx(truncatedSSE(), FORMATS.CLAUDE));
-    expect(result.success).toBe(true);
-    const json = await result.response.json();
-    expect(json.type).toBe("message");
-    expect(json.stop_reason).toBe("max_tokens");
-  });
+  it.each(["response.completed", "response.incomplete"])(
+    "Chat client finish_reason becomes length (not stop) via %s",
+    async (terminalEvent) => {
+      const result = await handleNonStreamingResponse(baseCtx(truncatedSSE(terminalEvent), FORMATS.OPENAI));
+      expect(result.success).toBe(true);
+      const json = await result.response.json();
+      expect(json.object).toBe("chat.completion");
+      expect(json.choices[0].finish_reason).toBe("length");
+    }
+  );
+
+  it.each(["response.completed", "response.incomplete"])(
+    "Claude client stop_reason becomes max_tokens (not end_turn) via %s",
+    async (terminalEvent) => {
+      const result = await handleNonStreamingResponse(baseCtx(truncatedSSE(terminalEvent), FORMATS.CLAUDE));
+      expect(result.success).toBe(true);
+      const json = await result.response.json();
+      expect(json.type).toBe("message");
+      expect(json.stop_reason).toBe("max_tokens");
+    }
+  );
 });

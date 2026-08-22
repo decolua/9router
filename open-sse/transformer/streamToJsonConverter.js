@@ -27,7 +27,7 @@ function processSSEMessage(msg, state) {
     state.created = parsed.response?.created_at || state.created;
   } else if (eventType === "response.output_item.done") {
     state.items.set(parsed.output_index ?? 0, parsed.item);
-  } else if (eventType === "response.completed" || eventType === "response.done") {
+  } else if (eventType === "response.completed" || eventType === "response.done" || eventType === "response.incomplete") {
     // Terminal events carry the REAL upstream status: OpenAI emits
     // response.completed with status:"incomplete" + incomplete_details when
     // max_output_tokens truncates the output. Hardcoding "completed" turned
