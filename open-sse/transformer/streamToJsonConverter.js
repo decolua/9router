@@ -12,15 +12,19 @@ function processSSEMessage(msg, state) {
 
   const eventMatch = msg.match(/^event:\s*(.+)$/m);
   const dataMatch = msg.match(/^data:\s*(.+)$/m);
-  if (!eventMatch || !dataMatch) return;
+  if (!dataMatch) return;
 
-  const eventType = eventMatch[1].trim();
   const dataStr = dataMatch[1].trim();
   if (dataStr === "[DONE]") return;
 
   let parsed;
   try { parsed = JSON.parse(dataStr); }
   catch { return; }
+
+  // Some OpenAI-compatible providers (e.g. SLG/singularityapi) send data-only
+  // SSE with no `event:` line, relying on the JSON payload's own `type` field
+  // instead — fall back to that so their streams aren't silently dropped.
+  const eventType = eventMatch ? eventMatch[1].trim() : (parsed.type || "");
 
   if (eventType === "response.created") {
     state.responseId = parsed.response?.id || state.responseId;

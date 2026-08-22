@@ -18,6 +18,7 @@ import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "o
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import { EMPTY_CONTENT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
@@ -295,6 +296,22 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       },
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
+      },
+      // Stream finished with no text/thinking/output tokens (upstream 200'd on
+      // nothing). The response already went out to this client — this only
+      // locks the account+model so the *next* request (including this
+      // client's own empty-stream retry) skips it and falls to the next
+      // combo/account candidate, then comes back into rotation once the lock
+      // expires.
+      onEmptyStream: async () => {
+        await markAccountUnavailable(
+          credentials.connectionId,
+          HTTP_STATUS.BAD_GATEWAY,
+          `Empty streaming response from ${provider}/${model}`,
+          provider,
+          model,
+          Date.now() + EMPTY_CONTENT_COOLDOWN_MS
+        );
       }
     });
 
