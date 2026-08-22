@@ -1,6 +1,6 @@
 import http from "http";
 import { URL } from "url";
-import { CODEX_CONFIG, TRAE_CONFIG, WINDSURF_CONFIG, ZED_HOSTED_CONFIG } from "../constants/oauth.js";
+import { CODEX_CONFIG, DEVIN_CONFIG, TRAE_CONFIG, WINDSURF_CONFIG, ZED_HOSTED_CONFIG } from "../constants/oauth.js";
 
 // Loopback origin guard for local callback proxies.
 // Legit OAuth redirects are top-level navigations (no `Origin` header); a cross-site
@@ -635,6 +635,91 @@ export function stopWindsurfProxy() {
   if (windsurfProxyTimeout) { clearTimeout(windsurfProxyTimeout); windsurfProxyTimeout = null; }
   if (windsurfProxyServer) { windsurfProxyServer.close(); windsurfProxyServer = null; }
   windsurfProxyPort = null;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Devin Cloud PKCE callback proxy. Singleton session.
+
+let devinProxyServer = null;
+let devinProxyTimeout = null;
+let devinProxyPort = null;
+let devinSession = null;
+
+export function registerDevinSession({ state, codeVerifier, redirectUri }) {
+  if (!state || !codeVerifier) return false;
+  devinSession = { state, codeVerifier, redirectUri, status: "pending", createdAt: Date.now() };
+  return true;
+}
+export function getDevinSessionStatus(state) {
+  if (!devinSession) return null;
+  if (state && devinSession.state !== state) return null;
+  return devinSession;
+}
+export function clearDevinSession(state) {
+  if (!state || (devinSession && devinSession.state === state)) devinSession = null;
+}
+
+export function startDevinProxy() {
+  return new Promise((resolve) => {
+    if (devinProxyServer) {
+      resolve({ success: true, port: devinProxyPort, callbackUrl: `http://127.0.0.1:${devinProxyPort}${DEVIN_CONFIG.callbackPath}` });
+      return;
+    }
+    const server = http.createServer(async (req, res) => {
+      const url = new URL(req.url, "http://localhost");
+      if (url.pathname !== DEVIN_CONFIG.callbackPath) {
+        res.writeHead(404).end("Not found");
+        return;
+      }
+      const session = devinSession;
+      if (!session) {
+        res.writeHead(200, { "Content-Type": "text/plain" }).end("No active Devin login session");
+        return;
+      }
+      if (!isLoopbackOrigin(req.headers.origin)) {
+        res.writeHead(403, { "Content-Type": "text/plain" }).end("Cross-origin callback rejected");
+        return;
+      }
+      const state = url.searchParams.get("state");
+      if (!state || state !== session.state) {
+        session.status = "error";
+        session.error = "Devin callback state mismatch";
+        res.writeHead(400, { "Content-Type": "text/plain" }).end(session.error);
+        stopDevinProxy();
+        return;
+      }
+      const rawCallback = `${url.pathname}?${url.searchParams.toString()}`;
+      try {
+        const { exchangeTokens } = await import("../providers.js");
+        const { createProviderConnection } = await import("@/models");
+        const tokenData = await exchangeTokens("devin", rawCallback, session.redirectUri, session.codeVerifier, session.state);
+        const connection = await createProviderConnection({ provider: "devin", authType: "oauth", ...tokenData, testStatus: "active" });
+        session.status = "done";
+        session.connectionId = connection.id;
+        session.email = connection.email;
+        res.writeHead(200, { "Content-Type": "text/plain" }).end("Devin login completed. You can close this tab.");
+      } catch (error) {
+        session.status = "error";
+        session.error = error.message;
+        res.writeHead(500, { "Content-Type": "text/plain" }).end("Devin login failed. You can close this tab.");
+      } finally {
+        stopDevinProxy();
+      }
+    });
+    server.listen(0, "127.0.0.1", () => {
+      devinProxyServer = server;
+      devinProxyPort = server.address().port;
+      devinProxyTimeout = setTimeout(() => stopDevinProxy(), DEVIN_CONFIG.oauthTimeoutMs);
+      resolve({ success: true, port: devinProxyPort, callbackUrl: `http://127.0.0.1:${devinProxyPort}${DEVIN_CONFIG.callbackPath}` });
+    });
+    server.on("error", (error) => resolve({ success: false, reason: error.message }));
+  });
+}
+
+export function stopDevinProxy() {
+  if (devinProxyTimeout) { clearTimeout(devinProxyTimeout); devinProxyTimeout = null; }
+  if (devinProxyServer) { devinProxyServer.close(); devinProxyServer = null; }
+  devinProxyPort = null;
 }
 
 // ───────────────────────────────────────────────────────────────────────────

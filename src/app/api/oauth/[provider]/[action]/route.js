@@ -33,6 +33,11 @@ import {
   registerZedSession,
   getZedSessionStatus,
   clearZedSession,
+  startDevinProxy,
+  stopDevinProxy,
+  registerDevinSession,
+  getDevinSessionStatus,
+  clearDevinSession,
 } from "@/lib/oauth/utils/server";
 import { detectIdeInstalled } from "@/lib/oauth/utils/ideDetect";
 import { ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
@@ -120,8 +125,12 @@ export async function GET(request, { params }) {
         const result = await startZedProxy(searchParams.get("native_app_port") || ZED_HOSTED_CONFIG.defaultNativeAppPort);
         return NextResponse.json(result);
       }
+      if (provider === "devin") {
+        const result = await startDevinProxy();
+        return NextResponse.json(result);
+      }
       if (!["codex", "xai"].includes(provider)) {
-        return NextResponse.json({ error: "Proxy only supported for codex/xai/trae/windsurf/zed" }, { status: 400 });
+        return NextResponse.json({ error: "Proxy only supported for codex/xai/trae/windsurf/zed/devin" }, { status: 400 });
       }
       const appPort = searchParams.get("app_port");
       if (!appPort) {
@@ -149,6 +158,7 @@ export async function GET(request, { params }) {
       }
       let session;
       if (provider === "trae") session = getTraeSessionStatus(state);
+      else if (provider === "devin") session = getDevinSessionStatus(state);
       else if (provider === "windsurf") session = getWindsurfSessionStatus(state);
       else if (provider === "zed") session = getZedSessionStatus(state);
       else if (provider === "xai") session = getXaiSessionStatus(state);
@@ -158,6 +168,7 @@ export async function GET(request, { params }) {
       if (session.status === "done" || session.status === "error") {
         const payload = { ...session };
         if (provider === "trae") clearTraeSession(state);
+        else if (provider === "devin") clearDevinSession(state);
         else if (provider === "windsurf") clearWindsurfSession(state);
         else if (provider === "zed") clearZedSession(state);
         else if (provider === "xai") clearXaiSession(state);
@@ -169,11 +180,12 @@ export async function GET(request, { params }) {
 
     if (action === "stop-proxy") {
       if (provider === "trae") stopTraeProxy();
+      else if (provider === "devin") stopDevinProxy();
       else if (provider === "windsurf") stopWindsurfProxy();
       else if (provider === "zed") stopZedProxy();
       else if (provider === "xai") stopXaiProxy();
       else if (provider === "codex") stopCodexProxy();
-      else return NextResponse.json({ error: "Proxy only supported for codex/xai/trae/windsurf/zed" }, { status: 400 });
+      else return NextResponse.json({ error: "Proxy only supported for codex/xai/trae/windsurf/zed/devin" }, { status: 400 });
       return NextResponse.json({ success: true });
     }
 
@@ -259,14 +271,33 @@ export async function POST(request, { params }) {
       if (!state) return NextResponse.json({ error: "Missing state" }, { status: 400 });
       let ok = false;
       if (provider === "trae") ok = registerTraeSession({ state });
+      else if (provider === "devin") ok = registerDevinSession({ state, codeVerifier: body?.codeVerifier, redirectUri: body?.redirectUri });
       else if (provider === "windsurf") ok = registerWindsurfSession({ state });
       else if (provider === "zed") ok = registerZedSession({ state, codeVerifier: body?.codeVerifier });
-      else return NextResponse.json({ error: "register-session only supported for trae/windsurf/zed" }, { status: 400 });
+      else return NextResponse.json({ error: "register-session only supported for trae/windsurf/zed/devin" }, { status: 400 });
       return NextResponse.json({ success: ok });
     }
 
     if (action === "exchange") {
       const { code, redirectUri, codeVerifier, state, meta } = body;
+
+      if (provider === "devin") {
+        const session = getDevinSessionStatus(state);
+        const verifier = codeVerifier || session?.codeVerifier;
+        const callbackRedirectUri = redirectUri || session?.redirectUri;
+        if (!code || !state || !verifier || !callbackRedirectUri) {
+          return NextResponse.json({ error: "Missing Devin callback URL, state, or PKCE session" }, { status: 400 });
+        }
+        try {
+          const tokenData = await exchangeTokens(provider, code, callbackRedirectUri, verifier, state);
+          const connection = await createProviderConnection({ provider, authType: "oauth", ...tokenData, testStatus: "active" });
+          clearDevinSession(state);
+          stopDevinProxy();
+          return NextResponse.json({ success: true, connection: { id: connection.id, provider: connection.provider } });
+        } catch (err) {
+          return NextResponse.json({ error: err.message }, { status: 500 });
+        }
+      }
 
       // Trae/Windsurf: code is either a raw callback URL or a pasted token.
       // exchangeTokens() handles both paths; no PKCE, skip codex JWT extraction.

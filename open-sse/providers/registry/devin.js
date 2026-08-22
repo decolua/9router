@@ -2,7 +2,7 @@ const DEVIN_WEB_URL = "https://app.devin.ai";
 const DEVIN_API_URL = "https://api.devin.ai";
 const DEVIN_HOST = "https://server.codeium.com";
 
-export default {
+const devin = {
   id: "devin",
   alias: "dv",
   uiAlias: "dv",
@@ -38,3 +38,5 @@ export default {
     oauthTimeoutMs: 600_000,
   },
 };
+
+export default devin;
