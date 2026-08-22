@@ -164,10 +164,83 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
 }
 
 /**
+ * Convert a non-streaming OpenAI Responses API body (`output: [...]`) into an
+ * OpenAI Chat Completions shape (`choices: [{ message, finish_reason }]`).
+ * Mirrors the item types the streaming translator already understands
+ * (openaiResponsesToOpenAIResponse in translator/response/openai-responses.js)
+ * so both paths agree on what counts as text/reasoning/tool-call content.
+ */
+function openAIResponsesBodyToChatCompletion(responseBody) {
+  const output = Array.isArray(responseBody?.output) ? responseBody.output : [];
+  let textContent = "", reasoningContent = "";
+  const toolCalls = [];
+
+  for (const item of output) {
+    if (item?.type === RESPONSES_ITEM.MESSAGE) {
+      for (const block of item.content || []) {
+        if (block?.type === RESPONSES_ITEM.OUTPUT_TEXT && typeof block.text === "string") {
+          textContent += block.text;
+        }
+      }
+    } else if (item?.type === RESPONSES_ITEM.REASONING) {
+      for (const summary of item.summary || []) {
+        if (summary?.type === RESPONSES_ITEM.SUMMARY_TEXT && typeof summary.text === "string") {
+          reasoningContent += summary.text;
+        }
+      }
+    } else if (item?.type === RESPONSES_ITEM.FUNCTION_CALL || item?.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL) {
+      const isCustom = item.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL;
+      toolCalls.push({
+        id: item.call_id || item.id || `call_${toolCalls.length}`,
+        type: "function",
+        function: {
+          name: item.name || "",
+          arguments: isCustom
+            ? JSON.stringify({ input: item.input || "" })
+            : (typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {})),
+        },
+      });
+    }
+  }
+
+  const message = { role: "assistant" };
+  if (textContent) message.content = textContent;
+  if (reasoningContent) message.reasoning_content = reasoningContent;
+  if (toolCalls.length > 0) message.tool_calls = toolCalls;
+  if (!message.content && !message.tool_calls) message.content = "";
+
+  const usage = responseBody?.usage || {};
+  return {
+    id: String(responseBody?.id || `chatcmpl-${Date.now()}`).replace(/^resp_/, "chatcmpl-"),
+    object: "chat.completion",
+    created: responseBody?.created_at || Math.floor(Date.now() / 1000),
+    model: responseBody?.model || "unknown",
+    choices: [{ index: 0, message, finish_reason: toolCalls.length > 0 ? "tool_calls" : "stop" }],
+    usage: {
+      prompt_tokens: usage.prompt_tokens || usage.input_tokens || 0,
+      completion_tokens: usage.completion_tokens || usage.output_tokens || 0,
+      total_tokens: usage.total_tokens || (usage.prompt_tokens || usage.input_tokens || 0) + (usage.completion_tokens || usage.output_tokens || 0),
+    },
+  };
+}
+
+/**
  * Translate non-streaming response body from provider format → OpenAI format.
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
   if (targetFormat === sourceFormat) return responseBody;
+
+  // Provider responded in the Responses API shape (`output: []`) — every
+  // client format below expects chat.completion-shaped input (`choices: []`),
+  // so normalize once here instead of teaching each branch to parse `output[]`.
+  if (targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat !== FORMATS.OPENAI_RESPONSES) {
+    const chatBody = openAIResponsesBodyToChatCompletion(responseBody);
+    if (sourceFormat === FORMATS.OPENAI) return chatBody;
+    if (sourceFormat === FORMATS.CLAUDE) return openAICompletionToClaudeMessage(chatBody);
+    // Gemini/Ollama clients behind a Responses-shaped provider aren't handled
+    // here; fall through unchanged (pre-existing gap, unrelated to this fix).
+  }
+
   // Provider responded in OpenAI Chat Completions shape but the client speaks
   // Responses API — convert so tool_calls/text surface as Responses `output`.
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {

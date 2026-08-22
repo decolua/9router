@@ -85,6 +85,49 @@ describe("non-stream Chat upstream for a Responses-API client (op-ericding bug)"
   });
 });
 
+// A Responses API body as returned by a non-streaming `apiType: "responses"`
+// upstream (e.g. a custom OpenAI-compatible provider like SLG/singularityapi).
+const RESPONSES_TEXT_BODY = {
+  id: "resp_test123",
+  object: "response",
+  created_at: 1700000000,
+  model: "some-model",
+  output: [{
+    id: "msg_1",
+    type: "message",
+    role: "assistant",
+    status: "completed",
+    content: [{ type: "output_text", text: "OK", annotations: [] }]
+  }],
+  usage: { prompt_tokens: 6, completion_tokens: 2, total_tokens: 8 }
+};
+
+describe("non-stream Responses-API upstream for a Chat/Claude client", () => {
+  it("translates Responses output text into chat.completion content for an OpenAI-chat client", () => {
+    const out = translateNonStreamingResponse(RESPONSES_TEXT_BODY, FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI);
+    expect(out.object).toBe("chat.completion");
+    expect(out.choices[0].message.content).toBe("OK");
+    expect(out.choices[0].finish_reason).toBe("stop");
+  });
+
+  it("translates Responses output text into Claude message content for a Claude client", () => {
+    const out = translateNonStreamingResponse(RESPONSES_TEXT_BODY, FORMATS.OPENAI_RESPONSES, FORMATS.CLAUDE);
+    expect(out.type).toBe("message");
+    const textBlock = (out.content || []).find((b) => b.type === "text");
+    expect(textBlock?.text).toBe("OK");
+  });
+
+  it("translates a Responses function_call into a Claude tool_use block", () => {
+    const body = {
+      ...RESPONSES_TEXT_BODY,
+      output: [{ type: "function_call", id: "fc_1", call_id: "call_1", name: "shell", arguments: "{\"cmd\":\"ls\"}" }]
+    };
+    const out = translateNonStreamingResponse(body, FORMATS.OPENAI_RESPONSES, FORMATS.CLAUDE);
+    const toolUse = (out.content || []).find((b) => b.type === "tool_use");
+    expect(toolUse).toMatchObject({ name: "shell", input: { cmd: "ls" } });
+  });
+});
+
 describe("forced-SSE JSON path for a Responses-API client behind a chat upstream", () => {
   const sseCtx = (sourceFormat, targetFormat) => {
     const encoder = new TextEncoder();
