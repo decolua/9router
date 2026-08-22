@@ -1,4 +1,4 @@
-name: Build and Publish Main Image
+name: Test and Publish Main Image
 
 on:
   push:
@@ -6,11 +6,49 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: 9router-main-image
+  cancel-in-progress: true
+
 env:
   GHCR_IMAGE: ghcr.io/caprol55555/9router
 
 jobs:
+  test:
+    name: Test and build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install application dependencies
+        run: npm install
+
+      - name: Install test dependencies
+        run: npm --prefix tests install
+
+      - name: Run usage, cache, and request logging tests
+        working-directory: tests
+        run: >-
+          npx vitest run
+          unit/usage-logs.test.js
+          unit/cached-token-usage.test.js
+          unit/usage-concern.test.js
+          unit/request-details-redaction.test.js
+          --reporter=verbose
+
+      - name: Build production application
+        run: npm run build
+
   build-and-push:
+    name: Build and publish image
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -38,7 +76,6 @@ jobs:
             type=raw,value=latest
 
       - name: Build and push amd64 image
-        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
