@@ -9,6 +9,55 @@ function maskApiKey(key) {
   return key.slice(0, 8) + "***";
 }
 
+function firstTokenCount(...values) {
+  let fallback = 0;
+  for (const value of values) {
+    if (value === null || value === undefined || value === "") continue;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) continue;
+    if (parsed > 0) return parsed;
+    fallback = parsed;
+  }
+  return fallback;
+}
+
+function getCacheTokenCounts(tokens = {}) {
+  const promptDetails = tokens.prompt_tokens_details || {};
+  const inputDetails = tokens.input_tokens_details || {};
+  const nestedUsage = tokens.usage || {};
+
+  return {
+    cacheReadTokens: firstTokenCount(
+      tokens.cached_tokens,
+      tokens.cache_read_input_tokens,
+      tokens.cache_read_tokens,
+      promptDetails.cached_tokens,
+      inputDetails.cached_tokens,
+      nestedUsage.cached_tokens,
+      nestedUsage.cache_read_input_tokens,
+      nestedUsage.cache_read_tokens,
+      nestedUsage.prompt_tokens_details?.cached_tokens,
+      nestedUsage.input_tokens_details?.cached_tokens,
+    ),
+    cacheCreationTokens: firstTokenCount(
+      tokens.cache_creation_input_tokens,
+      tokens.cache_creation_tokens,
+      tokens.cache_write_input_tokens,
+      tokens.cache_write_tokens,
+      promptDetails.cache_creation_tokens,
+      promptDetails.cache_creation_input_tokens,
+      inputDetails.cache_creation_tokens,
+      inputDetails.cache_creation_input_tokens,
+      nestedUsage.cache_creation_input_tokens,
+      nestedUsage.cache_creation_tokens,
+      nestedUsage.cache_write_input_tokens,
+      nestedUsage.cache_write_tokens,
+      nestedUsage.prompt_tokens_details?.cache_creation_tokens,
+      nestedUsage.input_tokens_details?.cache_creation_tokens,
+    ),
+  };
+}
+
 const PENDING_TIMEOUT_MS = 60 * 1000;
 const RING_CAP = 50;
 const CONN_CACHE_TTL_MS = 30 * 1000;
@@ -762,8 +811,23 @@ function formatLogDate(date = new Date()) {
   return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
-// No-op: request log is now derived from usageHistory table on read.
-export async function appendRequestLog() {}
+// Successful requests are persisted by saveRequestUsage. Lifecycle logging only
+// needs to retain terminal failures so usageHistory remains duplicate-free.
+export async function appendRequestLog(entry = {}) {
+  const status = String(entry.status || "").trim();
+  if (!/^(FAILED|ERROR)\b/i.test(status)) return;
+
+  await saveRequestUsage({
+    provider: entry.provider,
+    model: entry.model,
+    connectionId: entry.connectionId,
+    apiKey: entry.apiKey,
+    endpoint: entry.endpoint,
+    status,
+    tokens: entry.tokens || {},
+    timestamp: entry.timestamp || new Date().toISOString(),
+  });
+}
 
 export async function getRecentLogs(limit = 200) {
   try {
@@ -802,7 +866,14 @@ export async function getUsageLogs(filter = {}) {
   const conds = [];
   const params = [];
   if (filter.provider) { conds.push("provider = ?"); params.push(filter.provider); }
-  if (filter.status) { conds.push("status = ?"); params.push(filter.status); }
+  if (filter.status === "success") {
+    conds.push("LOWER(status) IN ('ok', 'success', '200 ok')");
+  } else if (filter.status === "failed") {
+    conds.push("(UPPER(status) LIKE 'FAILED%' OR UPPER(status) LIKE 'ERROR%')");
+  } else if (filter.status) {
+    conds.push("status = ?");
+    params.push(filter.status);
+  }
   if (filter.startDate) { conds.push("timestamp >= ?"); params.push(new Date(filter.startDate).toISOString()); }
   if (filter.endDate) { conds.push("timestamp <= ?"); params.push(new Date(filter.endDate).toISOString()); }
 
@@ -838,8 +909,7 @@ export async function getUsageLogs(filter = {}) {
   const logs = rows.map((r) => {
     const tokens = parseJson(r.tokens, {}) || {};
     const inputTokens = Number(r.promptTokens ?? tokens.prompt_tokens ?? tokens.input_tokens ?? 0);
-    const cacheReadTokens = Number(tokens.cached_tokens ?? tokens.cache_read_input_tokens ?? tokens.cache_read_tokens ?? 0);
-    const cacheCreationTokens = Number(tokens.cache_creation_input_tokens ?? tokens.cache_creation_tokens ?? 0);
+    const { cacheReadTokens, cacheCreationTokens } = getCacheTokenCounts(tokens);
     const outputTokens = Number(r.completionTokens ?? tokens.completion_tokens ?? tokens.output_tokens ?? 0);
     return {
       id: r.id,
@@ -857,7 +927,7 @@ export async function getUsageLogs(filter = {}) {
       totalTokens: inputTokens + outputTokens,
       cost: Number(r.cost || 0),
       status: r.status || "ok",
-      logType: r.status === "ok" || r.status === "success" ? "success" : (r.status || "unknown"),
+      logType: ["ok", "success", "200 ok"].includes(String(r.status || "").toLowerCase()) ? "success" : "failed",
     };
   });
   const totalPages = Math.ceil(totalItems / pageSize);

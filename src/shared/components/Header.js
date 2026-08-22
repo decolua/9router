@@ -92,6 +92,13 @@ const getPageInfo = (pathname) => {
       icon: "bar_chart",
       breadcrumbs: [],
     };
+  if (pathname.includes("/settings/pricing"))
+    return {
+      title: "Model Pricing",
+      description: "Configure model rates and automatic pricing updates",
+      icon: "paid",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/auth-files"))
     return {
       title: "Auth Files",

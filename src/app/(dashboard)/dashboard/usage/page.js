@@ -35,7 +35,7 @@ function UsageContent() {
   const [endDate, setEndDate] = useState(() => toDateInputValue(new Date()));
 
   const tabFromUrl = searchParams.get("tab");
-  const activeTab = tabFromUrl && ["overview", "logs"].includes(tabFromUrl)
+  const activeTab = tabFromUrl && ["overview", "analysis", "logs"].includes(tabFromUrl)
     ? tabFromUrl
     : "overview";
 
@@ -72,13 +72,14 @@ function UsageContent() {
         <SegmentedControl
           options={[
             { value: "overview", label: "Overview" },
+            { value: "analysis", label: "Usage Analysis" },
             { value: "logs", label: "Usage Logs" },
           ]}
           value={activeTab}
           onChange={handleTabChange}
           className="w-full sm:w-auto"
         />
-        {activeTab === "overview" && (
+        {activeTab !== "logs" && (
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <SegmentedControl
               options={PERIODS}
@@ -110,7 +111,12 @@ function UsageContent() {
 
       {activeTab === "overview" && (
         <Suspense fallback={<CardSkeleton />}>
-          <UsageStats period={period} setPeriod={setPeriod} startDate={startDate} endDate={endDate} hidePeriodSelector />
+          <UsageStats key="overview" period={period} setPeriod={setPeriod} startDate={startDate} endDate={endDate} hidePeriodSelector view="overview" />
+        </Suspense>
+      )}
+      {activeTab === "analysis" && (
+        <Suspense fallback={<CardSkeleton />}>
+          <UsageStats key="analysis" period={period} setPeriod={setPeriod} startDate={startDate} endDate={endDate} hidePeriodSelector view="analysis" />
         </Suspense>
       )}
       {activeTab === "logs" && <RequestLogger />}

@@ -22,11 +22,15 @@ const navItems = [
   { href: "/dashboard/providers", label: "Providers", icon: "dns" },
   // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
   { href: "/dashboard/combos", label: "Combo & Vision Adapter", icon: "layers" },
-  { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
   { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
   { href: "/dashboard/token-saver", label: "Token Saver", icon: "savings" },
   // { href: "/dashboard/pxpipe", label: "PXPIPE", icon: "image" },
   { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
+];
+
+const costCenterItems = [
+  { href: "/dashboard/usage", label: "Usage & Analytics", icon: "bar_chart" },
+  { href: "/dashboard/settings/pricing", label: "Model Pricing", icon: "paid" },
 ];
 
 const debugItems = [
@@ -181,6 +185,33 @@ export default function Sidebar({ onClose }) {
               <span className="text-[13px] font-medium">{item.label}</span>
             </Link>
           ))}
+
+          <div className="pt-3 mt-2 space-y-0.5">
+            <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
+              Cost Center
+            </p>
+            {costCenterItems.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onClose}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                  isActive(item.href)
+                    ? "bg-primary/10 text-primary"
+                    : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                )}
+              >
+                <span className={cn(
+                  "material-symbols-outlined text-[18px]",
+                  isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+                )}>
+                  {item.icon}
+                </span>
+                <span className="text-[13px] font-medium">{item.label}</span>
+              </Link>
+            ))}
+          </div>
 
           {/* System section */}
           <div className="pt-3 mt-2 space-y-0.5">
