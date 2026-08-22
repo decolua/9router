@@ -1,7 +1,7 @@
 # Devin Cloud Provider for 9router
 
-**Date:** 2026-08-22  
-**Status:** Design approved for specification review  
+**Date:** 2026-08-22
+**Status:** Design approved for specification review
 **Scope:** Devin Cloud provider integration; the existing local `devin-cli` provider remains separate.
 
 ## Summary
