@@ -7,6 +7,7 @@ import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { EMPTY_CONTENT_COOLDOWN_MS } from "../../config/errorConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
+import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
@@ -385,13 +386,31 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   let responseBody;
 
   if (contentType.includes("text/event-stream")) {
-    const sseText = await providerResponse.text();
-    const parsed = parseSSEToOpenAIResponse(sseText, model);
-    if (!parsed) {
-      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+    // A provider not statically flagged forceStream (e.g. a dynamically-added
+    // openai-compatible connection) can still force SSE at the HTTP level —
+    // providerRequiresStreaming only catches known providers, so this branch
+    // is reachable even for a "true non-streaming" request. When the upstream
+    // speaks Responses API, its SSE uses response.output_text.delta-style
+    // events, not choices[].delta — parseSSEToOpenAIResponse only understands
+    // the latter and would silently yield empty content. Use the Responses-
+    // aware converter (same one handleForcedSSEToJson uses) in that case.
+    if (targetFormat === FORMATS.OPENAI_RESPONSES) {
+      try {
+        responseBody = await convertResponsesStreamToJson(providerResponse.body);
+      } catch (err) {
+        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        console.error(`[ChatCore] Failed to convert Responses SSE from ${provider}:`, err.message);
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Failed to convert streaming response to JSON for ${provider}`);
+      }
+    } else {
+      const sseText = await providerResponse.text();
+      const parsed = parseSSEToOpenAIResponse(sseText, model);
+      if (!parsed) {
+        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+      }
+      responseBody = parsed;
     }
-    responseBody = parsed;
   } else {
     try {
       responseBody = await providerResponse.json();
