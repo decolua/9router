@@ -14,6 +14,58 @@ const MAX_CALL_ID_LEN = 64;
 const clampCallId = (id) => (typeof id === "string" && id.length > MAX_CALL_ID_LEN ? id.substring(0, MAX_CALL_ID_LEN) : id);
 
 /**
+ * Scan a Responses API `input[]` and collect every `call_id` declared by a
+ * `function_call` item. Returns a Set (possibly empty) of known call ids.
+ *
+ * Only `function_call` items introduce a tool call a downstream provider can
+ * match a result against; other item types are ignored.
+ */
+function collectKnownCallIds(input) {
+  const knownCallIds = new Set();
+  for (const item of input) {
+    if (item?.type === RESPONSES_ITEM.FUNCTION_CALL && typeof item.call_id === "string") {
+      knownCallIds.add(item.call_id);
+    }
+  }
+  return knownCallIds;
+}
+
+/**
+ * Remove `function_call_output` items that reference a `call_id` with no
+ * matching `function_call` in the same `input[]`.
+ *
+ * Clients that truncate or summarize conversation history (e.g. Codex CLI,
+ * some agents) can drop the assistant turn containing the tool call while
+ * keeping the subsequent tool result. The Responses API then rejects the
+ * whole request with HTTP 400:
+ *
+ *   "No tool call found for function call output with call_id X"
+ *
+ * This is input validation only: it rewrites request payloads before they
+ * leave the translator, regardless of provider or entry path.
+ *
+ * Returns the original array reference when nothing needs to change (non-array
+ * input, no tool output items, or every output already has a matching call),
+ * so callers can cheaply avoid cloning large inputs.
+ */
+function stripOrphanedToolOutputs(input) {
+  if (!Array.isArray(input)) return input;
+  const knownCallIds = collectKnownCallIds(input);
+
+  const stripped = [];
+  const deduped = input.filter(item => {
+    if (item?.type !== RESPONSES_ITEM.FUNCTION_CALL_OUTPUT) return true;
+    const hasMatch = typeof item.call_id === "string" && knownCallIds.has(item.call_id);
+    if (!hasMatch) {
+      console.warn(`[Translator] Stripped orphaned function_call_output (call_id=${item.call_id}) — no matching function_call in input`);
+      stripped.push(item.call_id);
+    }
+    return hasMatch;
+  });
+  return stripped.length === 0 ? input : deduped;
+}
+
+/**
  * Convert OpenAI Responses API request to OpenAI Chat Completions format
  */
 export function openaiResponsesToOpenAIRequest(model, body, stream, credentials) {
@@ -35,7 +87,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   const additionalTools = [];
   const customToolNames = new Set();
 
-  const inputItems = normalizeResponsesInput(body.input);
+  const inputItems = stripOrphanedToolOutputs(normalizeResponsesInput(body.input));
   if (!inputItems) return body;
 
   // Extract reasoning text from summary[].text (encrypted_content is continuity-only)
@@ -299,8 +351,19 @@ function buildReasoningInputItem(msg) {
  * Convert OpenAI Chat Completions to OpenAI Responses API format
  */
 export function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
-  // Body already in Responses API format (e.g. Cursor CLI calling /chat/completions with input[])
-  if (body.input) return { ...body, model, stream: true };
+  if (body.input) {
+    const cleanInput = stripOrphanedToolOutputs(body.input);
+    const passthrough = cleanInput === body.input ? { ...body, model, stream: true } : { ...body, input: cleanInput, model, stream: true };
+    // Responses API rejects Chat's max_tokens/max_completion_tokens — only max_output_tokens is valid.
+    if (passthrough.max_tokens !== undefined || passthrough.max_completion_tokens !== undefined) {
+      if (passthrough.max_output_tokens === undefined) {
+        passthrough.max_output_tokens = passthrough.max_tokens ?? passthrough.max_completion_tokens;
+      }
+      delete passthrough.max_tokens;
+      delete passthrough.max_completion_tokens;
+    }
+    return passthrough;
+  }
 
   const result = {
     model,
@@ -416,12 +479,16 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
 
   // Pass through other relevant fields
   if (body.temperature !== undefined) result.temperature = body.temperature;
-  if (body.max_tokens !== undefined) result.max_tokens = body.max_tokens;
+  // Responses API rejects Chat's max_tokens/max_completion_tokens — only max_output_tokens is valid.
+  if (body.max_tokens !== undefined) result.max_output_tokens = body.max_tokens;
+  else if (body.max_completion_tokens !== undefined) result.max_output_tokens = body.max_completion_tokens;
   if (body.top_p !== undefined) result.top_p = body.top_p;
   if (body.reasoning !== undefined) result.reasoning = body.reasoning;
   if (body.reasoning_effort !== undefined) result.reasoning = { effort: body.reasoning_effort, summary: "auto" };
   if (body.service_tier !== undefined) result.service_tier = body.service_tier;
   if (body.prompt_cache_key !== undefined) result.prompt_cache_key = body.prompt_cache_key;
+
+  result.input = stripOrphanedToolOutputs(result.input);
 
   return result;
 }

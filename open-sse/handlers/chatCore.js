@@ -22,6 +22,7 @@ import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.j
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
+import { salvageOrphanedToolResults, fixMissingToolResponses } from "../translator/concerns/toolCall.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { compressWithPxpipe } from "../rtk/pxpipe.js";
@@ -257,6 +258,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Token-saver flags accumulator for the single "⚙" log line below.
   const xf = [];
+
+  // Compression may remove a tool call while retaining its result. Restore the invariant before dispatch.
+  salvageOrphanedToolResults(translatedBody);
+  fixMissingToolResponses(translatedBody);
 
   // Caveman: inject terse-style system prompt
   if (tokenSaverEnabled && cavemanEnabled && cavemanLevel) {
