@@ -27,8 +27,17 @@ function processSSEMessage(msg, state) {
     state.created = parsed.response?.created_at || state.created;
   } else if (eventType === "response.output_item.done") {
     state.items.set(parsed.output_index ?? 0, parsed.item);
-  } else if (eventType === "response.completed" || eventType === "response.done") {
-    state.status = "completed";
+  } else if (eventType === "response.completed" || eventType === "response.done" || eventType === "response.incomplete") {
+    // Terminal events carry the REAL upstream status: OpenAI emits
+    // response.completed with status:"incomplete" + incomplete_details when
+    // max_output_tokens truncates the output. Hardcoding "completed" turned
+    // truncation into a normal stop for non-streaming clients.
+    if (parsed.response?.status) {
+      state.status = parsed.response.status;
+      if (parsed.response?.incomplete_details !== undefined && parsed.response?.incomplete_details !== null) {
+        state.incomplete_details = parsed.response.incomplete_details;
+      }
+    }
     if (parsed.response?.usage) {
       state.usage.input_tokens = parsed.response.usage.input_tokens || 0;
       state.usage.output_tokens = parsed.response.usage.output_tokens || 0;
@@ -59,6 +68,7 @@ export async function convertResponsesStreamToJson(stream) {
     responseId: "",
     created: Math.floor(Date.now() / 1000),
     status: "in_progress",
+    incomplete_details: undefined,
     usage: { ...EMPTY_RESPONSE },
     items: new Map()
   };
@@ -97,6 +107,7 @@ export async function convertResponsesStreamToJson(stream) {
     object: "response",
     created_at: state.created,
     status: state.status || "completed",
+    ...(state.incomplete_details ? { incomplete_details: state.incomplete_details } : {}),
     output,
     usage: state.usage
   };

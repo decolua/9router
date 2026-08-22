@@ -295,17 +295,59 @@ function buildReasoningInputItem(msg) {
   return item;
 }
 
+// Normalize tool_choice to the Responses API shape.
+// - string "auto"|"none"|"required" pass through
+// - Claude {type:"any"} → "required"; Claude {type:"tool",name} → named function
+// - OpenAI Chat {type:"function",function:{name}} and Responses {type:"function",name}
+//   both normalize to the Responses-native {type:"function",name}
+// - unknown shapes (hosted tools like {type:"web_search"}) are preserved as-is
+function normalizeToolChoice(choice) {
+  if (choice === undefined || choice === null) return undefined;
+  if (typeof choice === "string") return choice;
+  if (typeof choice !== "object") return choice;
+  const name = choice.function?.name ?? choice.name;
+  if (choice.type === "any") return "required";
+  if ((choice.type === "function" || choice.type === "tool") && typeof name === "string" && name) {
+    return { type: OPENAI_BLOCK.FUNCTION, name };
+  }
+  return choice;
+}
+
+// Token limits: Responses API only knows max_output_tokens. Precedence:
+// max_output_tokens > max_completion_tokens > max_tokens.
+function resolveMaxOutputTokens(body) {
+  for (const key of ["max_output_tokens", "max_completion_tokens", "max_tokens"]) {
+    if (body[key] !== undefined) return body[key];
+  }
+  return undefined;
+}
+
 /**
  * Convert OpenAI Chat Completions to OpenAI Responses API format
  */
 export function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
-  // Body already in Responses API format (e.g. Cursor CLI calling /chat/completions with input[])
-  if (body.input) return { ...body, model, stream: true };
+  // Body already in Responses API format (e.g. Cursor CLI calling /chat/completions with input[]).
+  // Respect the caller's stream intent (undefined keeps the historical streaming default);
+  // normalize token fields and tool_choice without rebuilding/altering `input`.
+  if (body.input) {
+    // Caller-resolved model always wins over any stale body.model (#3447 review).
+    const passthrough = { ...body, model };
+    const maxOut = resolveMaxOutputTokens(body);
+    if (maxOut !== undefined) {
+      passthrough.max_output_tokens = maxOut;
+      delete passthrough.max_completion_tokens;
+      delete passthrough.max_tokens;
+    }
+    const toolChoice = normalizeToolChoice(body.tool_choice);
+    if (toolChoice !== undefined) passthrough.tool_choice = toolChoice;
+    passthrough.stream = stream !== false;
+    return passthrough;
+  }
 
   const result = {
     model,
     input: [],
-    stream: true,
+    stream: stream !== false,
     store: false
   };
 
@@ -416,9 +458,12 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
 
   // Pass through other relevant fields
   if (body.temperature !== undefined) result.temperature = body.temperature;
-  // Responses schema requires max_output_tokens (Claude Code sends max_tokens)
-  if (body.max_tokens !== undefined) result.max_output_tokens = body.max_tokens;
-  if (body.max_output_tokens !== undefined) result.max_output_tokens = body.max_output_tokens;
+  // Responses schema only knows max_output_tokens. Explicit precedence:
+  // max_output_tokens > max_completion_tokens > max_tokens (fresh object — no legacy leak).
+  const maxOut = resolveMaxOutputTokens(body);
+  if (maxOut !== undefined) result.max_output_tokens = maxOut;
+  const toolChoice = normalizeToolChoice(body.tool_choice);
+  if (toolChoice !== undefined) result.tool_choice = toolChoice;
   if (body.top_p !== undefined) result.top_p = body.top_p;
   if (body.reasoning !== undefined) result.reasoning = body.reasoning;
   if (body.reasoning_effort !== undefined) result.reasoning = { effort: body.reasoning_effort, summary: "auto" };
