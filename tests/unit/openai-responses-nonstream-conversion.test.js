@@ -175,6 +175,31 @@ describe("Responses upstream custom_tool_call → tool clients (stream:false)", 
   });
 });
 
+// Production call shape from chatCore: targetFormat = providerResponseFormat
+// (what the UPSTREAM spoke — openai-responses here), sourceFormat = CLIENT format.
+const baseCtx = (providerResponse, clientFormat) => ({
+  providerResponse,
+  provider: "opencode",
+  model: "muse-spark-1.2-contributor-free",
+  sourceFormat: clientFormat,
+  targetFormat: FORMATS.OPENAI_RESPONSES,
+  body: { model: "muse-spark-1.2-contributor-free", stream: false, messages: [{ role: "user", content: "hi" }] },
+  stream: false,
+  translatedBody: { model: "muse-spark-1.2-contributor-free", input: [], stream: false },
+  finalBody: null,
+  requestStartTime: Date.now(),
+  connectionId: "test-conn",
+  apiKey: null,
+  clientRawRequest: { endpoint: "/v1/chat/completions" },
+  reqLogger: { logTargetRequest: vi.fn(), logError: vi.fn(), logProviderResponse: vi.fn(), logConvertedResponse: vi.fn() },
+  toolNameMap: null,
+  customToolNames: null,
+  trackDone: vi.fn(),
+  appendLog: vi.fn(),
+  reqTag: "",
+  log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), line: vi.fn() },
+});
+
 describe("Responses upstream answers SSE despite stream:false (fallback)", () => {
   const encoder = new TextEncoder();
   const sseResponse = () => new Response(new ReadableStream({
@@ -189,33 +214,8 @@ describe("Responses upstream answers SSE despite stream:false (fallback)", () =>
     }
   }), { status: 200, headers: { "content-type": "text/event-stream" } });
 
-  // Production call shape from chatCore: targetFormat = providerResponseFormat
-  // (what the UPSTREAM spoke — openai-responses here), sourceFormat = CLIENT format.
-  const baseCtx = (clientFormat) => ({
-    providerResponse: sseResponse(),
-    provider: "opencode",
-    model: "muse-spark-1.2-contributor-free",
-    sourceFormat: clientFormat,
-    targetFormat: FORMATS.OPENAI_RESPONSES,
-    body: { model: "muse-spark-1.2-contributor-free", stream: false, messages: [{ role: "user", content: "hi" }] },
-    stream: false,
-    translatedBody: { model: "muse-spark-1.2-contributor-free", input: [], stream: false },
-    finalBody: null,
-    requestStartTime: Date.now(),
-    connectionId: "test-conn",
-    apiKey: null,
-    clientRawRequest: { endpoint: "/v1/chat/completions" },
-    reqLogger: { logTargetRequest: vi.fn(), logError: vi.fn(), logProviderResponse: vi.fn(), logConvertedResponse: vi.fn() },
-    toolNameMap: null,
-    customToolNames: null,
-    trackDone: vi.fn(),
-    appendLog: vi.fn(),
-    reqTag: "",
-    log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), line: vi.fn() },
-  });
-
   it("Chat client gets chat.completion built from Responses SSE events", async () => {
-    const result = await handleNonStreamingResponse(baseCtx(FORMATS.OPENAI));
+    const result = await handleNonStreamingResponse(baseCtx(sseResponse(), FORMATS.OPENAI));
     expect(result.success).toBe(true);
     const json = await result.response.json();
     expect(json.object).toBe("chat.completion");
@@ -223,10 +223,65 @@ describe("Responses upstream answers SSE despite stream:false (fallback)", () =>
   });
 
   it("Claude client gets a Claude message body from Responses SSE events", async () => {
-    const result = await handleNonStreamingResponse(baseCtx(FORMATS.CLAUDE));
+    const result = await handleNonStreamingResponse(baseCtx(sseResponse(), FORMATS.CLAUDE));
     expect(result.success).toBe(true);
     const json = await result.response.json();
     expect(json.type).toBe("message");
     expect(json.content.some((b) => b.type === "text" && b.text === "from sse")).toBe(true);
+  });
+});
+
+describe("Responses upstream SSE truncated by max_output_tokens (incomplete status preserved)", () => {
+  const encoder = new TextEncoder();
+  // Terminal event carries the REAL upstream status — response.completed with
+  // status:"incomplete" is what OpenAI/opencode emit when max_output_tokens is hit.
+  const truncatedSSE = () => new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(
+        'event: response.output_item.done\n' +
+        'data: {"output_index":0,"item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"partial answer","annotations":[]}]}}\n\n' +
+        'event: response.completed\n' +
+        'data: {"type":"response.completed","response":{"id":"resp_trunc","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":3,"output_tokens":7,"total_tokens":10}}}\n\n'
+      ));
+      controller.close();
+    }
+  }), { status: 200, headers: { "content-type": "text/event-stream" } });
+
+  it("convertResponsesStreamToJson retains status incomplete + incomplete_details", async () => {
+    const { convertResponsesStreamToJson } = await import("../../open-sse/transformer/streamToJsonConverter.js");
+    const json = await convertResponsesStreamToJson(truncatedSSE().body);
+    expect(json.status).toBe("incomplete");
+    expect(json.incomplete_details).toEqual({ reason: "max_output_tokens" });
+  });
+
+  it("completed terminal event still yields status completed", async () => {
+    const { convertResponsesStreamToJson } = await import("../../open-sse/transformer/streamToJsonConverter.js");
+    const stream = new Response(new ReadableStream({
+      start(c) {
+        c.enqueue(encoder.encode(
+          'event: response.completed\n' +
+          'data: {"type":"response.completed","response":{"id":"resp_ok","status":"completed","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}}\n\n'
+        ));
+        c.close();
+      }
+    })).body;
+    const json = await convertResponsesStreamToJson(stream);
+    expect(json.status).toBe("completed");
+  });
+
+  it("Chat client finish_reason becomes length (not stop)", async () => {
+    const result = await handleNonStreamingResponse(baseCtx(truncatedSSE(), FORMATS.OPENAI));
+    expect(result.success).toBe(true);
+    const json = await result.response.json();
+    expect(json.object).toBe("chat.completion");
+    expect(json.choices[0].finish_reason).toBe("length");
+  });
+
+  it("Claude client stop_reason becomes max_tokens (not end_turn)", async () => {
+    const result = await handleNonStreamingResponse(baseCtx(truncatedSSE(), FORMATS.CLAUDE));
+    expect(result.success).toBe(true);
+    const json = await result.response.json();
+    expect(json.type).toBe("message");
+    expect(json.stop_reason).toBe("max_tokens");
   });
 });
