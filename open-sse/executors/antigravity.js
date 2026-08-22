@@ -150,9 +150,13 @@ export class AntigravityExecutor extends BaseExecutor {
       const contents = [];
       const srcContents = body.request?.contents || body.contents || [];
       for (const c of srcContents) {
-        const textParts = (c.parts || []).filter(p => p.text !== undefined).map(p => ({ text: p.text }));
-        if (textParts.length > 0) {
-          contents.push({ role: c.role || "user", parts: textParts });
+        const allowedParts = (c.parts || []).filter(p => p.text !== undefined || p.inlineData !== undefined).map(p => {
+          if (p.text !== undefined) return { text: p.text };
+          if (p.inlineData !== undefined) return { inlineData: p.inlineData };
+          return p;
+        });
+        if (allowedParts.length > 0) {
+          contents.push({ role: c.role || "user", parts: allowedParts });
         }
       }
 
