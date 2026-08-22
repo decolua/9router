@@ -32,6 +32,8 @@ import {
   CLAUDE_REFRESH_INTERVAL_MS,
   DEPLETED_QUOTA_THRESHOLD,
   AUTO_REFRESH_STORAGE_KEY,
+  ACCOUNT_FILTER_STORAGE_KEY,
+  PROVIDER_FILTER_STORAGE_KEY,
   CONNECTIONS_PAGE_SIZE,
   ACCOUNT_PAGE_SIZE_OPTIONS,
   ACCOUNT_PAGE_SIZE_MAX,
@@ -134,6 +136,7 @@ export default function ProviderLimits() {
   const [autoPingMaps, setAutoPingMaps] = useState({ claude: {}, codex: {} });
   const [lastUpdated, setLastUpdated] = useState(null);
   const [hasHydratedAutoRefresh, setHasHydratedAutoRefresh] = useState(false);
+  const [hasHydratedFilters, setHasHydratedFilters] = useState(false);
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [countdown, setCountdown] = useState(60);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
@@ -500,7 +503,47 @@ export default function ProviderLimits() {
     }
   }, [refreshingAll, fetchConnections, fetchQuota, page]);
 
+  // Restore saved filter preferences from localStorage on mount
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const storedAccount = window.localStorage.getItem(ACCOUNT_FILTER_STORAGE_KEY);
+      if (storedAccount && ["all", "active", "inactive"].includes(storedAccount)) {
+        setAccountFilter(storedAccount);
+      }
+      const storedProvider = window.localStorage.getItem(PROVIDER_FILTER_STORAGE_KEY);
+      if (storedProvider) {
+        setProviderFilter(storedProvider);
+      }
+    } catch (e) {
+      console.error("Error restoring quota filters:", e);
+    }
+    setHasHydratedFilters(true);
+  }, []);
+
+  // Persist account filter preference
+  useEffect(() => {
+    if (typeof window === "undefined" || !hasHydratedFilters) return;
+    try {
+      window.localStorage.setItem(ACCOUNT_FILTER_STORAGE_KEY, accountFilter);
+    } catch (e) {
+      console.error("Error saving account filter:", e);
+    }
+  }, [accountFilter, hasHydratedFilters]);
+
+  // Persist provider filter preference
+  useEffect(() => {
+    if (typeof window === "undefined" || !hasHydratedFilters) return;
+    try {
+      window.localStorage.setItem(PROVIDER_FILTER_STORAGE_KEY, providerFilter);
+    } catch (e) {
+      console.error("Error saving provider filter:", e);
+    }
+  }, [providerFilter, hasHydratedFilters]);
+
+  useEffect(() => {
+    if (!hasHydratedFilters) return;
+
     const initializeData = async () => {
       setConnectionsLoading(true);
       const visibleConnections = await fetchConnections(page);
@@ -522,7 +565,7 @@ export default function ProviderLimits() {
     };
 
     initializeData();
-  }, [fetchConnections, fetchQuota, page]);
+  }, [fetchConnections, fetchQuota, page, hasHydratedFilters]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
