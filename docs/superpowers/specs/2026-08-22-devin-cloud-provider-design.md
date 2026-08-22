@@ -118,6 +118,13 @@ The exact file set may be reduced if an existing generic path supports the behav
 
 The Dashboard will use a server-side dynamic loopback proxy, following the existing Windsurf/Trae pattern. A dynamic port avoids conflicts with other local applications and avoids requiring the browser to connect to the Next.js port.
 
+The flow has two deployment modes:
+
+- **Local deployment:** when the browser and 9router process are on the same machine, the loopback callback reaches the proxy and completes automatically.
+- **Remote deployment:** when the Dashboard is opened from a different machine, `127.0.0.1` in the callback URL refers to the user's machine rather than the 9router server. The callback may therefore show a connection-failed page, but the complete URL remains in the browser address bar. The user can copy that URL and paste it into the OAuth modal. The server extracts the `code` and `state`, retrieves the server-side PKCE verifier for that login session, validates state, and completes the exchange.
+
+The pasted value is a short-lived, single-use authorization callback URL—not an access token. It must never be logged or displayed after exchange. A public HTTPS callback endpoint may be added later only when the deployment has a trusted external origin and Devin accepts that redirect URI.
+
 ```mermaid
 sequenceDiagram
     autonumber
@@ -137,23 +144,35 @@ sequenceDiagram
     UI->>API: GET /api/oauth/devin/authorize?redirect_uri=callbackUrl
     API->>API: Generate PKCE verifier/challenge + state
     API-->>UI: authUrl, state, codeVerifier
-    UI->>API: POST /api/oauth/devin/register-session {state}
-    API->>Proxy: Register pending state
+    UI->>API: POST /api/oauth/devin/register-session {state, codeVerifier}
+    API->>Proxy: Register pending state + PKCE verifier
     UI->>Browser: Open authUrl
     Browser->>DevinWeb: OAuth login with PKCE
     DevinWeb-->>Proxy: GET /devin-auth-callback?code=...&state=...
-    Proxy->>Proxy: Validate loopback origin and state
-    Proxy->>DevinAPI: POST /auth/cli/token {code, code_verifier}
-    DevinAPI-->>Proxy: Devin session token
-    Proxy->>DB: Create active devin connection
-    Proxy-->>Browser: Success page
-    UI->>API: Poll /api/oauth/devin/poll-status
-    API-->>UI: done
+    alt Local deployment
+        Proxy->>Proxy: Validate loopback origin and state
+        Proxy->>DevinAPI: POST /auth/cli/token {code, code_verifier}
+        DevinAPI-->>Proxy: Devin session token
+        Proxy->>DB: Create active devin connection
+        Proxy-->>Browser: Success page
+        UI->>API: Poll /api/oauth/devin/poll-status
+        API-->>UI: done
+    else Remote deployment / loopback unreachable
+        Browser-->>UI: User copies callback URL from address bar
+        UI->>API: POST /api/oauth/devin/exchange {code: callbackUrl, state, codeVerifier}
+        API->>API: Parse URL and validate state
+        API->>DevinAPI: POST /auth/cli/token {code, code_verifier}
+        DevinAPI-->>API: Devin session token
+        API->>DB: Create active devin connection
+        API-->>UI: success
+    end
 ```
 
 ### OAuth credential mapping
 
 The connection will store the token in the existing `accessToken` field. The token will not be stored in `refreshToken`: it is not a refresh token in the OAuth sense and must not be sent to a generic refresh grant. Because Devin tokens are long-lived/opaque in the current contract, the initial connection will use `expiresAt: null`; the executor will rely on upstream authentication errors rather than proactively treating the token as expired.
+
+The OAuth modal must treat Devin as a callback-URL provider. In remote/manual mode it must accept the complete pasted callback URL, not only a raw authorization code, and submit it to the same exchange endpoint. The exchange endpoint must parse the URL without logging its query string.
 
 Recommended mapping:
 
@@ -336,7 +355,9 @@ The executor must not log access tokens, user JWTs, OAuth codes, raw callback UR
 
 - Validate OAuth `state` before exchanging a code.
 - Accept callbacks only on `127.0.0.1` and reject non-loopback `Origin` headers.
-- Keep PKCE verifier and OAuth state server-side until exchange completes.
+- Keep PKCE verifier and OAuth state server-side until exchange completes. The registration request may carry the verifier in a POST body; it must never be placed in a URL or query string.
+- Support manual callback URL paste when the browser cannot reach a loopback proxy on a remote deployment.
+- Treat pasted callback URLs as secrets: redact them from logs and do not persist them after exchange.
 - Redact token-bearing query parameters and request headers from logs.
 - Bound protobuf frame sizes before decompression.
 - Avoid dynamic URLs from Devin responses; upstream hosts remain allowlisted constants.
