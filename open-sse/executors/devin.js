@@ -42,7 +42,7 @@ export function parseDevinConnectFrames(input, maxPayload = MAX_DEVIN_FRAME_PAYL
   return { frames, rest: buffer.subarray(offset) };
 }
 
-export function decodeDevinChatDelta(payload) {
+export function decodeDevinChatDeltas(payload) {
   const deltas = [];
   for (const field of decodeFields(Buffer.from(payload))) {
     if (field.number === 1 && field.wire === 2) deltas.push({ type: "message", id: fieldText(field.value) });
@@ -56,7 +56,11 @@ export function decodeDevinChatDelta(payload) {
       if (previous?.type === "thinking") previous.signature = fieldText(field.value);
     }
   }
-  return deltas[0] || { type: "unknown" };
+  return deltas.length ? deltas : [{ type: "unknown" }];
+}
+
+export function decodeDevinChatDelta(payload) {
+  return decodeDevinChatDeltas(payload)[0];
 }
 
 export function decodeDevinTrailer(payload) {
@@ -136,8 +140,20 @@ function encodeConfiguration(body) {
 }
 
 function messageForWire(item) {
+  if (item?.role === "system") return [];
   if (item?.role === "user") return [{ role: 1, text: contentText(item.content) }];
   if (item?.role === "tool") return [{ role: 4, text: contentText(item.content), toolCallId: item.tool_call_id }];
+  if (item?.role === "assistant" && Array.isArray(item.tool_calls)) {
+    return [{
+      role: 1,
+      text: "",
+      toolCalls: item.tool_calls.map((call) => ({
+        id: call.id,
+        name: call.function?.name || call.name || "tool",
+        argumentsJson: call.function?.arguments || JSON.stringify(call.arguments || {}),
+      })),
+    }];
+  }
   const output = [];
   for (const content of Array.isArray(item?.content) ? item.content : [{ type: "text", text: contentText(item?.content) }]) {
     if (content?.type === "text") output.push({ role: 1, text: content.text });
@@ -323,14 +339,15 @@ export class DevinExecutor extends BaseExecutor {
                 if (error) emit({ error: { message: error, type: "devin_error" } });
                 continue;
               }
-              const delta = decodeDevinChatDelta(frame.payload);
-              if (delta.type === "text") emit(chunk(responseId, model, { content: delta.value }));
-              else if (delta.type === "thinking") emit(chunk(responseId, model, { reasoning_content: delta.value }));
-              else if (delta.type === "tool") {
-                toolCall = delta;
-                emit(chunk(responseId, model, { tool_calls: [{ index: 0, id: delta.id, type: "function", function: { name: delta.name, arguments: delta.argumentsJson } }] }));
-              } else if (delta.type === "usage") usage = delta;
-              else if (delta.type === "stop") stopReason = delta.reason;
+              for (const delta of decodeDevinChatDeltas(frame.payload)) {
+                if (delta.type === "text") emit(chunk(responseId, model, { content: delta.value }));
+                else if (delta.type === "thinking") emit(chunk(responseId, model, { reasoning_content: delta.value }));
+                else if (delta.type === "tool") {
+                  toolCall = delta;
+                  emit(chunk(responseId, model, { tool_calls: [{ index: 0, id: delta.id, type: "function", function: { name: delta.name, arguments: delta.argumentsJson } }] }));
+                } else if (delta.type === "usage") usage = delta;
+                else if (delta.type === "stop") stopReason = delta.reason;
+              }
             }
             if (next.done) break;
           }

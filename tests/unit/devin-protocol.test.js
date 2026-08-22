@@ -6,6 +6,8 @@ import {
   frameDevinConnect,
   parseDevinConnectFrames,
   decodeDevinChatDelta,
+  decodeDevinChatDeltas,
+  buildDevinChatRequest,
   decodeDevinTrailer,
 } from "open-sse/executors/devin.js";
 
@@ -51,6 +53,24 @@ describe("Devin protocol", () => {
   it("decodes text and thinking deltas", () => {
     expect(decodeDevinChatDelta(stringField(3, "hello"))).toEqual({ type: "text", value: "hello" });
     expect(decodeDevinChatDelta(stringField(9, "reason"))).toEqual({ type: "thinking", value: "reason" });
+  });
+
+  it("preserves multiple deltas carried in one protobuf payload", () => {
+    expect(decodeDevinChatDeltas(Buffer.concat([stringField(3, "hello"), stringField(9, "reason")]))).toEqual([
+      { type: "text", value: "hello" },
+      { type: "thinking", value: "reason" },
+    ]);
+  });
+
+  it("encodes OpenAI assistant tool_calls into the Devin prompt", () => {
+    const payload = buildDevinChatRequest({
+      model: "swe-1-7",
+      apiKey: "token",
+      userJwt: "jwt",
+      body: { messages: [{ role: "assistant", tool_calls: [{ id: "call-1", function: { name: "run", arguments: JSON.stringify({ x: 1 }) } }] }] },
+    });
+    expect(payload.toString("utf8")).toContain("call-1");
+    expect(payload.toString("utf8")).toContain("run");
   });
 
   it("decodes tool, usage, stop, and message deltas", () => {
