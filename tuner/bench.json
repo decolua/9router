@@ -118,6 +118,10 @@
     "Sleipnir": 1,
     "Yggdrasil": 4
   },
+  "_comboOrder": {
+    "_comment": "Per-combo ordering mode. Absent means 'free-first': cost class decides before band, so every free model sorts above every paid one and a subscription is never spent while free capacity is idle. That is right for the four banded combos, which exist to be cheap. Yggdrasil is the opposite promise - it is the id that must never run dry and is reached for when the answer matters - so it runs 'capability-first': band decides first, paid before free within a band, and the free members become the tail that keeps it alive once the paid quota is gone. Setting this also waives the bottom-prefix demotion and the subscription-at-index-0 pin guard for that combo, both of which encode the free-first premise.",
+    "Yggdrasil": "capability-first"
+  },
   "_comboRequires": {
     "_comment": "Capability flags a model must have (from /v1/models capabilities) to be eligible for this combo. A model whose capabilities are unknown - not present in /v1/models - is treated as NOT having the capability, so it is excluded. Currently EMPTY for all combos: the user cleared the vision requirement on 2026-08-01 to regain depth, accepting that an image request may land on a non-vision model. Re-enable by setting a combo's list back to [\"vision\"].",
     "Odin": [],

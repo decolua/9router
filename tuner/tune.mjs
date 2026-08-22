@@ -465,8 +465,9 @@ function interleaveByProvider(ids, groupKey, bench) {
 // pin must never smuggle an unregistered, disabled or dead model back in), and a
 // subscription-backed provider is never allowed at index 0 - the head serves every
 // request until it fails, and burning a subscription there is what free-first exists
-// to prevent.
-function applyPins(order, pins, eligible, bench) {
+// to prevent. That second guard is waived for a combo whose `_comboOrder` is
+// `capability-first`, where spending the subscription first is the whole point.
+function applyPins(order, pins, eligible, bench, allowSubscriptionHead = false) {
   const subs = bench._subscriptionPrefixes ?? ['ocg', 'ag', 'cx', 'cmc'];
   const isSub = (id) => subs.includes(id.slice(0, id.indexOf('/')));
   const entries = Object.entries(pins ?? {})
@@ -477,7 +478,7 @@ function applyPins(order, pins, eligible, bench) {
   const out = order.filter((id) => !pinnedIds.has(id));
   for (const [id, rawIdx] of entries) {
     let idx = Math.min(Math.max(0, Math.floor(rawIdx)), out.length);
-    if (idx === 0 && isSub(id)) {
+    if (idx === 0 && isSub(id) && !allowSubscriptionHead) {
       console.warn(`WARN pin ${id} at head refused: subscription provider, demoted to index 1`);
       idx = Math.min(1, out.length);
     }
@@ -534,7 +535,46 @@ async function main() {
       const i = allowed.indexOf(bandOf(id));
       return i === -1 ? 99 : i;
     };
+    // Two orderings, chosen per combo in `_comboOrder`.
+    //
+    // `free-first` (the default, and what every combo but Yggdrasil uses) spends
+    // free capacity before paid — see the note inside the comparator.
+    //
+    // `capability-first` inverts the cost half deliberately. Yggdrasil is the
+    // combo that must never run dry, and it is asked for when the answer matters:
+    // its head should be the most capable model available, and the paid quota is
+    // there to be spent before falling back to free models. Free entries are not
+    // dropped — they become the tail that keeps the combo alive after the paid
+    // capacity is gone, which is exactly the role free-first would have given the
+    // paid ones.
+    const orderMode = bench._comboOrder?.[row.name] ?? 'free-first';
+    const capabilityFirst = orderMode === 'capability-first';
+    // A model that has never been benched scores 0. That is "unmeasured", not
+    // "worst" - sorting it below a measured 55 would bury every newly added model
+    // at the bottom of the combo forever. Rank it as mid-table until it has a real
+    // number, which is what its null health already does on the other axis.
+    const rankScore = (id) => {
+      const raw = scoreOf(id);
+      return raw > 0 ? raw : 50;
+    };
     const sorted = pool.slice().sort((a, b) => {
+      if (capabilityFirst) {
+        const ra2 = bandRank(a);
+        const rb2 = bandRank(b);
+        if (ra2 !== rb2) return ra2 - rb2;
+        // Paid before free: the inverse of the rule below, and the only line that
+        // differs in intent rather than order.
+        const pa2 = cost(bench, a) > 0 ? 0 : 1;
+        const pb2 = cost(bench, b) > 0 ? 0 : 1;
+        if (pa2 !== pb2) return pa2 - pb2;
+        const sa2 = rankScore(a);
+        const sb2 = rankScore(b);
+        if (sa2 !== sb2) return sb2 - sa2;
+        const ha2 = health.get(a)?.health ?? 0.5;
+        const hb2 = health.get(b)?.health ?? 0.5;
+        if (ha2 !== hb2) return hb2 - ha2;
+        return a < b ? -1 : a > b ? 1 : 0;
+      }
       // FREE-FIRST OUTRANKS BAND (2026-08-03). Previously bandRank was
       // compared first, so a PAID target-band model sorted above every FREE
       // fallback-band model: in Sleipnir, cmc/deepseek-v4-flash (haiku,
@@ -569,12 +609,20 @@ async function main() {
     // accounts we keep for backup but must never burn quota while others work.
     // Applied AFTER interleave because interleave can re-promote them mid-pack.
     // Split+concat is deterministic; Array.sort with a two-value comparator is not.
-    const bottomPrefixes = bench._bottomPrefixes?.prefixes ?? [];
+    // Bottom-prefixes exist to stop a backup subscription burning quota while free
+    // capacity is idle. Under capability-first that premise is inverted - the paid
+    // duplicates are the capacity we mean to spend first - so the demotion is
+    // skipped rather than fought with pins.
+    const bottomPrefixes = capabilityFirst ? [] : (bench._bottomPrefixes?.prefixes ?? []);
     const isBottom = (id) => bottomPrefixes.some((p) => id.startsWith(`${p}/`));
     const top = ordered.filter((id) => !isBottom(id));
     const bottom = ordered.filter(isBottom);
     const bottomLast = top.concat(bottom);
-    const desired = capPerPool(applyPins(bottomLast, bench._pins?.[row.name], pool, bench), bench, MAX_PER_POOL);
+    const desired = capPerPool(
+      applyPins(bottomLast, bench._pins?.[row.name], pool, bench, capabilityFirst),
+      bench,
+      MAX_PER_POOL,
+    );
 
     const current = JSON.parse(row.models);
     const changed = JSON.stringify(desired) !== JSON.stringify(current);
@@ -617,6 +665,14 @@ async function main() {
     console.log(
       `${row.name} band=${targetBand} pool=${pool.length} head=${desired[0]} changed=${changed} applied=${applied}`
     );
+    // A dry run that prints only the head cannot verify an ordering change, which
+    // is the one thing a dry run is for before touching a comparator. Print the
+    // whole desired list for combos the run would actually rewrite.
+    if (DRY_RUN && changed) {
+      desired.forEach((id, n) => {
+        console.log(`  ${String(n).padStart(2)} ${id}  band=${bandOf(id)} cost=${cost(bench, id)} score=${scoreOf(id)}`);
+      });
+    }
   }
 
   await postUnbanded(unbanded, state.unbanded);

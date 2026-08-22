@@ -1,6 +1,24 @@
 # Unreleased
 
 ## Fixes
+- **Router**: a combo no longer reports exhaustion while it still holds entries it never
+  tried. Every skip in the cascade is a *prediction* — a cooldown guesses when a provider
+  recovers, a quota ban defaults to an hour whether or not the provider said so, and the
+  account probe answers for the account layer's bookkeeping rather than for the upstream.
+  Honouring those while some other entry can answer is free; honouring them when nothing
+  else can turns a working pool into a 503. `handleComboChat` now collects supply-side
+  skips and, only after the first pass has genuinely failed, retries them ignoring
+  cooldown and quota state. Oversized requests are excluded — no amount of retrying
+  shrinks a conversation, so `onlyTooLarge` still answers 413.
+- **Router**: a silent upstream cascades instead of hanging. Nothing bounded the wait for
+  a provider's response or for the first event of its stream, so one provider that
+  accepted the connection and then went quiet consumed the client's entire budget with a
+  full pool of untried models behind it — surfacing as a client timeout that no fallback
+  ever saw. Both waits now have deadlines (`COMBO_RESPONSE_TIMEOUT_MS`, default 90s;
+  `COMBO_FIRST_EVENT_TIMEOUT_MS`, default 150s), and expiry is raised as an ordinary
+  cascade failure. Generous on purpose: they exist to break a hang, not to police latency,
+  since a premature cascade pays two providers for one answer.
+
 - **Router**: `estimateInputTokens` no longer measures inlined images as prose. It
   stringified the whole body and divided by 4, but base64 runs ~4/3 of the raw bytes, so
   a 3MB phone photo scored over a million tokens where a provider bills it around a
@@ -78,6 +96,23 @@
   (`translator/response/openai-responses.js`) applies no echo filter at all, for
   any tag — that mechanism was removed by the revert in `81b6fcd4` and would have
   to be rebuilt rather than edited.
+
+## Changes
+- **Tuner**: combos can choose their ordering with `_comboOrder`. The default stays
+  `free-first` — cost class decides before band, so a subscription is never spent while
+  free capacity is idle, which is what the four banded combos are for. **Yggdrasil** now
+  runs `capability-first`: band decides first and paid sorts before free within a band, so
+  its head is the most capable model available and the free members become the tail that
+  keeps it alive once the paid quota is gone. It is the combo that must never run dry and
+  the one reached for when the answer matters, so free-first had it backwards. Setting the
+  mode also waives the bottom-prefix demotion and the subscription-at-index-0 pin guard for
+  that combo, both of which encode the free-first premise. Measured against the live DB:
+  Yggdrasil's head moves from `oc/laguna-s-2.1-free` (bench 70.2, no vision) to
+  `ag/claude-opus-4-6-thinking` (bench 80.8, vision-capable); Odin, Fenrir, Valkyrie and
+  Sleipnir are unchanged.
+- **Tuner**: a dry run prints the full desired order for combos it would rewrite, not just
+  the head. A head-only summary cannot verify an ordering change, which is the one thing a
+  dry run is for before touching the comparator.
 
 ## Features
 - **Router**: an orchestration nudge now states the live delegation count back to
