@@ -1,6 +1,6 @@
 import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
-import { decodeDiscoveredDevinModels } from "open-sse/services/devinModels.js";
+import { decodeDiscoveredDevinModels, discoverDevinModels } from "open-sse/services/devinModels.js";
 
 function varint(value) {
   const out = [];
@@ -44,5 +44,20 @@ describe("Devin model discovery", () => {
   it("decodes gzip-compressed discovery payloads", () => {
     const config = Buffer.concat([field(1, "SWE thinking"), numberField(4, 0), numberField(18, 100000), field(22, "swe-thinking")]);
     expect(decodeDiscoveredDevinModels(gzipSync(field(1, config)))[0]).toMatchObject({ id: "swe-thinking", reasoning: true, contextLength: 100000 });
+  });
+
+  it("posts the Devin auth metadata to the discovery endpoint", async () => {
+    const config = Buffer.concat([field(1, "SWE-1.7"), numberField(4, 0), field(22, "swe-1-7")]);
+    let request;
+    const models = await discoverDevinModels("token", {
+      fetchImpl: async (url, init) => {
+        request = { url, init };
+        return new Response(field(1, config), { status: 200 });
+      },
+    });
+    expect(request.url).toContain("GetCliModelConfigs");
+    expect(request.init.headers["content-type"]).toBe("application/proto");
+    expect(request.init.body.toString("utf8")).toContain("3.2.23");
+    expect(models[0].id).toBe("swe-1-7");
   });
 });
