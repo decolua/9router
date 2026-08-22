@@ -156,11 +156,14 @@ function responsesOutputToChatParts(output) {
       for (const c of item.content || []) {
         if (typeof c?.text === "string") textContent += c.text;
       }
-    } else if (item?.type === RESPONSES_ITEM.FUNCTION_CALL) {
+    } else if (item?.type === RESPONSES_ITEM.FUNCTION_CALL || item?.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL) {
+      const args = item?.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL
+        ? JSON.stringify({ input: typeof item.input === "string" ? item.input : JSON.stringify(item.input ?? "") })
+        : typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {});
       toolCalls.push({
         id: item.call_id || item.id || `call_${item.name}_${toolCalls.length}`,
         type: "function",
-        function: { name: item.name || "", arguments: typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {}) },
+        function: { name: item.name || "", arguments: args },
       });
     }
   }

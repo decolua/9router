@@ -122,9 +122,26 @@ describe("openai→responses request: token field precedence", () => {
     expect(out.max_output_tokens).toBe(333);
     expect(out.max_tokens).toBeUndefined();
     expect(out.max_completion_tokens).toBeUndefined();
-    // model override preserved
-    expect(out.model).toBe("gpt-x");
+    // resolved-model precedence: caller-resolved model wins over stale body.model
+    expect(out.model).toBe("m");
     // input preserved verbatim
     expect(out.input).toEqual([{ type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] }]);
+  });
+});
+
+describe("openai→responses request: fast-path resolved model precedence", () => {
+  it("arg-resolved model overrides stale body.model on body.input passthrough", () => {
+    const out = T(FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES, {
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] }],
+      model: "gpt-x",
+    });
+    expect(out.model).toBe("m");
+  });
+
+  it("body.input without model still gets the resolved model", () => {
+    const out = T(FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES, {
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] }],
+    });
+    expect(out.model).toBe("m");
   });
 });

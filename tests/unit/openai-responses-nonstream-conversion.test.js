@@ -121,6 +121,60 @@ describe("Responses upstream JSON edge cases", () => {
   });
 });
 
+describe("Responses upstream custom_tool_call → tool clients (stream:false)", () => {
+  const CUSTOM_JSON = {
+    id: "resp_custom",
+    object: "response",
+    created_at: 1700000000,
+    status: "completed",
+    model: "muse-spark-1.2-contributor",
+    output: [{ type: "custom_tool_call", call_id: "c1", name: "exec", input: "echo hi" }],
+    usage: { input_tokens: 5, output_tokens: 9, total_tokens: 14 },
+  };
+
+  it("Chat client gets one tool_calls entry with JSON {input} arguments and finish tool_calls", () => {
+    const chat = translateNonStreamingResponse(CUSTOM_JSON, FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI);
+    const tcs = chat.choices[0].message.tool_calls;
+    expect(tcs).toHaveLength(1);
+    expect(tcs[0].id).toBe("c1");
+    expect(tcs[0].type).toBe("function");
+    expect(tcs[0].function.name).toBe("exec");
+    expect(tcs[0].function.arguments).toBe(JSON.stringify({ input: "echo hi" }));
+    expect(chat.choices[0].finish_reason).toBe("tool_calls");
+  });
+
+  it("Claude client gets tool_use block with parsed {input} and stop_reason tool_use", () => {
+    const claude = translateNonStreamingResponse(CUSTOM_JSON, FORMATS.OPENAI_RESPONSES, FORMATS.CLAUDE);
+    const tu = claude.content.find((b) => b.type === "tool_use");
+    expect(tu).toBeTruthy();
+    expect(tu.id).toBe("c1");
+    expect(tu.name).toBe("exec");
+    expect(tu.input).toEqual({ input: "echo hi" });
+    expect(claude.stop_reason).toBe("tool_use");
+  });
+
+  it("object-valued item.input serializes through the same {input} envelope", () => {
+    const objInput = {
+      ...CUSTOM_JSON,
+      output: [{ type: "custom_tool_call", call_id: "c2", name: "exec", input: { cmd: "ls" } }],
+    };
+    const chat = translateNonStreamingResponse(objInput, FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI);
+    const args = JSON.parse(chat.choices[0].message.tool_calls[0].function.arguments);
+    expect(args).toEqual({ input: JSON.stringify({ cmd: "ls" }) });
+  });
+
+  it("missing/null item.input degrades to empty string inside {input}", () => {
+    const noInput = {
+      ...CUSTOM_JSON,
+      output: [{ type: "custom_tool_call", call_id: "c3", name: "exec" }],
+    };
+    const chat = translateNonStreamingResponse(noInput, FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI);
+    // spec formula: non-string raw goes through JSON.stringify(raw ?? "") → '""'
+    const args = JSON.parse(chat.choices[0].message.tool_calls[0].function.arguments);
+    expect(args).toEqual({ input: '""' });
+  });
+});
+
 describe("Responses upstream answers SSE despite stream:false (fallback)", () => {
   const encoder = new TextEncoder();
   const sseResponse = () => new Response(new ReadableStream({

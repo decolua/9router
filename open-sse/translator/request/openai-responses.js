@@ -330,8 +330,8 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   // Respect the caller's stream intent (undefined keeps the historical streaming default);
   // normalize token fields and tool_choice without rebuilding/altering `input`.
   if (body.input) {
-    // Model override: keep the caller-resolved model unless the body carries its own.
-    const passthrough = { ...body, model: body.model || model };
+    // Caller-resolved model always wins over any stale body.model (#3447 review).
+    const passthrough = { ...body, model };
     const maxOut = resolveMaxOutputTokens(body);
     if (maxOut !== undefined) {
       passthrough.max_output_tokens = maxOut;
