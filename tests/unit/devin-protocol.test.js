@@ -9,6 +9,7 @@ import {
   decodeDevinChatDeltas,
   buildDevinChatRequest,
   decodeDevinTrailer,
+  buildUserJwtRequest,
 } from "open-sse/executors/devin.js";
 
 function stringField(field, value) {
@@ -24,6 +25,11 @@ describe("Devin protocol", () => {
   it("normalizes the session token once", () => {
     expect(normalizeDevinSessionToken("abc")).toBe("devin-session-token$abc");
     expect(normalizeDevinSessionToken("devin-session-token$abc")).toBe("devin-session-token$abc");
+  });
+
+  it("includes the IDE version required by GetUserJwt", () => {
+    const payload = buildUserJwtRequest("token");
+    expect(payload.toString("utf8")).toContain("3.2.23");
   });
 
   it("round-trips a compressed Connect frame", () => {

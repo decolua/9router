@@ -104,6 +104,7 @@ function encodeMetadata(apiKey, userJwt) {
     stringField(3, apiKey),
     stringField(4, "en"),
     stringField(5, process.platform),
+    stringField(7, "3.2.23"),
     varintField(9, 1n),
     stringField(10, crypto.randomUUID()),
     stringField(12, "windsurf"),
