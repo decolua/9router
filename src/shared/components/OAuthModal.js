@@ -5,7 +5,7 @@ import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
-// Providers using the dynamic-port local callback proxy.
+// Providers using a local callback proxy.
 // Browser OAuth: popup → auto callback → auto exchange → poll-status.
 const PROXY_OAUTH_PROVIDERS = new Set(["trae", "windsurf", "zed", "devin"]);
 
@@ -179,9 +179,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     setPolling(false);
   }, [provider, onSuccess]);
 
-  // Trae/Windsurf proxy OAuth flow: dynamic-port local callback → auto exchange.
+  // Proxy OAuth flow: local callback → auto exchange.
   const startProxyFlow = useCallback(async (providerId) => {
-    // 1. Start the local callback server (returns a dynamic port + callback URL).
+    // 1. Start the provider callback server and obtain its registered callback URL.
     const startRes = await fetch(`/api/oauth/${providerId}/start-proxy`);
     const startData = await startRes.json();
     if (!startRes.ok || !startData.success || !startData.callbackUrl) {

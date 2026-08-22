@@ -33,7 +33,7 @@ const devin = {
     apiUrl: DEVIN_API_URL,
     host: DEVIN_HOST,
     codeChallengeMethod: "S256",
-    callbackPath: "/devin-auth-callback",
+    callbackPath: "/callback",
     callbackPort: 59653,
     oauthTimeoutMs: 600_000,
   },

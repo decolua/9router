@@ -10,7 +10,8 @@ describe("Devin registry", () => {
     expect(entry.alias).toBe("dv");
     expect(entry.category).toBe("oauth");
     expect(entry.authModes).toEqual(["oauth"]);
-    expect(PROVIDER_OAUTH.devin.callbackPath).toBe("/devin-auth-callback");
+    expect(PROVIDER_OAUTH.devin.callbackPath).toBe("/callback");
+    expect(PROVIDER_OAUTH.devin.callbackPort).toBe(59653);
     expect(PROVIDERS.devin.forceStream).toBe(true);
     expect(PROVIDER_MODELS.dv.map((model) => model.id)).toEqual(["swe-1-7", "swe-1-6"]);
   });
@@ -20,11 +21,11 @@ describe("Devin OAuth", () => {
   it("builds a stateful PKCE authorization URL", () => {
     const url = new URL(buildDevinAuthUrl(
       { authorizeUrl: "https://app.devin.ai/auth/cli/continue", codeChallengeMethod: "S256" },
-      "http://127.0.0.1:1234/devin-auth-callback",
+      "http://127.0.0.1:59653/callback",
       "state-1",
       "challenge-1",
     ));
-    expect(url.searchParams.get("redirect_uri")).toBe("http://127.0.0.1:1234/devin-auth-callback");
+    expect(url.searchParams.get("redirect_uri")).toBe("http://127.0.0.1:59653/callback");
     expect(url.searchParams.get("state")).toBe("state-1");
     expect(url.searchParams.get("code_challenge")).toBe("challenge-1");
     expect(url.searchParams.get("code_challenge_method")).toBe("S256");
@@ -32,11 +33,11 @@ describe("Devin OAuth", () => {
 
   it("accepts a full pasted callback URL and validates state", () => {
     expect(parseDevinCallback(
-      "http://127.0.0.1:1234/devin-auth-callback?code=abc&state=state-1",
+      "http://127.0.0.1:59653/callback?code=abc&state=state-1",
       "state-1",
     )).toEqual({ code: "abc", state: "state-1" });
     expect(() => parseDevinCallback(
-      "http://127.0.0.1:1234/devin-auth-callback?code=abc&state=wrong",
+      "http://127.0.0.1:59653/callback?code=abc&state=wrong",
       "state-1",
     )).toThrow(/state/i);
   });

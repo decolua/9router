@@ -116,7 +116,7 @@ The exact file set may be reduced if an existing generic path supports the behav
 
 ## OAuth Flow
 
-The Dashboard will use a server-side dynamic loopback proxy, following the existing Windsurf/Trae pattern. A dynamic port avoids conflicts with other local applications and avoids requiring the browser to connect to the Next.js port.
+The Dashboard will use a server-side loopback proxy. Devin requires the exact registered callback URI `http://127.0.0.1:59653/callback`, so the Devin listener uses that fixed port and path rather than a dynamic callback.
 
 The flow has two deployment modes:
 
@@ -148,7 +148,7 @@ sequenceDiagram
     API->>Proxy: Register pending state + PKCE verifier
     UI->>Browser: Open authUrl
     Browser->>DevinWeb: OAuth login with PKCE
-    DevinWeb-->>Proxy: GET /devin-auth-callback?code=...&state=...
+    DevinWeb-->>Proxy: GET /callback?code=...&state=...
     alt Local deployment
         Proxy->>Proxy: Validate loopback origin and state
         Proxy->>DevinAPI: POST /auth/cli/token {code, code_verifier}
@@ -172,7 +172,7 @@ sequenceDiagram
 
 The connection will store the token in the existing `accessToken` field. The token will not be stored in `refreshToken`: it is not a refresh token in the OAuth sense and must not be sent to a generic refresh grant. Because Devin tokens are long-lived/opaque in the current contract, the initial connection will use `expiresAt: null`; the executor will rely on upstream authentication errors rather than proactively treating the token as expired.
 
-The OAuth modal must treat Devin as a callback-URL provider. In remote/manual mode it must accept the complete pasted callback URL, not only a raw authorization code, and submit it to the same exchange endpoint. The exchange endpoint must parse the URL without logging its query string.
+The OAuth modal must treat Devin as a callback-URL provider using the exact `http://127.0.0.1:59653/callback` redirect URI. In remote/manual mode it must accept the complete pasted callback URL, not only a raw authorization code, and submit it to the same exchange endpoint. The exchange endpoint must parse the URL without logging its query string.
 
 Recommended mapping:
 

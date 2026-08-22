@@ -662,7 +662,7 @@ export function clearDevinSession(state) {
 export function startDevinProxy() {
   return new Promise((resolve) => {
     if (devinProxyServer) {
-      resolve({ success: true, port: devinProxyPort, callbackUrl: `http://127.0.0.1:${devinProxyPort}${DEVIN_CONFIG.callbackPath}` });
+      resolve({ success: true, port: devinProxyPort, callbackUrl: `http://127.0.0.1:${DEVIN_CONFIG.callbackPort}${DEVIN_CONFIG.callbackPath}` });
       return;
     }
     const server = http.createServer(async (req, res) => {
@@ -706,13 +706,20 @@ export function startDevinProxy() {
         stopDevinProxy();
       }
     });
-    server.listen(0, "127.0.0.1", () => {
+    server.listen(DEVIN_CONFIG.callbackPort, "127.0.0.1", () => {
       devinProxyServer = server;
       devinProxyPort = server.address().port;
       devinProxyTimeout = setTimeout(() => stopDevinProxy(), DEVIN_CONFIG.oauthTimeoutMs);
       resolve({ success: true, port: devinProxyPort, callbackUrl: `http://127.0.0.1:${devinProxyPort}${DEVIN_CONFIG.callbackPath}` });
     });
-    server.on("error", (error) => resolve({ success: false, reason: error.message }));
+    server.on("error", (error) => {
+      resolve({
+        success: false,
+        reason: error.code === "EADDRINUSE"
+          ? `Devin OAuth requires 127.0.0.1:${DEVIN_CONFIG.callbackPort}; the port is already in use`
+          : error.message,
+      });
+    });
   });
 }
 
