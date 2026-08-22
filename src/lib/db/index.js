@@ -1,6 +1,7 @@
 // Public API barrel — all DB functions
 import { getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
+import { assignLegacyApiKeyGroups } from "./migrations/002-api-key-groups.js";
 
 // Settings
 export {
@@ -29,8 +30,13 @@ export {
 
 // API keys
 export {
-  getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey, validateApiKey,
+  getApiKeys, getApiKeyById, getApiKeyByValue, createApiKey, updateApiKey, deleteApiKey, validateApiKey,
 } from "./repos/apiKeysRepo.js";
+
+export {
+  getApiKeyGroups, getApiKeyGroupById, getDefaultApiKeyGroup,
+  createApiKeyGroup, updateApiKeyGroup, deleteApiKeyGroup, DEFAULT_API_KEY_GROUP_ID,
+} from "./repos/apiKeyGroupsRepo.js";
 
 // Combos
 export {
@@ -77,7 +83,8 @@ export async function exportDb() {
     providerConnections: db.all(`SELECT * FROM providerConnections`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, provider: r.provider, authType: r.authType, name: r.name, email: r.email, priority: r.priority, isActive: r.isActive === 1, createdAt: r.createdAt, updatedAt: r.updatedAt })),
     providerNodes: db.all(`SELECT * FROM providerNodes`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, type: r.type, name: r.name, createdAt: r.createdAt, updatedAt: r.updatedAt })),
     proxyPools: db.all(`SELECT * FROM proxyPools`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, isActive: r.isActive === 1, testStatus: r.testStatus, createdAt: r.createdAt, updatedAt: r.updatedAt })),
-    apiKeys: db.all(`SELECT * FROM apiKeys`).map((r) => ({ id: r.id, key: r.key, name: r.name, machineId: r.machineId, isActive: r.isActive === 1, allowedModels: parseJson(r.allowedModels, []), allowedCombos: parseJson(r.allowedCombos, []), createdAt: r.createdAt })),
+    apiKeyGroups: db.all(`SELECT * FROM apiKeyGroups`).map((r) => ({ id: r.id, name: r.name, allowedModels: parseJson(r.allowedModels, []), allowedCombos: parseJson(r.allowedCombos, []), createdAt: r.createdAt, updatedAt: r.updatedAt })),
+    apiKeys: db.all(`SELECT * FROM apiKeys`).map((r) => ({ id: r.id, key: r.key, name: r.name, machineId: r.machineId, isActive: r.isActive === 1, allowedModels: parseJson(r.allowedModels, []), allowedCombos: parseJson(r.allowedCombos, []), groupId: r.groupId, createdAt: r.createdAt })),
     combos: db.all(`SELECT * FROM combos`).map((r) => ({ id: r.id, name: r.name, kind: r.kind, models: parseJson(r.models, []), createdAt: r.createdAt, updatedAt: r.updatedAt })),
     modelAliases: {},
     customModels: [],
@@ -106,6 +113,7 @@ export async function importDb(payload) {
     db.run(`DELETE FROM providerNodes`);
     db.run(`DELETE FROM proxyPools`);
     db.run(`DELETE FROM apiKeys`);
+    db.run(`DELETE FROM apiKeyGroups`);
     db.run(`DELETE FROM combos`);
     db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing')`);
 
@@ -135,12 +143,19 @@ export async function importDb(payload) {
         [id, isActive === false ? 0 : 1, testStatus || "unknown", stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
       );
     }
+    const now = new Date().toISOString();
+    const hasImportedGroups = Array.isArray(payload.apiKeyGroups) && payload.apiKeyGroups.length > 0;
+    const importedGroups = hasImportedGroups ? payload.apiKeyGroups : [{ id: "default", name: "默认分组", allowedModels: [], allowedCombos: [], createdAt: now, updatedAt: now }];
+    for (const group of importedGroups) {
+      db.run(`INSERT OR REPLACE INTO apiKeyGroups(id, name, allowedModels, allowedCombos, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`, [group.id, group.name, stringifyJson(group.allowedModels || []), stringifyJson(group.allowedCombos || []), group.createdAt || now, group.updatedAt || now]);
+    }
     for (const k of payload.apiKeys || []) {
       db.run(
-        `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, allowedModels, allowedCombos, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-        [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, stringifyJson(k.allowedModels || []), stringifyJson(k.allowedCombos || []), k.createdAt || new Date().toISOString()]
+        `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, allowedModels, allowedCombos, groupId, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, stringifyJson(k.allowedModels || []), stringifyJson(k.allowedCombos || []), hasImportedGroups ? (k.groupId || "default") : null, k.createdAt || now]
       );
     }
+    if (!hasImportedGroups) assignLegacyApiKeyGroups(db);
     for (const c of payload.combos || []) {
       db.run(
         `INSERT OR REPLACE INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,

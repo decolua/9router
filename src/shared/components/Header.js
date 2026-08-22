@@ -84,18 +84,25 @@ const getPageInfo = (pathname) => {
       icon: "layers",
       breadcrumbs: [],
     };
+  if (pathname.includes("/traffic-logs"))
+    return {
+      title: "Traffic Logs",
+      description: "Filter and inspect API request records",
+      icon: "receipt_long",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/usage"))
     return {
-      title: "Usage & Analytics",
+      title: "Traffic Analytics",
       description:
-        "Monitor your API usage, token consumption, and request logs",
+        "Analyze API usage and token consumption",
       icon: "bar_chart",
       breadcrumbs: [],
     };
   if (pathname.includes("/settings/pricing"))
     return {
       title: "Model Pricing",
-      description: "Configure model rates and automatic pricing updates",
+      description: "Configure model rates for cost calculation",
       icon: "paid",
       breadcrumbs: [],
     };
@@ -146,6 +153,13 @@ const getPageInfo = (pathname) => {
       title: "Agent Skills",
       description: "Copy a link and paste to your AI to use 9Router — no install needed",
       icon: "extension",
+      breadcrumbs: [],
+    };
+  if (pathname.includes("/key-groups"))
+    return {
+      title: "Key Groups",
+      description: "Manage model access for API key groups",
+      icon: "group_work",
       breadcrumbs: [],
     };
   if (pathname.includes("/endpoint"))

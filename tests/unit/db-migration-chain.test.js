@@ -35,8 +35,9 @@ describe("Schema migrations", () => {
     const tables = db.all(`SELECT name FROM sqlite_master WHERE type='table'`).map(t => t.name);
     expect(tables).toEqual(expect.arrayContaining([
       "_meta", "settings", "providerConnections", "providerNodes",
-      "proxyPools", "apiKeys", "combos", "kv", "usageHistory", "usageDaily", "requestDetails",
+      "proxyPools", "apiKeys", "apiKeyGroups", "combos", "kv", "usageHistory", "usageDaily", "requestDetails",
     ]));
+    expect(db.get(`SELECT name FROM apiKeyGroups WHERE id = 'default'`)?.name).toBe("默认分组");
   });
 
   it("existing DB at older schemaVersion → re-applies pending migrations on restart", async () => {
@@ -81,6 +82,27 @@ describe("Schema migrations", () => {
 
     const aliases = db.all(`SELECT * FROM kv WHERE scope='modelAliases'`);
     expect(aliases).toHaveLength(1);
+  });
+
+  it("legacy per-key restrictions are migrated into reusable key groups", async () => {
+    const restricted = { allowedModels: ["openai/gpt-5"], allowedCombos: ["coding"] };
+    fs.writeFileSync(path.join(tempDir, "db.json"), JSON.stringify({
+      apiKeys: [
+        { id: "k1", key: "key-1", name: "one", ...restricted, createdAt: new Date().toISOString() },
+        { id: "k2", key: "key-2", name: "two", ...restricted, createdAt: new Date().toISOString() },
+        { id: "k3", key: "key-3", name: "three", createdAt: new Date().toISOString() },
+      ],
+    }));
+
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const db = await getAdapter();
+    const keys = db.all(`SELECT id, groupId FROM apiKeys ORDER BY id`);
+    expect(keys[0].groupId).toBe(keys[1].groupId);
+    expect(keys[0].groupId).toMatch(/^migrated-/);
+    expect(keys[2].groupId).toBe("default");
+    const group = db.get(`SELECT allowedModels, allowedCombos FROM apiKeyGroups WHERE id = ?`, [keys[0].groupId]);
+    expect(JSON.parse(group.allowedModels)).toEqual(restricted.allowedModels);
+    expect(JSON.parse(group.allowedCombos)).toEqual(restricted.allowedCombos);
   });
 
   it("auto-sync re-creates missing index when DB lacks it", async () => {

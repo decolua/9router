@@ -7,6 +7,7 @@ import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
 import { getAppVersion } from "./version.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
+import { assignLegacyApiKeyGroups } from "./migrations/002-api-key-groups.js";
 
 // Marker file: prevents re-importing legacy JSON when user wipes data.sqlite.
 const MIGRATED_MARKER = path.join(DB_DIR, ".migrated-from-json");
@@ -142,8 +143,8 @@ function importLegacyMain(adapter, data) {
 
   importWithAssertion(adapter, "apiKeys", data.apiKeys || [], (k) => {
     adapter.run(
-      `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, allowedModels, allowedCombos, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-      [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, stringifyJson(k.allowedModels || []), stringifyJson(k.allowedCombos || []), k.createdAt || new Date().toISOString()]
+      `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, allowedModels, allowedCombos, groupId, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, stringifyJson(k.allowedModels || []), stringifyJson(k.allowedCombos || []), k.groupId || null, k.createdAt || new Date().toISOString()]
     );
   }, (k) => ({ id: k.id ?? null, name: k.name ?? null }));
 
@@ -268,6 +269,7 @@ export async function runMigrationOnce(adapter) {
     try {
       adapter.transaction(() => {
         importLegacyMain(adapter, legacyMain);
+        assignLegacyApiKeyGroups(adapter);
         importLegacyUsage(adapter, legacyUsage);
         importLegacyDisabled(adapter, legacyDisabled);
         importLegacyDetails(adapter, legacyDetails);

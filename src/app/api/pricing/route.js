@@ -1,6 +1,32 @@
 import { NextResponse } from "next/server";
 import { getPricing, updatePricing, resetPricing, resetAllPricing } from "@/lib/localDb.js";
-import { getDefaultPricing } from "open-sse/providers/pricing.js";
+import { getDefaultPricing, getPricingForModel as getDefaultPricingForModel } from "open-sse/providers/pricing.js";
+import { PROVIDER_MODELS } from "open-sse/config/providerModels.js";
+
+const EMPTY_PRICING = { input: 0, output: 0, cached: 0, cache_creation: 0, reasoning: 0 };
+
+function buildPricingCatalog(pricing) {
+  const pairs = new Map();
+  const add = (provider, model) => {
+    if (!provider || !model) return;
+    pairs.set(`${provider}\u0000${model}`, { provider, model });
+  };
+  for (const [provider, models] of Object.entries(PROVIDER_MODELS)) {
+    for (const model of models || []) add(provider, typeof model === "string" ? model : model?.id);
+  }
+  for (const [provider, models] of Object.entries(pricing || {})) {
+    for (const model of Object.keys(models || {})) add(provider, model);
+  }
+  return [...pairs.values()].map(({ provider, model }) => ({
+    provider,
+    model,
+    pricing: {
+      ...EMPTY_PRICING,
+      ...(getDefaultPricingForModel(provider, model) || {}),
+      ...(pricing?.[provider]?.[model] || {}),
+    },
+  })).sort((a, b) => a.provider.localeCompare(b.provider) || a.model.localeCompare(b.model));
+}
 
 /**
  * GET /api/pricing
@@ -9,7 +35,7 @@ import { getDefaultPricing } from "open-sse/providers/pricing.js";
 export async function GET() {
   try {
     const pricing = await getPricing();
-    return NextResponse.json(pricing);
+    return NextResponse.json({ items: buildPricingCatalog(pricing) });
   } catch (error) {
     console.error("Error fetching pricing:", error);
     return NextResponse.json(

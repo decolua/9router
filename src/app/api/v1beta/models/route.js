@@ -1,4 +1,5 @@
 import { PROVIDER_MODELS } from "@/shared/constants/models";
+import { extractApiKey, getApiKeyAccessPolicy } from "@/sse/services/auth.js";
 
 /**
  * Handle CORS preflight
@@ -17,8 +18,12 @@ export async function OPTIONS() {
  * GET /v1beta/models - Gemini compatible models list
  * Returns models in Gemini API format
  */
-export async function GET() {
+export async function GET(request) {
   try {
+    const apiKey = extractApiKey(request);
+    const policy = apiKey ? await getApiKeyAccessPolicy(apiKey) : null;
+    if (policy && !policy.valid) return Response.json({ error: { message: "Invalid API key" } }, { status: 401 });
+    const allowedModels = policy && !policy.unrestricted ? new Set(policy.allowedModels || []) : null;
     const models = [];
     const seen = new Set();
 
@@ -37,6 +42,7 @@ export async function GET() {
     
     for (const [provider, providerModels] of Object.entries(PROVIDER_MODELS)) {
       for (const model of providerModels) {
+        if (allowedModels && !allowedModels.has(`${provider}/${model.id}`)) continue;
         addModel({
           name: `models/${provider}/${model.id}`,
           displayName: model.name || model.id,

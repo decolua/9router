@@ -1,4 +1,5 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind } from "@/shared/constants/models";
+import { extractApiKey, getApiKeyAccessPolicy } from "@/sse/services/auth.js";
 import {
   AI_PROVIDERS,
   getProviderAlias,
@@ -562,7 +563,15 @@ export async function GET(request) {
   try {
     // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
-    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+    let data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+    const apiKey = extractApiKey(request);
+    if (apiKey) {
+      const policy = await getApiKeyAccessPolicy(apiKey);
+      if (!policy.valid) {
+        return Response.json({ error: { message: "Invalid API key", type: "authentication_error" } }, { status: 401, headers: { "Access-Control-Allow-Origin": "*" } });
+      }
+      data = filterModelsByAccessPolicy(data, policy);
+    }
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
@@ -573,4 +582,11 @@ export async function GET(request) {
       { status: 500 }
     );
   }
+}
+
+export function filterModelsByAccessPolicy(models, policy) {
+  if (!policy || policy.unrestricted) return models;
+  const allowedModels = new Set(policy.allowedModels || []);
+  const allowedCombos = new Set(policy.allowedCombos || []);
+  return models.filter((model) => model.owned_by === "combo" ? allowedCombos.has(model.id) : allowedModels.has(model.id));
 }

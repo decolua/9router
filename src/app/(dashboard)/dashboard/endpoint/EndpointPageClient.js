@@ -22,10 +22,9 @@ export default function APIPageClient({ machineId }) {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyGroupId, setNewKeyGroupId] = useState("default");
+  const [keyGroups, setKeyGroups] = useState([]);
   const [createdKey, setCreatedKey] = useState(null);
-  const [editingKey, setEditingKey] = useState(null);
-  const [allowedModelsText, setAllowedModelsText] = useState("");
-  const [allowedCombosText, setAllowedCombosText] = useState("");
   const [confirmState, setConfirmState] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
@@ -265,6 +264,13 @@ export default function APIPageClient({ machineId }) {
         return data.keys || [];
       };
 
+      const groupRes = await fetch("/api/key-groups", { cache: "no-store" });
+      const groupData = groupRes.ok ? await groupRes.json() : { groups: [] };
+      const groups = groupData.groups || [];
+      setKeyGroups(groups);
+      const defaultGroupId = groups.find((group) => group.isDefault)?.id || groups[0]?.id || "default";
+      setNewKeyGroupId((current) => groups.some((group) => group.id === current) ? current : defaultGroupId);
+
       let existing = await fetchKeys();
       // Auto-provision a default key for first-time users so the endpoint works out of the box.
       if (existing.length === 0) {
@@ -272,7 +278,7 @@ export default function APIPageClient({ machineId }) {
           const createRes = await fetch("/api/keys", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: "Default Key" }),
+            body: JSON.stringify({ name: "Default Key", groupId: defaultGroupId }),
           });
           if (createRes.ok) existing = await fetchKeys();
         } catch { /* fall through to empty render */ }
@@ -632,7 +638,7 @@ export default function APIPageClient({ machineId }) {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({ name: newKeyName, groupId: newKeyGroupId }),
       });
       const data = await res.json();
 
@@ -685,31 +691,19 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
-  const openKeyPermissions = (key) => {
-    setEditingKey(key);
-    setAllowedModelsText((key.allowedModels || []).join("\n"));
-    setAllowedCombosText((key.allowedCombos || []).join("\n"));
-  };
-
-  const saveKeyPermissions = async () => {
-    if (!editingKey) return;
-    const splitLines = (value) => [...new Set(value.split(/[\n,]/).map((v) => v.trim()).filter(Boolean))];
+  const handleKeyGroupChange = async (keyId, groupId) => {
     try {
-      const res = await fetch(`/api/keys/${editingKey.id}`, {
+      const res = await fetch(`/api/keys/${keyId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          allowedModels: splitLines(allowedModelsText),
-          allowedCombos: splitLines(allowedCombosText),
-        }),
+        body: JSON.stringify({ groupId }),
       });
-      if (!res.ok) throw new Error("Failed to update key permissions");
+      if (!res.ok) throw new Error("更新密钥分组失败");
       const data = await res.json();
-      setKeys((prev) => prev.map((k) => k.id === editingKey.id ? data.key : k));
-      setEditingKey(null);
+      setKeys((prev) => prev.map((key) => key.id === keyId ? data.key : key));
     } catch (error) {
-      console.error("Error updating key permissions:", error);
-      alert("Failed to update key permissions");
+      console.error("Error updating key group:", error);
+      alert(error.message);
     }
   };
 
@@ -1070,23 +1064,17 @@ export default function APIPageClient({ machineId }) {
                   <p className="text-xs text-text-muted mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
                   </p>
-                  <p className="text-xs text-text-muted mt-1">
-                    {key.allowedModels?.length || key.allowedCombos?.length
-                      ? `${key.allowedModels?.length || 0} models · ${key.allowedCombos?.length || 0} combos allowed`
-                      : "All models and combos allowed"}
-                  </p>
+                  <div className="mt-2 flex items-center gap-2 text-xs text-text-muted">
+                    <span>密钥分组</span>
+                    <select value={key.groupId || "default"} onChange={(event) => handleKeyGroupChange(key.id, event.target.value)} className="rounded-md border border-border bg-surface-2 px-2 py-1 text-xs text-text-main">
+                      {keyGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+                    </select>
+                  </div>
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => openKeyPermissions(key)}
-                    className="p-2 hover:bg-primary/10 rounded text-text-muted hover:text-primary transition-all"
-                    title="Configure model access"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">tune</span>
-                  </button>
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -1119,42 +1107,6 @@ export default function APIPageClient({ machineId }) {
         )}
       </Card>
 
-      <Modal
-        isOpen={!!editingKey}
-        title={editingKey ? `Model access · ${editingKey.name}` : "Model access"}
-        onClose={() => setEditingKey(null)}
-      >
-        <div className="flex flex-col gap-4">
-          <p className="text-sm text-text-muted">
-            Leave both fields empty to allow every model and combo. Enter one model or combo per line.
-          </p>
-          <label className="text-sm font-medium">
-            Allowed models
-            <textarea
-              value={allowedModelsText}
-              onChange={(e) => setAllowedModelsText(e.target.value)}
-              rows={6}
-              placeholder="openai/gpt-5.6-sol\nanthropic/claude-sonnet-4-6"
-              className="mt-1 w-full rounded-lg border border-border bg-bg-base px-3 py-2 text-sm font-mono outline-none focus:border-primary"
-            />
-          </label>
-          <label className="text-sm font-medium">
-            Allowed combos
-            <textarea
-              value={allowedCombosText}
-              onChange={(e) => setAllowedCombosText(e.target.value)}
-              rows={4}
-              placeholder="coding-combo"
-              className="mt-1 w-full rounded-lg border border-border bg-bg-base px-3 py-2 text-sm font-mono outline-none focus:border-primary"
-            />
-          </label>
-          <div className="flex gap-2">
-            <Button onClick={saveKeyPermissions} fullWidth>Save</Button>
-            <Button onClick={() => setEditingKey(null)} variant="ghost" fullWidth>Cancel</Button>
-          </div>
-        </div>
-      </Modal>
-
       {/* Add Key Modal */}
       <Modal
         isOpen={showAddModal}
@@ -1171,8 +1123,14 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
+          <label className="flex flex-col gap-1.5 text-sm font-medium text-text-main">
+            密钥分组
+            <select value={newKeyGroupId} onChange={(event) => setNewKeyGroupId(event.target.value)} className="w-full rounded-[10px] border border-transparent bg-surface-2 px-3 py-2.5 text-sm focus:border-brand-500/40 focus:outline-none focus:ring-2 focus:ring-brand-500/30">
+              {keyGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
+            </select>
+          </label>
           <div className="flex gap-2">
-            <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
+            <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim() || !newKeyGroupId}>
               Create
             </Button>
             <Button

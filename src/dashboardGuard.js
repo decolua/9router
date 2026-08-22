@@ -50,6 +50,7 @@ const ALWAYS_PROTECTED = [
 const PROTECTED_API_PATHS = [
   "/api/settings",
   "/api/keys",
+  "/api/key-groups",
   "/api/providers",
   "/api/provider-nodes",
   "/api/proxy-pools",

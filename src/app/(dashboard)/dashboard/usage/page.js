@@ -2,7 +2,7 @@
 
 import { Suspense, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { UsageStats, RequestLogger, CardSkeleton, SegmentedControl } from "@/shared/components";
+import { UsageStats, CardSkeleton, SegmentedControl } from "@/shared/components";
 
 const PERIODS = [
   { value: "today", label: "Today" },
@@ -35,7 +35,7 @@ function UsageContent() {
   const [endDate, setEndDate] = useState(() => toDateInputValue(new Date()));
 
   const tabFromUrl = searchParams.get("tab");
-  const activeTab = tabFromUrl && ["overview", "analysis", "logs"].includes(tabFromUrl)
+  const activeTab = tabFromUrl && ["overview", "analysis"].includes(tabFromUrl)
     ? tabFromUrl
     : "overview";
 
@@ -72,15 +72,13 @@ function UsageContent() {
         <SegmentedControl
           options={[
             { value: "overview", label: "Overview" },
-            { value: "analysis", label: "Usage Analysis" },
-            { value: "logs", label: "Usage Logs" },
+            { value: "analysis", label: "API Key Analysis" },
           ]}
           value={activeTab}
           onChange={handleTabChange}
           className="w-full sm:w-auto"
         />
-        {activeTab !== "logs" && (
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <SegmentedControl
               options={PERIODS}
               value={period}
@@ -94,19 +92,18 @@ function UsageContent() {
                 value={startDate}
                 onChange={handleDateChange(setStartDate)}
                 className="rounded-md border border-border bg-bg-base px-2 py-1 text-xs text-text-main"
-                aria-label="Start date"
+                aria-label="开始时间"
               />
-              <span className="text-xs text-text-muted">to</span>
+              <span className="text-xs text-text-muted">至</span>
               <input
                 type="datetime-local"
                 value={endDate}
                 onChange={handleDateChange(setEndDate)}
                 className="rounded-md border border-border bg-bg-base px-2 py-1 text-xs text-text-main"
-                aria-label="End date"
+                aria-label="结束时间"
               />
             </div>
-          </div>
-        )}
+        </div>
       </div>
 
       {activeTab === "overview" && (
@@ -119,7 +116,6 @@ function UsageContent() {
           <UsageStats key="analysis" period={period} setPeriod={setPeriod} startDate={startDate} endDate={endDate} hidePeriodSelector view="analysis" />
         </Suspense>
       )}
-      {activeTab === "logs" && <RequestLogger />}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { getProviderConnections, getApiKeys, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
+import { getProviderConnections, getApiKeyByValue, getApiKeyGroupById, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
@@ -340,19 +340,30 @@ export async function isValidApiKey(apiKey) {
   return await validateApiKey(apiKey);
 }
 
-/** Enforce optional API-key-specific model and combo allowlists. */
+export async function getApiKeyAccessPolicy(apiKey) {
+  if (!apiKey) return { valid: true, unrestricted: true, allowedModels: [], allowedCombos: [] };
+  const key = await getApiKeyByValue(apiKey);
+  if (!key?.isActive) return { valid: false, unrestricted: false, allowedModels: [], allowedCombos: [] };
+  const group = key.groupId ? await getApiKeyGroupById(key.groupId) : null;
+  const allowedModels = Array.isArray(group?.allowedModels)
+    ? group.allowedModels.filter(Boolean)
+    : (Array.isArray(key.allowedModels) ? key.allowedModels.filter(Boolean) : []);
+  const allowedCombos = Array.isArray(group?.allowedCombos)
+    ? group.allowedCombos.filter(Boolean)
+    : (Array.isArray(key.allowedCombos) ? key.allowedCombos.filter(Boolean) : []);
+  return { valid: true, unrestricted: allowedModels.length === 0 && allowedCombos.length === 0, allowedModels, allowedCombos, key, group };
+}
+
+/** Enforce API-key-group model and combo allowlists. */
 export async function isApiKeyModelAllowed(apiKey, model, comboName = null) {
   if (!apiKey) return { allowed: true };
-  const keys = await getApiKeys();
-  const key = keys.find((entry) => entry.key === apiKey);
-  if (!key) return { allowed: false, reason: "Invalid API key" };
-
-  const allowedModels = Array.isArray(key.allowedModels) ? key.allowedModels.filter(Boolean) : [];
-  const allowedCombos = Array.isArray(key.allowedCombos) ? key.allowedCombos.filter(Boolean) : [];
-  if (comboName && allowedCombos.length > 0 && !allowedCombos.includes(comboName)) {
+  const policy = await getApiKeyAccessPolicy(apiKey);
+  if (!policy.valid) return { allowed: false, reason: "Invalid API key" };
+  const { allowedModels, allowedCombos } = policy;
+  if (comboName && !policy.unrestricted && !allowedCombos.includes(comboName)) {
     return { allowed: false, reason: `API key is not allowed to use combo: ${comboName}` };
   }
-  if (allowedModels.length > 0 && model && !allowedModels.includes(model)) {
+  if (model && !policy.unrestricted && !allowedModels.includes(model)) {
     return { allowed: false, reason: `API key is not allowed to use model: ${model}` };
   }
   return { allowed: true };

@@ -18,6 +18,8 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+  try { global._dbAdapter?.instance?.close?.(); } catch {}
+  delete global._dbAdapter;
   if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
   if (originalDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = originalDataDir;
@@ -63,6 +65,17 @@ describe("DB SQLite layer — public API parity", () => {
     const deleted = await sqliteDb.deleteApiKey(k.id);
     expect(deleted).toBe(true);
     expect(await sqliteDb.getApiKeyById(k.id)).toBeNull();
+  });
+
+  it("apiKeyGroups: assign model access to keys and protect referenced groups", async () => {
+    const group = await sqliteDb.createApiKeyGroup({ name: "test-group", allowedModels: ["openai/gpt-5"], allowedCombos: [] });
+    const key = await sqliteDb.createApiKey("grouped-key", "machine-group", group.id);
+    expect(key.groupId).toBe(group.id);
+    expect(key.groupName).toBe("test-group");
+    await expect(sqliteDb.deleteApiKeyGroup(group.id)).rejects.toMatchObject({ code: "GROUP_IN_USE" });
+    await sqliteDb.deleteApiKey(key.id);
+    expect(await sqliteDb.deleteApiKeyGroup(group.id)).toBe(true);
+    await expect(sqliteDb.deleteApiKeyGroup("default")).rejects.toMatchObject({ code: "GROUP_PROTECTED" });
   });
 
   it("providerConnections: CRUD + reorder by priority", async () => {
@@ -258,6 +271,19 @@ describe("DB SQLite layer — public API parity", () => {
 
     await sqliteDb.importDb(snap);
     expect((await sqliteDb.getModelAliases()).marker).toBe("before");
+  });
+
+  it("importDb preserves legacy per-key model restrictions", async () => {
+    const snapshot = await sqliteDb.exportDb();
+    await sqliteDb.importDb({
+      settings: snapshot.settings,
+      apiKeys: [{ id: "legacy-import", key: "legacy-key", name: "legacy", machineId: "machine", allowedModels: ["openai/gpt-5"], allowedCombos: [], createdAt: new Date().toISOString() }],
+    });
+    const key = await sqliteDb.getApiKeyById("legacy-import");
+    expect(key.groupId).toMatch(/^migrated-/);
+    const group = await sqliteDb.getApiKeyGroupById(key.groupId);
+    expect(group.allowedModels).toEqual(["openai/gpt-5"]);
+    await sqliteDb.importDb(snapshot);
   });
 
   it("pricing: user pricing merged with constants", async () => {

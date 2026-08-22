@@ -19,6 +19,7 @@ const COMBINED_WEB_ITEM = { id: "web", label: "Web Fetch & Search", icon: "trave
 
 const navItems = [
   { href: "/dashboard/endpoint", label: "Endpoint & Key", icon: "api" },
+  { href: "/dashboard/key-groups", label: "Key Groups", icon: "group_work" },
   { href: "/dashboard/providers", label: "Providers", icon: "dns" },
   // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
   { href: "/dashboard/combos", label: "Combo & Vision Adapter", icon: "layers" },
@@ -29,7 +30,8 @@ const navItems = [
 ];
 
 const costCenterItems = [
-  { href: "/dashboard/usage", label: "Usage & Analytics", icon: "bar_chart" },
+  { href: "/dashboard/usage", label: "Traffic Analytics", icon: "bar_chart" },
+  { href: "/dashboard/traffic-logs", label: "Traffic Logs", icon: "receipt_long" },
   { href: "/dashboard/settings/pricing", label: "Model Pricing", icon: "paid" },
 ];
 
