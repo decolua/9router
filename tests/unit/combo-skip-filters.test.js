@@ -169,14 +169,20 @@ describe("combo skip filters", () => {
     expect(tried).not.toContain(AG);
   });
 
-  it("tells the client when to come back even if every entry was skipped", async () => {
+  it("tells the client when to come back once the skipped entries have also failed", async () => {
     const retryAfter = new Date(Date.now() + 600_000).toISOString();
-    const res = await run([AG, DEEPSEEK], async (_b, m) => ok(m),
+    // "Every entry was skipped" is no longer a terminal state: the second pass
+    // retries supply-side skips rather than report exhaustion with untried models
+    // behind it. So the handler must fail for the cascade to refuse at all, and
+    // the refusal now carries a real attempt's status instead of the 503 the skip
+    // path used to synthesize. What this case actually pins is unchanged — the
+    // client is handed a retryable code and a time to come back.
+    const res = await run([AG, DEEPSEEK], async (_b, m) => unavailable(m, 429, "Rate limit exceeded"),
       { canServe: () => ({ serveable: false, retryAfter }) });
 
-    expect(res.status).toBe(503);
+    expect(res.status).toBe(429);
     expect(res.headers.get("Retry-After")).toBeTruthy();
-    expect((await res.json()).error.message).toContain(AG);
+    expect((await res.json()).error.message).toContain(DEEPSEEK);
   });
 
   it("does not let a permanent-looking last entry bury a retryable earlier one", async () => {

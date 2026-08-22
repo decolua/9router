@@ -87,8 +87,15 @@ describe("combo cascade skip wiring", () => {
 
     const res = await handleComboChat({ body: {}, models: ["a/one", "a/two"], handleSingleModel, log, comboName: "c" });
 
-    // Every model skipped means the combo is exhausted, not silently successful.
+    // A cooldown is a prediction about a provider, not a fact about this request.
+    // While some other entry can still answer, honouring it costs nothing. When
+    // NOTHING can answer, the choice is between one speculative request and a
+    // certain 503 — so the cascade spends the request. This assertion used to be
+    // `not.toHaveBeenCalled()`, which contradicted the name it was written under
+    // and was exactly the wall the second pass exists to remove.
     expect(res).toBeDefined();
-    expect(handleSingleModel).not.toHaveBeenCalled();
+    expect(res.ok).toBe(true);
+    expect(handleSingleModel).toHaveBeenCalledTimes(1);
+    expect(handleSingleModel.mock.calls[0][1]).toBe("a/one");
   });
 });

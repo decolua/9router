@@ -11,6 +11,7 @@ import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
 import { estimateInputTokens } from "../utils/usageTracking.js";
 import { extractVisibleText, findDegeneracy, hasAssistantPrefill, GATE_WINDOW_CHARS, GATE_MIN_JUDGEABLE_CHARS, PREFLIGHT_MAX_READS, HOLD_BACK_MS } from "../utils/degeneracy.js";
+import { COMBO_RESPONSE_TIMEOUT_MS, COMBO_FIRST_EVENT_TIMEOUT_MS } from "../config/errorConfig.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -20,6 +21,31 @@ const HARD_CAPS = new Set(["vision", "pdf", "audioInput", "videoInput"]);
 // Clients and agent loops branch on exactly this distinction.
 function isRetryableStatus(status) {
   return status === 429 || status === 408 || (status >= 500 && status <= 599);
+}
+
+// Bound a wait so a silent upstream cascades instead of hanging. The rejection
+// carries `comboFallbackStatus`, so it lands in the same catch that already
+// moves to the next entry: a timeout is a supply failure like any other, and no
+// caller has to learn a new shape to handle it.
+//
+// Distinct from `withTimeout` further down, which serves the fusion panel and
+// *resolves* with a sentinel so a slow panellist is merely dropped from a vote.
+// Here the wait ending is a failure that must propagate, so this one rejects.
+function raceDeadline(promise, ms, label) {
+  if (!ms || ms <= 0) return promise;
+  let timer;
+  const guarded = Promise.resolve(promise);
+  const bell = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error(`${label} exceeded ${ms}ms`);
+      err.comboFallbackStatus = 504;
+      reject(err);
+      // The loser may still arrive. Nothing will read it, so release the socket
+      // rather than leave an orphaned body open for the life of the process.
+      guarded.then((v) => { try { v?.body?.cancel?.(); } catch { /* already gone */ } }, () => {});
+    }, ms);
+  });
+  return Promise.race([guarded, bell]).finally(() => clearTimeout(timer));
 }
 
 // Prefixes used when flattening tool turns into plain prose for panel models.
@@ -282,9 +308,18 @@ async function preflightSseResponse(response, isPrefill = false) {
 
   const reader = response.body.getReader();
   try {
+    // One deadline for the whole hunt, not per read: a provider that streams an
+    // endless run of empty frames never finishes this loop, and a per-read bound
+    // resets on each of them. The throw lands in this function's own catch,
+    // which cancels the reader and re-flags it as a cascade.
     let first;
+    const firstEventBy = Date.now() + COMBO_FIRST_EVENT_TIMEOUT_MS;
     do {
-      first = await reader.read();
+      first = await raceDeadline(
+        reader.read(),
+        Math.max(1, firstEventBy - Date.now()),
+        "first stream event"
+      );
     } while (!first.done && (!first.value || first.value.byteLength === 0));
 
     if (first.done) throw new Error("stream ended before first event");
@@ -584,6 +619,120 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   let widestWindow = 0;
   const inputTokens = estimateInputTokens(body);
 
+  // One entry's turn, lifted out of the loop so it can be run twice: once in
+  // pool order, and again over the entries the first pass never reached. Returns
+  // the deliverable Response on success and null on failure, recording the
+  // failure in the trackers above exactly as the single-pass version did.
+  const attemptModel = async (modelStr, i) => {
+  try {
+    // Third arg is the cascade position (0 = first choice), recorded as
+    // usageHistory.chainDepth. handleFusionChat's callback uses a third arg
+    // for isPanel, but that is a separate closure — this one is only ever
+    // paired with handleComboChat's (b, m) callback.
+    const result = await raceDeadline(
+      handleSingleModel(body, modelStr, i),
+      COMBO_RESPONSE_TIMEOUT_MS,
+      `${modelStr} response`
+    );
+
+    // Success (2xx) - verify an SSE stream produces data before committing to it.
+    if (result.ok) {
+      const ready = await preflightSseResponse(result, hasAssistantPrefill(body));
+      log.info("COMBO", `Model ${modelStr} succeeded`);
+      recordModelSuccess(modelStr);
+      return ready;
+    }
+
+    // Extract error info from response
+    let errorText = result.statusText || "";
+    let retryAfter = null;
+    let accountsLocked = false;
+    try {
+      const errorBody = await result.clone().json();
+      errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
+      retryAfter = errorBody?.retryAfter || null;
+      accountsLocked = errorBody?.accountsLocked === true;
+    } catch {
+      // Ignore JSON parse errors
+    }
+
+    // Track earliest retryAfter across all combo models
+    if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
+      earliestRetryAfter = retryAfter;
+    }
+
+    // Normalize error text to string (Worker-safe)
+    if (typeof errorText !== "string") {
+      try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
+    }
+
+    // Check if should fallback to next model
+    const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
+
+    // `accountsLocked` marks our own reply, synthesized when the account layer
+    // found every account locked. It quotes the provider's original text, so
+    // reading it back as a fresh verdict lets one provider 429 renew its own
+    // ban indefinitely. The account layer already holds the real expiry — the
+    // per-model memory below stays out of it.
+    if (!accountsLocked) {
+      // Remember it for subsequent requests, not just this cascade.
+      markModelCooldownFrom(modelStr, retryAfter, cooldownMs);
+      // Bound the ban by the provider's own reset time when it gave one; the
+      // default hour is a guess, and a guess should not outlive the fact.
+      if (isQuotaExhaustion(result.status, errorText)) {
+        // Only a reset time in the future replaces the default window. A value
+        // that parses to the past — or to an epoch offset, as a bare
+        // `retryAfter: 30` does — would otherwise store an already-expired ban,
+        // which is no ban at all.
+        const until = retryAfter ? new Date(retryAfter).getTime() : NaN;
+        const ttlMs = until > Date.now() ? until - Date.now() : undefined;
+        markQuotaExhausted(modelStr, Date.now(), ttlMs);
+      }
+    }
+    recordModelFailure(modelStr);
+
+    if (!shouldFallback) {
+      log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
+      return result;
+    }
+
+    // For transient errors (503/502/504), wait for cooldown before falling through
+    // so a briefly-overloaded provider gets a chance to recover rather than being
+    // skipped immediately (fixes: combo falls through on transient 503)
+    if (cooldownMs && cooldownMs > 0 && cooldownMs <= 5000 &&
+        (result.status === 503 || result.status === 502 || result.status === 504)) {
+      log.info("COMBO", `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
+      await new Promise(r => setTimeout(r, cooldownMs));
+    }
+
+    // Fallback to next model. Status and message move together: they describe
+    // one failure, and keeping the first status beside the last message hands
+    // the client a code from one provider explaining another provider's error.
+    lastError = errorText || String(result.status);
+    lastStatus = result.status;
+    if (isRetryableStatus(lastStatus)) lastRetryable = { status: lastStatus, error: lastError };
+    log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
+  } catch (error) {
+    // Catch unexpected exceptions to ensure fallback continues
+    lastError = error.message || String(error);
+    lastStatus = error.comboFallbackStatus || 500;
+    if (isRetryableStatus(lastStatus)) lastRetryable = { status: lastStatus, error: lastError };
+    // Score throw-class failures too. The returned-Response path records at
+    // the status branch above; without this, a model whose failure mode is
+    // "HTTP 200 then the stream ends before the first event" (preflight
+    // throws with comboFallbackStatus 502) stays permanently healthy and
+    // keeps winning first place over models that fail honestly.
+    recordModelFailure(modelStr);
+    log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
+  }
+    return null;
+  };
+
+  // Entries passed over for a supply reason — cooling down, quota-banned, no
+  // account capacity. Every one of those is a guess about the future, and the
+  // guess is only worth honouring while something else can still answer.
+  const deferred = [];
+
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
 
@@ -596,7 +745,11 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       if (skip.tooLarge) {
         if (skip.window > widestWindow) widestWindow = skip.window;
       } else {
+        // A supply-side skip is a prediction, not a fact about this request.
+        // Keep the entry so the second pass can test the prediction rather than
+        // let the combo report exhaustion with untried models in it.
         onlyTooLarge = false;
+        deferred.push({ modelStr, i });
       }
       if (skip.retryAfter && (!earliestRetryAfter || new Date(skip.retryAfter) < new Date(earliestRetryAfter))) {
         earliestRetryAfter = skip.retryAfter;
@@ -617,102 +770,35 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     onlyTooLarge = false;
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
-    try {
-      // Third arg is the cascade position (0 = first choice), recorded as
-      // usageHistory.chainDepth. handleFusionChat's callback uses a third arg
-      // for isPanel, but that is a separate closure — this one is only ever
-      // paired with handleComboChat's (b, m) callback.
-      const result = await handleSingleModel(body, modelStr, i);
+    const served = await attemptModel(modelStr, i);
+    if (served) return served;
+  }
 
-      // Success (2xx) - verify an SSE stream produces data before committing to it.
-      if (result.ok) {
-        const ready = await preflightSseResponse(result, hasAssistantPrefill(body));
-        log.info("COMBO", `Model ${modelStr} succeeded`);
-        recordModelSuccess(modelStr);
-        return ready;
+  // Second pass — the reason this combo cannot report exhaustion while it still
+  // holds untried entries. Everything above either failed for real or was passed
+  // over on a *prediction*: cooling down, quota-banned, no account capacity. Those
+  // predictions are cheap to make and routinely wrong — a cooldown is a fixed
+  // guess at a provider's recovery, a quota ban defaults to an hour whether or not
+  // the provider said so, and the account probe answers for the account layer's
+  // bookkeeping rather than for the upstream. Spending one real request to find
+  // out beats handing the client a 503 with a pool of untouched models behind it.
+  //
+  // Only supply-side skips come back. An oversized request is excluded at the
+  // point it is recorded: no amount of retrying shrinks the conversation, and
+  // `onlyTooLarge` still owns that case below.
+  if (deferred.length > 0) {
+    log.warn(
+      "COMBO",
+      `Every available entry in "${comboName}" failed — re-trying ${deferred.length} deferred ` +
+      `entr${deferred.length === 1 ? "y" : "ies"}, ignoring cooldown and quota state`
+    );
+    for (const { modelStr, i } of deferred) {
+      log.info("COMBO", `Last resort ${modelStr} (was skipped, trying anyway)`);
+      const served = await attemptModel(modelStr, i);
+      if (served) {
+        log.info("COMBO", `Last resort ${modelStr} succeeded — the skip was a stale prediction`);
+        return served;
       }
-
-      // Extract error info from response
-      let errorText = result.statusText || "";
-      let retryAfter = null;
-      let accountsLocked = false;
-      try {
-        const errorBody = await result.clone().json();
-        errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
-        retryAfter = errorBody?.retryAfter || null;
-        accountsLocked = errorBody?.accountsLocked === true;
-      } catch {
-        // Ignore JSON parse errors
-      }
-
-      // Track earliest retryAfter across all combo models
-      if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
-        earliestRetryAfter = retryAfter;
-      }
-
-      // Normalize error text to string (Worker-safe)
-      if (typeof errorText !== "string") {
-        try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
-      }
-
-      // Check if should fallback to next model
-      const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
-
-      // `accountsLocked` marks our own reply, synthesized when the account layer
-      // found every account locked. It quotes the provider's original text, so
-      // reading it back as a fresh verdict lets one provider 429 renew its own
-      // ban indefinitely. The account layer already holds the real expiry — the
-      // per-model memory below stays out of it.
-      if (!accountsLocked) {
-        // Remember it for subsequent requests, not just this cascade.
-        markModelCooldownFrom(modelStr, retryAfter, cooldownMs);
-        // Bound the ban by the provider's own reset time when it gave one; the
-        // default hour is a guess, and a guess should not outlive the fact.
-        if (isQuotaExhaustion(result.status, errorText)) {
-          // Only a reset time in the future replaces the default window. A value
-          // that parses to the past — or to an epoch offset, as a bare
-          // `retryAfter: 30` does — would otherwise store an already-expired ban,
-          // which is no ban at all.
-          const until = retryAfter ? new Date(retryAfter).getTime() : NaN;
-          const ttlMs = until > Date.now() ? until - Date.now() : undefined;
-          markQuotaExhausted(modelStr, Date.now(), ttlMs);
-        }
-      }
-      recordModelFailure(modelStr);
-
-      if (!shouldFallback) {
-        log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
-        return result;
-      }
-
-      // For transient errors (503/502/504), wait for cooldown before falling through
-      // so a briefly-overloaded provider gets a chance to recover rather than being
-      // skipped immediately (fixes: combo falls through on transient 503)
-      if (cooldownMs && cooldownMs > 0 && cooldownMs <= 5000 &&
-          (result.status === 503 || result.status === 502 || result.status === 504)) {
-        log.info("COMBO", `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
-        await new Promise(r => setTimeout(r, cooldownMs));
-      }
-
-      // Fallback to next model. Status and message move together: they describe
-      // one failure, and keeping the first status beside the last message hands
-      // the client a code from one provider explaining another provider's error.
-      lastError = errorText || String(result.status);
-      lastStatus = result.status;
-      if (isRetryableStatus(lastStatus)) lastRetryable = { status: lastStatus, error: lastError };
-      log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
-    } catch (error) {
-      // Catch unexpected exceptions to ensure fallback continues
-      lastError = error.message || String(error);
-      lastStatus = error.comboFallbackStatus || 500;
-      if (isRetryableStatus(lastStatus)) lastRetryable = { status: lastStatus, error: lastError };
-      // Score throw-class failures too. The returned-Response path records at
-      // the status branch above; without this, a model whose failure mode is
-      // "HTTP 200 then the stream ends before the first event" (preflight
-      // throws with comboFallbackStatus 502) stays permanently healthy and
-      // keeps winning first place over models that fail honestly.
-      recordModelFailure(modelStr);
-      log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
   }
 

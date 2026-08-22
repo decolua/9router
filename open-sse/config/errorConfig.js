@@ -145,3 +145,17 @@ export const COOLDOWN_MS = {
   transient: TRANSIENT_COOLDOWN_MS,
   requestNotAllowed: COOLDOWN.short,
 };
+
+// A provider that accepts the connection and then goes quiet is the one failure
+// the cascade could not see. Nothing below bounded the wait, so a single silent
+// upstream consumed the client's entire budget and the remaining combo entries
+// were never tried — the request "timed out" with a full pool of untried models
+// behind it. Two clocks, because the two silences are different failures: a
+// provider can return headers promptly and then never start the stream.
+//
+// Both are generous on purpose. They exist to break a hang, not to police
+// latency: a premature cascade re-sends the prompt to a second provider and
+// pays for it twice, so the bound sits well above any honest first-token time,
+// including a thinking model's.
+export const COMBO_RESPONSE_TIMEOUT_MS = Number(process.env.COMBO_RESPONSE_TIMEOUT_MS) || 90 * 1000;
+export const COMBO_FIRST_EVENT_TIMEOUT_MS = Number(process.env.COMBO_FIRST_EVENT_TIMEOUT_MS) || 150 * 1000;
