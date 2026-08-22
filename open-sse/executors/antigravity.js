@@ -112,6 +112,34 @@ function buildIdeRequestId({ body, request, credentials, model, requestType }) {
 export class AntigravityExecutor extends BaseExecutor {
   constructor() {
     super("antigravity", PROVIDERS.antigravity);
+    // Optimization #1: Local projectId cache to avoid API call on every request
+    this.projectId = null;
+    // Optimization #5: Schema cache to avoid re-processing tools on every request
+    this.schemaCache = new Map();
+
+    // Warmup connections at startup
+    if (typeof window === 'undefined' && global.process?.version) {
+      setTimeout(async () => {
+        try {
+          const httpsModule = await import("https");
+          const agent = new httpsModule.Agent({ keepAlive: true });
+
+          const controller = new AbortController();
+          setTimeout(() => controller.abort(), 2000);
+
+          await fetch("https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent?alt=sse", {
+            method: "POST",
+            signal: controller.signal,
+            agent,
+            body: JSON.stringify({ test: true })
+          }).catch(() => {});
+
+          console.log("[Antigravity] Connection pool warmed up successfully");
+        } catch (e) {
+          // Ignore warmup failures - not critical
+        }
+      }, 2000);
+    }
   }
 
   buildUrl(model, stream, urlIndex = 0) {
@@ -134,7 +162,13 @@ export class AntigravityExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
-    const projectId = credentials?.projectId || this.generateProjectId();
+    // Optimization #1: Use cached projectId (no API call needed!)
+    const projectId = this.projectId || credentials?.projectId || this.generateProjectId();
+
+    if (!this.projectId) {
+      console.log("[Antigravity] Using projectId:", projectId);
+      this.projectId = projectId;
+    }
 
     // OpenAI clients may include stream_options even for non-streaming calls.
     // Google generateContent rejects that combination before processing the request.
@@ -191,16 +225,31 @@ export class AntigravityExecutor extends BaseExecutor {
     // Fix contents for Claude models via Antigravity
     const contents = body.request?.contents?.map(c => {
       let role = c.role;
-      // functionResponse must be role "user" for Claude models
-      if (c.parts?.some(p => p.functionResponse)) {
-        role = "user";
-      }
-      // Strip thought-only parts, keep thoughtSignature on functionCall parts (Gemini 3+ requires it)
+
+      // Fast-path optimization (Fix #4): Skip if already clean
+      if (!c.parts || c.parts.length === 0) return c;
+
+      // Check if ANY modification needed before processing
+      const needsModification = c.parts.some(p => {
+        if (p.thought && !p.functionCall) return true;
+        if (p.thoughtSignature && !p.functionCall && !p.text) return true;
+        return false;
+      });
+
+      if (!needsModification) return c; // ← EARLY RETURN if already clean
+
+      // Only process if modifications are actually needed
       const parts = c.parts?.filter(p => {
         if (p.thought && !p.functionCall) return false;
         if (p.thoughtSignature && !p.functionCall && !p.text) return false;
         return true;
       });
+
+      // functionResponse must be role "user" for Claude models
+      if (c.parts?.some(p => p.functionResponse)) {
+        role = "user";
+      }
+
       // Gemini 3+ rejects functionCall parts without thoughtSignature. Clients (Claude Code, IDE)
       // don't persist thoughtSignature in their history, so backfill the default signature on any
       // functionCall part that arrives without one.
@@ -228,15 +277,33 @@ export class AntigravityExecutor extends BaseExecutor {
       for (const group of tools) {
         for (const fn of group.functionDeclarations || []) {
           const name = sanitizeFunctionName(fn.name);
+
+          // Check schema cache first (Optimization #5 - Schema Cache Optimization)
+          if (this.schemaCache.has(name)) {
+            if (!seenToolNames.has(name)) {
+              allDeclarations.push(this.schemaCache.get(name));
+              seenToolNames.add(name);
+            }
+            continue;
+          }
+
           if (seenToolNames.has(name)) continue;
           seenToolNames.add(name);
-          allDeclarations.push({
+
+          const cleanedParams = fn.parameters
+            ? cleanJSONSchemaForAntigravity(structuredClone(fn.parameters))
+            : { type: "object", properties: { reason: { type: "string", description: "Brief explanation" } }, required: ["reason"] };
+
+          const declaration = {
             ...fn,
             name,
-            parameters: fn.parameters
-              ? cleanJSONSchemaForAntigravity(structuredClone(fn.parameters))
-              : { type: "object", properties: { reason: { type: "string", description: "Brief explanation" } }, required: ["reason"] }
-          });
+            parameters: cleanedParams
+          };
+
+          // Cache the cleaned schema for next use
+          this.schemaCache.set(name, declaration);
+
+          allDeclarations.push(declaration);
         }
       }
       tools = allDeclarations.length > 0 ? [{ functionDeclarations: allDeclarations }] : [];
