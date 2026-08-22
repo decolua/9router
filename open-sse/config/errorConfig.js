@@ -38,6 +38,13 @@ export const BACKOFF_CONFIG = {
 // Default cooldown for transient/unknown errors
 export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
 
+// Cooldown after a provider returns HTTP 200 with no usable content (null/empty
+// message, no tool_calls, no reasoning). Upstream reports success but produced
+// nothing — lock the model on this account for a few minutes so the combo/account
+// fallback loop skips straight to the next candidate instead of retrying a backend
+// that just failed silently, then automatically retries it once the lock expires.
+export const EMPTY_CONTENT_COOLDOWN_MS = 7 * 60 * 1000;
+
 // Hard cap for provider-reported rate limit cooldown (e.g. codex resets_at can be 5-6h)
 export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 

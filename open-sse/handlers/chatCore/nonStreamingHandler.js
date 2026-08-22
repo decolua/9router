@@ -5,11 +5,36 @@ import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.j
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
+import { EMPTY_CONTENT_COOLDOWN_MS } from "../../config/errorConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+
+/**
+ * Whether a translated response actually contains something the client can use:
+ * non-empty text, a tool call, or reasoning output. Providers occasionally answer
+ * HTTP 200 with a fully empty body (upstream hiccup that isn't a real error status) —
+ * treat that the same as an upstream failure so the account/combo fallback loop
+ * moves on instead of handing the client nothing.
+ */
+function hasUsefulContent(translatedResponse, isClaudeMessageResponse, isResponsesResponse) {
+  if (isClaudeMessageResponse) {
+    const blocks = Array.isArray(translatedResponse?.content) ? translatedResponse.content : [];
+    return blocks.some((b) => (b?.type === "text" && typeof b.text === "string" && b.text.trim().length > 0) || b?.type === "tool_use" || b?.type === "thinking");
+  }
+  if (isResponsesResponse) {
+    return Array.isArray(translatedResponse?.output) && translatedResponse.output.length > 0;
+  }
+  const msg = translatedResponse?.choices?.[0]?.message;
+  const hasToolCalls = Array.isArray(msg?.tool_calls) && msg.tool_calls.length > 0;
+  const hasText = typeof msg?.content === "string"
+    ? msg.content.trim().length > 0
+    : Array.isArray(msg?.content) && msg.content.length > 0;
+  const hasReasoning = typeof msg?.reasoning_content === "string" && msg.reasoning_content.trim().length > 0;
+  return hasToolCalls || hasText || hasReasoning;
+}
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -369,6 +394,20 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }
 
   reqLogger.logConvertedResponse(translatedResponse);
+
+  // Upstream answered 200 but produced nothing usable (null/empty content, no
+  // tool_calls, no reasoning) — treat as a failure so the same fallback path as a
+  // real error status kicks in: lock this account+model for EMPTY_CONTENT_COOLDOWN_MS
+  // (skips it on the next request/combo attempt) and let the caller fall through to
+  // the next account/combo member. The lock auto-expires, so it comes back into
+  // rotation on its own once the upstream presumably recovers.
+  if (!hasUsefulContent(translatedResponse, isClaudeMessageResponse, isResponsesResponse)) {
+    appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY} (empty content)` });
+    if (log?.warn) {
+      log.warn("CHATCORE", `${provider}/${model} returned HTTP 200 with empty content (finish_reason=${translatedResponse?.choices?.[0]?.finish_reason || "unknown"}) — treating as failure, locking for ${Math.round(EMPTY_CONTENT_COOLDOWN_MS / 1000)}s`);
+    }
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Empty response content from ${provider}/${model}`, Date.now() + EMPTY_CONTENT_COOLDOWN_MS);
+  }
 
   const totalLatency = Date.now() - requestStartTime;
   saveRequestDetail(buildRequestDetail({
