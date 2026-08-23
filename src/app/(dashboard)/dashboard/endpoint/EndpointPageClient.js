@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
+import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, DropdownSelect } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import {
   TUNNEL_BENEFITS,
@@ -24,6 +24,9 @@ export default function APIPageClient({ machineId }) {
   const [newKeyName, setNewKeyName] = useState("");
   const [newKeyGroupId, setNewKeyGroupId] = useState("default");
   const [keyGroups, setKeyGroups] = useState([]);
+  const [selectedKeyIds, setSelectedKeyIds] = useState(new Set());
+  const [batchGroupId, setBatchGroupId] = useState("default");
+  const [batchSaving, setBatchSaving] = useState(false);
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
 
@@ -270,6 +273,7 @@ export default function APIPageClient({ machineId }) {
       setKeyGroups(groups);
       const defaultGroupId = groups.find((group) => group.isDefault)?.id || groups[0]?.id || "default";
       setNewKeyGroupId((current) => groups.some((group) => group.id === current) ? current : defaultGroupId);
+      setBatchGroupId((current) => groups.some((group) => group.id === current) ? current : defaultGroupId);
 
       let existing = await fetchKeys();
       // Auto-provision a default key for first-time users so the endpoint works out of the box.
@@ -663,6 +667,11 @@ export default function APIPageClient({ machineId }) {
           const res = await fetch(`/api/keys/${id}`, { method: "DELETE" });
           if (res.ok) {
             setKeys(keys.filter((k) => k.id !== id));
+            setSelectedKeyIds((current) => {
+              const next = new Set(current);
+              next.delete(id);
+              return next;
+            });
             setVisibleKeys(prev => {
               const next = new Set(prev);
               next.delete(id);
@@ -704,6 +713,39 @@ export default function APIPageClient({ machineId }) {
     } catch (error) {
       console.error("Error updating key group:", error);
       alert(error.message);
+    }
+  };
+
+  const toggleKeySelection = (keyId) => setSelectedKeyIds((current) => {
+    const next = new Set(current);
+    next.has(keyId) ? next.delete(keyId) : next.add(keyId);
+    return next;
+  });
+
+  const toggleAllKeys = () => setSelectedKeyIds((current) => (
+    current.size === keys.length ? new Set() : new Set(keys.map((key) => key.id))
+  ));
+
+  const handleBatchGroupChange = async () => {
+    if (!batchGroupId || selectedKeyIds.size === 0) return;
+    setBatchSaving(true);
+    try {
+      const updates = await Promise.all([...selectedKeyIds].map(async (keyId) => {
+        const response = await fetch(`/api/keys/${keyId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ groupId: batchGroupId }),
+        });
+        if (!response.ok) throw new Error("批量配置密钥分组失败");
+        return response.json();
+      }));
+      const updatedMap = new Map(updates.map((item) => [item.key.id, item.key]));
+      setKeys((current) => current.map((key) => updatedMap.get(key.id) || key));
+      setSelectedKeyIds(new Set());
+    } catch (error) {
+      alert(error.message);
+    } finally {
+      setBatchSaving(false);
     }
   };
 
@@ -993,10 +1035,10 @@ export default function APIPageClient({ machineId }) {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <span className="material-symbols-outlined text-primary">vpn_key</span>
-            API Keys
+            API 密钥
           </h2>
           <Button icon="add" onClick={() => setShowAddModal(true)}>
-            Create Key
+            新增密钥
           </Button>
         </div>
 
@@ -1019,6 +1061,18 @@ export default function APIPageClient({ machineId }) {
           </div>
         )}
 
+        {keys.length > 0 && (
+          <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-border bg-bg-subtle/50 px-3 py-2">
+            <label className="flex items-center gap-2 text-xs text-text-muted">
+              <input type="checkbox" checked={selectedKeyIds.size === keys.length} onChange={toggleAllKeys} />
+              全选
+            </label>
+            <span className="text-xs text-text-muted">已选 {selectedKeyIds.size} 个</span>
+            <DropdownSelect className="ml-auto w-44" value={batchGroupId} onChange={setBatchGroupId} searchable options={keyGroups.map((group) => ({ value: group.id, label: group.name }))} />
+            <Button size="sm" loading={batchSaving} disabled={selectedKeyIds.size === 0} onClick={handleBatchGroupChange}>批量配置分组</Button>
+          </div>
+        )}
+
         {keys.length === 0 ? (
           <div className="text-center py-12">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
@@ -1031,16 +1085,18 @@ export default function APIPageClient({ machineId }) {
             </Button>
           </div>
         ) : (
-          <div className="flex flex-col">
+          <div className="overflow-x-auto">
+            <div className="min-w-[720px]">
             {keys.map((key) => (
               <div
                 key={key.id}
-                className={`group flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
+                className={`group grid grid-cols-[auto_minmax(0,1fr)_10rem_auto_auto] items-center gap-3 border-b border-black/[0.03] py-2 last:border-b-0 dark:border-white/[0.03] ${key.isActive === false ? "opacity-60" : ""}`}
               >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{key.name}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <code className="text-xs text-text-muted font-mono">
+                <input type="checkbox" checked={selectedKeyIds.has(key.id)} onChange={() => toggleKeySelection(key.id)} aria-label={`选择 ${key.name}`} />
+                <div className="min-w-0">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="shrink-0 text-sm font-medium">{key.name}</span>
+                    <code className="min-w-0 truncate text-xs font-mono text-text-muted">
                       {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
                     </code>
                     <button
@@ -1061,19 +1117,12 @@ export default function APIPageClient({ machineId }) {
                       </span>
                     </button>
                   </div>
-                  <p className="text-xs text-text-muted mt-1">
-                    Created {new Date(key.createdAt).toLocaleDateString()}
-                  </p>
-                  <div className="mt-2 flex items-center gap-2 text-xs text-text-muted">
-                    <span>密钥分组</span>
-                    <select value={key.groupId || "default"} onChange={(event) => handleKeyGroupChange(key.id, event.target.value)} className="rounded-md border border-border bg-surface-2 px-2 py-1 text-xs text-text-main">
-                      {keyGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-                    </select>
-                  </div>
                   {key.isActive === false && (
-                    <p className="text-xs text-orange-500 mt-1">Paused</p>
+                    <p className="mt-0.5 text-xs text-orange-500">已暂停</p>
                   )}
                 </div>
+                <DropdownSelect value={key.groupId || "default"} onChange={(value) => handleKeyGroupChange(key.id, value)} searchable buttonClassName="min-h-8 py-1 text-xs" options={keyGroups.map((group) => ({ value: group.id, label: group.name }))} />
+                <span className="whitespace-nowrap text-xs text-text-muted">{new Date(key.createdAt).toLocaleDateString("zh-CN")}</span>
                 <div className="flex items-center gap-2">
                   <Toggle
                     size="sm"
@@ -1103,6 +1152,7 @@ export default function APIPageClient({ machineId }) {
                 </div>
               </div>
             ))}
+            </div>
           </div>
         )}
       </Card>
@@ -1123,12 +1173,7 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
-          <label className="flex flex-col gap-1.5 text-sm font-medium text-text-main">
-            密钥分组
-            <select value={newKeyGroupId} onChange={(event) => setNewKeyGroupId(event.target.value)} className="w-full rounded-[10px] border border-transparent bg-surface-2 px-3 py-2.5 text-sm focus:border-brand-500/40 focus:outline-none focus:ring-2 focus:ring-brand-500/30">
-              {keyGroups.map((group) => <option key={group.id} value={group.id}>{group.name}</option>)}
-            </select>
-          </label>
+          <DropdownSelect label="密钥分组" value={newKeyGroupId} onChange={setNewKeyGroupId} searchable options={keyGroups.map((group) => ({ value: group.id, label: group.name }))} />
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim() || !newKeyGroupId}>
               Create

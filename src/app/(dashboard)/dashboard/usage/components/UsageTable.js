@@ -6,15 +6,15 @@ import Card from "@/shared/components/Card";
 import Badge from "@/shared/components/Badge";
 
 const fmt = (n) => new Intl.NumberFormat().format(n || 0);
-const fmtCost = (n) => `$${(n || 0).toFixed(2)}`;
+const fmtCost = (n) => `$${Number(n || 0).toFixed(6)}`;
 
 function fmtTime(iso) {
-  if (!iso) return "Never";
+  if (!iso) return "从未使用";
   const diffMins = Math.floor((Date.now() - new Date(iso)) / 60000);
-  if (diffMins < 1) return "Just now";
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffMins < 1440) return `${Math.floor(diffMins / 60)}h ago`;
-  return new Date(iso).toLocaleDateString();
+  if (diffMins < 1) return "刚刚";
+  if (diffMins < 60) return `${diffMins} 分钟前`;
+  if (diffMins < 1440) return `${Math.floor(diffMins / 60)} 小时前`;
+  return new Date(iso).toLocaleDateString("zh-CN");
 }
 
 function SortIcon({ field, currentSort, currentOrder }) {
@@ -29,48 +29,29 @@ SortIcon.propTypes = {
 };
 
 /**
- * Render 3 token or cost cells based on viewMode
+ * Render token count and exact cost for each billable component.
  */
-function ValueCells({ item, viewMode, isSummary = false }) {
-  if (viewMode === "tokens") {
-    return (
-      <>
-        <td className="px-6 py-3 text-right text-text-muted">
-          {isSummary && item.promptTokens === undefined ? "—" : fmt(item.promptTokens)}
-        </td>
-        <td className="px-6 py-3 text-right text-text-muted">
-          {item.cachedTokens ? fmt(item.cachedTokens) : "—"}
-        </td>
-        <td className="px-6 py-3 text-right text-text-muted">
-          {isSummary && item.completionTokens === undefined ? "—" : fmt(item.completionTokens)}
-        </td>
-        <td className="px-6 py-3 text-right font-medium">
-          {fmt(item.totalTokens)}
-        </td>
-      </>
-    );
-  }
+function MetricValue({ tokens, cost, isSummary = false }) {
   return (
-    <>
-      <td className="px-6 py-3 text-right text-text-muted">
-        {isSummary && item.inputCost === undefined ? "—" : fmtCost(item.inputCost)}
-      </td>
-      <td className="px-6 py-3 text-right text-text-muted">
-        {item.cachedCost ? fmtCost(item.cachedCost) : "—"}
-      </td>
-      <td className="px-6 py-3 text-right text-text-muted">
-        {isSummary && item.outputCost === undefined ? "—" : fmtCost(item.outputCost)}
-      </td>
-      <td className="px-6 py-3 text-right font-medium text-warning">
-        {fmtCost(item.totalCost || item.cost)}
-      </td>
-    </>
+    <td className="px-4 py-3 text-right tabular-nums">
+      <div className="font-medium">{isSummary && tokens === undefined ? "—" : fmt(tokens)}</div>
+      <div className="mt-0.5 text-[10px] text-text-muted">{isSummary && cost === undefined ? "—" : fmtCost(cost)}</div>
+    </td>
   );
 }
 
+function ValueCells({ item, isSummary = false }) {
+  return <>
+    <MetricValue tokens={item.promptTokens} cost={item.inputCost} isSummary={isSummary} />
+    <MetricValue tokens={item.cachedTokens} cost={item.cachedCost} isSummary={isSummary} />
+    <MetricValue tokens={item.cacheCreationTokens} cost={item.cacheCreationCost} isSummary={isSummary} />
+    <MetricValue tokens={item.completionTokens} cost={item.outputCost} isSummary={isSummary} />
+  </>;
+}
+
+MetricValue.propTypes = { tokens: PropTypes.number, cost: PropTypes.number, isSummary: PropTypes.bool };
 ValueCells.propTypes = {
   item: PropTypes.object.isRequired,
-  viewMode: PropTypes.string.isRequired,
   isSummary: PropTypes.bool,
 };
 
@@ -100,7 +81,6 @@ export default function UsageTable({
   sortBy,
   sortOrder,
   onToggleSort,
-  viewMode,
   storageKey,
   renderDetailCells,
   renderSummaryCells,
@@ -135,22 +115,12 @@ export default function UsageTable({
     });
   }, []);
 
-  const valueColumns = useMemo(() => {
-    if (viewMode === "tokens") {
-      return [
-        { field: "promptTokens", label: "Input Tokens" },
-        { field: "cachedTokens", label: "Cached" },
-        { field: "completionTokens", label: "Output Tokens" },
-        { field: "totalTokens", label: "Total Tokens" },
-      ];
-    }
-    return [
-      { field: "promptTokens", label: "Input Cost" },
-      { field: "cachedCost", label: "Cached Cost" },
-      { field: "completionTokens", label: "Output Cost" },
-      { field: "cost", label: "Total Cost" },
-    ];
-  }, [viewMode]);
+  const valueColumns = useMemo(() => [
+    { field: "promptTokens", label: "输入" },
+    { field: "cachedTokens", label: "缓存读取" },
+    { field: "cacheCreationTokens", label: "缓存写入" },
+    { field: "completionTokens", label: "输出" },
+  ], []);
 
   const totalColSpan = columns.length + valueColumns.length;
 
@@ -204,7 +174,7 @@ export default function UsageTable({
                     </div>
                   </td>
                   {renderSummaryCells(group)}
-                  <ValueCells item={group.summary} viewMode={viewMode} isSummary />
+                  <ValueCells item={group.summary} isSummary />
                 </tr>
                 {/* Detail rows */}
                 {expanded.has(group.groupKey) && group.items.map((item) => (
@@ -213,7 +183,7 @@ export default function UsageTable({
                     className="group-detail hover:bg-bg-subtle/20 transition-colors"
                   >
                     {renderDetailCells(item)}
-                    <ValueCells item={item} viewMode={viewMode} />
+                    <ValueCells item={item} />
                   </tr>
                 ))}
               </Fragment>
@@ -244,7 +214,6 @@ UsageTable.propTypes = {
   sortBy: PropTypes.string.isRequired,
   sortOrder: PropTypes.string.isRequired,
   onToggleSort: PropTypes.func.isRequired,
-  viewMode: PropTypes.string.isRequired,
   storageKey: PropTypes.string.isRequired,
   renderDetailCells: PropTypes.func.isRequired,
   renderSummaryCells: PropTypes.func.isRequired,

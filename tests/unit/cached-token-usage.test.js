@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { canonicalizeUsage, extractUsage, mergeUsage, normalizeUsage } from "../../open-sse/utils/usageTracking.js";
-import { calculateCostFromTokens } from "../../open-sse/providers/pricing.js";
+import { calculateCostBreakdown, calculateCostFromTokens } from "../../open-sse/providers/pricing.js";
 import { toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
 
 // Canonical convention (single source of truth for storage + cost):
@@ -131,6 +131,25 @@ describe("calculateCostFromTokens (canonical inclusive convention)", () => {
   it("matches plain input pricing when no cache present", () => {
     const cost = calculateCostFromTokens({ prompt_tokens: 100, completion_tokens: 50 }, pricing);
     expect(cost).toBeCloseTo((100 * 3 + 50 * 15) / 1_000_000, 12);
+  });
+
+  it("returns exact token and cost components for usage tables", () => {
+    const result = calculateCostBreakdown(
+      { prompt_tokens: 330, completion_tokens: 50, cached_tokens: 200, cache_creation_input_tokens: 30 },
+      pricing,
+    );
+    expect(result.inputTokens).toBe(100);
+    expect(result.cacheReadTokens).toBe(200);
+    expect(result.cacheCreationTokens).toBe(30);
+    expect(result.outputTokens).toBe(50);
+    expect(result.inputCost).toBeCloseTo(100 * 3 / 1_000_000, 12);
+    expect(result.cacheReadCost).toBeCloseTo(200 * 0.3 / 1_000_000, 12);
+    expect(result.cacheCreationCost).toBeCloseTo(30 * 3.75 / 1_000_000, 12);
+    expect(result.outputCost).toBeCloseTo(50 * 15 / 1_000_000, 12);
+    expect(result.totalCost).toBeCloseTo(calculateCostFromTokens(
+      { prompt_tokens: 330, completion_tokens: 50, cached_tokens: 200, cache_creation_input_tokens: 30 },
+      pricing,
+    ), 12);
   });
 });
 

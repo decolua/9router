@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Card, Input, Modal, Toggle } from "@/shared/components";
 
 const EMPTY_FORM = { id: null, name: "", allowAll: true, allowedModels: [], allowedCombos: [] };
@@ -14,6 +14,8 @@ export default function KeyGroupsPage() {
   const [form, setForm] = useState(null);
   const [modelSearch, setModelSearch] = useState("");
   const [comboSearch, setComboSearch] = useState("");
+  const [modelView, setModelView] = useState("all");
+  const [comboView, setComboView] = useState("all");
 
   const loadData = async () => {
     setLoading(true);
@@ -44,7 +46,12 @@ export default function KeyGroupsPage() {
 
   useEffect(() => { loadData(); }, []);
 
-  const resetSearch = () => { setModelSearch(""); setComboSearch(""); };
+  const resetSearch = () => {
+    setModelSearch("");
+    setComboSearch("");
+    setModelView("all");
+    setComboView("all");
+  };
   const openCreate = () => { resetSearch(); setForm({ ...EMPTY_FORM }); };
   const openEdit = (group) => {
     resetSearch();
@@ -93,8 +100,14 @@ export default function KeyGroupsPage() {
 
   const normalizedModelSearch = modelSearch.trim().toLowerCase();
   const normalizedComboSearch = comboSearch.trim().toLowerCase();
-  const visibleModels = useMemo(() => normalizedModelSearch ? models.filter((model) => model.toLowerCase().includes(normalizedModelSearch)) : models, [models, normalizedModelSearch]);
-  const visibleCombos = useMemo(() => normalizedComboSearch ? combos.filter((combo) => combo.toLowerCase().includes(normalizedComboSearch)) : combos, [combos, normalizedComboSearch]);
+  const visibleModels = models.filter((model) => {
+    if (modelView === "selected" && !form?.allowedModels.includes(model)) return false;
+    return !normalizedModelSearch || model.toLowerCase().includes(normalizedModelSearch);
+  });
+  const visibleCombos = combos.filter((combo) => {
+    if (comboView === "selected" && !form?.allowedCombos.includes(combo)) return false;
+    return !normalizedComboSearch || combo.toLowerCase().includes(normalizedComboSearch);
+  });
 
   return (
     <div className="flex min-w-0 flex-col gap-4" data-i18n-skip>
@@ -121,12 +134,24 @@ export default function KeyGroupsPage() {
             <div className="grid gap-5 lg:grid-cols-2">
               <section className="flex min-w-0 flex-col gap-2">
                 <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">可用模型</h3><div className="flex items-center gap-2 text-xs"><span className="text-text-muted">已选 {form.allowedModels.length}</span><button type="button" onClick={() => selectValues("allowedModels", visibleModels)} className="whitespace-nowrap text-primary hover:underline">全选筛选结果</button><button type="button" onClick={() => clearValues("allowedModels")} className="whitespace-nowrap text-text-muted hover:text-text-main">全部取消</button></div></div>
-                <Input icon="search" placeholder="搜索可用模型" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} />
+                <div className="flex items-center gap-2">
+                  <Input className="min-w-0 flex-1" icon="search" placeholder="搜索可用模型" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} />
+                  <div className="flex shrink-0 rounded-md border border-border bg-bg-subtle p-0.5 text-xs">
+                    <button type="button" onClick={() => setModelView("all")} className={`rounded px-2.5 py-1.5 ${modelView === "all" ? "bg-primary text-white" : "text-text-muted hover:text-text-main"}`}>全部</button>
+                    <button type="button" onClick={() => setModelView("selected")} className={`rounded px-2.5 py-1.5 ${modelView === "selected" ? "bg-primary text-white" : "text-text-muted hover:text-text-main"}`}>已选中</button>
+                  </div>
+                </div>
                 <div className="h-80 overflow-y-auto rounded-md border border-border p-2">{visibleModels.length ? visibleModels.map((model) => <label key={model} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-surface-2"><input type="checkbox" checked={form.allowedModels.includes(model)} onChange={() => toggleValue("allowedModels", model)} /><span className="min-w-0 break-all font-mono">{model}</span></label>) : <p className="p-4 text-center text-xs text-text-muted">没有匹配的模型</p>}</div>
               </section>
               <section className="flex min-w-0 flex-col gap-2">
                 <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">可用模型组合</h3><div className="flex items-center gap-2 text-xs"><span className="text-text-muted">已选 {form.allowedCombos.length}</span><button type="button" onClick={() => selectValues("allowedCombos", visibleCombos)} className="whitespace-nowrap text-primary hover:underline">全选筛选结果</button><button type="button" onClick={() => clearValues("allowedCombos")} className="whitespace-nowrap text-text-muted hover:text-text-main">全部取消</button></div></div>
-                <Input icon="search" placeholder="搜索可用模型组合" value={comboSearch} onChange={(event) => setComboSearch(event.target.value)} />
+                <div className="flex items-center gap-2">
+                  <Input className="min-w-0 flex-1" icon="search" placeholder="搜索可用模型组合" value={comboSearch} onChange={(event) => setComboSearch(event.target.value)} />
+                  <div className="flex shrink-0 rounded-md border border-border bg-bg-subtle p-0.5 text-xs">
+                    <button type="button" onClick={() => setComboView("all")} className={`rounded px-2.5 py-1.5 ${comboView === "all" ? "bg-primary text-white" : "text-text-muted hover:text-text-main"}`}>全部</button>
+                    <button type="button" onClick={() => setComboView("selected")} className={`rounded px-2.5 py-1.5 ${comboView === "selected" ? "bg-primary text-white" : "text-text-muted hover:text-text-main"}`}>已选中</button>
+                  </div>
+                </div>
                 <div className="h-80 overflow-y-auto rounded-md border border-border p-2">{visibleCombos.length ? visibleCombos.map((combo) => <label key={combo} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-surface-2"><input type="checkbox" checked={form.allowedCombos.includes(combo)} onChange={() => toggleValue("allowedCombos", combo)} /><span className="min-w-0 break-all font-mono">{combo}</span></label>) : <p className="p-4 text-center text-xs text-text-muted">没有匹配的模型组合</p>}</div>
               </section>
             </div>

@@ -162,6 +162,13 @@ const getPageInfo = (pathname) => {
       icon: "group_work",
       breadcrumbs: [],
     };
+  if (pathname.includes("/expert-panel"))
+    return {
+      title: "Expert Panel",
+      description: "Compare multiple model responses and judge their quality",
+      icon: "forum",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/endpoint"))
     return {
       title: "Endpoint",

@@ -22,7 +22,8 @@ const navItems = [
   { href: "/dashboard/key-groups", label: "Key Groups", icon: "group_work" },
   { href: "/dashboard/providers", label: "Providers", icon: "dns" },
   // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
-  { href: "/dashboard/combos", label: "Combo & Vision Adapter", icon: "layers" },
+  { href: "/dashboard/combos", label: "Combo", icon: "layers" },
+  { href: "/dashboard/expert-panel", label: "Expert Panel", icon: "forum" },
   { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
   { href: "/dashboard/token-saver", label: "Token Saver", icon: "savings" },
   // { href: "/dashboard/pxpipe", label: "PXPIPE", icon: "image" },
@@ -70,7 +71,7 @@ export default function Sidebar({ onClose }) {
   useEffect(() => {
     fetch("/api/version")
       .then(res => res.json())
-      .then(data => { if (data.hasUpdate) setUpdateInfo(data); })
+      .then(data => setUpdateInfo(data))
       .catch(() => {});
   }, []);
 
@@ -133,10 +134,12 @@ export default function Sidebar({ onClose }) {
               <h1 className="text-lg font-semibold tracking-tight text-text-main">
                 {APP_CONFIG.name}
               </h1>
-              <span className="text-xs text-text-muted">v{APP_CONFIG.version}</span>
+              <span className="text-xs text-text-muted">
+                {`更新于 ${new Date(updateInfo?.lastUpdated || process.env.NEXT_PUBLIC_BUILD_TIME).toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })}`}
+              </span>
             </div>
           </Link>
-          {updateInfo && (
+          {updateInfo?.hasUpdate && (
             <div className="flex flex-col gap-1.5 rounded p-1 -m-1">
               <span className="text-xs font-semibold text-green-600 dark:text-amber-500">
                 ↑ New version available: v{updateInfo.latestVersion}

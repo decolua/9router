@@ -714,6 +714,96 @@ export async function getUsageStats(period = "all", range = {}) {
     }
   }
 
+  // API-key analysis needs exact per-rate components. Rebuild it from history for
+  // every period so legacy daily summaries also gain cache-write and component costs.
+  let apiKeyStart = new Date(0);
+  let apiKeyEnd = new Date();
+  if (period === "custom") {
+    apiKeyStart = range.startDate ? new Date(range.startDate) : apiKeyStart;
+    apiKeyEnd = range.endDate ? new Date(range.endDate) : apiKeyEnd;
+  } else if (period === "today") {
+    apiKeyStart = new Date();
+    apiKeyStart.setHours(0, 0, 0, 0);
+  } else if (period === "24h") {
+    apiKeyStart = new Date(Date.now() - PERIOD_MS["24h"]);
+  } else if (["7d", "30d", "60d"].includes(period)) {
+    const days = { "7d": 7, "30d": 30, "60d": 60 }[period];
+    apiKeyStart = new Date();
+    apiKeyStart.setHours(0, 0, 0, 0);
+    apiKeyStart.setDate(apiKeyStart.getDate() - days + 1);
+  }
+
+  const apiKeyRows = db.all(
+    `SELECT timestamp, provider, model, apiKey, promptTokens, completionTokens, tokens
+     FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
+    [apiKeyStart.toISOString(), apiKeyEnd.toISOString()],
+  );
+  const [{ getPricingForModel }, { calculateCostBreakdown }] = await Promise.all([
+    import("./pricingRepo.js"),
+    import("open-sse/providers/pricing.js"),
+  ]);
+  const pricingCache = new Map();
+  const pricedRows = await Promise.all(apiKeyRows.map(async (row) => {
+    const tokens = parseJson(row.tokens, {}) || {};
+    const { cacheReadTokens, cacheCreationTokens } = getCacheTokenCounts(tokens);
+    const normalizedTokens = {
+      ...tokens,
+      prompt_tokens: Number(row.promptTokens ?? tokens.prompt_tokens ?? tokens.input_tokens ?? 0),
+      completion_tokens: Number(row.completionTokens ?? tokens.completion_tokens ?? tokens.output_tokens ?? 0),
+      cached_tokens: cacheReadTokens,
+      cache_creation_input_tokens: cacheCreationTokens,
+    };
+    const pricingKey = `${row.provider || ""}|${row.model || ""}`;
+    if (!pricingCache.has(pricingKey)) pricingCache.set(pricingKey, getPricingForModel(row.provider, row.model));
+    const pricing = await pricingCache.get(pricingKey);
+    const breakdown = pricing
+      ? calculateCostBreakdown(normalizedTokens, pricing)
+      : await calculateBreakdown(row.provider, row.model, normalizedTokens);
+    return { row, breakdown };
+  }));
+
+  stats.byApiKey = {};
+  for (const { row, breakdown } of pricedRows) {
+    const apiKeyValue = row.apiKey && typeof row.apiKey === "string" ? row.apiKey : null;
+    const keyInfo = apiKeyValue ? apiKeyMap[apiKeyValue] : null;
+    const apiKeyMasked = maskApiKey(apiKeyValue);
+    const keyName = keyInfo?.name || (apiKeyValue ? `${apiKeyValue.slice(0, 8)}...` : "本地调用（无 API 密钥）");
+    const providerDisplayName = providerNodeNameMap[row.provider] || row.provider || "未知提供商";
+    const statsKey = `${apiKeyMasked || "local-no-key"}|${row.model || "未知模型"}|${row.provider || "unknown"}`;
+    if (!stats.byApiKey[statsKey]) {
+      stats.byApiKey[statsKey] = {
+        requests: 0,
+        promptTokens: 0,
+        cachedTokens: 0,
+        cacheCreationTokens: 0,
+        completionTokens: 0,
+        inputCost: 0,
+        cachedCost: 0,
+        cacheCreationCost: 0,
+        outputCost: 0,
+        cost: 0,
+        rawModel: row.model,
+        provider: providerDisplayName,
+        apiKeyMasked,
+        keyName,
+        apiKeyKey: apiKeyMasked || "local-no-key",
+        lastUsed: row.timestamp,
+      };
+    }
+    const target = stats.byApiKey[statsKey];
+    target.requests += 1;
+    target.promptTokens += breakdown.inputTokens;
+    target.cachedTokens += breakdown.cacheReadTokens;
+    target.cacheCreationTokens += breakdown.cacheCreationTokens;
+    target.completionTokens += breakdown.outputTokens;
+    target.inputCost += breakdown.inputCost;
+    target.cachedCost += breakdown.cacheReadCost;
+    target.cacheCreationCost += breakdown.cacheCreationCost;
+    target.outputCost += breakdown.outputCost;
+    target.cost += breakdown.totalCost;
+    if (new Date(row.timestamp) > new Date(target.lastUsed)) target.lastUsed = row.timestamp;
+  }
+
   stats.totalRequests = Object.values(stats.byProvider).reduce((sum, p) => sum + (p.requests || 0), 0);
   return stats;
 }
@@ -837,6 +927,32 @@ export async function appendRequestLog(entry = {}) {
   });
 }
 
+async function calculateBreakdown(provider, model, tokens) {
+  const fallbackTokens = {
+    inputTokens: Math.max(0, Number(tokens?.prompt_tokens || tokens?.input_tokens || 0)),
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    outputTokens: Math.max(0, Number(tokens?.completion_tokens || tokens?.output_tokens || 0)),
+    inputCost: 0,
+    cacheReadCost: 0,
+    cacheCreationCost: 0,
+    outputCost: 0,
+    totalCost: 0,
+  };
+  if (!tokens || !provider || !model) return fallbackTokens;
+  try {
+    const [{ getPricingForModel }, { calculateCostBreakdown }] = await Promise.all([
+      import("./pricingRepo.js"),
+      import("open-sse/providers/pricing.js"),
+    ]);
+    const pricing = await getPricingForModel(provider, model);
+    return pricing ? calculateCostBreakdown(tokens, pricing) : fallbackTokens;
+  } catch (error) {
+    console.error("Error calculating cost breakdown:", error);
+    return fallbackTokens;
+  }
+}
+
 export async function getRecentLogs(limit = 200) {
   try {
     const db = await getAdapter();
@@ -914,11 +1030,17 @@ export async function getUsageLogs(filter = {}) {
   const connMap = Object.fromEntries(connections.map((c) => [c.id, c.name || c.email || c.id]));
   const keyMap = Object.fromEntries(apiKeys.map((k) => [k.key, k.name || k.id]));
   const mask = (key) => !key ? null : key.length <= 8 ? `${key[0]}***` : `${key.slice(0, 8)}***`;
-  const logs = rows.map((r) => {
+  const logs = await Promise.all(rows.map(async (r) => {
     const tokens = parseJson(r.tokens, {}) || {};
-    const inputTokens = Number(r.promptTokens ?? tokens.prompt_tokens ?? tokens.input_tokens ?? 0);
     const { cacheReadTokens, cacheCreationTokens } = getCacheTokenCounts(tokens);
-    const outputTokens = Number(r.completionTokens ?? tokens.completion_tokens ?? tokens.output_tokens ?? 0);
+    const normalizedTokens = {
+      ...tokens,
+      prompt_tokens: Number(r.promptTokens ?? tokens.prompt_tokens ?? tokens.input_tokens ?? 0),
+      completion_tokens: Number(r.completionTokens ?? tokens.completion_tokens ?? tokens.output_tokens ?? 0),
+      cached_tokens: cacheReadTokens,
+      cache_creation_input_tokens: cacheCreationTokens,
+    };
+    const breakdown = await calculateBreakdown(r.provider, r.model, normalizedTokens);
     return {
       id: r.id,
       timestamp: r.timestamp,
@@ -928,16 +1050,12 @@ export async function getUsageLogs(filter = {}) {
       provider: r.provider,
       endpoint: r.endpoint,
       account: r.connectionId ? (connMap[r.connectionId] || r.connectionId) : null,
-      inputTokens,
-      cacheReadTokens,
-      cacheCreationTokens,
-      outputTokens,
-      totalTokens: inputTokens + outputTokens,
-      cost: Number(r.cost || 0),
+      ...breakdown,
+      cost: breakdown.totalCost || Number(r.cost || 0),
       status: r.status || "ok",
       logType: ["ok", "success", "200 ok"].includes(String(r.status || "").toLowerCase()) ? "success" : "failed",
     };
-  });
+  }));
   const totalPages = Math.ceil(totalItems / pageSize);
   return { logs, pagination: { page, pageSize, totalItems, totalPages, hasNext: page < totalPages, hasPrev: page > 1 } };
 }

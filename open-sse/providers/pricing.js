@@ -410,34 +410,39 @@ export function formatCost(cost) {
  * @returns {number} cost in dollars
  */
 export function calculateCostFromTokens(tokens, pricing) {
-  if (!tokens || !pricing) return 0;
+  return calculateCostBreakdown(tokens, pricing).totalCost;
+}
 
-  let cost = 0;
+/** Calculate exact token and cost components using the configured per-million rates. */
+export function calculateCostBreakdown(tokens, pricing) {
+  if (!tokens || !pricing) {
+    return { inputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, outputTokens: 0, inputCost: 0, cacheReadCost: 0, cacheCreationCost: 0, outputCost: 0, totalCost: 0 };
+  }
 
-  const inputTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
-  const cachedTokens = tokens.cached_tokens || tokens.cache_read_input_tokens || 0;
-  const cacheCreationTokens = tokens.cache_creation_input_tokens || 0;
+  const promptTokens = Number(tokens.prompt_tokens || tokens.input_tokens || 0);
+  const cachedTokens = Number(tokens.cached_tokens || tokens.cache_read_input_tokens || 0);
+  const cacheCreationTokens = Number(tokens.cache_creation_input_tokens || 0);
   // prompt_tokens is cache-inclusive (see canonicalizeUsage): cached + cache_creation
   // are subsets, so subtract both to avoid charging them at the full input rate.
-  const nonCachedInput = Math.max(0, inputTokens - cachedTokens - cacheCreationTokens);
+  const inputTokens = Math.max(0, promptTokens - cachedTokens - cacheCreationTokens);
+  const completionTokens = Number(tokens.completion_tokens || tokens.output_tokens || 0);
+  const reasoningTokens = Number(tokens.reasoning_tokens || 0);
+  const outputTokens = completionTokens + reasoningTokens;
+  const inputCost = inputTokens * (Number(pricing.input || 0) / 1000000);
+  const cacheReadCost = cachedTokens * (Number(pricing.cached ?? pricing.input ?? 0) / 1000000);
+  const cacheCreationCost = cacheCreationTokens * (Number(pricing.cache_creation ?? pricing.input ?? 0) / 1000000);
+  const outputCost = completionTokens * (Number(pricing.output || 0) / 1000000)
+    + reasoningTokens * (Number(pricing.reasoning ?? pricing.output ?? 0) / 1000000);
 
-  cost += nonCachedInput * (pricing.input / 1000000);
-
-  if (cachedTokens > 0) {
-    cost += cachedTokens * ((pricing.cached || pricing.input) / 1000000);
-  }
-
-  const outputTokens = tokens.completion_tokens || tokens.output_tokens || 0;
-  cost += outputTokens * (pricing.output / 1000000);
-
-  const reasoningTokens = tokens.reasoning_tokens || 0;
-  if (reasoningTokens > 0) {
-    cost += reasoningTokens * ((pricing.reasoning || pricing.output) / 1000000);
-  }
-
-  if (cacheCreationTokens > 0) {
-    cost += cacheCreationTokens * ((pricing.cache_creation || pricing.input) / 1000000);
-  }
-
-  return cost;
+  return {
+    inputTokens,
+    cacheReadTokens: cachedTokens,
+    cacheCreationTokens,
+    outputTokens,
+    inputCost,
+    cacheReadCost,
+    cacheCreationCost,
+    outputCost,
+    totalCost: inputCost + cacheReadCost + cacheCreationCost + outputCost,
+  };
 }
