@@ -21,6 +21,7 @@ export default {
     baseUrl: "https://ollama.com/api/chat",
     validateUrl: "https://ollama.com/api/tags",
     format: "ollama",
+    thinkingFormat: "ollama",
   },
   models: [
     { id: "gpt-oss:120b", name: "GPT OSS 120B" },
