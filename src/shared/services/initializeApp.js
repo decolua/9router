@@ -16,6 +16,8 @@ import {
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 import { killAllBridges } from "@/lib/mcp/stdioSseBridge";
+import { primeContextWindows } from "open-sse/services/contextWindowRegistry.js";
+import { refreshOpenRouterContextWindows } from "open-sse/services/openrouterModels.js";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -79,8 +81,32 @@ export async function initializeApp() {
   }
 }
 
+/** Six hours. Model windows change when a provider ships, not by the minute,
+ *  and the catalogue is a public unauthenticated GET — cheap, but not free. */
+const CONTEXT_WINDOW_REFRESH_MS = 6 * 60 * 60 * 1000;
+
+// Learn every model's real context window from the providers that publish one,
+// instead of inheriting the 200,000 default. That default is load-bearing —
+// shouldSkipModel and compactCeiling both read it — so a 1M model nobody has
+// hand-written a table entry for gets advertised at 200K and the gateway throws
+// away 80% of the window it chose that model for. See
+// services/contextWindowRegistry.js for the incident that forced this.
+function startContextWindowLearning() {
+  if (g.contextWindowLearningStarted) return;
+  g.contextWindowLearningStarted = true;
+  const run = () =>
+    Promise.all([
+      primeContextWindows(),
+      refreshOpenRouterContextWindows({ force: true }),
+    ]).catch((e) => console.warn("[CTXWIN] refresh failed:", e.message));
+  run();
+  const timer = setInterval(run, CONTEXT_WINDOW_REFRESH_MS);
+  if (typeof timer.unref === "function") timer.unref();
+}
+
 async function runHeavyStartup() {
   await cleanupProviderConnections();
+  startContextWindowLearning();
   const settings = await getSettings();
 
   // Auto-resume tunnel (once per process)

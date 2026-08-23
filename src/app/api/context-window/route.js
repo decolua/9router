@@ -79,7 +79,10 @@ export async function GET(request) {
     // A stale head is worse than a wrong one only if it stops the answer.
   }
 
-  const { ceiling, head, next } = compactCeiling(models, COMPACT_HEADROOM_RATIO);
+  // No request in hand here, so no size to fit: inputTokens 0 makes the first
+  // live member the head, which is the right answer for "what window should the
+  // client adopt" — the client is asking before it has a request either.
+  const { ceiling, head, next } = compactCeiling(models, COMPACT_HEADROOM_RATIO, 0);
 
   // `clientWindow` is the number to hand Claude Code, and it is NOT `head`.
   // Claude Code applies its own 80% to whatever window it is given, so the

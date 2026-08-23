@@ -11,6 +11,7 @@ import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
 import { estimateInputTokens, measureBody, IMAGE_TOKEN_ESTIMATE } from "../utils/usageTracking.js";
 import { charsPerToken, sizingCharsPerToken, isSizingCalibrated } from "./tokenRatio.js";
+import { learnedContextWindow } from "./contextWindowRegistry.js";
 import { extractVisibleText, findDegeneracy, hasAssistantPrefill, GATE_WINDOW_CHARS, GATE_MIN_JUDGEABLE_CHARS, PREFLIGHT_MAX_READS, HOLD_BACK_MS } from "../utils/degeneracy.js";
 import { COMBO_RESPONSE_TIMEOUT_MS, COMBO_FIRST_EVENT_TIMEOUT_MS, COMPACT_HEADROOM_RATIO, CONTEXT_ESTIMATE_SAFETY } from "../config/errorConfig.js";
 import { isPaidModel } from "../config/costClasses.js";
@@ -557,8 +558,22 @@ function splitModelStr(modelStr) {
     : { provider: "", model: modelStr };
 }
 
-/** A member's input window, or 0 when the provider does not declare one. */
+/**
+ * A member's input window, or 0 when nothing declares one.
+ *
+ * A window LEARNED from the provider's own catalogue wins over the static
+ * table, because the provider is the authority on its own model and a static
+ * entry is stale the moment they ship. The table stays as the seed for
+ * providers that publish no catalogue — and as the answer for the many models
+ * whose windows genuinely are fixed.
+ *
+ * The lookup is synchronous against a warm cache; the catalogue refresh happens
+ * out of band. Sizing runs on every request and must never wait on a network
+ * call to decide whether a model can hold one.
+ */
 export function modelContextWindow(modelStr) {
+  const learned = learnedContextWindow(modelStr);
+  if (learned) return learned;
   const { provider, model } = splitModelStr(modelStr);
   return getCapabilitiesForModel(provider, model).contextWindow || 0;
 }
@@ -614,7 +629,7 @@ export function widestEligibleWindow(models) {
  * Order matters and is the cascade's own: these are the members in the order
  * they will be tried, minus the ones already banned or backing off.
  */
-export function compactCeiling(models, headroomRatio) {
+export function compactCeiling(models, headroomRatio, inputTokens = 0) {
   const live = [];
   for (const modelStr of models) {
     if (isQuotaExhausted(modelStr) || isModelCoolingDown(modelStr)) continue;
@@ -622,8 +637,23 @@ export function compactCeiling(models, headroomRatio) {
     if (w > 0) live.push(w);
   }
   if (live.length === 0) return { ceiling: 0, head: 0, next: 0 };
-  const head = live[0];
-  const next = live.length > 1 ? live[1] : 0;
+
+  // The head is the member that will ACTUALLY answer, which is not always the
+  // first one: a member too small for this request is skipped before it is
+  // tried, and taking 80% of a window that is about to be passed over asks the
+  // client to compact on behalf of a model that was never going to serve it.
+  let headIdx = live.findIndex((w) => w >= inputTokens);
+  if (headIdx === -1) headIdx = 0; // nothing fits; the onlyTooLarge path owns that
+  const head = live[headIdx];
+
+  // "the next model" is the widest thing we could rotate INTO, not the adjacent
+  // list entry. The question the rule asks is whether a rotation can still
+  // carry the conversation — and a 200K member sitting between two 1M ones does
+  // not make the answer no. Reading it literally would cap a 1M head at 200K
+  // whenever any small member trailed it, which is the "compact at 20%" the
+  // whole exercise is trying to stop.
+  const next = live.slice(headIdx + 1).reduce((a, b) => (b > a ? b : a), 0);
+
   const byRatio = Math.floor(head * headroomRatio);
   const ceiling = next > 0 ? Math.min(byRatio, next) : byRatio;
   return { ceiling, head, next };
@@ -808,7 +838,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   //
   // Zero means no member declares a window, and a ceiling cannot be derived
   // from nothing — fall through and let the cascade answer as it always did.
-  const { ceiling, head: headWindow, next: nextWindow } = compactCeiling(rotatedModels, COMPACT_HEADROOM_RATIO);
+  const { ceiling, head: headWindow, next: nextWindow } = compactCeiling(rotatedModels, COMPACT_HEADROOM_RATIO, inputTokens);
   if (ceiling > 0 && inputTokens > ceiling) {
     const boundByNext = nextWindow > 0 && nextWindow < Math.floor(headWindow * COMPACT_HEADROOM_RATIO);
     const why = boundByNext
