@@ -14,8 +14,34 @@
  * cascade drained to a 429 that looked like a rotation failure.
  *
  * Per provider, because tokenizers differ: the same text is not the same number
- * of tokens to Gemini and to Claude. A global blend serves the sizing decision in
- * combo.js, which runs before any provider is chosen.
+ * of tokens to Gemini and to Claude.
+ *
+ * SIZING DOES NOT USE THE BLEND — and the first version of this module was wrong
+ * about that. A single global mean, fed by whichever provider happened to answer
+ * last, is a feedback loop: the estimate picks the member, that member's
+ * tokenizer produces the next sample, the sample moves the estimate, which picks
+ * a different member next time. Measured in production on 2026-08-23, over eight
+ * minutes and one unchanged conversation:
+ *
+ *     23:42:14  chars=590497  ratio=4.00  ->  estimate 150,784
+ *     23:42:42  chars=596279  ratio=2.50  ->  estimate 243,466
+ *     23:44:14  chars=604242  ratio=2.01  ->  estimate 305,373
+ *     23:45:04                ratio=1.84     (floor)
+ *     23:49:07                ratio=3.63     (ceiling)
+ *
+ * The same 600k-char body sized at 150k tokens and at 305k tokens — a 2x spread
+ * against a hard 200k cliff, so members flipped in and out of eligibility every
+ * turn. When it landed high, 200k members were judged able to hold a 400k request,
+ * each spent a round trip to answer 400, the cascade drained, and the client's
+ * compaction request came back an error — which Claude Code answers by abandoning
+ * compaction and carrying on with a full context. The conversation then cannot
+ * shrink, which is the one failure this whole path exists to prevent.
+ *
+ * So sizing takes the most PESSIMISTIC ratio observed, not the average one. The
+ * asymmetry is deliberate and it is not close: sizing low skips a member that
+ * might have coped, which costs one position in a cascade of eighteen; sizing
+ * high spends a round trip per member and can drain the combo. Under-counting
+ * tokens is the expensive mistake, so the number that can only over-count wins.
  */
 
 // Exponential moving average. Low alpha because the ratio is a property of the
@@ -35,6 +61,19 @@ const MAX_RATIO = 8;
 
 // Below this the sample is noise: a tiny request's fixed overhead dominates.
 const MIN_SAMPLE_CHARS = 2000;
+
+// A provider speaks for itself only once it has been seen more than once. One
+// sample is an anecdote, and because sizing takes the minimum across providers,
+// a single freak observation would otherwise set the number for everybody.
+const MIN_SAMPLES_TO_TRUST = 3;
+
+// Applied to the sizing ratio only, never to the recorded one. A smaller ratio
+// means more tokens, so this buys headroom against the gap between the body we
+// measure and the body the provider counts — translation rewrites it, the system
+// prompt is injected after, and RTK may compress tool results. 10% is the margin
+// the observed spread needs; it is not a fudge for an unmeasured quantity, which
+// is what CONTEXT_ESTIMATE_SAFETY was.
+const SIZING_MARGIN = 0.9;
 
 /** @type {Map<string, { ratio: number, samples: number }>} */
 const byProvider = new Map();
@@ -67,7 +106,9 @@ export function observeTokenRatio(provider, chars, realTokens) {
 
 /**
  * Chars per token to divide by. Provider-specific when known, else the global
- * blend, else the bootstrap.
+ * blend, else the bootstrap. This is the descriptive number — what we believe
+ * the tokenizer actually does. Use it for reporting, not for deciding whether a
+ * member can hold a request; see sizingCharsPerToken for that.
  */
 export function charsPerToken(provider = null) {
   if (provider) {
@@ -75,6 +116,42 @@ export function charsPerToken(provider = null) {
     if (p && p.samples > 0) return p.ratio;
   }
   return global.ratio;
+}
+
+/**
+ * The ratio to size a request with: the most token-hungry tokenizer we have
+ * actually observed, with a margin, so the estimate errs high.
+ *
+ * When the provider is known this is that provider's own ratio — nothing is
+ * blended, and the feedback loop described at the top of this file cannot form.
+ * When it is not — combo.js sizes once for the whole cascade, before any member
+ * is chosen — it is the MINIMUM across every provider with enough samples to
+ * speak. Minimum, not mean: the request has to fit whichever member ends up
+ * serving it, so the pool's worst case is the only honest number, and a minimum
+ * over a stable set barely moves even while the individual means drift.
+ */
+export function sizingCharsPerToken(provider = null) {
+  if (provider) {
+    const p = byProvider.get(provider);
+    if (p && p.samples >= MIN_SAMPLES_TO_TRUST) return p.ratio * SIZING_MARGIN;
+  }
+  let worst = null;
+  for (const p of byProvider.values()) {
+    if (p.samples < MIN_SAMPLES_TO_TRUST) continue;
+    if (worst === null || p.ratio < worst) worst = p.ratio;
+  }
+  if (worst !== null) return worst * SIZING_MARGIN;
+  return (global.samples > 0 ? global.ratio : BOOTSTRAP_CHARS_PER_TOKEN) * SIZING_MARGIN;
+}
+
+/** True once at least one provider has spoken often enough to be trusted. */
+export function isSizingCalibrated(provider = null) {
+  if (provider) {
+    const p = byProvider.get(provider);
+    if (p && p.samples >= MIN_SAMPLES_TO_TRUST) return true;
+  }
+  for (const p of byProvider.values()) if (p.samples >= MIN_SAMPLES_TO_TRUST) return true;
+  return false;
 }
 
 /** True once the number in use is measured rather than assumed. */

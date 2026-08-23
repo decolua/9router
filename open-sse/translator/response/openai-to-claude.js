@@ -66,7 +66,19 @@ function isValidPdfPagesArg(filePath, pages) {
 // blocks (<instructions>, <system-reminder>, ...) verbatim into their visible
 // output. Models never legitimately emit these tags, so drop the whole block.
 // Streaming-safe: tags split across chunks are held in state.echoCarry.
-const ECHO_TAGS = ["instructions", "system-reminder", "task-notification", "command-message", "command-name"];
+// `analysis` was added 2026-08-23. Claude Code's compaction prompt asks the model
+// for an <analysis> block followed by a <summary> block; once one of those replies
+// is in the transcript the model copies the shape on ordinary turns too, and its
+// reasoning arrives as visible text rather than as a thinking block. Observed on
+// ag/gemini-pro-agent: a full page of "First, let's address..." rendered to the
+// user as the answer. The Gemini thought->thinking mapping is not at fault and
+// was checked — these parts arrive with thought unset, as plain text.
+//
+// `summary` is deliberately NOT in this list and must not be added. During
+// compaction that block IS the payload the client consumes; stripping it would
+// leave Claude Code with nothing to compact to and break the session outright,
+// which is a far worse failure than showing a tag.
+const ECHO_TAGS = ["instructions", "system-reminder", "task-notification", "command-message", "command-name", "analysis"];
 
 // Longest attribute run tolerated inside an opening tag before it stops looking
 // like one. Bounds state.echoCarry: without it, `<instructions ` with no closing

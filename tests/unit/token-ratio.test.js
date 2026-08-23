@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  observeTokenRatio, charsPerToken, isCalibrated, ratioStats, resetTokenRatios,
+  observeTokenRatio, charsPerToken, sizingCharsPerToken, isCalibrated, isSizingCalibrated,
+  ratioStats, resetTokenRatios,
 } from "../../open-sse/services/tokenRatio.js";
 
 describe("learned chars-per-token ratio", () => {
@@ -52,5 +53,66 @@ describe("learned chars-per-token ratio", () => {
     observeTokenRatio("ag", NaN, 50);
     expect(isCalibrated()).toBe(false);
     expect(ratioStats().global.samples).toBe(0);
+  });
+});
+
+// The regression that made sizing unusable in production on 2026-08-23. A single
+// global mean, fed by whichever provider answered last, is a feedback loop: the
+// estimate picks the member, that member's tokenizer produces the next sample,
+// the sample moves the estimate. Observed over eight minutes on one unchanged
+// conversation the mean travelled 1.84 -> 3.63, so the same 600k-char body sized
+// at 150k tokens and at 305k tokens against a hard 200k cliff — members flipped
+// in and out of eligibility every turn, and the client's compaction request came
+// back an error, which Claude Code answers by abandoning compaction entirely.
+describe("sizing ratio is pessimistic and stable, not the mean", () => {
+  beforeEach(() => resetTokenRatios());
+
+  const feed = (provider, ratio, n = 5) => {
+    for (let i = 0; i < n; i++) observeTokenRatio(provider, 100000, Math.round(100000 / ratio));
+  };
+
+  it("sizes on the most token-hungry provider, not the average of them", () => {
+    feed("antigravity", 4.0);
+    feed("kiro", 1.6);
+    // The mean of these lands near 2.8 and under-counts by ~40% for anything
+    // routed to kiro. Sizing takes kiro's number for everyone.
+    expect(sizingCharsPerToken()).toBeLessThanOrEqual(1.6);
+    expect(sizingCharsPerToken()).toBeLessThan(charsPerToken());
+  });
+
+  it("never under-counts tokens relative to the mean", () => {
+    feed("antigravity", 3.0);
+    const chars = 600000;
+    expect(Math.ceil(chars / sizingCharsPerToken())).toBeGreaterThan(Math.ceil(chars / charsPerToken()));
+  });
+
+  it("ignores a provider seen only once, so one freak sample cannot set the floor", () => {
+    feed("antigravity", 3.0);
+    const before = sizingCharsPerToken();
+    observeTokenRatio("weird", 100000, 200000); // ratio 0.5, the guard-rail floor
+    // Recorded, but not yet allowed to speak: one sample is an anecdote, and
+    // because sizing takes the minimum this one would otherwise halve the
+    // estimate for every provider at once.
+    expect(ratioStats().providers.weird).toMatchObject({ samples: 1 });
+    expect(sizingCharsPerToken()).toBe(before);
+  });
+
+  it("holds steady while the mean drifts across providers", () => {
+    feed("antigravity", 1.8);
+    const sized = sizingCharsPerToken();
+    // Everything after this is a HIGHER ratio from other providers — exactly what
+    // dragged the old mean up and under-counted the next request.
+    feed("gemini", 3.6);
+    feed("commandcode", 4.0);
+    expect(charsPerToken()).toBeGreaterThan(2.5);
+    expect(sizingCharsPerToken()).toBe(sized);
+  });
+
+  it("is not calibrated until some provider clears the sample floor", () => {
+    expect(isSizingCalibrated()).toBe(false);
+    observeTokenRatio("antigravity", 100000, 50000);
+    expect(isSizingCalibrated()).toBe(false);
+    feed("antigravity", 2.0, 2);
+    expect(isSizingCalibrated()).toBe(true);
   });
 });

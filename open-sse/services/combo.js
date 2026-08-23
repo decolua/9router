@@ -10,7 +10,7 @@ import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
 import { estimateInputTokens, measureBody, IMAGE_TOKEN_ESTIMATE } from "../utils/usageTracking.js";
-import { charsPerToken, isCalibrated } from "./tokenRatio.js";
+import { charsPerToken, sizingCharsPerToken, isSizingCalibrated } from "./tokenRatio.js";
 import { extractVisibleText, findDegeneracy, hasAssistantPrefill, GATE_WINDOW_CHARS, GATE_MIN_JUDGEABLE_CHARS, PREFLIGHT_MAX_READS, HOLD_BACK_MS } from "../utils/degeneracy.js";
 import { COMBO_RESPONSE_TIMEOUT_MS, COMBO_FIRST_EVENT_TIMEOUT_MS, COMPACT_HEADROOM_RATIO, CONTEXT_ESTIMATE_SAFETY } from "../config/errorConfig.js";
 import { isPaidModel } from "../config/costClasses.js";
@@ -620,6 +620,11 @@ export async function shouldSkipModel(modelStr, { inputTokens = 0, canServe = nu
   // models from long conversations. If a provider really does share one budget,
   // it says so upstream and the cascade falls through on a real answer.
   const contextWindow = getCapabilitiesForModel(provider, model).contextWindow;
+  // Sized with the pool-wide worst case, deliberately. Refining this per member
+  // looks obvious and does not work: `provider` here is the ROUTING PREFIX (ag,
+  // kr, cmc) while tokenRatio keys on the executor provider name (antigravity,
+  // kiro, commandcode), so every per-member lookup would miss and silently fall
+  // back to this same number. Wire a prefix->provider map first, then refine.
   if (contextWindow && inputTokens > contextWindow) {
     // Flagged, because this skip is the one kind that waiting cannot fix. Every
     // other skip and failure here is a supply problem that resolves on its own;
@@ -728,8 +733,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   // estimate. Until then it falls back to the old constant times a safety factor,
   // which is a guess and is labelled as one in the log.
   const { chars, images } = measureBody(body);
-  const calibrated = isCalibrated();
-  const ratio = charsPerToken();
+  const calibrated = isSizingCalibrated();
+  // sizingCharsPerToken, not charsPerToken. The mean is what we believe the
+  // tokenizer does; sizing needs the number that cannot under-count. See the
+  // header of services/tokenRatio.js for the production trace that forced the
+  // distinction — the mean swung 1.84 to 3.63 on one unchanged conversation.
+  const ratio = sizingCharsPerToken();
   const inputTokens = calibrated
     ? Math.ceil(chars / ratio) + images * IMAGE_TOKEN_ESTIMATE
     : Math.ceil(estimateInputTokens(body) * CONTEXT_ESTIMATE_SAFETY);
@@ -737,7 +746,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     log.info(
       "CTXCAL",
       `chars=${chars} tokens=${inputTokens} ratio=${ratio.toFixed(2)} ` +
-      `source=${calibrated ? "measured" : "assumed"}`
+      `mean=${charsPerToken().toFixed(2)} source=${calibrated ? "measured" : "assumed"}`
     );
   }
 
