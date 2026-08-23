@@ -52,12 +52,17 @@ Expected: `getCapabilitiesForModel` CRITICAL ~61, `applyThinking` CRITICAL 9, `g
 
 - [ ] Step 0.3: Baseline snapshot (record pass/fail counts)
 
+Preflight finding: `node tests/__baseline__/verify-no-regression.mjs` without arg exits 2 `Missing results.json path` — requires JSON. Do NOT call it in preflight.
+
+Record static baselines only:
+
 ```bash
-node tests/__baseline__/verify-no-regression.mjs
 node tests/__baseline__/verify-providers.mjs
 node tests/__baseline__/verify-alias.mjs
 node tests/__baseline__/verify-oauth-urls.mjs
 ```
+
+Targeted 5-file run at this HEAD: 4 task-adjacent files PASS (59 tests), `unit/combo-autoswitch.test.js` 2 pre-existing failures (web_search disabled, toBe array identity) — baseline exact, not task regression. Expected: `web_search tool -> search` false, `keeps order when no model matches` toBe identity fail.
 
 - [ ] Step 0.4: Read current source for exact context
 
@@ -429,32 +434,48 @@ Do not modify generic `openai` path, `normalizeOpenAILevel`, or `budgetToLevel`.
 
 **Files:** none (verify only)
 
-- [ ] Step 5.1: Run targeted suite (exact established command; `--config`/`--dir` before `run`, filters after)
+- [ ] Step 5.1: Run 4 task-adjacent expected-green files with JSON output to path outside repo
 
 ```bash
-D:/Code/9router/tests/node_modules/.bin/vitest.cmd --config D:/Code/9router/tests/vitest.config.js --dir D:/Code/9router/tests run unit/opencode-ox-alpha-free.test.js translator/thinking-unified.test.js unit/thinking-effort-openai-max-clamp.test.js unit/capabilities.test.js unit/combo-autoswitch.test.js
+D:/Code/9router/tests/node_modules/.bin/vitest.cmd --config D:/Code/9router/tests/vitest.config.js --dir D:/Code/9router/tests run unit/opencode-ox-alpha-free.test.js translator/thinking-unified.test.js unit/thinking-effort-openai-max-clamp.test.js unit/capabilities.test.js --reporter=json --outputFile=C:/Users/NamVu/AppData/Local/Temp/9router-ox-targeted-results.json
 ```
 
-If CLI rejects ordering, fallback: `npx vitest run --config D:/Code/9router/tests/vitest.config.js --dir D:/Code/9router/tests unit/opencode-ox-alpha-free.test.js translator/thinking-unified.test.js unit/thinking-effort-openai-max-clamp.test.js unit/capabilities.test.js unit/combo-autoswitch.test.js`.
+Expected: exit 0, 4 files PASS.
 
-Expected: all 5 files PASS. Specifically: `unit/opencode-ox-alpha-free.test.js` all new cases green, `unit/thinking-effort-openai-max-clamp.test.js` still asserts `max->xhigh` for generic OpenAI, `translator/thinking-unified.test.js` unchanged.
+- [ ] Step 5.2: Verify no-regression against the JSON results
 
-- [ ] Step 5.2: Fix failures with minimum diff (only files listed). Re-run until green.
+```bash
+node tests/__baseline__/verify-no-regression.mjs C:/Users/NamVu/AppData/Local/Temp/9router-ox-targeted-results.json
+```
+
+Expected now fails=0, exit 0.
+
+- [ ] Step 5.3: Run combo-autoswitch separately — expect exactly the 2 pre-existing failures unchanged
+
+```bash
+D:/Code/9router/tests/node_modules/.bin/vitest.cmd --config D:/Code/9router/tests/vitest.config.js --dir D:/Code/9router/tests run unit/combo-autoswitch.test.js
+```
+
+Expected: `Tests 2 failed | 9 passed (11)` — exactly `web_search tool -> search` and `keeps order when no model matches`. These are pre-existing baseline failures, not task regression; do not fix them (out of scope).
+
+- [ ] Step 5.4: Fix task failures with minimum diff (only files listed). Re-run until green.
+
+No full-suite run: real tests + explicit no-live-call constraint.
 
 ---
 
 ### Task 6: Baselines + GitNexus detect + git checks
 
-- [ ] Step 6.1: Baseline verifiers from repo root
+- [ ] Step 6.1: Baseline verifiers from repo root (reuse JSON from Task 5)
 
 ```bash
-node tests/__baseline__/verify-no-regression.mjs
+node tests/__baseline__/verify-no-regression.mjs C:/Users/NamVu/AppData/Local/Temp/9router-ox-targeted-results.json
 node tests/__baseline__/verify-providers.mjs
 node tests/__baseline__/verify-alias.mjs
 node tests/__baseline__/verify-oauth-urls.mjs
 ```
 
-Expected: PASS (no regression vs committed snapshots).
+Expected: no-regression (now fails=0) + 3 static provider/alias/oauth PASS. Do not run verify-no-regression without arg (it exits 2 missing JSON).
 
 - [ ] Step 6.2: GitNexus detect before commit
 
