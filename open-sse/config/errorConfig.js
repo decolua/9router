@@ -133,7 +133,15 @@ export const ERROR_RULES = [
   { status: 401, cooldownMs: COOLDOWN.long },
   { status: 402, cooldownMs: COOLDOWN.long },
   { status: 403, cooldownMs: COOLDOWN.forbidden },
-  { status: 404, cooldownMs: COOLDOWN.long },
+  // A 404 is model_not_found (see ERROR_TYPES): the id we asked for is not one
+  // this provider serves. That is registry drift on our side, not congestion on
+  // theirs, and it needs an operator to fix the entry — the same premise as the
+  // 403 above. Two minutes just schedules the identical failure thirty times an
+  // hour. Observed 2026-08-23 in the Yggdrasil cascade at 17:18: three members
+  // 404ing in one pass (tokenrouter/deepseek/deepseek-v4-pro-0813-free,
+  // tokenrouter/qwen/qwen3.8-max-free, bb/gpt-5.5), all three still in rotation
+  // and all three certain to fail again.
+  { status: 404, cooldownMs: COOLDOWN.forbidden },
   // 400/406/410 had no status rule, so every one of them fell to the 30-second
   // transient default and came back on the very next request. Observed
   // 2026-08-23, one Yggdrasil cascade at 17:18 walking all 18 in-band entries

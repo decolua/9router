@@ -37,9 +37,15 @@ describe("deterministic client errors are not transient", () => {
 });
 
 describe("existing classifications are unchanged", () => {
-  it("403 keeps the forbidden cooldown and 404 keeps long", () => {
+  it("403 keeps the forbidden cooldown", () => {
     expect(checkFallbackError(403, "Forbidden").cooldownMs).toBe(FORBIDDEN);
-    expect(checkFallbackError(404, "Model not found").cooldownMs).toBe(LONG);
+  });
+
+  // Raised from COOLDOWN.long 2026-08-23: model_not_found is registry drift that
+  // needs an operator, so a two-minute retry is a treadmill, not self-healing.
+  it("404 is treated as needing an operator, not as congestion", () => {
+    expect(checkFallbackError(404, "Model not found").cooldownMs).toBe(FORBIDDEN);
+    expect(checkFallbackError(404, "Model not found").cooldownMs).not.toBe(LONG);
   });
 
   it("429 still uses exponential backoff, not a fixed cooldown", () => {
