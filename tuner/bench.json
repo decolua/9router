@@ -101,6 +101,10 @@
     },
     "tokenrouter/qwen/qwen3.8-max": {
       "family": "qwen3.8-max"
+    },
+    "openrouter/stealth/ox-alpha": {
+      "family": "ox-alpha",
+      "mode": "free"
     }
   },
   "_comboBand": {
@@ -359,6 +363,10 @@
       "swe_verified": 80.4,
       "swe_pro": 60.6,
       "note": "TokenRouter qwen3.8 line; band mirrors qwen3.7-max (same class, one revision on)"
+    },
+    "ox-alpha": {
+      "band": "fable",
+      "_note": "Stealth id on OpenRouter, free since 2026-08-22. Banded fable on the operator's call, not on a published benchmark - no score exists for a stealth model, and benchScore() returning 0 is read as 'unmeasured' by rankScore(), not as 'worst'. Replace with real numbers when the model is unmasked."
     }
   },
   "costClass": {
