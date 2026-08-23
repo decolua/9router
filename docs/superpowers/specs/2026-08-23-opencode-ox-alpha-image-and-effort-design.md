@@ -82,7 +82,7 @@ Notes that drive the mapping:
 - Budget handling for this format delegates to the same numeric→level ladder used elsewhere (via the existing `toLevel` for a budget config), then reuses the level→`low`/`high`/`max` collapse above.
 - `auto` stays "emit nothing after stripAll" (same semantics as `tokenrouter`'s `auto` path: omit the field so the upstream default applies). No `reasoning_effort` field is written for `auto` or `unknown`.
 
-Suggested shape (implementation detall is one `case` plus one 10-line helper; keep the smallest diff):
+Suggested shape (implementation detail is one `case` plus one 10-line helper; keep the smallest diff):
 
 ```js
 case "openai-low-high-max": {
@@ -115,9 +115,15 @@ Extend only `tests/unit/opencode-ox-alpha-free.test.js` if sufficient (smallest 
 
 Verification before any source commit (doc-only branch skips live runs):
 
-- Targeted Vitest: `unit/opencode-ox-alpha-free.test.js`, `unit/thinking-unified.test.js` (or `thinkingLevels`), `unit/openai-max-clamp` equivalent, `unit/capabilities.test.js`, `unit/reorderByCapabilities`/`unit/combos.autoswitch` suites, plus immediate neighbors. Full suite is not expected all-green on checkout (~938 pass, ~64 known red; see `tests/__baseline__/known-fails.txt`).
-- Baseline verifiers: `tests/__baseline__/verify-no-regression.mjs` and `verify-providers-baseline.mjs` where applicable.
-- GitNexus `detect_changes({scope:"compare", base_ref:"master"})` before any source commit. Blast radius warnings (GitNexus): `getCapabilitiesForModel` CRITICAL 61, `applyThinking` CRITICAL 9, `getThinkingLevels` CRITICAL 13, `stripUnsupportedModalities` HIGH 5. Only the new format string is added; existing generic `openai` behavior is untouched.
+- Targeted Vitest (exact files, run from `tests/`): `unit/opencode-ox-alpha-free.test.js`, `translator/thinking-unified.test.js`, `unit/thinking-effort-openai-max-clamp.test.js`, `unit/capabilities.test.js`, `unit/combo-autoswitch.test.js`. Full suite is not expected all-green on checkout (~938 pass, ~64 known red; see `tests/__baseline__/known-fails.txt`).
+- Baseline verifiers (exact scripts in `tests/__baseline__/`): `verify-no-regression.mjs`, `verify-providers.mjs`, `verify-alias.mjs`, `verify-oauth-urls.mjs`.
+- GitNexus change detection via CLI before any source commit:
+
+  ```
+  cmd.exe /d /s /c "gitnexus detect-changes --scope compare --base-ref master --repo D:\Code\9router"
+  ```
+
+  (`--repo` takes the absolute path because the registry has multiple same-named worktree entries.) Blast radius warnings (GitNexus): `getCapabilitiesForModel` CRITICAL 61, `applyThinking` CRITICAL 9, `getThinkingLevels` CRITICAL 13, `stripUnsupportedModalities` HIGH 5. Only the new format string is added; existing generic `openai` behavior is untouched.
 
 ## Non-goals
 
