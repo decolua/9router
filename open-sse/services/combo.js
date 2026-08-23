@@ -585,6 +585,51 @@ export function widestEligibleWindow(models) {
 }
 
 /**
+ * The compaction ceiling, as the operator specified it on 2026-08-23:
+ *
+ *   "if it will hit rotate and the next model cant handle the context, it
+ *    should compact. if it can handle the context, then compact at 80%.
+ *    dont check turn +1. because compacting itself needs the next model."
+ *
+ * Two clauses, one number:
+ *
+ *   80% of the HEAD's window     — the model that is about to answer. This is
+ *                                  the ordinary case and the one the ratio is
+ *                                  for.
+ *   the NEXT member's window     — a hard bound, not a percentage of one. If
+ *                                  the head fails we rotate, and the request
+ *                                  has to fit whatever we rotate into. That
+ *                                  request is the compaction itself, which is
+ *                                  why it is the next member's full window and
+ *                                  not 80% of it: no turn after this one is
+ *                                  being reserved for. ("dont check turn +1.")
+ *
+ * The lower of the two wins. Using the WIDEST eligible window instead — which
+ * is what this did until now — reads the pool's best member rather than the
+ * two that are actually about to be used: a 1M head in front of a 200K
+ * fallback produced a 838K ceiling, so the conversation was allowed to grow
+ * past the point where the fallback could take it, which is precisely the
+ * "next model cant handle the context" case the rule exists for.
+ *
+ * Order matters and is the cascade's own: these are the members in the order
+ * they will be tried, minus the ones already banned or backing off.
+ */
+export function compactCeiling(models, headroomRatio) {
+  const live = [];
+  for (const modelStr of models) {
+    if (isQuotaExhausted(modelStr) || isModelCoolingDown(modelStr)) continue;
+    const w = modelContextWindow(modelStr);
+    if (w > 0) live.push(w);
+  }
+  if (live.length === 0) return { ceiling: 0, head: 0, next: 0 };
+  const head = live[0];
+  const next = live.length > 1 ? live[1] : 0;
+  const byRatio = Math.floor(head * headroomRatio);
+  const ceiling = next > 0 ? Math.min(byRatio, next) : byRatio;
+  return { ceiling, head, next };
+}
+
+/**
  * A 413 shaped so the client compacts instead of erroring.
  *
  * Claude Code classifies an upstream failure as `prompt_too_long` only for
@@ -763,24 +808,19 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   //
   // Zero means no member declares a window, and a ceiling cannot be derived
   // from nothing — fall through and let the cascade answer as it always did.
-  const eligibleWindow = widestEligibleWindow(rotatedModels);
-  if (eligibleWindow > 0) {
-    const ceiling = Math.floor(eligibleWindow * COMPACT_HEADROOM_RATIO);
-    if (inputTokens > ceiling) {
-      log.warn(
-        "COMBO",
-        `Request ~${inputTokens} tokens exceeds ${Math.round(COMPACT_HEADROOM_RATIO * 100)}% of the ` +
-        `widest eligible window (${eligibleWindow}) in "${comboName}" — asking client to compact`
-      );
-      return promptTooLongResponse(
-        inputTokens,
-        ceiling,
-        `The largest context window currently available in combo "${comboName}" is ` +
-        `${eligibleWindow} tokens, and a request may use at most ` +
-        `${Math.round(COMPACT_HEADROOM_RATIO * 100)}% of it so the next turn still fits. ` +
-        `Compact the conversation and retry.`
-      );
-    }
+  const { ceiling, head: headWindow, next: nextWindow } = compactCeiling(rotatedModels, COMPACT_HEADROOM_RATIO);
+  if (ceiling > 0 && inputTokens > ceiling) {
+    const boundByNext = nextWindow > 0 && nextWindow < Math.floor(headWindow * COMPACT_HEADROOM_RATIO);
+    const why = boundByNext
+      ? `the next member after ${rotatedModels[0]} holds only ${nextWindow} tokens`
+      : `it exceeds ${Math.round(COMPACT_HEADROOM_RATIO * 100)}% of ${rotatedModels[0]}'s ${headWindow}-token window`;
+    log.warn("COMBO", `Request ~${inputTokens} tokens — asking client to compact: ${why}`);
+    return promptTooLongResponse(
+      inputTokens,
+      ceiling,
+      `Combo "${comboName}" can serve at most ${ceiling} tokens right now: ${why}. ` +
+      `Compact the conversation and retry.`
+    );
   }
 
   // One entry's turn, lifted out of the loop so it can be run twice: once in

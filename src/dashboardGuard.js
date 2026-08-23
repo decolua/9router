@@ -32,6 +32,11 @@ const PUBLIC_API_PATHS = [
   "/api/auth/saml",
   "/api/version",
   "/api/settings/require-login",
+  // Read-only pool shape: which member answers next and how wide its window is.
+  // The context-window hook runs as a Stop hook with no dashboard session, and
+  // the response carries no credentials — only model ids and token counts that
+  // the caller is about to be served by anyway.
+  "/api/context-window",
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
