@@ -3,6 +3,7 @@
 import { getCapabilitiesForModel } from "./capabilities.js";
 import { matchPattern } from "./pricing.js";
 import { resolveKiroEffortPath } from "../config/kiroConstants.js";
+import { PROVIDERS } from "./index.js";
 
 // Shared level sets (deduped) — verified against provider docs + wire in thinkingUnified.applyFormat.
 const L = {
@@ -25,6 +26,7 @@ const FORMAT_LEVELS = {
   zai: L.onOff,
   qwen: L.base,
   kimi: L.levelMax,
+  opencode: L.levelMax,   // zen gateway enum: none|low|medium|high|max (no xhigh/minimal)
   deepseek: L.hiMax,
   minimax: L.onOff,
   hunyuan: L.base,
@@ -49,7 +51,11 @@ export function getThinkingLevels(provider, model) {
   const hit = PATTERN_THINKING.find((entry) =>
     (!entry.provider || entry.provider === provider) && matchPattern(entry.pattern, model)
   );
-  let levels = hit?.levels || FORMAT_LEVELS[caps.thinkingFormat] || L.base;
+  // Provider-declared format wins over per-model caps (same precedence as
+  // thinkingUnified.resolveFormat) — e.g. opencode routes every model through
+  // one gateway enum regardless of the upstream vendor the id looks like.
+  const fmt = (provider && PROVIDERS[provider]?.thinkingFormat) || caps.thinkingFormat;
+  let levels = hit?.levels || FORMAT_LEVELS[fmt] || L.base;
   if (caps.thinkingCanDisable === false) levels = levels.filter((l) => l !== "none");
   return levels;
 }
