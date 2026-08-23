@@ -62,6 +62,11 @@ export {
   appendRequestLog, getRecentLogs,
 } from "./repos/usageRepo.js";
 
+// Model health (routing signal — always written, never behind a config gate)
+export {
+  recordModelOutcome, getModelHealthWindow, clearModelHealthRows, RETENTION_DAYS as MODEL_HEALTH_RETENTION_DAYS,
+} from "./repos/modelHealthRepo.js";
+
 // Request details
 export {
   saveRequestDetail, getRequestDetails, getRequestDetailById, getDistinctProviders,

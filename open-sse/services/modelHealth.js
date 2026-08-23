@@ -13,6 +13,14 @@
 // position and gets one ordinary attempt. If it is still broken it is demoted
 // again after a fresh run of failures, which costs one round trip per window.
 
+// Two horizons, deliberately separate. The in-memory run below is tactical: it
+// reorders THIS process's next cascade and forgets on restart, which is right
+// for "is this model sick right now". The database write is strategic: it is
+// the only record that a cascade member failed at all, and the tuner reads it a
+// day later to decide the combo's standing order. Losing the first costs one
+// wasted attempt; losing the second is what left nine dead models sitting in
+// Yggdrasil for eighteen days.
+
 const DEMOTE_AFTER = 3;
 
 /** How long a failure run stands before the model is given another chance. */
@@ -33,18 +41,32 @@ function liveRun(model, now) {
   return run;
 }
 
+// Fire-and-forget persistence. Imported lazily so this module stays a pure,
+// synchronously-importable unit — the DB layer picks a native sqlite binding at
+// load time, and the health rules above are unit-tested without one. A failed
+// write is logged and dropped: health bookkeeping must never break a request
+// that is otherwise being served.
+function persist(model, outcome, at) {
+  if (!model) return;
+  import("@/lib/db/index.js")
+    .then(({ recordModelOutcome }) => recordModelOutcome(model, outcome, at))
+    .catch((e) => console.warn(`[modelHealth] persist ${outcome} ${model} failed: ${e.message}`));
+}
+
 export function recordModelFailure(model, now = Date.now()) {
   if (!model) return 0;
   // A failure after the window restarts the run rather than resuming it, so one
   // stale failure plus one fresh one can't add up to a demotion.
   const count = (liveRun(model, now)?.count ?? 0) + 1;
   health.set(model, { count, at: now });
+  persist(model, "err", now);
   return count;
 }
 
-export function recordModelSuccess(model) {
+export function recordModelSuccess(model, now = Date.now()) {
   if (!model) return;
   health.delete(model);
+  persist(model, "ok", now);
 }
 
 export function isModelDemoted(model, threshold = DEMOTE_AFTER, now = Date.now()) {

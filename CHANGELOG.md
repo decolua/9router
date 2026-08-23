@@ -1,6 +1,34 @@
 # Unreleased
 
 ## Fixes
+- **Tuner**: dead models can be demoted again. The tuner read its error signal from
+  exactly one place, `requestDetails`, and that table is gated behind
+  `enableObservability` — which upstream defaulted to `false` on 2026-08-01 (3fab15ae)
+  while switching the key it reads from the never-present `enableObservability2` to
+  the now-always-present `enableObservability`. Two changes that each look harmless;
+  together they turned request logging off. Production wrote its last row on
+  2026-08-05T17:25 and nothing said so, because a model with no rows reads back
+  `ok=0 err=0` and the health formula calls that 0.5 — "no opinion", not "no data".
+  Nine permanently-dead members of Yggdrasil (400 ×5, 404 ×3, 410 ×1) were therefore
+  indistinguishable from nine nobody had tried, and were retried on every cascade for
+  eighteen days. Even switched on it would not have been enough: a cascade member that
+  fails never reached that table at all — `attemptModel` recorded it into an in-memory
+  Map that dies with the process — and the table prunes to a single **global** row cap,
+  so one chatty model can empty a 1-day window for every other. Health now has its own
+  store: a `modelHealth` table of hourly ok/err counters keyed by the routed id, written
+  unconditionally at the routing seam, retained per model for 7 days. A debug toggle can
+  no longer blind the router. Observability itself is left off — it is a debug feature,
+  and this is the last thing that depended on it.
+- **Tuner**: health can now actually move a model. It sat below band, cost class, exact
+  cost and bench score in both comparators, so two models had to agree on all four
+  before health was read — a model that 404s every request held index #11 of Yggdrasil
+  while scoring 0. A model observed failing with no successes (`health === 0`, which
+  absence of data cannot produce) is now sent to the tail of its combo, applied after
+  `interleaveByProvider` for the same reason the bottom-prefix demotion is: interleave
+  groups on `bandRank|cost` and would otherwise re-promote it mid-pack. It reorders and
+  never drops, exactly as the runtime's `demoteUnhealthy` does.
+- **Tests**: the suite no longer writes the developer's live `~/.9router` database.
+  `tests/setup.js` points `DATA_DIR` at a temp dir for the run.
 - **Router**: an image request no longer goes to the most expensive member of a combo.
   `reorderByCapabilities` floated capable models to the front but kept the pool's own
   order among them, so a capability-first combo handed every screenshot to its priciest

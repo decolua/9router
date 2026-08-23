@@ -142,6 +142,36 @@ async function getCandidates(db, bench, token) {
   return { candidates, caps, identities };
 }
 
+// The failure ledger, keyed by routed model id — the same string combos store
+// and the router tries, so nothing can be lost to a name mapping in between.
+//
+// This replaced requestDetails as the error signal on 2026-08-23. requestDetails
+// is gated behind `enableObservability`, which upstream defaulted to false on
+// 2026-08-01 (commit 3fab15ae); the last row on the production box was written
+// 2026-08-05T17:25. For eighteen days after that every candidate read back
+// ok=0 err=0, and `ok === 0 && err === 0` pins health at 0.5 — so nine models
+// that failed 100% of the time were indistinguishable from nine nobody had
+// tried, and none of them was ever demoted. A debug toggle must not be able to
+// blind the tuner, so health now has a store of its own that is always written.
+//
+// Returns an empty map on a database that predates the table: the app creates
+// it at boot, the tuner opens read-only and must not fail a run waiting for it.
+function getSeamHealth(db) {
+  const byId = new Map();
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 13);
+    for (const r of db.prepare(
+      `SELECT modelId, SUM(ok) ok, SUM(err) err, MAX(lastOkAt) lastOkAt, MAX(lastErrAt) lastErrAt
+         FROM modelHealth WHERE bucket >= ? GROUP BY modelId`
+    ).all(since)) {
+      byId.set(r.modelId, { ok: r.ok ?? 0, err: r.err ?? 0, lastOkAt: r.lastOkAt, lastErrAt: r.lastErrAt });
+    }
+  } catch (err) {
+    console.warn(`WARN modelHealth unreadable, falling back to requestDetails only: ${err.message}`);
+  }
+  return byId;
+}
+
 // ponytail: stats scoped by bench.providerByPrefix; any prefix missing from that map falls back to model-name-only matching.
 function getHealth(db, candidates, bench) {
   const okRows = db.prepare(
@@ -150,11 +180,20 @@ function getHealth(db, candidates, bench) {
   const errRows = db.prepare(
     `SELECT provider, model, SUM(status='error') e, COUNT(*) t FROM requestDetails WHERE timestamp > datetime('now','-1 day') GROUP BY provider, model`
   ).all();
+  const seam = getSeamHealth(db);
+  const recentCutoff = new Date(Date.now() - 30 * 60 * 1000).toISOString();
   const recentErrStmt = db.prepare(
     `SELECT COUNT(*) c FROM requestDetails WHERE timestamp > datetime('now','-30 minutes') AND status='error' AND model = ? AND provider = ?`
   );
   const recentOkStmt = db.prepare(
     `SELECT COUNT(*) c FROM requestDetails WHERE timestamp > datetime('now','-30 minutes') AND status != 'error' AND model = ? AND provider = ?`
+  );
+  // usageHistory is the complete success ledger — every served turn writes one,
+  // combo or direct — so it, not requestDetails, decides whether a model has
+  // answered recently. Reading recency from a switched-off table is how the
+  // `recentErr > 0 && recentOk === 0` rule came to fire on nothing at all.
+  const recentUsageStmt = db.prepare(
+    `SELECT COUNT(*) c FROM usageHistory WHERE timestamp > datetime('now','-30 minutes') AND model = ? AND provider = ?`
   );
   // A registered id and a logged model name do not always agree on the vendor
   // namespace: `nvidia/deepseek-ai/deepseek-v4-pro` is registered with the
@@ -177,22 +216,37 @@ function getHealth(db, candidates, bench) {
     const providerName = bench.providerByPrefix?.[prefix] ?? null;
     const exact = (r) => (providerName ? r.provider === providerName && r.model === modelPart : r.model === modelPart);
     let ok = sum(okRows, (r) => r.n, exact);
-    let err = sum(errRows, (r) => r.e, exact);
+    let rdErr = sum(errRows, (r) => r.e, exact);
     let matchedModel = modelPart;
-    if (ok === 0 && err === 0 && providerName && tail(modelPart) !== modelPart) {
+    if (ok === 0 && rdErr === 0 && providerName && tail(modelPart) !== modelPart) {
       const loose = (r) => r.provider === providerName && tail(r.model) === tail(modelPart);
       const lOk = sum(okRows, (r) => r.n, loose);
       const lErr = sum(errRows, (r) => r.e, loose);
       if (lOk > 0 || lErr > 0) {
         ok = lOk;
-        err = lErr;
+        rdErr = lErr;
         matchedModel = okRows.concat(errRows).find(loose)?.model ?? tail(modelPart);
       }
     }
+    // Failures come from the seam ledger, which records every cascade attempt.
+    // requestDetails is consulted only for ids the seam has never seen — direct
+    // (non-combo) traffic, and older rows from before the seam existed — so the
+    // two sources can never double-count the same failure.
+    const mh = seam.get(id);
+    const err = mh ? mh.err : rdErr;
+    // Don't let a name mismatch on the usageHistory side read back as "never
+    // succeeded": if that match found nothing but the seam has counted this id
+    // answering, take the seam's number. When usageHistory did match, it already
+    // counts those same turns, so adding the seam's would double them.
+    if (ok === 0 && mh) ok = mh.ok;
+
     let h = ok === 0 && err === 0 ? 0.5 : ok / (ok + err + 1);
-    const recentErr = providerName ? recentErrStmt.get(matchedModel, providerName).c : 0;
-    const recentOk = providerName ? recentOkStmt.get(matchedModel, providerName).c : 0;
-    if (recentErr > 0 && recentOk === 0) h = 0;
+    const recentErr = (mh?.lastErrAt ?? '') > recentCutoff
+      || (providerName ? recentErrStmt.get(matchedModel, providerName).c : 0) > 0;
+    const recentOk = (mh?.lastOkAt ?? '') > recentCutoff
+      || (providerName ? recentOkStmt.get(matchedModel, providerName).c : 0) > 0
+      || (providerName ? recentUsageStmt.get(matchedModel, providerName).c : 0) > 0;
+    if (recentErr && !recentOk) h = 0;
     if (ok === 0 && err === 0) statless.push(id);
     health.set(id, { ok, err, health: h });
   }
@@ -557,7 +611,27 @@ async function main() {
       const raw = scoreOf(id);
       return raw > 0 ? raw : 50;
     };
+    // Health as a TIEBREAKER cannot demote anything. It sat below band, cost
+    // class, exact cost and bench score in both orderings, so two models had to
+    // agree on all four before health was even read — which is why a model that
+    // 404s on every request held index #11 of Yggdrasil while scoring 0.
+    //
+    // health === 0 is not a low score. Given `h = ok / (ok + err + 1)`, it is
+    // reachable only two ways: observed failures with zero successes, or the
+    // recent-window rule finding errors in the last half hour and nothing
+    // served. Both mean the same thing — this model is not currently answering
+    // — and an unobserved model reads 0.5, never 0, so the gate cannot fire on
+    // absence of data. That verdict outranks every preference below it: there
+    // is no sense in which a dead model is the better first pick.
+    //
+    // It reorders, it never drops, exactly as the runtime's demoteUnhealthy
+    // does: a combo whose members are all sick still tries them all, and one
+    // success restores the model to its natural position on the next pass.
+    const dead = (id) => (health.get(id)?.health ?? 0.5) <= 0;
     const sorted = pool.slice().sort((a, b) => {
+      const da = dead(a) ? 1 : 0;
+      const db2 = dead(b) ? 1 : 0;
+      if (da !== db2) return da - db2;
       if (capabilityFirst) {
         const ra2 = bandRank(a);
         const rb2 = bandRank(b);
@@ -618,12 +692,23 @@ async function main() {
     const top = ordered.filter((id) => !isBottom(id));
     const bottom = ordered.filter(isBottom);
     const bottomLast = top.concat(bottom);
+    // Dead last, after interleave for the same reason bottom-prefixes are:
+    // interleaveByProvider groups on `bandRank|cost`, and a dead model shares
+    // that key with the healthy models it sits beside, so interleaving happily
+    // re-promotes it mid-pack. Applied after the bottom-prefix split too — a
+    // backup subscription we would rather not spend still outranks a model that
+    // is not answering at all. Stable split+concat, so the ordering computed
+    // above survives inside each group.
+    const alive = bottomLast.filter((id) => !dead(id));
+    const sick = bottomLast.filter(dead);
+    if (sick.length) {
+      console.log(`  ${row.name}: ${sick.length} unhealthy member(s) sent to the tail: ${sick.join(', ')}`);
+    }
     const desired = capPerPool(
-      applyPins(bottomLast, bench._pins?.[row.name], pool, bench, capabilityFirst),
+      applyPins(alive.concat(sick), bench._pins?.[row.name], pool, bench, capabilityFirst),
       bench,
       MAX_PER_POOL,
     );
-
     const current = JSON.parse(row.models);
     const changed = JSON.stringify(desired) !== JSON.stringify(current);
     const dwellOk = !lastApplied[row.name] || Date.now() - lastApplied[row.name] >= DWELL_MS;

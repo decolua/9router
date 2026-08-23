@@ -140,6 +140,12 @@ async function flushToDatabase() {
   }
 }
 
+// Debug-only, and switched off by default since 2026-08-01. Nothing load-bearing
+// may read this table: it can be turned off from the dashboard, it stores multi-KB
+// payloads, and it prunes to a single GLOBAL row cap, so one chatty model can empty
+// any per-model window over it. The tuner used to take its error signal from here
+// and spent eighteen days unable to see that nine models were dead — routing health
+// now lives in `modelHealth` (see repos/modelHealthRepo.js). Keep it that way.
 export async function saveRequestDetail(detail) {
   const config = await getObservabilityConfig();
   if (!config.enabled) {return;}
