@@ -134,6 +134,33 @@ export const ERROR_RULES = [
   { status: 402, cooldownMs: COOLDOWN.long },
   { status: 403, cooldownMs: COOLDOWN.forbidden },
   { status: 404, cooldownMs: COOLDOWN.long },
+  // 400/406/410 had no status rule, so every one of them fell to the 30-second
+  // transient default and came back on the very next request. Observed
+  // 2026-08-23, one Yggdrasil cascade at 17:18 walking all 18 in-band entries
+  // and all 11 deferred ones before reporting exhaustion:
+  //   400  oc/laguna-s-2.1-free, openrouter/poolside/laguna-s-2.1:free,
+  //        cf/@cf/deepseek-ai/deepseek-r1-distill-qwen-32b,
+  //        groq/llama-3.3-70b-versatile, cmc/deepseek/deepseek-v4-pro,
+  //        kr/claude-sonnet-4.5
+  //   410  nvidia/z-ai/glm-5.2
+  // Eleven of the fifteen real attempts were deterministic client errors, not
+  // supply failures — they would fail identically on the next request and did.
+  // The cascade nominally 18 deep was about four deep in practice, and the 429
+  // the client finally saw came from the last entry standing rather than from
+  // any rate limit that mattered.
+  //
+  // A 400 is this request being wrong for this model — an unsupported field, a
+  // schema the provider rejects. Waiting does not fix it, and the file already
+  // takes that position: the "improperly formed request" text rule above is
+  // COOLDOWN.long. Same condition, same cooldown, reached by status instead of
+  // by message text.
+  { status: 400, cooldownMs: COOLDOWN.long },
+  // 406 is model_not_supported (see ERROR_TYPES) and 410 is Gone — both say the
+  // model is not served here at all, which is the same premise as a region
+  // block. Putting them back in rotation only schedules an identical failure,
+  // so they get the region cooldown rather than the transient one.
+  { status: 406, cooldownMs: COOLDOWN.region },
+  { status: 410, cooldownMs: COOLDOWN.region },
   { status: 429, backoff: true },
 ];
 
