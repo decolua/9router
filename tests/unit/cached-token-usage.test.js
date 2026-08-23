@@ -118,7 +118,24 @@ describe("calculateCostFromTokens (canonical inclusive convention)", () => {
     const cost = calculateCostFromTokens({ prompt_tokens: 100, completion_tokens: 50 }, pricing);
     expect(cost).toBeCloseTo((100 * 3 + 50 * 15) / 1_000_000, 12);
   });
+  it("does not double-bill reasoning_tokens that are a subset of output", () => {
+    // OpenAI reports reasoning inside output_tokens; charging the full
+    // reasoning rate on top of output overbilled codex traffic by ~41%.
+    const p = { input: 1.75, output: 14, cached: 0.175, reasoning: 14 };
+    const cost = calculateCostFromTokens(
+      { prompt_tokens: 10000, cached_tokens: 9000, completion_tokens: 500, reasoning_tokens: 300 },
+      p
+    );
+    expect(cost).toBeCloseTo((1000 * 1.75 + 9000 * 0.175 + 500 * 14) / 1_000_000, 12);
+  });
+
+  it("applies only the reasoning-rate delta when reasoning is priced above output", () => {
+    const p = { input: 1, output: 10, cached: 0.5, reasoning: 12 };
+    const cost = calculateCostFromTokens({ prompt_tokens: 100, completion_tokens: 50, reasoning_tokens: 20 }, p);
+    expect(cost).toBeCloseTo((100 * 1 + 50 * 10 + 20 * (12 - 10)) / 1_000_000, 12);
+  });
 });
+
 
 describe("Anthropic streaming usage (message_start carries cache, message_delta output-only)", () => {
   it("extractUsage reads input + cache from message_start", () => {
