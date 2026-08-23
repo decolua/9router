@@ -52,12 +52,12 @@ export default function DropdownSelect({
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
         className={cn(
-          "flex min-h-9 w-full items-center justify-between gap-2 rounded-md border border-border bg-bg-base px-2.5 py-1.5 text-left text-sm text-text-main outline-none transition-colors",
+          "flex min-h-9 w-full items-center justify-between gap-2 rounded-md border border-border bg-surface px-2.5 py-1.5 text-left text-sm text-text-main outline-none transition-colors",
           "hover:border-primary/50 focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-50",
           buttonClassName,
         )}
       >
-        <span className={cn("min-w-0 truncate", !selected && "text-text-muted")}>{selected?.label || placeholder}</span>
+        <span className={cn("min-w-0 truncate whitespace-nowrap", !selected && "text-text-muted")}>{selected?.label || placeholder}</span>
         <span className={cn("material-symbols-outlined shrink-0 text-[18px] text-text-muted transition-transform", open && "rotate-180")}>expand_more</span>
       </button>
       {open && (

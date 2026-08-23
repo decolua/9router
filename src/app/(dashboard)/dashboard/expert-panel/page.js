@@ -124,7 +124,7 @@ export default function ExpertPanelPage() {
   };
 
   const confirmModels = () => {
-    const selected = modelPicker === "single" ? pickerSelection.slice(0, 1) : pickerSelection;
+    const selected = pickerSelection;
     setPanels((current) => [...current, ...selected.map((model) => ({ id: createId(), model, messages: [], response: "", status: "idle", score: null, comment: "", latencyMs: null, startedAt: null }))]);
     setModelPicker(null);
   };
@@ -236,7 +236,7 @@ export default function ExpertPanelPage() {
               {panel.comment && <footer className="border-t border-border bg-bg-subtle px-3 py-2 text-xs text-text-muted"><span className="font-medium text-text-main">裁判评语：</span>{panel.comment}</footer>}
             </section>
           ))}
-          <button type="button" onClick={() => openPicker("single")} className="flex h-full min-h-[420px] w-[300px] shrink-0 flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border bg-bg-subtle/30 text-text-muted transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary">
+          <button type="button" onClick={() => openPicker("multiple")} className="flex h-full min-h-[420px] w-[300px] shrink-0 flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border bg-surface text-text-muted shadow-sm transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary">
             <span className="material-symbols-outlined text-[30px]">add_circle</span>
             <span className="text-sm font-medium">待加入</span>
           </button>
@@ -244,22 +244,22 @@ export default function ExpertPanelPage() {
       </div>
 
       <div className="shrink-0 border-t border-border bg-surface px-4 py-3 lg:px-6">
-        <div className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
-          <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendPrompt(); } }} rows={2} placeholder={panels.length ? "向专家团发送提示词" : "请先添加模型"} disabled={panels.length === 0 || sending} className="max-h-40 min-h-14 flex-1 resize-y rounded-md border border-border bg-bg-base px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-60" />
-          <div className="flex flex-col gap-2">
-            <Button icon="delete_sweep" disabled={panels.length === 0 || sending || judging} onClick={clearSession}>清空会话</Button>
-            <Button icon="send" disabled={!prompt.trim() || panels.length === 0 || sending} loading={sending} onClick={sendPrompt}>发送</Button>
+        <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-stretch gap-2">
+          <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendPrompt(); } }} placeholder={panels.length ? "向专家团发送提示词" : "请先添加模型"} disabled={panels.length === 0 || sending} className="h-[80px] min-w-0 resize-none rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-60" />
+          <div className="grid h-[80px] w-32 grid-rows-2 gap-2">
+            <Button className="h-full" icon="delete_sweep" disabled={panels.length === 0 || sending || judging} onClick={clearSession}>清空会话</Button>
+            <Button className="h-full" icon="send" disabled={!prompt.trim() || panels.length === 0 || sending} loading={sending} onClick={sendPrompt}>发送</Button>
           </div>
         </div>
       </div>
 
-      <Modal isOpen={!!modelPicker} onClose={() => setModelPicker(null)} title={modelPicker === "multiple" ? "批量增加模型" : "增加模型"} size="lg" footer={<><Button variant="ghost" onClick={() => setModelPicker(null)}>取消</Button><Button disabled={pickerSelection.length === 0} onClick={confirmModels}>加入</Button></>}>
+      <Modal isOpen={!!modelPicker} onClose={() => setModelPicker(null)} title="增加模型" size="lg" footer={<><Button variant="ghost" onClick={() => setModelPicker(null)}>取消</Button><Button disabled={pickerSelection.length === 0} onClick={confirmModels}>批量加入</Button></>}>
         <div className="flex flex-col gap-3">
           <Input icon="search" placeholder="搜索模型" value={pickerSearch} onChange={(event) => setPickerSearch(event.target.value)} />
           <div className="max-h-[55vh] overflow-y-auto rounded-md border border-border p-2 custom-scrollbar">
             {visiblePickerModels.length ? visiblePickerModels.map((model) => {
               const checked = pickerSelection.includes(model.value);
-              return <label key={model.value} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm hover:bg-bg-hover"><input type={modelPicker === "single" ? "radio" : "checkbox"} checked={checked} onChange={() => setPickerSelection((current) => modelPicker === "single" ? [model.value] : (current.includes(model.value) ? current.filter((item) => item !== model.value) : [...current, model.value]))} /><span className="min-w-0 break-all font-mono text-xs">{model.label}</span></label>;
+              return <label key={model.value} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm hover:bg-bg-hover"><input type="checkbox" checked={checked} onChange={() => setPickerSelection((current) => current.includes(model.value) ? current.filter((item) => item !== model.value) : [...current, model.value])} /><span className="min-w-0 break-all font-mono text-xs">{model.label}</span></label>;
             }) : <p className="p-8 text-center text-sm text-text-muted">没有可加入的模型</p>}
           </div>
         </div>

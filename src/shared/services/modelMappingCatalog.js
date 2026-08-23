@@ -1,4 +1,4 @@
-import { getCustomModels, getProviderConnections, getProviderNodes } from "@/lib/localDb";
+import { getCustomModels, getProviderConnections, getProviderNodes, getSettings } from "@/lib/localDb";
 import { AI_MODELS } from "@/shared/constants/models.js";
 import { AI_PROVIDERS, FREE_PROVIDERS, getProviderAlias, resolveProviderId } from "@/shared/constants/providers.js";
 
@@ -11,10 +11,11 @@ function normalizeUpstreamModel(value, prefixes) {
 }
 
 export async function getModelMappingCatalog() {
-  const [connections, nodes, customModels] = await Promise.all([
+  const [connections, nodes, customModels, settings] = await Promise.all([
     getProviderConnections(),
     getProviderNodes(),
     getCustomModels(),
+    getSettings(),
   ]);
   const activeConnections = connections.filter((connection) => connection.isActive !== false);
   const activeProviders = new Set(activeConnections.map((connection) => connection.provider));
@@ -47,7 +48,7 @@ export async function getModelMappingCatalog() {
     catalog.set(id, {
       id,
       provider: cleanProvider,
-      providerName: nodeById.get(cleanProvider)?.name || AI_PROVIDERS[cleanProvider]?.name || cleanProvider,
+      providerName: settings.providerDisplayNames?.[cleanProvider] || nodeById.get(cleanProvider)?.name || AI_PROVIDERS[cleanProvider]?.name || cleanProvider,
       upstreamModel: cleanModel,
       routeModel: `${routePrefix}/${cleanModel}`,
     });

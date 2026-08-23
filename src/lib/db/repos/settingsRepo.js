@@ -72,6 +72,7 @@ const DEFAULT_SETTINGS = {
   providerAutoDisableTriggers: "invalid api key\nunauthorized\nforbidden\nrevoked\nquota exceeded\ninsufficient balance",
   providerAutoRecoveryEnabled: true,
   providerAutoRecoveryIntervalMinutes: 15,
+  hiddenNavigationItems: [],
 };
 
 async function readRaw() {

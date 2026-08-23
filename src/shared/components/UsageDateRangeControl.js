@@ -62,12 +62,12 @@ export default function UsageDateRangeControl({
     onPeriodChange("custom");
   };
 
-  const inputClass = "h-9 min-w-0 rounded-md border border-border bg-bg-base px-2 text-xs text-text-main outline-none focus:border-primary focus:ring-2 focus:ring-primary/15";
+  const inputClass = "h-9 min-w-0 rounded-md border border-border bg-surface px-2 text-xs text-text-main outline-none focus:border-primary focus:ring-2 focus:ring-primary/15";
 
   return (
     <div className={cn("flex min-w-0 flex-col gap-2 xl:flex-row xl:items-center", className)}>
       <SegmentedControl options={USAGE_PERIODS} value={period} onChange={selectPeriod} size="sm" className="w-full xl:w-auto" />
-      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 rounded-md bg-surface p-1">
         <input type="datetime-local" value={startDate} onChange={changeDate(onStartDateChange)} className={inputClass} aria-label="开始时间" />
         <span className="text-xs text-text-muted">至</span>
         <input type="datetime-local" value={endDate} onChange={changeDate(onEndDateChange)} className={inputClass} aria-label="结束时间" />

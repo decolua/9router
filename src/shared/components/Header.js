@@ -15,7 +15,7 @@ import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS } from "@/shared/constants/providers
 import { getProviderIconSrc } from "@/shared/utils/providerIcon";
 import { translate } from "@/i18n/runtime";
 
-const getPageInfo = (pathname) => {
+const getPageInfo = (pathname, providerDisplayNames = {}) => {
   if (!pathname) return { title: "", description: "", breadcrumbs: [] };
 
   // Media provider detail: /dashboard/media-providers/[kind]/[id]
@@ -26,12 +26,12 @@ const getPageInfo = (pathname) => {
     const kindConfig = MEDIA_PROVIDER_KINDS.find((k) => k.id === kindId);
     const provider = AI_PROVIDERS[providerId];
     return {
-      title: provider?.name || providerId,
+      title: providerDisplayNames[providerId] || provider?.name || providerId,
       description: "",
       breadcrumbs: [
         { label: "Media Providers", href: `/dashboard/media-providers/${kindId}` },
         { label: kindConfig?.label || kindId, href: `/dashboard/media-providers/${kindId}` },
-        { label: provider?.name || providerId, image: getProviderIconSrc(providerId) },
+        { label: providerDisplayNames[providerId] || provider?.name || providerId, image: getProviderIconSrc(providerId) },
       ],
     };
   }
@@ -56,13 +56,14 @@ const getPageInfo = (pathname) => {
     const providerInfo =
       OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId];
     if (providerInfo) {
+      const providerName = providerDisplayNames[providerId] || providerInfo.name;
       return {
-        title: providerInfo.name,
+        title: providerName,
         description: "",
         breadcrumbs: [
           { label: "Providers", href: "/dashboard/providers" },
           {
-            label: providerInfo.name,
+            label: providerName,
             image: getProviderIconSrc(providerInfo.id),
           },
         ],
@@ -212,9 +213,10 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
   const [displayName, setDisplayName] = useState("");
   const [loginMethod, setLoginMethod] = useState("");
   const [donateOpen, setDonateOpen] = useState(false);
+  const [providerDisplayNames, setProviderDisplayNames] = useState({});
 
   // Memoize page info to prevent unnecessary recalculations
-  const pageInfo = useMemo(() => getPageInfo(pathname), [pathname]);
+  const pageInfo = useMemo(() => getPageInfo(pathname, providerDisplayNames), [pathname, providerDisplayNames]);
   const { title, description, icon, breadcrumbs } = pageInfo;
 
   useEffect(() => {
@@ -241,6 +243,13 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/settings", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => setProviderDisplayNames(data?.providerDisplayNames || {}))
+      .catch(() => {});
   }, []);
 
   const handleLogout = async () => {

@@ -202,7 +202,9 @@ export default function ModelSelectModal({
 
     sortedProviderIds.forEach((providerId) => {
       const alias = getProviderAlias(providerId);
-      const providerInfo = allProviders[providerId] || { name: providerId, color: "#666" };
+      const configuredProvider = filteredActiveProviders.find((provider) => provider.provider === providerId);
+      const providerInfoBase = allProviders[providerId] || { name: providerId, color: "#666" };
+      const providerInfo = { ...providerInfoBase, name: configuredProvider?.providerName || providerInfoBase.name };
       const isCustomProvider = isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
 
       // For provider-as-model kinds (webSearch/webFetch): emit a single entry where value === providerId
@@ -264,7 +266,7 @@ export default function ModelSelectModal({
         if (combined.length > 0) {
           // Check for custom name from providerNodes (for compatible providers)
           const matchedNode = providerNodes.find(node => node.id === providerId);
-          const displayName = matchedNode?.name || providerInfo.name;
+          const displayName = configuredProvider?.providerName || matchedNode?.name || providerInfo.name;
 
           groups[providerId] = {
             name: displayName,
@@ -279,7 +281,7 @@ export default function ModelSelectModal({
         // Find connection object to get prefix synchronously without waiting for providerNodes fetch
         const connection = activeProviders.find(p => p.provider === providerId);
         const matchedNode = providerNodes.find(node => node.id === providerId);
-        const displayName = matchedNode?.name || connection?.name || providerInfo.name;
+        const displayName = connection?.providerName || matchedNode?.name || connection?.name || providerInfo.name;
         const nodePrefix = connection?.providerSpecificData?.prefix || matchedNode?.prefix || providerId;
 
         // Aliases are stored using the raw providerId as key (e.g. "openai-compatible-chat-<uuid>/glm-4.7"),

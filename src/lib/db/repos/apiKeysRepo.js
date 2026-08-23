@@ -26,6 +26,26 @@ export async function getApiKeys() {
   return db.all(`${KEY_SELECT} ORDER BY k.createdAt ASC`).map(rowToKey);
 }
 
+export async function getApiKeyUsageSummaries(now = new Date()) {
+  const db = await getAdapter();
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfThirtyDays = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const rows = db.all(
+    `SELECT apiKey,
+      SUM(CASE WHEN timestamp >= ? THEN COALESCE(cost, 0) ELSE 0 END) AS todayCost,
+      SUM(CASE WHEN timestamp >= ? THEN COALESCE(cost, 0) ELSE 0 END) AS thirtyDayCost
+     FROM usageHistory
+     WHERE apiKey IS NOT NULL AND timestamp >= ?
+     GROUP BY apiKey`,
+    [startOfToday.toISOString(), startOfThirtyDays.toISOString(), startOfThirtyDays.toISOString()],
+  );
+  return Object.fromEntries(rows.map((row) => [row.apiKey, {
+    todayCost: Number(row.todayCost || 0),
+    thirtyDayCost: Number(row.thirtyDayCost || 0),
+  }]));
+}
+
 export async function getApiKeyById(id) {
   const db = await getAdapter();
   return rowToKey(db.get(`${KEY_SELECT} WHERE k.id = ?`, [id]));

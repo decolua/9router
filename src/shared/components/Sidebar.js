@@ -57,6 +57,7 @@ export default function Sidebar({ onClose }) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
+  const [hiddenNavigationItems, setHiddenNavigationItems] = useState([]);
   const { copied, copy } = useCopyToClipboard(2000);
 
   const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
@@ -64,7 +65,10 @@ export default function Sidebar({ onClose }) {
   useEffect(() => {
     fetch("/api/settings")
       .then(res => res.json())
-      .then(data => { if (data.enableTranslator) setEnableTranslator(true); })
+      .then(data => {
+        if (data.enableTranslator) setEnableTranslator(true);
+        setHiddenNavigationItems(Array.isArray(data.hiddenNavigationItems) ? data.hiddenNavigationItems : []);
+      })
       .catch(() => {});
   }, []);
 
@@ -82,6 +86,7 @@ export default function Sidebar({ onClose }) {
     }
     return pathname.startsWith(href);
   };
+  const isVisible = (id) => !hiddenNavigationItems.includes(id);
 
   // Open manual update panel (no countdown yet — user must click Copy to trigger shutdown)
   const handleUpdate = () => {
@@ -168,7 +173,7 @@ export default function Sidebar({ onClose }) {
 
         {/* Navigation */}
         <nav className="flex-1 px-4 py-2 space-y-0.5 overflow-y-auto custom-scrollbar">
-          {navItems.map((item) => (
+          {navItems.filter((item) => isVisible(item.href.split("/").pop())).map((item) => (
             <Link
               key={item.href}
               href={item.href}
@@ -196,7 +201,10 @@ export default function Sidebar({ onClose }) {
             <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
               Cost Center
             </p>
-            {costCenterItems.map((item) => (
+            {costCenterItems.filter((item) => {
+              const path = item.href.split("/").pop();
+              return isVisible(path === "pricing" ? "pricing" : path === "model-mappings" ? "model-mappings" : path);
+            }).map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
@@ -226,7 +234,7 @@ export default function Sidebar({ onClose }) {
             </p>
 
             {/* Media Providers accordion */}
-            <button
+            {isVisible("media-providers") && <button
               onClick={() => setMediaOpen((v) => !v)}
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
@@ -240,8 +248,8 @@ export default function Sidebar({ onClose }) {
               <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: mediaOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
                 expand_more
               </span>
-            </button>
-            {mediaOpen && (
+            </button>}
+            {isVisible("media-providers") && mediaOpen && (
               <div className="pl-4">
                 {MEDIA_PROVIDER_KINDS.filter((k) => VISIBLE_MEDIA_KINDS.includes(k.id)).map((kind) => (
                   <Link
@@ -276,7 +284,7 @@ export default function Sidebar({ onClose }) {
               </div>
             )}
 
-            {systemItems.map((item) => (
+            {systemItems.filter((item) => isVisible(item.href.split("/").pop())).map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
@@ -302,7 +310,8 @@ export default function Sidebar({ onClose }) {
 
             {/* Debug items (inside System section, before Settings) */}
             {debugItems.map((item) => {
-              const show = item.href !== "/dashboard/translator" || enableTranslator;
+              const itemId = item.href.split("/").pop();
+              const show = isVisible(itemId) && (item.href !== "/dashboard/translator" || enableTranslator);
               return show ? (
                 <Link
                   key={item.href}
@@ -329,7 +338,7 @@ export default function Sidebar({ onClose }) {
             })}
 
             {/* Remote */}
-            <button
+            {isVisible("remote") && <button
               onClick={() => setShowRemoteModal(true)}
               className={cn(
                 "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group w-full",
@@ -340,10 +349,10 @@ export default function Sidebar({ onClose }) {
                 computer
               </span>
               <span className="text-[13px] font-medium">9Remote</span>
-            </button>
+            </button>}
 
             {/* 9English */}
-            <a
+            {isVisible("english") && <a
               href="https://9english.net/"
               target="_blank"
               rel="noreferrer"
@@ -357,7 +366,7 @@ export default function Sidebar({ onClose }) {
                 translate
               </span>
               <span className="text-[13px] font-medium">9English</span>
-            </a>
+            </a>}
 
             {/* Settings */}
             <Link

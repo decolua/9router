@@ -28,7 +28,7 @@ export default function SegmentedControl({
           key={option.value}
           onClick={() => onChange(option.value)}
           className={cn(
-            "shrink-0 px-4 rounded-[8px] font-medium transition-all",
+            "shrink-0 whitespace-nowrap px-4 rounded-[8px] font-medium transition-all",
             sizes[size],
             value === option.value
               ? "bg-surface text-text-main shadow-sm"

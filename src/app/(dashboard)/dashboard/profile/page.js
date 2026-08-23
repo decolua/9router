@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Card, Button, Toggle, Input } from "@/shared/components";
+import { NAVIGATION_VISIBILITY_OPTIONS } from "@/shared/constants/navigation";
 import Modal, { ConfirmModal } from "@/shared/components/Modal";
 import LanguageSwitcher from "@/shared/components/LanguageSwitcher";
 import { useTheme } from "@/shared/hooks/useTheme";
@@ -83,6 +84,8 @@ export default function ProfilePage() {
   const [activeSettingsTab, setActiveSettingsTab] = useState("general");
   const [automationSaving, setAutomationSaving] = useState(false);
   const [automationStatus, setAutomationStatus] = useState("");
+  const [navigationSaving, setNavigationSaving] = useState(false);
+  const [navigationStatus, setNavigationStatus] = useState("");
 
   useEffect(() => {
     fetch("/api/settings")
@@ -763,6 +766,35 @@ export default function ProfilePage() {
     }
   };
 
+  const toggleNavigationItem = (itemId, visible) => {
+    setSettings((current) => {
+      const hidden = new Set(Array.isArray(current.hiddenNavigationItems) ? current.hiddenNavigationItems : []);
+      if (visible) hidden.delete(itemId);
+      else hidden.add(itemId);
+      return { ...current, hiddenNavigationItems: [...hidden] };
+    });
+  };
+
+  const saveNavigationSettings = async () => {
+    setNavigationSaving(true);
+    setNavigationStatus("");
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hiddenNavigationItems: settings.hiddenNavigationItems || [] }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "保存失败");
+      setSettings((current) => ({ ...current, ...data }));
+      setNavigationStatus("导航栏设置已保存，刷新页面后生效");
+    } catch (error) {
+      setNavigationStatus(error.message || "保存失败");
+    } finally {
+      setNavigationSaving(false);
+    }
+  };
+
   const handleShutdown = async () => {
     setIsShuttingDown(true);
     try {
@@ -790,7 +822,7 @@ export default function ProfilePage() {
       <div className="flex flex-col gap-6">
         <div className="flex overflow-x-auto rounded-md border border-border bg-bg-subtle p-1">
           {[
-            ["general", "常规"], ["security", "安全与登录"], ["routing", "路由与恢复"], ["network", "网络"], ["observability", "可观测性"],
+            ["general", "常规"], ["security", "安全与登录"], ["routing", "路由与恢复"], ["navigation", "导航栏"], ["network", "网络"], ["observability", "可观测性"],
           ].map(([value, label]) => <button key={value} type="button" onClick={() => setActiveSettingsTab(value)} className={cn("h-9 shrink-0 rounded px-4 text-sm font-medium", activeSettingsTab === value ? "bg-surface text-text-main shadow-sm" : "text-text-muted hover:text-text-main")}>{label}</button>)}
         </div>
         {/* Local Mode Info */}
@@ -1550,6 +1582,27 @@ export default function ProfilePage() {
                 ? ` Combos rotate after ${settings.comboStickyRoundRobinLimit || 1} call${(settings.comboStickyRoundRobinLimit || 1) === 1 ? "" : "s"} per model.`
                 : " Combos always start with their first model."}
             </p>
+          </div>
+        </Card>
+
+        <Card className={activeSettingsTab === "navigation" ? "" : "hidden"}>
+          <div className="mb-4 flex items-center gap-3">
+            <div className="rounded-md bg-primary/10 p-2 text-primary"><span className="material-symbols-outlined text-[20px]">menu_open</span></div>
+            <div><h3 className="font-semibold">导航栏菜单</h3><p className="text-xs text-text-muted">配置侧边导航栏中显示的功能入口，设置入口始终保留。</p></div>
+          </div>
+          <div className="flex flex-col gap-5">
+            {[...new Set(NAVIGATION_VISIBILITY_OPTIONS.map((item) => item.section))].map((section) => (
+              <div key={section} className="flex flex-col gap-2">
+                <p className="text-xs font-semibold text-text-muted">{section}</p>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {NAVIGATION_VISIBILITY_OPTIONS.filter((item) => item.section === section).map((item) => {
+                    const visible = !(settings.hiddenNavigationItems || []).includes(item.id);
+                    return <div key={item.id} className="flex min-h-11 items-center justify-between gap-3 rounded-md border border-border bg-bg-base px-3 py-2"><span className="text-sm font-medium">{item.label}</span><Toggle size="sm" checked={visible} onChange={(checked) => toggleNavigationItem(item.id, checked)} /></div>;
+                  })}
+                </div>
+              </div>
+            ))}
+            <div className="flex items-center justify-between gap-3 border-t border-border pt-4"><span className="text-xs text-text-muted">{navigationStatus}</span><Button loading={navigationSaving} onClick={saveNavigationSettings}>保存设置</Button></div>
           </div>
         </Card>
 

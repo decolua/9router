@@ -6,12 +6,14 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 const originalDataDir = process.env.DATA_DIR;
 let tempDir;
 let db;
+let settingsRepo;
 
 beforeAll(async () => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-usage-logs-"));
   process.env.DATA_DIR = tempDir;
   vi.resetModules();
   db = await import("@/lib/db/repos/usageRepo.js");
+  settingsRepo = await import("@/lib/db/repos/settingsRepo.js");
 });
 
 afterAll(() => {
@@ -122,6 +124,27 @@ describe("usage logs", () => {
 
     expect(traffic.data.reduce((sum, point) => sum + Number(point[trafficSeries.id] || 0), 0)).toBe(100);
     expect(latency.data.some((point) => point[latencySeries.id] === 640)).toBe(true);
+  });
+
+  it("returns custom provider names and request latency in traffic logs", async () => {
+    await settingsRepo.updateSettings({ providerDisplayNames: { "renamed-provider": "团队供应商" } });
+    await db.saveRequestUsage({
+      provider: "renamed-provider",
+      model: "renamed-model",
+      timestamp: new Date().toISOString(),
+      tokens: { prompt_tokens: 10, completion_tokens: 5 },
+      meta: { latency: { total: 875 } },
+    });
+
+    const result = await db.getUsageLogs({ provider: "renamed-provider" });
+
+    expect(result.logs[0]).toMatchObject({
+      providerId: "renamed-provider",
+      provider: "团队供应商",
+      latencyMs: 875,
+    });
+    const providerChart = await db.getDimensionChartData("today", {}, "provider", "tokens");
+    expect(providerChart.series.some((series) => series.label === "团队供应商")).toBe(true);
   });
 
   it("covers the complete custom range when chart data is capped at 90 points", async () => {

@@ -125,6 +125,10 @@ export default function ProvidersPage() {
   const matchSearch = (name) =>
     !searchQuery.trim() ||
     name.toLowerCase().includes(searchQuery.trim().toLowerCase());
+  const applyProviderDisplayName = ([providerId, info]) => [
+    providerId,
+    { ...info, name: providerDisplayNames[providerId] || info.name || providerId },
+  ];
 
   const sortByPriority = (entries, authType) =>
     [...entries].sort(([ka, a], [kb, b]) => {
@@ -331,16 +335,16 @@ export default function ProvidersPage() {
   };
 
   const oauthEntries = sortByPriority(
-    Object.entries(OAUTH_PROVIDERS).filter(([, info]) => !info.hidden && matchSearch(info.name)),
+    Object.entries(OAUTH_PROVIDERS).map(applyProviderDisplayName).filter(([, info]) => !info.hidden && matchSearch(info.name)),
     "oauth",
   );
-  const freeEntries = Object.entries(FREE_PROVIDERS)
+  const freeEntries = Object.entries(FREE_PROVIDERS).map(applyProviderDisplayName)
     .filter(([, info]) => !info.hidden && matchSearch(info.name))
     .sort(([, a], [, b]) => (b.noAuth ? 1 : 0) - (a.noAuth ? 1 : 0));
   // Free Tier cards may be oauth-only (e.g. kimchi) or dual-auth, so count via
   // dualAuthTypes per provider instead of a fixed "apikey" — otherwise oauth
   // connections are invisible here (mismatch with the detail page).
-  const freeTierEntries = Object.entries(FREE_TIER_PROVIDERS)
+  const freeTierEntries = Object.entries(FREE_TIER_PROVIDERS).map(applyProviderDisplayName)
     .filter(
       ([, info]) =>
         !info.hidden &&
@@ -359,7 +363,7 @@ export default function ProvidersPage() {
       return (a.name || "").localeCompare(b.name || "");
     });
   // API Key: connected providers first, then alphabetical by name
-  const apikeyEntries = Object.entries(APIKEY_PROVIDERS)
+  const apikeyEntries = Object.entries(APIKEY_PROVIDERS).map(applyProviderDisplayName)
     .filter(
       ([, info]) =>
         !info.hidden &&
@@ -386,7 +390,7 @@ export default function ProvidersPage() {
       const authTypes = [...new Set(providerConnections.map((connection) => connection.authType))];
       return {
         providerId,
-        info: { ...info, name: node?.name || providerDisplayNames[providerId] || info.name || providerId },
+        info: { ...info, name: providerDisplayNames[providerId] || node?.name || info.name || providerId },
         authTypes,
         stats: getProviderStats(providerId, authTypes),
         autoDisabled: providerConnections.some((connection) => connection.autoDisabled === true),

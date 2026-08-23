@@ -305,7 +305,7 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
     const error = !active && errorSet.has(p.provider?.toLowerCase());
     const nodeId = `provider-${p.provider}`;
     const data = {
-      label: (config.name !== p.provider ? config.name : null) || p.nodeName || p.name || p.provider,
+      label: p.providerName || p.name || p.nodeName || (config.name !== p.provider ? config.name : null) || p.provider,
       color: config.color || "#6b7280",
       imageUrl: getProviderImageUrl(p.provider),
       textIcon: config.textIcon || (p.provider || "?").slice(0, 2).toUpperCase(),
@@ -437,7 +437,7 @@ export default function ProviderTopology({ providers = [], activeRequests = [], 
   }, [nodes.length]);
 
   return (
-    <div ref={containerRef} className="h-[320px] w-full min-w-0 rounded-lg border border-border bg-bg-subtle/30 sm:h-[480px]">
+    <div ref={containerRef} className="h-[320px] w-full min-w-0 rounded-lg border border-border bg-surface shadow-sm sm:h-[480px]">
       {providers.length === 0 ? (
         <div className="h-full flex items-center justify-center text-text-muted text-sm">
           No providers connected

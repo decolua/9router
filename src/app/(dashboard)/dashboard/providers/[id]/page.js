@@ -42,6 +42,7 @@ export default function ProviderDetailPage() {
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [providerNode, setProviderNode] = useState(null);
+  const [providerDisplayName, setProviderDisplayName] = useState("");
   const [proxyPools, setProxyPools] = useState([]);
   const [showOAuthModal, setShowOAuthModal] = useState(false);
   const [showIFlowCookieModal, setShowIFlowCookieModal] = useState(false);
@@ -128,7 +129,7 @@ export default function ProviderDetailPage() {
     triggerApiKeyConnection();
   };
 
-  const providerInfo = providerNode
+  const providerInfoBase = providerNode
     ? {
         id: providerNode.id,
         name: providerNode.name || (providerNode.type === "anthropic-compatible" ? "Anthropic Compatible" : "OpenAI Compatible"),
@@ -139,6 +140,7 @@ export default function ProviderDetailPage() {
         type: providerNode.type,
       }
     : (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId] || WEB_COOKIE_PROVIDERS[providerId]);
+  const providerInfo = providerInfoBase ? { ...providerInfoBase, name: providerDisplayName || providerInfoBase.name } : providerInfoBase;
   const authModes = providerInfo?.authModes || [];
   const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId] || authModes.includes("oauth");
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
@@ -302,6 +304,7 @@ export default function ProviderDetailPage() {
       const nodesData = await nodesRes.json();
       const proxyPoolsData = await proxyPoolsRes.json();
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+      setProviderDisplayName(settingsData.providerDisplayNames?.[providerId] || "");
       if (connectionsRes.ok) {
         const filtered = (connectionsData.connections || []).filter(c => c.provider === providerId);
         setConnections(filtered);

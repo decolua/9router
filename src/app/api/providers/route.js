@@ -9,6 +9,7 @@ import {
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { AI_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers";
 import { normalizeProviderId, normalizeProviderSpecificData } from "@/lib/providerNormalization";
+import { getSettings } from "@/lib/localDb";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,8 @@ async function normalizeProxyPoolId(proxyPoolId) {
 // GET /api/providers - List all connections
 export async function GET() {
   try {
-    const connections = await getProviderConnections();
+    const [connections, settings] = await Promise.all([getProviderConnections(), getSettings()]);
+    const providerDisplayNames = settings.providerDisplayNames || {};
 
     // Build nodeNameMap for compatible providers (id → name)
     let nodeNameMap = {};
@@ -66,9 +68,14 @@ export async function GET() {
       const name = isCompatible
         ? (c.name || nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
         : c.name;
+      const providerName = providerDisplayNames[c.provider]
+        || nodeNameMap[c.provider]
+        || AI_PROVIDERS[c.provider]?.name
+        || c.provider;
       return {
         ...c,
         name,
+        providerName,
         apiKey: undefined,
         accessToken: undefined,
         refreshToken: undefined,
@@ -76,7 +83,7 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json({ connections: safeConnections });
+    return NextResponse.json({ connections: safeConnections, providerDisplayNames });
   } catch (error) {
     console.log("Error fetching providers:", error);
     return NextResponse.json({ error: "Failed to fetch providers" }, { status: 500 });
@@ -119,7 +126,8 @@ export async function POST(request) {
     if (!apiKey && provider !== "ollama-local") {
       return NextResponse.json({ error: `${isWebCookieProvider ? "Cookie value" : "API Key"} is required` }, { status: 400 });
     }
-    const connectionName = name || displayName || AI_PROVIDERS[provider]?.name;
+    const settings = await getSettings();
+    const connectionName = name || displayName || settings.providerDisplayNames?.[provider] || AI_PROVIDERS[provider]?.name;
     if (!connectionName) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
     }

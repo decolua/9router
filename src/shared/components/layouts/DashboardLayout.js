@@ -9,24 +9,28 @@ import Header from "../Header";
 function getToastStyle(type) {
   if (type === "success") {
     return {
-      wrapper: "border-green-500/30 bg-green-500/10 text-green-600 dark:text-green-400",
+      wrapper: "border-green-500/25 text-green-700 dark:text-green-300",
+      iconWrapper: "bg-green-500/12 text-green-600 dark:text-green-400",
       icon: "check_circle",
     };
   }
   if (type === "error") {
     return {
-      wrapper: "border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400",
+      wrapper: "border-red-500/25 text-red-700 dark:text-red-300",
+      iconWrapper: "bg-red-500/12 text-red-600 dark:text-red-400",
       icon: "error",
     };
   }
   if (type === "warning") {
     return {
-      wrapper: "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+      wrapper: "border-amber-500/25 text-amber-700 dark:text-amber-300",
+      iconWrapper: "bg-amber-500/12 text-amber-600 dark:text-amber-400",
       icon: "warning",
     };
   }
   return {
-    wrapper: "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-400",
+    wrapper: "border-blue-500/25 text-blue-700 dark:text-blue-300",
+    iconWrapper: "bg-blue-500/12 text-blue-600 dark:text-blue-400",
     icon: "info",
   };
 }
@@ -39,25 +43,25 @@ export default function DashboardLayout({ children }) {
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-bg">
-      <div className="fixed top-4 right-4 z-[80] flex w-[min(92vw,380px)] flex-col gap-2">
+      <div className="pointer-events-none fixed right-4 top-4 z-[80] flex w-[min(92vw,440px)] flex-col gap-2">
         {notifications.map((n) => {
           const style = getToastStyle(n.type);
           return (
             <div
               key={n.id}
-              className={`rounded-lg border px-3 py-2 shadow-lg backdrop-blur-sm ${style.wrapper}`}
+              className={`pointer-events-auto rounded-md border bg-surface px-3 py-2.5 shadow-xl ${style.wrapper}`}
             >
-              <div className="flex items-start gap-2">
-                <span className="material-symbols-outlined text-[18px] leading-5">{style.icon}</span>
+              <div className="flex min-h-7 items-center gap-2.5">
+                <span className={`material-symbols-outlined flex size-7 shrink-0 items-center justify-center rounded-full text-[17px] leading-none ${style.iconWrapper}`}>{style.icon}</span>
                 <div className="min-w-0 flex-1">
-                  {n.title ? <p className="text-xs font-semibold mb-0.5">{n.title}</p> : null}
-                  <p className="text-xs whitespace-pre-wrap break-words">{n.message}</p>
+                  {n.title ? <p className="mb-0.5 text-xs font-semibold leading-4">{n.title}</p> : null}
+                  <p className="break-words text-sm leading-5 text-text-main">{String(n.message || "").replace(/\s*\n+\s*/g, " ")}</p>
                 </div>
                 {n.dismissible ? (
                   <button
                     type="button"
                     onClick={() => removeNotification(n.id)}
-                    className="text-current/70 hover:text-current"
+                    className="flex size-7 shrink-0 items-center justify-center rounded text-text-muted hover:bg-bg-hover hover:text-text-main"
                     aria-label="Dismiss notification"
                   >
                     <span className="material-symbols-outlined text-[16px]">close</span>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, DropdownSelect } from "@/shared/components";
+import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, DropdownSelect, Badge } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import {
   TUNNEL_BENEFITS,
@@ -78,9 +78,6 @@ export default function APIPageClient({ machineId }) {
   const tsEverReachableRef = useRef(false);
   const [tunnelEverReachable, setTunnelEverReachable] = useState(false);
   const [tsEverReachable, setTsEverReachable] = useState(false);
-
-  // API key visibility toggle state
-  const [visibleKeys, setVisibleKeys] = useState(new Set());
 
   // Client-side local/remote detection (UI hint only, not a security gate)
   const [isRemoteHost, setIsRemoteHost] = useState(false);
@@ -672,11 +669,6 @@ export default function APIPageClient({ machineId }) {
               next.delete(id);
               return next;
             });
-            setVisibleKeys(prev => {
-              const next = new Set(prev);
-              next.delete(id);
-              return next;
-            });
           }
         } catch (error) {
           console.log("Error deleting key:", error);
@@ -752,15 +744,6 @@ export default function APIPageClient({ machineId }) {
   const maskKey = (fullKey) => {
     if (!fullKey || fullKey.length <= 10) return fullKey || "";
     return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
-  };
-
-  const toggleKeyVisibility = (keyId) => {
-    setVisibleKeys(prev => {
-      const next = new Set(prev);
-      if (next.has(keyId)) next.delete(keyId);
-      else next.add(keyId);
-      return next;
-    });
   };
 
   const [baseUrl, setBaseUrl] = useState("/v1");
@@ -1085,74 +1068,39 @@ export default function APIPageClient({ machineId }) {
             </Button>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <div className="min-w-[720px]">
-            {keys.map((key) => (
-              <div
-                key={key.id}
-                className={`group grid grid-cols-[auto_minmax(0,1fr)_10rem_auto_auto] items-center gap-3 border-b border-black/[0.03] py-2 last:border-b-0 dark:border-white/[0.03] ${key.isActive === false ? "opacity-60" : ""}`}
-              >
-                <input type="checkbox" checked={selectedKeyIds.has(key.id)} onChange={() => toggleKeySelection(key.id)} aria-label={`选择 ${key.name}`} />
-                <div className="min-w-0">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className="shrink-0 text-sm font-medium">{key.name}</span>
-                    <code className="min-w-0 truncate text-xs font-mono text-text-muted">
-                      {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
-                    </code>
-                    <button
-                      onClick={() => toggleKeyVisibility(key.id)}
-                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
-                      title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
-                    >
-                      <span className="material-symbols-outlined text-[14px]">
-                        {visibleKeys.has(key.id) ? "visibility_off" : "visibility"}
-                      </span>
-                    </button>
-                    <button
-                      onClick={() => copy(key.key, key.id)}
-                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
-                    >
-                      <span className="material-symbols-outlined text-[14px]">
-                        {copied === key.id ? "check" : "content_copy"}
-                      </span>
-                    </button>
-                  </div>
-                  {key.isActive === false && (
-                    <p className="mt-0.5 text-xs text-orange-500">已暂停</p>
-                  )}
-                </div>
-                <DropdownSelect value={key.groupId || "default"} onChange={(value) => handleKeyGroupChange(key.id, value)} searchable buttonClassName="min-h-8 py-1 text-xs" options={keyGroups.map((group) => ({ value: group.id, label: group.name }))} />
-                <span className="whitespace-nowrap text-xs text-text-muted">{new Date(key.createdAt).toLocaleDateString("zh-CN")}</span>
-                <div className="flex items-center gap-2">
-                  <Toggle
-                    size="sm"
-                    checked={key.isActive ?? true}
-                    onChange={(checked) => {
-                      if (key.isActive && !checked) {
-                        setConfirmState({
-                          title: "Pause API Key",
-                          message: `Pause API key "${key.name}"?\n\nThis key will stop working immediately but can be resumed later.`,
-                          onConfirm: async () => {
-                            setConfirmState(null);
-                            handleToggleKey(key.id, checked);
-                          }
-                        });
-                      } else {
-                        handleToggleKey(key.id, checked);
-                      }
-                    }}
-                    title={key.isActive ? "Pause key" : "Resume key"}
-                  />
-                  <button
-                    onClick={() => handleDeleteKey(key.id)}
-                    className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">delete</span>
-                  </button>
-                </div>
-              </div>
-            ))}
-            </div>
+          <div className="overflow-x-auto rounded-md border border-border">
+            <table className="w-full min-w-[1040px] border-collapse text-sm">
+              <thead className="border-b border-border bg-bg-subtle text-xs text-text-muted">
+                <tr>
+                  <th className="w-10 px-3 py-2 text-center"><input type="checkbox" checked={selectedKeyIds.size === keys.length} onChange={toggleAllKeys} aria-label="选择全部密钥" /></th>
+                  <th className="px-3 py-2 text-left font-medium">密钥名称</th>
+                  <th className="px-3 py-2 text-left font-medium">API 密钥</th>
+                  <th className="w-44 px-3 py-2 text-left font-medium">分组</th>
+                  <th className="w-40 px-3 py-2 text-left font-medium">用量</th>
+                  <th className="w-24 px-3 py-2 text-left font-medium">状态</th>
+                  <th className="w-44 px-3 py-2 text-left font-medium">创建时间</th>
+                  <th className="w-24 px-3 py-2 text-center font-medium">操作</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {keys.map((key) => (
+                  <tr key={key.id} className={`group hover:bg-bg-hover/60 ${key.isActive === false ? "opacity-70" : ""}`}>
+                    <td className="px-3 py-2 text-center"><input type="checkbox" checked={selectedKeyIds.has(key.id)} onChange={() => toggleKeySelection(key.id)} aria-label={`选择 ${key.name}`} /></td>
+                    <td className="max-w-44 truncate px-3 py-2 font-medium" title={key.name}>{key.name}</td>
+                    <td className="px-3 py-2"><div className="flex items-center gap-1.5"><code className="max-w-48 truncate rounded bg-bg-subtle px-2 py-1 font-mono text-xs text-text-muted">{maskKey(key.key)}</code><button type="button" onClick={() => copy(key.key, key.id)} className="rounded p-1 text-text-muted hover:bg-primary/10 hover:text-primary" title="复制 API 密钥"><span className="material-symbols-outlined text-[16px]">{copied === key.id ? "check" : "content_copy"}</span></button></div></td>
+                    <td className="px-3 py-2"><DropdownSelect value={key.groupId || "default"} onChange={(value) => handleKeyGroupChange(key.id, value)} searchable buttonClassName="h-8 min-h-8 py-1 text-xs" options={keyGroups.map((group) => ({ value: group.id, label: group.name }))} /></td>
+                    <td className="px-3 py-2 text-xs tabular-nums"><div>今日：${Number(key.usage?.todayCost || 0).toFixed(4)}</div><div className="mt-0.5 text-text-muted">近 30 天：${Number(key.usage?.thirtyDayCost || 0).toFixed(4)}</div></td>
+                    <td className="px-3 py-2">{key.isActive === false ? <Badge variant="neutral" size="sm" dot>已禁用</Badge> : <Badge variant="success" size="sm" dot>已启用</Badge>}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-xs text-text-muted">{new Date(key.createdAt).toLocaleString("zh-CN", { hour12: false })}</td>
+                    <td className="px-3 py-2"><div className="flex items-center justify-center gap-1"><button type="button" onClick={() => {
+                      if (key.isActive) {
+                        setConfirmState({ title: "禁用 API 密钥", message: `确定禁用“${key.name}”吗？禁用后该密钥将立即停止工作。`, onConfirm: async () => { setConfirmState(null); handleToggleKey(key.id, false); } });
+                      } else handleToggleKey(key.id, true);
+                    }} className="rounded p-1.5 text-text-muted hover:bg-amber-500/10 hover:text-amber-600" title={key.isActive ? "禁用密钥" : "启用密钥"}><span className="material-symbols-outlined text-[18px]">{key.isActive ? "block" : "play_arrow"}</span></button><button type="button" onClick={() => handleDeleteKey(key.id)} className="rounded p-1.5 text-text-muted hover:bg-red-500/10 hover:text-red-500" title="删除密钥"><span className="material-symbols-outlined text-[18px]">delete</span></button></div></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </Card>

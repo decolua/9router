@@ -149,11 +149,12 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           return true;
         }).map((c) => ({
           ...c,
+          name: c.providerName || c.name,
           nodeName: nodeNameMap[c.provider] || null,
         }));
         const noAuthProviders = Object.values(FREE_PROVIDERS)
           .filter((p) => p.noAuth && !seen.has(p.id) && isLLMProvider(p.id))
-          .map((p) => ({ provider: p.id, name: p.name }));
+          .map((p) => ({ provider: p.id, providerName: d?.providerDisplayNames?.[p.id] || p.name, name: d?.providerDisplayNames?.[p.id] || p.name }));
         setProviders([...unique, ...noAuthProviders]);
       })
       .catch(() => {});

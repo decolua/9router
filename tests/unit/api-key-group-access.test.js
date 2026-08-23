@@ -68,4 +68,30 @@ describe("API key group access", () => {
     const filtered = filterModelsByAccessPolicy(models, { unrestricted: false, allowedModels: ["openai/gpt-5"], allowedCombos: ["coding"] });
     expect(filtered.map((model) => model.id)).toEqual(["openai/gpt-5", "coding"]);
   });
+
+  it("summarizes API key cost for today and the last 30 days", async () => {
+    const key = await dbApi.createApiKey("usage-summary", "machine-usage-summary");
+    await dbApi.updatePricing({
+      "usage-summary-provider": {
+        "usage-summary-model": { input: 1, output: 0, cached: 0, cache_creation: 0 },
+      },
+    });
+    const now = new Date();
+    const tenDaysAgo = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000);
+    const fortyDaysAgo = new Date(now.getTime() - 40 * 24 * 60 * 60 * 1000);
+    for (const timestamp of [now, tenDaysAgo, fortyDaysAgo]) {
+      await dbApi.saveRequestUsage({
+        provider: "usage-summary-provider",
+        model: "usage-summary-model",
+        apiKey: key.key,
+        timestamp: timestamp.toISOString(),
+        tokens: { prompt_tokens: 1_000_000, completion_tokens: 0 },
+      });
+    }
+
+    const summaries = await dbApi.getApiKeyUsageSummaries(now);
+
+    expect(summaries[key.key].todayCost).toBeCloseTo(1, 6);
+    expect(summaries[key.key].thirtyDayCost).toBeCloseTo(2, 6);
+  });
 });

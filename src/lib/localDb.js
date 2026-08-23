@@ -10,7 +10,7 @@ export {
   createProviderNode, updateProviderNode, deleteProviderNode,
   getProxyPools, getProxyPoolById,
   createProxyPool, updateProxyPool, deleteProxyPool,
-  getApiKeys, getApiKeyById, getApiKeyByValue, createApiKey, updateApiKey, deleteApiKey, validateApiKey,
+  getApiKeys, getApiKeyById, getApiKeyByValue, getApiKeyUsageSummaries, createApiKey, updateApiKey, deleteApiKey, validateApiKey,
   getApiKeyGroups, getApiKeyGroupById, getDefaultApiKeyGroup,
   createApiKeyGroup, updateApiKeyGroup, deleteApiKeyGroup, setDefaultApiKeyGroup, DEFAULT_API_KEY_GROUP_ID,
   getCombos, getComboById, getComboByName,

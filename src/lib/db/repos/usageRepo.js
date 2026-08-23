@@ -419,9 +419,9 @@ export async function getUsageStats(period = "all", range = {}) {
   const providerNodeNameMap = {};
   try {
     const settings = await getSettings();
-    Object.assign(providerNodeNameMap, settings.providerDisplayNames || {});
     const nodes = await getProviderNodes();
     for (const n of nodes) if (n.id && n.name) providerNodeNameMap[n.id] = n.name;
+    Object.assign(providerNodeNameMap, settings.providerDisplayNames || {});
   } catch {}
 
   let allApiKeys = [];
@@ -1032,6 +1032,16 @@ export async function getDimensionChartData(period = "7d", range = {}, dimension
   const modelMappingMap = dimension === "model"
     ? createModelMappingMap(await getModelMappings())
     : new Map();
+  const providerNames = new Map();
+  if (dimension === "provider") {
+    const [{ getProviderNodes }, { getSettings }] = await Promise.all([
+      import("./nodesRepo.js"),
+      import("./settingsRepo.js"),
+    ]);
+    const [nodes, settings] = await Promise.all([getProviderNodes(), getSettings()]);
+    for (const node of nodes) if (node.id && node.name) providerNames.set(node.id, node.name);
+    for (const [providerId, name] of Object.entries(settings.providerDisplayNames || {})) providerNames.set(providerId, name);
+  }
   const buckets = Array.from({ length: bucketCount }, () => new Map());
   const totals = new Map();
 
@@ -1041,7 +1051,7 @@ export async function getDimensionChartData(period = "7d", range = {}, dimension
     if (index < 0 || index >= bucketCount) continue;
     const group = dimension === "apiKey"
       ? (row.apiKey ? (keyNames.get(row.apiKey) || `${row.apiKey.slice(0, 8)}...`) : "本地调用（无 API 密钥）")
-      : dimension === "provider" ? (row.provider || "未知提供商") : getMappedModelName(modelMappingMap, row.provider, row.model || "未知模型");
+      : dimension === "provider" ? (providerNames.get(row.provider) || row.provider || "未知提供商") : getMappedModelName(modelMappingMap, row.provider, row.model || "未知模型");
     const tokens = parseJson(row.tokens, {}) || {};
     const latency = Number(parseJson(row.meta, {})?.latency?.total || 0);
     const value = metric === "requests" ? 1
@@ -1172,17 +1182,22 @@ export async function getUsageLogs(filter = {}) {
   const pageSize = Math.min(200, Math.max(1, Number(filter.pageSize) || 50));
   const totalItems = db.get(`SELECT COUNT(*) AS c FROM usageHistory ${where}`, params)?.c || 0;
   const rows = db.all(
-    `SELECT id, timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens FROM usageHistory ${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
+    `SELECT id, timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta FROM usageHistory ${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
     [...params, pageSize, (page - 1) * pageSize]
   );
-  const [{ getProviderConnections }, { getApiKeys }] = await Promise.all([
+  const [{ getProviderConnections }, { getApiKeys }, { getProviderNodes }, { getSettings }] = await Promise.all([
     import("./connectionsRepo.js"),
     import("./apiKeysRepo.js"),
+    import("./nodesRepo.js"),
+    import("./settingsRepo.js"),
   ]);
-  const connections = await getProviderConnections();
-  const apiKeys = await getApiKeys();
+  const [connections, apiKeys, providerNodes, settings] = await Promise.all([
+    getProviderConnections(), getApiKeys(), getProviderNodes(), getSettings(),
+  ]);
   const connMap = Object.fromEntries(connections.map((c) => [c.id, c.name || c.email || c.id]));
   const keyMap = Object.fromEntries(apiKeys.map((k) => [k.key, k.name || k.id]));
+  const providerNameMap = Object.fromEntries(providerNodes.filter((node) => node.id && node.name).map((node) => [node.id, node.name]));
+  Object.assign(providerNameMap, settings.providerDisplayNames || {});
   const { getModelMappings } = await import("./aliasRepo.js");
   const modelMappingMap = createModelMappingMap(await getModelMappings());
   const mask = (key) => !key ? null : key.length <= 8 ? `${key[0]}***` : `${key.slice(0, 8)}***`;
@@ -1197,18 +1212,21 @@ export async function getUsageLogs(filter = {}) {
       cache_creation_input_tokens: cacheCreationTokens,
     };
     const breakdown = await calculateBreakdown(r.provider, r.model, normalizedTokens);
+    const meta = parseJson(r.meta, {}) || {};
     return {
       id: r.id,
       timestamp: r.timestamp,
       apiKey: mask(r.apiKey),
       apiKeyName: r.apiKey ? (keyMap[r.apiKey] || mask(r.apiKey)) : "Local (No API Key)",
       model: getMappedModelName(modelMappingMap, r.provider, r.model),
-      provider: r.provider,
+      providerId: r.provider,
+      provider: providerNameMap[r.provider] || r.provider,
       endpoint: r.endpoint,
       account: r.connectionId ? (connMap[r.connectionId] || r.connectionId) : null,
       ...breakdown,
       cost: breakdown.totalCost || Number(r.cost || 0),
       status: r.status || "ok",
+      latencyMs: Number(meta.latency?.total || meta.latencyMs || meta.durationMs || 0),
       logType: ["ok", "success", "200 ok"].includes(String(r.status || "").toLowerCase()) ? "success" : "failed",
     };
   }));
