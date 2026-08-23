@@ -26,11 +26,15 @@ export function extractUsageFromResponse(responseBody) {
 
   // Claude format
   if (responseBody.usage?.input_tokens !== undefined) {
+    const inputDetails = responseBody.usage.input_tokens_details;
+    const isOpenAIResponsesUsage = inputDetails && typeof inputDetails === "object";
     return {
       prompt_tokens: responseBody.usage.input_tokens || 0,
       completion_tokens: responseBody.usage.output_tokens || 0,
-      cache_read_input_tokens: responseBody.usage.cache_read_input_tokens,
-      cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens
+      ...(isOpenAIResponsesUsage
+        ? { cached_tokens: inputDetails.cached_tokens }
+        : { cache_read_input_tokens: responseBody.usage.cache_read_input_tokens }),
+      cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens ?? inputDetails?.cache_creation_tokens
     };
   }
 
@@ -39,7 +43,8 @@ export function extractUsageFromResponse(responseBody) {
     return {
       prompt_tokens: responseBody.usage.prompt_tokens || 0,
       completion_tokens: responseBody.usage.completion_tokens || 0,
-      cached_tokens: responseBody.usage.prompt_tokens_details?.cached_tokens,
+      cached_tokens: responseBody.usage.prompt_tokens_details?.cached_tokens ?? responseBody.usage.prompt_cache_hit_tokens ?? responseBody.usage.cache_hit_tokens,
+      cache_creation_input_tokens: responseBody.usage.prompt_tokens_details?.cache_creation_tokens ?? responseBody.usage.prompt_cache_miss_tokens ?? responseBody.usage.cache_miss_tokens,
       reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens
     };
   }

@@ -128,8 +128,8 @@ export function normalizeUsage(usage) {
   assignNumber("completion_tokens", usage?.completion_tokens);
   assignNumber("total_tokens", usage?.total_tokens);
   assignNumber("cache_read_input_tokens", usage?.cache_read_input_tokens);
-  assignNumber("cache_creation_input_tokens", usage?.cache_creation_input_tokens);
-  assignNumber("cached_tokens", usage?.cached_tokens);
+  assignNumber("cache_creation_input_tokens", usage?.cache_creation_input_tokens ?? usage?.prompt_cache_miss_tokens ?? usage?.cache_miss_tokens);
+  assignNumber("cached_tokens", usage?.cached_tokens ?? usage?.prompt_cache_hit_tokens ?? usage?.cache_hit_tokens);
   assignNumber("reasoning_tokens", usage?.reasoning_tokens);
 
   // Preserve nested details objects for OpenAI format forwarding
@@ -278,6 +278,7 @@ export function extractUsage(chunk) {
       prompt_tokens: chunk.usage.prompt_tokens,
       completion_tokens: chunk.usage.completion_tokens || 0,
       cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens || chunk.usage.prompt_cache_hit_tokens,
+      cache_creation_input_tokens: chunk.usage.prompt_tokens_details?.cache_creation_tokens || chunk.usage.prompt_cache_miss_tokens,
       reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens,
       prompt_tokens_details: chunk.usage.prompt_tokens_details,
       completion_tokens_details: chunk.usage.completion_tokens_details

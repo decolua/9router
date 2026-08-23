@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { canonicalizeUsage, extractUsage, mergeUsage } from "../../open-sse/utils/usageTracking.js";
+import { canonicalizeUsage, extractUsage, mergeUsage, normalizeUsage } from "../../open-sse/utils/usageTracking.js";
 import { calculateCostFromTokens } from "../../open-sse/providers/pricing.js";
 import { toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
 
@@ -11,6 +11,20 @@ import { toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
 // Discriminator: Claude reports cache separately (prompt EXCLUDES cache);
 // OpenAI/Gemini report prompt INCLUDING cached_tokens.
 describe("canonicalizeUsage", () => {
+  it("normalizes OpenAI-compatible cache hit and miss aliases without double-counting prompt tokens", () => {
+    const normalized = normalizeUsage({
+      prompt_tokens: 500,
+      completion_tokens: 50,
+      prompt_cache_hit_tokens: 120,
+      prompt_cache_miss_tokens: 380,
+    });
+    const out = canonicalizeUsage(normalized);
+
+    expect(out.prompt_tokens).toBe(500);
+    expect(out.cached_tokens).toBe(120);
+    expect(out.cache_creation_input_tokens).toBe(380);
+  });
+
   it("folds Claude exclusive cache into an inclusive prompt count", () => {
     // Claude: input_tokens excludes cache; cache_read + cache_creation are separate
     const out = canonicalizeUsage({

@@ -12,20 +12,28 @@ export default function KeyGroupsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(null);
-  const [search, setSearch] = useState("");
+  const [modelSearch, setModelSearch] = useState("");
+  const [comboSearch, setComboSearch] = useState("");
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [groupRes, modelRes, comboRes] = await Promise.all([
+      const [groupRes, catalogRes, routedModelRes, comboRes] = await Promise.all([
         fetch("/api/key-groups", { cache: "no-store" }),
+        fetch("/api/models", { cache: "no-store" }),
         fetch("/api/v1/models", { cache: "no-store" }),
         fetch("/api/combos", { cache: "no-store" }),
       ]);
-      const [groupData, modelData, comboData] = await Promise.all([groupRes.json(), modelRes.json(), comboRes.json()]);
+      const [groupData, catalogData, routedModelData, comboData] = await Promise.all([
+        groupRes.json(), catalogRes.json(), routedModelRes.json(), comboRes.json(),
+      ]);
       if (!groupRes.ok) throw new Error(groupData.error || "加载密钥分组失败");
+      if (!catalogRes.ok && !routedModelRes.ok) throw new Error("加载可用模型失败");
+      if (!comboRes.ok) throw new Error(comboData.error || "加载模型组合失败");
       setGroups(groupData.groups || []);
-      setModels((modelData.data || []).filter((model) => model.owned_by !== "combo").map((model) => model.id).sort());
+      const catalogModels = (catalogData.models || []).map((model) => model.routedModel || model.fullModel || (model.provider && model.model ? `${model.provider}/${model.model}` : null));
+      const routedModels = (routedModelData.data || []).filter((model) => model.owned_by !== "combo").map((model) => model.id);
+      setModels([...new Set([...catalogModels, ...routedModels].filter(Boolean))].sort());
       setCombos((comboData.combos || []).map((combo) => combo.name).sort());
     } catch (error) {
       alert(error.message);
@@ -36,9 +44,10 @@ export default function KeyGroupsPage() {
 
   useEffect(() => { loadData(); }, []);
 
-  const openCreate = () => { setSearch(""); setForm({ ...EMPTY_FORM }); };
+  const resetSearch = () => { setModelSearch(""); setComboSearch(""); };
+  const openCreate = () => { resetSearch(); setForm({ ...EMPTY_FORM }); };
   const openEdit = (group) => {
-    setSearch("");
+    resetSearch();
     setForm({ id: group.id, name: group.name, allowAll: group.allowedModels.length === 0 && group.allowedCombos.length === 0, allowedModels: [...group.allowedModels], allowedCombos: [...group.allowedCombos] });
   };
 
@@ -76,9 +85,16 @@ export default function KeyGroupsPage() {
     return { ...current, [field]: [...values] };
   });
 
-  const normalizedSearch = search.trim().toLowerCase();
-  const visibleModels = useMemo(() => normalizedSearch ? models.filter((model) => model.toLowerCase().includes(normalizedSearch)) : models, [models, normalizedSearch]);
-  const visibleCombos = useMemo(() => normalizedSearch ? combos.filter((combo) => combo.toLowerCase().includes(normalizedSearch)) : combos, [combos, normalizedSearch]);
+  const selectValues = (field, values) => setForm((current) => ({
+    ...current,
+    [field]: [...new Set([...current[field], ...values])],
+  }));
+  const clearValues = (field) => setForm((current) => ({ ...current, [field]: [] }));
+
+  const normalizedModelSearch = modelSearch.trim().toLowerCase();
+  const normalizedComboSearch = comboSearch.trim().toLowerCase();
+  const visibleModels = useMemo(() => normalizedModelSearch ? models.filter((model) => model.toLowerCase().includes(normalizedModelSearch)) : models, [models, normalizedModelSearch]);
+  const visibleCombos = useMemo(() => normalizedComboSearch ? combos.filter((combo) => combo.toLowerCase().includes(normalizedComboSearch)) : combos, [combos, normalizedComboSearch]);
 
   return (
     <div className="flex min-w-0 flex-col gap-4" data-i18n-skip>
@@ -102,10 +118,17 @@ export default function KeyGroupsPage() {
           <Input label="分组名称" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="例如：开发环境" />
           <div className="flex items-center justify-between rounded-md border border-border p-3"><div><p className="text-sm font-medium">允许全部模型</p><p className="text-xs text-text-muted">开启后，该分组可获取并使用所有模型和模型组合。</p></div><Toggle checked={form.allowAll} onChange={(checked) => setForm((current) => ({ ...current, allowAll: checked }))} /></div>
           {!form.allowAll && <>
-            <Input icon="search" placeholder="搜索模型或模型组合" value={search} onChange={(event) => setSearch(event.target.value)} />
             <div className="grid gap-5 lg:grid-cols-2">
-              <section><div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-semibold">可用模型</h3><span className="text-xs text-text-muted">已选 {form.allowedModels.length}</span></div><div className="max-h-80 overflow-y-auto rounded-md border border-border p-2">{visibleModels.map((model) => <label key={model} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-surface-2"><input type="checkbox" checked={form.allowedModels.includes(model)} onChange={() => toggleValue("allowedModels", model)} /><span className="font-mono">{model}</span></label>)}</div></section>
-              <section><div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-semibold">可用模型组合</h3><span className="text-xs text-text-muted">已选 {form.allowedCombos.length}</span></div><div className="max-h-80 overflow-y-auto rounded-md border border-border p-2">{visibleCombos.length ? visibleCombos.map((combo) => <label key={combo} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-surface-2"><input type="checkbox" checked={form.allowedCombos.includes(combo)} onChange={() => toggleValue("allowedCombos", combo)} /><span className="font-mono">{combo}</span></label>) : <p className="p-4 text-center text-xs text-text-muted">没有模型组合</p>}</div></section>
+              <section className="flex min-w-0 flex-col gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">可用模型</h3><div className="flex items-center gap-2 text-xs"><span className="text-text-muted">已选 {form.allowedModels.length}</span><button type="button" onClick={() => selectValues("allowedModels", visibleModels)} className="whitespace-nowrap text-primary hover:underline">全选筛选结果</button><button type="button" onClick={() => clearValues("allowedModels")} className="whitespace-nowrap text-text-muted hover:text-text-main">全部取消</button></div></div>
+                <Input icon="search" placeholder="搜索可用模型" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} />
+                <div className="h-80 overflow-y-auto rounded-md border border-border p-2">{visibleModels.length ? visibleModels.map((model) => <label key={model} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-surface-2"><input type="checkbox" checked={form.allowedModels.includes(model)} onChange={() => toggleValue("allowedModels", model)} /><span className="min-w-0 break-all font-mono">{model}</span></label>) : <p className="p-4 text-center text-xs text-text-muted">没有匹配的模型</p>}</div>
+              </section>
+              <section className="flex min-w-0 flex-col gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">可用模型组合</h3><div className="flex items-center gap-2 text-xs"><span className="text-text-muted">已选 {form.allowedCombos.length}</span><button type="button" onClick={() => selectValues("allowedCombos", visibleCombos)} className="whitespace-nowrap text-primary hover:underline">全选筛选结果</button><button type="button" onClick={() => clearValues("allowedCombos")} className="whitespace-nowrap text-text-muted hover:text-text-main">全部取消</button></div></div>
+                <Input icon="search" placeholder="搜索可用模型组合" value={comboSearch} onChange={(event) => setComboSearch(event.target.value)} />
+                <div className="h-80 overflow-y-auto rounded-md border border-border p-2">{visibleCombos.length ? visibleCombos.map((combo) => <label key={combo} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-surface-2"><input type="checkbox" checked={form.allowedCombos.includes(combo)} onChange={() => toggleValue("allowedCombos", combo)} /><span className="min-w-0 break-all font-mono">{combo}</span></label>) : <p className="p-4 text-center text-xs text-text-muted">没有匹配的模型组合</p>}</div>
+              </section>
             </div>
           </>}
         </div>}

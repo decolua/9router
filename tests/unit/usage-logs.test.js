@@ -49,6 +49,27 @@ describe("usage logs", () => {
     expect(result.logs[0].logType).toBe("success");
   });
 
+  it("reads OpenAI-compatible cache hit and miss token aliases", async () => {
+    await db.saveRequestUsage({
+      provider: "cache-alias-provider",
+      model: "cache-alias-model",
+      status: "200 OK",
+      timestamp: "2026-08-21T02:00:00.000Z",
+      tokens: {
+        prompt_tokens: 500,
+        completion_tokens: 50,
+        prompt_cache_hit_tokens: 120,
+        prompt_cache_miss_tokens: 380,
+      },
+    });
+
+    const result = await db.getUsageLogs({ provider: "cache-alias-provider" });
+
+    expect(result.logs).toHaveLength(1);
+    expect(result.logs[0].cacheReadTokens).toBe(120);
+    expect(result.logs[0].cacheCreationTokens).toBe(380);
+  });
+
   it("persists terminal failures without duplicating pending or successful lifecycle events", async () => {
     const now = Date.now();
     const base = {
