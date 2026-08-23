@@ -163,9 +163,23 @@ export function detectRequiredCapabilities(body) {
     else if (mime.startsWith("video/")) required.add("videoInput");
   };
 
-  const scanBlock = (b) => {
+  const scanBlock = (b, depth = 0) => {
     if (!b || typeof b !== "object") return;
     const t = b.type;
+
+    // A tool result carries its own content blocks, and an image inside one is
+    // still an image the model has to see. This is not an edge case: an agent
+    // that reads a file off disk — Claude Code's Read tool — is the ONLY way an
+    // attachment reaches the router from a chat front end, so a screenshot sent
+    // through one arrived as `{type:"tool_result", content:[{type:"image"...}]}`,
+    // matched nothing here, and the request was served by whichever model
+    // happened to head the combo. It answered confidently about an image it had
+    // never been given.
+    if (t === "tool_result" && depth < 4) {
+      if (Array.isArray(b.content)) for (const inner of b.content) scanBlock(inner, depth + 1);
+      else if (typeof b.content === "string" && b.content.includes("data:image/")) required.add("vision");
+      return;
+    }
     if (t === "image_url" || t === "image" || t === "input_image") required.add("vision");
     if (t === "input_audio" || t === "audio_url" || t === "audio") required.add("audioInput");
     if (t === "input_video" || t === "video_url" || t === "video") required.add("videoInput");
