@@ -359,9 +359,14 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
           let hasToolUse = false;
           let hasKeptThinking = false;
 
-          // Claude native: preserve valid signatures, drop invalid blocks.
-          // anthropic-compatible: replace with default (safe fallback for lenient upstreams).
-          // DeepSeek: keep existing thinking as-is; add an unsigned placeholder only if missing.
+          // Claude native: keep a valid Claude signature.
+          // Unsigned / foreign blobs cannot go out as-is (native 400s) and
+          // must not be dropped either (P2: thoughts have to survive). Attach
+          // DEFAULT_THINKING_CLAUDE_SIGNATURE — the same documented bypass
+          // already sent as the native tool_use placeholder and used for
+          // anthropic-compatible. Copy-on-write: the body is reused on fallback.
+          // anthropic-compatible: replace with default (lenient upstreams).
+          // DeepSeek: keep existing thinking as-is; unsigned placeholder if missing.
           const isClaudeNative = provider === "claude";
           const isDeepSeek = provider === "deepseek";
           const kept = [];
@@ -372,6 +377,12 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
                 if (isValidClaudeSignature(block.signature)) {
                   hasKeptThinking = true;
                   kept.push(block);
+                } else if (typeof block.thinking === "string" && block.thinking.length > 0) {
+                  const rest = { ...block };
+                  delete rest.cache_control;
+                  delete rest.signature;
+                  kept.push({ ...rest, signature: DEFAULT_THINKING_CLAUDE_SIGNATURE });
+                  hasKeptThinking = true;
                 }
               } else if (isDeepSeek) {
                 hasKeptThinking = true;

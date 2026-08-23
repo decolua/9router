@@ -16,6 +16,7 @@ import { describe, it, expect } from "vitest";
 import "../translator/registerAll.js";
 import { translateRequest } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
+import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../open-sse/config/defaultThinkingSignature.js";
 
 describe("reasoning/thinking bridge", () => {
   it("openai -> claude: reasoning_content becomes a leading thinking block", () => {
@@ -136,5 +137,79 @@ describe("reasoning/thinking bridge", () => {
     const out = translateRequest(FORMATS.GEMINI, FORMATS.OPENAI, "m", body, true);
     const assistant = out.messages.find((m) => m.role === "assistant");
     expect(assistant.reasoning_content).toBe("gemini thinking");
+  });
+
+  // Production seam: prepareClaudeRequest with provider === "claude" (OAuth
+  // native). translateRequest(..., "anthropic") never enters
+  // handlesThinkingBlocks and so cannot see the unsigned-thinking filter.
+  it("openai -> claude native: unsigned thinking is kept with DEFAULT signature", () => {
+    const body = {
+      messages: [
+        { role: "user", content: "u1" },
+        { role: "assistant", content: "a1", reasoning_content: "r1" },
+        { role: "user", content: "u2" },
+      ],
+    };
+    const out = translateRequest(FORMATS.OPENAI, FORMATS.CLAUDE, "claude-sonnet-4.5", body, true, {}, "claude");
+    const assistant = out.messages.find((m) => m.role === "assistant");
+    const thinking = assistant.content.find((b) => b.type === "thinking");
+    expect(thinking).toEqual({
+      type: "thinking",
+      thinking: "r1",
+      signature: DEFAULT_THINKING_CLAUDE_SIGNATURE,
+    });
+    expect(assistant.content.find((b) => b.type === "text")?.text).toBe("a1");
+    expect(JSON.stringify(assistant.content.filter((b) => b.type === "text"))).not.toContain("r1");
+  });
+
+  it("openai -> claude native: foreign signature is replaced, not forwarded", () => {
+    const body = {
+      messages: [
+        { role: "user", content: "u" },
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "stolen", signature: "gAAAA-not-claude" },
+            { type: "text", text: "a" },
+          ],
+        },
+        { role: "user", content: "u2" },
+      ],
+    };
+    const out = translateRequest(FORMATS.OPENAI, FORMATS.CLAUDE, "claude-sonnet-4.5", body, true, {}, "claude");
+    const assistant = out.messages.find((m) => m.role === "assistant");
+    const thinking = assistant.content.find((b) => b.type === "thinking");
+    expect(thinking.thinking).toBe("stolen");
+    expect(thinking.signature).toBe(DEFAULT_THINKING_CLAUDE_SIGNATURE);
+    expect(thinking.signature).not.toBe("gAAAA-not-claude");
+  });
+
+  it("gemini -> openai: thought plus functionResponse is spread, not nested", () => {
+    const body = {
+      contents: [
+        { role: "user", parts: [{ text: "q" }] },
+        {
+          role: "model",
+          parts: [
+            { thought: true, text: "plan" },
+            { functionCall: { id: "c1", name: "f1", args: {} } },
+          ],
+        },
+        {
+          role: "user",
+          parts: [
+            { functionResponse: { id: "c1", name: "f1", response: { result: "r1" } } },
+            { text: "thanks" },
+          ],
+        },
+      ],
+    };
+    const out = translateRequest(FORMATS.GEMINI, FORMATS.OPENAI, "m", body, true);
+    expect(out.messages.every((m) => m && !Array.isArray(m) && typeof m.role === "string")).toBe(true);
+    expect(out.messages.filter((m) => m.role === "tool")).toHaveLength(1);
+    const asst = out.messages.find((m) => m.role === "assistant");
+    expect(asst.reasoning_content).toBe("plan");
+    const user = out.messages.find((m) => m.role === "user" && m.content === "thanks");
+    expect(user).toBeDefined();
   });
 });

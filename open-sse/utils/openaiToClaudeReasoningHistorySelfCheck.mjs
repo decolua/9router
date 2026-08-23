@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import "../../tests/translator/registerAll.js";
 import { translateRequest } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
+import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../config/defaultThinkingSignature.js";
 
 // 1. OpenAI → Claude: reasoning_content becomes a thinking block
 {
@@ -139,4 +140,46 @@ import { FORMATS } from "../translator/formats.js";
   assert.equal(assistant.reasoning_content, "gemini thinking", "thought:true → reasoning_content for gemini");
 }
 
-console.log("openaiToClaudeReasoningHistorySelfCheck: 10/10");
+// 11. Native Claude (provider === "claude"): unsigned thinking kept with DEFAULT signature.
+// translateRequest(..., "anthropic") skips handlesThinkingBlocks and cannot see this filter.
+{
+  const body = {
+    messages: [
+      { role: "user", content: "u1" },
+      { role: "assistant", content: "a1", reasoning_content: "r1" },
+      { role: "user", content: "u2" }
+    ]
+  };
+  const out = translateRequest(FORMATS.OPENAI, FORMATS.CLAUDE, "claude-sonnet-4.5", body, true, {}, "claude");
+  const assistant = out.messages.find(m => m.role === "assistant");
+  const thinking = assistant.content.find(b => b.type === "thinking");
+  assert.equal(thinking.thinking, "r1", "native: thinking text preserved");
+  assert.equal(thinking.signature, DEFAULT_THINKING_CLAUDE_SIGNATURE, "native: DEFAULT bypass signature attached");
+  const text = assistant.content.find(b => b.type === "text");
+  assert.equal(text.text, "a1", "native: visible text unchanged");
+  assert.equal(text.text.includes("r1"), false, "native: thoughts not in visible content");
+}
+
+// 12. Native Claude: foreign signature is replaced, not forwarded.
+{
+  const body = {
+    messages: [
+      { role: "user", content: "u" },
+      {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "stolen", signature: "gAAAA-not-claude" },
+          { type: "text", text: "a" }
+        ]
+      },
+      { role: "user", content: "u2" }
+    ]
+  };
+  const out = translateRequest(FORMATS.OPENAI, FORMATS.CLAUDE, "claude-sonnet-4.5", body, true, {}, "claude");
+  const assistant = out.messages.find(m => m.role === "assistant");
+  const thinking = assistant.content.find(b => b.type === "thinking");
+  assert.equal(thinking.thinking, "stolen", "native: thinking text kept after foreign-sig strip");
+  assert.equal(thinking.signature, DEFAULT_THINKING_CLAUDE_SIGNATURE, "native: foreign blob not forwarded");
+}
+
+console.log("openaiToClaudeReasoningHistorySelfCheck: 12/12");
