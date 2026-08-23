@@ -8,6 +8,12 @@ import {
   ANTHROPIC_COMPATIBLE_PREFIX,
 } from "@/shared/constants/providers";
 import { testSingleConnection } from "../[id]/test/testUtils.js";
+import { hasValidCliToken, isAuthenticated } from "@/dashboardGuard";
+
+async function requireAuth(request) {
+  if (await hasValidCliToken(request) || await isAuthenticated(request)) return true;
+  return false;
+}
 
 function getAuthGroup(providerId, connection = null) {
   // Prioritize authType from connection if available
@@ -41,6 +47,9 @@ function isCompatibleProvider(providerId) {
 
 // POST /api/providers/test-batch - Test multiple connections by group
 export async function POST(request) {
+  if (!(await requireAuth(request))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
     const body = await request.json();
     const { mode, providerId } = body;
