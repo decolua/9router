@@ -928,11 +928,14 @@ export async function appendRequestLog(entry = {}) {
 }
 
 async function calculateBreakdown(provider, model, tokens) {
+  const { cacheReadTokens, cacheCreationTokens } = getCacheTokenCounts(tokens);
+  const promptTokens = Math.max(0, Number(tokens?.prompt_tokens || tokens?.input_tokens || 0));
+  const reasoningTokens = Math.max(0, Number(tokens?.reasoning_tokens || 0));
   const fallbackTokens = {
-    inputTokens: Math.max(0, Number(tokens?.prompt_tokens || tokens?.input_tokens || 0)),
-    cacheReadTokens: 0,
-    cacheCreationTokens: 0,
-    outputTokens: Math.max(0, Number(tokens?.completion_tokens || tokens?.output_tokens || 0)),
+    inputTokens: Math.max(0, promptTokens - cacheReadTokens - cacheCreationTokens),
+    cacheReadTokens,
+    cacheCreationTokens,
+    outputTokens: Math.max(0, Number(tokens?.completion_tokens || tokens?.output_tokens || 0)) + reasoningTokens,
     inputCost: 0,
     cacheReadCost: 0,
     cacheCreationCost: 0,
