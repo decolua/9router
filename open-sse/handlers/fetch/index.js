@@ -1,8 +1,48 @@
 // Web Fetch handler — dispatches to firecrawl, jina-reader, tavily, exa
 // Returns normalized shape across all providers
 
+import { lookup } from "node:dns/promises";
+import { Agent } from "undici";
+
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_FORMAT = "markdown";
+
+// Private/reserved IP ranges for SSRF protection
+function isPrivateIp(ip) {
+  if (!ip) return true;
+  if (ip === "::1" || ip.startsWith("fc") || ip.startsWith("fd") || ip.startsWith("fe80")) return true;
+  const v4 = ip.includes(".") ? ip.split(":").pop() : ip;
+  const parts = v4.split(".").map((n) => Number.parseInt(n, 10));
+  if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) return ip.includes(":") ? false : true;
+  const [a, b] = parts;
+  if (a === 10 || a === 127 || a === 0) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  return false;
+}
+
+// Resolve hostname and validate all IPs are public (SSRF guard)
+async function resolveAndValidatePublicIps(hostname) {
+  if (!hostname) return null;
+  try {
+    const records = await lookup(hostname, { all: true });
+    if (!records.length || records.some((r) => isPrivateIp(r.address))) return null;
+    return records;
+  } catch {
+    return null;
+  }
+}
+
+// Create undici Agent that pins to validated public IPs (TOCTOU fix)
+function createPinnedAgent(pinnedIps) {
+  return new Agent({
+    connect: {
+      lookup: (_h, _o, cb) => cb(null, pinnedIps.map(r => ({ address: r.address, family: r.family })))
+    }
+  });
+}
 
 /**
  * @typedef {Object} FetchResult
@@ -13,7 +53,7 @@ const DEFAULT_FORMAT = "markdown";
  */
 
 /**
- * Fetch with timeout abort.
+ * Fetch with timeout abort, SSRF protection (DNS pinning, redirect blocking).
  * @param {string} url
  * @param {RequestInit} init
  * @param {number} timeoutMs
@@ -32,7 +72,14 @@ async function tryFetch(url, init, timeoutMs) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { ...init, headers: sanitizeHeaders(init.headers), signal: ctrl.signal });
+    const urlObj = new URL(url);
+    const pinnedIps = await resolveAndValidatePublicIps(urlObj.hostname);
+    if (!pinnedIps) {
+      return { ok: false, timeout: false, error: "SSRF blocked: private or invalid IP" };
+    }
+    const dispatcher = createPinnedAgent(pinnedIps);
+    // redirect: "manual" prevents a public URL redirecting to a private one (SSRF bypass)
+    const res = await fetch(url, { ...init, headers: sanitizeHeaders(init.headers), signal: ctrl.signal, redirect: "manual", dispatcher });
     return { ok: true, res };
   } catch (err) {
     const isAbort = err?.name === "AbortError";
