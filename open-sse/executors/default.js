@@ -153,9 +153,27 @@ export class DefaultExecutor extends BaseExecutor {
     // Hooks run BEFORE auth so dynamic overlays can't clobber the token.
     for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);
     applyAuth(headers, desc, credentials);
+    const isAnthropicOfficial =
+      this.provider === "claude" ||
+      this.provider === "anthropic" ||
+      (this.provider?.startsWith?.("anthropic-compatible-") &&
+        (() => {
+          const baseUrl = credentials?.providerSpecificData?.baseUrl || "";
+          return baseUrl === "" || baseUrl.includes("api.anthropic.com");
+        })());
 
-    if (this.provider === "claude" && model) {
-      headers["Anthropic-Beta"] = selectAnthropicBeta(model);
+    if (isAnthropicOfficial && model) {
+      const baseBeta = selectAnthropicBeta(model);
+      const rawBeta = credentials?.rawHeaders?.["anthropic-beta"] || credentials?.rawHeaders?.["Anthropic-Beta"];
+      if (rawBeta) {
+        const set = new Set(baseBeta.split(",").map(s => s.trim()).filter(Boolean));
+        for (const flag of rawBeta.split(",").map(s => s.trim()).filter(Boolean)) {
+          set.add(flag);
+        }
+        headers["Anthropic-Beta"] = Array.from(set).join(",");
+      } else {
+        headers["Anthropic-Beta"] = baseBeta;
+      }
     }
 
     // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams

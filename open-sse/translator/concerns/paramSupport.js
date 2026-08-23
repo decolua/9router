@@ -38,6 +38,9 @@ function clampNumber(body, key, ceiling) {
 // Remove unsupported params from body in place; returns body.
 export function stripUnsupportedParams(provider, model, body) {
   if (!model || !body || typeof body !== "object") return body;
+  if (provider !== "claude" && provider !== "anthropic" && !provider?.startsWith?.("anthropic-compatible") && body.context_management !== undefined) {
+    delete body.context_management;
+  }
   for (const rule of STRIP_RULES) {
     if (rule.provider && rule.provider !== provider) continue;
     if (!matches(rule, model)) continue;

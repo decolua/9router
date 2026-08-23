@@ -90,7 +90,7 @@ export function fixToolUseOrdering(messages) {
 const ADAPTIVE_THINKING_UNSUPPORTED = /haiku/i;
 
 function handlesThinkingBlocks(provider) {
-  return provider === "claude" || provider?.startsWith("anthropic-compatible") || provider === "deepseek";
+  return provider === "claude" || provider === "anthropic" || provider?.startsWith("anthropic-compatible") || provider === "deepseek";
 }
 
 function buildThinkingPlaceholder(provider) {
@@ -266,6 +266,10 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
   if (PROVIDERS[provider]?.quirks?.dropOutputConfig) {
     delete body.output_config;
   }
+  // quirk: non-Anthropic endpoints reject Anthropic's context_management (400 invalid params)
+  if (provider !== "claude" && provider !== "anthropic") {
+    delete body.context_management;
+  }
 
   // Clamp max_tokens to the model's real output ceiling. Models whose caps
   // declare a higher maxOutput (e.g. Opus 4.8 / Sonnet 4.6 = 128000) are allowed
@@ -362,7 +366,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
           // Claude native: preserve valid signatures, drop invalid blocks.
           // anthropic-compatible: replace with default (safe fallback for lenient upstreams).
           // DeepSeek: keep existing thinking as-is; add an unsigned placeholder only if missing.
-          const isClaudeNative = provider === "claude";
+          const isClaudeNative = provider === "claude" || provider === "anthropic";
           const isDeepSeek = provider === "deepseek";
           const kept = [];
           for (const block of msg.content) {
@@ -401,7 +405,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
   if (body.tools && Array.isArray(body.tools)) {
     // Strip built-in tools (e.g. web_search_20250305) and normalize to Anthropic-native shape
     // (drop `type` field, fold `function.{name,description,parameters}`) for non-Anthropic providers
-    if (provider !== "claude") {
+    if (provider !== "claude" && provider !== "anthropic") {
       body.tools = body.tools
         .filter(tool => !tool.type || tool.type === "function")
         .map(tool => {
