@@ -172,6 +172,21 @@ describe("openaiToCommandCodeRequest — tools schema conversion", () => {
     expect(out.params.tools[0].description).toBe("Ping the server");
   });
 
+  it("preserves image_url as an image content block", () => {
+    const out = openaiToCommandCodeRequest("deepseek/deepseek-v4-flash-vision-exp", {
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: "look" },
+          { type: "image_url", image_url: { url: "data:image/png;base64,BBBB" } },
+        ],
+      }],
+    }, true);
+    const blocks = out.params.messages[0].content;
+    expect(blocks).toContainEqual({ type: "text", text: "look" });
+    expect(blocks).toContainEqual({ type: "image", image: "data:image/png;base64,BBBB" });
+  });
+
   it("does not include tools field when input has none", () => {
     const out = openaiToCommandCodeRequest(MODEL, {
       messages: [{ role: "user", content: "hi" }],

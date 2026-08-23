@@ -55,4 +55,12 @@ describe("getCapabilitiesForModel", () => {
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-luna-agentic")).toMatchObject(kiroGpt56Expected);
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-sol-thinking-agentic")).toMatchObject(kiroGpt56Expected);
   });
+
+  it("marks DeepSeek V4 Flash Vision as vision-capable", () => {
+    const expected = { vision: true, reasoning: true, thinkingFormat: "deepseek" };
+    expect(getCapabilitiesForModel("opencode-go", "deepseek-v4-flash-vision-exp")).toMatchObject(expected);
+    expect(getCapabilitiesForModel("commandcode", "deepseek/deepseek-v4-flash-vision-exp")).toMatchObject(expected);
+    expect(getCapabilitiesForModel("commandcode", "deepseek-v4-flash-vision-exp")).toMatchObject(expected);
+    expect(getCapabilitiesForModel("opencode-go", "deepseek-v4-flash").vision).toBeFalsy();
+  });
 });
