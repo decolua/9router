@@ -3,6 +3,7 @@
 import { getCapabilitiesForModel } from "./capabilities.js";
 import { matchPattern } from "./pricing.js";
 import { resolveKiroEffortPath } from "../config/kiroConstants.js";
+import { PROVIDERS } from "./index.js";
 
 // Shared level sets (deduped) — verified against provider docs + wire in thinkingUnified.applyFormat.
 const L = {
@@ -29,6 +30,7 @@ const FORMAT_LEVELS = {
   minimax: L.onOff,
   hunyuan: L.base,
   step: L.base,
+  ollama: L.levelMax,
 };
 
 const CODEX_GPT_5_6_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -39,6 +41,9 @@ const PATTERN_THINKING = [
   { provider: "codex", pattern: "*gpt-5.6-terra*", levels: [...CODEX_GPT_5_6_LEVELS, "ultra"] },
   { provider: "codex", pattern: "*gpt-5.6-luna*", levels: CODEX_GPT_5_6_LEVELS },
   { pattern: "*codex*", levels: ["low", "medium", "high", "xhigh"] }, // codex cannot disable thinking
+  // Ollama GPT-OSS only supports low/medium/high (no max, per Ollama docs)
+  { provider: "ollama", pattern: "*gpt-oss*", levels: ["none", "low", "medium", "high"] },
+  { provider: "ollama-local", pattern: "*gpt-oss*", levels: ["none", "low", "medium", "high"] },
 ];
 
 // Returns valid thinking levels for a model, or null when the model has no reasoning.
@@ -49,7 +54,10 @@ export function getThinkingLevels(provider, model) {
   const hit = PATTERN_THINKING.find((entry) =>
     (!entry.provider || entry.provider === provider) && matchPattern(entry.pattern, model)
   );
-  let levels = hit?.levels || FORMAT_LEVELS[caps.thinkingFormat] || L.base;
+  // Provider-level thinkingFormat override (e.g., ollama→ollama) takes priority over per-model caps
+  const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
+  const fmt = providerFmt || caps.thinkingFormat;
+  let levels = hit?.levels || FORMAT_LEVELS[fmt] || L.base;
   if (caps.thinkingCanDisable === false) levels = levels.filter((l) => l !== "none");
   return levels;
 }

@@ -14,6 +14,7 @@ export default {
   transport: {
     baseUrl: "http://localhost:11434/api/chat",
     format: "ollama",
+    thinkingFormat: "ollama",
   },
   serviceKinds: ["llm"],
 };

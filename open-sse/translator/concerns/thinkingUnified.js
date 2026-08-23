@@ -19,6 +19,7 @@ const FORMAT_TO_NATIVE = {
   vertex: "gemini-budget",
   antigravity: "gemini-budget",
   kiro: "kiro",
+  ollama: "ollama",
 };
 
 // Strip a trailing thinking suffix "model(value)" → "model" (no-op when absent).
@@ -67,6 +68,25 @@ export function extractThinking(body) {
       if (Number.isFinite(budget) && budget > 0) return { mode: "budget", budget };
       return { mode: "auto" };
     }
+  }
+
+  // Ollama shape — `think` at top level (boolean or string low/medium/high/max)
+  if (body.think !== undefined) {
+    const tv = body.think;
+    if (tv === false) return { mode: "none" };
+    if (tv === true) return { mode: "auto" };
+    if (typeof tv === "string") {
+      const e = tv.toLowerCase().trim();
+      if (e === "none" || e === "off" || e === "false") return { mode: "none" };
+      if (e === "auto" || e === "true") return { mode: "auto" };
+      if (e === "minimal" || e === "low" || e === "medium" || e === "high" || e === "max" || e === "xhigh") {
+        return { mode: "level", level: e === "xhigh" ? "max" : e };
+      }
+      if (e) return { mode: "level", level: e };
+    }
+    // Numeric or other truthy → auto, falsy → none
+    if (tv) return { mode: "auto" };
+    return { mode: "none" };
   }
 
   // OpenAI chat / Responses shape
@@ -157,6 +177,21 @@ function toKimiReasoningEffort(cfg) {
   return null;
 }
 
+function toOllamaThink(cfg, supportedLevels) {
+  if (!cfg) return null;
+  if (cfg.mode === "auto") return true;
+  const level = toLevel(cfg);
+  if (!level || level === "auto") return true;
+  if (level === "minimal") return "low";
+  if (level === "xhigh") return "max";
+  if (["low", "medium", "high", "max"].includes(level)) {
+    // gpt-oss only supports low/medium/high — clamp max→high when unsupported
+    if (level === "max" && supportedLevels && !supportedLevels.includes("max")) return "high";
+    return level;
+  }
+  return "medium";
+}
+
 const GEMINI_LEVEL_OUTPUT_FLOOR = {
   minimal: 4096,
   low: 8192,
@@ -217,6 +252,7 @@ function stripAll(body) {
   delete body.enable_thinking;
   delete body.thinking_budget;
   delete body.output_config;
+  delete body.think;
   if (body.generationConfig) delete body.generationConfig.thinkingConfig;
   if (body.request?.generationConfig) delete body.request.generationConfig.thinkingConfig;
 }
@@ -291,6 +327,12 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
       const effort = toKimiReasoningEffort(eff);
       if (effort) body.reasoning_effort = effort;
+      break;
+    }
+    case "ollama": {
+      if (none && canDisable) { body.think = false; break; }
+      const out = toOllamaThink(eff, supportedLevels);
+      if (out !== null && out !== undefined) body.think = out;
       break;
     }
     case "minimax": {
