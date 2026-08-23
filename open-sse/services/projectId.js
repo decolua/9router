@@ -238,7 +238,14 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints, provi
                     console.log(`[ProjectId] Successfully onboarded, project ID: ${projectId}`);
                     return projectId;
                 }
-                throw new Error("onboardUser done but no project_id in response");
+                // Server finalized onboarding but returned no project_id. Retrying
+                // 5x with 2s delays (10s wasted per account) cannot change the
+                // response — bail immediately and fall back to the persisted
+                // projectId in the DB (or random generation). This eliminated
+                // the recurring "[ProjectId] onboardUser failed after 5 attempts"
+                // log spam after every token-refresh batch on large account pools.
+                console.warn(`[ProjectId] onboardUser done but no project_id in response (skipping retries)`);
+                return null;
             }
 
             // Server not done yet – wait and retry
