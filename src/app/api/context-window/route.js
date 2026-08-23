@@ -5,6 +5,11 @@ import { COMPACT_HEADROOM_RATIO } from "open-sse/config/errorConfig.js";
 
 export const dynamic = "force-dynamic";
 
+// How recently a member must have answered to be treated as the one serving.
+// Long enough to survive a quiet stretch between turns, short enough that a
+// model which died an hour ago stops speaking for the pool.
+const RECENT_SERVE_MS = 30 * 60 * 1000;
+
 // What window should the CLIENT believe it has?
 //
 // A combo is not one model, and its head changes every few minutes as quota
@@ -36,7 +41,44 @@ export async function GET(request) {
     return NextResponse.json({ combo: null, model: name, head: window, next: 0, ceiling: Math.floor(window * COMPACT_HEADROOM_RATIO), clientWindow: window, headroomRatio: COMPACT_HEADROOM_RATIO });
   }
 
-  const models = Array.isArray(combo.models) ? combo.models : [];
+  let models = Array.isArray(combo.models) ? combo.models : [];
+
+  // Put the member that is ACTUALLY answering at the head.
+  //
+  // compactCeiling skips members that are quota-banned or cooling down, because
+  // both are cheap local checks. It cannot see the third reason a member is
+  // passed over — "no account has capacity for it right now" — which comes from
+  // an async probe inside the cascade. On this box that gap is not academic:
+  // Yggdrasil's list head is ag/claude-opus-4-6-thinking, which Antigravity caps
+  // at 200K and which is skipped for account capacity on almost every turn,
+  // while ag/gemini-pro-agent (1,048,576) does the answering. Reporting the list
+  // head would tell the client its window is 200K when the model serving it
+  // holds five times that — the operator watched exactly that happen and said
+  // so: "the model that handles in the hud always gemini-pro-default and never
+  // change."
+  //
+  // The routing seam already records who answered: modelHealth carries lastOkAt
+  // per routed id, written on every successful cascade attempt. That is a fact
+  // about what happened rather than a prediction about what will, so a member
+  // that has served inside the recency window is promoted to the front and the
+  // rest keep their order behind it. If nothing has answered recently the list
+  // order stands, which is the old behaviour.
+  try {
+    const { getModelHealthWindow } = await import("@/lib/db/index.js");
+    const since = Date.now() - RECENT_SERVE_MS;
+    const rows = await getModelHealthWindow(1);
+    const lastOk = new Map(
+      rows.filter((r) => r.lastOkAt && Date.parse(r.lastOkAt) >= since).map((r) => [r.modelId, Date.parse(r.lastOkAt)])
+    );
+    if (lastOk.size) {
+      const served = models.filter((m) => lastOk.has(m)).sort((a, b) => lastOk.get(b) - lastOk.get(a));
+      if (served.length) models = [...served, ...models.filter((m) => !lastOk.has(m))];
+    }
+  } catch {
+    // Health table missing or unreadable: fall back to the combo's own order.
+    // A stale head is worse than a wrong one only if it stops the answer.
+  }
+
   const { ceiling, head, next } = compactCeiling(models, COMPACT_HEADROOM_RATIO);
 
   // `clientWindow` is the number to hand Claude Code, and it is NOT `head`.
