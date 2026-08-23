@@ -331,10 +331,20 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
       }
 
-      // Check if should fallback to next model
+      // Check if should fallback to next model. Model-specific context length / max_tokens
+      // limits must not abort the combo — allow fallback to models with larger context.
+      const lowerErr = errorText.toLowerCase();
+      const isContextOrModelLimitation = lowerErr.includes("max_tokens") ||
+        lowerErr.includes("context_length") ||
+        lowerErr.includes("context length") ||
+        lowerErr.includes("prompt is too long") ||
+        lowerErr.includes("too many tokens") ||
+        lowerErr.includes("exceeds the limit") ||
+        lowerErr.includes("not supported");
+
       const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
 
-      if (!shouldFallback) {
+      if (!shouldFallback && !isContextOrModelLimitation) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
         return result;
       }

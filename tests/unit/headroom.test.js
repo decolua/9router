@@ -202,6 +202,24 @@ describe("compressWithHeadroom", () => {
     expect(stats).toBeNull();
     expect(global.fetch).not.toHaveBeenCalled();
   });
+
+  it("activates circuit breaker after consecutive failures without repeated fetch", async () => {
+    global.fetch = vi.fn(async () => { throw new Error("Connection refused"); });
+    const body = { messages: [{ role: "user", content: "long" }] };
+
+    // First failure
+    await compressWithHeadroom(body, { enabled: true, url: "http://cb-test:8787" });
+    // Second failure - trips circuit breaker
+    await compressWithHeadroom(body, { enabled: true, url: "http://cb-test:8787" });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+
+    // Third call - short-circuits via circuit breaker
+    const diagnostics = {};
+    const stats = await compressWithHeadroom(body, { enabled: true, url: "http://cb-test:8787", diagnostics });
+    expect(stats).toBeNull();
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(diagnostics.reason).toContain("circuit breaker active");
+  });
 });
 
 describe("formatHeadroomLog", () => {

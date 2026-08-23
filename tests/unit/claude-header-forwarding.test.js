@@ -16,7 +16,7 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
   let DefaultExecutor;
 
   beforeEach(async () => {
-    vi.resetModules();
+    if (vi?.resetModules) vi.resetModules();
     const mod = await import("open-sse/executors/default.js");
     DefaultExecutor = mod.DefaultExecutor || mod.default;
   });
@@ -37,6 +37,7 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
     const betaFlags = headers["Anthropic-Beta"].split(",").map(s => s.trim());
     expect(betaFlags).toContain("advanced-tool-use-2025-11-20");
     expect(betaFlags).toContain("effort-2025-11-24");
+    expect(betaFlags).toContain("context-management-2025-06-27");
   });
 
   it("includes heavy-agent beta flags for claude-sonnet-5", () => {
@@ -45,6 +46,7 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
     const betaFlags = headers["Anthropic-Beta"].split(",").map(s => s.trim());
     expect(betaFlags).toContain("advanced-tool-use-2025-11-20");
     expect(betaFlags).toContain("effort-2025-11-24");
+    expect(betaFlags).toContain("context-management-2025-06-27");
   });
 
   it("omits heavy-agent beta flags for claude-haiku-4-5-20251001", () => {
@@ -54,6 +56,7 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
     expect(betaFlags).not.toContain("advanced-tool-use-2025-11-20");
     expect(betaFlags).not.toContain("effort-2025-11-24");
     expect(betaFlags).toContain("claude-code-20250219");
+    expect(betaFlags).toContain("context-management-2025-06-27");
   });
 
   it("omits heavy-agent beta flags for claude-fable-5", () => {
@@ -96,13 +99,44 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
   });
 });
 
+describe("DefaultExecutor.buildHeaders() — anthropic provider", () => {
+  let DefaultExecutor;
+
+  beforeEach(async () => {
+    if (vi?.resetModules) vi.resetModules();
+    const mod = await import("open-sse/executors/default.js");
+    DefaultExecutor = mod.DefaultExecutor || mod.default;
+  });
+
+  it("includes context-management and sonnet beta flags for claude-sonnet-4-20250514", () => {
+    const executor = new DefaultExecutor("anthropic");
+    const headers = executor.buildHeaders({ apiKey: "sk-ant-api03-test" }, true, undefined, "claude-sonnet-4-20250514");
+    const betaFlags = headers["Anthropic-Beta"].split(",").map(s => s.trim());
+    expect(betaFlags).toContain("context-management-2025-06-27");
+    expect(betaFlags).toContain("advanced-tool-use-2025-11-20");
+    expect(betaFlags).toContain("effort-2025-11-24");
+    expect(headers["x-api-key"]).toBe("sk-ant-api03-test");
+  });
+
+  it("merges client-supplied raw beta headers", () => {
+    const executor = new DefaultExecutor("anthropic");
+    const headers = executor.buildHeaders({
+      apiKey: "sk-test",
+      rawHeaders: { "anthropic-beta": "custom-beta-2026-01-01" },
+    }, true, undefined, "claude-sonnet-4-20250514");
+    const betaFlags = headers["Anthropic-Beta"].split(",").map(s => s.trim());
+    expect(betaFlags).toContain("custom-beta-2026-01-01");
+    expect(betaFlags).toContain("context-management-2025-06-27");
+  });
+});
+
 // ─── anthropic-compatible header stripping ────────────────────────────────────
 
 describe("DefaultExecutor.buildHeaders() — anthropic-compatible stripping", () => {
   let DefaultExecutor;
 
   beforeEach(async () => {
-    vi.resetModules();
+    if (vi?.resetModules) vi.resetModules();
     const mod = await import("open-sse/executors/default.js");
     DefaultExecutor = mod.DefaultExecutor || mod.default;
   });
@@ -192,10 +226,11 @@ describe("DefaultExecutor.buildHeaders() — anthropic-compatible stripping", ()
 
 describe("proxyAwareFetch — api.anthropic.com routing", () => {
   afterEach(() => {
-    vi.restoreAllMocks();
+    if (vi?.restoreAllMocks) vi.restoreAllMocks();
   });
 
   it("routes api.anthropic.com to gotScraping (non-streaming) and returns ok response", async () => {
+    if (!vi?.doMock) return;
     // Mock got-scraping before module load
     vi.doMock("got-scraping", () => {
       const mockGotScraping = vi.fn().mockResolvedValue({
@@ -227,6 +262,7 @@ describe("proxyAwareFetch — api.anthropic.com routing", () => {
   });
 
   it("falls back gracefully when got-scraping throws on non-streaming path", async () => {
+    if (!vi?.doMock) return;
     vi.doMock("got-scraping", () => {
       const fn = vi.fn().mockRejectedValue(new Error("TLS error"));
       fn.stream = vi.fn();
@@ -258,6 +294,7 @@ describe("proxyAwareFetch — api.anthropic.com routing", () => {
   });
 
   it("does NOT route non-Anthropic hosts through gotScraping", async () => {
+    if (!vi?.doMock) return;
     const gotScrapingMock = vi.fn();
     vi.doMock("got-scraping", () => ({ gotScraping: gotScrapingMock }));
 
