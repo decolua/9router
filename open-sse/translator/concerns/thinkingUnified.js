@@ -270,13 +270,13 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       // Z.ai ignores thinking.disabled → must use enable_thinking:false to turn off.
       if (none && canDisable) { body.enable_thinking = false; delete body.thinking; break; }
       body.thinking = { type: "enabled" };
-      // Z.ai requires reasoning.effort object (not flat reasoning_effort string).
+      // Dual fields: z.ai reads reasoning_effort (high|max); Ark reads reasoning.effort.
       const zaiLvl = toLevel(eff);
-      const zaiEffort = (zaiLvl === "minimal" || zaiLvl === "low" || zaiLvl === "medium" || zaiLvl === "high")
+      const arkLvl = (zaiLvl === "minimal" || zaiLvl === "low" || zaiLvl === "medium" || zaiLvl === "high")
         ? zaiLvl
         : ((zaiLvl === "xhigh" || zaiLvl === "max") ? "high" : "medium");
-      body.reasoning_effort = (zaiLvl === "high" || zaiLvl === "xhigh" || zaiLvl === "max") ? "high" : "max";
-      body.reasoning = { effort: zaiEffort };
+      body.reasoning_effort = zaiLvl === "high" ? "high" : "max";
+      body.reasoning = { effort: arkLvl };
       break;
     }
     case "qwen": {

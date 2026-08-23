@@ -58,6 +58,18 @@ describe("extractThinking", () => {
   it("no intent → null", () => {
     expect(extractThinking({ messages: [] })).toBeNull();
   });
+  it("reasoning_effort wins over thinking:{type:enabled} (no budget)", () => {
+    expect(extractThinking({
+      thinking: { type: "enabled" },
+      reasoning_effort: "high",
+    })).toEqual({ mode: "level", level: "high" });
+  });
+  it("reasoning.effort wins over thinking:{type:enabled} (no budget)", () => {
+    expect(extractThinking({
+      thinking: { type: "enabled" },
+      reasoning: { effort: "medium" },
+    })).toEqual({ mode: "level", level: "medium" });
+  });
 });
 
 describe("applyThinking per provider format", () => {
@@ -113,6 +125,19 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "glm-4.6", { reasoning_effort: "none" }, "glm");
     expect(out.enable_thinking).toBe(false);
     expect(out.thinking).toBeUndefined();
+  });
+  it.each([
+    ["high", "high", "high"],
+    ["max", "max", "high"],
+    ["xhigh", "max", "high"],
+    ["low", "max", "low"],
+    ["medium", "max", "medium"],
+    ["minimal", "max", "minimal"],
+  ])("GLM-5.x %s → reasoning_effort=%s reasoning.effort=%s", (input, zai, ark) => {
+    const out = apply("openai", "glm-5.3", { reasoning_effort: input }, "glm-cn");
+    expect(out.thinking).toEqual({ type: "enabled" });
+    expect(out.reasoning_effort).toBe(zai);
+    expect(out.reasoning).toEqual({ effort: ark });
   });
   it("Qwen on → enable_thinking + thinking_budget", () => {
     const out = apply("openai", "qwen3-max", { reasoning_effort: "medium" }, "qwen");
