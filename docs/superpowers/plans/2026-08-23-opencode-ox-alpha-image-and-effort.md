@@ -42,10 +42,10 @@ git diff --check
 - [ ] Step 0.2: GitNexus impact before edits (upstream direction, absolute repo)
 
 ```bash
-cmd.exe /d /s /c "gitnexus impact --target getCapabilitiesForModel --direction upstream --repo D:\Code\9router"
-cmd.exe /d /s /c "gitnexus impact --target stripUnsupportedModalities --direction upstream --repo D:\Code\9router"
-cmd.exe /d /s /c "gitnexus impact --target applyThinking --direction upstream --repo D:\Code\9router"
-cmd.exe /d /s /c "gitnexus impact --target getThinkingLevels --direction upstream --repo D:\Code\9router"
+cmd.exe /d /s /c "gitnexus impact getCapabilitiesForModel --direction upstream --repo D:\Code\9router"
+cmd.exe /d /s /c "gitnexus impact stripUnsupportedModalities --direction upstream --repo D:\Code\9router"
+cmd.exe /d /s /c "gitnexus impact applyThinking --direction upstream --repo D:\Code\9router"
+cmd.exe /d /s /c "gitnexus impact getThinkingLevels --direction upstream --repo D:\Code\9router"
 ```
 
 Expected: `getCapabilitiesForModel` CRITICAL ~61, `applyThinking` CRITICAL 9, `getThinkingLevels` CRITICAL 13; warn user if HIGH/CRITICAL.
@@ -75,7 +75,7 @@ Read `open-sse/providers/capabilities.js:73-114`, `:331-357`, `open-sse/provider
 ```js
 import { describe, expect, it } from "vitest";
 import { PROVIDER_MODELS, getModelTargetFormat, getModelSupportedFormats } from "../../open-sse/config/providerModels.js";
-import { getCapabilitiesForModel, DEFAULT_CAPABILITIES } from "../../open-sse/providers/capabilities.js";
+import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
 import { stripUnsupportedModalities } from "../../open-sse/translator/concerns/modality.js";
 import { applyThinking } from "../../open-sse/translator/concerns/thinkingUnified.js";
@@ -227,12 +227,9 @@ describe("Ox Alpha effort mapping (openai-low-high-max)", () => {
     expect(out.reasoning_effort).toBeUndefined();
   });
 
-  it("numeric 8192 -> high via budgetToLevel", () => {
-    const out = apply({ reasoning_effort: "8192" }, "opencode", OX_ID);
-    // also via suffix form: model(8192) extracts budget already, but explicit effort 8192 also routes budget path
-    const out2 = apply({}, "opencode", `${OX_ID}(8192)`);
-    expect(out.reasoning_effort === "high" || out2.reasoning_effort === "high").toBe(true);
-    expect(out2.reasoning_effort).toBe("high");
+  it("numeric 8192 suffix -> high via budgetToLevel", () => {
+    const out = apply({}, "opencode", `${OX_ID}(8192)`);
+    expect(out.reasoning_effort).toBe("high");
   });
 
   it("generic OpenAI max still clamps to xhigh", () => {
@@ -465,16 +462,17 @@ Expected: PASS (no regression vs committed snapshots).
 cmd.exe /d /s /c "gitnexus detect-changes --scope compare --base-ref master --repo D:\Code\9router"
 ```
 
-Expected: only 4 files changed, flows limited to thinking/capability paths; no unexpected provider/registry churn.
+Expected: compare output includes pre-existing local-branch changes plus this task. Identify this task's four paths explicitly; their affected symbols/flows stay limited to capability and thinking paths, with no new registry/executor/dashboard change attributable to this task. Before the source commit, cross-check against `git diff --name-only HEAD` to isolate uncommitted task scope from committed local history.
 
 - [ ] Step 6.3: Git hygiene
 
 ```bash
 git diff --check
-git status
+git diff --name-only HEAD
+git status --short --branch
 ```
 
-Must show exactly 4 modified files: `open-sse/providers/capabilities.js`, `open-sse/providers/thinkingLevels.js`, `open-sse/translator/concerns/thinkingUnified.js`, `tests/unit/opencode-ox-alpha-free.test.js`. No staged `CLAUDE.md`, checkpoint, `data-dev/`, `probe-dup-endpoints`, `tree3.json`.
+`git diff --name-only HEAD` must show exactly the four task files: `open-sse/providers/capabilities.js`, `open-sse/providers/thinkingLevels.js`, `open-sse/translator/concerns/thinkingUnified.js`, `tests/unit/opencode-ox-alpha-free.test.js`. `git status` will also show the user's pre-existing modified/untracked artifacts (`CLAUDE.md`, checkpoint, `data-dev/`, `tests/unit/probe-dup-endpoints.test.js`, `tree3.json`); preserve them and ensure none are staged.
 
 ---
 
