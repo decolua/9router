@@ -80,6 +80,9 @@ export default function ProfilePage() {
   const [proxyStatus, setProxyStatus] = useState({ type: "", message: "" });
   const [proxyLoading, setProxyLoading] = useState(false);
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
+  const [activeSettingsTab, setActiveSettingsTab] = useState("general");
+  const [automationSaving, setAutomationSaving] = useState(false);
+  const [automationStatus, setAutomationStatus] = useState("");
 
   useEffect(() => {
     fetch("/api/settings")
@@ -735,6 +738,31 @@ export default function ProfilePage() {
 
   const observabilityEnabled = settings.enableObservability === true;
 
+  const saveProviderAutomation = async () => {
+    setAutomationSaving(true);
+    setAutomationStatus("");
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          providerAutoDisableEnabled: settings.providerAutoDisableEnabled === true,
+          providerAutoDisableTriggers: settings.providerAutoDisableTriggers || "",
+          providerAutoRecoveryEnabled: settings.providerAutoRecoveryEnabled === true,
+          providerAutoRecoveryIntervalMinutes: Math.min(1440, Math.max(1, Number(settings.providerAutoRecoveryIntervalMinutes) || 15)),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "保存失败");
+      setSettings((current) => ({ ...current, ...data }));
+      setAutomationStatus("自动禁用与恢复设置已保存");
+    } catch (error) {
+      setAutomationStatus(error.message || "保存失败");
+    } finally {
+      setAutomationSaving(false);
+    }
+  };
+
   const handleShutdown = async () => {
     setIsShuttingDown(true);
     try {
@@ -758,10 +786,15 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 sm:px-0">
+    <div className="max-w-3xl mx-auto px-4 sm:px-0">
       <div className="flex flex-col gap-6">
+        <div className="flex overflow-x-auto rounded-md border border-border bg-bg-subtle p-1">
+          {[
+            ["general", "常规"], ["security", "安全与登录"], ["routing", "路由与恢复"], ["network", "网络"], ["observability", "可观测性"],
+          ].map(([value, label]) => <button key={value} type="button" onClick={() => setActiveSettingsTab(value)} className={cn("h-9 shrink-0 rounded px-4 text-sm font-medium", activeSettingsTab === value ? "bg-surface text-text-main shadow-sm" : "text-text-muted hover:text-text-main")}>{label}</button>)}
+        </div>
         {/* Local Mode Info */}
-        <Card>
+        <Card className={activeSettingsTab === "general" ? "" : "hidden"}>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
             <div className="flex items-center gap-3 sm:gap-4">
               <div className="size-10 sm:size-12 rounded-lg bg-green-500/10 text-green-500 flex items-center justify-center shrink-0">
@@ -836,7 +869,7 @@ export default function ProfilePage() {
         </Card>
 
         {/* Language */}
-        <Card>
+        <Card className={activeSettingsTab === "general" ? "" : "hidden"}>
           <div className="flex items-center gap-3 mb-4">
             <div className="size-10 rounded-lg bg-blue-500/10 text-blue-500 flex items-center justify-center shrink-0">
               <span className="material-symbols-outlined text-[20px]">language</span>
@@ -854,7 +887,7 @@ export default function ProfilePage() {
         </Card>
 
         {/* Security */}
-        <Card>
+        <Card className={activeSettingsTab === "security" ? "" : "hidden"}>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
               <span className="material-symbols-outlined text-[20px]">shield</span>
@@ -936,7 +969,7 @@ export default function ProfilePage() {
         </Card>
 
         {/* Single Sign-On (SSO) */}
-        <Card>
+        <Card className={activeSettingsTab === "security" ? "" : "hidden"}>
           <button
             type="button"
             onClick={() => setOidcExpanded((v) => !v)}
@@ -1430,7 +1463,7 @@ export default function ProfilePage() {
         </Card>
 
         {/* Routing Preferences */}
-        <Card>
+        <Card className={activeSettingsTab === "routing" ? "" : "hidden"}>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500 shrink-0">
               <span className="material-symbols-outlined text-[20px]">route</span>
@@ -1520,8 +1553,22 @@ export default function ProfilePage() {
           </div>
         </Card>
 
+        <Card className={activeSettingsTab === "routing" ? "" : "hidden"}>
+          <div className="mb-4 flex items-center gap-3">
+            <div className="rounded-md bg-red-500/10 p-2 text-red-500"><span className="material-symbols-outlined text-[20px]">health_and_safety</span></div>
+            <div><h3 className="font-semibold">提供商自动禁用与恢复</h3><p className="text-xs text-text-muted">错误内容命中触发词后自动停用连接，并定期检测是否恢复。</p></div>
+          </div>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-center justify-between gap-4"><div><p className="text-sm font-medium">启用自动禁用</p><p className="text-xs text-text-muted">只处理当前已启用且命中规则的连接。</p></div><Toggle checked={settings.providerAutoDisableEnabled === true} onChange={(checked) => setSettings((current) => ({ ...current, providerAutoDisableEnabled: checked }))} /></div>
+            <label className="flex flex-col gap-1.5 text-sm font-medium">触发词<textarea rows={4} value={settings.providerAutoDisableTriggers || ""} onChange={(event) => setSettings((current) => ({ ...current, providerAutoDisableTriggers: event.target.value }))} placeholder="每行或使用逗号分隔，例如 invalid api key、quota exceeded" className="resize-y rounded-md border border-border bg-bg-base px-3 py-2 text-sm font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" /></label>
+            <div className="flex items-center justify-between gap-4 border-t border-border pt-4"><div><p className="text-sm font-medium">启用自动恢复</p><p className="text-xs text-text-muted">检测通过后才会重新启用自动禁用的连接。</p></div><Toggle checked={settings.providerAutoRecoveryEnabled === true} onChange={(checked) => setSettings((current) => ({ ...current, providerAutoRecoveryEnabled: checked }))} /></div>
+            <Input label="检测间隔（分钟）" type="number" min="1" max="1440" value={settings.providerAutoRecoveryIntervalMinutes || 15} onChange={(event) => setSettings((current) => ({ ...current, providerAutoRecoveryIntervalMinutes: event.target.value }))} />
+            <div className="flex items-center justify-between gap-3"><span className="text-xs text-text-muted">{automationStatus}</span><Button loading={automationSaving} onClick={saveProviderAutomation}>保存设置</Button></div>
+          </div>
+        </Card>
+
         {/* Network */}
-        <Card>
+        <Card className={activeSettingsTab === "network" ? "" : "hidden"}>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-purple-500/10 text-purple-500 shrink-0">
               <span className="material-symbols-outlined text-[20px]">wifi</span>
@@ -1593,7 +1640,7 @@ export default function ProfilePage() {
         </Card>
 
         {/* Observability Settings */}
-        <Card>
+        <Card className={activeSettingsTab === "observability" ? "" : "hidden"}>
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500 shrink-0">
               <span className="material-symbols-outlined text-[20px]">monitoring</span>
@@ -1616,7 +1663,7 @@ export default function ProfilePage() {
         </Card>
 
         {/* Account actions */}
-        <div className="flex flex-col sm:flex-row gap-2">
+        <div className={cn("flex flex-col sm:flex-row gap-2", activeSettingsTab === "general" ? "" : "hidden")}>
           <Button
             variant="outline"
             fullWidth
@@ -1637,7 +1684,7 @@ export default function ProfilePage() {
         </div>
 
         {/* App Info */}
-        <div className="text-center text-xs sm:text-sm text-text-muted py-4">
+        <div className={cn("text-center text-xs sm:text-sm text-text-muted py-4", activeSettingsTab === "general" ? "" : "hidden")}>
           <p>{APP_CONFIG.name} v{APP_CONFIG.version}</p>
           <p className="mt-1">Local Mode - All data stored on your machine</p>
         </div>

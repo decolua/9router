@@ -272,7 +272,7 @@ export default function APIPageClient({ machineId }) {
       const groups = groupData.groups || [];
       setKeyGroups(groups);
       const defaultGroupId = groups.find((group) => group.isDefault)?.id || groups[0]?.id || "default";
-      setNewKeyGroupId((current) => groups.some((group) => group.id === current) ? current : defaultGroupId);
+      setNewKeyGroupId(defaultGroupId);
       setBatchGroupId((current) => groups.some((group) => group.id === current) ? current : defaultGroupId);
 
       let existing = await fetchKeys();

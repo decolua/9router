@@ -13,6 +13,7 @@ RUN --mount=type=cache,target=/root/.npm \
 
 COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_OPTIONS=--max-old-space-size=13312
 RUN npm run build
 
 FROM ${NODE_IMAGE} AS runner

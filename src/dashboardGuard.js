@@ -192,6 +192,13 @@ function isPublicApi(pathname) {
   return PUBLIC_API_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
+function isProviderRecoveryProbe(request, pathname) {
+  return request.method === "POST"
+    && request.headers.get("x-9r-internal-job") === "provider-auto-recovery"
+    && /^\/api\/providers\/[^/]+\/test$/.test(pathname)
+    && isLocalRequest(request);
+}
+
 export const __test__ = {
   isLocalRequest,
   isPublicLlmApi,
@@ -225,6 +232,7 @@ export async function proxy(request) {
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
   if (pathname.startsWith("/api/")) {
     if (isPublicApi(pathname)) return NextResponse.next();
+    if (isProviderRecoveryProbe(request, pathname)) return NextResponse.next();
     if (await hasValidCliToken(request) || await isAuthenticated(request))
       return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

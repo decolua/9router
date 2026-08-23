@@ -117,6 +117,15 @@ export async function PATCH(request) {
         .catch((error) => console.warn("[Pricing] scheduler update failed:", error.message));
     }
 
+    if (
+      Object.prototype.hasOwnProperty.call(body, "providerAutoRecoveryEnabled") ||
+      Object.prototype.hasOwnProperty.call(body, "providerAutoRecoveryIntervalMinutes")
+    ) {
+      import("@/shared/services/providerAutoRecovery")
+        .then(({ configureProviderAutoRecovery }) => configureProviderAutoRecovery(settings))
+        .catch((error) => console.warn("[ProviderAutoRecovery] scheduler update failed:", error.message));
+    }
+
     const { password, oidcClientSecret, ...safeSettings } = settings;
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
     return NextResponse.json(safeSettings, { headers: SETTINGS_RESPONSE_HEADERS });

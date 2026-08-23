@@ -122,6 +122,10 @@ async function runHeavyStartup() {
   import("@/shared/services/pricingSync")
     .then(({ startPricingAutoSync }) => startPricingAutoSync())
     .catch((e) => console.log("[Pricing] scheduler start failed:", e.message));
+
+  import("@/shared/services/providerAutoRecovery")
+    .then(({ startProviderAutoRecovery }) => startProviderAutoRecovery())
+    .catch((e) => console.log("[ProviderAutoRecovery] scheduler start failed:", e.message));
 }
 
 function hasQuotaAutoPingEnabled(settings) {

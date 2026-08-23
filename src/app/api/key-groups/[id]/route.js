@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { deleteApiKeyGroup, getApiKeyGroupById, updateApiKeyGroup } from "@/lib/localDb";
+import { deleteApiKeyGroup, getApiKeyGroupById, setDefaultApiKeyGroup, updateApiKeyGroup } from "@/lib/localDb";
 
 function normalizeList(value) {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) return null;
@@ -31,7 +31,9 @@ export async function PUT(request, { params }) {
         data[field] = value;
       }
     }
-    return NextResponse.json({ group: await updateApiKeyGroup(id, data) });
+    await updateApiKeyGroup(id, data);
+    const group = body.isDefault === true ? await setDefaultApiKeyGroup(id) : await getApiKeyGroupById(id);
+    return NextResponse.json({ group });
   } catch (error) {
     const conflict = String(error.message || "").includes("UNIQUE");
     return NextResponse.json({ error: conflict ? "分组名称已存在" : "更新密钥分组失败" }, { status: conflict ? 409 : 500 });

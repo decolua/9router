@@ -36,6 +36,9 @@ const nextConfig = {
     NEXT_PUBLIC_BUILD_TIME: buildTime,
   },
   experimental: {
+    // Keep production builds within CI memory limits despite the custom webpack hook below.
+    webpackBuildWorker: true,
+    webpackMemoryOptimizations: true,
     // #1529/#1572: LLM clients can send long context or base64 image payloads through /v1 rewrites.
     proxyClientMaxBodySize,
     // Cache fetch responses across HMR refreshes for faster dev reloads.

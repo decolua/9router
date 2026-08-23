@@ -268,6 +268,37 @@ describe("dashboard guard local-only access", () => {
   });
 });
 
+describe("provider recovery probe access", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+  });
+
+  it("allows the marked loopback provider test request", async () => {
+    const recoveryRequest = localRequest("/api/providers/connection-1/test", {
+      host: "localhost:20128",
+      "x-9r-internal-job": "provider-auto-recovery",
+    });
+    recoveryRequest.method = "POST";
+
+    expect(await proxy(recoveryRequest)).toBe(mocks.nextResponse);
+  });
+
+  it("rejects a remote request that copies the recovery marker", async () => {
+    const recoveryRequest = request("/api/providers/connection-1/test", {
+      host: "router.example.com",
+      "x-9r-internal-job": "provider-auto-recovery",
+    });
+    recoveryRequest.method = "POST";
+
+    const response = await proxy(recoveryRequest);
+    expect(response.status).toBe(401);
+  });
+});
+
 describe("dashboard guard helpers", () => {
   it("extracts bearer API keys before x-api-key", () => {
     const apiRequest = request("/v1/chat/completions", {

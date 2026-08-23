@@ -221,6 +221,14 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const connections = await getProviderConnections({ provider });
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
+  try {
+    const { maybeAutoDisableProviderConnection } = await import("@/shared/services/providerAutoRecovery.js");
+    if (await maybeAutoDisableProviderConnection(connectionId, { status, errorText, provider })) {
+      return { shouldFallback: true, cooldownMs: 0, autoDisabled: true };
+    }
+  } catch (error) {
+    log.warn("AUTH", `Auto-disable check failed: ${error.message}`);
+  }
 
   // GitHub premium-request exhaustion is account-wide until the next UTC month.
   const githubResetAtMs = githubMonthlyResetMs(status, errorText, provider);

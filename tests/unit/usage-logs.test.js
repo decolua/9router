@@ -105,4 +105,39 @@ describe("usage logs", () => {
     expect(successful.logs).toHaveLength(0);
     expect(keyUsage?.requests).toBe(1);
   });
+
+  it("builds model traffic and latency curves from usage history", async () => {
+    await db.saveRequestUsage({
+      provider: "curve-provider",
+      model: "curve-model",
+      timestamp: new Date().toISOString(),
+      tokens: { prompt_tokens: 80, completion_tokens: 20 },
+      meta: { latency: { ttft: 120, total: 640 } },
+    });
+
+    const traffic = await db.getDimensionChartData("today", {}, "model", "tokens");
+    const latency = await db.getDimensionChartData("today", {}, "model", "latency");
+    const trafficSeries = traffic.series.find((series) => series.label === "curve-model");
+    const latencySeries = latency.series.find((series) => series.label === "curve-model");
+
+    expect(traffic.data.reduce((sum, point) => sum + Number(point[trafficSeries.id] || 0), 0)).toBe(100);
+    expect(latency.data.some((point) => point[latencySeries.id] === 640)).toBe(true);
+  });
+
+  it("covers the complete custom range when chart data is capped at 90 points", async () => {
+    const startDate = "2026-01-01T00:00:00.000Z";
+    const endDate = "2026-08-24T00:00:00.000Z";
+    await db.saveRequestUsage({
+      provider: "long-range-provider",
+      model: "long-range-model",
+      timestamp: "2026-08-23T12:00:00.000Z",
+      tokens: { prompt_tokens: 30, completion_tokens: 10 },
+    });
+
+    const chart = await db.getDimensionChartData("custom", { startDate, endDate }, "model", "tokens");
+    const series = chart.series.find((item) => item.label === "long-range-model");
+
+    expect(chart.data.length).toBeLessThanOrEqual(90);
+    expect(chart.data.reduce((sum, point) => sum + Number(point[series.id] || 0), 0)).toBe(40);
+  });
 });

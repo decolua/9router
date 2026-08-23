@@ -317,9 +317,10 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   responseBody = decloakToolNames(responseBody, toolNameMap);
 
   const usage = extractUsageFromResponse(responseBody);
+  const totalLatency = Date.now() - requestStartTime;
   appendLog({ tokens: usage, status: "200 OK" });
-  saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
-  if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
+  saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, latency: { ttft: totalLatency, total: totalLatency }, silent: true });
+  if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: totalLatency } }));
 
   const translatedResponse = needsTranslation(targetFormat, sourceFormat)
     ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
@@ -370,7 +371,6 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   reqLogger.logConvertedResponse(translatedResponse);
 
-  const totalLatency = Date.now() - requestStartTime;
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,
     latency: { ttft: totalLatency, total: totalLatency },

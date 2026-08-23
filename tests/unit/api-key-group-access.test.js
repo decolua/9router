@@ -32,6 +32,15 @@ describe("API key group access", () => {
     expect(await auth.isApiKeyModelAllowed(key.key, "openai/gpt-5")).toEqual({ allowed: true });
   });
 
+  it("allows changing the default group used by newly created keys", async () => {
+    const group = await dbApi.createApiKeyGroup({ name: "team-default", allowedModels: [], allowedCombos: [] });
+    await dbApi.setDefaultApiKeyGroup(group.id);
+    const key = await dbApi.createApiKey("new-default-key", "machine-new-default");
+    expect(key.groupId).toBe(group.id);
+    expect((await dbApi.getApiKeyGroups()).find((item) => item.id === group.id)?.isDefault).toBe(true);
+    await dbApi.setDefaultApiKeyGroup("default");
+  });
+
   it("restricted group permits only selected models and combos", async () => {
     const group = await dbApi.createApiKeyGroup({ name: "restricted", allowedModels: ["openai/gpt-5"], allowedCombos: ["coding"] });
     const key = await dbApi.createApiKey("restricted-key", "machine-restricted", group.id);

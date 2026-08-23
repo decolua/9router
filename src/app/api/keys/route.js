@@ -27,7 +27,7 @@ export async function POST(request) {
 
     // Always get machineId from server
     const machineId = await getConsistentMachineId();
-    const apiKey = await createApiKey(name, machineId, groupId || "default");
+    const apiKey = await createApiKey(name, machineId, groupId || null);
 
     return NextResponse.json({
       key: apiKey.key,

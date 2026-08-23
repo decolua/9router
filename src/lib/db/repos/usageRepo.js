@@ -329,8 +329,8 @@ export async function saveRequestUsage(entry) {
       );
 
       if (existing) {
-        if (!existing.endpoint && entry.endpoint) {
-          db.run(`UPDATE usageHistory SET endpoint = ? WHERE id = ?`, [entry.endpoint, existing.id]);
+        if ((!existing.endpoint && entry.endpoint) || entry.meta) {
+          db.run(`UPDATE usageHistory SET endpoint = COALESCE(endpoint, ?), meta = ? WHERE id = ?`, [entry.endpoint || null, stringifyJson(entry.meta || {}), existing.id]);
         }
         return;
       }
@@ -341,7 +341,7 @@ export async function saveRequestUsage(entry) {
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson({}),
+          stringifyJson(tokens), stringifyJson(entry.meta || {}),
         ]
       );
 
@@ -763,12 +763,56 @@ export async function getUsageStats(period = "all", range = {}) {
   }));
 
   stats.byApiKey = {};
+  stats.byProvider = {};
+  stats.byModel = {};
   for (const { row, breakdown } of pricedRows) {
     const apiKeyValue = row.apiKey && typeof row.apiKey === "string" ? row.apiKey : null;
     const keyInfo = apiKeyValue ? apiKeyMap[apiKeyValue] : null;
     const apiKeyMasked = maskApiKey(apiKeyValue);
     const keyName = keyInfo?.name || (apiKeyValue ? `${apiKeyValue.slice(0, 8)}...` : "本地调用（无 API 密钥）");
     const providerDisplayName = providerNodeNameMap[row.provider] || row.provider || "未知提供商";
+    const providerKey = row.provider || "unknown";
+    if (!stats.byProvider[providerKey]) {
+      stats.byProvider[providerKey] = {
+        provider: providerDisplayName,
+        requests: 0, promptTokens: 0, cachedTokens: 0, cacheCreationTokens: 0, completionTokens: 0,
+        inputCost: 0, cachedCost: 0, cacheCreationCost: 0, outputCost: 0, cost: 0, lastUsed: row.timestamp,
+      };
+    }
+    const providerTarget = stats.byProvider[providerKey];
+    providerTarget.requests += 1;
+    providerTarget.promptTokens += breakdown.inputTokens;
+    providerTarget.cachedTokens += breakdown.cacheReadTokens;
+    providerTarget.cacheCreationTokens += breakdown.cacheCreationTokens;
+    providerTarget.completionTokens += breakdown.outputTokens;
+    providerTarget.inputCost += breakdown.inputCost;
+    providerTarget.cachedCost += breakdown.cacheReadCost;
+    providerTarget.cacheCreationCost += breakdown.cacheCreationCost;
+    providerTarget.outputCost += breakdown.outputCost;
+    providerTarget.cost += breakdown.totalCost;
+    if (new Date(row.timestamp) > new Date(providerTarget.lastUsed)) providerTarget.lastUsed = row.timestamp;
+
+    const modelKey = `${row.model || "未知模型"}|${providerKey}`;
+    if (!stats.byModel[modelKey]) {
+      stats.byModel[modelKey] = {
+        rawModel: row.model || "未知模型", provider: providerDisplayName,
+        requests: 0, promptTokens: 0, cachedTokens: 0, cacheCreationTokens: 0, completionTokens: 0,
+        inputCost: 0, cachedCost: 0, cacheCreationCost: 0, outputCost: 0, cost: 0, lastUsed: row.timestamp,
+      };
+    }
+    const modelTarget = stats.byModel[modelKey];
+    modelTarget.requests += 1;
+    modelTarget.promptTokens += breakdown.inputTokens;
+    modelTarget.cachedTokens += breakdown.cacheReadTokens;
+    modelTarget.cacheCreationTokens += breakdown.cacheCreationTokens;
+    modelTarget.completionTokens += breakdown.outputTokens;
+    modelTarget.inputCost += breakdown.inputCost;
+    modelTarget.cachedCost += breakdown.cacheReadCost;
+    modelTarget.cacheCreationCost += breakdown.cacheCreationCost;
+    modelTarget.outputCost += breakdown.outputCost;
+    modelTarget.cost += breakdown.totalCost;
+    if (new Date(row.timestamp) > new Date(modelTarget.lastUsed)) modelTarget.lastUsed = row.timestamp;
+
     const statsKey = `${apiKeyMasked || "local-no-key"}|${row.model || "未知模型"}|${row.provider || "unknown"}`;
     if (!stats.byApiKey[statsKey]) {
       stats.byApiKey[statsKey] = {
@@ -925,6 +969,102 @@ export async function appendRequestLog(entry = {}) {
     tokens: entry.tokens || {},
     timestamp: entry.timestamp || new Date().toISOString(),
   });
+}
+
+function getDimensionRange(period, range = {}) {
+  const now = new Date();
+  let start;
+  let end = new Date(now);
+  let bucketMs;
+  if (period === "today") {
+    start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    bucketMs = 60 * 60 * 1000;
+  } else if (period === "24h") {
+    start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    bucketMs = 60 * 60 * 1000;
+  } else if (period === "7d" || period === "30d") {
+    const days = period === "7d" ? 7 : 30;
+    start = new Date(now);
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - days + 1);
+    end = new Date(start);
+    end.setDate(end.getDate() + days);
+    bucketMs = 24 * 60 * 60 * 1000;
+  } else {
+    start = range.startDate ? new Date(range.startDate) : new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    end = range.endDate ? new Date(range.endDate) : now;
+    bucketMs = end.getTime() - start.getTime() <= 48 * 60 * 60 * 1000 ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+  }
+  if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
+    throw new Error("Invalid usage date range");
+  }
+  const durationMs = end.getTime() - start.getTime();
+  const naturalBucketCount = Math.max(1, Math.ceil(durationMs / bucketMs));
+  if (naturalBucketCount > 90) bucketMs = Math.ceil(durationMs / 90);
+  return { start, end, bucketMs, bucketCount: Math.max(1, Math.ceil(durationMs / bucketMs)) };
+}
+
+export async function getDimensionChartData(period = "7d", range = {}, dimension = "apiKey", metric = "tokens") {
+  const allowedDimensions = new Set(["apiKey", "provider", "model"]);
+  const allowedMetrics = new Set(["tokens", "requests", "latency"]);
+  if (!allowedDimensions.has(dimension) || !allowedMetrics.has(metric)) throw new Error("Invalid usage chart dimension");
+  const db = await getAdapter();
+  const { start, end, bucketMs, bucketCount } = getDimensionRange(period, range);
+  const rows = db.all(
+    `SELECT timestamp, provider, model, apiKey, promptTokens, completionTokens, tokens, meta
+     FROM usageHistory WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp ASC`,
+    [start.toISOString(), end.toISOString()],
+  );
+  const { getApiKeys } = await import("./apiKeysRepo.js");
+  const apiKeys = dimension === "apiKey" ? await getApiKeys() : [];
+  const keyNames = new Map(apiKeys.map((key) => [key.key, key.name || key.id]));
+  const buckets = Array.from({ length: bucketCount }, () => new Map());
+  const totals = new Map();
+
+  for (const row of rows) {
+    const timestamp = new Date(row.timestamp).getTime();
+    const index = Math.floor((timestamp - start.getTime()) / bucketMs);
+    if (index < 0 || index >= bucketCount) continue;
+    const group = dimension === "apiKey"
+      ? (row.apiKey ? (keyNames.get(row.apiKey) || `${row.apiKey.slice(0, 8)}...`) : "本地调用（无 API 密钥）")
+      : dimension === "provider" ? (row.provider || "未知提供商") : (row.model || "未知模型");
+    const tokens = parseJson(row.tokens, {}) || {};
+    const latency = Number(parseJson(row.meta, {})?.latency?.total || 0);
+    const value = metric === "requests" ? 1
+      : metric === "latency" ? latency
+      : Number(row.promptTokens ?? tokens.prompt_tokens ?? tokens.input_tokens ?? 0) + Number(row.completionTokens ?? tokens.completion_tokens ?? tokens.output_tokens ?? 0);
+    if (metric === "latency" && value <= 0) continue;
+    const current = buckets[index].get(group) || { sum: 0, count: 0 };
+    current.sum += value;
+    current.count += 1;
+    buckets[index].set(group, current);
+    const total = totals.get(group) || { sum: 0, count: 0 };
+    total.sum += value;
+    total.count += 1;
+    totals.set(group, total);
+  }
+
+  const ranked = [...totals.entries()]
+    .sort((a, b) => (metric === "latency" ? b[1].sum / b[1].count : b[1].sum) - (metric === "latency" ? a[1].sum / a[1].count : a[1].sum))
+    .slice(0, 8);
+  const series = ranked.map(([label], index) => ({ id: `series_${index}`, label }));
+  const data = buckets.map((bucket, index) => {
+    const timestamp = start.getTime() + index * bucketMs;
+    const point = {
+      label: bucketMs < 24 * 60 * 60 * 1000
+        ? new Date(timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })
+        : new Date(timestamp).toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }),
+    };
+    series.forEach((item) => {
+      const value = bucket.get(item.label);
+      point[item.id] = !value ? 0 : metric === "latency" ? Math.round(value.sum / value.count) : value.sum;
+    });
+    return point;
+  });
+  return { series, data, metric };
 }
 
 async function calculateBreakdown(provider, model, tokens) {

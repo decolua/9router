@@ -17,6 +17,7 @@ import dynamic from "next/dynamic";
 // Lazy-load: keeps @xyflow/react out of the shared bundle until topology renders
 const ProviderTopology = dynamic(() => import("@/app/(dashboard)/dashboard/usage/components/ProviderTopology"), { ssr: false });
 import UsageChart from "@/app/(dashboard)/dashboard/usage/components/UsageChart";
+import DimensionUsageChart from "@/app/(dashboard)/dashboard/usage/components/DimensionUsageChart";
 
 function sortData(dataMap, pendingMap = {}, sortBy, sortOrder) {
   return Object.entries(dataMap || {})
@@ -81,6 +82,20 @@ function groupDataByKey(data, keyField) {
 
 const API_KEY_COLUMNS = [
   { field: "keyName", label: "API 密钥名称" },
+  { field: "rawModel", label: "模型" },
+  { field: "provider", label: "提供商" },
+  { field: "requests", label: "请求数", align: "right" },
+  { field: "lastUsed", label: "最后使用", align: "right" },
+];
+
+const PROVIDER_COLUMNS = [
+  { field: "provider", label: "提供商" },
+  { field: "rawModel", label: "模型" },
+  { field: "requests", label: "请求数", align: "right" },
+  { field: "lastUsed", label: "最后使用", align: "right" },
+];
+
+const MODEL_COLUMNS = [
   { field: "rawModel", label: "模型" },
   { field: "provider", label: "提供商" },
   { field: "requests", label: "请求数", align: "right" },
@@ -217,9 +232,35 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   // Compute active table data
   const activeTableConfig = useMemo(() => {
     if (!stats) return null;
+    if (view === "providers") {
+      return {
+        title: "提供商使用分析",
+        columns: PROVIDER_COLUMNS,
+        groupedData: groupDataByKey(sortData(stats.byProvider, {}, sortBy, sortOrder), "provider"),
+        tableType: "provider",
+        storageKey: "usage-stats:expanded-providers",
+        emptyMessage: "暂无提供商使用记录。",
+        renderSummaryCells: (group) => <><td className="px-6 py-3 text-text-muted">—</td><td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td><td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td></>,
+        renderDetailCells: (item) => <><td className="px-6 py-3 font-medium">{item.provider}</td><td className="px-6 py-3 font-mono text-xs">{item.rawModel || "-"}</td><td className="px-6 py-3 text-right">{fmt(item.requests)}</td><td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td></>,
+      };
+    }
+    if (view === "models") {
+      return {
+        title: "模型流量明细",
+        columns: MODEL_COLUMNS,
+        groupedData: groupDataByKey(sortData(stats.byModel, {}, sortBy, sortOrder), "rawModel"),
+        tableType: "model",
+        storageKey: "usage-stats:expanded-models",
+        emptyMessage: "暂无模型流量记录。",
+        renderSummaryCells: (group) => <><td className="px-6 py-3 text-text-muted">—</td><td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td><td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td></>,
+        renderDetailCells: (item) => <><td className="px-6 py-3 font-mono text-xs">{item.rawModel}</td><td className="px-6 py-3"><Badge variant="neutral" size="sm">{item.provider}</Badge></td><td className="px-6 py-3 text-right">{fmt(item.requests)}</td><td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td></>,
+      };
+    }
     return {
+      title: "密钥使用分析",
       columns: API_KEY_COLUMNS,
       groupedData: groupDataByKey(sortData(stats.byApiKey, {}, sortBy, sortOrder), "keyName"),
+      tableType: "apiKey",
       storageKey: "usage-stats:expanded-apikeys",
       emptyMessage: "暂无 API 密钥使用记录。",
       renderSummaryCells: (group) => (
@@ -240,9 +281,9 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         </>
       ),
     };
-  }, [stats, sortBy, sortOrder]);
+  }, [stats, sortBy, sortOrder, view]);
 
-  if (!stats && !loading) return <div className="text-text-muted">Failed to load usage statistics.</div>;
+  if (!stats && !loading) return <div className="text-text-muted">无法加载流量统计。</div>;
 
   const spinner = (
     <div className="flex items-center justify-center py-12 text-text-muted">
@@ -286,14 +327,19 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           )}
           {loading ? spinner : <UsageChart period={period} startDate={startDate} endDate={endDate} />}
         </>
+      ) : view === "latency" ? (
+        <DimensionUsageChart title="模型平均延迟曲线" dimension="model" metric="latency" period={period} startDate={startDate} endDate={endDate} />
       ) : (
         <div className="flex flex-col gap-3">
+          {!loading && view === "keys" && <DimensionUsageChart title="各密钥流量曲线" dimension="apiKey" period={period} startDate={startDate} endDate={endDate} />}
+          {!loading && view === "providers" && <DimensionUsageChart title="各提供商流量曲线" dimension="provider" period={period} startDate={startDate} endDate={endDate} />}
+          {!loading && view === "models" && <DimensionUsageChart title="各模型流量曲线" dimension="model" period={period} startDate={startDate} endDate={endDate} />}
           {loading ? spinner : activeTableConfig && (
             <UsageTable
-              title="API 密钥使用分析"
+              title={activeTableConfig.title}
               columns={activeTableConfig.columns}
               groupedData={activeTableConfig.groupedData}
-              tableType="apiKey"
+              tableType={activeTableConfig.tableType}
               sortBy={sortBy}
               sortOrder={sortOrder}
               onToggleSort={toggleSort}

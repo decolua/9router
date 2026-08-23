@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import PropTypes from "prop-types";
 import Card from "./Card";
 import DropdownSelect from "./DropdownSelect";
+import UsageDateRangeControl, { getPeriodRange } from "./UsageDateRangeControl";
 
 const toLocalDateTimeValue = (date) => {
   const pad = (value) => String(value).padStart(2, "0");
@@ -35,6 +36,7 @@ export default function RequestLogger() {
   const [providers, setProviders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [period, setPeriod] = useState("today");
 
   const fetchLogs = useCallback(async (showLoading = true, page = 1) => {
     if (showLoading) setLoading(true);
@@ -65,18 +67,24 @@ export default function RequestLogger() {
   }, [autoRefresh, fetchLogs, pagination.page]);
 
   const updateFilter = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
+  const resetFilters = () => {
+    const range = getPeriodRange("today", new Date(), true);
+    setPeriod("today");
+    setFilters({ ...getDefaultLogFilters(), ...range });
+  };
 
   return (
     <div className="flex flex-col gap-4" data-i18n-skip>
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-        <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
-          <label className="text-xs text-text-muted">开始时间<input type="datetime-local" value={filters.startDate} onChange={(event) => updateFilter("startDate", event.target.value)} className="mt-1 w-full rounded-md border border-border bg-bg-base px-2 py-1.5 text-xs text-text-main" /></label>
-          <label className="text-xs text-text-muted">结束时间<input type="datetime-local" value={filters.endDate} onChange={(event) => updateFilter("endDate", event.target.value)} className="mt-1 w-full rounded-md border border-border bg-bg-base px-2 py-1.5 text-xs text-text-main" /></label>
+      <div className="flex flex-col gap-3 2xl:flex-row 2xl:items-end 2xl:justify-between">
+        <div className="flex min-w-0 flex-1 flex-col gap-2 xl:flex-row xl:items-end">
+          <UsageDateRangeControl className="xl:shrink-0" period={period} startDate={filters.startDate} endDate={filters.endDate} onPeriodChange={setPeriod} onStartDateChange={(value) => updateFilter("startDate", value)} onEndDateChange={(value) => updateFilter("endDate", value)} todayEndsTomorrow />
+          <div className="grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-3">
           <DropdownSelect label="API 密钥" value={filters.apiKey} onChange={(value) => updateFilter("apiKey", value)} searchable options={[{ value: "", label: "全部密钥" }, ...keys.map((key) => ({ value: key.id, label: key.name }))]} />
           <DropdownSelect label="模型提供商" value={filters.provider} onChange={(value) => updateFilter("provider", value)} searchable options={[{ value: "", label: "全部提供商" }, ...providers.map((provider) => ({ value: provider, label: provider }))]} />
           <DropdownSelect label="日志类型" value={filters.logType} onChange={(value) => updateFilter("logType", value)} options={[{ value: "", label: "全部类型" }, { value: "success", label: "成功" }, { value: "failed", label: "失败" }]} />
+          </div>
         </div>
-        <div className="flex shrink-0 flex-nowrap items-center gap-2 text-xs text-text-muted"><button onClick={() => setFilters(getDefaultLogFilters())} className="min-w-16 whitespace-nowrap rounded-md border border-border px-3 py-2 hover:bg-bg-hover">重置</button><button onClick={() => setAutoRefresh((value) => !value)} className={`min-w-20 whitespace-nowrap rounded-md border px-3 py-2 ${autoRefresh ? "border-primary text-primary" : "border-border"}`}>{autoRefresh ? "自动刷新" : "已暂停"}</button></div>
+        <div className="flex h-9 shrink-0 flex-nowrap items-center gap-2 text-xs text-text-muted"><button onClick={resetFilters} className="h-9 min-w-16 whitespace-nowrap rounded-md border border-border px-3 hover:bg-bg-hover">重置</button><button onClick={() => setAutoRefresh((value) => !value)} className={`h-9 min-w-20 whitespace-nowrap rounded-md border px-3 ${autoRefresh ? "border-primary text-primary" : "border-border"}`}>{autoRefresh ? "自动刷新" : "已暂停"}</button></div>
       </div>
 
       <Card className="overflow-hidden">

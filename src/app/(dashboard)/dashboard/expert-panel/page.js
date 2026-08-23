@@ -77,10 +77,42 @@ export default function ExpertPanelPage() {
   const [judgeSummary, setJudgeSummary] = useState("");
 
   useEffect(() => {
+    let cancelled = false;
+    const mergeModels = (items) => {
+      if (cancelled) return;
+      setModels((current) => {
+        const merged = new Map(current.map((item) => [item.value, item]));
+        for (const model of items.filter(Boolean)) merged.set(model, { value: model, label: model });
+        return [...merged.values()].sort((a, b) => a.label.localeCompare(b.label));
+      });
+    };
+
+    Promise.all([
+      fetch("/api/models", { cache: "no-store" }),
+      fetch("/api/providers", { cache: "no-store" }),
+      fetch("/api/combos", { cache: "no-store" }),
+    ])
+      .then(async ([catalogResponse, providerResponse, comboResponse]) => {
+        const [catalogData, providerData, comboData] = await Promise.all([
+          catalogResponse.json().catch(() => ({})),
+          providerResponse.json().catch(() => ({})),
+          comboResponse.json().catch(() => ({})),
+        ]);
+        const configuredProviders = new Set((providerData.connections || []).filter((connection) => connection.isActive !== false).map((connection) => connection.provider));
+        const catalogModels = (catalogData.models || [])
+          .filter((model) => configuredProviders.has(model.provider))
+          .map((model) => model.routedModel || model.fullModel);
+        const combos = (comboData.combos || []).map((combo) => combo.name);
+        mergeModels([...catalogModels, ...combos]);
+      })
+      .catch(() => {});
+
     fetch("/api/v1/models", { cache: "no-store" })
-      .then((response) => response.ok ? response.json() : Promise.reject(new Error("加载模型失败")))
-      .then((data) => setModels((data.data || []).map((model) => ({ value: model.id, label: model.id })).sort((a, b) => a.label.localeCompare(b.label))))
-      .catch(() => setModels([]));
+      .then((response) => response.ok ? response.json() : {})
+      .then((data) => mergeModels((data.data || []).map((model) => model.id)))
+      .catch(() => {});
+
+    return () => { cancelled = true; };
   }, []);
 
   const panelModelIds = useMemo(() => new Set(panels.map((panel) => panel.model)), [panels]);
@@ -155,19 +187,28 @@ export default function ExpertPanelPage() {
     }
   };
 
+  const clearSession = () => {
+    if (sending || judging || panels.length === 0) return;
+    setPanels((current) => current.map((panel) => ({ ...panel, messages: [], response: "", status: "idle", score: null, comment: "" })));
+    setPrompt("");
+    setJudgeSummary("");
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-bg-base" data-i18n-skip>
-      <div className="flex flex-wrap items-end gap-2 border-b border-border bg-surface/80 px-4 py-3 lg:px-6">
+      <div className="flex flex-wrap items-end gap-3 border-b border-border bg-surface/90 px-4 py-3 lg:px-6">
         <Button icon="add" size="sm" onClick={() => openPicker("multiple")}>批量增加模型</Button>
-        <DropdownSelect className="min-w-56" label="裁判模型" value={judgeModel} onChange={setJudgeModel} searchable searchPlaceholder="搜索裁判模型" options={models} placeholder="选择裁判模型" />
-        <Button size="sm" variant="secondary" loading={judging} disabled={!judgeModel || panels.length === 0 || panels.some((panel) => panel.status !== "done")} onClick={runJudge}>开始评分</Button>
         {judgeSummary && <p className="min-w-0 flex-1 text-sm text-text-muted">{judgeSummary}</p>}
+        <div className="ml-auto flex items-end gap-2">
+          <DropdownSelect className="w-64" label="裁判模型" value={judgeModel} onChange={setJudgeModel} searchable searchPlaceholder="搜索裁判模型" options={models} placeholder="选择裁判模型" buttonClassName="h-9" />
+          <Button className="h-9" size="sm" variant="secondary" loading={judging} disabled={!judgeModel || panels.length === 0 || panels.some((panel) => panel.status !== "done")} onClick={runJudge}>开始评分</Button>
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden p-4 lg:p-6 custom-scrollbar">
         <div className="flex h-full min-h-[360px] gap-3">
           {panels.map((panel) => (
-            <section key={panel.id} className="flex h-full w-[360px] shrink-0 flex-col overflow-hidden rounded-md border border-border bg-surface">
+            <section key={panel.id} className="flex h-full w-[440px] shrink-0 flex-col overflow-hidden rounded-md border border-border bg-surface shadow-sm">
               <header className="flex items-center gap-2 border-b border-border px-3 py-2">
                 <span className="min-w-0 flex-1 truncate font-mono text-xs font-semibold" title={panel.model}>{panel.model}</span>
                 {panel.score !== null && <span className="rounded bg-primary/10 px-2 py-0.5 text-sm font-semibold text-primary">{panel.score}</span>}
@@ -186,7 +227,7 @@ export default function ExpertPanelPage() {
               {panel.comment && <footer className="border-t border-border bg-bg-subtle px-3 py-2 text-xs text-text-muted"><span className="font-medium text-text-main">裁判评语：</span>{panel.comment}</footer>}
             </section>
           ))}
-          <button type="button" onClick={() => openPicker("single")} className="flex h-full min-h-[360px] w-[260px] shrink-0 flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border bg-bg-subtle/30 text-text-muted transition-colors hover:border-primary hover:text-primary">
+          <button type="button" onClick={() => openPicker("single")} className="flex h-full min-h-[420px] w-[300px] shrink-0 flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border bg-bg-subtle/30 text-text-muted transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary">
             <span className="material-symbols-outlined text-[30px]">add_circle</span>
             <span className="text-sm font-medium">待加入</span>
           </button>
@@ -194,9 +235,12 @@ export default function ExpertPanelPage() {
       </div>
 
       <div className="shrink-0 border-t border-border bg-surface px-4 py-3 lg:px-6">
-        <div className="mx-auto flex max-w-5xl items-end gap-2">
+        <div className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
           <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendPrompt(); } }} rows={2} placeholder={panels.length ? "向专家团发送提示词" : "请先添加模型"} disabled={panels.length === 0 || sending} className="max-h-40 min-h-14 flex-1 resize-y rounded-md border border-border bg-bg-base px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-60" />
-          <Button icon="send" disabled={!prompt.trim() || panels.length === 0 || sending} loading={sending} onClick={sendPrompt}>发送</Button>
+          <div className="flex flex-col gap-2">
+            <Button icon="delete_sweep" size="sm" variant="ghost" disabled={panels.length === 0 || sending || judging} onClick={clearSession}>清空会话</Button>
+            <Button icon="send" disabled={!prompt.trim() || panels.length === 0 || sending} loading={sending} onClick={sendPrompt}>发送</Button>
+          </div>
         </div>
       </div>
 

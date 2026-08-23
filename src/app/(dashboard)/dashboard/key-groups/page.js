@@ -86,6 +86,17 @@ export default function KeyGroupsPage() {
     await loadData();
   };
 
+  const setDefaultGroup = async (group) => {
+    const response = await fetch(`/api/key-groups/${group.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ isDefault: true }),
+    });
+    const data = await response.json();
+    if (!response.ok) return alert(data.error || "设置默认分组失败");
+    await loadData();
+  };
+
   const toggleValue = (field, value) => setForm((current) => {
     const values = new Set(current[field]);
     values.has(value) ? values.delete(value) : values.add(value);
@@ -119,7 +130,7 @@ export default function KeyGroupsPage() {
             <tbody className="divide-y divide-border/60">
               {loading ? <tr><td colSpan={4} className="p-10 text-center text-text-muted">正在加载密钥分组...</td></tr> : groups.map((group) => {
                 const unrestricted = group.allowedModels.length === 0 && group.allowedCombos.length === 0;
-                return <tr key={group.id} className="hover:bg-surface-2/60"><td className="px-4 py-3"><div className="flex items-center gap-2 font-medium">{group.name}{group.isDefault && <span className="rounded bg-primary/10 px-2 py-0.5 text-xs text-primary">默认</span>}</div></td><td className="px-4 py-3 text-text-muted">{unrestricted ? "全部模型" : `${group.allowedModels.length} 个模型，${group.allowedCombos.length} 个模型组合`}</td><td className="px-4 py-3 text-right tabular-nums">{group.keyCount}</td><td className="px-4 py-3 text-right"><button onClick={() => openEdit(group)} className="rounded-md p-2 text-text-muted hover:bg-surface-2 hover:text-primary" title="编辑"><span className="material-symbols-outlined text-[18px]">edit</span></button><button disabled={group.isDefault || group.keyCount > 0} onClick={() => deleteGroup(group)} className="rounded-md p-2 text-red-500 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-30" title={group.isDefault ? "默认分组不能删除" : group.keyCount > 0 ? "仍有密钥使用该分组" : "删除"}><span className="material-symbols-outlined text-[18px]">delete</span></button></td></tr>;
+                return <tr key={group.id} className="hover:bg-surface-2/60"><td className="px-4 py-3"><div className="flex items-center gap-2 font-medium">{group.name}{group.isDefault && <span className="rounded bg-primary/10 px-2 py-0.5 text-xs text-primary">默认</span>}</div></td><td className="px-4 py-3 text-text-muted">{unrestricted ? "全部模型" : `${group.allowedModels.length} 个模型，${group.allowedCombos.length} 个模型组合`}</td><td className="px-4 py-3 text-right tabular-nums">{group.keyCount}</td><td className="px-4 py-3 text-right">{!group.isDefault && <button onClick={() => setDefaultGroup(group)} className="rounded-md p-2 text-text-muted hover:bg-surface-2 hover:text-primary" title="设为默认分组"><span className="material-symbols-outlined text-[18px]">bookmark</span></button>}<button onClick={() => openEdit(group)} className="rounded-md p-2 text-text-muted hover:bg-surface-2 hover:text-primary" title="编辑"><span className="material-symbols-outlined text-[18px]">edit</span></button><button disabled={group.isDefault || group.keyCount > 0} onClick={() => deleteGroup(group)} className="rounded-md p-2 text-red-500 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-30" title={group.isDefault ? "默认分组不能删除" : group.keyCount > 0 ? "仍有密钥使用该分组" : "删除"}><span className="material-symbols-outlined text-[18px]">delete</span></button></td></tr>;
               })}
             </tbody>
           </table>

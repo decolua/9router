@@ -18,6 +18,7 @@ import {
   WEB_COOKIE_PROVIDERS,
   OPENAI_COMPATIBLE_PREFIX,
   ANTHROPIC_COMPATIBLE_PREFIX,
+  AI_PROVIDERS,
 } from "@/shared/constants/providers";
 import Link from "next/link";
 import { getErrorCode, getRelativeTime } from "@/shared/utils";
@@ -105,6 +106,7 @@ export default function ProvidersPage() {
     useState(false);
   const [testingMode, setTestingMode] = useState(null);
   const [testResults, setTestResults] = useState(null);
+  const [showCatalog, setShowCatalog] = useState(false);
   const notify = useNotificationStore();
   const searchQuery = useHeaderSearchStore((s) => s.query);
   const registerSearch = useHeaderSearchStore((s) => s.register);
@@ -343,6 +345,23 @@ export default function ProvidersPage() {
       ? apikeyEntries
       : apikeyEntries.slice(0, APIKEY_INITIAL_VISIBLE);
   const hiddenApikeyCount = apikeyEntries.length - APIKEY_INITIAL_VISIBLE;
+  const configuredProviders = [...new Set(connections.map((connection) => connection.provider))]
+    .map((providerId) => {
+      const providerConnections = connections.filter((connection) => connection.provider === providerId);
+      const node = providerNodes.find((item) => item.id === providerId);
+      const info = AI_PROVIDERS[providerId] || node || { id: providerId, name: providerId };
+      const authTypes = [...new Set(providerConnections.map((connection) => connection.authType))];
+      return {
+        providerId,
+        info: { ...info, name: node?.name || info.name || providerId },
+        authTypes,
+        stats: getProviderStats(providerId, authTypes),
+        autoDisabled: providerConnections.some((connection) => connection.autoDisabled === true),
+        autoDisabledReason: providerConnections.find((connection) => connection.autoDisabled === true)?.autoDisabledReason || "",
+      };
+    })
+    .filter((item) => matchSearch(item.info.name || item.providerId))
+    .sort((a, b) => (a.info.name || a.providerId).localeCompare(b.info.name || b.providerId));
 
   if (loading) {
     return (
@@ -363,7 +382,41 @@ export default function ProvidersPage() {
 
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
-      {!hasAnyResult && (
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">已配置提供商</h2>
+          <p className="text-xs text-text-muted">集中查看当前已接入的提供商及连接状态。</p>
+        </div>
+        <Button icon={showCatalog ? "close" : "add"} onClick={() => setShowCatalog((value) => !value)}>{showCatalog ? "收起新增" : "新增提供商"}</Button>
+      </div>
+
+      <Card className="overflow-hidden p-0">
+        {configuredProviders.length ? configuredProviders.map((item) => (
+          <div key={item.providerId} className="flex flex-col gap-3 border-b border-border px-4 py-3 last:border-b-0 sm:flex-row sm:items-center">
+            <Link href={`/dashboard/providers/${item.providerId}`} className="flex min-w-0 flex-1 items-center gap-3">
+              <ProviderIcon providerId={item.providerId} size={36} alt={item.info.name} fallbackText={(item.info.name || item.providerId).slice(0, 2).toUpperCase()} />
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="truncate font-medium">{item.info.name}</span>
+                  {item.autoDisabled && <Badge variant="warning" size="sm" dot>自动禁用</Badge>}
+                </div>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-text-muted">
+                  <span>{item.stats.total} 个连接</span>
+                  {getStatusDisplay(item.stats.connected, item.stats.error, item.stats.errorCode)}
+                  {item.autoDisabledReason && <span className="max-w-lg truncate" title={item.autoDisabledReason}>{item.autoDisabledReason}</span>}
+                </div>
+              </div>
+            </Link>
+            <div className="flex shrink-0 items-center justify-end gap-2">
+              <Button size="sm" variant="ghost" loading={testingMode === item.providerId} onClick={() => handleBatchTest("provider", item.providerId)}>测试</Button>
+              <Toggle checked={!item.stats.allDisabled} onChange={(active) => handleToggleProvider(item.providerId, item.authTypes, active)} />
+              <Link href={`/dashboard/providers/${item.providerId}`} className="rounded-md p-2 text-text-muted hover:bg-bg-hover hover:text-primary" title="管理提供商"><span className="material-symbols-outlined text-[19px]">chevron_right</span></Link>
+            </div>
+          </div>
+        )) : <div className="p-10 text-center text-sm text-text-muted">尚未配置提供商，请点击“新增提供商”。</div>}
+      </Card>
+
+      {showCatalog && !hasAnyResult && (
         <div className="text-center py-8 border border-dashed border-border rounded-xl">
           <span className="material-symbols-outlined text-[32px] text-text-muted mb-2">
             search_off
@@ -372,6 +425,7 @@ export default function ProvidersPage() {
         </div>
       )}
 
+      {showCatalog && <>
       {/* Custom Providers (OpenAI/Anthropic Compatible) — dynamic */}
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -602,6 +656,7 @@ export default function ProvidersPage() {
           ))}
         </div>
       </div> */}
+      </>}
 
       <AddCompatibleModal
         variant="openai"

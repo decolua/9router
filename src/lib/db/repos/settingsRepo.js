@@ -66,6 +66,11 @@ const DEFAULT_SETTINGS = {
   pricingLastSyncAt: "",
   pricingLastSyncStatus: "never",
   pricingLastSyncError: "",
+  defaultApiKeyGroupId: "default",
+  providerAutoDisableEnabled: false,
+  providerAutoDisableTriggers: "invalid api key,unauthorized,forbidden,revoked,quota exceeded,insufficient balance",
+  providerAutoRecoveryEnabled: true,
+  providerAutoRecoveryIntervalMinutes: 15,
 };
 
 async function readRaw() {

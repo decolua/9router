@@ -35,7 +35,7 @@ export {
 
 export {
   getApiKeyGroups, getApiKeyGroupById, getDefaultApiKeyGroup,
-  createApiKeyGroup, updateApiKeyGroup, deleteApiKeyGroup, DEFAULT_API_KEY_GROUP_ID,
+  createApiKeyGroup, updateApiKeyGroup, deleteApiKeyGroup, setDefaultApiKeyGroup, DEFAULT_API_KEY_GROUP_ID,
 } from "./repos/apiKeyGroupsRepo.js";
 
 // Combos
@@ -64,7 +64,7 @@ export {
 // Usage
 export {
   statsEmitter, trackPendingRequest, getActiveRequests,
-  saveRequestUsage, getUsageHistory, getUsageStats, getChartData,
+  saveRequestUsage, getUsageHistory, getUsageStats, getChartData, getDimensionChartData,
   appendRequestLog, getRecentLogs, getUsageLogs,
 } from "./repos/usageRepo.js";
 
