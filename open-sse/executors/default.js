@@ -62,6 +62,40 @@ const REFRESH_GRANTS = Object.fromEntries(
     })
 );
 
+// Ask OpenAI-compatible providers to report usage on streaming responses.
+//
+// They do not volunteer it: without `stream_options.include_usage` the stream
+// carries no usage object at all, so the router reports input_tokens 0 /
+// output_tokens 0 to the client. Measured against ox-alpha through
+// /v1/messages, both message_start and message_delta came back with zeroes.
+//
+// That is not a cosmetic gap. Claude Code sums usage off the stream to drive
+// its context meter, so a provider that reports nothing leaves the meter
+// pinned at 0% — the session never learns it is filling up, never compacts on
+// its own, and instead walks into a hard "Context limit reached" with no
+// warning. The operator watched that happen all evening: "goes 0 again in
+// token and context". It also starves tokenRatio, which learns chars-per-token
+// from real input counts and skips any sample reporting zero.
+//
+// iflow.js has done this for its own provider since it was written; this moves
+// the same two lines to the executor that actually serves most of them.
+// Providers that reject the field own their executors (codex, grok-cli) and
+// already delete it there, and a provider can opt out with
+// `quirks.noStreamUsage` if one turns up that chokes on it.
+function requestStreamUsage(config, body) {
+  if (config?.quirks?.noStreamUsage) return;
+  // Only meaningful on the chat-completions shape, and only while streaming.
+  // Sending it with stream:false makes DeepSeek and others reject the request
+  // outright ("stream_options should be set along with stream = true").
+  if (body.stream !== true) return;
+  if (!Array.isArray(body.messages)) return;
+  if (body.stream_options && typeof body.stream_options === "object") {
+    if (body.stream_options.include_usage === undefined) body.stream_options.include_usage = true;
+    return;
+  }
+  body.stream_options = { include_usage: true };
+}
+
 export class DefaultExecutor extends BaseExecutor {
   constructor(provider) {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
@@ -76,6 +110,7 @@ export class DefaultExecutor extends BaseExecutor {
         delete transformed.client_metadata;
       }
       stripUnsupportedParams(this.provider, model, transformed);
+      requestStreamUsage(this.config, transformed);
     }
 
     return injectReasoningContent({ provider: this.provider, model, body: transformed });

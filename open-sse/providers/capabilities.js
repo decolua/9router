@@ -142,11 +142,35 @@ export const PROVIDER_CAPABILITIES = {
   // calls getCapabilitiesForModel with the id prefix ("ag"), while provider-name
   // callers use "antigravity".
   "ag": {
-    "claude-opus-4-6-thinking": { vision: false, reasoning: true, contextWindow: 200000, maxOutput: 64000 },
+    // contextWindow corrected 2026-08-24. This override was added for the
+    // MEASURED vision:false finding; the 200000 rode along with it and was never
+    // tested. Probed against the live provider: a 362,664-token prompt was
+    // accepted and answered correctly, so 200000 is simply wrong — it was
+    // throwing away most of the window on the head of Yggdrasil and forcing the
+    // client to compact at 160K. 1000000 is the canonical figure this repo
+    // already asserts for claude-opus-4.6 (see capabilities-opus-context.test.js);
+    // the true Antigravity ceiling above 362,664 is untested, because the
+    // router's own compaction ceiling stopped the next probe at 897,517 before
+    // it reached the provider. If the real cap turns out lower, the cascade
+    // falls through on the provider's own error — strictly better than
+    // discarding 800K of a window we are paying for.
+    "claude-opus-4-6-thinking": { vision: false, reasoning: true, contextWindow: 1000000, maxOutput: 64000 },
     "claude-sonnet-4-6": { vision: false, reasoning: true, contextWindow: 200000, maxOutput: 64000 },
   },
   "antigravity": {
-    "claude-opus-4-6-thinking": { vision: false, reasoning: true, contextWindow: 200000, maxOutput: 64000 },
+    // contextWindow corrected 2026-08-24. This override was added for the
+    // MEASURED vision:false finding; the 200000 rode along with it and was never
+    // tested. Probed against the live provider: a 362,664-token prompt was
+    // accepted and answered correctly, so 200000 is simply wrong — it was
+    // throwing away most of the window on the head of Yggdrasil and forcing the
+    // client to compact at 160K. 1000000 is the canonical figure this repo
+    // already asserts for claude-opus-4.6 (see capabilities-opus-context.test.js);
+    // the true Antigravity ceiling above 362,664 is untested, because the
+    // router's own compaction ceiling stopped the next probe at 897,517 before
+    // it reached the provider. If the real cap turns out lower, the cascade
+    // falls through on the provider's own error — strictly better than
+    // discarding 800K of a window we are paying for.
+    "claude-opus-4-6-thinking": { vision: false, reasoning: true, contextWindow: 1000000, maxOutput: 64000 },
     "claude-sonnet-4-6": { vision: false, reasoning: true, contextWindow: 200000, maxOutput: 64000 },
   },
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
