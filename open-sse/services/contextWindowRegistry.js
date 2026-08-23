@@ -40,11 +40,18 @@ const MAX_WINDOW = 20_000_000;
 /** Re-read from disk at most this often; the map is small and rarely changes. */
 const CACHE_TTL_MS = 60_000;
 
-let cache = new Map();
-let cachedAt = 0;
+// Held on `global`, not in module scope, and that is not incidental. Next
+// bundles instrumentation, API routes and the chat path into separate module
+// registries, so a plain module-level Map gives each of them its own empty
+// copy: the learner fills one, the sizing path reads another, and the window
+// stays at the 200K default while the log cheerfully reports 422 windows
+// learned. Measured exactly that way before this line existed. Same reason
+// db/driver.js keeps its adapter on `global._dbAdapter`.
+if (!global.__9rContextWindows) global.__9rContextWindows = { cache: new Map(), cachedAt: 0 };
+const store = global.__9rContextWindows;
 
 async function load() {
-  if (cache.size && Date.now() - cachedAt < CACHE_TTL_MS) return cache;
+  if (store.cache.size && Date.now() - store.cachedAt < CACHE_TTL_MS) return store.cache;
   try {
     const db = await getAdapter();
     const next = new Map();
@@ -52,13 +59,13 @@ async function load() {
       const n = Number(r.value);
       if (Number.isFinite(n) && n > 0) next.set(r.key, n);
     }
-    cache = next;
-    cachedAt = Date.now();
+    store.cache = next;
+    store.cachedAt = Date.now();
   } catch {
     // No DB yet (early boot, or a runtime without one): the static table still
     // answers. Never throw from a sizing path.
   }
-  return cache;
+  return store.cache;
 }
 
 /**
@@ -79,7 +86,7 @@ export async function observeContextWindow(modelId, window, source = "provider")
        ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
       [SCOPE, modelId, String(n)]
     );
-    cache.set(modelId, n);
+    store.cache.set(modelId, n);
     console.log(`[CTXWIN] ${modelId} = ${n} (${source}${known ? `, was ${known}` : ""})`);
     return true;
   } catch (e) {
@@ -91,16 +98,22 @@ export async function observeContextWindow(modelId, window, source = "provider")
 /** The learned window for a routed id, or 0. Synchronous against the cache so
  *  the hot sizing path never awaits; `load()` is driven by the refresher. */
 export function learnedContextWindow(modelId) {
-  return cache.get(modelId) || 0;
+  // Lazy prime, fire-and-forget: whichever bundle asks first warms the shared
+  // map for all of them. Never awaited — sizing runs on every request.
+  if (!store.cache.size && !store.priming) {
+    store.priming = true;
+    load().finally(() => { store.priming = false; });
+  }
+  return store.cache.get(modelId) || 0;
 }
 
 /** Warm the cache. Called at boot and by the catalogue refresher. */
 export async function primeContextWindows() {
   await load();
-  return cache.size;
+  return store.cache.size;
 }
 
 export function __setForTests(map) {
-  cache = new Map(map);
-  cachedAt = Date.now();
+  store.cache = new Map(map);
+  store.cachedAt = Date.now();
 }
