@@ -11,7 +11,7 @@ import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
 import { estimateInputTokens } from "../utils/usageTracking.js";
 import { extractVisibleText, findDegeneracy, hasAssistantPrefill, GATE_WINDOW_CHARS, GATE_MIN_JUDGEABLE_CHARS, PREFLIGHT_MAX_READS, HOLD_BACK_MS } from "../utils/degeneracy.js";
-import { COMBO_RESPONSE_TIMEOUT_MS, COMBO_FIRST_EVENT_TIMEOUT_MS } from "../config/errorConfig.js";
+import { COMBO_RESPONSE_TIMEOUT_MS, COMBO_FIRST_EVENT_TIMEOUT_MS, COMPACT_HEADROOM_RATIO } from "../config/errorConfig.js";
 import { isPaidModel } from "../config/costClasses.js";
 import { isEmptyTurnNotice } from "../translator/response/emptyTurn.js";
 
@@ -548,6 +548,67 @@ async function preflightSseResponse(response, isPrefill = false) {
  *   Account-layer probe: has any account capacity for this model? `null` = no opinion.
  * @returns {Promise<{ reason: string, retryAfter?: string }|null>}
  */
+/** Split "provider/model" the way shouldSkipModel does, so both read one window. */
+function splitModelStr(modelStr) {
+  const slash = modelStr.indexOf("/");
+  return slash > 0
+    ? { provider: modelStr.slice(0, slash), model: modelStr.slice(slash + 1) }
+    : { provider: "", model: modelStr };
+}
+
+/** A member's input window, or 0 when the provider does not declare one. */
+export function modelContextWindow(modelStr) {
+  const { provider, model } = splitModelStr(modelStr);
+  return getCapabilitiesForModel(provider, model).contextWindow || 0;
+}
+
+/**
+ * The widest window still reachable, counting only members that are not already
+ * banned or backing off. Those two checks are synchronous and local — no probe,
+ * no round trip — so this is cheap enough to run before every cascade.
+ *
+ * Deliberately NOT the widest window in the pool: a 1M member that is quota-
+ * exhausted for the next six hours cannot hold anything, and letting it raise
+ * the ceiling is what allows a conversation to grow past the point where the
+ * members that CAN answer are able to take it. That is the failure the
+ * operator's "next model cant handle the context" clause describes.
+ */
+export function widestEligibleWindow(models) {
+  let widest = 0;
+  for (const modelStr of models) {
+    if (isQuotaExhausted(modelStr) || isModelCoolingDown(modelStr)) continue;
+    const w = modelContextWindow(modelStr);
+    if (w > widest) widest = w;
+  }
+  return widest;
+}
+
+/**
+ * A 413 shaped so the client compacts instead of erroring.
+ *
+ * Claude Code classifies an upstream failure as `prompt_too_long` only for
+ * HTTP 413 whose message matches /prompt is too long[^0-9]*(\d+) tokens? > (\d+)/
+ * — it then subtracts the two numbers and drops exactly that many tokens of
+ * history before retrying (its "reactive compact", trigger "ptl"). A 413 whose
+ * message does not carry both numbers in that order is surfaced to the user as
+ * a plain API error, which is what the previous wording did: correct code,
+ * unparseable text, so the one client that could have self-healed did not.
+ *
+ * The numbers are the real ones. `limit` is the ceiling we are enforcing, not
+ * the model's raw window, so the gap the client trims is the gap that actually
+ * has to go.
+ */
+function promptTooLongResponse(actualTokens, limitTokens, detail) {
+  const message =
+    `Prompt is too long: ${actualTokens} tokens > ${limitTokens} tokens. ${detail}`;
+  return new Response(
+    JSON.stringify({
+      error: { message, type: "invalid_request_error", code: "context_length_exceeded" },
+    }),
+    { status: 413, headers: { "Content-Type": "application/json" } }
+  );
+}
+
 export async function shouldSkipModel(modelStr, { inputTokens = 0, canServe = null } = {}) {
   const slash = modelStr.indexOf("/");
   const provider = slash > 0 ? modelStr.slice(0, slash) : "";
@@ -656,6 +717,39 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   let onlyTooLarge = true;
   let widestWindow = 0;
   const inputTokens = estimateInputTokens(body);
+
+  // Ask the client to compact BEFORE spending the cascade, not after exhausting
+  // it. Serving a request that already fills the widest eligible window means
+  // the next turn has nowhere to go: the reply only grows the conversation, and
+  // by then the members that could have answered are the ones it no longer fits.
+  //
+  // The ceiling is a share of the widest window still reachable, so it tracks
+  // live supply — as members exhaust or back off, the ceiling falls with them
+  // and the compact is requested earlier. That is both halves of the operator's
+  // rule in one number, and it is why this cannot live in the client: only the
+  // router knows which members are eligible on this request.
+  //
+  // Zero means no member declares a window, and a ceiling cannot be derived
+  // from nothing — fall through and let the cascade answer as it always did.
+  const eligibleWindow = widestEligibleWindow(rotatedModels);
+  if (eligibleWindow > 0) {
+    const ceiling = Math.floor(eligibleWindow * COMPACT_HEADROOM_RATIO);
+    if (inputTokens > ceiling) {
+      log.warn(
+        "COMBO",
+        `Request ~${inputTokens} tokens exceeds ${Math.round(COMPACT_HEADROOM_RATIO * 100)}% of the ` +
+        `widest eligible window (${eligibleWindow}) in "${comboName}" — asking client to compact`
+      );
+      return promptTooLongResponse(
+        inputTokens,
+        ceiling,
+        `The largest context window currently available in combo "${comboName}" is ` +
+        `${eligibleWindow} tokens, and a request may use at most ` +
+        `${Math.round(COMPACT_HEADROOM_RATIO * 100)}% of it so the next turn still fits. ` +
+        `Compact the conversation and retry.`
+      );
+    }
+  }
 
   // One entry's turn, lifted out of the loop so it can be run twice: once in
   // pool order, and again over the entries the first pass never reached. Returns
@@ -860,10 +954,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       `combo "${comboName}" is ${widestWindow}. No model in this combo can serve it — ` +
       `compact the conversation or switch to a combo with a larger window.`;
     log.warn("COMBO", `All models skipped for context size | ${msg}`);
-    return new Response(
-      JSON.stringify({ error: { message: msg, type: "invalid_request_error", code: "context_length_exceeded" } }),
-      { status: 413, headers: { "Content-Type": "application/json" } }
-    );
+    return promptTooLongResponse(estimateInputTokens(body), widestWindow, msg);
   }
 
   const quoted = (lastRetryable && !isRetryableStatus(lastStatus))

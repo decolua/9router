@@ -184,5 +184,19 @@ export const COOLDOWN_MS = {
 // latency: a premature cascade re-sends the prompt to a second provider and
 // pays for it twice, so the bound sits well above any honest first-token time,
 // including a thinking model's.
+// How much of a model's context window a request may occupy before the combo
+// asks the client to compact instead of serving it. The operator's rule, stated
+// 2026-08-23: "if it will hit rotate and the next model cant handle the context,
+// it should compact. if it can handle the context, then compact at 80%."
+//
+// This lives in the router rather than in the client because only the router
+// knows, per request, which members are actually eligible right now — a static
+// per-model map in the client goes stale the moment the tuner reorders or a
+// member is banned. Both halves of the rule fall out of one number: the ceiling
+// is a share of the WIDEST ELIGIBLE window, so as members cool down or exhaust
+// their quota the ceiling drops with them, and the client is asked to compact
+// before the cascade runs out of anywhere to go.
+export const COMPACT_HEADROOM_RATIO = Number(process.env.COMPACT_HEADROOM_RATIO) || 0.8;
+
 export const COMBO_RESPONSE_TIMEOUT_MS = Number(process.env.COMBO_RESPONSE_TIMEOUT_MS) || 90 * 1000;
 export const COMBO_FIRST_EVENT_TIMEOUT_MS = Number(process.env.COMBO_FIRST_EVENT_TIMEOUT_MS) || 150 * 1000;
