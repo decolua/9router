@@ -37,6 +37,7 @@ export default {
     { id: "kimi-k2.6", name: "Kimi K2.6", supportedFormats: ["openai"] },
     { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", supportedFormats: ["openai", "claude", "openai-responses"] },
     { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", supportedFormats: ["openai", "claude", "openai-responses"] },
+    { id: "deepseek-v4-flash-vision-exp", name: "DeepSeek V4 Flash Vision Exp", supportedFormats: ["openai", "claude", "openai-responses"] },
     { id: "mimo-v2.5", name: "MiMo V2.5", supportedFormats: ["openai"] },
     { id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro", supportedFormats: ["openai"] },
     { id: "minimax-m3", name: "MiniMax M3", supportedFormats: ["openai", "claude"] },

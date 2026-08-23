@@ -41,7 +41,8 @@ function toContentBlocks(content) {
         if (part.type === OPENAI_BLOCK.TEXT && typeof part.text === "string") {
           blocks.push({ type: OPENAI_BLOCK.TEXT, text: part.text });
         } else if (part.type === OPENAI_BLOCK.IMAGE_URL || part.type === OPENAI_BLOCK.IMAGE) {
-          blocks.push({ type: OPENAI_BLOCK.TEXT, text: "[image omitted]" });
+          const url = typeof part.image_url === "string" ? part.image_url : (part.image_url?.url || part.image || part.url);
+          if (url) blocks.push({ type: "image", image: url });
         } else if (typeof part.text === "string") {
           blocks.push({ type: OPENAI_BLOCK.TEXT, text: part.text });
         }
