@@ -42,7 +42,7 @@ export const DEFAULT_CAPABILITIES = {
   tools: true,          // function / tool calling
   reasoning: false,     // thinking / reasoning
   // thinking wire format (only meaningful when reasoning:true). null → derive from transport.format.
-  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|hunyuan|step
+  // enum: openai|openai-low-high-max|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|hunyuan|step
   thinkingFormat: null,
   thinkingCanDisable: true,  // false → model cannot turn thinking off (clamp to min instead of disable)
   thinkingRange: null,       // { min, max } for budget formats; null = no clamp
@@ -65,6 +65,19 @@ const SERVICE_KIND_CAPABILITIES = {
 export function capabilitiesFromServiceKind(kind) {
   return SERVICE_KIND_CAPABILITIES[kind] || null;
 }
+
+// OpenCode Zen Ox Alpha Free — image input + always-thinking reasoning
+// (models.dev: reasoning_options [low, high, max]). Shared by the four
+// provider/id pairs below; never exposed globally so other providers'
+// same-named models keep pattern/default caps.
+const OX_ALPHA_CAPABILITIES = {
+  vision: true,
+  reasoning: true,
+  thinkingFormat: "openai-low-high-max",
+  thinkingCanDisable: false,
+  contextWindow: 1000000,
+  maxOutput: 131072,
+};
 
 /**
  * Canonical exact-id overrides — used for exceptions that patterns would
@@ -109,8 +122,6 @@ export const MODEL_CAPABILITIES = {
   "kimi-k2.7-code":    { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
   "kimi-k2.7-code-highspeed": { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
 
-  // OpenCode Zen Ox Alpha Free (image input + reasoning per models.dev; input-only until transport verified)
-  "x-preview-f-free":  { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 131072 },
 };
 
 const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
@@ -181,6 +192,20 @@ export const PROVIDER_CAPABILITIES = {
   "poolside": {
     "laguna-s-2.1":  { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 32000 },
     "laguna-xs-2.1": { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 },
+  },
+  // OpenCode Zen Ox Alpha Free — full ids (opencode/opencode-go, seen by runtime
+  // request handling) + routed aliases (oc/ocg, read raw by combo reorderByCapabilities).
+  "opencode": {
+    "x-preview-f-free": OX_ALPHA_CAPABILITIES,
+  },
+  "oc": {
+    "x-preview-f-free": OX_ALPHA_CAPABILITIES,
+  },
+  "opencode-go": {
+    "ox-alpha-free": OX_ALPHA_CAPABILITIES,
+  },
+  "ocg": {
+    "ox-alpha-free": OX_ALPHA_CAPABILITIES,
   },
 };
 
@@ -330,24 +355,25 @@ export const PATTERN_CAPABILITIES = [
  */
 export function getCapabilitiesForModel(provider, model) {
   if (!model) return { ...DEFAULT_CAPABILITIES };
-
+  // Strip a trailing thinking suffix "model(value)" so lookups resolve the base id.
+  const normalizedModel = model.replace(/\([^()]+\)\s*$/, "").trim();
   // Canonical exact lookup strips vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7".
-  const baseModel = model.includes("/") ? model.split("/").pop() : model;
+  const baseModel = normalizedModel.includes("/") ? normalizedModel.split("/").pop() : normalizedModel;
 
   // 1. Provider-specific override
   if (provider) {
     const providerCaps = PROVIDER_CAPABILITIES[provider];
-    if (providerCaps?.[model]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[model] };
+    if (providerCaps?.[normalizedModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[normalizedModel] };
     if (providerCaps?.[baseModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] };
   }
 
   // 2. Canonical exact
   if (MODEL_CAPABILITIES[baseModel]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[baseModel] };
-  if (MODEL_CAPABILITIES[model]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[model] };
+  if (MODEL_CAPABILITIES[normalizedModel]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[normalizedModel] };
 
   // 3. Pattern match (first match wins)
   for (const { pattern, caps } of PATTERN_CAPABILITIES) {
-    if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
+    if (matchPattern(pattern, baseModel) || matchPattern(pattern, normalizedModel)) {
       return { ...DEFAULT_CAPABILITIES, ...caps };
     }
   }
