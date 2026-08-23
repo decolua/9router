@@ -106,14 +106,12 @@ function isLoopbackHostname(h) {
 }
 
 function isLoopbackPeer(request) {
+  // Only trust peer IP when custom-server.js has validated it via peer token.
+  // Host header is spoofable and cannot be used for security decisions.
   if (hasTrustedPeerHeaders(request)) {
     return isLoopbackHostname(request.headers.get("x-9r-real-ip"));
   }
-  // Bare `next dev` forks its server, so the wrapper never loads and no peer address
-  // reaches us. Host is spoofable, so this stays confined to development.
-  if (process.env.NODE_ENV === "development") {
-    return isLoopbackHostname(request.headers.get("host"));
-  }
+  // Without peer token, we cannot trust x-9r-real-ip or Host header.
   return false;
 }
 
@@ -121,7 +119,12 @@ export function isLocalRequest(request) {
   // Stamped by custom-server.js when forwarding headers exist: request came through
   // a reverse proxy, so the loopback socket is the proxy hop, not the end-user.
   if (request.headers.get("x-9r-via-proxy")) return false;
-  if (!isLoopbackPeer(request)) return false;
+
+  // Only trust peer IP when custom-server.js has validated it via peer token.
+  // Without peer token, we cannot trust x-9r-real-ip or Host header.
+  if (!hasTrustedPeerHeaders(request)) return false;
+  if (!isLoopbackHostname(request.headers.get("x-9r-real-ip"))) return false;
+
   const origin = request.headers.get("origin");
   if (origin) {
     try {
@@ -152,7 +155,11 @@ async function hasValidApiKey(request) {
 }
 
 async function canAccessPublicLlmApi(request) {
-  if (isLocalRequest(request)) return true;
+  // Only trust locality when custom-server.js has validated the peer via peer token.
+  // This prevents Host header spoofing from bypassing API key requirement.
+  if (hasTrustedPeerHeaders(request) && isLoopbackHostname(request.headers.get("x-9r-real-ip"))) {
+    return true;
+  }
   if (await hasValidCliToken(request)) return true;
   return await hasValidApiKey(request);
 }
