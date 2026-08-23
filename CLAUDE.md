@@ -95,6 +95,15 @@ Not everything here is compression. `systemInject.js` is the shared, format-awar
 - `custom-server.js` wraps the Next standalone server to derive client IP from the TCP socket and strip attacker-controlled `X-Forwarded-For` — trusting forwarding headers only from a loopback reverse proxy. Preserve this when touching request/IP/rate-limit code.
 - Security-sensitive env: `JWT_SECRET` (session cookie), `INITIAL_PASSWORD` (default `123456` — must override), `API_KEY_SECRET`, `MACHINE_ID_SALT`. Full env contract in `.env.example` and ARCHITECTURE.md's env matrix.
 - Binary/protobuf upstreams (kiro EventStream, cursor protobuf, commandcode NDJSON) don't round-trip through OpenAI — they're handled inside their own executor, not the translator.
+- Upstream merges follow a fixed policy, and it is automated: `.github/workflows/upstream-sync.yml`
+  runs daily, and `scripts/upstream-assess.mjs` splits incoming commits into **clean** (touch no
+  file this fork has changed — nothing to decide) and **contended** (they do, and each names the
+  fork commits that touched the same file). The rule for a contended commit: if upstream already
+  handles what our change was for, **take upstream and fix forward from it**, even when it still
+  needs work — do not reinstate ours. Only where no official equivalent exists does our version
+  win. The job never writes to `inyund`; it opens a PR, because a commit merged on a green tick
+  is a commit merged without assessment. Its regression gate is the baseline verifier, not a raw
+  pass count — and a clean automerge is not a working one.
 - Versioning: root and `cli/` are versioned independently; changes are logged in `CHANGELOG.md` under a `# Unreleased` heading at the top, folded into the version section when a release is cut. Commit style is Conventional Commits (`fix(translator): …`, `feat(...)`).
 - Model identity: registry model entries declare `family` / `effort` / `mode` — a band is never inferred from the shape of an id. Read `CONTEXT.md` for the vocabulary and `docs/adr/0001` before touching `tuner/tune.mjs` banding or adding an effort-suffixed model.
 - On Windows, set `git config core.fileMode false` in your clone. Windows cannot represent the exec bit, so the default reports `cli/cli.js`, `scripts/translate-readme.js` and `start.sh` as permanently modified (`100755 → 100644`) with zero content change, which blocks `git stash pop` and pollutes every diff. The `100755` modes stay correct in the index either way.

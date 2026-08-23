@@ -1,0 +1,131 @@
+name: Upstream sync
+
+# Track decolua/9router and bring its work in under the fork's merge policy:
+#
+#   1. not deliberately merging commit without assessing it
+#   2. if our fix in our usecase should persist then it wins
+#   3. if there are official features that already handled our improvement or
+#      fix, choose the official — even if it still needs adjustments. Start
+#      fixing from the official feature.
+#
+# This job NEVER writes to `inyund`. It prepares the merge, proves whether it
+# builds and passes, and opens a pull request carrying the assessment. Rule 1
+# says a commit is not merged without being assessed; a workflow that pushed to
+# the deploy branch on a green tick would be doing exactly that, just faster.
+#
+# The clean/contended split is what makes the review cheap: commits touching no
+# file this fork has changed need no decision, and the PR body says so, leaving
+# the reviewer only the handful where rules 2 and 3 actually bite.
+
+on:
+  schedule:
+    - cron: "0 21 * * *" # 04:00 Asia/Jakarta, after the day's work has landed
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: inyund
+          # Full history: the assessment walks every fork commit back to the
+          # merge base to say which of ours touched each contended file.
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/decolua/9router.git || true
+          git fetch upstream master --quiet
+
+      - name: Assess incoming commits
+        id: assess
+        run: |
+          node scripts/upstream-assess.mjs > assessment.json
+          node scripts/upstream-assess.mjs --markdown > assessment.md
+          COUNT=$(node -e "process.stdout.write(String(require('./assessment.json').incoming))")
+          CONTENDED=$(node -e "process.stdout.write(String(require('./assessment.json').contended.length))")
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "contended=$CONTENDED" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse --short upstream/master)" >> "$GITHUB_OUTPUT"
+          cat assessment.md
+
+      - name: Nothing to do
+        if: steps.assess.outputs.count == '0'
+        run: echo "Already level with upstream."
+
+      - name: Prepare the merge
+        if: steps.assess.outputs.count != '0'
+        id: merge
+        run: |
+          git config user.name "upstream-sync"
+          git config user.email "noreply@github.com"
+          git checkout -b "upstream-sync/${{ steps.assess.outputs.sha }}"
+          # --no-commit would hide conflicts behind a clean exit code; let the
+          # merge commit itself record what happened and report the state.
+          if git merge --no-edit upstream/master; then
+            echo "conflicts=none" >> "$GITHUB_OUTPUT"
+          else
+            echo "conflicts=yes" >> "$GITHUB_OUTPUT"
+            git diff --name-only --diff-filter=U > conflicts.txt || true
+            # Leave the conflict markers in the branch on purpose. A reviewer
+            # resolving them in place is the point; a workflow that guessed at
+            # a resolution would be merging without assessment.
+            git add -A
+            git commit -m "merge upstream/master (CONFLICTED — resolve before merging)" --no-verify
+          fi
+
+      # A clean automerge is not a working one. Git compares hunks, not
+      # behaviour: it will happily interleave two edits into a file that no
+      # longer runs. This gate is the difference between "merged" and "works",
+      # and its result goes in the PR body either way.
+      - name: Prove it still runs
+        if: steps.assess.outputs.count != '0'
+        id: verify
+        continue-on-error: true
+        run: |
+          npm install --no-audit --no-fund
+          (cd tests && npm install --no-audit --no-fund)
+          (cd tests && npx vitest run --reporter=json --outputFile=/tmp/results.json) || true
+          node tests/__baseline__/verify-no-regression.mjs /tmp/results.json | tee verify.txt
+
+      - name: Open the pull request
+        if: steps.assess.outputs.count != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git push -u origin "upstream-sync/${{ steps.assess.outputs.sha }}" --force
+          {
+            echo "Automated. **Do not squash-merge** — this is a merge commit and the"
+            echo "merge base is what keeps the next sync's assessment honest."
+            echo
+            if [ "${{ steps.merge.outputs.conflicts }}" = "yes" ]; then
+              echo "### ⚠ Conflicted"
+              echo
+              echo "Conflict markers are committed on the branch, deliberately — resolving them"
+              echo "in place is the review. Files:"
+              echo
+              sed 's/^/- `/; s/$/`/' conflicts.txt
+              echo
+            fi
+            echo "### Regression gate"
+            echo
+            echo '```'
+            cat verify.txt 2>/dev/null || echo "gate did not run"
+            echo '```'
+            echo
+            echo "The suite is not all-green on a clean checkout; judge it by the baseline"
+            echo "verifier above, not by a raw pass count. See CLAUDE.md."
+            echo
+            cat assessment.md
+          } > body.md
+          gh pr create \
+            --base inyund \
+            --head "upstream-sync/${{ steps.assess.outputs.sha }}" \
+            --title "Upstream sync: ${{ steps.assess.outputs.count }} commit(s), ${{ steps.assess.outputs.contended }} contended" \
+            --body-file body.md \
+          || gh pr edit "upstream-sync/${{ steps.assess.outputs.sha }}" --body-file body.md
