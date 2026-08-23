@@ -11,7 +11,7 @@ import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
 import { estimateInputTokens } from "../utils/usageTracking.js";
 import { extractVisibleText, findDegeneracy, hasAssistantPrefill, GATE_WINDOW_CHARS, GATE_MIN_JUDGEABLE_CHARS, PREFLIGHT_MAX_READS, HOLD_BACK_MS } from "../utils/degeneracy.js";
-import { COMBO_RESPONSE_TIMEOUT_MS, COMBO_FIRST_EVENT_TIMEOUT_MS, COMPACT_HEADROOM_RATIO } from "../config/errorConfig.js";
+import { COMBO_RESPONSE_TIMEOUT_MS, COMBO_FIRST_EVENT_TIMEOUT_MS, COMPACT_HEADROOM_RATIO, CONTEXT_ESTIMATE_SAFETY } from "../config/errorConfig.js";
 import { isPaidModel } from "../config/costClasses.js";
 import { isEmptyTurnNotice } from "../translator/response/emptyTurn.js";
 
@@ -716,7 +716,16 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   // stays retryable. Starts true and is cleared by the first counter-example.
   let onlyTooLarge = true;
   let widestWindow = 0;
-  const inputTokens = estimateInputTokens(body);
+  // The raw estimate assumes 4 chars/token, which under-counts an agent transcript
+  // by roughly 2.6x (see CONTEXT_ESTIMATE_SAFETY). Every size decision below uses the
+  // adjusted figure so a member is skipped rather than spending a round trip to be
+  // told the input is too long; the raw value is kept only to log the pair, so the
+  // safety factor can be replaced with a measured ratio later.
+  const rawInputTokens = estimateInputTokens(body);
+  const inputTokens = Math.ceil(rawInputTokens * CONTEXT_ESTIMATE_SAFETY);
+  if (rawInputTokens > 0) {
+    log.info("CTXCAL", `raw=${rawInputTokens} adjusted=${inputTokens} safety=${CONTEXT_ESTIMATE_SAFETY}`);
+  }
 
   // Ask the client to compact BEFORE spending the cascade, not after exhausting
   // it. Serving a request that already fills the widest eligible window means
@@ -950,11 +959,11 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   // code: not retryable, and the message says what to do about it.
   if (onlyTooLarge && widestWindow > 0) {
     const msg =
-      `Request is ~${estimateInputTokens(body)} tokens; the largest context window in ` +
+      `Request is ~${inputTokens} tokens; the largest context window in ` +
       `combo "${comboName}" is ${widestWindow}. No model in this combo can serve it — ` +
       `compact the conversation or switch to a combo with a larger window.`;
     log.warn("COMBO", `All models skipped for context size | ${msg}`);
-    return promptTooLongResponse(estimateInputTokens(body), widestWindow, msg);
+    return promptTooLongResponse(inputTokens, widestWindow, msg);
   }
 
   const quoted = (lastRetryable && !isRetryableStatus(lastStatus))

@@ -119,9 +119,18 @@ describe("combo skip filters", () => {
   });
 
   it("the output budget does not count against an input context window", async () => {
-    // ~150k estimated input tokens plus a 64k output budget. The input fits a
-    // 200k window; the output allowance is a separate budget upstream.
-    const body = { messages: [{ role: "user", content: "x".repeat(600_000) }], max_tokens: 64_000 };
+    // Input sized to fit a 200k window AFTER CONTEXT_ESTIMATE_SAFETY, plus a 64k
+    // output budget. If the output allowance were counted against the input window
+    // the total would exceed 200k and OPUS would be skipped — that is what this
+    // asserts, and it is unchanged.
+    //
+    // The magnitudes moved 2026-08-23. This case previously used 600_000 chars and
+    // called it "~150k tokens", which is the flat 4 chars/token assumption that
+    // proved wrong in production: a provider measured a 602,528-char body at 391,532
+    // tokens. Sizing now applies CONTEXT_ESTIMATE_SAFETY (2.5x), so 600_000 chars is
+    // treated as 375k and no longer fits 200k — correctly. 240_000 chars is 60k raw,
+    // 150k adjusted, which fits 200k with room for the 64k output budget to matter.
+    const body = { messages: [{ role: "user", content: "x".repeat(240_000) }], max_tokens: 64_000 };
     const tried = [];
     await handleComboChat({
       body, models: [OPUS, DEEPSEEK], log, comboName: "test-combo", comboStrategy: "fallback",

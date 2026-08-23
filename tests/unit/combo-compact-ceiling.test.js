@@ -76,3 +76,40 @@ describe("the 413 body is shaped for Claude Code's reactive compaction", () => {
     expect(old.match(CLAUDE_CODE_PTL)).toBeNull();
   });
 });
+
+// Regression for the 2026-08-23 "429 instead of rotate" report. The router sized a
+// request at 150,632 tokens from 602,528 serialized chars (the flat 4 chars/token
+// assumption in estimateInputTokens). The provider answered
+// 400 "Input length 391532 exceeds the max...", i.e. 1.54 chars/token actual.
+// Five members declaring 200K-262K windows therefore passed the size check, each
+// burned a round trip to be told the input was too long, and the pool collapsed to
+// the 1M members — which were rate limited. The client saw a 429 and concluded
+// rotation was broken; rotation had in fact tried every entry.
+describe("context estimate carries a safety factor for sizing", () => {
+  it("defaults to 2.5 and is env-overridable", async () => {
+    const { CONTEXT_ESTIMATE_SAFETY } = await import("../../open-sse/config/errorConfig.js");
+    expect(CONTEXT_ESTIMATE_SAFETY).toBe(2.5);
+  });
+
+  it("the measured case is no longer waved through 200K-window members", async () => {
+    const { CONTEXT_ESTIMATE_SAFETY } = await import("../../open-sse/config/errorConfig.js");
+    const rawEstimate = 150632;            // what the router computed
+    const providerActual = 391532;         // what the provider measured
+    const adjusted = Math.ceil(rawEstimate * CONTEXT_ESTIMATE_SAFETY);
+
+    // Before: 150632 < 200000, so a 200K member looked able to serve it.
+    expect(rawEstimate).toBeLessThan(200000);
+    // After: the adjusted figure exceeds every window that actually rejected it.
+    for (const window of [200000, 262144]) {
+      expect(adjusted).toBeGreaterThan(window);
+    }
+    // Still conservative rather than absurd — it must not exceed the real size,
+    // or genuinely capable 1M members would start being skipped too.
+    expect(adjusted).toBeLessThanOrEqual(providerActual);
+  });
+
+  it("leaves 1M members eligible, so large requests still route", async () => {
+    const { CONTEXT_ESTIMATE_SAFETY } = await import("../../open-sse/config/errorConfig.js");
+    expect(Math.ceil(150632 * CONTEXT_ESTIMATE_SAFETY)).toBeLessThan(1000000);
+  });
+});

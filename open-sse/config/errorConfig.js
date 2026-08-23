@@ -204,6 +204,26 @@ export const COOLDOWN_MS = {
 // is a share of the WIDEST ELIGIBLE window, so as members cool down or exhaust
 // their quota the ceiling drops with them, and the client is asked to compact
 // before the cascade runs out of anywhere to go.
+// `estimateInputTokens` divides the serialized body by 4 chars/token. That is a
+// prose average and it is badly wrong for an agent transcript, which is JSON, tool
+// schemas, escaped strings and file paths — all of which tokenize far worse.
+//
+// Measured 2026-08-23, one Yggdrasil request: the router estimated 150,632 tokens
+// from 602,528 chars, and the provider answered
+//   400 "Input length 391532 exceeds the max..."
+// i.e. 1.54 chars/token actual against the assumed 4.0 — a 2.6x underestimate.
+// The consequence is not a wrong number in a log. The size check in shouldSkipModel
+// reads this estimate, so five members declaring 200K-262K windows were judged able
+// to serve a request they could not, each burned a round trip to answer 400, and the
+// pool collapsed to the 1M members — which were rate limited. The client saw a 429
+// and no rotation, when the real fault was sizing.
+//
+// Applied ONLY to the size check, never to billing or analytics, and deliberately in
+// the conservative direction: over-estimating costs a skip, under-estimating costs a
+// wasted round trip and a misleading error. Tune with CONTEXT_ESTIMATE_SAFETY once
+// enough observed ratios are logged (see the CTXCAL log line in combo.js).
+export const CONTEXT_ESTIMATE_SAFETY = Number(process.env.CONTEXT_ESTIMATE_SAFETY) || 2.5;
+
 export const COMPACT_HEADROOM_RATIO = Number(process.env.COMPACT_HEADROOM_RATIO) || 0.8;
 
 export const COMBO_RESPONSE_TIMEOUT_MS = Number(process.env.COMBO_RESPONSE_TIMEOUT_MS) || 90 * 1000;
