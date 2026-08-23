@@ -13,6 +13,7 @@ import { estimateInputTokens } from "../utils/usageTracking.js";
 import { extractVisibleText, findDegeneracy, hasAssistantPrefill, GATE_WINDOW_CHARS, GATE_MIN_JUDGEABLE_CHARS, PREFLIGHT_MAX_READS, HOLD_BACK_MS } from "../utils/degeneracy.js";
 import { COMBO_RESPONSE_TIMEOUT_MS, COMBO_FIRST_EVENT_TIMEOUT_MS } from "../config/errorConfig.js";
 import { isPaidModel } from "../config/costClasses.js";
+import { isEmptyTurnNotice } from "../translator/response/emptyTurn.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -411,6 +412,18 @@ async function preflightSseResponse(response, isPrefill = false) {
 
     // Only judge what was actually read cleanly. A stream that errored or that
     // produced no prose has told us nothing about how it opens.
+    // An upstream that answered with nothing at all is not an answer. The
+    // translator turns that into a visible notice, which reaches the client as a
+    // perfectly well-formed stream and therefore used to end the turn — a wall in
+    // the one place the cascade is supposed to make walls impossible. It is caught
+    // here rather than in the translator because here, and only here, nothing has
+    // been sent yet and another member can still take the request.
+    if (visible && !readAheadError && isEmptyTurnNotice(visible)) {
+      const failure = new Error("upstream produced an empty turn");
+      failure.comboFallbackStatus = 502;
+      throw failure;
+    }
+
     const degeneracy = visible && !readAheadError && !isPrefill ? findDegeneracy(visible) : null;
     if (degeneracy) {
       const failure = new Error(`degenerate opening: ${degeneracy}`);

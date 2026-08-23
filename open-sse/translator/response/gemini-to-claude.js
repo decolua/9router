@@ -15,6 +15,7 @@ import { FORMATS } from "../formats.js";
 // Shared rather than copied: duplicating these filters is how they came to be
 // missing from two of three response paths.
 import { filterEchoText, filterUserEcho, flushEchoText } from "./openai-to-claude.js";
+import { EMPTY_TURN_PHRASE } from "./emptyTurn.js";
 
 function stopBlock(state, results, key, indexKey) {
   if (!state[key]) return;
@@ -84,7 +85,7 @@ function emitEmptyTurnNotice(state, results, candidate, payload, raw) {
     .map((r) => r.category)
     .join(", ");
 
-  let text = `[9router] ${state.model || "upstream"} returned a response with no content `
+  let text = `[9router] ${state.model || "upstream"} ${EMPTY_TURN_PHRASE} `
     + `(finishReason=${finish}`;
   if (block) text += `, promptFeedback.blockReason=${block}`;
   if (ratings) text += `, blocked=${ratings}`;

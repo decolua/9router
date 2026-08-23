@@ -6,6 +6,7 @@ import { toOpenAIUsage } from "../concerns/usage.js";
 import { reasoningDelta } from "../concerns/reasoning.js";
 import { encodeDataUri } from "../concerns/image.js";
 import { toOpenAIFinish } from "../concerns/finishReason.js";
+import { EMPTY_TURN_PHRASE } from "./emptyTurn.js";
 
 // Build chunk meta for current gemini state
 function chunkMeta(state) {
@@ -45,7 +46,7 @@ function blockNotice(state, candidate, response) {
     .map((r) => r.category)
     .join(", ");
 
-  let text = `[9router] ${state.model || "upstream"} returned a response with no content (finishReason=${finish}`;
+  let text = `[9router] ${state.model || "upstream"} ${EMPTY_TURN_PHRASE} (finishReason=${finish}`;
   if (blocked) text += `, blocked=${blocked}`;
   text += ").";
 
