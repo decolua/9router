@@ -34,6 +34,7 @@ const costCenterItems = [
   { href: "/dashboard/usage", label: "Traffic Analytics", icon: "bar_chart" },
   { href: "/dashboard/traffic-logs", label: "Traffic Logs", icon: "receipt_long" },
   { href: "/dashboard/settings/pricing", label: "Model Pricing", icon: "paid" },
+  { href: "/dashboard/settings/model-mappings", label: "模型映射", icon: "conversion_path" },
 ];
 
 const debugItems = [

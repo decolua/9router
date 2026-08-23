@@ -2,6 +2,7 @@
 import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
 import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
+import { getMappedModelCandidates } from "./modelMappingResolver.js";
 
 // Local provider alias overrides (HMR-friendly, applied on top of open-sse map)
 const LOCAL_PROVIDER_ALIASES = {
@@ -38,6 +39,16 @@ export async function resolveModelAlias(alias) {
 export async function getModelInfo(modelStr) {
   const parsed = parseModel(modelStr);
 
+  if (parsed.isAlias) {
+    const combo = await getComboByName(parsed.model);
+    if (combo) return { provider: null, model: parsed.model };
+  }
+
+  const mappedCandidates = await getMappedModelCandidates(modelStr);
+  if (mappedCandidates.length) {
+    return { provider: mappedCandidates[0].provider, model: mappedCandidates[0].model };
+  }
+
   if (!parsed.isAlias) {
     // Provider-node prefixes are user-defined. They must not override built-in
     // provider ids/aliases such as `cf`, `cloudflare-ai`, `openai`, or `hf`.
@@ -66,15 +77,6 @@ export async function getModelInfo(modelStr) {
     };
   }
 
-  // Check if this is a combo name before resolving as alias
-  // This prevents combo names from being incorrectly routed to providers
-  const combo = await getComboByName(parsed.model);
-  if (combo) {
-    // Return null provider to signal this should be handled as combo
-    // The caller (handleChat) will detect this and handle it as combo
-    return { provider: null, model: parsed.model };
-  }
-
   return getModelInfoCore(modelStr, getModelAliases);
 }
 
@@ -83,12 +85,13 @@ export async function getModelInfo(modelStr) {
  * @returns {Promise<string[]|null>} Array of models or null if not a combo
  */
 export async function getComboModels(modelStr) {
-  // Only check if it's not in provider/model format
-  if (modelStr.includes("/")) return null;
-
-  const combo = await getComboByName(modelStr);
-  if (combo && combo.models && combo.models.length > 0) {
-    return combo.models;
+  if (!modelStr.includes("/")) {
+    const combo = await getComboByName(modelStr);
+    if (combo && combo.models && combo.models.length > 0) {
+      return combo.models;
+    }
   }
-  return null;
+
+  const candidates = await getMappedModelCandidates(modelStr);
+  return candidates.length ? [...new Set(candidates.map((item) => item.modelString))] : null;
 }

@@ -67,8 +67,9 @@ const DEFAULT_SETTINGS = {
   pricingLastSyncStatus: "never",
   pricingLastSyncError: "",
   defaultApiKeyGroupId: "default",
+  providerDisplayNames: {},
   providerAutoDisableEnabled: false,
-  providerAutoDisableTriggers: "invalid api key,unauthorized,forbidden,revoked,quota exceeded,insufficient balance",
+  providerAutoDisableTriggers: "invalid api key\nunauthorized\nforbidden\nrevoked\nquota exceeded\ninsufficient balance",
   providerAutoRecoveryEnabled: true,
   providerAutoRecoveryIntervalMinutes: 15,
 };

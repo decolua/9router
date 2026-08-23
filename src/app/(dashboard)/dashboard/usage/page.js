@@ -35,8 +35,7 @@ function UsageContent() {
 
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
-      {/* Tabs + period selector on same row */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div>
         <SegmentedControl
           options={[
             { value: "overview", label: "使用概览" },
@@ -49,9 +48,9 @@ function UsageContent() {
           onChange={handleTabChange}
           className="w-full sm:w-auto"
         />
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-            <UsageDateRangeControl period={period} startDate={startDate} endDate={endDate} onPeriodChange={setPeriod} onStartDateChange={setStartDate} onEndDateChange={setEndDate} />
-        </div>
+      </div>
+      <div className="flex w-full justify-start">
+        <UsageDateRangeControl period={period} startDate={startDate} endDate={endDate} onPeriodChange={setPeriod} onStartDateChange={setStartDate} onEndDateChange={setEndDate} />
       </div>
 
       {activeTab === "overview" && (

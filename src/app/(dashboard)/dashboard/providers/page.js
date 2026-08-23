@@ -7,6 +7,8 @@ import {
   CardSkeleton,
   Badge,
   Button,
+  Input,
+  Modal,
   Toggle,
 } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
@@ -32,14 +34,14 @@ function getStatusDisplay(connected, error, errorCode) {
   if (connected > 0) {
     parts.push(
       <Badge key="connected" variant="success" size="sm" dot>
-        {connected} Connected
+        {connected} 个正常
       </Badge>,
     );
   }
   if (error > 0) {
     const errText = errorCode
-      ? `${error} Error (${errorCode})`
-      : `${error} Error`;
+      ? `${error} 个异常（${errorCode}）`
+      : `${error} 个异常`;
     parts.push(
       <Badge key="error" variant="error" size="sm" dot>
         {errText}
@@ -47,7 +49,7 @@ function getStatusDisplay(connected, error, errorCode) {
     );
   }
   if (parts.length === 0) {
-    return <span className="text-text-muted">No connections</span>;
+    return <span className="text-text-muted">暂无正常连接</span>;
   }
   return parts;
 }
@@ -107,6 +109,9 @@ export default function ProvidersPage() {
   const [testingMode, setTestingMode] = useState(null);
   const [testResults, setTestResults] = useState(null);
   const [showCatalog, setShowCatalog] = useState(false);
+  const [usageByProvider, setUsageByProvider] = useState({});
+  const [providerDisplayNames, setProviderDisplayNames] = useState({});
+  const [editingProviderName, setEditingProviderName] = useState(null);
   const notify = useNotificationStore();
   const searchQuery = useHeaderSearchStore((s) => s.query);
   const registerSearch = useHeaderSearchStore((s) => s.register);
@@ -150,15 +155,22 @@ export default function ProvidersPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [connectionsRes, nodesRes] = await Promise.all([
+        const rangeEnd = new Date(Date.now() + 86400000).toISOString();
+        const [connectionsRes, nodesRes, usageRes, settingsRes] = await Promise.all([
           fetch("/api/providers"),
           fetch("/api/provider-nodes"),
+          fetch(`/api/usage/stats?period=custom&startDate=${encodeURIComponent("2000-01-01T00:00:00.000Z")}&endDate=${encodeURIComponent(rangeEnd)}`),
+          fetch("/api/settings", { cache: "no-store" }),
         ]);
         const connectionsData = await connectionsRes.json();
         const nodesData = await nodesRes.json();
+        const usageData = await usageRes.json().catch(() => ({}));
+        const settingsData = await settingsRes.json().catch(() => ({}));
         if (connectionsRes.ok)
           setConnections(connectionsData.connections || []);
         if (nodesRes.ok) setProviderNodes(nodesData.nodes || []);
+        if (usageRes.ok) setUsageByProvider(usageData.byProvider || {});
+        if (settingsRes.ok) setProviderDisplayNames(settingsData.providerDisplayNames || {});
       } catch (error) {
         console.log("Error fetching data:", error);
       } finally {
@@ -167,6 +179,27 @@ export default function ProvidersPage() {
     };
     fetchData();
   }, []);
+
+  const saveProviderDisplayName = async () => {
+    const providerId = editingProviderName?.providerId;
+    const name = editingProviderName?.name?.trim();
+    if (!providerId || !name) return notify.warning("提供商名称不能为空");
+    const nextNames = { ...providerDisplayNames, [providerId]: name };
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerDisplayNames: nextNames }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "保存提供商名称失败");
+      setProviderDisplayNames(nextNames);
+      setEditingProviderName(null);
+      notify.success("提供商名称已更新");
+    } catch (error) {
+      notify.error(error.message || "保存提供商名称失败");
+    }
+  };
 
   const getProviderStats = (providerId, authType) => {
     const authTypes = Array.isArray(authType) ? authType : [authType];
@@ -353,11 +386,16 @@ export default function ProvidersPage() {
       const authTypes = [...new Set(providerConnections.map((connection) => connection.authType))];
       return {
         providerId,
-        info: { ...info, name: node?.name || info.name || providerId },
+        info: { ...info, name: node?.name || providerDisplayNames[providerId] || info.name || providerId },
         authTypes,
         stats: getProviderStats(providerId, authTypes),
         autoDisabled: providerConnections.some((connection) => connection.autoDisabled === true),
         autoDisabledReason: providerConnections.find((connection) => connection.autoDisabled === true)?.autoDisabledReason || "",
+        lastModified: providerConnections.reduce((latest, connection) => {
+          const value = connection.updatedAt || connection.createdAt;
+          return !latest || new Date(value) > new Date(latest) ? value : latest;
+        }, null),
+        totalCost: Number(usageByProvider[providerId]?.cost || 0),
       };
     })
     .filter((item) => matchSearch(item.info.name || item.providerId))
@@ -387,27 +425,30 @@ export default function ProvidersPage() {
           <h2 className="text-lg font-semibold">已配置提供商</h2>
           <p className="text-xs text-text-muted">集中查看当前已接入的提供商及连接状态。</p>
         </div>
-        <Button icon={showCatalog ? "close" : "add"} onClick={() => setShowCatalog((value) => !value)}>{showCatalog ? "收起新增" : "新增提供商"}</Button>
+        <Button icon="add" onClick={() => setShowCatalog(true)}>新增提供商</Button>
       </div>
 
       <Card className="overflow-hidden p-0">
         {configuredProviders.length ? configuredProviders.map((item) => (
-          <div key={item.providerId} className="flex flex-col gap-3 border-b border-border px-4 py-3 last:border-b-0 sm:flex-row sm:items-center">
+          <div key={item.providerId} className="flex flex-col gap-2 border-b border-border px-3 py-2 last:border-b-0 sm:flex-row sm:items-center">
             <Link href={`/dashboard/providers/${item.providerId}`} className="flex min-w-0 flex-1 items-center gap-3">
-              <ProviderIcon providerId={item.providerId} size={36} alt={item.info.name} fallbackText={(item.info.name || item.providerId).slice(0, 2).toUpperCase()} />
+              <ProviderIcon providerId={item.providerId} size={30} alt={item.info.name} fallbackText={(item.info.name || item.providerId).slice(0, 2).toUpperCase()} />
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="truncate font-medium">{item.info.name}</span>
-                  {item.autoDisabled && <Badge variant="warning" size="sm" dot>自动禁用</Badge>}
+                  {item.autoDisabled ? <Badge variant="warning" size="sm" dot>自动禁用</Badge> : item.stats.allDisabled ? <Badge variant="neutral" size="sm" dot>已禁用</Badge> : <Badge variant="success" size="sm" dot>已启用</Badge>}
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-text-muted">
                   <span>{item.stats.total} 个连接</span>
                   {getStatusDisplay(item.stats.connected, item.stats.error, item.stats.errorCode)}
+                  <span>最后修改 {item.lastModified ? new Date(item.lastModified).toLocaleString("zh-CN") : "-"}</span>
+                  <span>累计消费 ${item.totalCost.toFixed(4)}</span>
                   {item.autoDisabledReason && <span className="max-w-lg truncate" title={item.autoDisabledReason}>{item.autoDisabledReason}</span>}
                 </div>
               </div>
             </Link>
             <div className="flex shrink-0 items-center justify-end gap-2">
+              <button type="button" className="rounded-md p-1.5 text-text-muted hover:bg-bg-hover hover:text-primary" title="修改显示名称" onClick={() => setEditingProviderName({ providerId: item.providerId, name: item.info.name })}><span className="material-symbols-outlined text-[18px]">edit</span></button>
               <Button size="sm" variant="ghost" loading={testingMode === item.providerId} onClick={() => handleBatchTest("provider", item.providerId)}>测试</Button>
               <Toggle checked={!item.stats.allDisabled} onChange={(active) => handleToggleProvider(item.providerId, item.authTypes, active)} />
               <Link href={`/dashboard/providers/${item.providerId}`} className="rounded-md p-2 text-text-muted hover:bg-bg-hover hover:text-primary" title="管理提供商"><span className="material-symbols-outlined text-[19px]">chevron_right</span></Link>
@@ -416,7 +457,9 @@ export default function ProvidersPage() {
         )) : <div className="p-10 text-center text-sm text-text-muted">尚未配置提供商，请点击“新增提供商”。</div>}
       </Card>
 
-      {showCatalog && !hasAnyResult && (
+      <Modal isOpen={showCatalog} onClose={() => setShowCatalog(false)} title="新增提供商" size="full">
+      <div className="flex flex-col gap-6">
+      {!hasAnyResult && (
         <div className="text-center py-8 border border-dashed border-border rounded-xl">
           <span className="material-symbols-outlined text-[32px] text-text-muted mb-2">
             search_off
@@ -425,7 +468,7 @@ export default function ProvidersPage() {
         </div>
       )}
 
-      {showCatalog && <>
+      <>
       {/* Custom Providers (OpenAI/Anthropic Compatible) — dynamic */}
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -656,7 +699,13 @@ export default function ProvidersPage() {
           ))}
         </div>
       </div> */}
-      </>}
+      </>
+      </div>
+      </Modal>
+
+      <Modal isOpen={!!editingProviderName} onClose={() => setEditingProviderName(null)} title="修改提供商显示名称" footer={<><Button variant="ghost" onClick={() => setEditingProviderName(null)}>取消</Button><Button onClick={saveProviderDisplayName}>保存</Button></>}>
+        <Input label="显示名称" value={editingProviderName?.name || ""} onChange={(event) => setEditingProviderName((current) => ({ ...current, name: event.target.value }))} />
+      </Modal>
 
       <AddCompatibleModal
         variant="openai"

@@ -6,7 +6,7 @@ import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getModelMappings } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -19,6 +19,7 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { createModelMappingMap, getMappedModelName } from "@/shared/utils/modelMapping.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -322,6 +323,8 @@ export async function buildModelsList(kindFilter, options = {}) {
           id: `${alias}/${model.id}`,
           object: "model",
           owned_by: alias,
+          upstream_provider: providerId,
+          upstream_model: model.id,
         });
       }
     }
@@ -340,6 +343,8 @@ export async function buildModelsList(kindFilter, options = {}) {
         id: `${providerAlias}/${modelId}`,
         object: "model",
         owned_by: providerAlias,
+        upstream_provider: aliasToProviderId[providerAlias] || providerAlias,
+        upstream_model: modelId,
       });
     }
   } else {
@@ -477,6 +482,8 @@ export async function buildModelsList(kindFilter, options = {}) {
           id: `${outputAlias}/${modelId}`,
           object: "model",
           owned_by: outputAlias,
+          upstream_provider: providerId,
+          upstream_model: modelId,
         };
         // Live-catalog resolvers (kiro/qoder/github/clinepass) mostly only return
         // { id, name } — no per-model capability data. Fall back to the same
@@ -531,12 +538,23 @@ export async function buildModelsList(kindFilter, options = {}) {
     }
   }
 
+  const mappingMap = createModelMappingMap(await getModelMappings().catch(() => []));
+  const applyMappings = options.applyMappings !== false;
   const dedupedModels = [];
   const seenModelIds = new Set();
   for (const model of models) {
-    if (!model?.id || seenModelIds.has(model.id)) continue;
-    seenModelIds.add(model.id);
-    dedupedModels.push(model);
+    if (!model?.id) continue;
+    const mappedId = applyMappings && model.upstream_provider && model.upstream_model
+      ? getMappedModelName(mappingMap, model.upstream_provider, model.upstream_model)
+      : model.id;
+    if (seenModelIds.has(mappedId)) continue;
+    seenModelIds.add(mappedId);
+    if (applyMappings) {
+      const { upstream_provider, upstream_model, ...publicModel } = model;
+      dedupedModels.push({ ...publicModel, id: mappedId });
+    } else {
+      dedupedModels.push(model);
+    }
   }
 
   return dedupedModels;

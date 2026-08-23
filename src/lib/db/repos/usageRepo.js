@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
+import { createModelMappingMap, getMappedModelName } from "@/shared/utils/modelMapping.js";
 
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
@@ -403,10 +404,11 @@ function loadDaysInRange(adapter, maxDays) {
 export async function getUsageStats(period = "all", range = {}) {
   const db = await getAdapter();
 
-  const [{ getProviderConnections }, { getApiKeys }, { getProviderNodes }] = await Promise.all([
+  const [{ getProviderConnections }, { getApiKeys }, { getProviderNodes }, { getSettings }] = await Promise.all([
     import("./connectionsRepo.js"),
     import("./apiKeysRepo.js"),
     import("./nodesRepo.js"),
+    import("./settingsRepo.js"),
   ]);
 
   let allConnections = [];
@@ -416,6 +418,8 @@ export async function getUsageStats(period = "all", range = {}) {
 
   const providerNodeNameMap = {};
   try {
+    const settings = await getSettings();
+    Object.assign(providerNodeNameMap, settings.providerDisplayNames || {});
     const nodes = await getProviderNodes();
     for (const n of nodes) if (n.id && n.name) providerNodeNameMap[n.id] = n.name;
   } catch {}
@@ -765,6 +769,8 @@ export async function getUsageStats(period = "all", range = {}) {
   stats.byApiKey = {};
   stats.byProvider = {};
   stats.byModel = {};
+  const { getModelMappings } = await import("./aliasRepo.js");
+  const modelMappingMap = createModelMappingMap(await getModelMappings());
   for (const { row, breakdown } of pricedRows) {
     const apiKeyValue = row.apiKey && typeof row.apiKey === "string" ? row.apiKey : null;
     const keyInfo = apiKeyValue ? apiKeyMap[apiKeyValue] : null;
@@ -772,6 +778,7 @@ export async function getUsageStats(period = "all", range = {}) {
     const keyName = keyInfo?.name || (apiKeyValue ? `${apiKeyValue.slice(0, 8)}...` : "本地调用（无 API 密钥）");
     const providerDisplayName = providerNodeNameMap[row.provider] || row.provider || "未知提供商";
     const providerKey = row.provider || "unknown";
+    const mappedModel = getMappedModelName(modelMappingMap, row.provider, row.model || "未知模型");
     if (!stats.byProvider[providerKey]) {
       stats.byProvider[providerKey] = {
         provider: providerDisplayName,
@@ -792,10 +799,10 @@ export async function getUsageStats(period = "all", range = {}) {
     providerTarget.cost += breakdown.totalCost;
     if (new Date(row.timestamp) > new Date(providerTarget.lastUsed)) providerTarget.lastUsed = row.timestamp;
 
-    const modelKey = `${row.model || "未知模型"}|${providerKey}`;
+    const modelKey = `${mappedModel}|${providerKey}`;
     if (!stats.byModel[modelKey]) {
       stats.byModel[modelKey] = {
-        rawModel: row.model || "未知模型", provider: providerDisplayName,
+        rawModel: mappedModel, provider: providerDisplayName,
         requests: 0, promptTokens: 0, cachedTokens: 0, cacheCreationTokens: 0, completionTokens: 0,
         inputCost: 0, cachedCost: 0, cacheCreationCost: 0, outputCost: 0, cost: 0, lastUsed: row.timestamp,
       };
@@ -813,7 +820,7 @@ export async function getUsageStats(period = "all", range = {}) {
     modelTarget.cost += breakdown.totalCost;
     if (new Date(row.timestamp) > new Date(modelTarget.lastUsed)) modelTarget.lastUsed = row.timestamp;
 
-    const statsKey = `${apiKeyMasked || "local-no-key"}|${row.model || "未知模型"}|${row.provider || "unknown"}`;
+    const statsKey = `${apiKeyMasked || "local-no-key"}|${mappedModel}|${row.provider || "unknown"}`;
     if (!stats.byApiKey[statsKey]) {
       stats.byApiKey[statsKey] = {
         requests: 0,
@@ -826,7 +833,7 @@ export async function getUsageStats(period = "all", range = {}) {
         cacheCreationCost: 0,
         outputCost: 0,
         cost: 0,
-        rawModel: row.model,
+        rawModel: mappedModel,
         provider: providerDisplayName,
         apiKeyMasked,
         keyName,
@@ -1021,6 +1028,10 @@ export async function getDimensionChartData(period = "7d", range = {}, dimension
   const { getApiKeys } = await import("./apiKeysRepo.js");
   const apiKeys = dimension === "apiKey" ? await getApiKeys() : [];
   const keyNames = new Map(apiKeys.map((key) => [key.key, key.name || key.id]));
+  const { getModelMappings } = await import("./aliasRepo.js");
+  const modelMappingMap = dimension === "model"
+    ? createModelMappingMap(await getModelMappings())
+    : new Map();
   const buckets = Array.from({ length: bucketCount }, () => new Map());
   const totals = new Map();
 
@@ -1030,7 +1041,7 @@ export async function getDimensionChartData(period = "7d", range = {}, dimension
     if (index < 0 || index >= bucketCount) continue;
     const group = dimension === "apiKey"
       ? (row.apiKey ? (keyNames.get(row.apiKey) || `${row.apiKey.slice(0, 8)}...`) : "本地调用（无 API 密钥）")
-      : dimension === "provider" ? (row.provider || "未知提供商") : (row.model || "未知模型");
+      : dimension === "provider" ? (row.provider || "未知提供商") : getMappedModelName(modelMappingMap, row.provider, row.model || "未知模型");
     const tokens = parseJson(row.tokens, {}) || {};
     const latency = Number(parseJson(row.meta, {})?.latency?.total || 0);
     const value = metric === "requests" ? 1
@@ -1172,6 +1183,8 @@ export async function getUsageLogs(filter = {}) {
   const apiKeys = await getApiKeys();
   const connMap = Object.fromEntries(connections.map((c) => [c.id, c.name || c.email || c.id]));
   const keyMap = Object.fromEntries(apiKeys.map((k) => [k.key, k.name || k.id]));
+  const { getModelMappings } = await import("./aliasRepo.js");
+  const modelMappingMap = createModelMappingMap(await getModelMappings());
   const mask = (key) => !key ? null : key.length <= 8 ? `${key[0]}***` : `${key.slice(0, 8)}***`;
   const logs = await Promise.all(rows.map(async (r) => {
     const tokens = parseJson(r.tokens, {}) || {};
@@ -1189,7 +1202,7 @@ export async function getUsageLogs(filter = {}) {
       timestamp: r.timestamp,
       apiKey: mask(r.apiKey),
       apiKeyName: r.apiKey ? (keyMap[r.apiKey] || mask(r.apiKey)) : "Local (No API Key)",
-      model: r.model,
+      model: getMappedModelName(modelMappingMap, r.provider, r.model),
       provider: r.provider,
       endpoint: r.endpoint,
       account: r.connectionId ? (connMap[r.connectionId] || r.connectionId) : null,

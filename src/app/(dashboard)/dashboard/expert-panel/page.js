@@ -2,11 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button, DropdownSelect, Input, Modal } from "@/shared/components";
+import { useNotificationStore } from "@/store/notificationStore";
+import { parseJudgeResult } from "@/shared/utils/judgeResult.js";
 
 const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
 function readAssistantText(chunk) {
-  const content = chunk?.choices?.[0]?.delta?.content ?? chunk?.choices?.[0]?.message?.content;
+  const content = chunk?.choices?.[0]?.delta?.content ?? chunk?.choices?.[0]?.message?.content ?? chunk?.output_text ?? chunk?.text;
   if (typeof content === "string") return content;
   if (Array.isArray(content)) return content.map((part) => part?.text || part?.content || "").join("");
   if (typeof chunk?.output_text === "string") return chunk.output_text;
@@ -17,10 +19,11 @@ function readAssistantText(chunk) {
 }
 
 async function requestModel(model, messages, onChunk, stream = true) {
+  const requestMessages = messages.map(({ role, content }) => ({ role, content }));
   const response = await fetch("/api/dashboard/chat/completions", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: stream ? "text/event-stream" : "application/json" },
-    body: JSON.stringify({ model, messages, stream }),
+    body: JSON.stringify({ model, messages: requestMessages, stream }),
   });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
@@ -56,15 +59,10 @@ async function requestModel(model, messages, onChunk, stream = true) {
   return result;
 }
 
-function parseJudgeResult(text) {
-  const normalized = String(text || "").replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-  const start = normalized.indexOf("{");
-  const end = normalized.lastIndexOf("}");
-  if (start < 0 || end <= start) throw new Error("裁判模型未返回有效评分");
-  return JSON.parse(normalized.slice(start, end + 1));
-}
+const formatMessageTime = (value) => value ? new Date(value).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) : "";
 
 export default function ExpertPanelPage() {
+  const notify = useNotificationStore();
   const [models, setModels] = useState([]);
   const [panels, setPanels] = useState([]);
   const [prompt, setPrompt] = useState("");
@@ -103,13 +101,11 @@ export default function ExpertPanelPage() {
           .filter((model) => configuredProviders.has(model.provider))
           .map((model) => model.routedModel || model.fullModel);
         const combos = (comboData.combos || []).map((combo) => combo.name);
-        mergeModels([...catalogModels, ...combos]);
+        const mappedModelsResponse = await fetch("/api/v1/models", { cache: "no-store" }).catch(() => null);
+        const mappedModelsData = mappedModelsResponse?.ok ? await mappedModelsResponse.json().catch(() => ({})) : {};
+        const mappedModels = (mappedModelsData.data || []).map((model) => model.id);
+        mergeModels([...(mappedModels.length ? mappedModels : catalogModels), ...combos]);
       })
-      .catch(() => {});
-
-    fetch("/api/v1/models", { cache: "no-store" })
-      .then((response) => response.ok ? response.json() : {})
-      .then((data) => mergeModels((data.data || []).map((model) => model.id)))
       .catch(() => {});
 
     return () => { cancelled = true; };
@@ -129,7 +125,7 @@ export default function ExpertPanelPage() {
 
   const confirmModels = () => {
     const selected = modelPicker === "single" ? pickerSelection.slice(0, 1) : pickerSelection;
-    setPanels((current) => [...current, ...selected.map((model) => ({ id: createId(), model, messages: [], response: "", status: "idle", score: null, comment: "" }))]);
+    setPanels((current) => [...current, ...selected.map((model) => ({ id: createId(), model, messages: [], response: "", status: "idle", score: null, comment: "", latencyMs: null, startedAt: null }))]);
     setModelPicker(null);
   };
 
@@ -143,7 +139,7 @@ export default function ExpertPanelPage() {
     setJudgeSummary("");
     const requestMessages = new Map(panels.map((panel) => [
       panel.id,
-      [...panel.messages, { role: "user", content: text }],
+      [...panel.messages, { role: "user", content: text, timestamp: new Date().toISOString() }],
     ]));
     setPanels((current) => current.map((panel) => ({
       ...panel,
@@ -152,14 +148,20 @@ export default function ExpertPanelPage() {
       response: "",
       score: null,
       comment: "",
+      latencyMs: null,
+      startedAt: Date.now(),
     })));
     await Promise.all(panels.map(async (panel) => {
       const messages = requestMessages.get(panel.id) || panel.messages;
+      const startedAt = Date.now();
       try {
         const response = await requestModel(panel.model, messages, (partial) => updatePanel(panel.id, { response: partial }));
-        updatePanel(panel.id, { response, status: "done", messages: [...messages, { role: "assistant", content: response }] });
+        const latencyMs = Date.now() - startedAt;
+        updatePanel(panel.id, { response, status: "done", latencyMs, messages: [...messages, { role: "assistant", content: response, timestamp: new Date().toISOString(), latencyMs }] });
       } catch (error) {
-        updatePanel(panel.id, { status: "error", response: error.message || "请求失败" });
+        const message = error.message || "请求失败";
+        updatePanel(panel.id, { status: "error", response: message, latencyMs: Date.now() - startedAt });
+        notify.error(`${panel.model}：${message}`);
       }
     }));
     setSending(false);
@@ -174,14 +176,18 @@ export default function ExpertPanelPage() {
       const judgePrompt = `你是严格的回答质量裁判。请根据正确性、完整性、相关性和清晰度，为每个候选回复评分。只返回 JSON，不要附加说明。格式：{"scores":[{"model":"模型名","score":0,"comment":"简短评语"}],"summary":"总体结论"}\n\n候选回复：\n${JSON.stringify(candidates, null, 2)}`;
       const resultText = await requestModel(judgeModel, [{ role: "user", content: judgePrompt }], null, false);
       const result = parseJudgeResult(resultText);
-      const scoreMap = new Map((result.scores || []).map((item) => [item.model, item]));
-      setPanels((current) => current.map((panel) => {
-        const score = scoreMap.get(panel.model);
+      const scoreMap = new Map((result.scores || []).map((item) => [String(item.model).trim().toLowerCase(), item]));
+      setPanels((current) => current.map((panel, index) => {
+        const score = scoreMap.get(panel.model.toLowerCase())
+          || result.scores.find((item) => panel.model.toLowerCase().endsWith(String(item.model).toLowerCase()))
+          || (result.scores.length === current.length ? result.scores[index] : null);
         return score ? { ...panel, score: Number(score.score), comment: score.comment || "" } : panel;
       }));
       setJudgeSummary(result.summary || "评分完成");
+      notify.success(result.summary || "评分完成");
     } catch (error) {
       setJudgeSummary(error.message || "评分失败");
+      notify.error(error.message || "评分失败");
     } finally {
       setJudging(false);
     }
@@ -189,7 +195,7 @@ export default function ExpertPanelPage() {
 
   const clearSession = () => {
     if (sending || judging || panels.length === 0) return;
-    setPanels((current) => current.map((panel) => ({ ...panel, messages: [], response: "", status: "idle", score: null, comment: "" })));
+    setPanels((current) => current.map((panel) => ({ ...panel, messages: [], response: "", status: "idle", score: null, comment: "", latencyMs: null, startedAt: null })));
     setPrompt("");
     setJudgeSummary("");
   };
@@ -199,8 +205,9 @@ export default function ExpertPanelPage() {
       <div className="flex flex-wrap items-end gap-3 border-b border-border bg-surface/90 px-4 py-3 lg:px-6">
         <Button icon="add" size="sm" onClick={() => openPicker("multiple")}>批量增加模型</Button>
         {judgeSummary && <p className="min-w-0 flex-1 text-sm text-text-muted">{judgeSummary}</p>}
-        <div className="ml-auto flex items-end gap-2">
-          <DropdownSelect className="w-64" label="裁判模型" value={judgeModel} onChange={setJudgeModel} searchable searchPlaceholder="搜索裁判模型" options={models} placeholder="选择裁判模型" buttonClassName="h-9" />
+        <div className="ml-auto flex items-center gap-2">
+          <span className="shrink-0 text-sm font-medium text-text-main">裁判模型</span>
+          <DropdownSelect className="w-64" value={judgeModel} onChange={setJudgeModel} searchable searchPlaceholder="搜索裁判模型" options={models} placeholder="选择裁判模型" buttonClassName="h-9" />
           <Button className="h-9" size="sm" variant="secondary" loading={judging} disabled={!judgeModel || panels.length === 0 || panels.some((panel) => panel.status !== "done")} onClick={runJudge}>开始评分</Button>
         </div>
       </div>
@@ -208,21 +215,23 @@ export default function ExpertPanelPage() {
       <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden p-4 lg:p-6 custom-scrollbar">
         <div className="flex h-full min-h-[360px] gap-3">
           {panels.map((panel) => (
-            <section key={panel.id} className="flex h-full w-[440px] shrink-0 flex-col overflow-hidden rounded-md border border-border bg-surface shadow-sm">
+            <section key={panel.id} className="flex h-full w-[480px] shrink-0 flex-col overflow-hidden rounded-md border border-border bg-surface shadow-sm">
               <header className="flex items-center gap-2 border-b border-border px-3 py-2">
                 <span className="min-w-0 flex-1 truncate font-mono text-xs font-semibold" title={panel.model}>{panel.model}</span>
+                {panel.latencyMs !== null && <span className="text-[11px] tabular-nums text-text-muted">{panel.latencyMs} ms</span>}
                 {panel.score !== null && <span className="rounded bg-primary/10 px-2 py-0.5 text-sm font-semibold text-primary">{panel.score}</span>}
                 <button type="button" disabled={sending} onClick={() => setPanels((current) => current.filter((item) => item.id !== panel.id))} className="rounded p-1 text-text-muted hover:bg-red-500/10 hover:text-red-500 disabled:opacity-40" title="移除模型"><span className="material-symbols-outlined text-[17px]">close</span></button>
               </header>
               <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3 text-sm leading-6 custom-scrollbar">
                 {panel.messages.map((message, index) => (
-                  <div key={`${panel.id}-${index}`} className={message.role === "user" ? "self-end rounded-md bg-primary/10 px-3 py-2 text-text-main" : "whitespace-pre-wrap break-words"}>
-                    {message.content}
+                  <div key={`${panel.id}-${index}`} className={`flex max-w-[92%] flex-col gap-1 ${message.role === "user" ? "self-end items-end" : "self-start items-start"}`}>
+                    <div className={`whitespace-pre-wrap break-words rounded-md px-3 py-2 ${message.role === "user" ? "bg-primary text-white" : "border border-border bg-surface-2 text-text-main"}`}>{message.content}</div>
+                    <span className="px-1 text-[10px] text-text-muted">{formatMessageTime(message.timestamp)}{message.latencyMs !== undefined ? ` · ${message.latencyMs} ms` : ""}</span>
                   </div>
                 ))}
                 {!panel.response && panel.messages.length === 0 && panel.status === "idle" && <p className="text-center text-text-muted">等待发送提示词</p>}
                 {!panel.response && panel.status === "streaming" && <p className="animate-pulse text-text-muted">正在生成...</p>}
-                {panel.response && panel.status !== "done" && <div className={`whitespace-pre-wrap break-words ${panel.status === "error" ? "text-red-500" : ""}`}>{panel.response}</div>}
+                {panel.response && panel.status !== "done" && <div className={`max-w-[92%] self-start whitespace-pre-wrap break-words rounded-md border px-3 py-2 ${panel.status === "error" ? "border-red-500/30 bg-red-500/5 text-red-500" : "border-border bg-surface-2"}`}>{panel.response}</div>}
               </div>
               {panel.comment && <footer className="border-t border-border bg-bg-subtle px-3 py-2 text-xs text-text-muted"><span className="font-medium text-text-main">裁判评语：</span>{panel.comment}</footer>}
             </section>
@@ -238,7 +247,7 @@ export default function ExpertPanelPage() {
         <div className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
           <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendPrompt(); } }} rows={2} placeholder={panels.length ? "向专家团发送提示词" : "请先添加模型"} disabled={panels.length === 0 || sending} className="max-h-40 min-h-14 flex-1 resize-y rounded-md border border-border bg-bg-base px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-60" />
           <div className="flex flex-col gap-2">
-            <Button icon="delete_sweep" size="sm" variant="ghost" disabled={panels.length === 0 || sending || judging} onClick={clearSession}>清空会话</Button>
+            <Button icon="delete_sweep" disabled={panels.length === 0 || sending || judging} onClick={clearSession}>清空会话</Button>
             <Button icon="send" disabled={!prompt.trim() || panels.length === 0 || sending} loading={sending} onClick={sendPrompt}>发送</Button>
           </div>
         </div>

@@ -15,7 +15,7 @@ async function testConnectionThroughApi(connectionId) {
 }
 
 export function parseAutoDisableTriggers(value) {
-  const items = Array.isArray(value) ? value : String(value || "").split(/[\n,，]/);
+  const items = Array.isArray(value) ? value : String(value || "").split(/\r?\n/);
   return [...new Set(items.map((item) => String(item).trim().toLowerCase()).filter(Boolean))];
 }
 

@@ -1,9 +1,10 @@
-import { getProviderConnections, getApiKeyByValue, getApiKeyGroupById, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
+import { getProviderConnections, getApiKeyByValue, getApiKeyGroupById, validateApiKey, updateProviderConnection, getSettings, getProxyPools, getModelMappings } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
+import { createModelMappingMap, getMappedModelName } from "@/shared/utils/modelMapping.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
@@ -353,13 +354,22 @@ export async function getApiKeyAccessPolicy(apiKey) {
   const key = await getApiKeyByValue(apiKey);
   if (!key?.isActive) return { valid: false, unrestricted: false, allowedModels: [], allowedCombos: [] };
   const group = key.groupId ? await getApiKeyGroupById(key.groupId) : null;
-  const allowedModels = Array.isArray(group?.allowedModels)
+  const configuredModels = Array.isArray(group?.allowedModels)
     ? group.allowedModels.filter(Boolean)
     : (Array.isArray(key.allowedModels) ? key.allowedModels.filter(Boolean) : []);
   const allowedCombos = Array.isArray(group?.allowedCombos)
     ? group.allowedCombos.filter(Boolean)
     : (Array.isArray(key.allowedCombos) ? key.allowedCombos.filter(Boolean) : []);
-  return { valid: true, unrestricted: allowedModels.length === 0 && allowedCombos.length === 0, allowedModels, allowedCombos, key, group };
+  const mappingMap = createModelMappingMap(await getModelMappings());
+  const allowedModels = [...new Set(configuredModels.flatMap((value) => {
+    const model = String(value || "").trim();
+    if (!model.includes("/")) return [model];
+    const separator = model.indexOf("/");
+    const provider = resolveProviderId(model.slice(0, separator));
+    const upstreamModel = model.slice(separator + 1);
+    return [model, getMappedModelName(mappingMap, provider, upstreamModel), upstreamModel];
+  }).filter(Boolean))];
+  return { valid: true, unrestricted: configuredModels.length === 0 && allowedCombos.length === 0, allowedModels, allowedCombos, key, group };
 }
 
 /** Enforce API-key-group model and combo allowlists. */
