@@ -86,6 +86,7 @@ const LOCAL_ONLY_PATHS = [
   "/api/headroom/proxy",
   "/api/headroom/extras",
   "/api/headroom/restart",
+  "/api/headroom/status",
   "/api/pxpipe",
 ];
 

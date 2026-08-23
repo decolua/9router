@@ -272,6 +272,7 @@ describe("dashboard guard local-only access", () => {
     "/api/pxpipe/status",
     "/api/headroom/extras",
     "/api/headroom/restart",
+    "/api/headroom/status",
   ])("denies management route %s from remote host even when requireLogin=false", async (pathname) => {
     mocks.getSettings.mockResolvedValue({ requireLogin: false });
 
@@ -281,7 +282,7 @@ describe("dashboard guard local-only access", () => {
     expect(response.body.error).toBe("Local only: CLI token required");
   });
 
-  it.each(["/api/pxpipe/install", "/api/headroom/extras"])(
+  it.each(["/api/pxpipe/install", "/api/headroom/extras", "/api/headroom/status"])(
     "allows management route %s on loopback when requireLogin=false",
     async (pathname) => {
       mocks.getSettings.mockResolvedValue({ requireLogin: false });
@@ -297,6 +298,15 @@ describe("dashboard guard local-only access", () => {
 
   it("allows pxpipe install from remote host with valid CLI token", async () => {
     const response = await proxy(request("/api/pxpipe/install", {
+      host: "router.example.com",
+      "x-9r-cli-token": "cli-token",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+
+  it("still allows /api/headroom/status with valid CLI token from anywhere", async () => {
+    const response = await proxy(request("/api/headroom/status", {
       host: "router.example.com",
       "x-9r-cli-token": "cli-token",
     }));
