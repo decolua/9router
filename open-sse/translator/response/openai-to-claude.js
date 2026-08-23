@@ -335,7 +335,15 @@ export function openaiToClaudeResponse(chunk, state) {
         content: [],
         stop_reason: null,
         stop_sequence: null,
-        usage: { input_tokens: 0, output_tokens: 0 }
+        // Not a hardcoded zero. An OpenAI-compatible upstream reports usage only
+        // in its final chunk, so the true input count does not exist yet — but
+        // Claude's message_start is where clients read it, and Claude Code sizes
+        // its context meter from exactly this field. Emitting 0 told it the
+        // conversation was empty, so the meter read 0% through a 200k session
+        // and it never compacted on its own; it just hit the wall. The hint is
+        // seeded from the request body in utils/stream.js and is superseded by
+        // the provider's real number as soon as one arrives.
+        usage: { input_tokens: state.inputTokenHint || 0, output_tokens: 0 }
       }
     });
   }

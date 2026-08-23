@@ -1,7 +1,7 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
-import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
+import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS, estimateInputTokens } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { extractLastUserText } from "./userEcho.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
@@ -72,6 +72,14 @@ export function createSSEStream(options = {}) {
     // own last user turn travels with the stream state without touching any
     // caller signature.
     lastUserText: extractLastUserText(body),
+    // Claude's message_start carries input_tokens; an OpenAI-compatible upstream
+    // does not report usage until the FINAL chunk, so the translator emitted
+    // zero there and clients read the context as empty. Claude Code sizes its
+    // context meter off message_start, so it sat at 0% through a 200k
+    // conversation and never compacted on its own — it just hit the wall.
+    // The real count replaces this the moment the provider sends one; until
+    // then an estimate is strictly better than a zero that means "no context".
+    inputTokenHint: estimateInputTokens(body),
   } : null;
 
   let totalContentLength = 0;

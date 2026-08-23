@@ -58,7 +58,11 @@ describe("combo cascade skip wiring", () => {
 
     await handleComboChat({
       body: { system: "x".repeat(800_000), max_tokens: 1 },
-      models: ["ag/claude-opus-4-6-thinking", "ocg/qwen3.7-max"],
+      // ag/gpt-oss-120b-medium (128k) is the small one. This was
+      // ag/claude-opus-4-6-thinking until its 200k declaration was probed and
+      // disproved on 2026-08-24 — it is a 1M model and no longer too small for
+      // anything this test can construct.
+      models: ["ag/gpt-oss-120b-medium", "ocg/qwen3.7-max"],
       handleSingleModel,
       log,
       comboName: "c",

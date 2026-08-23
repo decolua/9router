@@ -694,7 +694,15 @@ export async function shouldSkipModel(modelStr, { inputTokens = 0, canServe = nu
   // separate allowance upstream, so counting it here silently removes big-window
   // models from long conversations. If a provider really does share one budget,
   // it says so upstream and the cascade falls through on a real answer.
-  const contextWindow = getCapabilitiesForModel(provider, model).contextWindow;
+  //
+  // Via modelContextWindow, NOT getCapabilitiesForModel directly. This line read
+  // the static table straight and so never saw a learned window: /api/context-window
+  // reported ox-alpha at 1,048,576 while this skip check still used 200,000, and
+  // the cascade dropped to gemini the moment the conversation crossed 200K —
+  // "Skipping openrouter/stealth/ox-alpha, request needs ~202065 tokens but
+  // window is 200000". One accessor for one question; there is no reason for a
+  // second path to the same number.
+  const contextWindow = modelContextWindow(modelStr);
   // Sized with the pool-wide worst case, deliberately. Refining this per member
   // looks obvious and does not work: `provider` here is the ROUTING PREFIX (ag,
   // kr, cmc) while tokenRatio keys on the executor provider name (antigravity,

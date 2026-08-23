@@ -10,7 +10,12 @@ import { clearModelHealth } from "open-sse/services/modelHealth.js";
 
 const log = { info() {}, warn() {}, debug() {} };
 const AG = "ag/gemini-3.1-pro-low";
-const OPUS = "ag/claude-opus-4-6-thinking";   // 200k context window
+// A genuinely SMALL member. This was ag/claude-opus-4-6-thinking while that id
+// was declared 200k — a declaration probed and disproved on 2026-08-24 (362,664
+// tokens accepted and answered), so it is now 1,000,000 and can no longer play
+// the part. The test is about skipping a member too small for the request, not
+// about this particular id.
+const SMALL = "ag/gpt-oss-120b-medium";        // 128k context window
 const DEEPSEEK = "ocg/deepseek-v4-pro";
 
 const ok = (model) =>
@@ -121,7 +126,7 @@ describe("combo skip filters", () => {
   it("the output budget does not count against an input context window", async () => {
     // Input sized to fit a 200k window AFTER CONTEXT_ESTIMATE_SAFETY, plus a 64k
     // output budget. If the output allowance were counted against the input window
-    // the total would exceed 200k and OPUS would be skipped — that is what this
+    // the total would exceed 200k and SMALL would be skipped — that is what this
     // asserts, and it is unchanged.
     //
     // The magnitudes moved 2026-08-23. This case previously used 600_000 chars and
@@ -130,23 +135,29 @@ describe("combo skip filters", () => {
     // tokens. Sizing now applies CONTEXT_ESTIMATE_SAFETY (2.5x), so 600_000 chars is
     // treated as 375k and no longer fits 200k — correctly. 240_000 chars is 60k raw,
     // 150k adjusted, which fits 200k with room for the 64k output budget to matter.
-    const body = { messages: [{ role: "user", content: "x".repeat(240_000) }], max_tokens: 64_000 };
+    // Sized against SMALL's 128k input window, not the 200k this case used while
+    // it pointed at an id since measured at 1M. Uncalibrated sizing is
+    // estimateInputTokens (~chars/4) x CONTEXT_ESTIMATE_SAFETY (2.5), i.e.
+    // chars x 0.625: 160,000 chars -> ~100k tokens. That fits 128k on its own,
+    // and would NOT fit if the 64k output budget were subtracted from the input
+    // window — which is precisely the mistake this test exists to catch.
+    const body = { messages: [{ role: "user", content: "x".repeat(160_000) }], max_tokens: 64_000 };
     const tried = [];
     await handleComboChat({
-      body, models: [OPUS, DEEPSEEK], log, comboName: "test-combo", comboStrategy: "fallback",
+      body, models: [SMALL, DEEPSEEK], log, comboName: "test-combo", comboStrategy: "fallback",
       handleSingleModel: async (_b, m) => { tried.push(m); return ok(m); },
     });
-    expect(tried).toContain(OPUS);
+    expect(tried).toContain(SMALL);
   });
 
   it("still skips a model whose input window cannot fit the request at all", async () => {
     const body = { messages: [{ role: "user", content: "x".repeat(1_200_000) }] }; // ~300k tokens
     const tried = [];
     await handleComboChat({
-      body, models: [OPUS, DEEPSEEK], log, comboName: "test-combo", comboStrategy: "fallback",
+      body, models: [SMALL, DEEPSEEK], log, comboName: "test-combo", comboStrategy: "fallback",
       handleSingleModel: async (_b, m) => { tried.push(m); return ok(m); },
     });
-    expect(tried).not.toContain(OPUS);
+    expect(tried).not.toContain(SMALL);
     expect(tried).toContain(DEEPSEEK);
   });
 
