@@ -52,9 +52,9 @@ describe("opencode thinking effort", () => {
     expect(out.output_config).toBeUndefined();
   });
 
-  it("UI levels expose the gateway enum (incl. max) for stealth and vendor ids", () => {
+  it("UI levels for stealth ids come from their own caps entry (gateway enum incl. max)", () => {
     expect(getThinkingLevels("opencode", "x-preview-f-free")).toEqual(["none", "low", "medium", "high", "max"]);
-    expect(getThinkingLevels("opencode", "gpt-5.6-sol")).toEqual(["none", "low", "medium", "high", "max"]);
+    expect(getThinkingLevels("opencode", "big-pickle")).toEqual(["none", "low", "medium", "high", "max"]);
   });
 
   it("other providers unaffected", () => {
