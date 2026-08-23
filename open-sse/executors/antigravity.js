@@ -112,6 +112,10 @@ function buildIdeRequestId({ body, request, credentials, model, requestType }) {
 export class AntigravityExecutor extends BaseExecutor {
   constructor() {
     super("antigravity", PROVIDERS.antigravity);
+    // Optimization #10: Cap connect timeout at 15s (default 60s stalls rotation
+    // when the picked account is slow/dead — with 100+ accounts round-robin,
+    // waiting 60s per dead account makes every request feel slow).
+    this.config.timeoutMs = 15000;
     // Optimization #1: Local projectId cache to avoid API call on every request
     this.projectId = null;
     // Optimization #5: Schema cache to avoid re-processing tools on every request

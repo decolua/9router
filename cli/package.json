@@ -1,6 +1,6 @@
 {
   "name": "9router-imagefix",
-  "version": "0.5.61",
+  "version": "0.5.62",
   "description": "9Router CLI - Start and manage 9Router server (with image fix)",
   "bin": {
     "9router-imagefix": "./cli.js"
