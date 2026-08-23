@@ -343,11 +343,32 @@ export function mergeUsage(prev, next) {
  * high-detail 1024x1024 lands near 1105), so a request this admits genuinely
  * fits and the estimate errs toward refusing too little rather than too much.
  */
-const IMAGE_TOKEN_ESTIMATE = 1600;
+export const IMAGE_TOKEN_ESTIMATE = 1600;
 
 /** A long string that is plausibly base64 — the alphabet, allowing wrapped whitespace. */
 function looksBase64(value) {
   return value.length > 1024 && /^[A-Za-z0-9+/=\s]+$/.test(value.slice(0, 256));
+}
+
+/**
+ * Serialize a body for sizing, with inlined base64 media stripped and counted
+ * separately. Returns the raw character count so a caller can divide by a
+ * measured chars-per-token ratio instead of a hardcoded constant.
+ */
+export function measureBody(body) {
+  if (!body || typeof body !== "object") return { chars: 0, images: 0 };
+  try {
+    let images = 0;
+    const bodyStr = JSON.stringify(body, (key, value) => {
+      if (typeof value !== "string") return value;
+      if (value.startsWith("data:") && value.includes(";base64,")) { images++; return ""; }
+      if (key === "data" && looksBase64(value)) { images++; return ""; }
+      return value;
+    });
+    return { chars: bodyStr.length, images };
+  } catch {
+    return { chars: 0, images: 0 };
+  }
 }
 
 export function estimateInputTokens(body) {

@@ -2,7 +2,7 @@ import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
-import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
+import { addBufferToUsage, filterUsageForFormat, measureBody } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
@@ -322,7 +322,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   const usage = extractUsageFromResponse(responseBody);
   appendLog({ tokens: usage, status: "200 OK" });
-  saveUsageStats({ provider, model, tokens: usage, connectionId, sessionId, comboName, chainDepth, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
+  saveUsageStats({ promptChars: measureBody(body).chars, provider, model, tokens: usage, connectionId, sessionId, comboName, chainDepth, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
   const translatedResponse = needsTranslation(targetFormat, sourceFormat)

@@ -1,3 +1,4 @@
+import { measureBody } from "../../utils/usageTracking.js";
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { createSSETransformStreamWithLogger, createPassthroughStreamWithLogger } from "../../utils/stream.js";
@@ -137,7 +138,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, sessionId
     });
 
     // Persist stream usage to DB (no console line; the "📊 done" line below is authoritative)
-    saveUsageStats({ provider, model, tokens: usage, connectionId, sessionId, comboName, chainDepth, apiKey, endpoint: clientRawRequest?.endpoint, label: "STREAM USAGE", silent: true });
+    saveUsageStats({ promptChars: measureBody(body).chars, provider, model, tokens: usage, connectionId, sessionId, comboName, chainDepth, apiKey, endpoint: clientRawRequest?.endpoint, label: "STREAM USAGE", silent: true });
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency }));
   };
 

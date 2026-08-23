@@ -1,6 +1,7 @@
 import { saveRequestUsage, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { COLORS } from "../../utils/stream.js";
 import { canonicalizeUsage } from "../../utils/usageTracking.js";
+import { observeTokenRatio } from "../../services/tokenRatio.js";
 
 const OPTIONAL_PARAMS = [
   "temperature", "top_p", "top_k",
@@ -94,7 +95,7 @@ export function formatDoneLine({ usage, latency }) {
   return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
 }
 
-export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, comboName = null, chainDepth = 0, sessionId = null, label = "USAGE", silent = false }) {
+export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, comboName = null, chainDepth = 0, sessionId = null, label = "USAGE", silent = false, promptChars = 0 }) {
   if (!tokens || typeof tokens !== "object") return;
 
   const inTokens = tokens.input_tokens ?? tokens.prompt_tokens ?? 0;
@@ -106,6 +107,17 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     const time = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
     const accountSuffix = connectionId ? ` | account=${connectionId.slice(0, 8)}...` : "";
     console.log(`${COLORS.green}[${time}] 📊 [${label}] ${provider.toUpperCase()} | in=${inTokens} | out=${outTokens}${accountSuffix}${COLORS.reset}`);
+  }
+
+  // Feed the provider's real count back into the sizing estimate. This is the
+  // only place both halves of the ratio exist: the body we sent and the number
+  // the provider actually measured. Cache-inclusive on purpose — cached tokens
+  // still occupy the context window, which is what sizing is about.
+  if (promptChars > 0) {
+    const realIn = inTokens
+      + (tokens.cache_read_input_tokens || tokens.cached_tokens || 0)
+      + (tokens.cache_creation_input_tokens || 0);
+    observeTokenRatio(provider, promptChars, realIn);
   }
 
   // Canonicalize to one storage convention (prompt_tokens cache-inclusive) so

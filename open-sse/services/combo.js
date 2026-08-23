@@ -9,7 +9,8 @@ import { demoteUnhealthy, recordModelFailure, recordModelSuccess } from "./model
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
-import { estimateInputTokens } from "../utils/usageTracking.js";
+import { estimateInputTokens, measureBody, IMAGE_TOKEN_ESTIMATE } from "../utils/usageTracking.js";
+import { charsPerToken, isCalibrated } from "./tokenRatio.js";
 import { extractVisibleText, findDegeneracy, hasAssistantPrefill, GATE_WINDOW_CHARS, GATE_MIN_JUDGEABLE_CHARS, PREFLIGHT_MAX_READS, HOLD_BACK_MS } from "../utils/degeneracy.js";
 import { COMBO_RESPONSE_TIMEOUT_MS, COMBO_FIRST_EVENT_TIMEOUT_MS, COMPACT_HEADROOM_RATIO, CONTEXT_ESTIMATE_SAFETY } from "../config/errorConfig.js";
 import { isPaidModel } from "../config/costClasses.js";
@@ -721,10 +722,23 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   // adjusted figure so a member is skipped rather than spending a round trip to be
   // told the input is too long; the raw value is kept only to log the pair, so the
   // safety factor can be replaced with a measured ratio later.
-  const rawInputTokens = estimateInputTokens(body);
-  const inputTokens = Math.ceil(rawInputTokens * CONTEXT_ESTIMATE_SAFETY);
-  if (rawInputTokens > 0) {
-    log.info("CTXCAL", `raw=${rawInputTokens} adjusted=${inputTokens} safety=${CONTEXT_ESTIMATE_SAFETY}`);
+  // Size from a MEASURED chars-per-token ratio once one exists. The ratio is
+  // learned from the provider's own input_tokens on every response (see
+  // services/tokenRatio.js), so after the first real call this stops being an
+  // estimate. Until then it falls back to the old constant times a safety factor,
+  // which is a guess and is labelled as one in the log.
+  const { chars, images } = measureBody(body);
+  const calibrated = isCalibrated();
+  const ratio = charsPerToken();
+  const inputTokens = calibrated
+    ? Math.ceil(chars / ratio) + images * IMAGE_TOKEN_ESTIMATE
+    : Math.ceil(estimateInputTokens(body) * CONTEXT_ESTIMATE_SAFETY);
+  if (chars > 0) {
+    log.info(
+      "CTXCAL",
+      `chars=${chars} tokens=${inputTokens} ratio=${ratio.toFixed(2)} ` +
+      `source=${calibrated ? "measured" : "assumed"}`
+    );
   }
 
   // Ask the client to compact BEFORE spending the cascade, not after exhausting
