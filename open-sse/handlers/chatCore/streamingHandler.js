@@ -79,11 +79,6 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     };
   }
 
-  // Keep trace-only context off the positional stream factory signatures. This
-  // lets independent transport patches extend those signatures without overlap.
-  if (reqLogger) {
-    reqLogger.toolSemanticsContext = { sourceFormat, targetFormat, translatedBody, log };
-  }
   const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey });
 
   // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event

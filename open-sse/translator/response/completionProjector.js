@@ -12,6 +12,20 @@ function parseArgs(value) {
   }
 }
 
+function fallbackCallId(name, index = 0) {
+  const base = name || "tool";
+  return index ? `call_${base}_${index}` : `call_${base}`;
+}
+
+function extractCustomToolInput(argumentsValue) {
+  const argumentsText = typeof argumentsValue === "string" ? argumentsValue : JSON.stringify(argumentsValue || {});
+  try {
+    const parsed = JSON.parse(argumentsText);
+    if (parsed && typeof parsed === "object" && typeof parsed.input === "string") return parsed.input;
+  } catch { /* raw freeform input */ }
+  return argumentsText;
+}
+
 function getChoice(completion) {
   return completion?.choices?.[0] || {};
 }
@@ -44,12 +58,15 @@ function openAICompletionToClaudeMessage(completion) {
   if (typeof message.content === "string" && message.content.length > 0) {
     content.push({ type: "text", text: message.content });
   }
-  for (const toolCall of getToolCalls(completion)) {
+  const toolCalls = getToolCalls(completion);
+  for (let i = 0; i < toolCalls.length; i++) {
+    const toolCall = toolCalls[i];
     const fn = toolCall.function || {};
+    const name = fn.name || toolCall.name || "";
     content.push({
       type: "tool_use",
-      id: toolCall.id || `toolu_${Date.now()}_${content.length}`,
-      name: fn.name || toolCall.name || "",
+      id: toolCall.id || fallbackCallId(name, i),
+      name,
       input: parseArgs(fn.arguments || toolCall.arguments),
     });
   }
@@ -81,11 +98,15 @@ function openAICompletionToGeminiResponse(completion) {
   if (typeof message.content === "string" && message.content.length > 0) {
     parts.push({ text: message.content });
   }
-  for (const toolCall of getToolCalls(completion)) {
+  const toolCalls = getToolCalls(completion);
+  for (let i = 0; i < toolCalls.length; i++) {
+    const toolCall = toolCalls[i];
     const fn = toolCall.function || {};
+    const name = fn.name || toolCall.name || "";
     parts.push({
       functionCall: {
-        name: fn.name || toolCall.name || "",
+        id: toolCall.id || fallbackCallId(name, i),
+        name,
         args: parseArgs(fn.arguments || toolCall.arguments),
       }
     });
@@ -161,7 +182,7 @@ export function responsesApiToOpenAICompletion(responseBody, fallbackModel) {
   const toolCalls = output
     .filter(item => item?.type === "function_call")
     .map((item, idx) => ({
-      id: item.call_id || `call_${item.name || "tool"}_${idx}`,
+      id: item.call_id || fallbackCallId(item.name, idx),
       type: "function",
       function: {
         name: item.name || "",
@@ -170,6 +191,26 @@ export function responsesApiToOpenAICompletion(responseBody, fallbackModel) {
     }));
 
   const usage = responseBody?.usage || {};
+  const cacheRead = usage.cache_read_input_tokens || usage.cached_tokens || usage.input_tokens_details?.cached_tokens || 0;
+  const cacheCreate = usage.cache_creation_input_tokens || usage.input_tokens_details?.cache_creation_tokens || 0;
+  const promptTokens = (usage.input_tokens || usage.prompt_tokens || 0) + cacheRead + cacheCreate;
+  const completionTokens = usage.output_tokens || usage.completion_tokens || 0;
+  const reasoningTokens = usage.output_tokens_details?.reasoning_tokens || usage.reasoning_tokens;
+  const openaiUsage = {
+    prompt_tokens: promptTokens,
+    completion_tokens: completionTokens,
+    total_tokens: promptTokens + completionTokens,
+  };
+  if (cacheRead > 0 || cacheCreate > 0) {
+    openaiUsage.prompt_tokens_details = {
+      ...(cacheRead > 0 ? { cached_tokens: cacheRead } : {}),
+      ...(cacheCreate > 0 ? { cache_creation_tokens: cacheCreate } : {}),
+    };
+  }
+  if (reasoningTokens > 0) {
+    openaiUsage.completion_tokens_details = { reasoning_tokens: reasoningTokens };
+  }
+
   const message = {
     role: "assistant",
     content: textContent || (toolCalls.length > 0 ? null : ""),
@@ -185,15 +226,11 @@ export function responsesApiToOpenAICompletion(responseBody, fallbackModel) {
     created: responseBody?.created_at || Math.floor(Date.now() / 1000),
     model: responseBody?.model || fallbackModel || "unknown",
     choices: [{ index: 0, message, finish_reason: finishReason }],
-    usage: {
-      prompt_tokens: usage.input_tokens || usage.prompt_tokens || 0,
-      completion_tokens: usage.output_tokens || usage.completion_tokens || 0,
-      total_tokens: usage.total_tokens || ((usage.input_tokens || usage.prompt_tokens || 0) + (usage.output_tokens || usage.completion_tokens || 0)),
-    },
+    usage: openaiUsage,
   };
 }
 
-function openAICompletionToResponsesOutput(completion) {
+function openAICompletionToResponsesOutput(completion, customToolNames = null) {
   if (!completion?.choices?.[0]) return completion;
   const message = getMessage(completion);
   const usage = completion.usage || {};
@@ -223,16 +260,27 @@ function openAICompletionToResponsesOutput(completion) {
 
   const toolCalls = getToolCalls(completion);
   if (toolCalls.length > 0) {
-    for (const toolCall of toolCalls) {
+    for (let i = 0; i < toolCalls.length; i++) {
+      const toolCall = toolCalls[i];
       const fn = toolCall.function || {};
-      const callId = toolCall.id || `call_${fn.name || "tool"}_${idx}`;
-      output.push({
-        type: "function_call",
-        id: `fc_${callId}`,
-        call_id: callId,
-        name: fn.name || toolCall.name || "",
-        arguments: typeof fn.arguments === "string" ? fn.arguments : JSON.stringify(fn.arguments || {}),
-      });
+      const name = fn.name || toolCall.name || "";
+      const callId = toolCall.id || fallbackCallId(name, i);
+      const custom = customToolNames?.has(name);
+      output.push(custom
+        ? {
+            type: "custom_tool_call",
+            id: `ctc_${callId}`,
+            call_id: callId,
+            name,
+            input: extractCustomToolInput(fn.arguments),
+          }
+        : {
+            type: "function_call",
+            id: `fc_${callId}`,
+            call_id: callId,
+            name,
+            arguments: typeof fn.arguments === "string" ? fn.arguments : JSON.stringify(fn.arguments || {}),
+          });
       idx++;
     }
   } else if (!text && !reasoning) {
@@ -274,7 +322,7 @@ function openAICompletionToResponsesOutput(completion) {
   };
 }
 
-export function projectCompletionToClientFormat(completion, sourceFormat) {
+export function projectCompletionToClientFormat(completion, sourceFormat, customToolNames = null) {
   switch (sourceFormat) {
     case FORMATS.CLAUDE:
       return openAICompletionToClaudeMessage(completion);
@@ -287,7 +335,7 @@ export function projectCompletionToClientFormat(completion, sourceFormat) {
       return openAICompletionToOllama(completion);
     case FORMATS.OPENAI_RESPONSES:
     case FORMATS.OPENAI_RESPONSE:
-      return openAICompletionToResponsesOutput(completion);
+      return openAICompletionToResponsesOutput(completion, customToolNames);
     default:
       return completion;
   }

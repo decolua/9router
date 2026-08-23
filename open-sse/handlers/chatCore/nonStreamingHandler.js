@@ -9,7 +9,6 @@ import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
-import { logToolSemantics } from "../../utils/toolSemanticsTrace.js";
 
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
@@ -34,7 +33,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat) {
         else if (part.text !== undefined) textContent += part.text;
         if (part.functionCall) {
           toolCalls.push({
-            id: `call_${part.functionCall.name}_${Date.now()}_${toolCalls.length}`,
+            id: part.functionCall.id || `call_${part.functionCall.name}`,
             type: "function",
             function: { name: part.functionCall.name, arguments: JSON.stringify(part.functionCall.args || {}) }
           });
@@ -142,10 +141,19 @@ export function translateNonStreamingResponse(responseBody, targetFormat) {
   return responseBody;
 }
 
+function stripOpenAIReasoningWhenVisible(completion) {
+  if (!completion?.choices) return;
+  for (const choice of completion.choices) {
+    if (choice?.message?.reasoning_content && choice.message.content) {
+      delete choice.message.reasoning_content;
+    }
+  }
+}
+
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, trackDone, appendLog, pxpipe, reqTag, log }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
@@ -156,6 +164,10 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     if (!parsed) {
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+    }
+    if (parsed.error) {
+      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, parsed.error.message || "Upstream SSE stream failed");
     }
     responseBody = parsed;
   } else {
@@ -216,22 +228,14 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     openAIResponse.usage = addBufferToUsage(openAIResponse.usage);
   }
 
-  // Strip reasoning_content only when content is non-empty.
-  // When content is empty (e.g. thinking models that used all tokens for reasoning),
-  // reasoning_content is the only useful output and must be preserved.
-  if (openAIResponse?.choices) {
-    for (const choice of openAIResponse.choices) {
-      if (choice?.message?.reasoning_content && choice.message.content) {
-        delete choice.message.reasoning_content;
-      }
-    }
-  }
-
-  const translatedResponse = preservesNativeResponse ? responseBody : projectCompletionToClientFormat(openAIResponse, sourceFormat);
+  const translatedResponse = preservesNativeResponse ? responseBody : projectCompletionToClientFormat(openAIResponse, sourceFormat, customToolNames);
   if (translatedResponse?.usage) {
     translatedResponse.usage = filterUsageForFormat(translatedResponse.usage, sourceFormat);
   }
-  logToolSemantics(log, { source: sourceFormat, target: targetFormat, mode: "non-stream", requestBody: body, translatedBody, providerBody: responseBody, clientBody: translatedResponse });
+  // OpenAI-client compat: strip reasoning_content only after projection, and
+  // only when the client speaks OpenAI. Claude/Gemini/Ollama/Responses need
+  // the canonical field to build thinking / thought:true / reasoning items.
+  if (sourceFormat === FORMATS.OPENAI) stripOpenAIReasoningWhenVisible(translatedResponse);
 
   reqLogger.logConvertedResponse(translatedResponse);
 

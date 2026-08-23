@@ -5,11 +5,19 @@ import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { projectCompletionToClientFormat, responsesApiToOpenAICompletion } from "../../translator/response/completionProjector.js";
-import { logToolSemantics } from "../../utils/toolSemanticsTrace.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
-import { saveRequestDetail, appendRequestLog } from "@/lib/usageDb.js";
+import { saveRequestDetail } from "@/lib/usageDb.js";
+
+function stripOpenAIReasoningWhenVisible(completion) {
+  if (!completion?.choices) return;
+  for (const choice of completion.choices) {
+    if (choice?.message?.reasoning_content && choice.message.content) {
+      delete choice.message.reasoning_content;
+    }
+  }
+}
 
 /**
  * Parse OpenAI-style SSE text into a single chat completion JSON.
@@ -17,15 +25,21 @@ import { saveRequestDetail, appendRequestLog } from "@/lib/usageDb.js";
  */
 export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   const chunks = [];
+  let streamError = null;
 
   for (const line of String(rawSSE || "").split("\n")) {
     const trimmed = line.trim();
     if (!trimmed.startsWith("data:")) continue;
     const payload = trimmed.slice(5).trim();
     if (!payload || payload === "[DONE]") continue;
-    try { chunks.push(JSON.parse(payload)); } catch { /* ignore malformed lines */ }
+    try {
+      const chunk = JSON.parse(payload);
+      if (chunk?.error) streamError = chunk.error;
+      else chunks.push(chunk);
+    } catch { /* ignore malformed lines */ }
   }
 
+  if (streamError) return { error: streamError };
   if (chunks.length === 0) return null;
 
   const first = chunks[0];
@@ -79,7 +93,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, trackDone, appendLog, toolNameMap, reqTag, log }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, customToolNames, trackDone, appendLog, reqTag, log }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -93,7 +107,10 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
   };
 
   // Codex/Responses API SSE path
-  const isCodexResponsesApi = isResponsesProvider(provider) || sourceFormat === FORMATS.OPENAI_RESPONSES;
+  // Branch on the UPSTREAM format (targetFormat = format we spoke to the provider in),
+  // not the client format: a Responses-API client behind a chat-native forced-streaming
+  // provider still receives chat SSE chunks, which must go through the standard path.
+  const isCodexResponsesApi = isResponsesProvider(provider) || targetFormat === FORMATS.OPENAI_RESPONSES;
   if (isCodexResponsesApi) {
     try {
       const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
@@ -104,16 +121,28 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
       if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
-      const openAICompletion = responsesApiToOpenAICompletion(jsonResponse, model);
-      const finalResp = projectCompletionToClientFormat(openAICompletion, sourceFormat);
-      logToolSemantics(log, { source: sourceFormat, target: targetFormat, mode: "sse-json-responses", requestBody: body, translatedBody, providerBody: jsonResponse, clientBody: finalResp });
+      const inTokensForLog = (usage.input_tokens || 0)
+        + (usage.cache_read_input_tokens || usage.cached_tokens || 0)
+        + (usage.cache_creation_input_tokens || 0);
 
       const totalLatency = Date.now() - requestStartTime;
+      const openAICompletion = sourceFormat === FORMATS.OPENAI_RESPONSES
+        ? null
+        : responsesApiToOpenAICompletion(jsonResponse, model);
+      const finalResp = sourceFormat === FORMATS.OPENAI_RESPONSES
+        ? jsonResponse
+        : projectCompletionToClientFormat(openAICompletion, sourceFormat, customToolNames);
+      if (sourceFormat === FORMATS.OPENAI) stripOpenAIReasoningWhenVisible(finalResp);
+
       saveRequestDetail(buildRequestDetail({
         ...ctx,
         latency: { ttft: totalLatency, total: totalLatency },
-        tokens: { prompt_tokens: usage.input_tokens || 0, completion_tokens: usage.output_tokens || 0 },
-        response: { content: openAICompletion.choices?.[0]?.message?.content || null, thinking: openAICompletion.choices?.[0]?.message?.reasoning_content || null, finish_reason: openAICompletion.choices?.[0]?.finish_reason || "unknown" },
+        tokens: { prompt_tokens: inTokensForLog, completion_tokens: usage.output_tokens || 0 },
+        response: {
+          content: openAICompletion?.choices?.[0]?.message?.content || null,
+          thinking: openAICompletion?.choices?.[0]?.message?.reasoning_content || null,
+          finish_reason: openAICompletion?.choices?.[0]?.finish_reason || jsonResponse.status || "unknown"
+        },
         status: "success"
       }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
 
@@ -129,6 +158,12 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     const sseText = await providerResponse.text();
     const parsed = parseSSEToOpenAIResponse(sseText, model);
     if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+    if (parsed.error) {
+      return createErrorResult(
+        HTTP_STATUS.BAD_GATEWAY,
+        parsed.error.message || "Upstream SSE stream failed"
+      );
+    }
 
     if (onRequestSuccess) await onRequestSuccess();
 
@@ -150,20 +185,17 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       status: "success"
     }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
 
-    // Strip reasoning_content only when content is non-empty.
-    // When content is empty (e.g. thinking models that used all tokens for reasoning),
-    // reasoning_content is the only useful output and must be preserved.
-    // Previously this was unconditional, which broke Qwen3.5, Claude extended thinking, etc.
-    if (parsed?.choices) {
-      for (const choice of parsed.choices) {
-        if (choice?.message?.reasoning_content && choice.message.content) {
-          delete choice.message.reasoning_content;
-        }
-      }
-    }
+    // Re-attach usage explicitly. This handler already HAS the correct usage — it is
+    // the same object written to the usage DB, and for a cached Claude request that DB
+    // row reads cache_read_input_tokens: 11022 — yet the client was observed receiving
+    // no usage field at all (verified 2026-08-04 with a fingerprinted payload matched
+    // on both sides). Whatever drops it between assembly and serialisation, the client
+    // must not be left unable to account for its own token spend: a caller cannot tell
+    // a 90%-cached request from a cheap one without this.
+    if (usage && Object.keys(usage).length > 0) parsed.usage = usage;
 
-    const finalResp = projectCompletionToClientFormat(parsed, sourceFormat);
-    logToolSemantics(log, { source: sourceFormat, target: targetFormat, mode: "sse-json-chat", requestBody: body, translatedBody, providerBody: parsed, clientBody: finalResp });
+    const finalResp = projectCompletionToClientFormat(parsed, sourceFormat, customToolNames);
+    if (sourceFormat === FORMATS.OPENAI) stripOpenAIReasoningWhenVisible(finalResp);
 
     return { success: true, response: new Response(JSON.stringify(finalResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {

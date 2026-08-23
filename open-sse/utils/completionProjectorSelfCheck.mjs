@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { createSseDoneTracker } from "./sseDoneTracker.js";
 import { projectCompletionToClientFormat, responsesApiToOpenAICompletion } from "../translator/response/completionProjector.js";
-import { createToolCallTraceAccumulator, isToolSemanticsDebugActive, summarizeToolCalls } from "./toolSemanticsTrace.js";
 
 const checks = [];
 const check = (name, fn) => checks.push({ name, fn });
@@ -33,7 +32,7 @@ check("Gemini-family projection preserves text, thought, and functionCall", () =
   const parts = projected.response.candidates[0].content.parts;
   assert.deepEqual(parts[0], { text: "thought", thought: true });
   assert.deepEqual(parts[1], { text: "answer" });
-  assert.deepEqual(parts[2], { functionCall: { name: "lookup", args: { q: "x" } } });
+  assert.deepEqual(parts[2], { functionCall: { id: "call-1", name: "lookup", args: { q: "x" } } });
   assert.equal(projected.response.usageMetadata.totalTokenCount, 8);
 });
 
@@ -76,7 +75,7 @@ check("Projected Gemini output matches expected semantic structure", () => {
           parts: [
             { text: "thought", thought: true },
             { text: "answer" },
-            { functionCall: { name: "lookup", args: { q: "x" } } }
+            { functionCall: { id: "call-1", name: "lookup", args: { q: "x" } } }
           ]
         },
         finishReason: "STOP",
@@ -218,47 +217,44 @@ check("Responses projection preserves text before function_call", () => {
   assert.equal(projected.output[1].content[0].text, "answer");
 });
 
-check("Tool trace sees Responses event wrappers", () => {
-  const event = { event: "response.output_item.done", data: { item: { type: "function_call", name: "lookup", arguments: "{\"q\":\"x\"}" } } };
-  assert.equal(summarizeToolCalls(event).count, 1);
+check("Responses usage folds cache and reasoning tokens into OpenAI pivot", () => {
+  const normalized = responsesApiToOpenAICompletion({
+    id: "resp-u",
+    status: "completed",
+    output: [{ type: "message", content: [{ type: "output_text", text: "hi" }] }],
+    usage: {
+      input_tokens: 12,
+      output_tokens: 4,
+      cache_read_input_tokens: 5332,
+      output_tokens_details: { reasoning_tokens: 7 }
+    }
+  }, "m");
+  assert.equal(normalized.usage.prompt_tokens, 5344);
+  assert.equal(normalized.usage.completion_tokens, 4);
+  assert.equal(normalized.usage.total_tokens, 5348);
+  assert.equal(normalized.usage.prompt_tokens_details.cached_tokens, 5332);
+  assert.equal(normalized.usage.completion_tokens_details.reasoning_tokens, 7);
 });
 
-check("Tool trace accumulates Claude input_json_delta", () => {
-  const acc = createToolCallTraceAccumulator();
-  acc.push({ type: "content_block_start", index: 1, content_block: { type: "tool_use", name: "lookup", input: {} } });
-  const before = acc.summary().digest;
-  acc.push({ type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: "{\"q\":\"x\"}" } });
-  const after = acc.summary();
-  assert.equal(after.count, 1);
-  assert.notEqual(after.digest, before);
-});
-
-check("Tool trace does not double-count added+delta+done in real streaming", () => {
-  const acc = createToolCallTraceAccumulator();
-  // Realistic Responses API streaming sequence: added (empty args) → deltas → done
-  // (full args). addSlot must be authoritative — extractToolCalls must NOT run on
-  // any response.* event, otherwise the .done event would double-count via
-  // body.data.item lookup.
-  acc.push({ type: "response.output_item.added", output_index: 0, item: { type: "function_call", name: "lookup", arguments: "" } });
-  acc.push({ type: "response.function_call_arguments.delta", output_index: 0, delta: "{\"q\":\"x\"}" });
-  acc.push({ type: "response.output_item.done", output_index: 0, item: { type: "function_call", name: "lookup", arguments: "{\"q\":\"x\"}" } });
-  assert.equal(acc.summary().count, 1);
-});
-
-check("Tool trace still captures non-streaming shapes via extractToolCalls", () => {
-  const acc = createToolCallTraceAccumulator();
-  // Non-response.* body: full OpenAI completion. addSlot handles nothing here;
-  // extractToolCalls must run and see choices[0].message.tool_calls.
-  acc.push({
-    choices: [{ message: { tool_calls: [{ function: { name: "lookup", arguments: "{\"q\":\"x\"}" } }] } }]
-  });
-  assert.equal(acc.summary().count, 1);
-});
-
-check("Tool trace work is gated by an explicit active debug level", () => {
-  assert.equal(isToolSemanticsDebugActive({ debug() {} }, false), false);
-  assert.equal(isToolSemanticsDebugActive({ debugEnabled: true, debug() {} }, false), true);
-  assert.equal(isToolSemanticsDebugActive(null, true), true);
+check("Gemini functionCall carries a deterministic id", () => {
+  const nameless = {
+    id: "chatcmpl-g",
+    object: "chat.completion",
+    created: 1,
+    model: "m",
+    choices: [{
+      index: 0,
+      message: {
+        role: "assistant",
+        content: "",
+        tool_calls: [{ type: "function", function: { name: "lookup", arguments: "{}" } }]
+      },
+      finish_reason: "tool_calls"
+    }]
+  };
+  const part = projectCompletionToClientFormat(nameless, "gemini").response.candidates[0].content.parts.find(p => p.functionCall);
+  assert.equal(part.functionCall.id, "call_lookup");
+  assert.equal(part.functionCall.name, "lookup");
 });
 
 check("Passthrough forwards exactly one OpenAI DONE sentinel", () => {
