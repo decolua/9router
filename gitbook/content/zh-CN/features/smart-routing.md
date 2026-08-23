@@ -404,4 +404,3 @@ cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-think
 ## 相关
 
 - [组合](./combos.md) - 创建自定义回退链
-- [配额跟踪](./quota-tracking.md) - 监控使用与成本

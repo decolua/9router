@@ -534,4 +534,3 @@ Dashboard → Combos → Clone "premium-coding"
 ## Liên quan
 
 - [Smart Routing](./smart-routing.md) - Cách auto fallback hoạt động
-- [Quota Tracking](./quota-tracking.md) - Theo dõi sử dụng và chi phí

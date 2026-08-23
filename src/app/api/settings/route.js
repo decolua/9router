@@ -97,18 +97,6 @@ export async function PATCH(request) {
     }
 
     if (
-      Object.prototype.hasOwnProperty.call(body, "claudeAutoPing") ||
-      Object.prototype.hasOwnProperty.call(body, "codexAutoPing")
-    ) {
-      // Keep the scheduler absent when no account opted in; load its provider graph only on demand.
-      import("@/shared/services/quotaAutoPing")
-        .then(({ configureQuotaAutoPing }) => {
-          configureQuotaAutoPing(settings);
-        })
-        .catch((error) => console.warn("[AutoPing] settings update failed:", error.message));
-    }
-
-    if (
       Object.prototype.hasOwnProperty.call(body, "pricingAutoSyncEnabled") ||
       Object.prototype.hasOwnProperty.call(body, "pricingAutoSyncIntervalHours")
     ) {

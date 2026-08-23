@@ -114,11 +114,11 @@ const getPageInfo = (pathname, providerDisplayNames = {}) => {
       icon: "vpn_key",
       breadcrumbs: [],
     };
-  if (pathname.includes("/quota"))
+  if (pathname.includes("/monitor"))
     return {
-      title: "Quota Tracker",
-      description: "Track and manage your API quota limits",
-      icon: "data_usage",
+      title: "系统监控",
+      description: "查看实时吞吐、延迟、错误与提供商状态",
+      icon: "monitor_heart",
       breadcrumbs: [],
     };
   if (pathname.includes("/mitm"))
@@ -200,9 +200,9 @@ const getPageInfo = (pathname, providerDisplayNames = {}) => {
     };
   if (pathname === "/dashboard")
     return {
-      title: "Endpoint",
-      description: "API endpoint configuration",
-      icon: "api",
+      title: "仪表盘",
+      description: "查看密钥、提供商与模型用量概览",
+      icon: "dashboard",
       breadcrumbs: [],
     };
   return { title: "", description: "", breadcrumbs: [] };

@@ -534,4 +534,3 @@ quality-first: 生产代码
 ## 相关
 
 - [智能路由](./smart-routing.md) - 自动回退如何工作
-- [配额跟踪](./quota-tracking.md) - 监控使用与成本

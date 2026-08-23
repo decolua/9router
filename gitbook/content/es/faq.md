@@ -150,7 +150,6 @@ Dashboard → Providers → Quota Tracking
 → Uso en tiempo real + cuenta regresiva de reinicio
 ```
 
-Consulta la [documentación de seguimiento de cuota](features/quota-tracking.md) para detalles.
 
 ---
 

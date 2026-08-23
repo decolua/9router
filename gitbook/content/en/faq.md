@@ -150,7 +150,6 @@ Dashboard → Providers → Quota Tracking
 → Real-time usage + reset countdown
 ```
 
-See [quota tracking documentation](features/quota-tracking.md) for details.
 
 ---
 

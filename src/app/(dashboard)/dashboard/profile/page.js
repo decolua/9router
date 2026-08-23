@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Card, Button, Toggle, Input } from "@/shared/components";
-import { NAVIGATION_VISIBILITY_OPTIONS } from "@/shared/constants/navigation";
+import { NAVIGATION_SECTIONS, NAVIGATION_VISIBILITY_OPTIONS } from "@/shared/constants/navigation";
 import Modal, { ConfirmModal } from "@/shared/components/Modal";
 import LanguageSwitcher from "@/shared/components/LanguageSwitcher";
 import { useTheme } from "@/shared/hooks/useTheme";
@@ -775,6 +775,13 @@ export default function ProfilePage() {
     });
   };
 
+  const setNavigationSection = (itemId, section) => {
+    setSettings((current) => ({
+      ...current,
+      navigationItemSections: { ...(current.navigationItemSections || {}), [itemId]: section },
+    }));
+  };
+
   const saveNavigationSettings = async () => {
     setNavigationSaving(true);
     setNavigationStatus("");
@@ -782,7 +789,10 @@ export default function ProfilePage() {
       const response = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ hiddenNavigationItems: settings.hiddenNavigationItems || [] }),
+        body: JSON.stringify({
+          hiddenNavigationItems: settings.hiddenNavigationItems || [],
+          navigationItemSections: settings.navigationItemSections || {},
+        }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "保存失败");
@@ -1591,13 +1601,13 @@ export default function ProfilePage() {
             <div><h3 className="font-semibold">导航栏菜单</h3><p className="text-xs text-text-muted">配置侧边导航栏中显示的功能入口，设置入口始终保留。</p></div>
           </div>
           <div className="flex flex-col gap-5">
-            {[...new Set(NAVIGATION_VISIBILITY_OPTIONS.map((item) => item.section))].map((section) => (
+            {NAVIGATION_SECTIONS.map((section) => (
               <div key={section} className="flex flex-col gap-2">
                 <p className="text-xs font-semibold text-text-muted">{section}</p>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {NAVIGATION_VISIBILITY_OPTIONS.filter((item) => item.section === section).map((item) => {
+                  {NAVIGATION_VISIBILITY_OPTIONS.filter((item) => (item.fixedSection ? item.section : settings.navigationItemSections?.[item.id] || item.section) === section).map((item) => {
                     const visible = !(settings.hiddenNavigationItems || []).includes(item.id);
-                    return <div key={item.id} className="flex min-h-11 items-center justify-between gap-3 rounded-md border border-border bg-bg-base px-3 py-2"><span className="text-sm font-medium">{item.label}</span><Toggle size="sm" checked={visible} onChange={(checked) => toggleNavigationItem(item.id, checked)} /></div>;
+                    return <div key={item.id} className="grid min-h-11 grid-cols-[minmax(0,1fr)_120px_auto] items-center gap-3 rounded-md border border-border bg-bg-base px-3 py-2"><span className="truncate text-sm font-medium">{item.label}</span><select disabled={item.fixedSection} className="h-8 rounded-md border border-border bg-surface px-2 text-xs disabled:opacity-50" value={item.fixedSection ? item.section : settings.navigationItemSections?.[item.id] || item.section} onChange={(event) => setNavigationSection(item.id, event.target.value)}>{NAVIGATION_SECTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select><Toggle size="sm" checked={visible} onChange={(checked) => toggleNavigationItem(item.id, checked)} /></div>;
                   })}
                 </div>
               </div>

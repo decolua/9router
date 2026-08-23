@@ -150,7 +150,6 @@ Dashboard → Providers → Quota Tracking
 → Real-time usage + reset countdown
 ```
 
-Xem [tài liệu quota tracking](features/quota-tracking.md) để biết chi tiết.
 
 ---
 

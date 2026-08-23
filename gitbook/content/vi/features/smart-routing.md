@@ -340,16 +340,6 @@ Lên kế hoạch usage quanh thời gian reset quota:
 
 ## Giám sát & Cảnh báo
 
-### Dashboard Quota Tracker
-
-```
-Dashboard → Quota Overview:
-  Claude Code: 2.5h / 5h remaining (50%)
-  Gemini CLI: 450 / 1000 requests today
-  GLM-4.7: 5M / 10M tokens (resets in 8h)
-  MiniMax: 3M / 5M tokens (rolling 5h)
-```
-
 ### Thông báo Thời gian thực
 
 ```
@@ -404,4 +394,3 @@ Dashboard → Analytics:
 ## Liên quan
 
 - [Combos](./combos.md) - Tạo chuỗi fallback tùy chỉnh
-- [Quota Tracking](./quota-tracking.md) - Theo dõi usage và chi phí

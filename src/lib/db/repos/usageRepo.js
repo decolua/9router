@@ -189,7 +189,7 @@ async function ensureRingInitialized() {
   } catch {}
 }
 
-async function calculateCost(provider, model, tokens) {
+async function calculateCost(provider, model, tokens, timestamp) {
   if (!tokens || !provider || !model) return 0;
   try {
     const { getPricingForModel } = await import("./pricingRepo.js");
@@ -200,7 +200,7 @@ async function calculateCost(provider, model, tokens) {
     // copies drifting apart — see open-sse/providers/pricing.js for the
     // cache-inclusive prompt_tokens convention this assumes).
     const { calculateCostFromTokens } = await import("open-sse/providers/pricing.js");
-    return calculateCostFromTokens(tokens, pricing);
+    return calculateCostFromTokens(tokens, pricing, timestamp);
   } catch (e) {
     console.error("Error calculating cost:", e);
     return 0;
@@ -301,7 +301,7 @@ export async function saveRequestUsage(entry) {
     const db = await getAdapter();
 
     if (!entry.timestamp) entry.timestamp = new Date().toISOString();
-    entry.cost = await calculateCost(entry.provider, entry.model, entry.tokens);
+    entry.cost = await calculateCost(entry.provider, entry.model, entry.tokens, entry.timestamp);
 
     const tokens = entry.tokens || {};
     const promptTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
@@ -761,8 +761,8 @@ export async function getUsageStats(period = "all", range = {}) {
     if (!pricingCache.has(pricingKey)) pricingCache.set(pricingKey, getPricingForModel(row.provider, row.model));
     const pricing = await pricingCache.get(pricingKey);
     const breakdown = pricing
-      ? calculateCostBreakdown(normalizedTokens, pricing)
-      : await calculateBreakdown(row.provider, row.model, normalizedTokens);
+      ? calculateCostBreakdown(normalizedTokens, pricing, row.timestamp)
+      : await calculateBreakdown(row.provider, row.model, normalizedTokens, row.timestamp);
     return { row, breakdown };
   }));
 
@@ -1088,7 +1088,7 @@ export async function getDimensionChartData(period = "7d", range = {}, dimension
   return { series, data, metric };
 }
 
-async function calculateBreakdown(provider, model, tokens) {
+async function calculateBreakdown(provider, model, tokens, timestamp) {
   const { cacheReadTokens, cacheCreationTokens } = getCacheTokenCounts(tokens);
   const promptTokens = Math.max(0, Number(tokens?.prompt_tokens || tokens?.input_tokens || 0));
   const reasoningTokens = Math.max(0, Number(tokens?.reasoning_tokens || 0));
@@ -1110,7 +1110,7 @@ async function calculateBreakdown(provider, model, tokens) {
       import("open-sse/providers/pricing.js"),
     ]);
     const pricing = await getPricingForModel(provider, model);
-    return pricing ? calculateCostBreakdown(tokens, pricing) : fallbackTokens;
+    return pricing ? calculateCostBreakdown(tokens, pricing, timestamp) : fallbackTokens;
   } catch (error) {
     console.error("Error calculating cost breakdown:", error);
     return fallbackTokens;
@@ -1211,7 +1211,7 @@ export async function getUsageLogs(filter = {}) {
       cached_tokens: cacheReadTokens,
       cache_creation_input_tokens: cacheCreationTokens,
     };
-    const breakdown = await calculateBreakdown(r.provider, r.model, normalizedTokens);
+    const breakdown = await calculateBreakdown(r.provider, r.model, normalizedTokens, r.timestamp);
     const meta = parseJson(r.meta, {}) || {};
     return {
       id: r.id,

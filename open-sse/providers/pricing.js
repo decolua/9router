@@ -409,15 +409,49 @@ export function formatCost(cost) {
  * @param {object} pricing
  * @returns {number} cost in dollars
  */
-export function calculateCostFromTokens(tokens, pricing) {
-  return calculateCostBreakdown(tokens, pricing).totalCost;
+export function calculateCostFromTokens(tokens, pricing, timestamp = new Date()) {
+  return calculateCostBreakdown(tokens, pricing, timestamp).totalCost;
+}
+
+function parseUtcMinute(value) {
+  const match = String(value || "").trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
+export function isPeakPricingTime(peakWindows, timestamp = new Date()) {
+  const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+  if (!Number.isFinite(date.getTime())) return false;
+  const current = date.getUTCHours() * 60 + date.getUTCMinutes();
+  return String(peakWindows || "")
+    .split(/[,，\n]+/)
+    .map((window) => window.trim())
+    .filter(Boolean)
+    .some((window) => {
+      const [startValue, endValue] = window.split(/[-~～—]/).map((part) => part.trim());
+      const start = parseUtcMinute(startValue);
+      const end = parseUtcMinute(endValue);
+      if (start == null || end == null || start === end) return false;
+      return start < end ? current >= start && current < end : current >= start || current < end;
+    });
+}
+
+export function resolveTimeBasedPricing(pricing, timestamp = new Date()) {
+  if (!pricing?.peakEnabled) return pricing;
+  const tier = isPeakPricingTime(pricing.peakWindows, timestamp) ? pricing.peakPricing : pricing.offPeakPricing;
+  return tier && typeof tier === "object" ? { ...pricing, ...tier } : pricing;
 }
 
 /** Calculate exact token and cost components using the configured per-million rates. */
-export function calculateCostBreakdown(tokens, pricing) {
+export function calculateCostBreakdown(tokens, pricing, timestamp = new Date()) {
   if (!tokens || !pricing) {
     return { inputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, outputTokens: 0, inputCost: 0, cacheReadCost: 0, cacheCreationCost: 0, outputCost: 0, totalCost: 0 };
   }
+
+  pricing = resolveTimeBasedPricing(pricing, timestamp);
 
   const promptTokens = Number(tokens.prompt_tokens || tokens.input_tokens || 0);
   const cachedTokens = Number(tokens.cached_tokens || tokens.cache_read_input_tokens || 0);

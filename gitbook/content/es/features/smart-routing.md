@@ -404,4 +404,3 @@ Dashboard → Analytics:
 ## Relacionado
 
 - [Combos](./combos.md) - Crea cadenas de fallback personalizadas
-- [Seguimiento de cuota](./quota-tracking.md) - Monitorea uso y costos

@@ -18,34 +18,37 @@ const VISIBLE_MEDIA_KINDS = ["embedding", "image", "video", "tts", "stt"];
 const COMBINED_WEB_ITEM = { id: "web", label: "Web Fetch & Search", icon: "travel_explore", href: "/dashboard/media-providers/web" };
 
 const navItems = [
-  { href: "/dashboard/endpoint", label: "Endpoint & Key", icon: "api" },
-  { href: "/dashboard/key-groups", label: "Key Groups", icon: "group_work" },
-  { href: "/dashboard/providers", label: "Providers", icon: "dns" },
+  { id: "dashboard", href: "/dashboard", label: "仪表盘", icon: "dashboard", section: "主要功能" },
+  { id: "endpoint", href: "/dashboard/endpoint", label: "端点与密钥", icon: "api", section: "主要功能" },
+  { id: "key-groups", href: "/dashboard/key-groups", label: "密钥分组", icon: "group_work", section: "主要功能" },
+  { id: "providers", href: "/dashboard/providers", label: "提供商", icon: "dns", section: "主要功能" },
   // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
-  { href: "/dashboard/combos", label: "Combo", icon: "layers" },
-  { href: "/dashboard/expert-panel", label: "Expert Panel", icon: "forum" },
-  { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
-  { href: "/dashboard/token-saver", label: "Token Saver", icon: "savings" },
+  { id: "combos", href: "/dashboard/combos", label: "组合", icon: "layers", section: "主要功能" },
+  { id: "expert-panel", href: "/dashboard/expert-panel", label: "专家团会话", icon: "forum", section: "主要功能" },
+  { id: "token-saver", href: "/dashboard/token-saver", label: "Token 节省", icon: "savings", section: "主要功能" },
   // { href: "/dashboard/pxpipe", label: "PXPIPE", icon: "image" },
-  { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
+  { id: "cli-tools", href: "/dashboard/cli-tools", label: "CLI 工具", icon: "terminal", section: "主要功能" },
 ];
 
 const costCenterItems = [
-  { href: "/dashboard/usage", label: "Traffic Analytics", icon: "bar_chart" },
-  { href: "/dashboard/traffic-logs", label: "Traffic Logs", icon: "receipt_long" },
-  { href: "/dashboard/settings/pricing", label: "Model Pricing", icon: "paid" },
-  { href: "/dashboard/settings/model-mappings", label: "模型映射", icon: "conversion_path" },
+  { id: "usage", href: "/dashboard/usage", label: "流量分析", icon: "bar_chart", section: "成本中心" },
+  { id: "traffic-logs", href: "/dashboard/traffic-logs", label: "流量日志", icon: "receipt_long", section: "成本中心" },
+  { id: "pricing", href: "/dashboard/settings/pricing", label: "模型定价", icon: "paid", section: "成本中心" },
+  { id: "model-mappings", href: "/dashboard/settings/model-mappings", label: "模型映射", icon: "conversion_path", section: "成本中心" },
 ];
 
 const debugItems = [
-  { href: "/dashboard/console-log", label: "Console Log", icon: "terminal" },
-  { href: "/dashboard/translator", label: "Translator", icon: "translate" },
+  { id: "console-log", href: "/dashboard/console-log", label: "控制台日志", icon: "terminal", section: "系统" },
+  { id: "translator", href: "/dashboard/translator", label: "转换器", icon: "translate", section: "系统" },
 ];
 
 const systemItems = [
-  { href: "/dashboard/proxy-pools", label: "Proxy Pools", icon: "lan" },
-  { href: "/dashboard/skills", label: "Skills", icon: "extension" },
+  { id: "monitor", href: "/dashboard/monitor", label: "系统监控", icon: "monitor_heart", section: "系统" },
+  { id: "proxy-pools", href: "/dashboard/proxy-pools", label: "代理池", icon: "lan", section: "系统" },
+  { id: "skills", href: "/dashboard/skills", label: "技能", icon: "extension", section: "系统" },
 ];
+
+const allLinkItems = [...navItems, ...costCenterItems, ...systemItems, ...debugItems];
 
 export default function Sidebar({ onClose }) {
   const pathname = usePathname();
@@ -58,6 +61,7 @@ export default function Sidebar({ onClose }) {
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
   const [hiddenNavigationItems, setHiddenNavigationItems] = useState([]);
+  const [navigationItemSections, setNavigationItemSections] = useState({});
   const { copied, copy } = useCopyToClipboard(2000);
 
   const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
@@ -68,6 +72,7 @@ export default function Sidebar({ onClose }) {
       .then(data => {
         if (data.enableTranslator) setEnableTranslator(true);
         setHiddenNavigationItems(Array.isArray(data.hiddenNavigationItems) ? data.hiddenNavigationItems : []);
+        setNavigationItemSections(data.navigationItemSections || {});
       })
       .catch(() => {});
   }, []);
@@ -81,12 +86,11 @@ export default function Sidebar({ onClose }) {
   }, []);
 
   const isActive = (href) => {
-    if (href === "/dashboard/endpoint") {
-      return pathname === "/dashboard" || pathname.startsWith("/dashboard/endpoint");
-    }
+    if (href === "/dashboard") return pathname === "/dashboard";
     return pathname.startsWith(href);
   };
   const isVisible = (id) => !hiddenNavigationItems.includes(id);
+  const itemSection = (item) => navigationItemSections[item.id] || item.section;
 
   // Open manual update panel (no countdown yet — user must click Copy to trigger shutdown)
   const handleUpdate = () => {
@@ -173,7 +177,8 @@ export default function Sidebar({ onClose }) {
 
         {/* Navigation */}
         <nav className="flex-1 px-4 py-2 space-y-0.5 overflow-y-auto custom-scrollbar">
-          {navItems.filter((item) => isVisible(item.href.split("/").pop())).map((item) => (
+          <p className="mb-2 px-4 text-xs font-semibold text-text-muted/60">主要功能</p>
+          {allLinkItems.filter((item) => isVisible(item.id) && itemSection(item) === "主要功能" && (item.id !== "translator" || enableTranslator)).map((item) => (
             <Link
               key={item.href}
               href={item.href}
@@ -199,12 +204,9 @@ export default function Sidebar({ onClose }) {
 
           <div className="pt-3 mt-2 space-y-0.5">
             <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
-              Cost Center
+              成本中心
             </p>
-            {costCenterItems.filter((item) => {
-              const path = item.href.split("/").pop();
-              return isVisible(path === "pricing" ? "pricing" : path === "model-mappings" ? "model-mappings" : path);
-            }).map((item) => (
+            {allLinkItems.filter((item) => isVisible(item.id) && itemSection(item) === "成本中心" && (item.id !== "translator" || enableTranslator)).map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
@@ -230,7 +232,7 @@ export default function Sidebar({ onClose }) {
           {/* System section */}
           <div className="pt-3 mt-2 space-y-0.5">
             <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
-              System
+              系统
             </p>
 
             {/* Media Providers accordion */}
@@ -284,7 +286,7 @@ export default function Sidebar({ onClose }) {
               </div>
             )}
 
-            {systemItems.filter((item) => isVisible(item.href.split("/").pop())).map((item) => (
+            {allLinkItems.filter((item) => isVisible(item.id) && itemSection(item) === "系统" && (item.id !== "translator" || enableTranslator)).map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
@@ -307,35 +309,6 @@ export default function Sidebar({ onClose }) {
                 <span className="text-[13px] font-medium">{item.label}</span>
               </Link>
             ))}
-
-            {/* Debug items (inside System section, before Settings) */}
-            {debugItems.map((item) => {
-              const itemId = item.href.split("/").pop();
-              const show = isVisible(itemId) && (item.href !== "/dashboard/translator" || enableTranslator);
-              return show ? (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={onClose}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                    isActive(item.href)
-                      ? "bg-primary/10 text-primary"
-                      : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "material-symbols-outlined text-[18px]",
-                      isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                    )}
-                  >
-                    {item.icon}
-                  </span>
-                  <span className="text-[13px] font-medium">{item.label}</span>
-                </Link>
-              ) : null;
-            })}
 
             {/* Remote */}
             {isVisible("remote") && <button

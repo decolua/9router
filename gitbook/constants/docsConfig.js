@@ -22,8 +22,7 @@ const NAV_STRUCTURE = [
     key: "features",
     items: [
       { key: "smartRouting", slug: "features/smart-routing" },
-      { key: "combos", slug: "features/combos" },
-      { key: "quotaTracking", slug: "features/quota-tracking" }
+      { key: "combos", slug: "features/combos" }
     ]
   },
   {
@@ -68,7 +67,6 @@ const TRANSLATIONS = {
     features: "Features",
     smartRouting: "Smart Routing",
     combos: "Combos & Fallback",
-    quotaTracking: "Quota Tracking",
     integration: "Integration",
     claudeCode: "Claude Code",
     codex: "OpenAI Codex",
@@ -99,7 +97,6 @@ const TRANSLATIONS = {
     features: "Tính năng",
     smartRouting: "Định tuyến thông minh",
     combos: "Combo & Fallback",
-    quotaTracking: "Theo dõi Quota",
     integration: "Tích hợp",
     claudeCode: "Claude Code",
     codex: "OpenAI Codex",
@@ -130,7 +127,6 @@ const TRANSLATIONS = {
     features: "功能",
     smartRouting: "智能路由",
     combos: "组合与回退",
-    quotaTracking: "配额跟踪",
     integration: "集成",
     claudeCode: "Claude Code",
     codex: "OpenAI Codex",
@@ -161,7 +157,6 @@ const TRANSLATIONS = {
     features: "Funciones",
     smartRouting: "Enrutamiento inteligente",
     combos: "Combos y Fallback",
-    quotaTracking: "Seguimiento de cuota",
     integration: "Integración",
     claudeCode: "Claude Code",
     codex: "OpenAI Codex",
@@ -192,7 +187,6 @@ const TRANSLATIONS = {
     features: "機能",
     smartRouting: "スマートルーティング",
     combos: "コンボとフォールバック",
-    quotaTracking: "クォータ追跡",
     integration: "連携",
     claudeCode: "Claude Code",
     codex: "OpenAI Codex",

@@ -150,7 +150,6 @@ Dashboard → Providers → Quota Tracking
 → リアルタイム使用量 + リセットカウントダウン
 ```
 
-詳細は[クォータトラッキングドキュメント](features/quota-tracking.md)を参照。
 
 ---
 

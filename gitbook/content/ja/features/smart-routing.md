@@ -404,4 +404,3 @@ Dashboard → Analytics:
 ## 関連
 
 - [コンボ](./combos.md) - カスタムフォールバックチェーンを作成
-- [クォータトラッキング](./quota-tracking.md) - 使用量とコストをモニター

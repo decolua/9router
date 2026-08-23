@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server";
-import { getPricing, updatePricing, resetPricing, resetAllPricing } from "@/lib/localDb.js";
+import { getPricing, getSettings, updatePricing, resetPricing, resetAllPricing, updateSettings } from "@/lib/localDb.js";
 import { getDefaultPricing, getPricingForModel as getDefaultPricingForModel } from "open-sse/providers/pricing.js";
 import { PROVIDER_MODELS } from "open-sse/config/providerModels.js";
 
 const EMPTY_PRICING = { input: 0, output: 0, cached: 0, cache_creation: 0, reasoning: 0 };
+const RATE_FIELDS = Object.keys(EMPTY_PRICING);
 
-function buildPricingCatalog(pricing) {
+function buildPricingCatalog(pricing, deletedPricingModels = []) {
+  const deleted = new Set(deletedPricingModels);
   const pairs = new Map();
   const add = (provider, model) => {
     if (!provider || !model) return;
@@ -17,13 +19,19 @@ function buildPricingCatalog(pricing) {
   for (const [provider, models] of Object.entries(pricing || {})) {
     for (const model of Object.keys(models || {})) add(provider, model);
   }
-  return [...pairs.values()].map(({ provider, model }) => ({
+  return [...pairs.values()]
+  .filter(({ provider, model }) => !deleted.has(`${provider}\u0000${model}`))
+  .map(({ provider, model }) => ({
     provider,
     model,
     pricing: {
       ...EMPTY_PRICING,
       ...(getDefaultPricingForModel(provider, model) || {}),
       ...(pricing?.[provider]?.[model] || {}),
+      peakEnabled: pricing?.[provider]?.[model]?.peakEnabled === true,
+      peakWindows: pricing?.[provider]?.[model]?.peakWindows || "",
+      peakPricing: { ...EMPTY_PRICING, ...(pricing?.[provider]?.[model]?.peakPricing || {}) },
+      offPeakPricing: { ...EMPTY_PRICING, ...(pricing?.[provider]?.[model]?.offPeakPricing || {}) },
     },
   })).sort((a, b) => a.provider.localeCompare(b.provider) || a.model.localeCompare(b.model));
 }
@@ -34,8 +42,8 @@ function buildPricingCatalog(pricing) {
  */
 export async function GET() {
   try {
-    const pricing = await getPricing();
-    return NextResponse.json({ items: buildPricingCatalog(pricing) });
+    const [pricing, settings] = await Promise.all([getPricing(), getSettings()]);
+    return NextResponse.json({ items: buildPricingCatalog(pricing, settings.deletedPricingModels) });
   } catch (error) {
     console.error("Error fetching pricing:", error);
     return NextResponse.json(
@@ -80,7 +88,7 @@ export async function PATCH(request) {
         }
 
         // Validate pricing fields
-        const validFields = ["input", "output", "cached", "reasoning", "cache_creation"];
+        const validFields = [...RATE_FIELDS, "peakEnabled", "peakWindows", "peakPricing", "offPeakPricing"];
         for (const [key, value] of Object.entries(pricing)) {
           if (!validFields.includes(key)) {
             return NextResponse.json(
@@ -88,17 +96,34 @@ export async function PATCH(request) {
               { status: 400 }
             );
           }
-          if (typeof value !== "number" || isNaN(value) || value < 0) {
+          if (RATE_FIELDS.includes(key) && (typeof value !== "number" || isNaN(value) || value < 0)) {
             return NextResponse.json(
               { error: `Invalid pricing value for ${key} in ${provider}/${model}: must be non-negative number` },
               { status: 400 }
             );
           }
+          if (key === "peakEnabled" && typeof value !== "boolean") {
+            return NextResponse.json({ error: `Invalid peak pricing switch for ${provider}/${model}` }, { status: 400 });
+          }
+          if (key === "peakWindows" && typeof value !== "string") {
+            return NextResponse.json({ error: `Invalid peak pricing windows for ${provider}/${model}` }, { status: 400 });
+          }
+          if ((key === "peakPricing" || key === "offPeakPricing") && (typeof value !== "object" || value === null || Object.entries(value).some(([field, rate]) => !RATE_FIELDS.includes(field) || typeof rate !== "number" || isNaN(rate) || rate < 0))) {
+            return NextResponse.json({ error: `Invalid ${key} for ${provider}/${model}` }, { status: 400 });
+          }
         }
       }
     }
 
-    const updatedPricing = await updatePricing(body);
+    const settings = await getSettings();
+    const restored = new Set(settings.deletedPricingModels || []);
+    for (const [provider, models] of Object.entries(body)) {
+      for (const model of Object.keys(models)) restored.delete(`${provider}\u0000${model}`);
+    }
+    const [updatedPricing] = await Promise.all([
+      updatePricing(body),
+      updateSettings({ deletedPricingModels: [...restored] }),
+    ]);
     return NextResponse.json(updatedPricing);
   } catch (error) {
     console.error("Error updating pricing:", error);
@@ -119,10 +144,22 @@ export async function DELETE(request) {
     const { searchParams } = new URL(request.url);
     const provider = searchParams.get("provider");
     const model = searchParams.get("model");
+    let requestedModels = [];
+    try {
+      const body = await request.json();
+      requestedModels = Array.isArray(body?.models) ? body.models : [];
+    } catch {}
 
-    if (provider && model) {
-      // Reset specific model
-      await resetPricing(provider, model);
+    if (requestedModels.length || (provider && model)) {
+      const models = requestedModels.length ? requestedModels : [{ provider, model }];
+      const validModels = models.filter((item) => item?.provider && item?.model);
+      const settings = await getSettings();
+      const deleted = new Set(settings.deletedPricingModels || []);
+      for (const item of validModels) {
+        await resetPricing(item.provider, item.model);
+        deleted.add(`${item.provider}\u0000${item.model}`);
+      }
+      await updateSettings({ deletedPricingModels: [...deleted] });
     } else if (provider) {
       // Reset entire provider
       await resetPricing(provider);

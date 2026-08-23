@@ -1,4 +1,5 @@
-import { getSettings, updateSettings, updatePricing } from "@/lib/localDb";
+import { getPricing, getSettings, updateSettings, updatePricing } from "@/lib/localDb";
+import { PROVIDER_MODELS } from "open-sse/config/providerModels.js";
 
 const SOURCE_URL = "https://opencode.ai/docs/zh-cn/go/";
 const MODEL_IDS = {
@@ -24,6 +25,7 @@ const MODEL_IDS = {
   "Qwen3.6 Plus": "qwen3.6-plus",
   "DeepSeek V4 Pro": "deepseek-v4-pro",
   "DeepSeek V4 Flash": "deepseek-v4-flash",
+  "DeepSeek V4 Flash Vision Exp": "deepseek-v4-flash-vision-exp",
   Hy3: "hy3",
 };
 
@@ -47,6 +49,17 @@ function stripVariant(name) {
   return name.replace(/\s+\((?:≤|>|Off-Peak|Peak).*$/, "").trim();
 }
 
+const OPENCODE_PEAK_WINDOWS = "01:00-04:00,06:00-10:00";
+
+function parseRowPricing(row) {
+  const input = parsePrice(row[1]);
+  const output = parsePrice(row[2]);
+  const cached = parsePrice(row[3]);
+  const cache_creation = parsePrice(row[4]);
+  if (input == null || output == null || cached == null) return null;
+  return { input, output, cached, ...(cache_creation == null ? {} : { cache_creation }) };
+}
+
 export function parseOpenCodePricing(html) {
   const table = [...String(html || "").matchAll(/<table\b[^>]*>[\s\S]*?<\/table>/gi)]
     .map((match) => match[0])
@@ -56,16 +69,29 @@ export function parseOpenCodePricing(html) {
     .map((match) => [...match[1].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map((cell) => decodeHtml(cell[1].replace(/<[^>]+>/g, "").trim())))
     .filter((cells) => cells.length >= 5);
   const pricing = {};
+  const tiered = {};
   for (const row of rows) {
     const modelName = stripVariant(row[0]);
     const model = MODEL_IDS[modelName];
-    if (!model || pricing[model]) continue;
-    const input = parsePrice(row[1]);
-    const output = parsePrice(row[2]);
-    const cached = parsePrice(row[3]);
-    const cache_creation = parsePrice(row[4]);
-    if (input == null || output == null || cached == null) continue;
-    pricing[model] = { input, output, cached, ...(cache_creation == null ? {} : { cache_creation }) };
+    const rowPricing = parseRowPricing(row);
+    if (!model || !rowPricing) continue;
+    const variant = row[0].match(/\((Off-Peak|Peak)\)\s*$/i)?.[1]?.toLowerCase();
+    if (variant) {
+      tiered[model] ||= {};
+      tiered[model][variant === "peak" ? "peakPricing" : "offPeakPricing"] = rowPricing;
+    } else if (!pricing[model]) {
+      pricing[model] = rowPricing;
+    }
+  }
+  for (const [model, tiers] of Object.entries(tiered)) {
+    if (!tiers.peakPricing || !tiers.offPeakPricing) continue;
+    pricing[model] = {
+      ...tiers.peakPricing,
+      peakEnabled: true,
+      peakWindows: OPENCODE_PEAK_WINDOWS,
+      peakPricing: tiers.peakPricing,
+      offPeakPricing: tiers.offPeakPricing,
+    };
   }
   if (!Object.keys(pricing).length) throw new Error("No supported model prices found");
   return pricing;
@@ -76,10 +102,29 @@ export async function syncPricingFromOpenCode() {
   try {
     const response = await fetch(SOURCE_URL, { signal: AbortSignal.timeout(15000), cache: "no-store" });
     if (!response.ok) throw new Error(`Source returned ${response.status}`);
-    const pricing = parseOpenCodePricing(await response.text());
-    await updatePricing({ "opencode-go": pricing });
+    const sourcePricing = parseOpenCodePricing(await response.text());
+    const currentPricing = await getPricing();
+    const settings = await getSettings();
+    const deleted = new Set(settings.deletedPricingModels || []);
+    const existingModels = new Set([
+      ...(PROVIDER_MODELS["opencode-go"] || []).map((model) => typeof model === "string" ? model : model?.id).filter(Boolean),
+      ...Object.keys(currentPricing["opencode-go"] || {}),
+    ]);
+    const pricing = {};
+    for (const [model, values] of Object.entries(sourcePricing)) {
+      if (!existingModels.has(model) || deleted.has(`opencode-go\u0000${model}`)) continue;
+      pricing[model] = { ...(currentPricing["opencode-go"]?.[model] || {}), ...values };
+    }
+    if (Object.keys(pricing).length) await updatePricing({ "opencode-go": pricing });
     await updateSettings({ pricingLastSyncAt: now, pricingLastSyncStatus: "success", pricingLastSyncError: "" });
-    return { provider: "opencode-go", pricing, source: SOURCE_URL, syncedAt: now };
+    return {
+      provider: "opencode-go",
+      pricing,
+      updatedCount: Object.keys(pricing).length,
+      skippedCount: Object.keys(sourcePricing).length - Object.keys(pricing).length,
+      source: SOURCE_URL,
+      syncedAt: now,
+    };
   } catch (error) {
     await updateSettings({ pricingLastSyncAt: now, pricingLastSyncStatus: "error", pricingLastSyncError: error.message });
     throw error;
