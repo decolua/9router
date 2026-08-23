@@ -15,8 +15,105 @@ const HOP_BY_HOP_HEADERS = new Set([
   "upgrade",
 ]);
 
-const DASHBOARD_PREFIX = "/api/headroom/proxy";
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+export const DASHBOARD_PREFIX = "/api/headroom/proxy";
+
+const ALLOWED_PREFIXES = [
+  "dashboard",
+  "assets",
+  "_next",
+  "static",
+  "favicon",
+  "stats",
+  "stats-history",
+  "health",
+  "livez",
+  "readyz",
+  "metrics",
+  "transformations",
+];
+
+function isAllowedPath(url, prefix) {
+  if (url === prefix || url.startsWith(prefix + "/")) return false;
+  if (url.startsWith("//")) return false;
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url)) return false;
+  if (!url.startsWith("/")) return false;
+  const pathOnly = url.split("?")[0].split("#")[0];
+  for (const p of ALLOWED_PREFIXES) {
+    if (pathOnly === `/${p}`) return true;
+    if (pathOnly.startsWith(`/${p}/`)) return true;
+    if (pathOnly.startsWith(`/${p}.`)) return true;
+  }
+  return false;
+}
+
+export function rewriteHeadroomHtml(html, prefixOverride) {
+  if (typeof html !== "string") return html;
+  if (!html) return html;
+  const prefix = prefixOverride || DASHBOARD_PREFIX;
+
+  let out = html.replace(/\b(src|href|action)\s*=\s*(["'])(\/[^"']*)\2/g, (match, attr, quote, url) => {
+    if (!isAllowedPath(url, prefix)) return match;
+    return `${attr}=${quote}${prefix}${url}${quote}`;
+  });
+
+  out = out.replace(/fetch\s*\(\s*(['"`])(\/[^'"`]*?)\1/g, (match, quote, url) => {
+    if (url.includes("\\") || url.includes("${")) return match;
+    if (!isAllowedPath(url, prefix)) return match;
+    return `fetch(${quote}${prefix}${url}${quote}`;
+  });
+
+  return out;
+}
+
+export function rewriteLocation(value, target) {
+  if (value == null) return value;
+  if (value === "") return "";
+  if (typeof value !== "string") return value;
+  if (value === DASHBOARD_PREFIX || value.startsWith(DASHBOARD_PREFIX + "/")) return value;
+  if (value.startsWith("//")) return value;
+
+  const schemeRe = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
+  if (schemeRe.test(value)) {
+    try {
+      const url = new URL(value);
+      if (!["http:", "https:"].includes(url.protocol)) return value;
+      const targetUrl = target instanceof URL ? target : new URL(target);
+      if (url.origin !== targetUrl.origin) return value;
+      const path = url.pathname + url.search + url.hash;
+      return `${DASHBOARD_PREFIX}${path}`;
+    } catch {
+      return value;
+    }
+  }
+
+  try {
+    const targetUrl = target instanceof URL ? target : new URL(target);
+    const resolved = new URL(value, targetUrl);
+    if (resolved.origin !== targetUrl.origin) return value;
+    const path = resolved.pathname + resolved.search + resolved.hash;
+    return `${DASHBOARD_PREFIX}${path}`;
+  } catch {
+    return value;
+  }
+}
+
+export function forwardedHeaders(request, target) {
+  const headers = new Headers(request.headers);
+  for (const key of [...headers.keys()]) {
+    if (HOP_BY_HOP_HEADERS.has(key.toLowerCase())) headers.delete(key);
+  }
+  headers.delete("host");
+  headers.delete("cookie");
+  headers.delete("authorization");
+  headers.delete("proxy-authorization");
+  headers.delete("proxy-authenticate");
+  const raw = process.env.HEADROOM_API_KEY;
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (trimmed) headers.set("authorization", `Bearer ${trimmed}`);
+  }
+  return headers;
+}
 
 async function getTargetBase() {
   const settings = await getSettings();
@@ -30,30 +127,15 @@ async function getTargetBase() {
 
 function buildTargetUrl(base, path, search) {
   const target = new URL(base);
-  target.pathname = `/${path.join("/")}`;
+  const basePath = target.pathname.replace(/\/$/, "");
+  const incoming = path.join("/");
+  if (incoming) {
+    target.pathname = `${basePath}/${incoming}`;
+  } else {
+    target.pathname = basePath || "/";
+  }
   target.search = search;
   return target;
-}
-
-function forwardedHeaders(request, target) {
-  const headers = new Headers(request.headers);
-  for (const header of headers.keys()) {
-    if (HOP_BY_HOP_HEADERS.has(header.toLowerCase())) headers.delete(header);
-  }
-  headers.delete("host");
-  // Never leak viewer credentials to a non-loopback Headroom host
-  if (!LOOPBACK_HOSTS.has(target.hostname.replace(/^\[|\]$/g, "").toLowerCase())) {
-    headers.delete("cookie");
-    headers.delete("authorization");
-  }
-  return headers;
-}
-
-function rewriteDashboardHtml(html) {
-  return html.replace(
-    /fetch\('(?=\/(?:stats|health|stats-history|transformations\/feed))/g,
-    `fetch('${DASHBOARD_PREFIX}`,
-  );
 }
 
 async function proxy(request, { params }) {
@@ -74,24 +156,29 @@ async function proxy(request, { params }) {
     });
 
     const headers = new Headers(response.headers);
-    for (const header of headers.keys()) {
-      if (HOP_BY_HOP_HEADERS.has(header.toLowerCase())) headers.delete(header);
+    for (const key of [...headers.keys()]) {
+      if (HOP_BY_HOP_HEADERS.has(key.toLowerCase())) headers.delete(key);
     }
 
-    if (path.join("/") === "dashboard") {
-      const contentType = response.headers.get("content-type") || "";
-      if (contentType.includes("text/html")) {
-        headers.delete("content-length");
-        return new NextResponse(rewriteDashboardHtml(await response.text()), {
-          status: response.status,
-          headers,
-        });
-      }
+    const loc = headers.get("location");
+    if (loc) {
+      const rewritten = rewriteLocation(loc, base);
+      if (rewritten !== loc) headers.set("location", rewritten);
+    }
+
+    const contentType = response.headers.get("content-type") || "";
+    const isHtml = contentType.includes("text/html");
+
+    if (isHtml) {
+      const body = await response.text();
+      const rewritten = rewriteHeadroomHtml(body);
+      if (rewritten !== body) headers.delete("content-length");
+      return new NextResponse(rewritten, { status: response.status, headers });
     }
 
     return new NextResponse(response.body, { status: response.status, headers });
-  } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Headroom proxy request failed" }, { status: 502 });
   }
 }
 
