@@ -157,6 +157,16 @@ function toKimiReasoningEffort(cfg) {
   return null;
 }
 
+// Ox Alpha always-thinking models: upstream accepts only low/high/max.
+// auto/unknown → null (caller omits the field so the upstream default applies).
+function toLowHighMaxLevel(cfg) {
+  const level = toLevel(cfg);
+  if (level === "none" || level === "minimal" || level === "low") return "low";
+  if (level === "medium" || level === "high") return "high";
+  if (level === "xhigh" || level === "max" || level === "ultra") return "max";
+  return null;
+}
+
 const GEMINI_LEVEL_OUTPUT_FLOOR = {
   minimal: 4096,
   low: 8192,
@@ -233,6 +243,11 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
       const level = toLevel(eff);
       if (level) body.reasoning_effort = normalizeOpenAILevel(level, supportedLevels);
+      break;
+    }
+    case "openai-low-high-max": {
+      const level = toLowHighMaxLevel(eff);
+      if (level) body.reasoning_effort = level;
       break;
     }
     case "claude-adaptive": {
