@@ -39,17 +39,13 @@ export function geminiToOpenAIRequest(model, body, stream) {
     }
   }
 
-  // Convert contents to messages
+  // Convert contents to messages.
+  // convertGeminiContent may return one message or an array (tool results +
+  // co-located call/text). Always spread: push(converted) nests the array as
+  // one element and the next turn 400s on unpaired tool calls.
   if (body.contents && Array.isArray(body.contents)) {
     for (const content of body.contents) {
-      const converted = convertGeminiContent(content);
-      if (converted) {
-        if (Array.isArray(converted)) {
-          result.messages.push(...converted);
-        } else {
-          result.messages.push(converted);
-        }
-      }
+      appendConvertedMessages(result.messages, convertGeminiContent(content));
     }
   }
 
@@ -73,6 +69,11 @@ export function geminiToOpenAIRequest(model, body, stream) {
   }
 
   return result;
+}
+
+function appendConvertedMessages(messages, converted) {
+  if (!converted) return;
+  messages.push(...(Array.isArray(converted) ? converted : [converted]));
 }
 
 // Convert Gemini content to OpenAI message

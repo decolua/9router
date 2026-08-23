@@ -71,6 +71,9 @@ describe("gemini -> openai request translation — functionResponse co-located w
 
     expect(toolMsgs).toHaveLength(2);
     expect(toolMsgs.map(m => m.tool_call_id).sort()).toEqual(["call_a", "call_b"]);
+    // Spread invariant: a parent `push(converted)` would nest the two tool
+    // messages as one array element, so none of messages[] would have role:tool.
+    expect(result.messages.every((m) => m && typeof m === "object" && !Array.isArray(m) && typeof m.role === "string")).toBe(true);
   });
 
   it("preserves text co-located with a functionResponse, keeping the original turn role", () => {

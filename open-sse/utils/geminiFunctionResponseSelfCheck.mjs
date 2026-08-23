@@ -64,6 +64,10 @@ import { FORMATS } from "../translator/formats.js";
   assert.equal(toolMsgs.length, 2, "both tool results preserved");
   assert.ok(toolMsgs.some(m => m.tool_call_id === "c1"), "first tool result present");
   assert.ok(toolMsgs.some(m => m.tool_call_id === "c2"), "second tool result present");
+  assert.ok(
+    out.messages.every(m => m && typeof m === "object" && !Array.isArray(m) && typeof m.role === "string"),
+    "parent loop must spread array results; push(converted) nests them"
+  );
 }
 
 // 4. functionResponse + text
