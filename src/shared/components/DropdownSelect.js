@@ -22,7 +22,9 @@ export default function DropdownSelect({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const selected = multiple
-    ? options.filter((option) => Array.isArray(value) && value.some((item) => String(item) === String(option.value)))
+    ? (value == null
+      ? options
+      : options.filter((option) => Array.isArray(value) && value.some((item) => String(item) === String(option.value))))
     : options.find((option) => String(option.value) === String(value));
   const normalizedQuery = query.trim().toLowerCase();
   const visibleOptions = useMemo(
@@ -42,7 +44,7 @@ export default function DropdownSelect({
 
   const selectOption = (option) => {
     if (multiple) {
-      const current = Array.isArray(value) ? value : [];
+      const current = value == null ? options.map((item) => item.value) : (Array.isArray(value) ? value : []);
       const next = current.some((item) => String(item) === String(option.value))
         ? current.filter((item) => String(item) !== String(option.value))
         : [...current, option.value];
@@ -55,8 +57,10 @@ export default function DropdownSelect({
   };
   const selectAll = () => onChange?.(options.map((option) => option.value));
   const clearAll = () => onChange?.([]);
+  const allSelected = multiple && options.length > 0 && selected.length === options.length;
+  const partiallySelected = multiple && selected.length > 0 && selected.length < options.length;
   const selectedLabel = multiple
-    ? (selected.length ? `已选 ${selected.length} 项` : placeholder)
+    ? (allSelected ? "全部" : selected.length ? `已选 ${selected.length} 项` : placeholder)
     : selected?.label || placeholder;
 
   return (
@@ -74,7 +78,7 @@ export default function DropdownSelect({
           buttonClassName,
         )}
       >
-        <span className={cn("min-w-0 truncate whitespace-nowrap", multiple ? !selected.length : !selected && "text-text-muted")}>{selectedLabel}</span>
+        <span className={cn("min-w-0 truncate whitespace-nowrap", multiple ? !selected.length && "text-text-muted" : !selected && "text-text-muted")}>{selectedLabel}</span>
         <span className={cn("material-symbols-outlined shrink-0 text-[18px] text-text-muted transition-transform", open && "rotate-180")}>expand_more</span>
       </button>
       {open && (
@@ -94,15 +98,22 @@ export default function DropdownSelect({
             </div>
           )}
           {multiple && (
-            <div className="flex items-center justify-between gap-2 border-b border-border px-2 py-1.5 text-xs">
-              <button type="button" onClick={selectAll} className="whitespace-nowrap text-primary hover:underline">全选</button>
-              <button type="button" onClick={clearAll} className="whitespace-nowrap text-text-muted hover:text-text-main">全部取消</button>
+            <div className="flex items-center gap-2 border-b border-border px-2 py-1.5 text-xs">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                ref={(node) => { if (node) node.indeterminate = partiallySelected; }}
+                onChange={(event) => (event.target.checked ? selectAll() : clearAll())}
+                aria-label={allSelected ? "取消全选" : "全选"}
+                className="size-5 shrink-0 accent-primary"
+              />
+              <span className="whitespace-nowrap">全选</span>
             </div>
           )}
           <div role="listbox" className="max-h-64 overflow-y-auto p-1 custom-scrollbar">
             {visibleOptions.length ? visibleOptions.map((option) => {
               const active = multiple
-                ? Array.isArray(value) && value.some((item) => String(item) === String(option.value))
+                ? value == null || (Array.isArray(value) && value.some((item) => String(item) === String(option.value)))
                 : String(option.value) === String(value);
               return (
                 <button
@@ -116,7 +127,7 @@ export default function DropdownSelect({
                     active && "bg-primary/10 text-primary",
                   )}
                 >
-                  <span className="flex min-w-0 items-center gap-2 whitespace-nowrap">{multiple && <span aria-hidden="true" className={cn("flex size-4 shrink-0 items-center justify-center rounded border", active ? "border-primary bg-primary text-white" : "border-border bg-surface")}><span className="material-symbols-outlined text-[13px]">{active ? "check" : ""}</span></span>}<span className="min-w-0 truncate">{option.label}</span></span>
+                  <span className="flex min-w-0 items-center gap-2 whitespace-nowrap">{multiple && <span aria-hidden="true" className={cn("flex size-5 shrink-0 items-center justify-center rounded border", active ? "border-primary bg-primary text-white" : "border-border bg-surface")}><span className="material-symbols-outlined text-[14px]">{active ? "check" : ""}</span></span>}<span className="min-w-0 truncate whitespace-nowrap">{option.label}</span></span>
                   {!multiple && active && <span className="material-symbols-outlined shrink-0 text-[17px]">check</span>}
                 </button>
               );

@@ -19,7 +19,7 @@ export const getDefaultLogFilters = (now = new Date()) => {
   start.setHours(0, 0, 0, 0);
   const end = new Date(start);
   end.setDate(end.getDate() + 1);
-  return { startDate: toLocalDateTimeValue(start), endDate: toLocalDateTimeValue(end), apiKey: [], provider: [], endpoint: [], selectedModel: [], actualModel: [], logType: [] };
+  return { startDate: toLocalDateTimeValue(start), endDate: toLocalDateTimeValue(end), apiKey: null, provider: null, endpoint: null, selectedModel: null, actualModel: null, logType: null };
 };
 const formatNumber = (value) => new Intl.NumberFormat("zh-CN").format(Number(value || 0));
 const formatCost = (value) => `$${Number(value || 0).toFixed(6)}`;
@@ -89,7 +89,7 @@ export default function RequestLogger() {
       const query = new URLSearchParams({ page: String(page), pageSize: "50", sortBy: sortState.field, sortOrder: sortState.direction });
       Object.entries(filters).forEach(([key, value]) => {
         if (Array.isArray(value)) {
-          if (value.length) query.set(key, value.join(","));
+          query.set(key, value.length ? value.join(",") : "__none__");
         } else if (value) query.set(key, value);
       });
       const response = await fetch(`/api/usage/request-logs?${query.toString()}`, { cache: "no-store" });

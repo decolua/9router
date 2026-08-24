@@ -1155,10 +1155,13 @@ export async function getUsageLogs(filter = {}) {
   const asList = (value) => (Array.isArray(value) ? value : String(value || "").split(",")).map((item) => String(item).trim()).filter(Boolean);
   const providerFilters = asList(filter.provider);
   const endpointFilters = asList(filter.endpoint);
-  if (providerFilters.length) { conds.push(`provider IN (${providerFilters.map(() => "?").join(",")})`); params.push(...providerFilters); }
-  if (endpointFilters.length) { conds.push(`endpoint IN (${endpointFilters.map(() => "?").join(",")})`); params.push(...endpointFilters); }
+  if (providerFilters.includes("__none__") || endpointFilters.includes("__none__")) conds.push("1 = 0");
+  if (providerFilters.length && !providerFilters.includes("__none__")) { conds.push(`provider IN (${providerFilters.map(() => "?").join(",")})`); params.push(...providerFilters); }
+  if (endpointFilters.length && !endpointFilters.includes("__none__")) { conds.push(`endpoint IN (${endpointFilters.map(() => "?").join(",")})`); params.push(...endpointFilters); }
   const statusFilters = asList(filter.status);
-  if (statusFilters.length === 1 && statusFilters[0] === "success") {
+  if (statusFilters.includes("__none__")) {
+    conds.push("1 = 0");
+  } else if (statusFilters.length === 1 && statusFilters[0] === "success") {
     conds.push("LOWER(status) IN ('ok', 'success', '200 ok')");
   } else if (statusFilters.length === 1 && statusFilters[0] === "failed") {
     conds.push("(UPPER(status) LIKE 'FAILED%' OR UPPER(status) LIKE 'ERROR%')");
@@ -1177,6 +1180,9 @@ export async function getUsageLogs(filter = {}) {
   if (filter.endDate) { conds.push("timestamp <= ?"); params.push(parseChinaDateTime(filter.endDate).toISOString()); }
 
   const apiKeyFilters = asList(filter.apiKey);
+  if (apiKeyFilters.includes("__none__")) {
+    return { logs: [], filterOptions: { endpoints: [], providers: [], selectedModels: [], actualModels: [] }, pagination: { page: filter.page || 1, pageSize: filter.pageSize || 50, totalItems: 0, totalPages: 0, hasNext: false, hasPrev: false } };
+  }
   if (apiKeyFilters.length) {
     const { getApiKeys } = await import("./apiKeysRepo.js");
     const keys = await getApiKeys();
@@ -1210,7 +1216,9 @@ export async function getUsageLogs(filter = {}) {
     const meta = parseJson(row.meta, {}) || {};
     const selected = modelFilter(meta.requestedModel || row.model);
     const actual = modelFilter(meta.actualModel || row.model);
-    return (!selectedQuery.length || selectedQuery.includes(selected)) && (!actualQuery.length || actualQuery.includes(actual));
+    const selectedMatches = selectedQuery.includes("__none__") ? false : (!selectedQuery.length || selectedQuery.includes(selected));
+    const actualMatches = actualQuery.includes("__none__") ? false : (!actualQuery.length || actualQuery.includes(actual));
+    return selectedMatches && actualMatches;
   });
   const totalItems = filteredRows.length;
   const rawSortValue = (row) => {
