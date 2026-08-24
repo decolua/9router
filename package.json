@@ -52,9 +52,9 @@
     "zustand": "^5.0.10"
   },
   "optionalDependencies": {
-    "better-sqlite3": "^12.6.2"
+    "better-sqlite3": "^13.0.3"
   },
-  "comment_better_sqlite3": "kept in optionalDependencies so npm install doesn't fail on systems without build tools — sql.js is used as fallback at runtime",
+  "comment_better_sqlite3": "kept in optionalDependencies so npm install doesn't fail on systems without build tools — sql.js is used as fallback at runtime; ^13 requires Node >= 22",
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
     "eslint": "^9",
