@@ -374,7 +374,7 @@ Client → 9Router → Headroom /v1/compress → 9Router → provider
 ตั้งค่าท้องถิ่น:
 
 ```bash
-pip install "headroom-ai[proxy]"
+pip install "headroom-ai[proxy]>=0.5.21"
 headroom proxy --port 8787
 ```
 
