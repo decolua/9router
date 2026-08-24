@@ -231,11 +231,6 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   }
 
   const { provider, model } = modelInfo;
-  const modelAccess = await isApiKeyModelAllowed(apiKey, modelStr);
-  if (!modelAccess.allowed) {
-    log.warn("AUTH", modelAccess.reason, { model: modelStr });
-    return errorResponse(HTTP_STATUS.FORBIDDEN, modelAccess.reason);
-  }
   // Routing shown in the unified "▶" line (client model → provider/model)
 
   // Extract userAgent from request
