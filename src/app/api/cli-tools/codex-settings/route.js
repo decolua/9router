@@ -1,6 +1,7 @@
 "use server";
 
 import { NextResponse } from "next/server";
+import { readExistingConfig } from "@/lib/cliTools/readExistingConfig";
 import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
@@ -121,12 +122,11 @@ export async function POST(request) {
     // Ensure directory exists
     await fs.mkdir(codexDir, { recursive: true });
 
-    // Read and parse existing config
-    let parsed = {};
-    try {
-      const existingConfig = await fs.readFile(configPath, "utf-8");
-      parsed = parsedToWritable(parseTOML(existingConfig));
-    } catch { /* No existing config */ }
+    // Read and parse existing config. A file that exists but cannot be read or
+    // parsed must NOT be treated as empty: the merge below writes the result back,
+    // so that would replace every provider, MCP server and policy the user had.
+    const existingConfig = await readExistingConfig(configPath, (raw) => parsedToWritable(parseTOML(raw)));
+    const parsed = existingConfig ?? {};
 
     // Update only 9Router related fields (api_key goes to auth.json, not config.toml)
     parsed.model = model;
@@ -158,7 +158,13 @@ export async function POST(request) {
     });
   } catch (error) {
     console.log("Error updating codex settings:", error);
-    return NextResponse.json({ error: "Failed to update codex settings" }, { status: 500 });
+    // Surface the one failure the user can act on — a config file of theirs that
+    // cannot be parsed — and keep everything else generic.
+    const refusedToClobber = String(error?.message || "").includes("refusing to overwrite it");
+    return NextResponse.json(
+      { error: refusedToClobber ? error.message : "Failed to update codex settings" },
+      { status: 500 }
+    );
   }
 }
 
