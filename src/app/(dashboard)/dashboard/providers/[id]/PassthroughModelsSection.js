@@ -3,6 +3,7 @@
 import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button } from "@/shared/components";
+import { useNotificationStore } from "@/store/notificationStore";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
 
 function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
@@ -90,6 +91,7 @@ PassthroughModelRow.propTypes = {
 export default function PassthroughModelsSection({ providerAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel }) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
+  const notify = useNotificationStore();
 
   const allModels = getProviderCustomModelRows({
     customModels,
@@ -103,7 +105,7 @@ export default function PassthroughModelsSection({ providerAlias, modelAliases, 
     const modelId = newModel.trim();
 
     if (allModels.some((model) => model.id === modelId)) {
-      alert("Model already exists for this provider.");
+      notify.warning("该提供商已存在此模型");
       return;
     }
 

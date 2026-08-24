@@ -906,9 +906,10 @@ export async function getChartData(period = "7d", range = {}) {
 
   if (period === "today") {
     startTime = getChinaDayStart(now);
-    endTime = startTime + DAY_MS;
+    // The date selector covers the full local day, while the curve should stop at now.
+    endTime = Math.max(startTime + 1, now);
     bucketMs = hourMs;
-    bucketCount = 24;
+    bucketCount = Math.max(1, Math.ceil((endTime - startTime) / bucketMs));
   } else if (period === "24h") {
     const currentHourStart = Math.floor(now / hourMs) * hourMs;
     startTime = currentHourStart - 23 * hourMs;

@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button, Card, Input, SegmentedControl } from "@/shared/components";
 import DashboardLayout from "@/shared/components/layouts/DashboardLayout";
 
 const formatNumber = (value) => new Intl.NumberFormat("zh-CN").format(Number(value || 0));
 const formatCost = (value) => `$${Number(value || 0).toFixed(6)}`;
+const MODEL_MARKET_LOG_COLUMNS = ["timestamp", "selectedModel", "actualModel", "provider", "input", "cacheRead", "cacheWrite", "output", "total", "latency", "status"];
 
 export default function ModelMarketClient({ isDashboardView = false }) {
   const [apiKey, setApiKey] = useState("");
@@ -18,6 +19,14 @@ export default function ModelMarketClient({ isDashboardView = false }) {
   const [loading, setLoading] = useState(false);
   const [logsLoading, setLogsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [logRange, setLogRange] = useState(() => { const start = new Date(); start.setHours(0, 0, 0, 0); const end = new Date(start); end.setDate(end.getDate() + 1); return { startDate: start.toISOString().slice(0, 16), endDate: end.toISOString().slice(0, 16) }; });
+  const [visibleLogColumns, setVisibleLogColumns] = useState(MODEL_MARKET_LOG_COLUMNS);
+
+  useEffect(() => {
+    fetch("/api/settings", { cache: "no-store" }).then((response) => response.ok ? response.json() : null).then((settings) => {
+      if (Array.isArray(settings?.modelMarketLogColumns) && settings.modelMarketLogColumns.length) setVisibleLogColumns(settings.modelMarketLogColumns);
+    }).catch(() => {});
+  }, []);
 
   const groupedModels = useMemo(() => {
     const groups = new Map();
@@ -32,7 +41,8 @@ export default function ModelMarketClient({ isDashboardView = false }) {
   const fetchLogs = async (key, page = 1) => {
     setLogsLoading(true);
     try {
-      const response = await fetch(`/api/model-market/logs?page=${page}&pageSize=20`, {
+      const params = new URLSearchParams({ page: String(page), pageSize: "20", startDate: logRange.startDate, endDate: logRange.endDate });
+      const response = await fetch(`/api/model-market/logs?${params.toString()}`, {
         cache: "no-store",
         headers: { Authorization: `Bearer ${key}` },
       });
@@ -44,6 +54,8 @@ export default function ModelMarketClient({ isDashboardView = false }) {
       setLogsLoading(false);
     }
   };
+
+  useEffect(() => { if (activeKey) fetchLogs(activeKey, 1).catch(() => {}); }, [logRange.startDate, logRange.endDate]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -108,7 +120,7 @@ export default function ModelMarketClient({ isDashboardView = false }) {
           <section className="flex min-w-0 flex-col gap-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <SegmentedControl options={[{ value: "models", label: `可用模型 ${models.length}` }, { value: "logs", label: `流量日志 ${pagination.totalItems || 0}` }]} value={activeTab} onChange={setActiveTab} className="w-full sm:w-auto" />
-              <p className="text-xs text-text-muted">当前密钥：{activeKey.slice(0, 8)}***</p>
+              <div className="flex flex-wrap items-center gap-2"><input type="datetime-local" value={logRange.startDate} onChange={(event) => setLogRange((current) => ({ ...current, startDate: event.target.value }))} className="h-9 rounded-md border border-border bg-surface px-2 text-xs" /><span className="text-xs text-text-muted">至</span><input type="datetime-local" value={logRange.endDate} onChange={(event) => setLogRange((current) => ({ ...current, endDate: event.target.value }))} className="h-9 rounded-md border border-border bg-surface px-2 text-xs" /><p className="text-xs text-text-muted">当前密钥：{activeKey.slice(0, 8)}***</p></div>
             </div>
 
             {activeTab === "models" && (
@@ -129,8 +141,8 @@ export default function ModelMarketClient({ isDashboardView = false }) {
                 <div className="overflow-x-auto">
                   {logsLoading ? <div className="p-12 text-center text-sm text-text-muted">正在加载流量日志...</div> : logs.length ? (
                     <table className="w-full min-w-[900px] border-collapse text-xs">
-                      <thead className="border-b border-border bg-bg-subtle text-text-muted"><tr><th className="px-3 py-2 text-left">时间</th><th className="px-3 py-2 text-left">模型</th><th className="px-3 py-2 text-left">提供商</th><th className="px-3 py-2 text-right">输入</th><th className="px-3 py-2 text-right">输出</th><th className="px-3 py-2 text-right">费用</th><th className="px-3 py-2 text-right">延时</th><th className="px-3 py-2 text-left">状态</th></tr></thead>
-                      <tbody className="divide-y divide-border/60">{logs.map((log) => <tr key={log.id} className="hover:bg-bg-hover"><td className="whitespace-nowrap px-3 py-2 text-text-muted">{new Date(log.timestamp).toLocaleString("zh-CN")}</td><td className="max-w-64 truncate px-3 py-2 font-mono" title={log.model}>{log.model || "-"}</td><td className="px-3 py-2">{log.provider || "-"}</td><td className="px-3 py-2 text-right tabular-nums">{formatNumber(log.inputTokens)}</td><td className="px-3 py-2 text-right tabular-nums">{formatNumber(log.outputTokens)}</td><td className="px-3 py-2 text-right tabular-nums">{formatCost(log.cost)}</td><td className="px-3 py-2 text-right tabular-nums">{log.latencyMs ? `${formatNumber(log.latencyMs)} ms` : "-"}</td><td className="px-3 py-2">{log.status || "-"}</td></tr>)}</tbody>
+                      <thead className="border-b border-border bg-bg-subtle text-text-muted"><tr>{visibleLogColumns.includes("timestamp") && <th className="px-3 py-2 text-left">时间</th>}{visibleLogColumns.includes("selectedModel") && <th className="px-3 py-2 text-left">用户选择模型</th>}{visibleLogColumns.includes("actualModel") && <th className="px-3 py-2 text-left">实际请求模型</th>}{visibleLogColumns.includes("provider") && <th className="px-3 py-2 text-left">提供商</th>}{visibleLogColumns.includes("input") && <th className="px-3 py-2 text-right">输入</th>}{visibleLogColumns.includes("cacheRead") && <th className="px-3 py-2 text-right">缓存读取</th>}{visibleLogColumns.includes("cacheWrite") && <th className="px-3 py-2 text-right">缓存写入</th>}{visibleLogColumns.includes("output") && <th className="px-3 py-2 text-right">输出</th>}{visibleLogColumns.includes("total") && <th className="px-3 py-2 text-right">总和</th>}{visibleLogColumns.includes("latency") && <th className="px-3 py-2 text-right">延时</th>}{visibleLogColumns.includes("status") && <th className="px-3 py-2 text-left">状态</th>}</tr></thead>
+                      <tbody className="divide-y divide-border/60">{logs.map((log) => <tr key={log.id} className="hover:bg-bg-hover">{visibleLogColumns.includes("timestamp") && <td className="whitespace-nowrap px-3 py-2 text-text-muted">{new Date(log.timestamp).toLocaleString("zh-CN")}</td>}{visibleLogColumns.includes("selectedModel") && <td className="max-w-64 truncate px-3 py-2 font-mono" title={log.selectedModel}>{log.selectedModel || log.model || "-"}</td>}{visibleLogColumns.includes("actualModel") && <td className="max-w-64 truncate px-3 py-2 font-mono">{log.actualModel || log.model || "-"}</td>}{visibleLogColumns.includes("provider") && <td className="px-3 py-2">{log.provider || "-"}</td>}{visibleLogColumns.includes("input") && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(log.inputTokens)}</td>}{visibleLogColumns.includes("cacheRead") && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(log.cacheReadTokens)}</td>}{visibleLogColumns.includes("cacheWrite") && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(log.cacheCreationTokens)}</td>}{visibleLogColumns.includes("output") && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(log.outputTokens)}</td>}{visibleLogColumns.includes("total") && <td className="px-3 py-2 text-right tabular-nums">{formatNumber(Number(log.inputTokens || 0) + Number(log.cacheReadTokens || 0) + Number(log.cacheCreationTokens || 0) + Number(log.outputTokens || 0))}<div className="text-[10px] text-text-muted">{formatCost(log.cost)}</div></td>}{visibleLogColumns.includes("latency") && <td className="px-3 py-2 text-right tabular-nums">{log.latencyMs ? `${formatNumber(log.latencyMs)} ms` : "-"}</td>}{visibleLogColumns.includes("status") && <td className="px-3 py-2">{log.status || "-"}</td>}</tr>)}</tbody>
                     </table>
                   ) : <div className="p-12 text-center text-sm text-text-muted">该密钥暂无流量日志</div>}
                 </div>

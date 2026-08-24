@@ -10,6 +10,13 @@ import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
 import { LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
 import { LOCALE_FLAGS } from "@/shared/constants/locales";
+import { useNotificationStore } from "@/store/notificationStore";
+
+const MODEL_MARKET_LOG_COLUMN_OPTIONS = [
+  ["timestamp", "时间"], ["selectedModel", "用户选择模型"], ["actualModel", "实际请求模型"],
+  ["provider", "提供商"], ["input", "输入"], ["cacheRead", "缓存读取"], ["cacheWrite", "缓存写入"],
+  ["output", "输出"], ["total", "总和"], ["latency", "延时"], ["status", "状态"],
+];
 
 function getLocaleFromCookie() {
   if (typeof document === "undefined") return "en";
@@ -90,6 +97,8 @@ export default function ProfilePage() {
   const [navigationDeleteSection, setNavigationDeleteSection] = useState("");
   const [usageDefaultsSaving, setUsageDefaultsSaving] = useState(false);
   const [usageDefaultsStatus, setUsageDefaultsStatus] = useState("");
+  const [navigationRename, setNavigationRename] = useState({ open: false, section: "", value: "" });
+  const notify = useNotificationStore();
 
   useEffect(() => {
     fetch("/api/settings")
@@ -798,16 +807,16 @@ export default function ProfilePage() {
 
   const addNavigationSection = () => {
     const section = newNavigationSection.trim();
-    if (!section) return setNavigationStatus("请输入主题名称");
-    if (navigationSections.some((item) => item.toLowerCase() === section.toLowerCase())) return setNavigationStatus("该主题已存在");
+    if (!section) return notify.warning("请输入主题名称");
+    if (navigationSections.some((item) => item.toLowerCase() === section.toLowerCase())) return notify.warning("该主题已存在");
     setSettings((current) => ({ ...current, navigationSections: [...navigationSections, section] }));
     setNewNavigationSection("");
-    setNavigationStatus("");
+    notify.success("已新增导航标题");
   };
 
   const deleteNavigationSection = () => {
     if (!navigationDeleteSection || navigationSections.length <= 1) {
-      setNavigationStatus("至少需要保留一个导航主题");
+      notify.warning("至少需要保留一个导航主题");
       setNavigationDeleteSection("");
       return;
     }
@@ -822,7 +831,7 @@ export default function ProfilePage() {
       return { ...current, navigationSections: remaining, navigationItemSections: assignments };
     });
     setNavigationDeleteSection("");
-    setNavigationStatus(`已将原主题中的导航项移动到“${fallback}”`);
+    notify.success(`已将原主题中的导航项移动到“${fallback}”`);
   };
 
   const moveNavigationSection = (section, direction) => {
@@ -836,10 +845,15 @@ export default function ProfilePage() {
   };
 
   const renameNavigationSection = (section) => {
-    const nextName = window.prompt("修改主题名称", section)?.trim();
-    if (!nextName || nextName === section) return;
+    setNavigationRename({ open: true, section, value: section });
+  };
+
+  const confirmRenameNavigationSection = () => {
+    const section = navigationRename.section;
+    const nextName = navigationRename.value.trim();
+    if (!nextName || nextName === section) { setNavigationRename({ open: false, section: "", value: "" }); return; }
     if (navigationSections.some((item) => item !== section && item.toLowerCase() === nextName.toLowerCase())) {
-      setNavigationStatus("该主题已存在");
+      notify.warning("该主题已存在");
       return;
     }
     setSettings((current) => {
@@ -853,7 +867,8 @@ export default function ProfilePage() {
         navigationItemSections: assignments,
       };
     });
-    setNavigationStatus("");
+    setNavigationRename({ open: false, section: "", value: "" });
+    notify.success("已修改导航标题");
   };
 
   const moveNavigationItem = (itemId, section, direction) => {
@@ -889,9 +904,9 @@ export default function ProfilePage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "保存失败");
       setSettings((current) => ({ ...current, ...data }));
-      setNavigationStatus("导航栏设置已保存，刷新页面后生效");
+      notify.success("导航栏设置已保存");
     } catch (error) {
-      setNavigationStatus(error.message || "保存失败");
+      notify.error(error.message || "保存失败");
     } finally {
       setNavigationSaving(false);
     }
@@ -907,12 +922,13 @@ export default function ProfilePage() {
         body: JSON.stringify({
           usageDefaultPeriod: normalizeUsagePeriod(settings.usageDefaultPeriod),
           trafficLogsDefaultPeriod: normalizeUsagePeriod(settings.trafficLogsDefaultPeriod),
+          modelMarketLogColumns: Array.isArray(settings.modelMarketLogColumns) && settings.modelMarketLogColumns.length ? settings.modelMarketLogColumns : MODEL_MARKET_LOG_COLUMN_OPTIONS.map(([id]) => id),
         }),
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "保存失败");
       setSettings((current) => ({ ...current, ...data }));
-      setUsageDefaultsStatus("默认时间已保存");
+      setUsageDefaultsStatus("默认时间和模型广场日志列设置已保存");
     } catch (error) {
       setUsageDefaultsStatus(error.message || "保存失败");
     } finally {
@@ -1754,6 +1770,12 @@ export default function ProfilePage() {
               <DropdownSelect label="流量分析" value={normalizeUsagePeriod(settings.usageDefaultPeriod)} options={USAGE_DEFAULT_PERIODS} onChange={(value) => setSettings((current) => ({ ...current, usageDefaultPeriod: value }))} />
               <DropdownSelect label="流量日志" value={normalizeUsagePeriod(settings.trafficLogsDefaultPeriod)} options={USAGE_DEFAULT_PERIODS} onChange={(value) => setSettings((current) => ({ ...current, trafficLogsDefaultPeriod: value }))} />
             </div>
+            <div className="rounded-md border border-border p-3">
+              <p className="mb-2 text-sm font-medium">模型广场流量日志列设置</p>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {MODEL_MARKET_LOG_COLUMN_OPTIONS.map(([id, label]) => <label key={id} className="flex items-center gap-2 rounded border border-border px-2 py-1.5 text-xs"><input type="checkbox" checked={(settings.modelMarketLogColumns || MODEL_MARKET_LOG_COLUMN_OPTIONS.map(([key]) => key)).includes(id)} onChange={(event) => setSettings((current) => { const currentColumns = new Set(current.modelMarketLogColumns || MODEL_MARKET_LOG_COLUMN_OPTIONS.map(([key]) => key)); if (event.target.checked) currentColumns.add(id); else if (currentColumns.size > 1) currentColumns.delete(id); return { ...current, modelMarketLogColumns: [...currentColumns] }; })} /><span>{label}</span></label>)}
+              </div>
+            </div>
             <div className="flex items-center justify-between gap-3 border-t border-border pt-4"><span className="text-xs text-text-muted">{usageDefaultsStatus}</span><Button loading={usageDefaultsSaving} onClick={saveUsageDefaults}>保存设置</Button></div>
           </div>
         </Card>
@@ -1914,6 +1936,16 @@ export default function ProfilePage() {
         variant="danger"
         loading={isShuttingDown}
       />
+
+      <Modal
+        isOpen={navigationRename.open}
+        onClose={() => setNavigationRename({ open: false, section: "", value: "" })}
+        title="修改导航标题"
+        size="sm"
+        footer={<><Button variant="ghost" onClick={() => setNavigationRename({ open: false, section: "", value: "" })}>取消</Button><Button onClick={confirmRenameNavigationSection}>保存</Button></>}
+      >
+        <Input label="标题名称" value={navigationRename.value} onChange={(event) => setNavigationRename((current) => ({ ...current, value: event.target.value }))} autoFocus />
+      </Modal>
 
       <Modal
         isOpen={dbAuth.open}

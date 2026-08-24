@@ -159,8 +159,8 @@ export default function ExpertPanelPage() {
       if (cancelled) return;
       setModels((current) => {
         const merged = new Map(current.map((item) => [item.value, item]));
-        for (const model of items.filter(Boolean)) merged.set(model, { value: model, label: model });
-        return [...merged.values()].sort((a, b) => a.label.localeCompare(b.label));
+        for (const model of items.filter(Boolean)) merged.set(model.value, model);
+        return [...merged.values()].sort((a, b) => `${a.provider}/${a.label}`.localeCompare(`${b.provider}/${b.label}`));
       });
     };
 
@@ -176,13 +176,14 @@ export default function ExpertPanelPage() {
           comboResponse.json().catch(() => ({})),
         ]);
         const configuredProviders = new Set((providerData.connections || []).filter((connection) => connection.isActive !== false).map((connection) => connection.provider));
+        const providerNames = new Map((providerData.connections || []).map((connection) => [connection.provider, connection.providerName || connection.name || connection.provider]));
         const catalogModels = (catalogData.models || [])
           .filter((model) => configuredProviders.has(model.provider))
-          .map((model) => model.routedModel || model.fullModel);
-        const combos = (comboData.combos || []).map((combo) => combo.name);
+          .map((model) => ({ value: model.routedModel || model.fullModel, label: model.alias || model.model || model.routedModel || model.fullModel, provider: providerNames.get(model.provider) || model.provider }));
+        const combos = (comboData.combos || []).map((combo) => ({ value: combo.name, label: combo.name, provider: "模型组合" }));
         const mappedModelsResponse = await fetch("/api/v1/models", { cache: "no-store" }).catch(() => null);
         const mappedModelsData = mappedModelsResponse?.ok ? await mappedModelsResponse.json().catch(() => ({})) : {};
-        const mappedModels = (mappedModelsData.data || []).map((model) => model.id);
+        const mappedModels = (mappedModelsData.data || []).map((model) => ({ value: model.id, label: model.id, provider: model.owned_by || String(model.id).split("/")[0] || "其他" }));
         mergeModels([...(mappedModels.length ? mappedModels : catalogModels), ...combos]);
       })
       .catch(() => {});
@@ -191,9 +192,10 @@ export default function ExpertPanelPage() {
   }, []);
 
   const panelModelIds = useMemo(() => new Set(panels.map((panel) => panel.model)), [panels]);
+  const modelLabelMap = useMemo(() => new Map(models.map((model) => [model.value, model.label])), [models]);
   const visiblePickerModels = useMemo(() => {
     const query = pickerSearch.trim().toLowerCase();
-    return models.filter((model) => !panelModelIds.has(model.value) && (!query || model.label.toLowerCase().includes(query)));
+    return models.filter((model) => !panelModelIds.has(model.value) && (!query || `${model.provider} ${model.label}`.toLowerCase().includes(query)));
   }, [models, panelModelIds, pickerSearch]);
 
   const openPicker = (mode) => {
@@ -335,7 +337,6 @@ export default function ExpertPanelPage() {
         <DropdownSelect className="w-56" value={activeSessionId} onChange={switchSession} options={sessions.map((session) => ({ value: session.id, label: session.title }))} placeholder="选择会话" buttonClassName="h-9" />
         <Button icon="note_add" size="md" variant="secondary" disabled={!sessionsReady || sending || judging} onClick={addSession}>新建会话</Button>
         <Button icon="delete" size="md" variant="ghost" disabled={!sessionsReady || sending || judging} onClick={deleteSession}>删除会话</Button>
-        <Button icon="add" size="md" onClick={() => openPicker("multiple")}>批量增加模型</Button>
         {judgeSummary && <p className="min-w-0 flex-1 text-sm text-text-muted">{judgeSummary}</p>}
         <div className="ml-auto flex items-center gap-2">
           <span className="shrink-0 text-sm font-medium text-text-main">裁判模型</span>
@@ -349,7 +350,7 @@ export default function ExpertPanelPage() {
           {panels.map((panel) => (
             <section key={panel.id} className="flex h-full w-[480px] shrink-0 flex-col overflow-hidden rounded-md border border-border bg-surface shadow-sm">
               <header className="flex items-center gap-2 border-b border-border px-3 py-2">
-                <span className="min-w-0 flex-1 truncate font-mono text-xs font-semibold" title={panel.model}>{panel.model}</span>
+                <span className="min-w-0 flex-1 truncate font-mono text-xs font-semibold" title={panel.model}>{modelLabelMap.get(panel.model) || panel.model}</span>
                 {panel.latencyMs !== null && <span className="text-[11px] tabular-nums text-text-muted">{panel.latencyMs} ms</span>}
                 {panel.score !== null && <span className="rounded bg-primary/10 px-2 py-0.5 text-sm font-semibold text-primary">{panel.score}</span>}
                 <button type="button" disabled={sending} onClick={() => setPanels((current) => current.filter((item) => item.id !== panel.id))} className="rounded p-1 text-text-muted hover:bg-red-500/10 hover:text-red-500 disabled:opacity-40" title="移除模型"><span className="material-symbols-outlined text-[17px]">close</span></button>
@@ -365,7 +366,7 @@ export default function ExpertPanelPage() {
                 {!panel.response && panel.status === "streaming" && <p className="animate-pulse text-text-muted">正在生成...</p>}
                 {panel.response && panel.status !== "done" && <div className={`max-w-[92%] self-start whitespace-pre-wrap break-words rounded-md border px-3 py-2 ${panel.status === "error" ? "border-red-500/30 bg-red-500/5 text-red-500" : "border-border bg-surface-2"}`}>{panel.response}</div>}
               </div>
-              {panel.comment && <footer className="border-t border-border bg-bg-subtle px-3 py-2 text-xs text-text-muted"><span className="font-medium text-text-main">裁判评语：</span>{panel.comment}</footer>}
+              {panel.comment && <div className="border-t border-border bg-bg-subtle px-3 py-2 text-xs text-text-muted"><span className="font-medium text-text-main">裁判评语：</span>{panel.comment}</div>}
             </section>
           ))}
           <button type="button" onClick={() => openPicker("multiple")} className="flex h-full min-h-[420px] w-[300px] shrink-0 flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border bg-surface text-text-muted shadow-sm transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary">
@@ -387,12 +388,9 @@ export default function ExpertPanelPage() {
 
       <Modal isOpen={!!modelPicker} onClose={() => setModelPicker(null)} title="增加模型" size="lg" footer={<><Button variant="ghost" onClick={() => setModelPicker(null)}>取消</Button><Button disabled={pickerSelection.length === 0} onClick={confirmModels}>批量加入</Button></>}>
         <div className="flex flex-col gap-3">
-          <Input icon="search" placeholder="搜索模型" value={pickerSearch} onChange={(event) => setPickerSearch(event.target.value)} />
+          <Input icon="search" placeholder="搜索提供商或模型" value={pickerSearch} onChange={(event) => setPickerSearch(event.target.value)} />
           <div className="max-h-[55vh] overflow-y-auto rounded-md border border-border p-2 custom-scrollbar">
-            {visiblePickerModels.length ? visiblePickerModels.map((model) => {
-              const checked = pickerSelection.includes(model.value);
-              return <label key={model.value} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm hover:bg-bg-hover"><input type="checkbox" checked={checked} onChange={() => setPickerSelection((current) => current.includes(model.value) ? current.filter((item) => item !== model.value) : [...current, model.value])} /><span className="min-w-0 break-all font-mono text-xs">{model.label}</span></label>;
-            }) : <p className="p-8 text-center text-sm text-text-muted">没有可加入的模型</p>}
+            {visiblePickerModels.length ? Object.entries(visiblePickerModels.reduce((groups, model) => { (groups[model.provider || "其他"] ||= []).push(model); return groups; }, {})).map(([provider, providerModels]) => <div key={provider} className="mb-3 last:mb-0"><div className="px-2 py-1 text-xs font-semibold text-text-muted">{provider}</div>{providerModels.map((model) => { const checked = pickerSelection.includes(model.value); return <label key={model.value} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm hover:bg-bg-hover"><input type="checkbox" checked={checked} onChange={() => setPickerSelection((current) => current.includes(model.value) ? current.filter((item) => item !== model.value) : [...current, model.value])} /><span className="min-w-0 break-all font-mono text-xs">{model.label}</span></label>; })}</div>) : <p className="p-8 text-center text-sm text-text-muted">没有可加入的模型</p>}
           </div>
         </div>
       </Modal>

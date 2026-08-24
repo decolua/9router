@@ -5,7 +5,7 @@ export const NAVIGATION_VISIBILITY_OPTIONS = [
   { id: "model-market", label: "模型广场", section: "主要功能" },
   { id: "key-groups", label: "密钥分组", section: "主要功能" },
   { id: "providers", label: "提供商", section: "主要功能" },
-  { id: "combos", label: "组合", section: "主要功能" },
+  { id: "combos", label: "模型组合", section: "主要功能" },
   { id: "expert-panel", label: "专家团会话", section: "主要功能" },
   { id: "token-saver", label: "Token 节省", section: "主要功能" },
   { id: "cli-tools", label: "CLI 工具", section: "主要功能" },

@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { UsageStats, CardSkeleton, SegmentedControl, UsageDateRangeControl, getPeriodRange, normalizeUsagePeriod } from "@/shared/components";
+import { UsageStats, Button, CardSkeleton, SegmentedControl, UsageDateRangeControl, getPeriodRange, normalizeUsagePeriod } from "@/shared/components";
 
 export default function UsagePage() {
   return (
@@ -20,6 +20,7 @@ function UsageContent() {
   const initialRange = getPeriodRange("today");
   const [startDate, setStartDate] = useState(initialRange.startDate);
   const [endDate, setEndDate] = useState(initialRange.endDate);
+  const [refreshToken, setRefreshToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,17 +67,18 @@ function UsageContent() {
         />
       </div>
       <div className="flex w-full justify-start">
-        <UsageDateRangeControl period={period} startDate={startDate} endDate={endDate} onPeriodChange={setPeriod} onStartDateChange={setStartDate} onEndDateChange={setEndDate} />
+        <UsageDateRangeControl period={period} startDate={startDate} endDate={endDate} onPeriodChange={setPeriod} onStartDateChange={setStartDate} onEndDateChange={setEndDate} todayEndsTomorrow />
+        <Button variant="secondary" icon="refresh" onClick={() => setRefreshToken((value) => value + 1)}>刷新</Button>
       </div>
 
       {activeTab === "overview" && (
         <Suspense fallback={<CardSkeleton />}>
-          <UsageStats key="overview" period={period} setPeriod={setPeriod} startDate={startDate} endDate={endDate} hidePeriodSelector view="overview" />
+          <UsageStats key={`overview-${refreshToken}`} period={period} setPeriod={setPeriod} startDate={startDate} endDate={endDate} hidePeriodSelector view="overview" />
         </Suspense>
       )}
       {activeTab !== "overview" && (
         <Suspense fallback={<CardSkeleton />}>
-          <UsageStats key={activeTab} period={period} setPeriod={setPeriod} startDate={startDate} endDate={endDate} hidePeriodSelector view={activeTab} />
+          <UsageStats key={`${activeTab}-${refreshToken}`} period={period} setPeriod={setPeriod} startDate={startDate} endDate={endDate} hidePeriodSelector view={activeTab} />
         </Suspense>
       )}
     </div>

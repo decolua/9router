@@ -25,7 +25,7 @@ const navItems = [
   { id: "key-groups", href: "/dashboard/key-groups", label: "密钥分组", icon: "group_work", section: "主要功能" },
   { id: "providers", href: "/dashboard/providers", label: "提供商", icon: "dns", section: "主要功能" },
   // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
-  { id: "combos", href: "/dashboard/combos", label: "组合", icon: "layers", section: "主要功能" },
+  { id: "combos", href: "/dashboard/combos", label: "模型组合", icon: "layers", section: "主要功能" },
   { id: "expert-panel", href: "/dashboard/expert-panel", label: "专家团会话", icon: "forum", section: "主要功能" },
   { id: "token-saver", href: "/dashboard/token-saver", label: "Token 节省", icon: "savings", section: "主要功能" },
   // { href: "/dashboard/pxpipe", label: "PXPIPE", icon: "image" },

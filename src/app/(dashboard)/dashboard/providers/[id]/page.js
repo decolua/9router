@@ -11,6 +11,7 @@ import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
+import { useNotificationStore } from "@/store/notificationStore";
 import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
@@ -79,6 +80,7 @@ export default function ProviderDetailPage() {
   const [providerModelConfigSaving, setProviderModelConfigSaving] = useState(false);
   const [providerModelConfigStatus, setProviderModelConfigStatus] = useState("");
   const { copied, copy } = useCopyToClipboard();
+  const notify = useNotificationStore();
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
 
@@ -436,6 +438,23 @@ export default function ProviderDetailPage() {
     saveThinkingConfig(mode);
   };
 
+  const handleDeleteAllModels = () => {
+    const ids = [...new Set([
+      ...customModels.filter((entry) => entry.providerAlias === providerStorageAlias && (entry.kind || entry.type || "llm") === "llm").map((entry) => entry.id),
+      ...Object.entries(modelAliases).filter(([key]) => key.startsWith(`${providerStorageAlias}/`)).map(([, alias]) => alias),
+    ])];
+    if (!ids.length) return notify.info("当前没有可删除的模型");
+    setConfirmState({
+      title: "删除全部模型",
+      message: `确认删除该提供商的 ${ids.length} 个自定义模型？`,
+      onConfirm: async () => {
+        setConfirmState(null);
+        await Promise.all(ids.map((id) => handleDeleteCustomModel(id, "llm", providerStorageAlias).catch(() => {})));
+        notify.success("已删除全部自定义模型");
+      },
+    });
+  };
+
   const saveProviderModelConfig = async () => {
     setProviderModelConfigSaving(true);
     setProviderModelConfigStatus("");
@@ -522,7 +541,7 @@ export default function ProviderDetailPage() {
         await fetchAliases();
       } else {
         const data = await res.json();
-        alert(data.error || "Failed to set alias");
+      notify.error(data.error || "设置模型别名失败");
       }
     } catch (error) {
       console.log("Error setting alias:", error);
@@ -554,7 +573,7 @@ export default function ProviderDetailPage() {
         if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("customModelChanged"));
       } else {
         const data = await res.json();
-        alert(data.error || "Failed to add custom model");
+        notify.error(data.error || "添加自定义模型失败");
       }
     } catch (error) {
       console.log("Error adding custom model:", error);
@@ -577,23 +596,28 @@ export default function ProviderDetailPage() {
   // Fetch the active connection's live catalog and persist models missing from the registry.
   const handleImportProviderModels = async () => {
     if (importingProviderModels) return;
-    const activeConnection = connections.find((conn) => conn.isActive !== false);
+    const targetConnections = (selectedConnectionIds.length > 0 ? connections.filter((connection) => selectedConnectionIds.includes(connection.id)) : connections).filter((conn) => conn.isActive !== false);
+    const activeConnection = targetConnections[0];
     if (!activeConnection) {
-      alert(translate("Please add an active connection first"));
+      notify.warning("请先添加启用的连接");
       return;
     }
 
     setImportingProviderModels(true);
     try {
-      const res = await fetch(`/api/providers/${activeConnection.id}/models`);
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data.error || translate("Failed to fetch models"));
+      const responses = await Promise.all(targetConnections.map(async (connection) => {
+        const res = await fetch(`/api/providers/${connection.id}/models`);
+        const data = await res.json().catch(() => ({}));
+        return { res, data };
+      }));
+      const failed = responses.filter(({ res }) => !res.ok).length;
+      const fetchedModels = [...new Map(responses.flatMap(({ data }) => data.models || []).map((model) => [typeof model === "string" ? model : (model.id || model.name || model.model), model])).values()];
+      if (failed === responses.length) {
+        notify.error("更新模型列表失败");
         return;
       }
-      const fetchedModels = data.models || [];
       if (fetchedModels.length === 0) {
-        alert(translate("No models returned"));
+        notify.warning("提供商未返回模型");
         return;
       }
 
@@ -622,23 +646,24 @@ export default function ProviderDetailPage() {
       }
       
       if (importedCount === 0) {
-        alert(translate("All models already exist, no new models added"));
+        notify.info("所有模型都已存在");
       } else {
-        alert(translate("Successfully added") + ` ${importedCount} ` + translate("models"));
+        notify.success(`已更新 ${importedCount} 个模型${failed ? `，${failed} 个连接失败` : ""}`);
       }
     } catch (error) {
       console.log("Error importing provider models:", error);
-      alert(translate("Error fetching models") + ": " + error.message);
+      notify.error(`更新模型列表失败：${error.message}`);
     } finally {
       setImportingProviderModels(false);
     }
   };
 
   const handleRunOneByOneTest = async () => {
-    if (oneByOneRunning || connections.length === 0) return;
+    const targetConnections = selectedConnectionIds.length > 0 ? connections.filter((connection) => selectedConnectionIds.includes(connection.id)) : connections;
+    if (oneByOneRunning || targetConnections.length === 0) return;
 
     const queuedState = Object.fromEntries(
-      connections.map((connection) => [connection.id, { state: "queued", error: null }]),
+      targetConnections.map((connection) => [connection.id, { state: "queued", error: null }]),
     );
 
     stopOneByOneRef.current = false;
@@ -646,16 +671,16 @@ export default function ProviderDetailPage() {
     setOneByOneStopping(false);
     setOneByOneCurrentConnectionId(null);
     setOneByOneResults(queuedState);
-    setOneByOneSummary({ total: connections.length, completed: 0, passed: 0, failed: 0, stopped: false });
+    setOneByOneSummary({ total: targetConnections.length, completed: 0, passed: 0, failed: 0, stopped: false });
 
     let passed = 0;
     let failed = 0;
 
     try {
-      for (let index = 0; index < connections.length; index += 1) {
+      for (let index = 0; index < targetConnections.length; index += 1) {
         if (stopOneByOneRef.current) {
           setOneByOneSummary({
-            total: connections.length,
+            total: targetConnections.length,
             completed: index,
             passed,
             failed,
@@ -664,7 +689,7 @@ export default function ProviderDetailPage() {
           break;
         }
 
-        const connection = connections[index];
+        const connection = targetConnections[index];
         setOneByOneCurrentConnectionId(connection.id);
         setOneByOneResults((prev) => ({
           ...prev,
@@ -701,14 +726,14 @@ export default function ProviderDetailPage() {
         }
 
         setOneByOneSummary({
-          total: connections.length,
+            total: targetConnections.length,
           completed: index + 1,
           passed,
           failed,
           stopped: false,
         });
 
-        if (index < connections.length - 1) {
+        if (index < targetConnections.length - 1) {
           await sleep(ONE_BY_ONE_DELAY_MS);
         }
       }
@@ -765,7 +790,7 @@ export default function ProviderDetailPage() {
         }
         setConnections(prev => prev.filter(c => !idsToDelete.includes(c.id)));
         setSelectedConnectionIds([]);
-        if (failed > 0) alert(`Deleted ${idsToDelete.length - failed} connection(s), ${failed} failed.`);
+        if (failed > 0) notify.warning(`已删除 ${idsToDelete.length - failed} 个连接，${failed} 个失败`);
       }
     });
   };
@@ -934,7 +959,7 @@ export default function ProviderDetailPage() {
           failed += 1;
         }
       }
-      if (failed > 0) alert(`Updated with ${failed} failed request(s).`);
+      if (failed > 0) notify.warning(`批量更新代理池时有 ${failed} 个请求失败`);
       await fetchConnections();
       setShowBulkProxyModal(false);
     } finally {
@@ -950,7 +975,7 @@ export default function ProviderDetailPage() {
   const handleApplyOneToOne = () => {
     const activePools = proxyPools.filter((p) => p.isActive === true);
     if (activePools.length === 0) {
-      alert("No active proxy pools available.");
+      notify.warning("没有可用的启用代理池");
       return;
     }
     const targets = connections.map((c, i) => ({
@@ -1481,13 +1506,13 @@ export default function ProviderDetailPage() {
                     </Button>
                   )}
                   <Button
-                    size="sm"
+                    size="md"
                     variant="secondary"
                     icon="sync"
                     onClick={handleRunOneByOneTest}
                     disabled={oneByOneRunning}
                   >
-                    {oneByOneRunning ? "Testing Connection One-by-One..." : "Test Connection One-by-One"}
+                    {oneByOneRunning ? "正在逐个测试连接..." : "逐个测试连接"}
                   </Button>
                   {oneByOneRunning && (
                     <Button
@@ -1699,24 +1724,27 @@ export default function ProviderDetailPage() {
               <div className="flex flex-wrap gap-2">
                 {connections.some((conn) => conn.isActive !== false) && (
                   <Button
-                    size="sm"
+                    size="md"
                     variant="secondary"
                     icon={importingProviderModels ? "progress_activity" : "download"}
                     onClick={handleImportProviderModels}
                     disabled={importingProviderModels}
                   >
-                    {importingProviderModels ? translate("Fetching...") : translate("Fetch Models")}
+                    {importingProviderModels ? "正在更新..." : "更新模型列表"}
                   </Button>
                 )}
                 {disabledModelIds.length > 0 && (
-                  <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
-                    Active All
+                  <Button size="md" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
+                     全部启用
                   </Button>
                 )}
                 {activeIds.length > 0 && (
-                  <Button size="sm" variant="secondary" icon="block" onClick={() => handleDisableAll(activeIds)}>
-                    Disable All
+                  <Button size="md" variant="secondary" icon="block" onClick={() => handleDisableAll(activeIds)}>
+                     全部禁用
                   </Button>
+                )}
+                {(customModels.some((entry) => entry.providerAlias === providerStorageAlias && (entry.kind || entry.type || "llm") === "llm") || Object.keys(modelAliases).some((key) => key.startsWith(`${providerStorageAlias}/`))) && (
+                  <Button size="md" variant="danger" icon="delete_sweep" onClick={handleDeleteAllModels}>删除全部模型</Button>
                 )}
               </div>
             );

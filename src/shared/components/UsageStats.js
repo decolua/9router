@@ -114,8 +114,9 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const sortBy = searchParams.get("sortBy") || "rawModel";
-  const sortOrder = searchParams.get("sortOrder") || "asc";
+  const storedSort = (() => { try { return JSON.parse(localStorage.getItem(`9router:usage-sort:${view}`) || "null"); } catch { return null; } })();
+  const sortBy = searchParams.get("sortBy") || storedSort?.sortBy || "rawModel";
+  const sortOrder = searchParams.get("sortOrder") || storedSort?.sortOrder || "asc";
 
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -175,6 +176,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       if (startDate) query.set("startDate", startDate);
       if (endDate) query.set("endDate", endDate);
     }
+    try { localStorage.setItem(`9router:usage-sort:${view}`, JSON.stringify({ sortBy: params.get("sortBy"), sortOrder: params.get("sortOrder") })); } catch {}
     fetch(`/api/usage/stats?${query.toString()}`)
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {

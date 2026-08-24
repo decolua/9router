@@ -1,13 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button, Card, Input, Modal, Toggle } from "@/shared/components";
+import { useNotificationStore } from "@/store/notificationStore";
 
 const EMPTY_FORM = { id: null, name: "", allowAll: true, allowedModels: [], allowedCombos: [] };
 
 export default function KeyGroupsPage() {
   const [groups, setGroups] = useState([]);
   const [models, setModels] = useState([]);
+  const notify = useNotificationStore();
   const [combos, setCombos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -20,25 +22,35 @@ export default function KeyGroupsPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [groupRes, catalogRes, routedModelRes, comboRes] = await Promise.all([
+      const [groupRes, catalogRes, routedModelRes, comboRes, providerRes] = await Promise.all([
         fetch("/api/key-groups", { cache: "no-store" }),
         fetch("/api/models", { cache: "no-store" }),
         fetch("/api/v1/models", { cache: "no-store" }),
         fetch("/api/combos", { cache: "no-store" }),
+        fetch("/api/providers", { cache: "no-store" }),
       ]);
-      const [groupData, catalogData, routedModelData, comboData] = await Promise.all([
-        groupRes.json(), catalogRes.json(), routedModelRes.json(), comboRes.json(),
+      const [groupData, catalogData, routedModelData, comboData, providerData] = await Promise.all([
+        groupRes.json(), catalogRes.json(), routedModelRes.json(), comboRes.json(), providerRes.json(),
       ]);
       if (!groupRes.ok) throw new Error(groupData.error || "加载密钥分组失败");
       if (!catalogRes.ok && !routedModelRes.ok) throw new Error("加载可用模型失败");
       if (!comboRes.ok) throw new Error(comboData.error || "加载模型组合失败");
       setGroups(groupData.groups || []);
-      const catalogModels = (catalogData.models || []).map((model) => model.routedModel || model.fullModel || (model.provider && model.model ? `${model.provider}/${model.model}` : null));
-      const routedModels = (routedModelData.data || []).filter((model) => model.owned_by !== "combo").map((model) => model.id);
-      setModels([...new Set([...catalogModels, ...routedModels].filter(Boolean))].sort());
+      const allowedProviders = new Map((providerData.connections || [])
+        .filter((connection) => connection.isActive !== false || connection.autoDisabledReason)
+        .map((connection) => [connection.provider, connection.providerName || connection.name || connection.provider]));
+      const catalogModels = (catalogData.models || [])
+        .filter((model) => allowedProviders.has(model.provider))
+        .map((model) => ({ id: model.routedModel || model.fullModel || `${model.provider}/${model.model}`, provider: allowedProviders.get(model.provider), modelName: model.alias || model.model }));
+      const routedModels = (routedModelData.data || []).filter((model) => model.owned_by !== "combo").map((model) => {
+        const [provider, ...rest] = String(model.id || "").split("/");
+        return { id: model.id, provider: allowedProviders.get(provider) || provider, modelName: rest.join("/") || model.id };
+      }).filter((model) => model.id && (allowedProviders.has(String(model.id).split("/")[0]) || model.provider));
+      const deduped = new Map([...catalogModels, ...routedModels].map((model) => [model.id, model]));
+      setModels([...deduped.values()].sort((a, b) => `${a.provider}/${a.modelName}`.localeCompare(`${b.provider}/${b.modelName}`)));
       setCombos((comboData.combos || []).map((combo) => combo.name).sort());
     } catch (error) {
-      alert(error.message);
+      notify.error(error.message);
     } finally {
       setLoading(false);
     }
@@ -59,7 +71,7 @@ export default function KeyGroupsPage() {
   };
 
   const saveGroup = async () => {
-    if (!form.name.trim()) return alert("请输入分组名称");
+    if (!form.name.trim()) return notify.warning("请输入分组名称");
     setSaving(true);
     try {
       const response = await fetch(form.id ? `/api/key-groups/${form.id}` : "/api/key-groups", {
@@ -72,7 +84,7 @@ export default function KeyGroupsPage() {
       setForm(null);
       await loadData();
     } catch (error) {
-      alert(error.message);
+      notify.error(error.message);
     } finally {
       setSaving(false);
     }
@@ -82,7 +94,7 @@ export default function KeyGroupsPage() {
     if (!confirm(`删除密钥分组“${group.name}”？`)) return;
     const response = await fetch(`/api/key-groups/${group.id}`, { method: "DELETE" });
     const data = await response.json();
-    if (!response.ok) return alert(data.error || "删除密钥分组失败");
+    if (!response.ok) return notify.error(data.error || "删除密钥分组失败");
     await loadData();
   };
 
@@ -93,7 +105,7 @@ export default function KeyGroupsPage() {
       body: JSON.stringify({ isDefault: true }),
     });
     const data = await response.json();
-    if (!response.ok) return alert(data.error || "设置默认分组失败");
+    if (!response.ok) return notify.error(data.error || "设置默认分组失败");
     await loadData();
   };
 
@@ -112,9 +124,15 @@ export default function KeyGroupsPage() {
   const normalizedModelSearch = modelSearch.trim().toLowerCase();
   const normalizedComboSearch = comboSearch.trim().toLowerCase();
   const visibleModels = models.filter((model) => {
-    if (modelView === "selected" && !form?.allowedModels.includes(model)) return false;
-    return !normalizedModelSearch || model.toLowerCase().includes(normalizedModelSearch);
+    if (modelView === "selected" && !form?.allowedModels.includes(model.id)) return false;
+    return !normalizedModelSearch || `${model.provider} ${model.modelName} ${model.id}`.toLowerCase().includes(normalizedModelSearch);
   });
+  const groupedModels = useMemo(() => visibleModels.reduce((groups, model) => {
+    const key = model.provider || "其他";
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(model);
+    return groups;
+  }, {}), [visibleModels]);
   const visibleCombos = combos.filter((combo) => {
     if (comboView === "selected" && !form?.allowedCombos.includes(combo)) return false;
     return !normalizedComboSearch || combo.toLowerCase().includes(normalizedComboSearch);
@@ -144,7 +162,7 @@ export default function KeyGroupsPage() {
           {!form.allowAll && <>
             <div className="grid gap-5 lg:grid-cols-2">
               <section className="flex min-w-0 flex-col gap-2">
-                <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">可用模型</h3><div className="flex items-center gap-2 text-xs"><span className="text-text-muted">已选 {form.allowedModels.length}</span><button type="button" onClick={() => selectValues("allowedModels", visibleModels)} className="whitespace-nowrap text-primary hover:underline">全选筛选结果</button><button type="button" onClick={() => clearValues("allowedModels")} className="whitespace-nowrap text-text-muted hover:text-text-main">全部取消</button></div></div>
+                <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">可用模型</h3><div className="flex items-center gap-2 text-xs"><span className="text-text-muted">已选 {form.allowedModels.length}</span><button type="button" onClick={() => selectValues("allowedModels", visibleModels.map((model) => model.id))} className="whitespace-nowrap text-primary hover:underline">全选筛选结果</button><button type="button" onClick={() => clearValues("allowedModels")} className="whitespace-nowrap text-text-muted hover:text-text-main">全部取消</button></div></div>
                 <div className="flex items-center gap-2">
                   <Input className="min-w-0 flex-1" icon="search" placeholder="搜索可用模型" value={modelSearch} onChange={(event) => setModelSearch(event.target.value)} />
                   <div className="flex shrink-0 rounded-md border border-border bg-bg-subtle p-0.5 text-xs">
@@ -152,7 +170,7 @@ export default function KeyGroupsPage() {
                     <button type="button" onClick={() => setModelView("selected")} className={`rounded px-2.5 py-1.5 ${modelView === "selected" ? "bg-primary text-white" : "text-text-muted hover:text-text-main"}`}>已选中</button>
                   </div>
                 </div>
-                <div className="h-80 overflow-y-auto rounded-md border border-border p-2">{visibleModels.length ? visibleModels.map((model) => <label key={model} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-surface-2"><input type="checkbox" checked={form.allowedModels.includes(model)} onChange={() => toggleValue("allowedModels", model)} /><span className="min-w-0 break-all font-mono">{model}</span></label>) : <p className="p-4 text-center text-xs text-text-muted">没有匹配的模型</p>}</div>
+                <div className="h-80 overflow-y-auto rounded-md border border-border p-2">{visibleModels.length ? Object.entries(groupedModels).map(([provider, providerModels]) => <div key={provider} className="mb-3 last:mb-0"><div className="sticky top-0 z-[1] bg-surface px-2 py-1 text-xs font-semibold text-text-muted">{provider}</div>{providerModels.map((model) => <label key={model.id} className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-surface-2"><input type="checkbox" checked={form.allowedModels.includes(model.id)} onChange={() => toggleValue("allowedModels", model.id)} /><span className="min-w-0 break-all font-mono">{model.modelName || model.id}</span><span className="ml-auto text-[10px] text-text-muted">{model.id}</span></label>)}</div>) : <p className="p-4 text-center text-xs text-text-muted">没有匹配的模型</p>}</div>
               </section>
               <section className="flex min-w-0 flex-col gap-2">
                 <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-semibold">可用模型组合</h3><div className="flex items-center gap-2 text-xs"><span className="text-text-muted">已选 {form.allowedCombos.length}</span><button type="button" onClick={() => selectValues("allowedCombos", visibleCombos)} className="whitespace-nowrap text-primary hover:underline">全选筛选结果</button><button type="button" onClick={() => clearValues("allowedCombos")} className="whitespace-nowrap text-text-muted hover:text-text-main">全部取消</button></div></div>

@@ -22,6 +22,8 @@ export async function GET(request) {
       page: searchParams.get("page"),
       pageSize: Math.min(50, Math.max(1, Number(searchParams.get("pageSize")) || 20)),
       apiKey: keyRecord.id,
+      startDate: searchParams.get("startDate"),
+      endDate: searchParams.get("endDate"),
     });
     return NextResponse.json({
       logs: result.logs.map(sanitizeModelMarketLog),
