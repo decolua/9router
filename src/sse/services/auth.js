@@ -188,8 +188,27 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       connection = availableConnections[0];
     }
 
+    const configuredProxyPoolIds = providerId === "freebuff"
+      ? [...new Set([
+        ...(Array.isArray(connection.providerSpecificData?.proxyPoolIds) ? connection.providerSpecificData.proxyPoolIds : []),
+        connection.providerSpecificData?.proxyPoolId,
+      ].map((id) => String(id || "").trim()).filter(Boolean))]
+      : null;
+    const requestedForcedPoolId = String(options?.forceProxyPoolId || "").trim();
+    const allowedForcedPoolIds = Array.isArray(options?.allowedProxyPoolIds)
+      ? new Set(options.allowedProxyPoolIds.map((id) => String(id || "").trim()).filter(Boolean))
+      : null;
+    const forcedProxyPoolId = requestedForcedPoolId && allowedForcedPoolIds?.has(requestedForcedPoolId)
+      ? requestedForcedPoolId
+      : null;
+    if (requestedForcedPoolId && !forcedProxyPoolId) return null;
     const psdForProxy = providerId === "freebuff"
-      ? { ...(connection.providerSpecificData || {}), proxyPoolScope: `${providerId}::${model || ""}` }
+      ? {
+        ...(connection.providerSpecificData || {}),
+        proxyPoolId: forcedProxyPoolId || connection.providerSpecificData?.proxyPoolId,
+        proxyPoolIds: forcedProxyPoolId ? [forcedProxyPoolId] : configuredProxyPoolIds,
+        proxyPoolScope: `${providerId}::${model || ""}`,
+      }
       : connection.providerSpecificData?.proxyPoolIds?.length
         ? { ...connection.providerSpecificData, proxyPoolScope: `${providerId}::${model || ""}` }
         : connection.providerSpecificData;

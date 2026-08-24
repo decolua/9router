@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { executeMock } = vi.hoisted(() => ({ executeMock: vi.fn() }));
 
+vi.mock("../../open-sse/translator/index.js", () => ({ register: vi.fn(), translateRequest: vi.fn((_source, _target, _model, body) => body) }));
 vi.mock("../../open-sse/executors/index.js", () => ({
   getExecutor: () => ({ noAuth: true, execute: executeMock }),
 }));

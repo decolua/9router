@@ -23,6 +23,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { routeFiniteFreebuff } from "./freebuffRouting.js";
 
 /**
  * Handle chat completion request
@@ -246,18 +247,36 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // Extract userAgent from request
   const userAgent = request?.headers?.get("user-agent") || "";
 
-  // Try with available accounts (fallback on errors)
+  if (provider === "freebuff") {
+    const routed = await routeFiniteFreebuff({
+      provider,
+      model,
+      select: (excludedConnectionIds) => getProviderCredentials(provider, excludedConnectionIds, model, { preferredConnectionId: options.preferredConnectionId }),
+      resolvePool: (selected, forceProxyPoolId) => getProviderCredentials(provider, new Set(), model, {
+        preferredConnectionId: selected.connectionId,
+        forceProxyPoolId,
+        allowedProxyPoolIds: [
+          ...(selected._connection?.providerSpecificData?.proxyPoolIds || []),
+          selected._connection?.providerSpecificData?.proxyPoolId,
+        ],
+      }),
+      dispatch: (credentials) => dispatchChatAttempt({ body, provider, model, credentials, log, clientRawRequest, request, apiKey, userAgent }),
+      shouldFallback: async () => false,
+    });
+    if (routed.response) return routed.response;
+    if (routed.terminal.kind === "quota") {
+      return unavailableResponse(429, `[${provider}/${model}] ${routed.terminal.message}`, routed.terminal.reset, "quota reset pending");
+    }
+    return errorResponse(routed.terminal.status, routed.terminal.message);
+  }
+
   const excludeConnectionIds = new Set();
-  const excludePoolIds = new Set();
-  const maxPoolRetries = 2;
-  let poolRetries = 0;
   let lastError = null;
   let lastStatus = null;
 
   while (true) {
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
       preferredConnectionId: options.preferredConnectionId,
-      excludePoolIds,
     });
 
     // All accounts unavailable
@@ -275,10 +294,6 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       log.warn("CHAT", "No more accounts available", { provider });
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
     }
-    if (credentials.providerSpecificData?.noFitPool === true) {
-      return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, `Freebuff has no eligible proxy pool for ${model}`);
-    }
-
     // Account selection shown in the unified "▶" line (acc:...)
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
@@ -360,4 +375,24 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     return result.response;
   }
+}
+
+async function dispatchChatAttempt({ body, provider, model, credentials, log, clientRawRequest, request, apiKey, userAgent }) {
+  const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+  const chatSettings = await getSettings();
+  return handleChatCore({
+    body: { ...body, model: `${provider}/${model}` }, modelInfo: { provider, model }, credentials: refreshedCredentials, log,
+    clientRawRequest, connectionId: credentials.connectionId, userAgent, apiKey,
+    ccFilterNaming: !!chatSettings.ccFilterNaming, rtkEnabled: !!chatSettings.rtkEnabled,
+    headroomEnabled: !!chatSettings.headroomEnabled, headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
+    headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
+    cavemanEnabled: !!chatSettings.cavemanEnabled, cavemanLevel: chatSettings.cavemanLevel || "full",
+    ponytailEnabled: !!chatSettings.ponytailEnabled, ponytailLevel: chatSettings.ponytailLevel || "full",
+    pxpipeEnabled: !!chatSettings.pxpipeEnabled, pxpipeMinChars: chatSettings.pxpipeMinChars, pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
+    pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null, onPxpipeEvent: appendPxpipeEvent,
+    providerThinking: (chatSettings.providerThinking || {})[provider] || null,
+    sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+    onCredentialsRefreshed: async (newCreds) => updateProviderCredentials(credentials.connectionId, { ...newCreds, existingProviderSpecificData: credentials.providerSpecificData, testStatus: "active" }),
+    onRequestSuccess: async () => clearAccountError(credentials.connectionId, credentials, model),
+  });
 }
