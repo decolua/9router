@@ -1,3 +1,4 @@
+import { hydrateFitnessCache } from "./proxyPoolFitnessLifecycle.js";
 import {
   getProxyPoolById,
   listProxyPoolFitness,
@@ -96,6 +97,17 @@ export async function clearAllPoolUnfit(provider = null) {
   catch (error) { persistenceLog("clear-all", error); return false; }
 }
 export async function resetPoolFitness() { return clearAllPoolUnfit(); }
+export function evictPoolFitness(poolId) {
+  if (poolId) fitness.delete(poolId);
+}
+export async function hydratePoolFitness(now = Date.now()) {
+  try {
+    return await hydrateFitnessCache({
+      list: listProxyPoolFitness, remove: deleteProxyPoolFitness,
+      setPool: setPoolFitness, removeCached, now,
+    });
+  } catch (error) { persistenceLog("hydrate", error); return false; }
+}
 export async function pruneExpired(now = Date.now()) {
   let entries;
   try { entries = await listProxyPoolFitness(); } catch (error) { persistenceLog("prune", error); return 0; }

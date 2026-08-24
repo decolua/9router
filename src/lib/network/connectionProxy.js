@@ -1,5 +1,6 @@
 import { getProxyPoolById } from "@/models";
-import { fitPoolIds, loadPoolFitness, observePoolFitnessVersion } from "open-sse/services/proxyPoolFitness.js";
+import { getProxyFitnessReady } from "@/lib/db/driver.js";
+import { fitPoolIds, observePoolFitnessVersion } from "open-sse/services/proxyPoolFitness.js";
 
 function normalizeString(value) {
   if (value === undefined || value === null) return "";
@@ -24,7 +25,9 @@ export async function resolveConnectionProxyConfig(providerSpecificData = {}, co
     const excludedPoolIds = excludePoolIds instanceof Set
       ? [...excludePoolIds]
       : Array.isArray(excludePoolIds) ? excludePoolIds : [];
-    if (strategy === "smart" && scope) await Promise.all(proxyPoolIds.map((id) => loadPoolFitness(id)));
+    if (strategy === "smart" && scope && !await getProxyFitnessReady()) {
+      return { source: "error", proxyPoolId: null, proxyPool: null, connectionProxyEnabled: false, connectionProxyUrl: "", connectionNoProxy: "", noFitPool: true, strictProxy: true };
+    }
     const selectedPoolId = proxyPoolIds.length
       ? pickProxyPoolId(proxyPoolIds, strategy, connectionId || "", providerSpecificData?.targetProxyPoolIds || [], { scope, excludeIds: excludedPoolIds })
       : excludedPoolIds.includes(proxyPoolId) ? null : proxyPoolId;

@@ -6,9 +6,11 @@ import { POST as clearExact } from "../../../src/app/api/proxy-pools/[id]/fitnes
 const mocks = vi.hoisted(() => ({
   clearAllPoolUnfit: vi.fn(),
   clearPoolUnfit: vi.fn(),
+  getProxyFitnessReady: vi.fn(),
   poolFitnessSnapshot: vi.fn(),
 }));
 
+vi.mock("@/lib/db/driver.js", () => ({ getProxyFitnessReady: mocks.getProxyFitnessReady }));
 vi.mock("next/server", () => ({
   NextResponse: {
     json: (body, init = {}) => ({ body, status: init.status || 200 }),
@@ -25,6 +27,7 @@ function request(body, jsonError = null) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.poolFitnessSnapshot.mockResolvedValue({});
+  mocks.getProxyFitnessReady.mockResolvedValue(true);
   mocks.clearAllPoolUnfit.mockResolvedValue(true);
   mocks.clearPoolUnfit.mockResolvedValue(true);
 });
@@ -66,6 +69,26 @@ describe("Proxy Fitness API Routes", () => {
           },
         },
       });
+    });
+
+    it("waits for readiness before reading the snapshot", async () => {
+      let resolve;
+      mocks.getProxyFitnessReady.mockReturnValue(new Promise((next) => { resolve = next; }));
+      let settled = false;
+      const response = GET().then((value) => { settled = true; return value; });
+      await Promise.resolve();
+      expect(settled).toBe(false);
+      expect(mocks.poolFitnessSnapshot).not.toHaveBeenCalled();
+      resolve(true);
+      await expect(response).resolves.toEqual({ status: 200, body: { pools: {} } });
+      expect(mocks.poolFitnessSnapshot).toHaveBeenCalledTimes(1);
+    });
+
+    it("maps false or rejected readiness to 500 without reading the snapshot", async () => {
+      mocks.getProxyFitnessReady.mockResolvedValueOnce(false).mockRejectedValueOnce(new Error("hydrate failed"));
+      await expect(GET()).resolves.toEqual({ status: 500, body: { error: "Failed to read proxy fitness" } });
+      await expect(GET()).resolves.toEqual({ status: 500, body: { error: "Failed to read proxy fitness" } });
+      expect(mocks.poolFitnessSnapshot).not.toHaveBeenCalled();
     });
 
     it("handles service errors", async () => {

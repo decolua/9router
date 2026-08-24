@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getProxyFitnessReady } from "@/lib/db/driver.js";
 import { poolFitnessSnapshot } from "../../../../../open-sse/services/proxyPoolFitness.js";
 
 const MAX_REASON_LENGTH = 256;
@@ -41,6 +42,7 @@ function publicFitnessSnapshot(snapshot) {
 // Snapshot is automatically pruned during read
 export async function GET() {
   try {
+    if (!await getProxyFitnessReady()) throw new Error("Proxy fitness hydration failed");
     const snapshot = await poolFitnessSnapshot();
     return NextResponse.json({ pools: publicFitnessSnapshot(snapshot) });
   } catch (error) {

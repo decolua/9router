@@ -1,7 +1,7 @@
 import { ensureDirs, DATA_FILE } from "./paths.js";
 
 // Use global to survive Next.js dev hot-reload (module state resets on reload)
-if (!global._dbAdapter) global._dbAdapter = { instance: null, initPromise: null, logged: false };
+if (!global._dbAdapter) global._dbAdapter = { instance: null, initPromise: null, fitnessReadyPromise: null, generation: 0, logged: false };
 const state = global._dbAdapter;
 
 async function tryBunSqlite() {
@@ -73,10 +73,48 @@ async function initAdapter() {
   return adapter;
 }
 
+function retryRejected(key, promise) {
+  promise.catch(() => {
+    if (state[key] === promise) state[key] = null;
+  });
+  return promise;
+}
+
 export async function getAdapter() {
   if (state.instance) return state.instance;
-  if (!state.initPromise) state.initPromise = initAdapter().then((a) => { state.instance = a; return a; });
+  if (!state.initPromise) {
+    const generation = state.generation;
+    let promise;
+    promise = initAdapter().then((adapter) => {
+      if (state.initPromise === promise && state.generation === generation) {
+        state.instance = adapter;
+        return adapter;
+      }
+      adapter.close?.();
+      throw new Error("[DB] adapter initialization cancelled");
+    });
+    state.initPromise = retryRejected("initPromise", promise);
+  }
   return state.initPromise;
+}
+
+export function getProxyFitnessReady() {
+  if (!state.fitnessReadyPromise) {
+    const promise = getAdapter()
+      .then(() => import("../../../open-sse/services/proxyPoolFitness.js"))
+      .then(({ hydratePoolFitness }) => hydratePoolFitness());
+    state.fitnessReadyPromise = retryRejected("fitnessReadyPromise", promise);
+  }
+  return state.fitnessReadyPromise;
+}
+
+export function closeAdapter() {
+  const adapter = state.instance;
+  if (adapter) adapter.close?.();
+  state.generation += 1;
+  state.instance = null;
+  state.initPromise = null;
+  state.fitnessReadyPromise = null;
 }
 
 export function getAdapterSync() {

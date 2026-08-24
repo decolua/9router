@@ -96,9 +96,10 @@ export async function deleteProxyPool(id) {
   db.transaction(() => {
     const row = db.get(`SELECT * FROM proxyPools WHERE id = ?`, [id]);
     if (!row) return;
-    removed = rowToPool(row);
     db.run(`DELETE FROM proxyPoolFitness WHERE poolId = ?`, [id]);
-    db.run(`DELETE FROM proxyPools WHERE id = ?`, [id]);
+    if (!db.run(`DELETE FROM proxyPools WHERE id = ?`, [id]).changes) throw new Error("Proxy pool deletion did not commit");
+    removed = rowToPool(row);
   });
+  if (removed) (await import("../../../../open-sse/services/proxyPoolFitness.js")).evictPoolFitness(id);
   return removed;
 }
