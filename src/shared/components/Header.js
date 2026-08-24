@@ -78,7 +78,7 @@ const getPageInfo = (pathname) => {
     return {
       title: "Combos",
       description: "Model combos with fallback",
-      icon: "layers",
+      icon: "merge_type",
       breadcrumbs: [],
     };
   if (pathname.includes("/usage"))
@@ -114,21 +114,21 @@ const getPageInfo = (pathname) => {
     return {
       title: "Token Saver",
       description: "Compress prompts and outputs to save tokens",
-      icon: "savings",
+      icon: "money_bag",
       breadcrumbs: [],
     };
   if (pathname.includes("/cli-tools"))
     return {
       title: "CLI Tools",
       description: "Configure CLI tools",
-      icon: "terminal",
+      icon: "code",
       breadcrumbs: [],
     };
   if (pathname.includes("/proxy-pools"))
     return {
       title: "Proxy Pools",
       description: "Manage your proxy pool configurations",
-      icon: "lan",
+      icon: "android_wifi_4_bar_lock",
       breadcrumbs: [],
     };
   if (pathname.includes("/skills"))
@@ -142,7 +142,7 @@ const getPageInfo = (pathname) => {
     return {
       title: "Endpoint",
       description: "API endpoint configuration",
-      icon: "api",
+      icon: "key",
       breadcrumbs: [],
     };
   if (pathname.includes("/profile"))
@@ -170,7 +170,7 @@ const getPageInfo = (pathname) => {
     return {
       title: "Endpoint",
       description: "API endpoint configuration",
-      icon: "api",
+      icon: "key",
       breadcrumbs: [],
     };
   return { title: "", description: "", breadcrumbs: [] };
