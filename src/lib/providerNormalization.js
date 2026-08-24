@@ -1,4 +1,7 @@
 import { AI_PROVIDERS } from "../shared/constants/providers.js";
+import { normalizeModelsUrl } from "./providerModelsUrl.js";
+
+export { normalizeModelsUrl };
 
 /**
  * Detect xAI Grok models by id pattern (grok-*, Grok_*, etc).
@@ -28,6 +31,10 @@ export function normalizeProviderSpecificData(provider, body = {}, providerSpeci
   const next = providerSpecificData && typeof providerSpecificData === "object"
     ? { ...providerSpecificData }
     : {};
+
+  if (Object.prototype.hasOwnProperty.call(next, "modelsUrl")) {
+    next.modelsUrl = normalizeModelsUrl(next.modelsUrl);
+  }
 
   if (provider === "ollama-local") {
     const baseUrl = (

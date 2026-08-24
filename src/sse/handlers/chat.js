@@ -48,6 +48,7 @@ export async function handleChat(request, clientRawRequest = null, options = {})
     };
   }
   const modelStr = body.model;
+  const preferredConnectionId = options.preferredConnectionId || null;
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
 
@@ -164,13 +165,13 @@ export async function handleChat(request, clientRawRequest = null, options = {})
     });
   }
 
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, preferredConnectionId);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, preferredConnectionId = null) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -242,7 +243,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
+      preferredConnectionId,
+      includeInactivePreferred: !!preferredConnectionId,
+    });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {

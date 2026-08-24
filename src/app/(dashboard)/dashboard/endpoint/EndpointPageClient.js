@@ -1069,7 +1069,7 @@ export default function APIPageClient({ machineId }) {
           </div>
         ) : (
           <div className="overflow-x-auto rounded-md border border-border">
-            <table className="w-full min-w-[1040px] border-collapse text-sm">
+            <table className="w-full min-w-[1220px] border-collapse text-sm">
               <thead className="border-b border-border bg-bg-subtle text-xs text-text-muted">
                 <tr>
                   <th className="w-10 px-3 py-2 text-center"><input type="checkbox" checked={selectedKeyIds.size === keys.length} onChange={toggleAllKeys} aria-label="选择全部密钥" /></th>
@@ -1079,6 +1079,7 @@ export default function APIPageClient({ machineId }) {
                   <th className="w-40 px-3 py-2 text-left font-medium">用量</th>
                   <th className="w-24 px-3 py-2 text-left font-medium">状态</th>
                   <th className="w-44 px-3 py-2 text-left font-medium">创建时间</th>
+                  <th className="w-44 px-3 py-2 text-left font-medium">最后请求时间</th>
                   <th className="w-24 px-3 py-2 text-center font-medium">操作</th>
                 </tr>
               </thead>
@@ -1092,6 +1093,7 @@ export default function APIPageClient({ machineId }) {
                     <td className="px-3 py-2 text-xs tabular-nums"><div>今日：${Number(key.usage?.todayCost || 0).toFixed(4)}</div><div className="mt-0.5 text-text-muted">近 30 天：${Number(key.usage?.thirtyDayCost || 0).toFixed(4)}</div></td>
                     <td className="px-3 py-2">{key.isActive === false ? <Badge variant="neutral" size="sm" dot>已禁用</Badge> : <Badge variant="success" size="sm" dot>已启用</Badge>}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-xs text-text-muted">{new Date(key.createdAt).toLocaleString("zh-CN", { hour12: false })}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-xs text-text-muted">{key.usage?.lastRequestAt ? new Date(key.usage.lastRequestAt).toLocaleString("zh-CN", { hour12: false }) : "-"}</td>
                     <td className="px-3 py-2"><div className="flex items-center justify-center gap-1"><button type="button" onClick={() => {
                       if (key.isActive) {
                         setConfirmState({ title: "禁用 API 密钥", message: `确定禁用“${key.name}”吗？禁用后该密钥将立即停止工作。`, onConfirm: async () => { setConfirmState(null); handleToggleKey(key.id, false); } });

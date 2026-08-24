@@ -6,7 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG, UPDATER_CONFIG } from "@/shared/constants/config";
-import { DEFAULT_NAVIGATION_SECTIONS } from "@/shared/constants/navigation";
+import { DEFAULT_NAVIGATION_ITEM_ORDER, DEFAULT_NAVIGATION_SECTIONS } from "@/shared/constants/navigation";
 import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import Button from "./Button";
@@ -21,7 +21,7 @@ const COMBINED_WEB_ITEM = { id: "web", label: "Web Fetch & Search", icon: "trave
 const navItems = [
   { id: "dashboard", href: "/dashboard", label: "仪表盘", icon: "dashboard", section: "主要功能" },
   { id: "endpoint", href: "/dashboard/endpoint", label: "端点与密钥", icon: "api", section: "主要功能" },
-  { id: "model-market", href: "/model-market", label: "模型广场", icon: "storefront", section: "主要功能" },
+  { id: "model-market", href: "/model-market?source=dashboard", label: "模型广场", icon: "storefront", section: "主要功能" },
   { id: "key-groups", href: "/dashboard/key-groups", label: "密钥分组", icon: "group_work", section: "主要功能" },
   { id: "providers", href: "/dashboard/providers", label: "提供商", icon: "dns", section: "主要功能" },
   // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
@@ -51,6 +51,18 @@ const systemItems = [
 ];
 
 const allLinkItems = [...navItems, ...costCenterItems, ...systemItems, ...debugItems];
+const specialNavigationItems = [
+  { id: "media-providers", label: "媒体提供商", section: "系统" },
+  { id: "remote", label: "9Remote", section: "系统" },
+  { id: "english", label: "9English", section: "系统" },
+];
+const allNavigationItems = [...allLinkItems, ...specialNavigationItems];
+
+function normalizeNavigationItemOrder(order) {
+  const configured = Array.isArray(order) ? order : [];
+  return [...configured, ...DEFAULT_NAVIGATION_ITEM_ORDER]
+    .filter((id, index, items) => DEFAULT_NAVIGATION_ITEM_ORDER.includes(id) && items.indexOf(id) === index);
+}
 
 export default function Sidebar({ onClose }) {
   const pathname = usePathname();
@@ -65,6 +77,7 @@ export default function Sidebar({ onClose }) {
   const [hiddenNavigationItems, setHiddenNavigationItems] = useState([]);
   const [navigationSections, setNavigationSections] = useState(DEFAULT_NAVIGATION_SECTIONS);
   const [navigationItemSections, setNavigationItemSections] = useState({});
+  const [navigationItemOrder, setNavigationItemOrder] = useState(DEFAULT_NAVIGATION_ITEM_ORDER);
   const { copied, copy } = useCopyToClipboard(2000);
 
   const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
@@ -77,6 +90,7 @@ export default function Sidebar({ onClose }) {
         setHiddenNavigationItems(Array.isArray(data.hiddenNavigationItems) ? data.hiddenNavigationItems : []);
         setNavigationSections(Array.isArray(data.navigationSections) && data.navigationSections.length ? data.navigationSections : DEFAULT_NAVIGATION_SECTIONS);
         setNavigationItemSections(data.navigationItemSections || {});
+        setNavigationItemOrder(normalizeNavigationItemOrder(data.navigationItemOrder));
       })
       .catch(() => {});
   }, []);
@@ -90,14 +104,16 @@ export default function Sidebar({ onClose }) {
   }, []);
 
   const isActive = (href) => {
-    if (href === "/dashboard") return pathname === "/dashboard";
-    return pathname.startsWith(href);
+    const hrefPath = href.split("?")[0];
+    if (hrefPath === "/dashboard") return pathname === "/dashboard";
+    return pathname.startsWith(hrefPath);
   };
   const isVisible = (id) => !hiddenNavigationItems.includes(id);
   const itemSection = (item) => {
     const section = navigationItemSections[item.id] || item.section;
     return navigationSections.includes(section) ? section : navigationSections[0];
   };
+  const navigationOrderIndex = new Map(navigationItemOrder.map((id, index) => [id, index]));
 
   // Open manual update panel (no countdown yet — user must click Copy to trigger shutdown)
   const handleUpdate = () => {
@@ -185,24 +201,13 @@ export default function Sidebar({ onClose }) {
         {/* Navigation */}
         <nav className="flex-1 overflow-y-auto px-4 py-2 custom-scrollbar">
           {navigationSections.map((section, sectionIndex) => {
-            const sectionLinks = allLinkItems.filter((item) => isVisible(item.id) && itemSection(item) === section && (item.id !== "translator" || enableTranslator));
-            const showMediaProviders = isVisible("media-providers") && itemSection({ id: "media-providers", section: "系统" }) === section;
-            const showRemote = isVisible("remote") && itemSection({ id: "remote", section: "系统" }) === section;
-            const showEnglish = isVisible("english") && itemSection({ id: "english", section: "系统" }) === section;
+            const sectionItems = allNavigationItems
+              .filter((item) => isVisible(item.id) && itemSection(item) === section && (item.id !== "translator" || enableTranslator))
+              .sort((left, right) => (navigationOrderIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (navigationOrderIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER));
             return <div key={section} className={cn("space-y-0.5", sectionIndex > 0 && "mt-2 pt-3")}>
               <p className="mb-2 px-4 text-xs font-semibold text-text-muted/60">{section}</p>
-              {sectionLinks.map((item) => <Link
-                key={item.href}
-                href={item.href}
-                onClick={onClose}
-                className={cn("flex items-center gap-3 rounded-lg px-3 py-1 transition-all group", isActive(item.href) ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-surface-2 hover:text-text-main")}
-              >
-                <span className={cn("material-symbols-outlined text-[18px]", isActive(item.href) ? "fill-1" : "transition-colors group-hover:text-primary")}>{item.icon}</span>
-                <span className="text-[13px] font-medium">{item.label}</span>
-              </Link>)}
-
-            {showMediaProviders && <button
-              onClick={() => setMediaOpen((v) => !v)}
+              {sectionItems.map((item) => item.id === "media-providers" ? <div key={item.id} className="contents"><button
+                onClick={() => setMediaOpen((v) => !v)}
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
                 pathname.startsWith("/dashboard/media-providers")
@@ -214,9 +219,9 @@ export default function Sidebar({ onClose }) {
               <span className="flex-1 text-left text-[13px] font-medium">媒体提供商</span>
               <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: mediaOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
                 expand_more
-              </span>
-            </button>}
-            {showMediaProviders && mediaOpen && (
+                </span>
+              </button>
+              {mediaOpen && (
               <div className="pl-4">
                 {MEDIA_PROVIDER_KINDS.filter((k) => VISIBLE_MEDIA_KINDS.includes(k.id)).map((kind) => (
                   <Link
@@ -249,9 +254,8 @@ export default function Sidebar({ onClose }) {
                   <span className="text-sm">{COMBINED_WEB_ITEM.label}</span>
                 </Link>
               </div>
-            )}
-
-            {showRemote && <button
+              )}</div> : item.id === "remote" ? <button
+              key={item.id}
               onClick={() => setShowRemoteModal(true)}
               className={cn(
                 "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group w-full",
@@ -262,9 +266,8 @@ export default function Sidebar({ onClose }) {
                 computer
               </span>
               <span className="text-[13px] font-medium">9Remote</span>
-            </button>}
-
-            {showEnglish && <a
+            </button> : item.id === "english" ? <a
+              key={item.id}
               href="https://9english.net/"
               target="_blank"
               rel="noreferrer"
@@ -278,7 +281,15 @@ export default function Sidebar({ onClose }) {
                 translate
               </span>
               <span className="text-[13px] font-medium">9English</span>
-            </a>}
+            </a> : <Link
+                key={item.href}
+                href={item.href}
+                onClick={onClose}
+                className={cn("flex items-center gap-3 rounded-lg px-3 py-1 transition-all group", isActive(item.href) ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-surface-2 hover:text-text-main")}
+              >
+                <span className={cn("material-symbols-outlined text-[18px]", isActive(item.href) ? "fill-1" : "transition-colors group-hover:text-primary")}>{item.icon}</span>
+                <span className="text-[13px] font-medium">{item.label}</span>
+              </Link>)}
             </div>;
           })}
 

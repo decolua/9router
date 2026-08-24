@@ -970,6 +970,7 @@ export async function appendRequestLog(entry = {}) {
     endpoint: entry.endpoint,
     status,
     tokens: entry.tokens || {},
+    meta: entry.meta || {},
     timestamp: entry.timestamp || new Date().toISOString(),
   });
 }
@@ -981,7 +982,7 @@ function getDimensionRange(period, range = {}) {
   let bucketMs;
   if (period === "today") {
     start = new Date(getChinaDayStart(now));
-    end = new Date(start.getTime() + DAY_MS);
+    end = new Date(Math.min(now.getTime() + 1, start.getTime() + DAY_MS));
     bucketMs = 60 * 60 * 1000;
   } else if (period === "24h") {
     const currentHourStart = Math.floor(now.getTime() / (60 * 60 * 1000)) * 60 * 60 * 1000;
@@ -1210,12 +1211,15 @@ export async function getUsageLogs(filter = {}) {
     };
     const breakdown = await calculateBreakdown(r.provider, r.model, normalizedTokens, r.timestamp);
     const meta = parseJson(r.meta, {}) || {};
+    const mappedModel = getMappedModelName(modelMappingMap, r.provider, r.model);
     return {
       id: r.id,
       timestamp: r.timestamp,
       apiKey: mask(r.apiKey),
       apiKeyName: r.apiKey ? (keyMap[r.apiKey] || mask(r.apiKey)) : "Local (No API Key)",
-      model: getMappedModelName(modelMappingMap, r.provider, r.model),
+      model: mappedModel,
+      selectedModel: meta.requestedModel || mappedModel,
+      actualModel: meta.actualModel || r.model || mappedModel,
       providerId: r.provider,
       provider: providerNameMap[r.provider] || r.provider,
       endpoint: r.endpoint,

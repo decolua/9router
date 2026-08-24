@@ -73,7 +73,7 @@ export default function ProviderDetailPage() {
   const [oneByOneResults, setOneByOneResults] = useState({});
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
-  const [importingQoderModels, setImportingQoderModels] = useState(false);
+  const [importingProviderModels, setImportingProviderModels] = useState(false);
   const { copied, copy } = useCopyToClipboard();
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
@@ -531,16 +531,16 @@ export default function ProviderDetailPage() {
     }
   };
 
-  // Fetch Qoder model list and automatically add to available models
-  const handleImportQoderModels = async () => {
-    if (importingQoderModels) return;
+  // Fetch the active connection's live catalog and persist models missing from the registry.
+  const handleImportProviderModels = async () => {
+    if (importingProviderModels) return;
     const activeConnection = connections.find((conn) => conn.isActive !== false);
     if (!activeConnection) {
-      alert(translate("Please add an active Qoder connection first"));
+      alert(translate("Please add an active connection first"));
       return;
     }
 
-    setImportingQoderModels(true);
+    setImportingProviderModels(true);
     try {
       const res = await fetch(`/api/providers/${activeConnection.id}/models`);
       const data = await res.json();
@@ -548,27 +548,33 @@ export default function ProviderDetailPage() {
         alert(data.error || translate("Failed to fetch models"));
         return;
       }
-      const models = data.models || [];
-      if (models.length === 0) {
+      const fetchedModels = data.models || [];
+      if (fetchedModels.length === 0) {
         alert(translate("No models returned"));
         return;
       }
 
+      const knownIds = new Set([
+        ...models.map((model) => model.id),
+        ...customModels
+          .filter((entry) => entry.providerAlias === providerStorageAlias && (entry.kind || entry.type || "llm") === "llm")
+          .map((entry) => entry.id),
+        ...Object.values(modelAliases)
+          .filter((model) => model.startsWith(`${providerStorageAlias}/`))
+          .map((model) => model.slice(providerStorageAlias.length + 1)),
+      ]);
+      const nonLlmKinds = new Set(["embedding", "image", "tts", "stt", "video", "webSearch", "webFetch"]);
       let importedCount = 0;
-      for (const model of models) {
-        const modelId = model.id || model.name;
+      for (const model of fetchedModels) {
+        const modelId = typeof model === "string" ? model : (model.id || model.name || model.model);
         if (!modelId) continue;
-        
-        // Qoder model ID format may be "qoder/auto" or "auto", need to remove prefix
-        const cleanModelId = modelId.replace(/^qoder\//, "");
-        const alreadyExists = customModels.some(
-          (entry) => entry.providerAlias === providerStorageAlias && entry.id === cleanModelId && (entry.kind || entry.type || "llm") === "llm"
-        ) || Object.values(modelAliases).includes(`${providerStorageAlias}/${cleanModelId}`);
-        if (alreadyExists) {
-          continue;
-        }
+        if (typeof model === "object" && nonLlmKinds.has(model.kind || model.type)) continue;
+
+        const cleanModelId = providerId === "qoder" ? modelId.replace(/^qoder\//, "") : modelId;
+        if (knownIds.has(cleanModelId)) continue;
 
         await handleAddCustomModel(cleanModelId, "llm", providerStorageAlias);
+        knownIds.add(cleanModelId);
         importedCount += 1;
       }
       
@@ -578,10 +584,10 @@ export default function ProviderDetailPage() {
         alert(translate("Successfully added") + ` ${importedCount} ` + translate("models"));
       }
     } catch (error) {
-      console.log("Error importing Qoder models:", error);
+      console.log("Error importing provider models:", error);
       alert(translate("Error fetching models") + ": " + error.message);
     } finally {
-      setImportingQoderModels(false);
+      setImportingProviderModels(false);
     }
   };
 
@@ -1140,20 +1146,6 @@ export default function ProviderDetailPage() {
           Add Model
         </button>
 
-        {/* Import Qoder models button — only show for qoder provider */}
-        {providerId === "qoder" && connections.some((conn) => conn.isActive !== false) && (
-          <button
-            onClick={handleImportQoderModels}
-            disabled={importingQoderModels}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-500/40 px-3 py-2 text-xs text-blue-600 dark:text-blue-400 transition-colors hover:border-blue-500 hover:bg-blue-500/5 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <span className="material-symbols-outlined text-sm" style={importingQoderModels ? { animation: "spin 1s linear infinite" } : undefined}>
-              {importingQoderModels ? "progress_activity" : "download"}
-            </span>
-            {importingQoderModels ? translate("Fetching...") : translate("Fetch Qoder Models")}
-          </button>
-        )}
-
         {/* Suggested models from provider API — show only models not yet added */}
         {suggestedModels.length > 0 && (() => {
           const addedFullModels = new Set([
@@ -1631,7 +1623,18 @@ export default function ProviderDetailPage() {
             ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id);
             const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
             return (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
+                {connections.some((conn) => conn.isActive !== false) && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    icon={importingProviderModels ? "progress_activity" : "download"}
+                    onClick={handleImportProviderModels}
+                    disabled={importingProviderModels}
+                  >
+                    {importingProviderModels ? translate("Fetching...") : translate("Fetch Models")}
+                  </Button>
+                )}
                 {disabledModelIds.length > 0 && (
                   <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
                     Active All

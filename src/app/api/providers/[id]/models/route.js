@@ -79,6 +79,27 @@ const createOpenAIModelsConfig = (url) => ({
   parseResponse: parseOpenAIStyleModels
 });
 
+const createConfiguredModelsConfig = (url, providerConfig) => {
+  if (providerConfig && typeof providerConfig.customResolver !== "function") {
+    return { ...providerConfig, url };
+  }
+
+  return {
+    ...createOpenAIModelsConfig(url),
+    // Configured endpoints may expose either OpenAI- or Anthropic-style auth.
+    extraAuthHeaders: true,
+  };
+};
+
+const normalizeConfiguredModelsUrl = (value) => {
+  if (typeof value !== "string" || !value.trim()) return "";
+  const url = new URL(value.trim());
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("Models URL must use http or https");
+  }
+  return url.toString();
+};
+
 const getStaticProviderModels = (providerId) =>
   getModelsByProviderId(providerId).map((model) => ({
     ...model,
@@ -448,12 +469,19 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
+    let configuredModelsUrl = "";
+    try {
+      configuredModelsUrl = normalizeConfiguredModelsUrl(connection.providerSpecificData?.modelsUrl);
+    } catch (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
     if (isOpenAICompatibleProvider(connection.provider)) {
       const baseUrl = connection.providerSpecificData?.baseUrl;
-      if (!baseUrl) {
+      if (!configuredModelsUrl && !baseUrl) {
         return NextResponse.json({ error: "No base URL configured for OpenAI compatible provider" }, { status: 400 });
       }
-      const url = `${baseUrl.replace(/\/$/, "")}/models`;
+      const url = configuredModelsUrl || `${baseUrl.replace(/\/$/, "")}/models`;
       const response = await fetch(url, {
         method: "GET",
         headers: {
@@ -483,16 +511,18 @@ export async function GET(request, { params }) {
 
     if (isAnthropicCompatibleProvider(connection.provider)) {
       let baseUrl = connection.providerSpecificData?.baseUrl;
-      if (!baseUrl) {
+      if (!configuredModelsUrl && !baseUrl) {
         return NextResponse.json({ error: "No base URL configured for Anthropic compatible provider" }, { status: 400 });
       }
 
-      baseUrl = baseUrl.replace(/\/$/, "");
-      if (baseUrl.endsWith("/messages")) {
-        baseUrl = baseUrl.slice(0, -9);
+      if (baseUrl) {
+        baseUrl = baseUrl.replace(/\/$/, "");
+        if (baseUrl.endsWith("/messages")) {
+          baseUrl = baseUrl.slice(0, -9);
+        }
       }
 
-      const url = `${baseUrl}/models`;
+      const url = configuredModelsUrl || `${baseUrl}/models`;
       const response = await fetch(url, {
         method: "GET",
         headers: {
@@ -522,7 +552,10 @@ export async function GET(request, { params }) {
       });
     }
 
-    const config = PROVIDER_MODELS_CONFIG[connection.provider];
+    const providerConfig = PROVIDER_MODELS_CONFIG[connection.provider];
+    const config = configuredModelsUrl
+      ? createConfiguredModelsConfig(configuredModelsUrl, providerConfig)
+      : providerConfig;
     if (!config) {
       return NextResponse.json(
         { error: `Provider ${connection.provider} does not support models listing` },
@@ -553,13 +586,18 @@ export async function GET(request, { params }) {
     // Build request URL
     let url = config.url;
     if (config.authQuery) {
-      url += `?${config.authQuery}=${token}`;
+      url += `${url.includes("?") ? "&" : "?"}${config.authQuery}=${encodeURIComponent(token)}`;
     }
 
     // Build headers
     const headers = { ...config.headers };
     if (config.authHeader && !config.authQuery) {
       headers[config.authHeader] = (config.authPrefix || "") + token;
+    }
+    if (config.extraAuthHeaders) {
+      headers.Authorization = `Bearer ${token}`;
+      headers["x-api-key"] = token;
+      headers["anthropic-version"] = "2023-06-01";
     }
 
     // Make request

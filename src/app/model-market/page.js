@@ -1,13 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button, Card, Input, SegmentedControl } from "@/shared/components";
+import DashboardLayout from "@/shared/components/layouts/DashboardLayout";
 
 const formatNumber = (value) => new Intl.NumberFormat("zh-CN").format(Number(value || 0));
 const formatCost = (value) => `$${Number(value || 0).toFixed(6)}`;
 
 export default function ModelMarketPage() {
+  const searchParams = useSearchParams();
+  const isDashboardView = searchParams.get("source") === "dashboard";
   const [apiKey, setApiKey] = useState("");
   const [activeKey, setActiveKey] = useState("");
   const [models, setModels] = useState([]);
@@ -81,19 +85,14 @@ export default function ModelMarketPage() {
     }
   };
 
-  return (
-    <main className="min-h-screen bg-bg text-text-main">
-      <div className="border-b border-border bg-surface/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <Link href="/model-market" className="flex items-center gap-3">
+  const content = (
+    <div className={isDashboardView ? "flex flex-col gap-6" : "mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 sm:px-6 sm:py-8"}>
+        {!isDashboardView && (
+          <Link href="/model-market" className="flex w-fit items-center gap-3">
             <span className="flex size-9 items-center justify-center rounded-md bg-primary text-white"><span className="material-symbols-outlined text-[20px]">hub</span></span>
             <span><strong className="block text-sm">9Router 模型广场</strong><span className="block text-xs text-text-muted">按密钥查看可用能力</span></span>
           </Link>
-          <Link href="/login" className="flex h-9 items-center gap-1 rounded-md px-3 text-sm text-text-muted hover:bg-bg-hover hover:text-text-main"><span className="material-symbols-outlined text-[18px]">admin_panel_settings</span>管理后台</Link>
-        </div>
-      </div>
-
-      <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-8 sm:px-6 lg:py-12">
+        )}
         <section className="max-w-3xl">
           <p className="mb-2 text-xs font-semibold text-primary">MODEL ACCESS</p>
           <h1 className="text-3xl font-semibold sm:text-4xl">模型广场</h1>
@@ -143,7 +142,16 @@ export default function ModelMarketPage() {
             )}
           </section>
         )}
-      </div>
+    </div>
+  );
+
+  if (isDashboardView) {
+    return <DashboardLayout>{content}</DashboardLayout>;
+  }
+
+  return (
+    <main className="min-h-screen bg-bg text-text-main">
+      {content}
     </main>
   );
 }

@@ -30,6 +30,8 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     priority: 1,
     proxyPoolId: NONE_PROXY_POOL_VALUE,
     ollamaHostUrl: "",
+    modelsUrl: "",
+    testModel: "",
   });
   const [azureData, setAzureData] = useState({
     azureEndpoint: "",
@@ -53,24 +55,27 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const [bulkResult, setBulkResult] = useState(null); // { success, failed }
 
   const buildProviderSpecificData = () => {
+    const data = {};
+    if (formData.modelsUrl.trim()) data.modelsUrl = formData.modelsUrl.trim();
+    if (formData.testModel.trim()) data.testModel = formData.testModel.trim();
     if (isOllamaLocal && formData.ollamaHostUrl.trim()) {
-      return { baseUrl: formData.ollamaHostUrl.trim() };
+      data.baseUrl = formData.ollamaHostUrl.trim();
     }
     if (isAzure) {
-      return {
+      Object.assign(data, {
         azureEndpoint: azureData.azureEndpoint,
         apiVersion: azureData.apiVersion,
         deployment: azureData.deployment,
         organization: azureData.organization,
-      };
+      });
     }
     if (isCloudflareAi) {
-      return { accountId: cloudflareData.accountId };
+      data.accountId = cloudflareData.accountId;
     }
     if (providerRegions && region) {
-      return { region };
+      data.region = region;
     }
-    return undefined;
+    return Object.keys(data).length > 0 ? data : undefined;
   };
 
   const handleValidate = async () => {
@@ -292,6 +297,21 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             options={providerRegions.map((r) => ({ value: r.id, label: r.label }))}
           />
         )}
+        <Input
+          label="Models URL"
+          type="url"
+          value={formData.modelsUrl}
+          onChange={(e) => setFormData({ ...formData, modelsUrl: e.target.value })}
+          placeholder="https://api.example.com/v1/models"
+          hint="Optional. Configure the full model-list endpoint when it is not Base URL + /models."
+        />
+        <Input
+          label="测试模型"
+          value={formData.testModel}
+          onChange={(e) => setFormData({ ...formData, testModel: e.target.value })}
+          placeholder="例如：gpt-4o-mini"
+          hint="自动恢复会向该模型发送真实请求；未配置时不会自动恢复连接。"
+        />
         {isCompatible && (
           <Input
             label="Default Model"

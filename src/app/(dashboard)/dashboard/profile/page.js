@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Card, Button, DropdownSelect, Toggle, Input, USAGE_DEFAULT_PERIODS, normalizeUsagePeriod } from "@/shared/components";
-import { DEFAULT_NAVIGATION_SECTIONS, NAVIGATION_VISIBILITY_OPTIONS } from "@/shared/constants/navigation";
+import { DEFAULT_NAVIGATION_ITEM_ORDER, DEFAULT_NAVIGATION_SECTIONS, NAVIGATION_VISIBILITY_OPTIONS } from "@/shared/constants/navigation";
 import Modal, { ConfirmModal } from "@/shared/components/Modal";
 import LanguageSwitcher from "@/shared/components/LanguageSwitcher";
 import { useTheme } from "@/shared/hooks/useTheme";
@@ -789,6 +789,12 @@ export default function ProfilePage() {
   const navigationSections = Array.isArray(settings.navigationSections) && settings.navigationSections.length
     ? settings.navigationSections
     : DEFAULT_NAVIGATION_SECTIONS;
+  const configuredNavigationItemOrder = Array.isArray(settings.navigationItemOrder) ? settings.navigationItemOrder : [];
+  const navigationItemOrder = [
+    ...configuredNavigationItemOrder,
+    ...DEFAULT_NAVIGATION_ITEM_ORDER.filter((id) => !configuredNavigationItemOrder.includes(id)),
+  ].filter((id, index, items) => DEFAULT_NAVIGATION_ITEM_ORDER.includes(id) && items.indexOf(id) === index);
+  const navigationOrderIndex = new Map(navigationItemOrder.map((id, index) => [id, index]));
 
   const addNavigationSection = () => {
     const section = newNavigationSection.trim();
@@ -829,6 +835,43 @@ export default function ProfilePage() {
     setNavigationStatus("");
   };
 
+  const renameNavigationSection = (section) => {
+    const nextName = window.prompt("修改主题名称", section)?.trim();
+    if (!nextName || nextName === section) return;
+    if (navigationSections.some((item) => item !== section && item.toLowerCase() === nextName.toLowerCase())) {
+      setNavigationStatus("该主题已存在");
+      return;
+    }
+    setSettings((current) => {
+      const assignments = { ...(current.navigationItemSections || {}) };
+      for (const item of NAVIGATION_VISIBILITY_OPTIONS) {
+        if ((assignments[item.id] || item.section) === section) assignments[item.id] = nextName;
+      }
+      return {
+        ...current,
+        navigationSections: navigationSections.map((item) => item === section ? nextName : item),
+        navigationItemSections: assignments,
+      };
+    });
+    setNavigationStatus("");
+  };
+
+  const moveNavigationItem = (itemId, section, direction) => {
+    const sectionItemIds = NAVIGATION_VISIBILITY_OPTIONS
+      .filter((item) => (settings.navigationItemSections?.[item.id] || item.section) === section)
+      .sort((left, right) => (navigationOrderIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (navigationOrderIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER))
+      .map((item) => item.id);
+    const currentIndex = sectionItemIds.indexOf(itemId);
+    const swapId = sectionItemIds[currentIndex + direction];
+    if (currentIndex < 0 || !swapId) return;
+    const nextOrder = [...navigationItemOrder];
+    const itemIndex = nextOrder.indexOf(itemId);
+    const swapIndex = nextOrder.indexOf(swapId);
+    [nextOrder[itemIndex], nextOrder[swapIndex]] = [nextOrder[swapIndex], nextOrder[itemIndex]];
+    setSettings((current) => ({ ...current, navigationItemOrder: nextOrder }));
+    setNavigationStatus("");
+  };
+
   const saveNavigationSettings = async () => {
     setNavigationSaving(true);
     setNavigationStatus("");
@@ -840,6 +883,7 @@ export default function ProfilePage() {
           hiddenNavigationItems: settings.hiddenNavigationItems || [],
           navigationSections,
           navigationItemSections: settings.navigationItemSections || {},
+          navigationItemOrder,
         }),
       });
       const data = await response.json();
@@ -1679,17 +1723,18 @@ export default function ProfilePage() {
             {navigationSections.map((section, sectionIndex) => (
               <div key={section} className="flex flex-col gap-2">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs font-semibold text-text-muted">{section}</p>
-                  <div className="flex items-center gap-1">
+                    <p className="text-xs font-semibold text-text-muted">{section}</p>
+                    <div className="flex items-center gap-1">
+                      <button type="button" onClick={() => renameNavigationSection(section)} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-hover hover:text-primary" title="修改主题名称" aria-label={`修改${section}名称`}><span className="material-symbols-outlined text-[18px]">edit</span></button>
                     <button type="button" disabled={sectionIndex === 0} onClick={() => moveNavigationSection(section, -1)} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-30" title="上移主题" aria-label={`上移${section}`}><span className="material-symbols-outlined text-[18px]">arrow_upward</span></button>
                     <button type="button" disabled={sectionIndex === navigationSections.length - 1} onClick={() => moveNavigationSection(section, 1)} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-30" title="下移主题" aria-label={`下移${section}`}><span className="material-symbols-outlined text-[18px]">arrow_downward</span></button>
                     <button type="button" disabled={navigationSections.length <= 1} onClick={() => setNavigationDeleteSection(section)} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-red-500/10 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30" title="删除主题" aria-label={`删除${section}`}><span className="material-symbols-outlined text-[18px]">delete</span></button>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {NAVIGATION_VISIBILITY_OPTIONS.filter((item) => (settings.navigationItemSections?.[item.id] || item.section) === section).map((item) => {
+                  {NAVIGATION_VISIBILITY_OPTIONS.filter((item) => (settings.navigationItemSections?.[item.id] || item.section) === section).sort((left, right) => (navigationOrderIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (navigationOrderIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER)).map((item, itemIndex, sectionItems) => {
                     const visible = !(settings.hiddenNavigationItems || []).includes(item.id);
-                    return <div key={item.id} className="flex min-h-11 flex-wrap items-center gap-3 rounded-md border border-border bg-bg-base px-3 py-2"><span className="min-w-0 flex-1 truncate text-sm font-medium">{item.label}</span><DropdownSelect className="order-3 w-full sm:order-none sm:w-36" buttonClassName="h-8 min-h-8 text-xs" value={settings.navigationItemSections?.[item.id] || item.section} options={navigationSections.map((option) => ({ value: option, label: option }))} onChange={(value) => setNavigationSection(item.id, value)} /><Toggle size="sm" checked={visible} onChange={(checked) => toggleNavigationItem(item.id, checked)} /></div>;
+                    return <div key={item.id} className="flex min-h-11 flex-wrap items-center gap-2 rounded-md border border-border bg-bg-base px-3 py-2"><span className="min-w-0 flex-1 truncate text-sm font-medium">{item.label}</span><div className="flex items-center gap-0.5"><button type="button" disabled={itemIndex === 0} onClick={() => moveNavigationItem(item.id, section, -1)} className="flex size-7 items-center justify-center rounded text-text-muted hover:bg-bg-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-30" title="上移标签" aria-label={`上移${item.label}`}><span className="material-symbols-outlined text-[16px]">arrow_upward</span></button><button type="button" disabled={itemIndex === sectionItems.length - 1} onClick={() => moveNavigationItem(item.id, section, 1)} className="flex size-7 items-center justify-center rounded text-text-muted hover:bg-bg-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-30" title="下移标签" aria-label={`下移${item.label}`}><span className="material-symbols-outlined text-[16px]">arrow_downward</span></button></div><DropdownSelect className="order-3 w-full sm:order-none sm:w-36" buttonClassName="h-8 min-h-8 text-xs" value={settings.navigationItemSections?.[item.id] || item.section} options={navigationSections.map((option) => ({ value: option, label: option }))} onChange={(value) => setNavigationSection(item.id, value)} /><Toggle size="sm" checked={visible} onChange={(checked) => toggleNavigationItem(item.id, checked)} /></div>;
                   })}
                 </div>
               </div>

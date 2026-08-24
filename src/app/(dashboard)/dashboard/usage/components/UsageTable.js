@@ -46,6 +46,7 @@ function ValueCells({ item, isSummary = false }) {
     <MetricValue tokens={item.cachedTokens} cost={item.cachedCost} isSummary={isSummary} />
     <MetricValue tokens={item.cacheCreationTokens} cost={item.cacheCreationCost} isSummary={isSummary} />
     <MetricValue tokens={item.completionTokens} cost={item.outputCost} isSummary={isSummary} />
+    <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums text-amber-600">{fmtCost(item.totalCost ?? item.cost)}</td>
   </>;
 }
 
@@ -120,6 +121,7 @@ export default function UsageTable({
     { field: "cachedTokens", label: "缓存读取" },
     { field: "cacheCreationTokens", label: "缓存写入" },
     { field: "completionTokens", label: "输出" },
+    { field: "totalCost", label: "总费用" },
   ], []);
 
   const totalColSpan = columns.length + valueColumns.length;

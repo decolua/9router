@@ -172,8 +172,8 @@ const getPageInfo = (pathname, providerDisplayNames = {}) => {
     };
   if (pathname.includes("/endpoint"))
     return {
-      title: "Endpoint",
-      description: "API endpoint configuration",
+      title: "端点与密钥",
+      description: "管理 API 端点、访问密钥和鉴权策略",
       icon: "api",
       breadcrumbs: [],
     };

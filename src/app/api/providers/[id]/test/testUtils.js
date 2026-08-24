@@ -1,7 +1,8 @@
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { pingModelByKind } from "@/app/api/models/test/ping";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import {
@@ -830,7 +831,15 @@ case "llm7": {
 /**
  * Test a single connection by ID, update DB, and return result.
  */
-export async function testSingleConnection(id) {
+function resolveConnectionTestModel(connection) {
+  const configured = String(connection.providerSpecificData?.testModel || "").trim();
+  if (!configured) return "";
+  if (configured.includes("/")) return configured;
+  const prefix = connection.providerSpecificData?.prefix || getProviderAlias(connection.provider) || connection.provider;
+  return `${prefix}/${configured}`;
+}
+
+export async function testSingleConnection(id, options = {}) {
   const connection = await getProviderConnectionById(id);
   if (!connection) return { valid: false, error: "Connection not found", latencyMs: 0, testedAt: new Date().toISOString() };
 
@@ -856,6 +865,19 @@ export async function testSingleConnection(id) {
     result = await testApiKeyConnection(connection, effectiveProxy);
   } else {
     result = await testOAuthConnection(connection, effectiveProxy);
+  }
+
+  const testModel = resolveConnectionTestModel(connection);
+  if (result.valid && testModel) {
+    const modelResult = await pingModelByKind(testModel, "llm", undefined, { connectionId: id });
+    result = {
+      ...result,
+      valid: modelResult.ok === true,
+      error: modelResult.ok ? null : modelResult.error || "测试模型请求失败",
+      modelTested: testModel,
+    };
+  } else if (result.valid && options.requireModelProbe) {
+    result = { ...result, valid: false, error: "未配置测试模型，自动恢复不会仅凭连接检测重新启用" };
   }
 
   const latencyMs = Date.now() - start;

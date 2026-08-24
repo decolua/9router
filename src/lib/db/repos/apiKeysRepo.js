@@ -34,15 +34,17 @@ export async function getApiKeyUsageSummaries(now = new Date()) {
   const rows = db.all(
     `SELECT apiKey,
       SUM(CASE WHEN timestamp >= ? THEN COALESCE(cost, 0) ELSE 0 END) AS todayCost,
-      SUM(CASE WHEN timestamp >= ? THEN COALESCE(cost, 0) ELSE 0 END) AS thirtyDayCost
+      SUM(CASE WHEN timestamp >= ? THEN COALESCE(cost, 0) ELSE 0 END) AS thirtyDayCost,
+      MAX(timestamp) AS lastRequestAt
      FROM usageHistory
-     WHERE apiKey IS NOT NULL AND timestamp >= ?
+     WHERE apiKey IS NOT NULL
      GROUP BY apiKey`,
-    [startOfToday.toISOString(), startOfThirtyDays.toISOString(), startOfThirtyDays.toISOString()],
+    [startOfToday.toISOString(), startOfThirtyDays.toISOString()],
   );
   return Object.fromEntries(rows.map((row) => [row.apiKey, {
     todayCost: Number(row.todayCost || 0),
     thirtyDayCost: Number(row.thirtyDayCost || 0),
+    lastRequestAt: row.lastRequestAt || null,
   }]));
 }
 

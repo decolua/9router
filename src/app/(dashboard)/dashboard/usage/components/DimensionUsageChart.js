@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import PropTypes from "prop-types";
-import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import Card from "@/shared/components/Card";
 
 const COLORS = ["#ef6a47", "#2563eb", "#16a34a", "#9333ea", "#0891b2", "#ca8a04", "#db2777", "#4f46e5"];
@@ -36,16 +36,20 @@ export default function DimensionUsageChart({ title, dimension, metric = "tokens
       </div>
       {loading ? <div className="flex h-72 items-center justify-center text-sm text-text-muted">正在加载...</div>
         : !hasData ? <div className="flex h-72 items-center justify-center text-sm text-text-muted">当前时间范围暂无数据</div>
-          : <ResponsiveContainer width="100%" height={320}>
-              <LineChart data={result.data} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.12} />
-                <XAxis dataKey="label" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
-                <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={58} tickFormatter={(value) => formatValue(value, metric)} />
-                <Tooltip formatter={(value) => formatValue(value, metric)} contentStyle={{ background: "var(--color-bg)", border: "1px solid var(--color-border)", borderRadius: 6, fontSize: 12 }} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                {result.series.map((series, index) => <Line key={series.id} type="monotone" dataKey={series.id} name={series.label} stroke={COLORS[index % COLORS.length]} strokeWidth={2} dot={false} activeDot={{ r: 3 }} />)}
-              </LineChart>
-            </ResponsiveContainer>}
+          : <div className="flex min-w-0 flex-col gap-3 lg:flex-row">
+              <div className="h-[320px] min-w-0 flex-1"><ResponsiveContainer width="100%" height="100%">
+                <LineChart data={result.data} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
+                  <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.12} />
+                  <XAxis dataKey="label" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={58} tickFormatter={(value) => formatValue(value, metric)} />
+                  <Tooltip formatter={(value) => formatValue(value, metric)} contentStyle={{ background: "var(--color-bg)", border: "1px solid var(--color-border)", borderRadius: 6, fontSize: 12 }} />
+                  {result.series.map((series, index) => <Line key={series.id} type="monotone" dataKey={series.id} name={series.label} stroke={COLORS[index % COLORS.length]} strokeWidth={2} dot={false} activeDot={{ r: 3 }} />)}
+                </LineChart>
+              </ResponsiveContainer></div>
+              <div className="grid max-h-[320px] grid-cols-2 content-start gap-2 overflow-y-auto border-t border-border pt-3 text-xs lg:w-48 lg:grid-cols-1 lg:border-l lg:border-t-0 lg:pl-3 lg:pt-1">
+                {result.series.map((series, index) => <div key={series.id} className="flex min-w-0 items-center gap-2" title={series.label}><span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} /><span className="truncate">{series.label}</span></div>)}
+              </div>
+            </div>}
     </Card>
   );
 }

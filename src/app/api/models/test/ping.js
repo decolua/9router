@@ -50,8 +50,12 @@ async function getInternalHeaders() {
   return headers;
 }
 
-export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`) {
+export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`, options = {}) {
   const headers = await getInternalHeaders();
+  if (options.connectionId) {
+    headers["x-connection-id"] = options.connectionId;
+    headers["x-9r-internal-job"] = "provider-model-test";
+  }
   const start = Date.now();
 
   if (kind === "embedding") {
@@ -130,7 +134,8 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     return { ok: true, latencyMs, error: null, status: res.status };
   }
 
-  const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
+  const chatPath = options.connectionId ? "/api/dashboard/chat/completions" : "/api/v1/chat/completions";
+  const res = await fetch(`${baseUrl}${chatPath}`, {
     method: "POST",
     headers,
     body: JSON.stringify({

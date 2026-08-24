@@ -5,6 +5,7 @@ import {
   updateProviderConnection,
   deleteProviderConnection,
 } from "@/models";
+import { normalizeModelsUrl } from "@/lib/providerModelsUrl";
 
 function normalizeProxyConfig(body = {}) {
   const hasAnyProxyField =
@@ -104,6 +105,14 @@ export async function PUT(request, { params }) {
     const existing = await getProviderConnectionById(id);
     if (!existing) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+    }
+
+    if (providerSpecificData && Object.prototype.hasOwnProperty.call(providerSpecificData, "modelsUrl")) {
+      try {
+        providerSpecificData.modelsUrl = normalizeModelsUrl(providerSpecificData.modelsUrl);
+      } catch (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
     }
 
     const proxyConfig = normalizeProxyConfig(body);

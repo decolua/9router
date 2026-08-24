@@ -14,6 +14,8 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     name: "",
     priority: 1,
     apiKey: "",
+    modelsUrl: "",
+    testModel: "",
   });
   const [azureData, setAzureData] = useState({
     azureEndpoint: "",
@@ -35,6 +37,8 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         name: connection.name || "",
         priority: connection.priority || 1,
         apiKey: "",
+        modelsUrl: connection.providerSpecificData?.modelsUrl || "",
+        testModel: connection.providerSpecificData?.testModel || "",
       });
       // Load Azure-specific data if present
       if (connection.provider === "azure" && connection.providerSpecificData) {
@@ -120,6 +124,10 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       const updates = {
         name: formData.name,
         priority: formData.priority,
+        providerSpecificData: {
+          modelsUrl: formData.modelsUrl.trim(),
+          testModel: formData.testModel.trim(),
+        },
       };
       if (!isOAuth && formData.apiKey) {
         updates.apiKey = formData.apiKey;
@@ -158,6 +166,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       // Add Azure-specific data if this is an Azure connection
       if (isAzure) {
         updates.providerSpecificData = {
+          ...updates.providerSpecificData,
           azureEndpoint: azureData.azureEndpoint,
           apiVersion: azureData.apiVersion,
           deployment: azureData.deployment,
@@ -165,11 +174,11 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         };
       }
       if (isCloudflareAi) {
-        updates.providerSpecificData = { accountId: cloudflareData.accountId };
+        updates.providerSpecificData = { ...updates.providerSpecificData, accountId: cloudflareData.accountId };
       }
       // Persist updated region for region-aware providers
       if (providerRegions && region) {
-        updates.providerSpecificData = buildRegionSpecificData();
+        updates.providerSpecificData = { ...updates.providerSpecificData, ...buildRegionSpecificData() };
       }
       
       await onSave(updates);
@@ -200,6 +209,22 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           type="number"
           value={formData.priority}
           onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value, 10) || 1 })}
+        />
+
+        <Input
+          label="Models URL"
+          type="url"
+          value={formData.modelsUrl}
+          onChange={(e) => setFormData({ ...formData, modelsUrl: e.target.value })}
+          placeholder="https://api.example.com/v1/models"
+          hint="Optional. Leave blank to use the provider default; set the full model-list endpoint when it cannot be derived from the Base URL."
+        />
+        <Input
+          label="测试模型"
+          value={formData.testModel}
+          onChange={(e) => setFormData({ ...formData, testModel: e.target.value })}
+          placeholder="例如：gpt-4o-mini"
+          hint="自动恢复会向该模型发送真实请求；未配置时不会自动恢复连接。"
         />
 
         {!isOAuth && (

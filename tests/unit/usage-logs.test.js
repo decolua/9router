@@ -208,6 +208,26 @@ describe("usage logs", () => {
     expect(providerChart.series.some((series) => series.label === "团队供应商")).toBe(true);
   });
 
+  it("returns the user-selected and actual upstream models in traffic logs", async () => {
+    await db.saveRequestUsage({
+      provider: "dual-model-provider",
+      model: "router-model",
+      timestamp: new Date().toISOString(),
+      tokens: { prompt_tokens: 10, completion_tokens: 5 },
+      meta: {
+        requestedModel: "user-facing-model",
+        actualModel: "upstream/provider-model",
+      },
+    });
+
+    const result = await db.getUsageLogs({ provider: "dual-model-provider" });
+
+    expect(result.logs[0]).toMatchObject({
+      selectedModel: "user-facing-model",
+      actualModel: "upstream/provider-model",
+    });
+  });
+
   it("covers the complete custom range when chart data is capped at 90 points", async () => {
     const startDate = "2026-01-01T00:00:00.000Z";
     const endDate = "2026-08-24T00:00:00.000Z";

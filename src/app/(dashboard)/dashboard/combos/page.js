@@ -62,7 +62,9 @@ async function loadCombosPageData() {
   }
   return {
     combos: combosRes.ok ? (combosData.combos || []).filter((combo) => !combo.kind || combo.kind === "llm") : null,
-    activeProviders: providersRes.ok ? providersData.connections || [] : null,
+    activeProviders: providersRes.ok
+      ? (providersData.connections || []).filter((connection) => connection.isActive !== false || connection.autoDisabled === true)
+      : null,
     comboStrategies: settingsData.comboStrategies || {},
     capacityAdapter,
   };

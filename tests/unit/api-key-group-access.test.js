@@ -105,5 +105,6 @@ describe("API key group access", () => {
 
     expect(summaries[key.key].todayCost).toBeCloseTo(1, 6);
     expect(summaries[key.key].thirtyDayCost).toBeCloseTo(2, 6);
+    expect(summaries[key.key].lastRequestAt).toBe(now.toISOString());
   });
 });

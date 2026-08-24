@@ -413,7 +413,9 @@ export function calculateCostFromTokens(tokens, pricing, timestamp = new Date())
   return calculateCostBreakdown(tokens, pricing, timestamp).totalCost;
 }
 
-function parseUtcMinute(value) {
+const CHINA_UTC_OFFSET_MINUTES = 8 * 60;
+
+function parseMinute(value) {
   const match = String(value || "").trim().match(/^(\d{1,2}):(\d{2})$/);
   if (!match) return null;
   const hour = Number(match[1]);
@@ -425,15 +427,16 @@ function parseUtcMinute(value) {
 export function isPeakPricingTime(peakWindows, timestamp = new Date()) {
   const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
   if (!Number.isFinite(date.getTime())) return false;
-  const current = date.getUTCHours() * 60 + date.getUTCMinutes();
+  const chinaTime = new Date(date.getTime() + CHINA_UTC_OFFSET_MINUTES * 60 * 1000);
+  const current = chinaTime.getUTCHours() * 60 + chinaTime.getUTCMinutes();
   return String(peakWindows || "")
     .split(/[,，\n]+/)
     .map((window) => window.trim())
     .filter(Boolean)
     .some((window) => {
       const [startValue, endValue] = window.split(/[-~～—]/).map((part) => part.trim());
-      const start = parseUtcMinute(startValue);
-      const end = parseUtcMinute(endValue);
+      const start = parseMinute(startValue);
+      const end = parseMinute(endValue);
       if (start == null || end == null || start === end) return false;
       return start < end ? current >= start && current < end : current >= start || current < end;
     });

@@ -1,7 +1,23 @@
-import { getProviderConnectionById, getProviderConnections, getSettings, updateProviderConnection } from "@/lib/localDb";
+import { getProviderConnectionById, getProviderConnections, getSettings, updateProviderConnection, updateSettings } from "@/lib/localDb";
 
 const DEFAULT_INTERVAL_MINUTES = 15;
+const HISTORY_LIMIT = 100;
 const g = global.__providerAutoRecovery ??= { timer: null, running: false };
+
+async function recordAutoDisableEvent(connection, type, reason = "") {
+  const settings = await getSettings();
+  const history = Array.isArray(settings.providerAutoDisableHistory) ? settings.providerAutoDisableHistory : [];
+  const event = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+    type,
+    timestamp: new Date().toISOString(),
+    provider: connection.provider,
+    connectionId: connection.id,
+    connectionName: connection.name || connection.email || connection.id,
+    reason,
+  };
+  await updateSettings({ providerAutoDisableHistory: [event, ...history].slice(0, HISTORY_LIMIT) });
+}
 
 async function testConnectionThroughApi(connectionId) {
   const port = Number(process.env.PORT) || 20128;
@@ -33,7 +49,7 @@ export async function maybeAutoDisableProviderConnection(connectionId, error = {
   if (!matchesAutoDisableTrigger(message, settings.providerAutoDisableTriggers)) return false;
 
   const connection = await getProviderConnectionById(connectionId);
-  if (!connection || (connection.isActive === false && connection.autoDisabled !== true)) return false;
+  if (!connection || connection.isActive === false) return false;
 
   await updateProviderConnection(connectionId, {
     isActive: false,
@@ -42,6 +58,7 @@ export async function maybeAutoDisableProviderConnection(connectionId, error = {
     autoDisabledReason: String(error.errorText || error.status || "命中自动禁用规则").slice(0, 300),
     autoRecoveryLastCheckedAt: null,
   });
+  await recordAutoDisableEvent(connection, "disabled", String(error.errorText || error.status || "命中自动禁用规则").slice(0, 300));
   console.warn(`[ProviderAutoRecovery] auto-disabled ${connection.provider}/${connectionId}: ${message}`);
   return true;
 }
@@ -72,6 +89,7 @@ export async function runProviderAutoRecovery() {
           autoRecoveryLastCheckedAt: checkedAt,
           autoDisabledReason: null,
         });
+        await recordAutoDisableEvent(connection, "recovered", "测试模型请求成功");
         console.log(`[ProviderAutoRecovery] restored ${connection.provider}/${connection.id}`);
       } else {
         await updateProviderConnection(connection.id, { autoRecoveryLastCheckedAt: checkedAt });

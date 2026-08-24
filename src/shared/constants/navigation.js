@@ -23,3 +23,10 @@ export const NAVIGATION_VISIBILITY_OPTIONS = [
 ];
 
 export const DEFAULT_NAVIGATION_SECTIONS = ["主要功能", "成本中心", "系统"];
+
+export const DEFAULT_NAVIGATION_ITEM_ORDER = [
+  "dashboard", "endpoint", "model-market", "key-groups", "providers", "combos",
+  "expert-panel", "token-saver", "cli-tools", "usage", "traffic-logs", "pricing",
+  "model-mappings", "monitor", "proxy-pools", "skills", "console-log", "translator",
+  "media-providers", "remote", "english",
+];

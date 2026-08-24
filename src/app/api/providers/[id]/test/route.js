@@ -5,7 +5,8 @@ import { testSingleConnection } from "./testUtils.js";
 export async function POST(request, { params }) {
   try {
     const { id } = await params;
-    const result = await testSingleConnection(id);
+    const requireModelProbe = request.headers.get("x-9r-internal-job") === "provider-auto-recovery";
+    const result = await testSingleConnection(id, { requireModelProbe });
 
     if (result.error === "Connection not found") {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });

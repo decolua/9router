@@ -6,6 +6,34 @@ import { useNotificationStore } from "@/store/notificationStore";
 import { parseJudgeResult } from "@/shared/utils/judgeResult.js";
 
 const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+const SESSION_STORAGE_KEY = "9router:expert-panel-sessions";
+
+function createSession(index = 1) {
+  const now = new Date().toISOString();
+  return {
+    id: createId(),
+    title: `新会话 ${index}`,
+    panels: [],
+    prompt: "",
+    judgeModel: "",
+    judgeSummary: "",
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function normalizeStoredSession(session, index) {
+  if (!session || typeof session !== "object") return createSession(index + 1);
+  return {
+    ...createSession(index + 1),
+    ...session,
+    panels: Array.isArray(session.panels) ? session.panels.map((panel) => ({
+      ...panel,
+      status: panel.status === "streaming" ? "idle" : panel.status,
+      startedAt: null,
+    })) : [],
+  };
+}
 
 function readAssistantText(chunk) {
   const content = chunk?.choices?.[0]?.delta?.content ?? chunk?.choices?.[0]?.message?.content ?? chunk?.output_text ?? chunk?.text;
@@ -73,6 +101,57 @@ export default function ExpertPanelPage() {
   const [sending, setSending] = useState(false);
   const [judging, setJudging] = useState(false);
   const [judgeSummary, setJudgeSummary] = useState("");
+  const [sessions, setSessions] = useState([]);
+  const [activeSessionId, setActiveSessionId] = useState("");
+  const [sessionTitle, setSessionTitle] = useState("");
+  const [sessionsReady, setSessionsReady] = useState(false);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      let restored = [];
+      let restoredActiveId = "";
+      try {
+        const saved = JSON.parse(localStorage.getItem(SESSION_STORAGE_KEY) || "null");
+        restored = Array.isArray(saved?.sessions) ? saved.sessions.map(normalizeStoredSession) : [];
+        restoredActiveId = saved?.activeSessionId || "";
+      } catch {}
+      if (!restored.length) restored = [createSession(1)];
+      const active = restored.find((session) => session.id === restoredActiveId) || restored[0];
+      setSessions(restored);
+      setActiveSessionId(active.id);
+      setSessionTitle(active.title);
+      setPanels(active.panels);
+      setPrompt(active.prompt || "");
+      setJudgeModel(active.judgeModel || "");
+      setJudgeSummary(active.judgeSummary || "");
+      setSessionsReady(true);
+    }, 0);
+    return () => clearTimeout(timeout);
+  }, []);
+
+  useEffect(() => {
+    if (!sessionsReady || !activeSessionId) return undefined;
+    const timeout = setTimeout(() => {
+      setSessions((current) => {
+        const savedSession = {
+          id: activeSessionId,
+          title: sessionTitle || "未命名会话",
+          panels: panels.map((panel) => ({ ...panel, status: panel.status === "streaming" ? "idle" : panel.status, startedAt: null })),
+          prompt,
+          judgeModel,
+          judgeSummary,
+          createdAt: current.find((session) => session.id === activeSessionId)?.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        const next = current.some((session) => session.id === activeSessionId)
+          ? current.map((session) => session.id === activeSessionId ? savedSession : session)
+          : [...current, savedSession];
+        localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ activeSessionId, sessions: next }));
+        return next;
+      });
+    }, 250);
+    return () => clearTimeout(timeout);
+  }, [activeSessionId, judgeModel, judgeSummary, panels, prompt, sessionTitle, sessionsReady]);
 
   useEffect(() => {
     let cancelled = false;
@@ -123,6 +202,55 @@ export default function ExpertPanelPage() {
     setModelPicker(mode);
   };
 
+  const applySession = (session) => {
+    setActiveSessionId(session.id);
+    setSessionTitle(session.title);
+    setPanels(session.panels || []);
+    setPrompt(session.prompt || "");
+    setJudgeModel(session.judgeModel || "");
+    setJudgeSummary(session.judgeSummary || "");
+  };
+
+  const snapshotCurrentSession = () => sessions.map((session) => session.id === activeSessionId ? {
+    ...session,
+    title: sessionTitle || "未命名会话",
+    panels: panels.map((panel) => ({ ...panel, status: panel.status === "streaming" ? "idle" : panel.status, startedAt: null })),
+    prompt,
+    judgeModel,
+    judgeSummary,
+    updatedAt: new Date().toISOString(),
+  } : session);
+
+  const switchSession = (sessionId) => {
+    if (sending || judging || sessionId === activeSessionId) return;
+    const next = snapshotCurrentSession();
+    const target = next.find((session) => session.id === sessionId);
+    if (!target) return;
+    setSessions(next);
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ activeSessionId: target.id, sessions: next }));
+    applySession(target);
+  };
+
+  const addSession = () => {
+    if (sending || judging) return;
+    const session = createSession(sessions.length + 1);
+    const next = [...snapshotCurrentSession(), session];
+    setSessions(next);
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ activeSessionId: session.id, sessions: next }));
+    applySession(session);
+  };
+
+  const deleteSession = () => {
+    if (sending || judging || !activeSessionId) return;
+    if (!window.confirm(`删除会话“${sessionTitle}”？`)) return;
+    let next = snapshotCurrentSession().filter((session) => session.id !== activeSessionId);
+    if (!next.length) next = [createSession(1)];
+    const target = next[0];
+    setSessions(next);
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({ activeSessionId: target.id, sessions: next }));
+    applySession(target);
+  };
+
   const confirmModels = () => {
     const selected = pickerSelection;
     setPanels((current) => [...current, ...selected.map((model) => ({ id: createId(), model, messages: [], response: "", status: "idle", score: null, comment: "", latencyMs: null, startedAt: null }))]);
@@ -134,6 +262,7 @@ export default function ExpertPanelPage() {
   const sendPrompt = async () => {
     const text = prompt.trim();
     if (!text || panels.length === 0 || sending) return;
+    if (/^新会话\s*\d*$/.test(sessionTitle)) setSessionTitle(text.slice(0, 24));
     setPrompt("");
     setSending(true);
     setJudgeSummary("");
@@ -202,7 +331,10 @@ export default function ExpertPanelPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-bg-base" data-i18n-skip>
-      <div className="flex flex-wrap items-end gap-3 border-b border-border bg-surface/90 px-4 py-3 lg:px-6">
+      <div className="flex flex-wrap items-end gap-3 border-b border-border bg-surface/90 px-4 py-3 lg:px-8">
+        <DropdownSelect className="w-56" value={activeSessionId} onChange={switchSession} options={sessions.map((session) => ({ value: session.id, label: session.title }))} placeholder="选择会话" buttonClassName="h-9" />
+        <Button icon="note_add" size="sm" variant="secondary" disabled={!sessionsReady || sending || judging} onClick={addSession}>新建会话</Button>
+        <Button icon="delete" size="sm" variant="ghost" disabled={!sessionsReady || sending || judging} onClick={deleteSession}>删除会话</Button>
         <Button icon="add" size="sm" onClick={() => openPicker("multiple")}>批量增加模型</Button>
         {judgeSummary && <p className="min-w-0 flex-1 text-sm text-text-muted">{judgeSummary}</p>}
         <div className="ml-auto flex items-center gap-2">
@@ -212,7 +344,7 @@ export default function ExpertPanelPage() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden p-4 lg:p-6 custom-scrollbar">
+      <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden p-4 lg:p-8 custom-scrollbar">
         <div className="flex h-full min-h-[360px] gap-3">
           {panels.map((panel) => (
             <section key={panel.id} className="flex h-full w-[480px] shrink-0 flex-col overflow-hidden rounded-md border border-border bg-surface shadow-sm">
@@ -243,7 +375,7 @@ export default function ExpertPanelPage() {
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-border bg-surface px-4 py-3 lg:px-6">
+      <div className="shrink-0 border-t border-border bg-surface px-4 py-3 lg:px-8">
         <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-stretch gap-2">
           <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendPrompt(); } }} placeholder={panels.length ? "向专家团发送提示词" : "请先添加模型"} disabled={panels.length === 0 || sending} className="h-[80px] min-w-0 resize-none rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-60" />
           <div className="grid h-[80px] w-32 grid-rows-2 gap-2">

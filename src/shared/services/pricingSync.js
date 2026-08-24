@@ -49,7 +49,37 @@ function stripVariant(name) {
   return name.replace(/\s+\((?:≤|>|Off-Peak|Peak).*$/, "").trim();
 }
 
-const OPENCODE_PEAK_WINDOWS = "01:00-04:00,06:00-10:00";
+const OPENCODE_PEAK_WINDOWS_UTC = "01:00-04:00,06:00-10:00";
+
+function parseTimeMinute(value) {
+  const match = String(value || "").trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
+function formatTimeMinute(value) {
+  const normalized = ((value % 1440) + 1440) % 1440;
+  return `${String(Math.floor(normalized / 60)).padStart(2, "0")}:${String(normalized % 60).padStart(2, "0")}`;
+}
+
+export function shiftPricingWindows(windows, offsetMinutes) {
+  return String(windows || "")
+    .split(/[,，\n]+/)
+    .map((window) => {
+      const [startValue, endValue] = window.split(/[-~～—]/).map((part) => part.trim());
+      const start = parseTimeMinute(startValue);
+      const end = parseTimeMinute(endValue);
+      if (start == null || end == null || start === end) return "";
+      return `${formatTimeMinute(start + offsetMinutes)}-${formatTimeMinute(end + offsetMinutes)}`;
+    })
+    .filter(Boolean)
+    .join(",");
+}
+
+const OPENCODE_PEAK_WINDOWS_CHINA = shiftPricingWindows(OPENCODE_PEAK_WINDOWS_UTC, 8 * 60);
 
 function parseRowPricing(row) {
   const input = parsePrice(row[1]);
@@ -88,7 +118,7 @@ export function parseOpenCodePricing(html) {
     pricing[model] = {
       ...tiers.peakPricing,
       peakEnabled: true,
-      peakWindows: OPENCODE_PEAK_WINDOWS,
+      peakWindows: OPENCODE_PEAK_WINDOWS_CHINA,
       peakPricing: tiers.peakPricing,
       offPeakPricing: tiers.offPeakPricing,
     };
