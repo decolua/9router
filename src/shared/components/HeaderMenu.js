@@ -74,7 +74,7 @@ export default function HeaderMenu({ onLogout }) {
           className="flex items-center justify-center p-2 rounded-lg text-text-muted hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5 transition-all"
           title="Menu"
         >
-          <span className="material-symbols-outlined">grid_view</span>
+          <span className="material-symbols-outlined">person</span>
         </button>
 
         {isOpen && (
