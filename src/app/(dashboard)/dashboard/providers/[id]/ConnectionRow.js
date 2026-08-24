@@ -4,9 +4,10 @@ import { useState, useEffect, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
-import CooldownTimer from "./CooldownTimer";
+import QuotaLockView from "../components/QuotaLockView";
+import { getEffectiveConnectionStatus } from "../quotaLockView";
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null, modelAssignmentOptions = null, onModelAssignmentChange = null, strictModelAssignment = false }) {
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null, modelAssignmentOptions = null, onModelAssignmentChange = null, strictModelAssignment = false, exactModelId = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null);
@@ -85,36 +86,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
       : null;
 
   // Use useState + useEffect for impure Date.now() to avoid calling during render
-  const [isCooldown, setIsCooldown] = useState(false);
 
-  // Get earliest model lock timestamp (useEffect handles the Date.now() comparison)
-  const modelLockUntil = Object.entries(connection)
-    .filter(([k]) => k.startsWith("modelLock_"))
-    .map(([, v]) => v)
-    .filter(v => !!v)
-    .sort()[0] || null;
 
-  useEffect(() => {
-    const checkCooldown = () => {
-      const until = Object.entries(connection)
-        .filter(([k]) => k.startsWith("modelLock_"))
-        .map(([, v]) => v)
-        .filter(v => v && new Date(v).getTime() > Date.now())
-        .sort()[0] || null;
-      setIsCooldown(!!until);
-    };
-
-    checkCooldown();
-    const interval = modelLockUntil ? setInterval(checkCooldown, 1000) : null;
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [modelLockUntil]);
 
   // Determine effective status (override unavailable if cooldown expired)
-  const effectiveStatus = (connection.testStatus === "unavailable" && !isCooldown)
-    ? "active"  // Cooldown expired u2192 treat as active
-    : connection.testStatus;
+  const effectiveStatus = getEffectiveConnectionStatus(connection, null, exactModelId);
 
   const getStatusVariant = () => getConnectionStatusVariant(connection.isActive, effectiveStatus);
 
@@ -163,8 +139,9 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
           {secondaryDisplayName && (
             <p className="text-xs text-text-muted truncate">{secondaryDisplayName}</p>
           )}
-          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
-            <Badge variant={getStatusVariant()} size="sm" dot>
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
+              <QuotaLockView provider={connection} exactModelId={exactModelId} />
+              <Badge variant={getStatusVariant()} size="sm" dot>
               {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
             </Badge>
             <Badge variant="default" size="sm">
@@ -175,8 +152,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 Proxy
               </Badge>
             )}
-            {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
-            {connection.lastError && connection.isActive !== false && (
+              {connection.lastError && connection.isActive !== false && (
               <span className="max-w-full truncate text-xs text-red-500 sm:max-w-[300px]" title={connection.lastError}>
                 {connection.lastError}
               </span>
@@ -299,7 +275,7 @@ ConnectionRow.propTypes = {
     name: PropTypes.string,
     email: PropTypes.string,
     displayName: PropTypes.string,
-    modelLockUntil: PropTypes.string,
+
     testStatus: PropTypes.string,
     isActive: PropTypes.bool,
     lastError: PropTypes.string,

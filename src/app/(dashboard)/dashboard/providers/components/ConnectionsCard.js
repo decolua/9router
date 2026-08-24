@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
 import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal, ConfirmModal } from "@/shared/components";
+import QuotaLockView from "./QuotaLockView";
+import { getEffectiveConnectionStatus } from "../quotaLockView";
 
 // ── CooldownTimer ──────────────────────────────────────────────
 function CooldownTimer({ until }) {
@@ -32,9 +34,8 @@ CooldownTimer.propTypes = { until: PropTypes.string.isRequired };
 // ── ConnectionRow ──────────────────────────────────────────────
 function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
-  const [updatingProxy, setUpdatingProxy] = useState(false);
-  const [isCooldown, setIsCooldown] = useState(false);
-  const proxyDropdownRef = useRef(null);
+    const [updatingProxy, setUpdatingProxy] = useState(false);
+    const proxyDropdownRef = useRef(null);
 
   const proxyPoolMap = new Map((proxyPools || []).map((p) => [p.id, p]));
   const boundProxyPoolId = connection.providerSpecificData?.proxyPoolId || null;
@@ -59,24 +60,10 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
   const noProxyText = boundProxyPool?.noProxy || connection.providerSpecificData?.connectionNoProxy || "";
   const proxyBadgeVariant = boundProxyPool?.isActive === true ? "success" : (boundProxyPoolId || hasLegacyProxy) ? "error" : "default";
 
-  const modelLockUntil = Object.entries(connection)
-    .filter(([k]) => k.startsWith("modelLock_"))
-    .map(([, v]) => v).filter(Boolean).sort()[0] || null;
 
-  useEffect(() => {
-    const check = () => {
-      const until = Object.entries(connection)
-        .filter(([k]) => k.startsWith("modelLock_"))
-        .map(([, v]) => v).filter(v => v && new Date(v).getTime() > Date.now()).sort()[0] || null;
-      setIsCooldown(!!until);
-    };
-    check();
-    const t = modelLockUntil ? setInterval(check, 1000) : null;
-    return () => { if (t) clearInterval(t); };
-  }, [modelLockUntil]);
 
-  useEffect(() => {
-    if (!showProxyDropdown) return;
+    useEffect(() => {
+      if (!showProxyDropdown) return;
     const handler = (e) => {
       if (proxyDropdownRef.current && !proxyDropdownRef.current.contains(e.target))
         setShowProxyDropdown(false);
@@ -85,7 +72,7 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
     return () => document.removeEventListener("mousedown", handler);
   }, [showProxyDropdown]);
 
-  const effectiveStatus = connection.testStatus === "unavailable" && !isCooldown ? "active" : connection.testStatus;
+  const effectiveStatus = getEffectiveConnectionStatus(connection);
 
   const getStatusVariant = () => getConnectionStatusVariant(connection.isActive, effectiveStatus);
 
@@ -111,15 +98,15 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
           </button>
         </div>
         <span className="material-symbols-outlined text-base text-text-muted">{isOAuth ? "lock" : "key"}</span>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">{displayName}</p>
-          <div className="flex flex-wrap items-center gap-2 mt-1">
-            <Badge variant={getStatusVariant()} size="sm" dot>
-              {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
-            </Badge>
-            {hasAnyProxy && <Badge variant={proxyBadgeVariant} size="sm">Proxy</Badge>}
-            {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
-            {connection.lastError && connection.isActive !== false && (
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium truncate">{displayName}</p>
+            <div className="flex flex-wrap items-center gap-2 mt-1">
+              <QuotaLockView provider={connection} />
+              <Badge variant={getStatusVariant()} size="sm" dot>
+                {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
+              </Badge>
+              {hasAnyProxy && <Badge variant={proxyBadgeVariant} size="sm">Proxy</Badge>}
+              {connection.lastError && connection.isActive !== false && (
               <span className="text-xs text-red-500 truncate max-w-[300px]" title={connection.lastError}>{connection.lastError}</span>
             )}
             <span className="text-xs text-text-muted">#{connection.priority}</span>

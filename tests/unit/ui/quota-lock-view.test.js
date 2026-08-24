@@ -1,5 +1,98 @@
+/**
+ * @vitest-environment jsdom
+ */
+import React from 'react';
 import { test, expect, describe, vi, afterEach } from 'vitest';
-import { deriveQuotaLockView, sanitizeReason } from '../../../src/app/(dashboard)/dashboard/providers/quotaLockView.js';
+import { deriveQuotaLockView, sanitizeReason, mergeQuotaLockFields, getEffectiveConnectionStatus } from '../../../src/app/(dashboard)/dashboard/providers/quotaLockView.js';
+import { render, screen, act } from '@testing-library/react';
+
+vi.mock('../../../src/shared/components', () => ({
+    Badge: ({ children, title, className, "data-testid": testId }) => React.createElement('div', {
+        className: `badge ${className || ''}`,
+        title,
+        'data-testid': testId || 'badge'
+    }, children)
+}));
+
+import QuotaLockView from '../../../src/app/(dashboard)/dashboard/providers/components/QuotaLockView.jsx';
+
+describe('QuotaLockView React Component', () => {
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    test('renders null when there is no lock', () => {
+        const { container } = render(React.createElement(QuotaLockView, { provider: {} }));
+        expect(container.firstChild).toBeNull();
+    });
+
+    test('renders global lock correctly', () => {
+        const now = Date.now();
+        const provider = {
+            modelLock___all: now + 5000,
+            modelLock___allReason: 'Global reason',
+            modelLock___allSource: 'Global source'
+        };
+
+        render(React.createElement(QuotaLockView, { provider }));
+
+        expect(screen.getByTestId('quota-lock-scope').textContent).toBe('Global Lock');
+        expect(screen.getByTestId('quota-lock-reason').textContent).toBe('Global reason');
+        expect(screen.getByTestId('quota-lock-source').textContent).toBe('Global source');
+        expect(screen.getByTestId('quota-lock-countdown').textContent).toContain('expires');
+    });
+
+    test('renders exact model lock correctly without additional locks', () => {
+        const now = Date.now();
+        const provider = {
+            'modelLock_model-a': now + 5000,
+            'modelLock_model-aReason': 'Model reason',
+            'modelLock_model-aSource': 'Model source',
+            'modelLock_model-b': now + 10000
+        };
+
+        const { container } = render(React.createElement(QuotaLockView, { provider, exactModelId: "model-a" }));
+
+        expect(screen.getByTestId('quota-lock-scope').textContent).toBe('model-a');
+        expect(screen.getByTestId('quota-lock-reason').textContent).toBe('Model reason');
+        expect(screen.getByTestId('quota-lock-source').textContent).toBe('Model source');
+        expect(container.textContent).not.toContain('more)');
+    });
+
+    test('renders nearest model lock with additional count', () => {
+        const now = Date.now();
+        const provider = {
+            'modelLock_model-a': now + 5000,
+            'modelLock_model-aReason': 'Nearest reason',
+            'modelLock_model-b': now + 10000
+        };
+
+        const { container } = render(React.createElement(QuotaLockView, { provider }));
+
+        expect(screen.getByTestId('quota-lock-scope').textContent).toBe('model-a');
+        expect(screen.getByTestId('quota-lock-reason').textContent).toBe('Nearest reason');
+        expect(container.textContent).toContain('(+1 more)');
+    });
+
+    test('countdown disappears on expiry via fake timers', async () => {
+        vi.useFakeTimers();
+        const now = 1000000000;
+        vi.setSystemTime(now);
+
+        const provider = {
+            modelLock___all: now + 500
+        };
+
+        const { container } = render(React.createElement(QuotaLockView, { provider }));
+        expect(container.firstChild).not.toBeNull();
+
+        await act(async () => {
+            vi.advanceTimersByTime(1500);
+        });
+
+        expect(container.firstChild).toBeNull();
+    });
+});
 
 describe('quotaLockView', () => {
     afterEach(() => {
@@ -238,6 +331,71 @@ describe('quotaLockView', () => {
             additionalModelLocks: 0,
             nearestModelId: null
         });
+    });
+});
+
+describe('getEffectiveConnectionStatus', () => {
+    test('returns original status when there are no locks', () => {
+        expect(getEffectiveConnectionStatus({ testStatus: 'ok' })).toBe('ok');
+        expect(getEffectiveConnectionStatus({ testStatus: 'error' })).toBe('error');
+    });
+
+    test('reverts unavailable status to active if raw modelLock exists but is expired', () => {
+        const now = 1000000;
+        expect(getEffectiveConnectionStatus({
+            testStatus: 'unavailable',
+            'modelLock_model-a': now - 5000
+        }, now)).toBe('active');
+    });
+
+    test('keeps unavailable status if raw modelLock exists and is still active', () => {
+        const now = 1000000;
+        expect(getEffectiveConnectionStatus({
+            testStatus: 'unavailable',
+            'modelLock_model-a': now + 5000
+        }, now)).toBe('unavailable');
+    });
+
+    test('ignores locks for other models when exactModelId is provided', () => {
+        const now = 1000000;
+        expect(getEffectiveConnectionStatus({
+            testStatus: 'unavailable',
+            'modelLock_model-b': now + 5000
+        }, now, 'model-a')).toBe('active');
+    });
+
+    test('global lock retains unavailable status even with exactModelId', () => {
+        const now = 1000000;
+        expect(getEffectiveConnectionStatus({
+            testStatus: 'unavailable',
+            modelLock___all: now + 5000
+        }, now, 'model-a')).toBe('unavailable');
+    });
+});
+
+describe('mergeQuotaLockFields', () => {
+    test('merges locks from multiple connections correctly', () => {
+        const now = Date.now();
+        const connections = [
+            { 'modelLock_model-a': now + 5000, 'modelLock_model-aReason': 'Old lock', 'modelLock_model-b': now + 1000 },
+            { 'modelLock_model-a': now + 10000, 'modelLock_model-aReason': 'New lock', 'modelLock_model-c': now + 2000 },
+            null,
+            { quotaResetAt: now + 20000, quotaResetAtReason: 'Global' }
+        ];
+
+        const merged = mergeQuotaLockFields(connections);
+
+        expect(merged['modelLock_model-a']).toBe(now + 10000);
+        expect(merged['modelLock_model-aReason']).toBe('New lock');
+        expect(merged['modelLock_model-b']).toBe(now + 1000);
+        expect(merged['modelLock_model-c']).toBe(now + 2000);
+        expect(merged.quotaResetAt).toBe(now + 20000);
+        expect(merged.quotaResetAtReason).toBe('Global');
+    });
+
+    test('ignores missing arrays or objects safely', () => {
+        expect(mergeQuotaLockFields(null)).toEqual({});
+        expect(mergeQuotaLockFields([null, undefined, 42, 'string'])).toEqual({});
     });
 });
 

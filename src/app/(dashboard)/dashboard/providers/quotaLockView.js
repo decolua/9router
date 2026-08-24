@@ -22,6 +22,50 @@ export function sanitizeReason(text) {
     return sanitized || null;
 }
 
+export function mergeQuotaLockFields(connections) {
+    if (!Array.isArray(connections)) return {};
+
+    return connections.reduce((merged, conn) => {
+        if (!conn || typeof conn !== 'object') return merged;
+
+        if (conn.quotaResetAt) {
+            const currentExpiry = merged.quotaResetAt;
+            const newExpiry = typeof conn.quotaResetAt === 'string' ? Date.parse(conn.quotaResetAt) : conn.quotaResetAt;
+            if (typeof newExpiry === 'number' && Number.isFinite(newExpiry) && (!currentExpiry || newExpiry > currentExpiry)) {
+                merged.quotaResetAt = newExpiry;
+                if (conn.quotaResetAtReason) merged.quotaResetAtReason = conn.quotaResetAtReason;
+                if (conn.quotaResetAtSource) merged.quotaResetAtSource = conn.quotaResetAtSource;
+                if (conn.quotaResetAtClassifiedAt) merged.quotaResetAtClassifiedAt = conn.quotaResetAtClassifiedAt;
+            }
+        }
+
+        for (const [key, value] of Object.entries(conn)) {
+            if (key.startsWith('modelLock_') && !key.endsWith('Reason') && !key.endsWith('Source') && !key.endsWith('ClassifiedAt')) {
+                const currentExpiry = merged[key];
+                const newExpiry = typeof value === 'string' ? Date.parse(value) : value;
+                if (typeof newExpiry === 'number' && Number.isFinite(newExpiry) && (!currentExpiry || newExpiry > currentExpiry)) {
+                    merged[key] = newExpiry;
+                    if (conn[`${key}Reason`]) merged[`${key}Reason`] = conn[`${key}Reason`];
+                    if (conn[`${key}Source`]) merged[`${key}Source`] = conn[`${key}Source`];
+                    if (conn[`${key}ClassifiedAt`]) merged[`${key}ClassifiedAt`] = conn[`${key}ClassifiedAt`];
+                }
+            }
+        }
+        return merged;
+    }, {});
+}
+
+export function getEffectiveConnectionStatus(connection, nowArg = null, exactModelId = null) {
+    if (!connection || typeof connection !== 'object') return 'Unknown';
+    const lockInfo = deriveQuotaLockView(connection, nowArg, exactModelId);
+
+    if (connection.testStatus === "unavailable" && !lockInfo.isActive) {
+        return "active";
+    }
+
+    return connection.testStatus || "Unknown";
+}
+
 export function deriveQuotaLockView(provider, nowArg = null, exactModelId = null) {
     const now = nowArg ?? Date.now();
     const emptyState = { isActive: false, scope: null, expiry: null, reason: null, source: null, classifiedAt: null, additionalModelLocks: 0, nearestModelId: null };
