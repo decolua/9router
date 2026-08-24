@@ -20,17 +20,13 @@ vi.mock("@/lib/usageDb.js", () => ({
 
 vi.mock("@/lib/pxpipe/loader.js", () => ({ getTransform: vi.fn() }));
 vi.mock("@/lib/pxpipe/events.js", () => ({ appendPxpipeEvent: vi.fn(async () => {}) }));
+vi.mock("../../open-sse/translator/index.js", () => ({ translateRequest: vi.fn((_source, _target, _model, body) => body), register: vi.fn() }));
 
 // getExecutor is called with `provider` as the first argument — a bare string,
 // not a symbol. Keep the fake factory string-keyed like the real map.
-vi.mock("../../open-sse/executors/index.js", async (importOriginal) => {
-  const actual = await importOriginal();
-  return {
-    ...actual,
-    getExecutor: (provider) =>
-      provider === "freebuff" ? mocks.fakeExecutor : actual.getExecutor(provider),
-  };
-});
+vi.mock("../../open-sse/executors/index.js", () => ({
+  getExecutor: (provider) => provider === "freebuff" ? mocks.fakeExecutor : null,
+}));
 
 const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
 const FAKE_MODEL = "deepseek/deepseek-v4-flash";
@@ -55,10 +51,11 @@ async function runOnce({ error }) {
 describe("handleChatCore executor error propagation", () => {
   it("preserves a structured 409 model-lock error with resetsAtMs and pool scoping instead of flattening to 502", async () => {
     const resetsAtMs = Date.now() + 10_000;
+    const poolScoped = { poolId: "pool-a", scope: `freebuff::${FAKE_MODEL}`, reason: "limited_ip", fitnessVersion: 7, until: resetsAtMs };
     const lockError = Object.assign(new Error("Freebuff session locked to another model"), {
       status: 409,
       resetsAtMs,
-      poolScoped: { poolId: "pool-a", reason: "limited_ip" },
+      poolScoped,
     });
 
     const result = await runOnce({ error: lockError });
@@ -66,7 +63,7 @@ describe("handleChatCore executor error propagation", () => {
     expect(result.success).toBe(false);
     expect(result.status).toBe(409);
     expect(result.resetsAtMs).toBe(resetsAtMs);
-    expect(result.poolScoped).toEqual({ poolId: "pool-a", reason: "limited_ip" });
+    expect(result.poolScoped).toEqual(poolScoped);
     expect(result.response.status).toBe(409);
     expect(result.error).toContain("409");
     expect(result.error).toContain("Freebuff session locked");

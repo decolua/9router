@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fetchMock = vi.fn();
+const fitnessMocks = vi.hoisted(() => ({ markPoolUnfit: vi.fn(), clearPoolUnfit: vi.fn() }));
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({ proxyAwareFetch: (...args) => fetchMock(...args) }));
-vi.mock("../../open-sse/services/proxyPoolFitness.js", () => ({ markPoolUnfit: vi.fn(), clearPoolUnfit: vi.fn() }));
+vi.mock("../../open-sse/services/proxyPoolFitness.js", () => ({ ...fitnessMocks, POOL_UNFIT_MS: 300_000 }));
 
 import { FreebuffExecutor, __test__ } from "../../open-sse/executors/freebuff.js";
+import { markFreebuffPoolFailure } from "../../open-sse/executors/freebuffProxyFitness.js";
 
 const MODEL = "deepseek/deepseek-v4-flash";
 const SESSION_URL = "https://www.codebuff.com/api/v1/freebuff/session";
@@ -18,6 +20,9 @@ function response(body, status = 200) {
 
 beforeEach(() => {
   fetchMock.mockReset();
+  fitnessMocks.markPoolUnfit.mockReset();
+  fitnessMocks.clearPoolUnfit.mockReset();
+  fitnessMocks.markPoolUnfit.mockImplementation(async (poolId, scope, until, reason) => ({ poolId, scope, until, reason, version: 7 }));
   __test__.resetSessionCache();
 });
 
@@ -127,16 +132,76 @@ describe("Freebuff executor", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("maps limited-IP session gates to a pool-scoped retry signal", async () => {
-    fetchMock.mockResolvedValueOnce(response({ status: "session_model_mismatch", message: "limited IP" }));
+  it("safely classifies a hostile throwing message getter and circular sensitive object", async () => {
+    const hostile = { token: "secret-value" }; hostile.self = hostile;
+    Object.defineProperty(hostile, "message", { get() { throw new Error("getter must not run"); } });
+    const result = await markFreebuffPoolFailure({ model: MODEL, proxyOptions: { proxyPoolId: "pool-a" }, stage: "session_acquire", error: hostile });
+    expect(result).toMatchObject({ poolId: "pool-a", scope: `freebuff::${MODEL}`, fitnessVersion: 7 });
+    expect(fitnessMocks.markPoolUnfit).toHaveBeenCalledWith("pool-a", `freebuff::${MODEL}`, expect.any(Number), expect.not.stringContaining("secret-value"));
+  });
 
-    await expect(new FreebuffExecutor().execute({
-      model: MODEL,
-      body: { messages: [{ role: "user", content: "hi" }] },
-      stream: false,
-      credentials,
-      proxyOptions: { proxyPoolId: "pool-a", connectionProxyUrl: "http://proxy" },
-    })).rejects.toMatchObject({ status: 409, poolScoped: { poolId: "pool-a", scope: `freebuff::${MODEL}`, reason: "limited_ip" } });
+  it("marks limited_ip once for initial session with committed metadata", async () => {
+    fetchMock.mockResolvedValueOnce(response({ status: "session_model_mismatch", message: "limited IP" }));
+    await expect(new FreebuffExecutor().execute({ model: MODEL, body: { messages: [{ role: "user", content: "hi" }] }, stream: false, credentials, proxyOptions: { proxyPoolId: "pool-a" } }))
+      .rejects.toMatchObject({ status: 409, poolScoped: { poolId: "pool-a", scope: `freebuff::${MODEL}`, reason: "limited_ip", fitnessVersion: 7, until: expect.any(Number) } });
+    expect(fetchMock).toHaveBeenCalledTimes(1); expect(fitnessMocks.markPoolUnfit).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks limited_ip once for the first chat response", async () => {
+    fetchMock.mockImplementation((url, options) => url === SESSION_URL ? Promise.resolve(response({ status: "none" })) : url === RUN_URL ? Promise.resolve(response(JSON.parse(options.body).action === "START" ? { runId: "run-1" } : {})) : Promise.resolve(response({ error: "session_model_mismatch", message: "limited IP" }, 409)));
+    await expect(new FreebuffExecutor().execute({ model: MODEL, body: { messages: [{ role: "user", content: "hi" }] }, stream: false, credentials, proxyOptions: { proxyPoolId: "pool-a" } })).rejects.toMatchObject({ poolScoped: { fitnessVersion: 7 } });
+    expect(fetchMock.mock.calls.filter(([url]) => url === CHAT_URL)).toHaveLength(1); expect(fitnessMocks.markPoolUnfit).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks limited_ip once at forced session then cached preflight neither fetches nor remarks", async () => {
+    let sessions = 0;
+    fetchMock.mockImplementation((url, options) => { if (url === SESSION_URL) return Promise.resolve(++sessions === 1 ? response({ status: "active", instanceId: "i", expiresAt: new Date(Date.now() + 60_000).toISOString() }) : response({ status: "session_model_mismatch", message: "limited IP" })); if (url === RUN_URL) return Promise.resolve(response(JSON.parse(options.body).action === "START" ? { runId: "run-1" } : {})); return Promise.resolve(response({}, 428)); });
+    const request = { model: MODEL, body: { messages: [{ role: "user", content: "hi" }] }, stream: false, credentials: { ...credentials, accessToken: "forced-token" }, proxyOptions: { proxyPoolId: "pool-a" } };
+    await expect(new FreebuffExecutor().execute(request)).rejects.toMatchObject({ poolScoped: { fitnessVersion: 7 } });
+    expect(fitnessMocks.markPoolUnfit).toHaveBeenCalledTimes(1); fetchMock.mockClear();
+    await expect(new FreebuffExecutor().execute(request)).rejects.toMatchObject({ status: 409 });
+    expect(fetchMock).not.toHaveBeenCalled(); expect(fitnessMocks.markPoolUnfit).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks connector and timeout session failures once after three attempts", async () => {
+    for (const error of [Object.assign(new Error("connector"), { code: "ECONNREFUSED" }), Object.assign(new Error("timeout"), { name: "TimeoutError" })]) {
+      __test__.resetSessionCache(); fetchMock.mockReset(); fitnessMocks.markPoolUnfit.mockClear(); fetchMock.mockRejectedValue(error);
+      await expect(new FreebuffExecutor().execute({ model: MODEL, body: { messages: [{ role: "user", content: "hi" }] }, stream: false, credentials, proxyOptions: { proxyPoolId: "pool-a" } })).rejects.toBe(error);
+      expect(fetchMock).toHaveBeenCalledTimes(3); expect(fitnessMocks.markPoolUnfit).toHaveBeenCalledTimes(1);
+    }
+  });
+
+  it("distinguishes target 503 from trusted relay 503", async () => {
+    const execute = (chat) => { fetchMock.mockImplementation((url, options) => url === SESSION_URL ? Promise.resolve(response({ status: "none" })) : url === RUN_URL ? Promise.resolve(response(JSON.parse(options.body).action === "START" ? { runId: "r" } : {})) : Promise.resolve(chat)); return new FreebuffExecutor().execute({ model: MODEL, body: { messages: [{ role: "user", content: "hi" }] }, stream: false, credentials, proxyOptions: { proxyPoolId: "pool-a" } }); };
+    await execute(response({ error: "same" }, 503)); expect(fitnessMocks.markPoolUnfit).not.toHaveBeenCalled();
+    __test__.resetSessionCache(); fetchMock.mockReset(); await expect(execute({ ...response({ error: "same" }, 503), headers: new Headers({ "x-9router-relay-error": "proxy_connect" }) })).rejects.toMatchObject({ poolScoped: { scope: `freebuff::${MODEL}`, fitnessVersion: 7 } }); expect(fitnessMocks.markPoolUnfit).toHaveBeenCalledTimes(1);
+  });
+
+  it("marks chat connector failure once after three pre-response attempts", async () => {
+    let chats = 0; fetchMock.mockImplementation((url, options) => url === SESSION_URL ? Promise.resolve(response({ status: "none" })) : url === RUN_URL ? Promise.resolve(response(JSON.parse(options.body).action === "START" ? { runId: "r" } : {})) : (chats += 1, Promise.reject(new Error("tunnel reset"))));
+    await expect(new FreebuffExecutor().execute({ model: MODEL, body: { messages: [{ role: "user", content: "hi" }] }, stream: false, credentials, proxyOptions: { proxyPoolId: "pool-a" } })).rejects.toMatchObject({ poolScoped: { fitnessVersion: 7 } });
+    expect(chats).toBe(3); expect(fitnessMocks.markPoolUnfit).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not mark excluded target, quota, abort, no-pool, or null-pool cases", async () => {
+    for (const status of [502, 503, 504, 429]) await markFreebuffPoolFailure({ model: MODEL, proxyOptions: { proxyPoolId: "pool-a" }, stage: "chat_submit", status, error: status === 429 ? "quota exceeded" : "target", provenance: "target_response" });
+    await markFreebuffPoolFailure({ model: MODEL, proxyOptions: { proxyPoolId: "pool-a" }, stage: "chat_submit", error: new Error("abort"), signal: AbortSignal.abort() });
+    await markFreebuffPoolFailure({ model: MODEL, proxyOptions: null, stage: "chat_submit", error: new Error("tunnel") }); await markFreebuffPoolFailure({ model: MODEL, proxyOptions: { proxyPoolId: null }, stage: "chat_submit", error: new Error("tunnel") });
+    expect(fitnessMocks.markPoolUnfit).not.toHaveBeenCalled();
+  });
+
+  it("does not mark credential, model_locked, or stale-session recovery", async () => {
+    for (const session of [response({}, 401), response({ status: "model_locked" })]) {
+      __test__.resetSessionCache(); fetchMock.mockReset(); fetchMock.mockResolvedValue(session);
+      try { await new FreebuffExecutor().execute({ model: MODEL, body: { messages: [{ role: "user", content: "hi" }] }, stream: false, credentials, proxyOptions: { proxyPoolId: "pool-a" } }); } catch {}
+    }
+    expect(fitnessMocks.markPoolUnfit).not.toHaveBeenCalled();
+  });
+
+  it("never replays uncertain post-submit acceptance", async () => {
+    let chats = 0; fetchMock.mockImplementation((url, options) => url === SESSION_URL ? Promise.resolve(response({ status: "none" })) : url === RUN_URL ? Promise.resolve(response(JSON.parse(options.body).action === "START" ? { runId: "r" } : {})) : (chats += 1, Promise.reject(Object.assign(new Error("body interrupted"), { responseStarted: true }))));
+    await expect(new FreebuffExecutor().execute({ model: MODEL, body: { messages: [{ role: "user", content: "hi" }] }, stream: false, credentials, proxyOptions: { proxyPoolId: "pool-a" } })).rejects.toThrow(/interrupted/);
+    expect(chats).toBe(1); expect(fitnessMocks.markPoolUnfit).not.toHaveBeenCalled();
   });
 
   it("retries transient chat network failures twice while retaining one run id", async () => {

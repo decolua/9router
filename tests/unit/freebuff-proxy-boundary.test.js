@@ -14,6 +14,7 @@ vi.mock("@/lib/localDb", () => ({
   getProxyPools: vi.fn(),
   getApiKeyMetadata: vi.fn(),
   touchApiKey: vi.fn(),
+  getObservedConnectionModelLock: vi.fn(() => null),
 }));
 
 vi.mock("@/lib/network/connectionProxy", () => ({
