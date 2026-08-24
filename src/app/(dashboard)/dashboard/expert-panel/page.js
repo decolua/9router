@@ -201,6 +201,26 @@ export default function ExpertPanelPage() {
 
   const panelModelIds = useMemo(() => new Set(panels.map((panel) => panel.model)), [panels]);
   const modelLabelMap = useMemo(() => new Map(models.map((model) => [model.value, model.label])), [models]);
+  const chatEntries = useMemo(() => {
+    const entries = [];
+    const seenUsers = new Set();
+    for (const panel of panels) {
+      for (const message of panel.messages || []) {
+        if (message.role === "user") {
+          const key = `${message.timestamp || ""}|${message.content || ""}`;
+          if (seenUsers.has(key)) continue;
+          seenUsers.add(key);
+          entries.push({ kind: "user", message });
+        } else {
+          entries.push({ kind: "assistant", panel, message });
+        }
+      }
+      if (panel.response && panel.status !== "done") {
+        entries.push({ kind: "assistant", panel, message: { role: "assistant", content: panel.response, timestamp: panel.startedAt ? new Date(panel.startedAt).toISOString() : new Date().toISOString(), latencyMs: null, pending: true } });
+      }
+    }
+    return entries.sort((left, right) => new Date(left.message.timestamp || 0) - new Date(right.message.timestamp || 0));
+  }, [panels]);
   const visiblePickerModels = useMemo(() => {
     const query = pickerSearch.trim().toLowerCase();
     return models.filter((model) => !panelModelIds.has(model.value) && (!query || `${model.provider} ${model.label}`.toLowerCase().includes(query)));
@@ -371,29 +391,22 @@ export default function ExpertPanelPage() {
 
       <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-8 custom-scrollbar">
         <section className="mx-auto flex min-h-[360px] w-full max-w-6xl flex-col overflow-hidden rounded-md border border-border bg-surface shadow-sm">
-          {panels.map((panel) => (
-            <article key={panel.id} className="flex flex-col border-b border-border last:border-b-0">
-              <header className="flex items-center gap-2 border-b border-border px-3 py-2">
-                <span className="rounded bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">专家</span>
-                <span className="min-w-0 flex-1 truncate font-mono text-xs font-semibold" title={panel.model}>{modelLabelMap.get(panel.model) || panel.model}</span>
-                {panel.score !== null && <span className="rounded bg-primary/10 px-2 py-0.5 text-sm font-semibold text-primary">评分 {panel.score}</span>}
-                <button type="button" disabled={sending} onClick={() => setPanels((current) => current.filter((item) => item.id !== panel.id))} className="rounded p-1 text-text-muted hover:bg-red-500/10 hover:text-red-500 disabled:opacity-40" title="移除模型"><span className="material-symbols-outlined text-[17px]">close</span></button>
-              </header>
-              <div className="flex flex-col gap-3 p-4 text-sm leading-6">
-                {panel.messages.map((message, index) => (
-                  <div key={`${panel.id}-${index}`} className={`flex max-w-[92%] flex-col gap-1 ${message.role === "user" ? "self-end items-end" : "self-start items-start"}`}>
-                    <div className={`whitespace-pre-wrap break-words rounded-md px-3 py-2 ${message.role === "user" ? "bg-primary text-white" : "border border-border bg-surface-2 text-text-main"}`}>{message.content}</div>
-                    <span className="px-1 text-[10px] text-text-muted">{formatMessageTime(message.timestamp)}{message.latencyMs !== undefined ? ` · ${message.latencyMs} ms` : ""}</span>
-                  </div>
-                ))}
-                {!panel.response && panel.messages.length === 0 && panel.status === "idle" && <p className="text-center text-text-muted">等待发送提示词</p>}
-                {!panel.response && panel.status === "streaming" && <p className="animate-pulse text-text-muted">正在生成...</p>}
-                {panel.response && panel.status !== "done" && <div className={`max-w-[92%] self-start whitespace-pre-wrap break-words rounded-md border px-3 py-2 ${panel.status === "error" ? "border-red-500/30 bg-red-500/5 text-red-500" : "border-border bg-surface-2"}`}>{panel.response}</div>}
-              </div>
-              {panel.score !== null || panel.comment ? <div className="ml-2 border-l-2 border-primary/30 pl-3 text-xs text-text-muted"><div className="mb-1 flex items-center gap-2"><span className="rounded bg-amber-500/10 px-2 py-0.5 font-semibold text-amber-600">裁判</span><span>评分 {panel.score ?? "-"}</span></div>{panel.comment && <p><span className="font-medium text-text-main">评语：</span>{panel.comment}</p>}<div className="mt-1 text-[10px] text-text-muted">{panel.judgeTimestamp ? formatMessageTime(panel.judgeTimestamp) : ""}{panel.judgeLatencyMs != null ? ` · ${panel.judgeLatencyMs} ms` : ""}</div></div> : null}
-            </article>
-          ))}
-          {judgeSummary && <article className="border-t border-primary/20 bg-primary/5 px-4 py-3 text-sm"><div className="mb-1 flex items-center gap-2"><span className="rounded bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-600">裁判</span><span className="font-medium">裁判综评</span></div><p className="whitespace-pre-wrap text-text-muted">{judgeSummary}</p><div className="mt-2 text-[10px] text-text-muted">{judgeStartedAt ? formatMessageTime(judgeStartedAt) : ""}{judgeLatencyMs != null ? ` · ${judgeLatencyMs} ms` : ""}</div></article>}
+          <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+            <span className="text-xs font-semibold text-text-muted">专家团</span>
+            {panels.map((panel) => <span key={panel.id} className="inline-flex max-w-52 items-center gap-1 rounded bg-primary/10 px-2 py-1 text-[10px] font-medium text-primary"><span className="truncate" title={panel.model}>{modelLabelMap.get(panel.model) || panel.model}</span><button type="button" disabled={sending} onClick={() => setPanels((current) => current.filter((item) => item.id !== panel.id))} className="rounded text-primary/70 hover:text-red-500 disabled:opacity-40" title="移除模型"><span className="material-symbols-outlined text-[13px]">close</span></button></span>)}
+          </div>
+          <div className="flex min-h-[300px] flex-col gap-4 p-4 text-sm leading-6">
+            {chatEntries.map((entry, index) => {
+              if (entry.kind === "user") return <div key={`user-${index}`} className="flex max-w-[92%] flex-col items-end gap-1 self-end"><div className="whitespace-pre-wrap break-words rounded-md bg-primary px-3 py-2 text-white">{entry.message.content}</div><span className="px-1 text-[10px] text-text-muted">{formatMessageTime(entry.message.timestamp)}</span></div>;
+              const panel = entry.panel;
+              const assistantMessages = (panel.messages || []).filter((message) => message.role === "assistant");
+              const isLatest = entry.message.pending || assistantMessages[assistantMessages.length - 1] === entry.message;
+              return <div key={`${panel.id}-${index}`} className="flex max-w-[94%] flex-col items-start gap-1 self-start"><div className="flex items-center gap-2"><span className="rounded bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">专家</span><span className="font-mono text-[10px] font-medium text-text-muted">{modelLabelMap.get(panel.model) || panel.model}</span></div><div className={`whitespace-pre-wrap break-words rounded-md border px-3 py-2 ${panel.status === "error" ? "border-red-500/30 bg-red-500/5 text-red-500" : "border-border bg-surface-2 text-text-main"}`}>{entry.message.content}</div><span className="px-1 text-[10px] text-text-muted">{formatMessageTime(entry.message.timestamp)}{entry.message.latencyMs != null ? ` · ${entry.message.latencyMs} ms` : ""}{entry.message.pending ? " · 生成中" : ""}</span>{isLatest && (panel.score !== null || panel.comment) && <div className="ml-2 border-l-2 border-primary/30 pl-3 text-xs text-text-muted"><div className="mb-1 flex items-center gap-2"><span className="rounded bg-amber-500/10 px-2 py-0.5 font-semibold text-amber-600">裁判</span><span>评分 {panel.score ?? "-"}</span></div>{panel.comment && <p><span className="font-medium text-text-main">评语：</span>{panel.comment}</p>}<div className="mt-1 text-[10px]">{panel.judgeTimestamp ? formatMessageTime(panel.judgeTimestamp) : ""}{panel.judgeLatencyMs != null ? ` · ${panel.judgeLatencyMs} ms` : ""}</div></div>}</div>;
+            })}
+            {!chatEntries.length && panels.length === 0 && <p className="flex flex-1 items-center justify-center text-center text-text-muted">请先添加模型</p>}
+            {!chatEntries.length && panels.length > 0 && <p className="flex flex-1 items-center justify-center text-center text-text-muted">等待发送提示词</p>}
+          </div>
+          {judgeSummary && <article className="border-t border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm"><div className="mb-1 flex items-center gap-2"><span className="rounded bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-600">裁判</span><span className="font-medium">裁判综评</span></div><p className="whitespace-pre-wrap text-text-muted">{judgeSummary}</p><div className="mt-2 text-[10px] text-text-muted">{judgeStartedAt ? formatMessageTime(judgeStartedAt) : ""}{judgeLatencyMs != null ? ` · ${judgeLatencyMs} ms` : ""}</div></article>}
           <button type="button" onClick={() => openPicker("multiple")} className="m-4 flex min-h-16 items-center justify-center gap-2 rounded-md border border-dashed border-border bg-bg-subtle text-text-muted transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary">
             <span className="material-symbols-outlined text-[22px]">add_circle</span>
             <span className="text-sm font-medium">增加模型</span>

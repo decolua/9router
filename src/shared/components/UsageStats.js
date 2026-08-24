@@ -114,9 +114,16 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const storedSort = (() => { try { return JSON.parse(localStorage.getItem(`9router:usage-sort:${view}`) || "null"); } catch { return null; } })();
-  const sortBy = searchParams.get("sortBy") || storedSort?.sortBy || "rawModel";
-  const sortOrder = searchParams.get("sortOrder") || storedSort?.sortOrder || "asc";
+  const [sortState, setSortState] = useState(() => {
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(`9router:usage-sort:${view}`) || "null");
+      return { sortBy: stored?.sortBy || "rawModel", sortOrder: stored?.sortOrder === "desc" ? "desc" : "asc" };
+    } catch {
+      return { sortBy: "rawModel", sortOrder: "asc" };
+    }
+  });
+  const sortBy = sortState.sortBy;
+  const sortOrder = sortState.sortOrder;
 
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -176,7 +183,6 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       if (startDate) query.set("startDate", startDate);
       if (endDate) query.set("endDate", endDate);
     }
-    try { localStorage.setItem(`9router:usage-sort:${view}`, JSON.stringify({ sortBy: params.get("sortBy"), sortOrder: params.get("sortOrder") })); } catch {}
     fetch(`/api/usage/stats?${query.toString()}`)
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
@@ -222,15 +228,16 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   }, []);
 
   const toggleSort = useCallback((tableType, field) => {
+    const nextSort = sortState.sortBy === field
+      ? { sortBy: field, sortOrder: sortState.sortOrder === "asc" ? "desc" : "asc" }
+      : { sortBy: field, sortOrder: "asc" };
+    setSortState(nextSort);
+    try { window.localStorage.setItem(`9router:usage-sort:${view}`, JSON.stringify(nextSort)); } catch {}
     const params = new URLSearchParams(searchParams.toString());
-    if (params.get("sortBy") === field) {
-      params.set("sortOrder", params.get("sortOrder") === "asc" ? "desc" : "asc");
-    } else {
-      params.set("sortBy", field);
-      params.set("sortOrder", "asc");
-    }
+    params.set("sortBy", nextSort.sortBy);
+    params.set("sortOrder", nextSort.sortOrder);
     router.replace(`?${params.toString()}`, { scroll: false });
-  }, [searchParams, router]);
+  }, [searchParams, router, sortState, view]);
 
   // Compute active table data
   const activeTableConfig = useMemo(() => {

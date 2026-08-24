@@ -17,7 +17,7 @@ function UsageContent() {
   const router = useRouter();
 
   const [period, setPeriod] = useState("today");
-  const initialRange = getPeriodRange("today");
+  const initialRange = getPeriodRange("today", new Date(), true);
   const [startDate, setStartDate] = useState(initialRange.startDate);
   const [endDate, setEndDate] = useState(initialRange.endDate);
   const [refreshToken, setRefreshToken] = useState(0);
@@ -29,7 +29,7 @@ function UsageContent() {
       .then((settings) => {
         if (cancelled || !settings) return;
         const defaultPeriod = normalizeUsagePeriod(settings.usageDefaultPeriod);
-        const range = getPeriodRange(defaultPeriod);
+        const range = getPeriodRange(defaultPeriod, new Date(), true);
         setPeriod(defaultPeriod);
         setStartDate(range.startDate);
         setEndDate(range.endDate);
@@ -66,9 +66,9 @@ function UsageContent() {
           className="w-full sm:w-auto"
         />
       </div>
-      <div className="flex w-full justify-start">
-        <UsageDateRangeControl period={period} startDate={startDate} endDate={endDate} onPeriodChange={setPeriod} onStartDateChange={setStartDate} onEndDateChange={setEndDate} todayEndsTomorrow />
-        <Button variant="secondary" icon="refresh" onClick={() => setRefreshToken((value) => value + 1)}>刷新</Button>
+      <div className="flex w-full items-center justify-between gap-3">
+        <UsageDateRangeControl className="min-w-0" period={period} startDate={startDate} endDate={endDate} onPeriodChange={setPeriod} onStartDateChange={setStartDate} onEndDateChange={setEndDate} todayEndsTomorrow />
+        <Button className="shrink-0" variant="secondary" icon="refresh" onClick={() => setRefreshToken((value) => value + 1)}>刷新</Button>
       </div>
 
       {activeTab === "overview" && (

@@ -1714,17 +1714,16 @@ export default function ProviderDetailPage() {
             const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
             return (
               <div className="flex flex-wrap gap-2">
-                {connections.some((conn) => conn.isActive !== false) && (
-                  <Button
-                    size="md"
-                    variant="secondary"
-                    icon={importingProviderModels ? "progress_activity" : "download"}
-                    onClick={handleImportProviderModels}
-                    disabled={importingProviderModels}
-                  >
-                    {importingProviderModels ? "正在更新..." : "更新模型列表"}
-                  </Button>
-                )}
+                <Button
+                  size="md"
+                  variant="secondary"
+                  icon={importingProviderModels ? "progress_activity" : "download"}
+                  onClick={handleImportProviderModels}
+                  disabled={importingProviderModels || !connections.some((conn) => conn.isActive !== false)}
+                  title={!connections.some((conn) => conn.isActive !== false) ? "请先添加并启用连接" : undefined}
+                >
+                  {importingProviderModels ? "正在更新..." : "更新模型列表"}
+                </Button>
                 {disabledModelIds.length > 0 && (
                   <Button size="md" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
                      全部启用

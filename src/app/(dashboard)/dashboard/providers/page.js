@@ -9,6 +9,7 @@ import {
   Button,
   Input,
   Modal,
+  ConfirmModal,
   Toggle,
 } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
@@ -107,6 +108,9 @@ export default function ProvidersPage() {
   const [showAddAnthropicCompatibleModal, setShowAddAnthropicCompatibleModal] =
     useState(false);
   const [testingMode, setTestingMode] = useState(null);
+  const [selectedProviderIds, setSelectedProviderIds] = useState([]);
+  const [batchModelsLoading, setBatchModelsLoading] = useState(false);
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
   const [testResults, setTestResults] = useState(null);
   const [showCatalog, setShowCatalog] = useState(false);
   const [usageByProvider, setUsageByProvider] = useState({});
@@ -295,6 +299,60 @@ export default function ProvidersPage() {
     }
   };
 
+  const runBatchModelAction = async (action) => {
+    const targets = configuredProviders.filter((item) => selectedProviderIds.includes(item.providerId));
+    if (!targets.length || batchModelsLoading) return;
+    setBatchModelsLoading(true);
+    try {
+      const [customResponse, aliasResponse] = await Promise.all([fetch("/api/models/custom", { cache: "no-store" }), fetch("/api/models/alias", { cache: "no-store" })]);
+      const customData = await customResponse.json().catch(() => ({}));
+      const aliasData = await aliasResponse.json().catch(() => ({}));
+      const customModels = customData.models || [];
+      const aliases = aliasData.aliases || {};
+      let changed = 0;
+      for (const target of targets) {
+        const providerId = target.providerId;
+        const providerConnections = connections.filter((connection) => connection.provider === providerId && connection.isActive !== false);
+        if (action === "delete") {
+          const oldCustom = customModels.filter((model) => model.providerAlias === providerId && (model.kind || model.type || "llm") === "llm");
+          const oldAliases = Object.entries(aliases).filter(([, fullModel]) => String(fullModel).startsWith(`${providerId}/`)).map(([alias]) => alias);
+          await Promise.all([...oldCustom.map((model) => fetch(`/api/models/custom?providerAlias=${encodeURIComponent(providerId)}&id=${encodeURIComponent(model.id)}&type=llm`, { method: "DELETE" })), ...oldAliases.map((alias) => fetch(`/api/models/alias?alias=${encodeURIComponent(alias)}`, { method: "DELETE" }))]);
+          changed += oldCustom.length + oldAliases.length;
+          continue;
+        }
+        if (!providerConnections.length) continue;
+        const responses = await Promise.all(providerConnections.map((connection) => fetch(`/api/providers/${connection.id}/models`, { cache: "no-store" }).then(async (response) => ({ response, data: await response.json().catch(() => ({})) }))));
+        const models = [...new Set(responses.flatMap(({ data }) => data.models || []).map((model) => typeof model === "string" ? model : model.id || model.name || model.model).filter(Boolean))];
+        if (!models.length) continue;
+        const oldCustom = customModels.filter((model) => model.providerAlias === providerId && (model.kind || model.type || "llm") === "llm");
+        const oldAliases = Object.entries(aliases).filter(([, fullModel]) => String(fullModel).startsWith(`${providerId}/`)).map(([alias]) => alias);
+        await Promise.all([...oldCustom.map((model) => fetch(`/api/models/custom?providerAlias=${encodeURIComponent(providerId)}&id=${encodeURIComponent(model.id)}&type=llm`, { method: "DELETE" })), ...oldAliases.map((alias) => fetch(`/api/models/alias?alias=${encodeURIComponent(alias)}`, { method: "DELETE" }))]);
+        await Promise.all(models.map((id) => fetch("/api/models/custom", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ providerAlias: providerId, id, type: "llm" }) })));
+        changed += models.length;
+      }
+      notify.success(action === "delete" ? `已删除 ${changed} 个模型` : `已更新 ${changed} 个模型`);
+      setSelectedProviderIds([]);
+    } catch (error) {
+      notify.error(error.message || "批量操作失败");
+    } finally {
+      setBatchModelsLoading(false);
+    }
+  };
+
+  const runBatchProviderTest = () => {
+    if (!selectedProviderIds.length || testingMode) return;
+    handleBatchTest("providers", selectedProviderIds);
+  };
+  const deleteSelectedProviders = async () => {
+    setBatchDeleteOpen(false);
+    const ids = connections.filter((connection) => selectedProviderIds.includes(connection.provider)).map((connection) => connection.id);
+    const results = await Promise.allSettled(ids.map((id) => fetch(`/api/providers/${id}`, { method: "DELETE" })));
+    const failed = results.filter((result) => result.status === "rejected" || !result.value?.ok).length;
+    setConnections((current) => current.filter((connection) => !selectedProviderIds.includes(connection.provider)));
+    setSelectedProviderIds([]);
+    failed ? notify.warning(`已删除 ${ids.length - failed} 个连接，${failed} 个失败`) : notify.success(`已删除 ${selectedProviderIds.length} 个提供商的连接`);
+  };
+
   const compatibleProviders = providerNodes
     .filter((node) => node.type === "openai-compatible")
     .map((node) => ({
@@ -405,6 +463,11 @@ export default function ProvidersPage() {
     .filter((item) => matchSearch(item.info.name || item.providerId))
     .sort((a, b) => (a.info.name || a.providerId).localeCompare(b.info.name || b.providerId));
 
+  const toggleProviderSelection = (providerId) => setSelectedProviderIds((current) => current.includes(providerId) ? current.filter((id) => id !== providerId) : [...current, providerId]);
+  const configuredProviderIds = configuredProviders.map((item) => item.providerId);
+  const allProvidersSelected = configuredProviderIds.length > 0 && configuredProviderIds.every((id) => selectedProviderIds.includes(id));
+  const toggleAllProviders = () => setSelectedProviderIds(allProvidersSelected ? [] : configuredProviderIds);
+
   if (loading) {
     return (
       <div className="flex flex-col gap-8">
@@ -433,8 +496,14 @@ export default function ProvidersPage() {
       </div>
 
       <Card className="overflow-hidden p-0">
-        {configuredProviders.length ? configuredProviders.map((item) => (
+        {configuredProviders.length ? <>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-bg-subtle px-3 py-2">
+            <label className="flex items-center gap-2 text-xs text-text-muted"><input type="checkbox" checked={allProvidersSelected} onChange={toggleAllProviders} />全选提供商</label>
+            <div className="flex flex-wrap items-center gap-2"><span className="text-xs text-text-muted">已选 {selectedProviderIds.length}</span><Button size="sm" variant="secondary" icon="science" disabled={!selectedProviderIds.length || !!testingMode} loading={testingMode === "providers"} onClick={runBatchProviderTest}>批量测试</Button><Button size="sm" variant="secondary" icon="download" disabled={!selectedProviderIds.length || batchModelsLoading} loading={batchModelsLoading} onClick={() => runBatchModelAction("update")}>批量更新模型</Button><Button size="sm" variant="danger" icon="delete_sweep" disabled={!selectedProviderIds.length || batchModelsLoading} onClick={() => runBatchModelAction("delete")}>批量删除模型</Button><Button size="sm" variant="danger" icon="delete" disabled={!selectedProviderIds.length || batchModelsLoading} onClick={() => setBatchDeleteOpen(true)}>批量删除提供商</Button></div>
+          </div>
+          {configuredProviders.map((item) => (
           <div key={item.providerId} className="flex flex-col gap-2 border-b border-border px-3 py-2 last:border-b-0 sm:flex-row sm:items-center">
+            <input type="checkbox" checked={selectedProviderIds.includes(item.providerId)} onChange={() => toggleProviderSelection(item.providerId)} aria-label={`选择${item.info.name}`} />
             <Link href={`/dashboard/providers/${item.providerId}`} className="flex min-w-0 flex-1 items-center gap-3">
               <ProviderIcon providerId={item.providerId} size={30} alt={item.info.name} fallbackText={(item.info.name || item.providerId).slice(0, 2).toUpperCase()} />
               <div className="min-w-0">
@@ -467,8 +536,10 @@ export default function ProvidersPage() {
               <Link href={`/dashboard/providers/${item.providerId}`} className="rounded-md p-2 text-text-muted hover:bg-bg-hover hover:text-primary" title="管理提供商"><span className="material-symbols-outlined text-[19px]">chevron_right</span></Link>
             </div>
           </div>
-        )) : <div className="p-10 text-center text-sm text-text-muted">尚未配置提供商，请点击“新增提供商”。</div>}
+          ))}
+        </> : <div className="p-10 text-center text-sm text-text-muted">尚未配置提供商，请点击“新增提供商”。</div>}
       </Card>
+      <ConfirmModal isOpen={batchDeleteOpen} onClose={() => setBatchDeleteOpen(false)} onConfirm={deleteSelectedProviders} title="批量删除提供商" message={`确认删除已选 ${selectedProviderIds.length} 个提供商的全部连接？`} confirmText="删除" cancelText="取消" variant="danger" />
 
       <Modal isOpen={showCatalog} onClose={() => setShowCatalog(false)} title="新增提供商" size="full">
       <div className="flex flex-col gap-6">

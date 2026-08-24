@@ -43,7 +43,7 @@ function isCompatibleProvider(providerId) {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { mode, providerId } = body;
+    const { mode, providerId, providerIds } = body;
 
     if (!mode) {
       return NextResponse.json({ error: "mode is required" }, { status: 400 });
@@ -52,7 +52,10 @@ export async function POST(request) {
     const allConnections = await getProviderConnections({ isActive: true });
 
     let connectionsToTest = [];
-    if (mode === "provider" && providerId) {
+    if (mode === "providers" && Array.isArray(providerIds) && providerIds.length) {
+      const selected = new Set(providerIds);
+      connectionsToTest = allConnections.filter((c) => selected.has(c.provider));
+    } else if (mode === "provider" && providerId) {
       connectionsToTest = allConnections.filter((c) => c.provider === providerId);
     } else if (mode === "oauth") {
       connectionsToTest = allConnections.filter((c) => getAuthGroup(c.provider, c) === "oauth");
@@ -66,7 +69,7 @@ export async function POST(request) {
       connectionsToTest = allConnections;
     } else {
       return NextResponse.json(
-        { error: "Invalid mode. Use: provider, oauth, free, apikey, compatible, all" },
+        { error: "Invalid mode. Use: provider, providers, oauth, free, apikey, compatible, all" },
         { status: 400 }
       );
     }
