@@ -221,6 +221,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         noFitPool: resolvedProxy.noFitPool === true,
         strictProxy: resolvedProxy.strictProxy === true,
       },
+      _observedPoolFitness: providerId === "freebuff" && resolvedProxy.proxyPoolId
+        ? Object.freeze({ poolId: resolvedProxy.proxyPoolId, scope: `${providerId}::${model || ""}`, version: Number.isInteger(resolvedProxy.observedFitnessVersion) ? resolvedProxy.observedFitnessVersion : 0 })
+        : null,
       connectionId: connection.id,
       // Include current status for optimization check
       testStatus: connection.testStatus,

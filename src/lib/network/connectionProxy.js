@@ -1,5 +1,5 @@
 import { getProxyPoolById } from "@/models";
-import { fitPoolIds, loadPoolFitness } from "open-sse/services/proxyPoolFitness.js";
+import { fitPoolIds, loadPoolFitness, observePoolFitnessVersion } from "open-sse/services/proxyPoolFitness.js";
 
 function normalizeString(value) {
   if (value === undefined || value === null) return "";
@@ -35,10 +35,11 @@ export async function resolveConnectionProxyConfig(providerSpecificData = {}, co
       const proxyUrl = normalizeString(proxyPool?.proxyUrl);
       const noProxy = normalizeString(proxyPool?.noProxy);
       if (proxyPool && proxyPool.isActive === true && proxyUrl) {
+        const observedFitnessVersion = scope ? await observePoolFitnessVersion(selectedPoolId, scope) : 0;
         if (["vercel", "cloudflare", "deno"].includes(proxyPool.type)) {
-          return { source: proxyPool.type, proxyPoolId: selectedPoolId, proxyPool, connectionProxyEnabled: false, connectionProxyUrl: "", connectionNoProxy: noProxy, strictProxy: proxyPool.strictProxy === true, vercelRelayUrl: proxyUrl };
+          return { source: proxyPool.type, proxyPoolId: selectedPoolId, proxyPool, observedFitnessVersion, connectionProxyEnabled: false, connectionProxyUrl: "", connectionNoProxy: noProxy, strictProxy: proxyPool.strictProxy === true, vercelRelayUrl: proxyUrl };
         }
-        return { source: "pool", proxyPoolId: selectedPoolId, proxyPool, connectionProxyEnabled: true, connectionProxyUrl: proxyUrl, connectionNoProxy: noProxy, strictProxy: proxyPool.strictProxy === true };
+        return { source: "pool", proxyPoolId: selectedPoolId, proxyPool, observedFitnessVersion, connectionProxyEnabled: true, connectionProxyUrl: proxyUrl, connectionNoProxy: noProxy, strictProxy: proxyPool.strictProxy === true };
       }
     }
 

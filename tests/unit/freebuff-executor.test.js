@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fetchMock = vi.fn();
-const fitnessMocks = vi.hoisted(() => ({ markPoolUnfit: vi.fn(), clearPoolUnfit: vi.fn() }));
+const fitnessMocks = vi.hoisted(() => ({ markPoolUnfit: vi.fn(), clearPoolUnfit: vi.fn(), observePoolFitnessVersion: vi.fn() }));
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({ proxyAwareFetch: (...args) => fetchMock(...args) }));
-vi.mock("../../open-sse/services/proxyPoolFitness.js", () => ({ ...fitnessMocks, POOL_UNFIT_MS: 300_000 }));
+vi.mock("../../open-sse/services/proxyPoolFitness.js", () => ({ ...fitnessMocks, observeActivePoolFitness: async (...args) => { const version = await fitnessMocks.observePoolFitnessVersion(...args); return version ? { version, until: Date.now() + 60_000 } : null; }, POOL_UNFIT_MS: 300_000 }));
 
 import { FreebuffExecutor, __test__ } from "../../open-sse/executors/freebuff.js";
 import { markFreebuffPoolFailure } from "../../open-sse/executors/freebuffProxyFitness.js";
@@ -22,6 +22,8 @@ beforeEach(() => {
   fetchMock.mockReset();
   fitnessMocks.markPoolUnfit.mockReset();
   fitnessMocks.clearPoolUnfit.mockReset();
+  fitnessMocks.observePoolFitnessVersion.mockReset();
+  fitnessMocks.observePoolFitnessVersion.mockResolvedValue(7);
   fitnessMocks.markPoolUnfit.mockImplementation(async (poolId, scope, until, reason) => ({ poolId, scope, until, reason, version: 7 }));
   __test__.resetSessionCache();
 });
@@ -161,6 +163,31 @@ describe("Freebuff executor", () => {
     expect(fitnessMocks.markPoolUnfit).toHaveBeenCalledTimes(1); fetchMock.mockClear();
     await expect(new FreebuffExecutor().execute(request)).rejects.toMatchObject({ status: 409 });
     expect(fetchMock).not.toHaveBeenCalled(); expect(fitnessMocks.markPoolUnfit).toHaveBeenCalledTimes(1);
+  });
+
+  it("evicts stale local limited-IP cooldown after an exact persisted clear and reaches network", async () => {
+    fetchMock.mockResolvedValueOnce(response({ status: "session_model_mismatch", message: "limited IP" }));
+    const request = { model: MODEL, body: { messages: [{ role: "user", content: "hi" }] }, stream: false, credentials: { ...credentials, accessToken: "tok-cleared" }, proxyOptions: { proxyPoolId: "pool-a", connectionProxyUrl: "http://proxy" } };
+    await expect(new FreebuffExecutor().execute(request)).rejects.toMatchObject({ status: 409, poolScoped: { fitnessVersion: 7 } });
+    fitnessMocks.observePoolFitnessVersion.mockResolvedValueOnce(0);
+    fetchMock.mockImplementation((url, options) => url === SESSION_URL ? Promise.resolve(response({ status: "none" })) : url === RUN_URL ? Promise.resolve(response(JSON.parse(options.body).action === "START" ? { runId: "run-cleared" } : {})) : Promise.resolve(response({ choices: [] })));
+    await expect(new FreebuffExecutor().execute(request)).resolves.toMatchObject({ response: { status: 200 } });
+    expect(fetchMock).toHaveBeenCalled(); expect(fitnessMocks.markPoolUnfit).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses newer authoritative active version for local fail-fast without re-mark or network", async () => {
+    fetchMock.mockResolvedValueOnce(response({ status: "session_model_mismatch", message: "limited IP" }));
+    const request = { model: MODEL, body: { messages: [{ role: "user", content: "hi" }] }, stream: false, credentials: { ...credentials, accessToken: "tok-newer" }, proxyOptions: { proxyPoolId: "pool-a", connectionProxyUrl: "http://proxy" } };
+    await expect(new FreebuffExecutor().execute(request)).rejects.toMatchObject({ status: 409, poolScoped: { fitnessVersion: 7 } });
+    fetchMock.mockClear(); fitnessMocks.observePoolFitnessVersion.mockResolvedValueOnce(8);
+    await expect(new FreebuffExecutor().execute(request)).rejects.toMatchObject({ poolScoped: { poolId: "pool-a", scope: `freebuff::${MODEL}`, fitnessVersion: 8 } });
+    expect(fetchMock).not.toHaveBeenCalled(); expect(fitnessMocks.markPoolUnfit).toHaveBeenCalledTimes(1);
+  });
+
+  it("conditionally clears only the selection-time exact fitness version after success", async () => {
+    fetchMock.mockImplementation((url, options) => url === SESSION_URL ? Promise.resolve(response({ status: "none" })) : url === RUN_URL ? Promise.resolve(response(JSON.parse(options.body).action === "START" ? { runId: "run-clear" } : {})) : Promise.resolve(response({ choices: [] })));
+    await new FreebuffExecutor().execute({ model: MODEL, body: { messages: [{ role: "user", content: "hi" }] }, stream: false, credentials: { ...credentials, _observedPoolFitness: Object.freeze({ poolId: "pool-a", scope: `freebuff::${MODEL}`, version: 7 }) }, proxyOptions: { proxyPoolId: "pool-a" } });
+    expect(fitnessMocks.clearPoolUnfit).toHaveBeenCalledWith("pool-a", `freebuff::${MODEL}`, 7);
   });
 
   it("marks connector and timeout session failures once after three attempts", async () => {

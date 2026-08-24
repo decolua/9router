@@ -36,6 +36,7 @@ describe("Freebuff credential selection", () => {
       proxyPoolId: "pool-a",
       vercelRelayUrl: "",
       strictProxy: true,
+      observedFitnessVersion: 4,
     });
   });
 
@@ -53,6 +54,14 @@ describe("Freebuff credential selection", () => {
       expect.objectContaining({ proxyPoolScope: "freebuff::model-a" }),
       "right"
     );
+  });
+
+  it("attaches an immutable exact-scope selection version for Freebuff", async () => {
+    mocks.getProviderConnections.mockResolvedValue([{ id: "right", provider: "freebuff", name: "Right", priority: 1, providerSpecificData: { assignedModel: "model-a" } }]);
+    const { getProviderCredentials } = await import("../../src/sse/services/auth.js");
+    const credentials = await getProviderCredentials("freebuff", null, "model-a");
+    expect(credentials._observedPoolFitness).toEqual({ poolId: "pool-a", scope: "freebuff::model-a", version: 4 });
+    expect(Object.isFrozen(credentials._observedPoolFitness)).toBe(true);
   });
 
   it("preserves non-Freebuff credential selection when strict Freebuff assignment is enabled", async () => {

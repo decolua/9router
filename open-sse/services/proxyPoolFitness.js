@@ -65,6 +65,17 @@ export async function markPoolUnfit(poolId, scope, until = Date.now() + POOL_UNF
   try { const committed = await upsertProxyPoolFitness(poolId, scope, until, reason); if (committed) updateCached(committed); return committed; }
   catch (error) { persistenceLog("mark", error); return null; }
 }
+export async function observePoolFitnessVersion(poolId, scope) {
+  const entry = await observeActivePoolFitness(poolId, scope);
+  return entry?.version ?? 0;
+}
+export async function observeActivePoolFitness(poolId, scope, now = Date.now()) {
+  if (!poolId || !scope) return null;
+  try {
+    const entry = (await listProxyPoolFitness(poolId)).find((candidate) => candidate.scope === scope);
+    return entry?.until > now ? entry : null;
+  } catch (error) { persistenceLog("observe", error); return undefined; }
+}
 export async function clearPoolUnfit(poolId, scope, version) {
   if (!poolId || !scope) return false;
   try {

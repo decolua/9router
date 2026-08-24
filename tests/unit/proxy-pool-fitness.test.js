@@ -53,6 +53,20 @@ describe("proxy-pool fitness persistence", () => {
     expect(await clearPoolUnfit("pool-clear", "freebuff::model", marked.version)).toBe(true);
     expect(fitPoolIds(["pool-clear"], "freebuff::model")).toEqual(["pool-clear"]);
   });
+  it("preserves newer exact failures and isolates pool, model, and wildcard rows", async () => {
+    const { markPoolUnfit, clearPoolUnfit, fitPoolIds } = await import("../../open-sse/services/proxyPoolFitness.js");
+    const until = Date.now() + 60_000;
+    const observed = await markPoolUnfit("pool-a", "freebuff::model-a", until, "first");
+    const newer = await markPoolUnfit("pool-a", "freebuff::model-a", until, "newer");
+    await markPoolUnfit("pool-a", "freebuff::model-b", until, "model-b");
+    await markPoolUnfit("pool-b", "freebuff::model-a", until, "pool-b");
+    await markPoolUnfit("pool-a", "freebuff::*", until, "wildcard");
+    expect(await clearPoolUnfit("pool-a", "freebuff::model-a", observed.version)).toBe(false);
+    expect(await clearPoolUnfit("pool-a", "freebuff::model-a", 0)).toBe(false);
+    expect(await clearPoolUnfit("pool-a", "freebuff::model-a", newer.version)).toBe(true);
+    expect(fitPoolIds(["pool-a"], "freebuff::model-a")).toEqual([]);
+    expect(fitPoolIds(["pool-b"], "freebuff::model-a")).toEqual([]);
+  });
   it("rejects invalid mark inputs without persistence", async () => {
     const { markPoolUnfit } = await import("../../open-sse/services/proxyPoolFitness.js");
     expect(await markPoolUnfit("", "freebuff::model", Date.now())).toBeNull();
