@@ -3,6 +3,7 @@ import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/con
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { getAntigravityQuotaCache } from "./antigravityQuota.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -76,10 +77,29 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    // Filter out model-locked and excluded connections
+    // Filter out model-locked, excluded, and antigravity quota-exhausted connections
+    const isAntigravity = providerId === "antigravity";
+    let antigravityQuotaCache = null;
+    if (isAntigravity && model) {
+      antigravityQuotaCache = getAntigravityQuotaCache();
+    }
+
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
+      // Antigravity: skip if model manually disabled
+      if (isAntigravity && Array.isArray(c.disabledModels) && c.disabledModels.includes(model)) {
+        log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | model ${model} manually disabled`);
+        return false;
+      }
+      // Antigravity: skip if live quota exhausted for this model
+      if (isAntigravity && model && antigravityQuotaCache) {
+        const quota = antigravityQuotaCache.get(c.id)?.[model];
+        if (quota && quota.remainingPercentage <= 0 && quota.resetAt && new Date(quota.resetAt).getTime() > Date.now()) {
+          log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | quota exhausted for ${model} (reset ${quota.resetAt})`);
+          return false;
+        }
+      }
       return true;
     });
 
