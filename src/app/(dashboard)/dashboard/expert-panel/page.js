@@ -176,23 +176,28 @@ export default function ExpertPanelPage() {
       fetch("/api/models", { cache: "no-store" }),
       fetch("/api/providers", { cache: "no-store" }),
       fetch("/api/combos", { cache: "no-store" }),
+      fetch("/api/models/custom", { cache: "no-store" }),
     ])
-      .then(async ([catalogResponse, providerResponse, comboResponse]) => {
-        const [catalogData, providerData, comboData] = await Promise.all([
+      .then(async ([catalogResponse, providerResponse, comboResponse, customResponse]) => {
+        const [catalogData, providerData, comboData, customData] = await Promise.all([
           catalogResponse.json().catch(() => ({})),
           providerResponse.json().catch(() => ({})),
           comboResponse.json().catch(() => ({})),
+          customResponse.json().catch(() => ({})),
         ]);
-        const configuredProviders = new Set((providerData.connections || []).filter((connection) => connection.isActive !== false).map((connection) => connection.provider));
+        const configuredProviders = new Set((providerData.connections || []).filter((connection) => connection.isActive !== false || connection.autoDisabled === true || connection.autoDisabledReason).map((connection) => connection.provider));
         const providerNames = new Map((providerData.connections || []).map((connection) => [connection.provider, connection.providerName || connection.name || connection.provider]));
         const catalogModels = (catalogData.models || [])
           .filter((model) => configuredProviders.has(model.provider))
           .map((model) => ({ value: model.routedModel || model.fullModel, label: model.alias || model.model || model.routedModel || model.fullModel, provider: providerNames.get(model.provider) || model.provider }));
         const combos = (comboData.combos || []).map((combo) => ({ value: combo.name, label: combo.name, provider: "模型组合" }));
+        const customModels = (customData.models || [])
+          .filter((model) => (model.kind || model.type || "llm") === "llm" && configuredProviders.has(model.providerAlias))
+          .map((model) => ({ value: `${model.providerAlias}/${model.id}`, label: model.name || model.id, provider: providerNames.get(model.providerAlias) || model.providerAlias }));
         const mappedModelsResponse = await fetch("/api/v1/models", { cache: "no-store" }).catch(() => null);
         const mappedModelsData = mappedModelsResponse?.ok ? await mappedModelsResponse.json().catch(() => ({})) : {};
         const mappedModels = (mappedModelsData.data || []).map((model) => ({ value: model.id, label: model.id, provider: model.owned_by || String(model.id).split("/")[0] || "其他" }));
-        mergeModels([...(mappedModels.length ? mappedModels : catalogModels), ...combos]);
+        mergeModels([...(mappedModels.length ? mappedModels : catalogModels), ...customModels, ...combos]);
       })
       .catch(() => {});
 
@@ -201,6 +206,7 @@ export default function ExpertPanelPage() {
 
   const panelModelIds = useMemo(() => new Set(panels.map((panel) => panel.model)), [panels]);
   const modelLabelMap = useMemo(() => new Map(models.map((model) => [model.value, model.label])), [models]);
+  const modelProviderMap = useMemo(() => new Map(models.map((model) => [model.value, model.provider || "其他"])), [models]);
   const chatEntries = useMemo(() => {
     const entries = [];
     const seenUsers = new Set();
@@ -384,19 +390,19 @@ export default function ExpertPanelPage() {
       </div>
 
       <div className="min-h-0 flex-1 px-4 py-4 lg:px-8 lg:py-6 custom-scrollbar">
-        <div className="mx-auto grid h-full min-h-0 w-full max-w-7xl grid-cols-1 gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
-          <aside className="flex min-h-0 flex-col overflow-hidden rounded-md border border-border bg-surface shadow-sm">
+        <div className="mx-0 grid h-full min-h-0 w-full grid-cols-1 gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+          <aside className="flex min-h-0 flex-col overflow-visible rounded-md border border-border bg-surface shadow-sm">
             <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
               <Input icon="search" placeholder="搜索提供商或模型" value={pickerSearch} onChange={(event) => setPickerSearch(event.target.value)} />
               <Button icon="add" variant="secondary" disabled={sending} onClick={() => openPicker("multiple")}>增加模型</Button>
               <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-border bg-bg-subtle p-2 custom-scrollbar">
                 <div className="mb-2 text-xs font-semibold text-text-muted">已选专家模型</div>
-                {panels.length ? panels.map((panel) => <div key={panel.id} className="flex items-center justify-between gap-2 border-b border-border/60 px-2 py-2 last:border-b-0"><span className="min-w-0 truncate font-mono text-xs" title={panel.model}>{modelLabelMap.get(panel.model) || panel.model}</span><button type="button" disabled={sending} onClick={() => setPanels((current) => current.filter((item) => item.id !== panel.id))} className="shrink-0 rounded p-1 text-text-muted hover:bg-bg-hover hover:text-red-500 disabled:opacity-40" title="移除模型" aria-label="移除模型"><span className="material-symbols-outlined text-[16px]">close</span></button></div>) : <p className="p-4 text-center text-xs text-text-muted">尚未添加模型</p>}
+                {panels.length ? panels.map((panel) => <div key={panel.id} className="flex items-center justify-between gap-2 border-b border-border/60 px-2 py-2 last:border-b-0"><span className="min-w-0 truncate text-xs" title={panel.model}><span className="font-medium text-text-muted">{modelProviderMap.get(panel.model) || "其他"}</span><span className="mx-1 text-text-muted">/</span><span className="font-mono">{modelLabelMap.get(panel.model) || panel.model}</span></span><button type="button" disabled={sending} onClick={() => setPanels((current) => current.filter((item) => item.id !== panel.id))} className="shrink-0 rounded p-1 text-text-muted hover:bg-bg-hover hover:text-red-500 disabled:opacity-40" title="移除模型" aria-label="移除模型"><span className="material-symbols-outlined text-[16px]">close</span></button></div>) : <p className="p-4 text-center text-xs text-text-muted">尚未添加模型</p>}
               </div>
             </div>
             <div className="shrink-0 border-t border-border p-3">
               <div className="mb-2 text-xs font-semibold text-text-muted">裁判设置</div>
-              <DropdownSelect className="w-full" value={judgeModel} onChange={setJudgeModel} searchable searchPlaceholder="搜索裁判模型" options={models} placeholder="选择裁判模型" buttonClassName="h-9" />
+              <DropdownSelect className="w-full" value={judgeModel} onChange={setJudgeModel} searchable searchPlaceholder="搜索裁判模型" options={models} placeholder="选择裁判模型" buttonClassName="h-9" menuPlacement="top" />
               <Button className="mt-2 w-full" variant="secondary" loading={judging} disabled={!judgeModel || panels.length === 0 || panels.some((panel) => panel.status !== "done")} onClick={runJudge}>开始评分</Button>
             </div>
           </aside>

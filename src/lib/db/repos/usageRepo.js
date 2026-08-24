@@ -1152,26 +1152,38 @@ export async function getUsageLogs(filter = {}) {
   const db = await getAdapter();
   const conds = [];
   const params = [];
-  if (filter.provider) { conds.push("provider = ?"); params.push(filter.provider); }
-  if (filter.endpoint) { conds.push("LOWER(endpoint) LIKE LOWER(?)"); params.push(`%${filter.endpoint}%`); }
-  if (filter.status === "success") {
+  const asList = (value) => (Array.isArray(value) ? value : String(value || "").split(",")).map((item) => String(item).trim()).filter(Boolean);
+  const providerFilters = asList(filter.provider);
+  const endpointFilters = asList(filter.endpoint);
+  if (providerFilters.length) { conds.push(`provider IN (${providerFilters.map(() => "?").join(",")})`); params.push(...providerFilters); }
+  if (endpointFilters.length) { conds.push(`endpoint IN (${endpointFilters.map(() => "?").join(",")})`); params.push(...endpointFilters); }
+  const statusFilters = asList(filter.status);
+  if (statusFilters.length === 1 && statusFilters[0] === "success") {
     conds.push("LOWER(status) IN ('ok', 'success', '200 ok')");
-  } else if (filter.status === "failed") {
+  } else if (statusFilters.length === 1 && statusFilters[0] === "failed") {
     conds.push("(UPPER(status) LIKE 'FAILED%' OR UPPER(status) LIKE 'ERROR%')");
-  } else if (filter.status) {
-    conds.push("status = ?");
-    params.push(filter.status);
+  } else if (statusFilters.length) {
+    const statusConds = [];
+    if (statusFilters.includes("success")) statusConds.push("LOWER(status) IN ('ok', 'success', '200 ok')");
+    if (statusFilters.includes("failed")) statusConds.push("(UPPER(status) LIKE 'FAILED%' OR UPPER(status) LIKE 'ERROR%')");
+    const explicitStatuses = statusFilters.filter((status) => !["success", "failed"].includes(status));
+    if (explicitStatuses.length) {
+      statusConds.push(`status IN (${explicitStatuses.map(() => "?").join(",")})`);
+      params.push(...explicitStatuses);
+    }
+    if (statusConds.length) conds.push(`(${statusConds.join(" OR ")})`);
   }
   if (filter.startDate) { conds.push("timestamp >= ?"); params.push(parseChinaDateTime(filter.startDate).toISOString()); }
   if (filter.endDate) { conds.push("timestamp <= ?"); params.push(parseChinaDateTime(filter.endDate).toISOString()); }
 
-  if (filter.apiKey) {
+  const apiKeyFilters = asList(filter.apiKey);
+  if (apiKeyFilters.length) {
     const { getApiKeys } = await import("./apiKeysRepo.js");
     const keys = await getApiKeys();
-    const selected = keys.find((key) => key.id === filter.apiKey || key.name === filter.apiKey || key.key === filter.apiKey);
-    if (selected) {
-      conds.push("apiKey = ?");
-      params.push(selected.key);
+    const selectedKeys = keys.filter((key) => apiKeyFilters.some((value) => key.id === value || key.name === value || key.key === value));
+    if (selectedKeys.length) {
+      conds.push(`apiKey IN (${selectedKeys.map(() => "?").join(",")})`);
+      params.push(...selectedKeys.map((key) => key.key));
     } else {
       return { logs: [], pagination: { page: filter.page || 1, pageSize: filter.pageSize || 50, totalItems: 0, totalPages: 0, hasNext: false, hasPrev: false } };
     }
@@ -1184,15 +1196,21 @@ export async function getUsageLogs(filter = {}) {
   const sortBy = allowedSortFields.has(filter.sortBy) ? filter.sortBy : "timestamp";
   const sortOrder = filter.sortOrder === "asc" ? "ASC" : "DESC";
   const allRows = db.all(`SELECT id, timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta FROM usageHistory ${where} ORDER BY id DESC`, params);
+  const uniqueValues = (values) => [...new Set(values.filter(Boolean).map((value) => String(value)))].sort((a, b) => a.localeCompare(b));
+  const filterOptions = {
+    endpoints: uniqueValues(allRows.map((row) => row.endpoint)),
+    providers: uniqueValues(allRows.map((row) => row.provider)),
+    selectedModels: uniqueValues(allRows.map((row) => parseJson(row.meta, {})?.requestedModel || row.model)),
+    actualModels: uniqueValues(allRows.map((row) => parseJson(row.meta, {})?.actualModel || row.model)),
+  };
   const modelFilter = (value) => String(value || "").toLowerCase();
-  const selectedQuery = modelFilter(filter.selectedModel);
-  const actualQuery = modelFilter(filter.actualModel);
+  const selectedQuery = asList(filter.selectedModel).map(modelFilter);
+  const actualQuery = asList(filter.actualModel).map(modelFilter);
   const filteredRows = allRows.filter((row) => {
-    if (!selectedQuery && !actualQuery) return true;
     const meta = parseJson(row.meta, {}) || {};
     const selected = modelFilter(meta.requestedModel || row.model);
     const actual = modelFilter(meta.actualModel || row.model);
-    return (!selectedQuery || selected.includes(selectedQuery)) && (!actualQuery || actual.includes(actualQuery));
+    return (!selectedQuery.length || selectedQuery.includes(selected)) && (!actualQuery.length || actualQuery.includes(actual));
   });
   const totalItems = filteredRows.length;
   const rawSortValue = (row) => {
@@ -1271,5 +1289,5 @@ export async function getUsageLogs(filter = {}) {
     };
   }));
   const totalPages = Math.ceil(totalItems / pageSize);
-  return { logs, pagination: { page, pageSize, totalItems, totalPages, hasNext: page < totalPages, hasPrev: page > 1 } };
+  return { logs, filterOptions, pagination: { page, pageSize, totalItems, totalPages, hasNext: page < totalPages, hasPrev: page > 1 } };
 }

@@ -12,6 +12,8 @@ export default function DropdownSelect({
   placeholder = "请选择",
   searchable = false,
   searchPlaceholder = "搜索选项",
+  multiple = false,
+  menuPlacement = "bottom",
   disabled = false,
   className,
   buttonClassName,
@@ -19,7 +21,9 @@ export default function DropdownSelect({
   const rootRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const selected = options.find((option) => String(option.value) === String(value));
+  const selected = multiple
+    ? options.filter((option) => Array.isArray(value) && value.some((item) => String(item) === String(option.value)))
+    : options.find((option) => String(option.value) === String(value));
   const normalizedQuery = query.trim().toLowerCase();
   const visibleOptions = useMemo(
     () => normalizedQuery
@@ -37,10 +41,23 @@ export default function DropdownSelect({
   }, []);
 
   const selectOption = (option) => {
+    if (multiple) {
+      const current = Array.isArray(value) ? value : [];
+      const next = current.some((item) => String(item) === String(option.value))
+        ? current.filter((item) => String(item) !== String(option.value))
+        : [...current, option.value];
+      onChange?.(next, option);
+      return;
+    }
     onChange?.(option.value, option);
     setOpen(false);
     setQuery("");
   };
+  const selectAll = () => onChange?.(options.map((option) => option.value));
+  const clearAll = () => onChange?.([]);
+  const selectedLabel = multiple
+    ? (selected.length ? `已选 ${selected.length} 项` : placeholder)
+    : selected?.label || placeholder;
 
   return (
     <div ref={rootRef} className={cn("relative flex min-w-0 flex-col gap-1.5", className)}>
@@ -57,11 +74,11 @@ export default function DropdownSelect({
           buttonClassName,
         )}
       >
-        <span className={cn("min-w-0 truncate whitespace-nowrap", !selected && "text-text-muted")}>{selected?.label || placeholder}</span>
+        <span className={cn("min-w-0 truncate whitespace-nowrap", multiple ? !selected.length : !selected && "text-text-muted")}>{selectedLabel}</span>
         <span className={cn("material-symbols-outlined shrink-0 text-[18px] text-text-muted transition-transform", open && "rotate-180")}>expand_more</span>
       </button>
       {open && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 overflow-hidden rounded-md border border-border bg-surface shadow-xl">
+        <div className={cn("absolute left-0 right-0 z-50 overflow-hidden rounded-md border border-border bg-surface shadow-xl", menuPlacement === "top" ? "bottom-full mb-1" : "top-full mt-1")}>
           {searchable && (
             <div className="border-b border-border p-2">
               <div className="relative">
@@ -76,9 +93,17 @@ export default function DropdownSelect({
               </div>
             </div>
           )}
+          {multiple && (
+            <div className="flex items-center justify-between gap-2 border-b border-border px-2 py-1.5 text-xs">
+              <button type="button" onClick={selectAll} className="whitespace-nowrap text-primary hover:underline">全选</button>
+              <button type="button" onClick={clearAll} className="whitespace-nowrap text-text-muted hover:text-text-main">全部取消</button>
+            </div>
+          )}
           <div role="listbox" className="max-h-64 overflow-y-auto p-1 custom-scrollbar">
             {visibleOptions.length ? visibleOptions.map((option) => {
-              const active = String(option.value) === String(value);
+              const active = multiple
+                ? Array.isArray(value) && value.some((item) => String(item) === String(option.value))
+                : String(option.value) === String(value);
               return (
                 <button
                   key={option.value}
@@ -91,8 +116,8 @@ export default function DropdownSelect({
                     active && "bg-primary/10 text-primary",
                   )}
                 >
-                  <span className="min-w-0 truncate">{option.label}</span>
-                  {active && <span className="material-symbols-outlined shrink-0 text-[17px]">check</span>}
+                  <span className="flex min-w-0 items-center gap-2 whitespace-nowrap">{multiple && <span aria-hidden="true" className={cn("flex size-4 shrink-0 items-center justify-center rounded border", active ? "border-primary bg-primary text-white" : "border-border bg-surface")}><span className="material-symbols-outlined text-[13px]">{active ? "check" : ""}</span></span>}<span className="min-w-0 truncate">{option.label}</span></span>
+                  {!multiple && active && <span className="material-symbols-outlined shrink-0 text-[17px]">check</span>}
                 </button>
               );
             }) : <p className="px-3 py-5 text-center text-xs text-text-muted">没有匹配项</p>}
@@ -106,11 +131,13 @@ export default function DropdownSelect({
 DropdownSelect.propTypes = {
   label: PropTypes.string,
   options: PropTypes.arrayOf(PropTypes.shape({ value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]).isRequired, label: PropTypes.node.isRequired })),
-  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  value: PropTypes.oneOfType([PropTypes.string, PropTypes.number, PropTypes.arrayOf(PropTypes.oneOfType([PropTypes.string, PropTypes.number]))]),
   onChange: PropTypes.func,
   placeholder: PropTypes.string,
   searchable: PropTypes.bool,
   searchPlaceholder: PropTypes.string,
+  multiple: PropTypes.bool,
+  menuPlacement: PropTypes.oneOf(["top", "bottom"]),
   disabled: PropTypes.bool,
   className: PropTypes.string,
   buttonClassName: PropTypes.string,

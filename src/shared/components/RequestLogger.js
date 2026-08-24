@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import Card from "./Card";
 import Button from "./Button";
-import Input from "./Input";
 import Modal from "./Modal";
 import DropdownSelect from "./DropdownSelect";
 import UsageDateRangeControl from "./UsageDateRangeControl";
@@ -20,7 +19,7 @@ export const getDefaultLogFilters = (now = new Date()) => {
   start.setHours(0, 0, 0, 0);
   const end = new Date(start);
   end.setDate(end.getDate() + 1);
-  return { startDate: toLocalDateTimeValue(start), endDate: toLocalDateTimeValue(end), apiKey: "", provider: "", endpoint: "", selectedModel: "", actualModel: "", logType: "" };
+  return { startDate: toLocalDateTimeValue(start), endDate: toLocalDateTimeValue(end), apiKey: [], provider: [], endpoint: [], selectedModel: [], actualModel: [], logType: [] };
 };
 const formatNumber = (value) => new Intl.NumberFormat("zh-CN").format(Number(value || 0));
 const formatCost = (value) => `$${Number(value || 0).toFixed(6)}`;
@@ -66,6 +65,7 @@ export default function RequestLogger() {
   const [filters, setFilters] = useState(() => getDefaultLogFilters());
   const [keys, setKeys] = useState([]);
   const [providers, setProviders] = useState([]);
+  const [filterOptions, setFilterOptions] = useState({ endpoints: [], selectedModels: [], actualModels: [] });
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState("today");
   const [showColumnSettings, setShowColumnSettings] = useState(false);
@@ -87,11 +87,16 @@ export default function RequestLogger() {
     if (showLoading) setLoading(true);
     try {
       const query = new URLSearchParams({ page: String(page), pageSize: "50", sortBy: sortState.field, sortOrder: sortState.direction });
-      Object.entries(filters).forEach(([key, value]) => value && query.set(key, value));
+      Object.entries(filters).forEach(([key, value]) => {
+        if (Array.isArray(value)) {
+          if (value.length) query.set(key, value.join(","));
+        } else if (value) query.set(key, value);
+      });
       const response = await fetch(`/api/usage/request-logs?${query.toString()}`, { cache: "no-store" });
       if (!response.ok) throw new Error("无法加载流量日志");
       const data = await response.json();
       setLogs(data.logs || []);
+      setFilterOptions(data.filterOptions || { endpoints: [], selectedModels: [], actualModels: [] });
       setPagination(data.pagination || { page, pageSize: 50, totalPages: 0 });
     } catch (error) {
       console.error("Failed to fetch logs:", error);
@@ -150,11 +155,15 @@ export default function RequestLogger() {
   const sortedLogs = logs;
   const totals = useMemo(() => logs.reduce((sum, log) => ({
     input: sum.input + Number(log.inputTokens || 0),
+    inputCost: sum.inputCost + Number(log.inputCost || 0),
     cacheRead: sum.cacheRead + Number(log.cacheReadTokens || 0),
+    cacheReadCost: sum.cacheReadCost + Number(log.cacheReadCost || 0),
     cacheWrite: sum.cacheWrite + Number(log.cacheCreationTokens || 0),
+    cacheWriteCost: sum.cacheWriteCost + Number(log.cacheCreationCost || 0),
     output: sum.output + Number(log.outputTokens || 0),
+    outputCost: sum.outputCost + Number(log.outputCost || 0),
     cost: sum.cost + Number(log.cost || 0),
-  }), { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, cost: 0 }), [logs]);
+  }), { input: 0, inputCost: 0, cacheRead: 0, cacheReadCost: 0, cacheWrite: 0, cacheWriteCost: 0, output: 0, outputCost: 0, cost: 0 }), [logs]);
   const leadingColumnCount = ["timestamp", "apiKey", "selectedModel", "actualModel", "provider", "endpoint"].filter(isColumnVisible).length;
 
   return (
@@ -165,12 +174,12 @@ export default function RequestLogger() {
             <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2 text-xs text-text-muted"><button onClick={() => setShowColumnSettings(true)} className="flex h-9 min-w-20 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-border bg-surface px-3 hover:bg-bg-hover"><span className="material-symbols-outlined text-[17px]">view_column</span>列设置</button><button onClick={resetFilters} className="flex h-9 min-w-16 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-border bg-surface px-3 hover:bg-bg-hover"><span className="material-symbols-outlined text-[17px]">restart_alt</span>重置</button><button onClick={() => fetchLogs(true, pagination.page)} disabled={loading} className="flex h-9 min-w-20 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-border bg-surface px-3 hover:bg-bg-hover disabled:opacity-50"><span className={`material-symbols-outlined text-[17px] ${loading ? "animate-spin" : ""}`}>refresh</span>刷新</button></div>
           </div>
           <div className="flex flex-wrap items-end gap-2">
-            <DropdownSelect className="w-full sm:w-48" label="API 密钥" value={filters.apiKey} onChange={(value) => updateFilter("apiKey", value)} searchable options={[{ value: "", label: "全部密钥" }, ...keys.map((key) => ({ value: key.id, label: key.name }))]} />
-            <DropdownSelect className="w-full sm:w-48" label="模型提供商" value={filters.provider} onChange={(value) => updateFilter("provider", value)} searchable options={[{ value: "", label: "全部提供商" }, ...providers]} />
-            <Input className="w-full sm:w-48" label="端点" value={filters.endpoint} onChange={(event) => updateFilter("endpoint", event.target.value)} placeholder="筛选端点" />
-            <Input className="w-full sm:w-48" label="用户选择" value={filters.selectedModel} onChange={(event) => updateFilter("selectedModel", event.target.value)} placeholder="筛选用户选择" />
-            <Input className="w-full sm:w-48" label="实际请求模型" value={filters.actualModel} onChange={(event) => updateFilter("actualModel", event.target.value)} placeholder="筛选实际请求模型" />
-            <DropdownSelect className="w-full sm:w-40" label="日志类型" value={filters.logType} onChange={(value) => updateFilter("logType", value)} options={[{ value: "", label: "全部类型" }, { value: "success", label: "成功" }, { value: "failed", label: "失败" }]} />
+            <DropdownSelect className="w-full sm:w-48" label="API 密钥" multiple value={filters.apiKey} onChange={(value) => updateFilter("apiKey", value)} searchable options={keys.map((key) => ({ value: key.id, label: key.name }))} />
+            <DropdownSelect className="w-full sm:w-48" label="模型提供商" multiple value={filters.provider} onChange={(value) => updateFilter("provider", value)} searchable options={providers} />
+            <DropdownSelect className="w-full sm:w-48" label="端点" multiple value={filters.endpoint} onChange={(value) => updateFilter("endpoint", value)} searchable options={filterOptions.endpoints.map((value) => ({ value, label: value }))} />
+            <DropdownSelect className="w-full sm:w-48" label="用户选择" multiple value={filters.selectedModel} onChange={(value) => updateFilter("selectedModel", value)} searchable options={filterOptions.selectedModels.map((value) => ({ value, label: value }))} />
+            <DropdownSelect className="w-full sm:w-48" label="实际请求模型" multiple value={filters.actualModel} onChange={(value) => updateFilter("actualModel", value)} searchable options={filterOptions.actualModels.map((value) => ({ value, label: value }))} />
+            <DropdownSelect className="w-full sm:w-40" label="日志类型" multiple value={filters.logType} onChange={(value) => updateFilter("logType", value)} options={[{ value: "success", label: "成功" }, { value: "failed", label: "失败" }]} />
           </div>
       </div>
 
@@ -180,7 +189,7 @@ export default function RequestLogger() {
            <table className="w-full min-w-[1280px] border-collapse text-xs">
                <thead className="sticky top-0 z-10 border-b border-border bg-surface text-text-muted"><tr>{isColumnVisible("timestamp") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="timestamp" sortState={sortState} onSort={toggleSort}>时间</SortHeader></th>}{isColumnVisible("apiKey") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="apiKeyName" sortState={sortState} onSort={toggleSort}>API 密钥</SortHeader></th>}{isColumnVisible("selectedModel") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="selectedModel" sortState={sortState} onSort={toggleSort}>用户选择</SortHeader></th>}{isColumnVisible("actualModel") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="actualModel" sortState={sortState} onSort={toggleSort}>实际请求模型</SortHeader></th>}{isColumnVisible("provider") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="provider" sortState={sortState} onSort={toggleSort}>提供商</SortHeader></th>}{isColumnVisible("endpoint") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="endpoint" sortState={sortState} onSort={toggleSort}>端点</SortHeader></th>}{isColumnVisible("input") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="inputTokens" align="right" sortState={sortState} onSort={toggleSort}>输入</SortHeader></th>}{isColumnVisible("cacheRead") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="cacheReadTokens" align="right" sortState={sortState} onSort={toggleSort}>缓存读取</SortHeader></th>}{isColumnVisible("cacheWrite") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="cacheCreationTokens" align="right" sortState={sortState} onSort={toggleSort}>缓存写入</SortHeader></th>}{isColumnVisible("output") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="outputTokens" align="right" sortState={sortState} onSort={toggleSort}>输出</SortHeader></th>}{isColumnVisible("total") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="totalTokens" align="right" sortState={sortState} onSort={toggleSort}>总和</SortHeader></th>}{isColumnVisible("latency") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="latencyMs" align="right" sortState={sortState} onSort={toggleSort}>首 Token / 完成</SortHeader></th>}{isColumnVisible("status") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="status" sortState={sortState} onSort={toggleSort}>状态</SortHeader></th>}</tr></thead>
                <tbody className="divide-y divide-border/60">{sortedLogs.map((log) => <tr key={log.id} className={isSuccessStatus(log.status) ? "hover:bg-bg-hover/60" : "border-l-2 border-red-500/60 bg-red-500/[0.05] hover:bg-red-500/[0.09]"}>{isColumnVisible("timestamp") && <td className="whitespace-nowrap px-3 py-2 text-text-muted">{new Date(log.timestamp).toLocaleString("zh-CN")}</td>}{isColumnVisible("apiKey") && <td className="whitespace-nowrap px-3 py-2">{log.apiKeyName}</td>}{isColumnVisible("selectedModel") && <td className="px-3 py-2 font-mono"><span className="mr-1 rounded bg-primary/10 px-1 text-[10px] text-primary">{log.selectedModelType || "模型"}</span>{String(log.selectedModel || log.model || "-").replace(/^group:/, "")}</td>}{isColumnVisible("actualModel") && <td className="px-3 py-2 font-mono">{log.actualModel || log.model || "-"}</td>}{isColumnVisible("provider") && <td className="whitespace-nowrap px-3 py-2">{log.provider || "-"}</td>}{isColumnVisible("endpoint") && <td className="px-3 py-2">{log.endpoint || "-"}</td>}{isColumnVisible("input") && <MetricCell tokens={log.inputTokens} cost={log.inputCost} color="text-primary" />}{isColumnVisible("cacheRead") && <MetricCell tokens={log.cacheReadTokens} cost={log.cacheReadCost} color="text-sky-500" />}{isColumnVisible("cacheWrite") && <MetricCell tokens={log.cacheCreationTokens} cost={log.cacheCreationCost} color="text-cyan-500" />}{isColumnVisible("output") && <MetricCell tokens={log.outputTokens} cost={log.outputCost} color="text-success" />}{isColumnVisible("total") && <MetricCell tokens={Number(log.inputTokens || 0) + Number(log.cacheReadTokens || 0) + Number(log.cacheCreationTokens || 0) + Number(log.outputTokens || 0)} cost={log.cost} color="text-warning" />}{isColumnVisible("latency") && <LatencyCell ttftMs={log.ttftMs} totalMs={log.latencyMs} />}{isColumnVisible("status") && <td className={`whitespace-nowrap px-3 py-2 font-semibold ${isSuccessStatus(log.status) ? "text-success" : "text-error"}`}>{isSuccessStatus(log.status) ? "成功" : (log.status || "失败")}</td>}</tr>)}</tbody>
-               <tfoot className="sticky bottom-0 z-20"><tr className="border-t-2 border-border bg-bg-subtle font-semibold shadow-[0_-2px_8px_rgba(0,0,0,0.08)]"><td colSpan={Math.max(1, leadingColumnCount)} className="px-3 py-2 text-right">当前页合计</td>{isColumnVisible("input") && <MetricCell tokens={totals.input} cost={0} color="text-primary" />}{isColumnVisible("cacheRead") && <MetricCell tokens={totals.cacheRead} cost={0} color="text-sky-500" />}{isColumnVisible("cacheWrite") && <MetricCell tokens={totals.cacheWrite} cost={0} color="text-cyan-500" />}{isColumnVisible("output") && <MetricCell tokens={totals.output} cost={0} color="text-success" />}{isColumnVisible("total") && <MetricCell tokens={totals.input + totals.cacheRead + totals.cacheWrite + totals.output} cost={totals.cost} color="text-warning" />}{isColumnVisible("latency") && <td />}{isColumnVisible("status") && <td />}</tr></tfoot>
+               <tfoot className="sticky bottom-0 z-20"><tr className="border-t-2 border-border bg-white font-semibold shadow-[0_-2px_8px_rgba(0,0,0,0.08)] [&>td]:bg-white"><td colSpan={Math.max(1, leadingColumnCount)} className="px-3 py-2 text-right">当前页合计</td>{isColumnVisible("input") && <MetricCell tokens={totals.input} cost={totals.inputCost} color="text-primary" />}{isColumnVisible("cacheRead") && <MetricCell tokens={totals.cacheRead} cost={totals.cacheReadCost} color="text-sky-500" />}{isColumnVisible("cacheWrite") && <MetricCell tokens={totals.cacheWrite} cost={totals.cacheWriteCost} color="text-cyan-500" />}{isColumnVisible("output") && <MetricCell tokens={totals.output} cost={totals.outputCost} color="text-success" />}{isColumnVisible("total") && <MetricCell tokens={totals.input + totals.cacheRead + totals.cacheWrite + totals.output} cost={totals.cost} color="text-warning" />}{isColumnVisible("latency") && <td />}{isColumnVisible("status") && <td />}</tr></tfoot>
             </table>
           )}
         </div>

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button, Card, Input, Modal, Toggle } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
+import { getProviderAlias } from "@/shared/constants/providers";
 
 const EMPTY_FORM = { id: null, name: "", allowAll: true, allowedModels: [], allowedCombos: [] };
 
@@ -22,22 +23,23 @@ export default function KeyGroupsPage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [groupRes, catalogRes, routedModelRes, comboRes, providerRes] = await Promise.all([
+      const [groupRes, catalogRes, routedModelRes, comboRes, providerRes, customRes] = await Promise.all([
         fetch("/api/key-groups", { cache: "no-store" }),
         fetch("/api/models", { cache: "no-store" }),
         fetch("/api/v1/models", { cache: "no-store" }),
         fetch("/api/combos", { cache: "no-store" }),
         fetch("/api/providers", { cache: "no-store" }),
+        fetch("/api/models/custom", { cache: "no-store" }),
       ]);
-      const [groupData, catalogData, routedModelData, comboData, providerData] = await Promise.all([
-        groupRes.json(), catalogRes.json(), routedModelRes.json(), comboRes.json(), providerRes.json(),
+      const [groupData, catalogData, routedModelData, comboData, providerData, customData] = await Promise.all([
+        groupRes.json(), catalogRes.json(), routedModelRes.json(), comboRes.json(), providerRes.json(), customRes.json(),
       ]);
       if (!groupRes.ok) throw new Error(groupData.error || "加载密钥分组失败");
       if (!catalogRes.ok && !routedModelRes.ok) throw new Error("加载可用模型失败");
       if (!comboRes.ok) throw new Error(comboData.error || "加载模型组合失败");
       setGroups(groupData.groups || []);
       const allowedProviders = new Map((providerData.connections || [])
-        .filter((connection) => connection.isActive !== false || connection.autoDisabledReason)
+        .filter((connection) => connection.isActive !== false || connection.autoDisabled === true || connection.autoDisabledReason)
         .map((connection) => [connection.provider, connection.providerName || connection.name || connection.provider]));
       const catalogModels = (catalogData.models || [])
         .filter((model) => allowedProviders.has(model.provider))
@@ -46,7 +48,15 @@ export default function KeyGroupsPage() {
         const [provider, ...rest] = String(model.id || "").split("/");
         return { id: model.id, provider: allowedProviders.get(provider) || provider, modelName: rest.join("/") || model.id };
       }).filter((model) => model.id && (allowedProviders.has(String(model.id).split("/")[0]) || model.provider));
-      const deduped = new Map([...catalogModels, ...routedModels].map((model) => [model.id, model]));
+      const customModels = (customData.models || [])
+        .filter((model) => (model.kind || model.type || "llm") === "llm")
+        .filter((model) => allowedProviders.has(model.providerAlias) || allowedProviders.has(getProviderAlias(model.providerAlias) || model.providerAlias))
+        .map((model) => ({
+          id: `${model.providerAlias}/${model.id}`,
+          provider: allowedProviders.get(model.providerAlias) || allowedProviders.get(getProviderAlias(model.providerAlias)) || model.providerAlias,
+          modelName: model.name || model.id,
+        }));
+      const deduped = new Map([...catalogModels, ...routedModels, ...customModels].map((model) => [model.id, model]));
       setModels([...deduped.values()].sort((a, b) => `${a.provider}/${a.modelName}`.localeCompare(`${b.provider}/${b.modelName}`)));
       setCombos((comboData.combos || []).map((combo) => combo.name).sort());
     } catch (error) {
