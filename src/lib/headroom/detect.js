@@ -31,6 +31,7 @@ const EXTRA_BINS = IS_WIN
   : [
       "/usr/local/bin",
       "/opt/homebrew/bin",
+      "/Library/Frameworks/Python.framework/Versions/3.14/bin",
       "/Library/Frameworks/Python.framework/Versions/3.13/bin",
       "/Library/Frameworks/Python.framework/Versions/3.12/bin",
       "/Library/Frameworks/Python.framework/Versions/3.11/bin",
@@ -41,7 +42,7 @@ const EXTRA_BINS = IS_WIN
     ];
 
 const EXTENDED_PATH = [...EXTRA_BINS, process.env.PATH || ""].filter(Boolean).join(path.delimiter);
-const PYTHON_CANDIDATES = ["python3.13", "python3.12", "python3.11", "python3.10", "python3", "python"];
+const PYTHON_CANDIDATES = ["python3.14", "python3.13", "python3.12", "python3.11", "python3.10", "python3", "python"];
 const MIN_VERSION = [3, 10];
 const HEADROOM_HEALTH_TIMEOUT_MS = 1500;
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
@@ -77,7 +78,7 @@ function pythonCandidates() {
   const bin = findHeadroomBinary();
   if (bin) {
     const dir = path.dirname(bin);
-    const names = IS_WIN ? ["python.exe", "python3.exe"] : ["python3", "python3.13", "python"];
+    const names = IS_WIN ? ["python.exe", "python3.exe"] : ["python3", "python3.14", "python3.13", "python"];
     for (const n of names) list.push(path.join(dir, n));
   }
   for (const dir of EXTRA_BINS) {
