@@ -281,7 +281,10 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
         return null;
       }
       const oai = openaiResponsesToOpenAIRequest(model, body, false);
-      if (!Array.isArray(oai?.messages)) return null;
+      if (!Array.isArray(oai?.messages)) {
+        setDiagnostic(diagnostics, "openai-responses request did not translate to messages[]");
+        return null;
+      }
       const data = await callCompress(url, oai.messages, model, timeoutMs, compressUserMessages, diagnostics || {});
       if (!data) return null;
       // input: undefined so the translator rebuilds input from the compressed
