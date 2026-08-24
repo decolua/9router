@@ -11,8 +11,8 @@ export const dynamic = "force-dynamic";
 export async function POST(request) {
   try {
     const { connectionId, model, disabled } = await request.json();
-    if (!connectionId || !model) {
-      return NextResponse.json({ error: "connectionId and model required" }, { status: 400 });
+    if (!connectionId || !model || typeof disabled !== "boolean") {
+      return NextResponse.json({ error: "connectionId, model, and boolean disabled required" }, { status: 400 });
     }
 
     const connections = await getProviderConnections({ provider: "antigravity" });

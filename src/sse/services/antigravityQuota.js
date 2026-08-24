@@ -14,6 +14,8 @@ import * as log from "../utils/logger.js";
 const quotaCache = new Map();
 // Track last refresh per connection to avoid hammering
 const lastRefreshAt = new Map();
+// In-flight refresh promises — dedup concurrent 409/429 bursts
+const inflightRefresh = new Map();
 
 const MIN_REFRESH_INTERVAL_MS = 30_000; // 30s between refreshes per connection
 
@@ -37,6 +39,20 @@ export async function refreshAntigravityQuota(connectionId, accessToken, provide
     return quotaCache.get(connectionId) || null;
   }
 
+  // Coalesce concurrent refreshes for same connection
+  const inflight = inflightRefresh.get(connectionId);
+  if (inflight) return inflight;
+
+  const promise = _doRefresh(connectionId, accessToken, providerSpecificData, now);
+  inflightRefresh.set(connectionId, promise);
+  try {
+    return await promise;
+  } finally {
+    inflightRefresh.delete(connectionId);
+  }
+}
+
+async function _doRefresh(connectionId, accessToken, providerSpecificData, now) {
   try {
     const proxyCfg = await resolveConnectionProxyConfig(providerSpecificData || {});
     const proxyOptions = {
