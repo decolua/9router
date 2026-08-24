@@ -962,9 +962,8 @@ export default function ProfilePage() {
   return (
     <div className="w-full px-4 sm:px-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
-        <div className="flex w-full items-center justify-between gap-4 border-b border-border pb-2">
-          <h1 className="shrink-0 text-xl font-semibold text-text-main">设置</h1>
-          <div className="flex min-w-0 justify-end overflow-x-auto rounded-md border border-border bg-bg-subtle p-1">
+        <div className="mx-auto flex w-full max-w-3xl justify-center border-b border-border pb-2">
+          <div className="flex min-w-0 justify-center overflow-x-auto rounded-md border border-border bg-bg-subtle p-1">
             {[
               ["general", "常规"], ["security", "安全与登录"], ["routing", "路由与恢复"], ["navigation", "导航栏"], ["usage", "流量"], ["network", "网络"], ["observability", "可观测性"],
             ].map(([value, label]) => <button key={value} type="button" onClick={() => setActiveSettingsTab(value)} className={cn("h-9 shrink-0 rounded px-4 text-sm font-medium", activeSettingsTab === value ? "bg-surface text-text-main shadow-sm" : "text-text-muted hover:text-text-main")}>{label}</button>)}
@@ -1752,7 +1751,7 @@ export default function ProfilePage() {
                     <button type="button" disabled={navigationSections.length <= 1} onClick={() => setNavigationDeleteSection(section)} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-red-500/10 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30" title="删除主题" aria-label={`删除${section}`}><span className="material-symbols-outlined text-[18px]">delete</span></button>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-2">
                   {NAVIGATION_VISIBILITY_OPTIONS.filter((item) => (settings.navigationItemSections?.[item.id] || item.section) === section).sort((left, right) => (navigationOrderIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (navigationOrderIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER)).map((item, itemIndex, sectionItems) => {
                     const visible = !(settings.hiddenNavigationItems || []).includes(item.id);
                     return <div key={item.id} className="flex min-h-11 flex-wrap items-center gap-2 rounded-md border border-border bg-bg-base px-3 py-2"><Input className="min-w-0 flex-1" label="" aria-label={`自定义${item.label}标题`} value={settings.navigationItemLabels?.[item.id] ?? ""} placeholder={item.label} onChange={(event) => setSettings((current) => ({ ...current, navigationItemLabels: { ...(current.navigationItemLabels || {}), [item.id]: event.target.value }}))} /><div className="flex items-center gap-0.5"><button type="button" disabled={itemIndex === 0} onClick={() => moveNavigationItem(item.id, section, -1)} className="flex size-7 items-center justify-center rounded text-text-muted hover:bg-bg-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-30" title="上移标签" aria-label={`上移${item.label}`}><span className="material-symbols-outlined text-[16px]">arrow_upward</span></button><button type="button" disabled={itemIndex === sectionItems.length - 1} onClick={() => moveNavigationItem(item.id, section, 1)} className="flex size-7 items-center justify-center rounded text-text-muted hover:bg-bg-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-30" title="下移标签" aria-label={`下移${item.label}`}><span className="material-symbols-outlined text-[16px]">arrow_downward</span></button></div><DropdownSelect className="order-3 w-full sm:order-none sm:w-36" buttonClassName="h-8 min-h-8 text-xs" value={settings.navigationItemSections?.[item.id] || item.section} options={navigationSections.map((option) => ({ value: option, label: option }))} onChange={(value) => setNavigationSection(item.id, value)} /><Toggle size="sm" checked={visible} onChange={(checked) => toggleNavigationItem(item.id, checked)} /></div>;
