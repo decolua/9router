@@ -1223,6 +1223,7 @@ export async function getUsageLogs(filter = {}) {
       ...breakdown,
       cost: breakdown.totalCost || Number(r.cost || 0),
       status: r.status || "ok",
+      ttftMs: Number(meta.latency?.ttft || 0),
       latencyMs: Number(meta.latency?.total || meta.latencyMs || meta.durationMs || 0),
       logType: ["ok", "success", "200 ok"].includes(String(r.status || "").toLowerCase()) ? "success" : "failed",
     };

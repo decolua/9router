@@ -6,8 +6,22 @@ import { getProviderAlias, resolveProviderId, FREE_PROVIDERS } from "@/shared/co
 import * as log from "../utils/logger.js";
 import { createModelMappingMap, getMappedModelName } from "@/shared/utils/modelMapping.js";
 
-// Mutex to prevent race conditions during account selection
-let selectionMutex = Promise.resolve();
+// Keep round-robin selection consistent without serializing unrelated providers.
+const selectionMutexes = new Map();
+
+function acquireSelectionMutex(providerId) {
+  const current = selectionMutexes.get(providerId) || Promise.resolve();
+  let resolveCurrent;
+  const next = new Promise((resolve) => { resolveCurrent = resolve; });
+  selectionMutexes.set(providerId, next);
+  return {
+    wait: current,
+    release: () => {
+      resolveCurrent();
+      if (selectionMutexes.get(providerId) === next) selectionMutexes.delete(providerId);
+    },
+  };
+}
 
 const GITHUB_MONTHLY_USAGE_LIMIT = "you've reached your additional usage limit for your plan";
 
@@ -31,16 +45,11 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
-  // Acquire mutex to prevent race conditions
-  const currentMutex = selectionMutex;
-  let resolveMutex;
-  selectionMutex = new Promise(resolve => { resolveMutex = resolve; });
+  const providerId = resolveProviderId(provider);
+  const selectionMutex = acquireSelectionMutex(providerId);
 
   try {
-    await currentMutex;
-
-    // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
-    const providerId = resolveProviderId(provider);
+    await selectionMutex.wait;
 
     // Inject a virtual connection for no-auth free providers (with optional proxy pool from settings)
     if (FREE_PROVIDERS[providerId]?.noAuth) {
@@ -203,7 +212,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       _connection: connection
     };
   } finally {
-    if (resolveMutex) resolveMutex();
+    selectionMutex.release();
   }
 }
 

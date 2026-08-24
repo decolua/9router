@@ -193,7 +193,7 @@ describe("usage logs", () => {
       model: "renamed-model",
       timestamp: new Date().toISOString(),
       tokens: { prompt_tokens: 10, completion_tokens: 5 },
-      meta: { latency: { total: 875 } },
+      meta: { latency: { ttft: 125, total: 875 } },
     });
 
     const result = await db.getUsageLogs({ provider: "renamed-provider" });
@@ -201,6 +201,7 @@ describe("usage logs", () => {
     expect(result.logs[0]).toMatchObject({
       providerId: "renamed-provider",
       provider: "团队供应商",
+      ttftMs: 125,
       latencyMs: 875,
     });
     const providerChart = await db.getDimensionChartData("today", {}, "provider", "tokens");
