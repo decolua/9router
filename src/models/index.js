@@ -18,6 +18,7 @@ export {
   listProxyPoolFitness,
   upsertProxyPoolFitness,
   deleteProxyPoolFitness,
+  deleteProxyPoolFitnessVersion,
   clearProxyPoolFitness,
   deleteProxyPoolFitnessByPool,
   deleteProviderConnectionsByProvider,

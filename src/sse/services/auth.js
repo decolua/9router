@@ -1,7 +1,6 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools, getApiKeyMetadata, touchApiKey } from "@/lib/localDb";
+import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools, getApiKeyMetadata, touchApiKey, extendConnectionModelLock, clearConnectionModelLockIfObserved, getObservedConnectionModelLock } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
-import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil, isQuotaExhaustion, MODEL_LOCK_ALL } from "open-sse/services/accountFallback.js";
-import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil, MODEL_LOCK_ALL, ADAPTIVE_FAILURE_ACTION, classifyAdaptiveFailure } from "open-sse/services/accountFallback.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { modelPatternMatches } from "@/shared/utils/modelPermissions.js";
 import * as log from "../utils/logger.js";
@@ -227,7 +226,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       testStatus: connection.testStatus,
       lastError: connection.lastError,
       // Pass full connection for clearAccountError to read modelLock_* keys
-      _connection: connection
+      _connection: connection,
+      _observedModelLock: getObservedConnectionModelLock(connection, model),
+      _observedModel: model,
     };
   } finally {
     if (resolveMutex) resolveMutex();
@@ -250,54 +251,35 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
 
-  // GitHub premium-request exhaustion is account-wide until the next UTC month.
   const githubResetAtMs = githubMonthlyResetMs(status, errorText, provider);
+  const classification = classifyAdaptiveFailure({ status, error: errorText, provider, model, resetsAtMs });
+  const action = githubResetAtMs ? ADAPTIVE_FAILURE_ACTION.ACCOUNT_QUOTA_LOCK : classification.action;
+  const expiresAtMs = githubResetAtMs || classification.expiresAtMs;
 
-  // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
-  let shouldFallback, cooldownMs, newBackoffLevel;
-  let isAccountWideQuotaPause = false;
-
-  if (githubResetAtMs) {
-    shouldFallback = true;
-    cooldownMs = githubResetAtMs - Date.now();
-    newBackoffLevel = 0;
-    isAccountWideQuotaPause = true;
-  } else if (resetsAtMs && resetsAtMs > Date.now() && isQuotaExhaustion(status, errorText)) {
-    shouldFallback = true;
-    cooldownMs = resetsAtMs - Date.now();
-    newBackoffLevel = 0;
-    isAccountWideQuotaPause = true;
-  } else if (resetsAtMs && resetsAtMs > Date.now()) {
-    shouldFallback = true;
-    cooldownMs = Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
-    newBackoffLevel = 0;
-  } else {
-    ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));
+  if (action === ADAPTIVE_FAILURE_ACTION.ACCOUNT_QUOTA_LOCK || action === ADAPTIVE_FAILURE_ACTION.MODEL_QUOTA_LOCK) {
+    const lockModel = action === ADAPTIVE_FAILURE_ACTION.ACCOUNT_QUOTA_LOCK ? null : model;
+    const lock = {
+      expiresAt: new Date(expiresAtMs).toISOString(),
+      reason: classification.reason || "Quota limit",
+      source: classification.source,
+      classifiedAt: new Date().toISOString(),
+    };
+    await extendConnectionModelLock(connectionId, lockModel, lock);
+    const cooldownMs = Math.max(0, expiresAtMs - Date.now());
+    return { shouldFallback: true, cooldownMs };
   }
+
+  const { shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel);
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
-
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
-  const lockUpdate = isAccountWideQuotaPause
-    ? { [MODEL_LOCK_ALL]: new Date(Date.now() + cooldownMs).toISOString() }
-    : buildModelLockUpdate(model, cooldownMs);
-
   await updateProviderConnection(connectionId, {
-    ...lockUpdate,
+    ...buildModelLockUpdate(model, cooldownMs),
     testStatus: "unavailable",
     lastError: reason,
     errorCode: status,
     lastErrorAt: new Date().toISOString(),
     backoffLevel: newBackoffLevel ?? backoffLevel
   });
-
-  const lockKey = Object.keys(lockUpdate)[0];
-  const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
-  log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
-
-  if (provider && status && reason) {
-    console.error(`❌ ${provider} [${status}]: ${reason}`);
-  }
-
   return { shouldFallback: true, cooldownMs };
 }
 
@@ -313,6 +295,12 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
 export async function clearAccountError(connectionId, currentConnection, model = null) {
   if (!connectionId || connectionId === "noauth") return;
   const conn = currentConnection._connection || currentConnection;
+  const selectedModel = model ?? currentConnection._observedModel;
+  const observed = currentConnection._observedModelLock;
+  if (selectedModel && observed?.expiresAt && observed?.classifiedAt) {
+    await clearConnectionModelLockIfObserved(connectionId, selectedModel, observed);
+    return;
+  }
   const now = Date.now();
   const allLockKeys = Object.keys(conn).filter(k => k.startsWith("modelLock_"));
 

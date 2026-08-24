@@ -13,6 +13,7 @@ export {
   createProviderConnection, updateProviderConnection,
   deleteProviderConnection, deleteProviderConnectionsByProvider,
   reorderProviderConnections, cleanupProviderConnections,
+  extendConnectionModelLock, clearConnectionModelLockIfObserved, getObservedConnectionModelLock,
 } from "./repos/connectionsRepo.js";
 
 // Provider nodes
@@ -29,7 +30,7 @@ export {
 
 export {
   listProxyPoolFitness, upsertProxyPoolFitness, deleteProxyPoolFitness,
-  clearProxyPoolFitness, deleteProxyPoolFitnessByPool,
+  deleteProxyPoolFitnessVersion, clearProxyPoolFitness, deleteProxyPoolFitnessByPool,
 } from "./repos/proxyPoolFitnessRepo.js";
 
 // API keys
