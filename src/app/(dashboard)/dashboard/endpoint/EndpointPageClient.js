@@ -18,7 +18,7 @@ import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
 import { useNotificationStore } from "@/store/notificationStore";
-export default function APIPageClient({ machineId }) {
+export default function APIPageClient({ machineId, mode = "endpoint" }) {
   const notify = useNotificationStore();
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -809,6 +809,7 @@ export default function APIPageClient({ machineId }) {
 
   return (
     <div className="flex flex-col gap-8">
+      {mode !== "keys" && <>
       {/* Endpoint Card */}
       <Card>
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
@@ -1054,16 +1055,19 @@ export default function APIPageClient({ machineId }) {
         )}
       </Card>
 
-        <div className="mt-6 border-t border-border pt-5">
+        <Card>
+        <div>
           <div className="mb-3 flex items-center justify-between gap-3">
-            <div><h3 className="font-semibold">格式端点</h3><p className="text-xs text-text-muted">按客户端协议查看可用入口。</p></div>
+            <div><h3 className="font-semibold">端点格式</h3><p className="text-xs text-text-muted">按客户端协议查看可用入口。</p></div>
           </div>
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
             {endpointFormats.map((format) => <div key={format.id} className="flex items-center gap-3 rounded-md border border-border bg-bg-base px-3 py-2.5"><span className="material-symbols-outlined text-primary">{format.icon}</span><div className="min-w-0"><p className="truncate text-sm font-medium">{format.label}</p><code className="text-xs text-text-muted">{baseUrl.replace(/\/v1$/, "")}{format.path}</code></div></div>)}
           </div>
         </div>
+        </Card>
 
-        <div className="mt-6 border-t border-border pt-5">
+        <Card>
+        <div>
           <div className="mb-3"><h3 className="font-semibold">端点映射</h3><p className="text-xs text-text-muted">将未使用的自定义路径映射到对应格式端点。</p></div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <Input label="自定义路径" value={mappingPath} onChange={(event) => setMappingPath(event.target.value)} placeholder="例如：/v1/compat/chat" className="flex-1" />
@@ -1072,9 +1076,11 @@ export default function APIPageClient({ machineId }) {
           </div>
           {endpointMappings.length > 0 && <div className="mt-3 overflow-x-auto rounded-md border border-border"><table className="w-full min-w-[560px] text-sm"><thead className="border-b border-border bg-bg-subtle text-xs text-text-muted"><tr><th className="px-3 py-2 text-left">自定义路径</th><th className="px-3 py-2 text-left">目标格式</th><th className="w-16 px-3 py-2 text-right">操作</th></tr></thead><tbody className="divide-y divide-border/60">{endpointMappings.map((mapping) => <tr key={`${mapping.path}-${mapping.format}`}><td className="px-3 py-2 font-mono text-xs">{mapping.path}</td><td className="px-3 py-2">{endpointFormats.find((format) => format.id === mapping.format)?.label || mapping.format}</td><td className="px-3 py-2 text-right"><button type="button" disabled={mappingSaving} onClick={() => saveEndpointMappings(endpointMappings.filter((item) => item !== mapping))} className="rounded p-1.5 text-text-muted hover:bg-red-500/10 hover:text-red-500" title="删除映射"><span className="material-symbols-outlined text-[18px]">delete</span></button></td></tr>)}</tbody></table></div>}
         </div>
+        </Card>
+        </>}
 
       {/* API Keys */}
-      <Card id="require-api-key">
+      {mode !== "endpoint" && <Card id="require-api-key">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <span className="material-symbols-outlined text-primary">vpn_key</span>
@@ -1165,7 +1171,7 @@ export default function APIPageClient({ machineId }) {
             </table>
           </div>
         )}
-      </Card>
+      </Card>}
 
       {/* Add Key Modal */}
       <Modal
@@ -1399,4 +1405,5 @@ export default function APIPageClient({ machineId }) {
 
 APIPageClient.propTypes = {
   machineId: PropTypes.string.isRequired,
+  mode: PropTypes.oneOf(["endpoint", "keys"]),
 };

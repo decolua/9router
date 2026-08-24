@@ -8,7 +8,6 @@ import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/prov
 import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
-import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { useNotificationStore } from "@/store/notificationStore";
@@ -61,11 +60,11 @@ export default function ProviderDetailPage() {
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
-  const [thinkingMode, setThinkingMode] = useState("auto");
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [liveModels, setLiveModels] = useState([]);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
+  const [deletedModelIds, setDeletedModelIds] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
   const [showAgRiskModal, setShowAgRiskModal] = useState(false);
   const [oneByOneRunning, setOneByOneRunning] = useState(false);
@@ -165,33 +164,7 @@ export default function ProviderDetailPage() {
     : providerId === "kimi" ? "Kimi API Key"
     : providerId === "qoder" ? "PAT"
     : "API Key";
-  // Resolve suffix "(level)" for a model when a thinking level is picked and the model supports it.
-  const resolveThinkingSuffix = (modelId) => {
-    if (!thinkingMode || thinkingMode === "auto") return null;
-    const levels = getThinkingLevels(providerId, modelId);
-    return levels && levels.includes(thinkingMode) ? thinkingMode : null;
-  };
   const providerStorageAlias = isCompatible ? providerId : providerAlias;
-  // Union of levels across this provider's reasoning models — drives the level picker options.
-  // Include custom models too (e.g. manually added gpt-5.6-sol → max).
-  const providerThinkingLevels = (() => {
-    const set = new Set();
-    const seen = new Set();
-    const addLevels = (modelId) => {
-      if (!modelId || seen.has(modelId)) return;
-      seen.add(modelId);
-      const lv = getThinkingLevels(providerId, modelId);
-      if (lv) lv.forEach((l) => { if (l !== "none") set.add(l); });
-    };
-    for (const m of models) addLevels(m.id);
-    for (const m of kiloFreeModels) addLevels(m.id);
-    for (const entry of customModels) {
-      if (entry.providerAlias !== providerStorageAlias) continue;
-      if ((entry.kind || entry.type || "llm") !== "llm") continue;
-      addLevels(entry.id);
-    }
-    return set.size ? ["auto", ...[...set]] : null;
-  })();
   const providerDisplayAlias = isCompatible
     ? (providerNode?.prefix || providerId)
     : providerAlias;
@@ -316,6 +289,8 @@ export default function ProviderDetailPage() {
       ))?.providerSpecificData || {};
       setProviderModelsUrl(configuredModelSettings?.modelsUrl ?? legacyModelSettings.modelsUrl ?? "");
       setProviderTestModel(configuredModelSettings?.testModel ?? legacyModelSettings.testModel ?? "");
+      const storageAlias = isCompatible ? providerId : providerAlias;
+      setDeletedModelIds(Array.isArray(settingsData.deletedProviderModels?.[storageAlias]) ? settingsData.deletedProviderModels[storageAlias] : []);
       if (proxyPoolsRes.ok) {
         setProxyPools(proxyPoolsData.proxyPools || []);
       }
@@ -323,9 +298,6 @@ export default function ProviderDetailPage() {
       const override = (settingsData.providerStrategies || {})[providerId] || {};
       setProviderStrategy(override.fallbackStrategy || null);
       setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
-      // Load per-provider thinking config
-      const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
-      setThinkingMode(thinkingCfg.mode || "auto");
       if (nodesRes.ok) {
         let node = (nodesData.nodes || []).find((entry) => entry.id === providerId) || null;
 
@@ -412,37 +384,33 @@ export default function ProviderDetailPage() {
     saveProviderStrategy("round-robin", value);
   };
 
-  const saveThinkingConfig = async (mode) => {
+  const handleDeleteBuiltInModel = async (modelId) => {
+    const storageAlias = providerStorageAlias;
     try {
       const settingsRes = await fetch("/api/settings", { cache: "no-store" });
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-      const current = settingsData.providerThinking || {};
-      const updated = { ...current };
-      if (!mode || mode === "auto") {
-        delete updated[providerId];
-      } else {
-        updated[providerId] = { mode };
-      }
-      await fetch("/api/settings", {
+      const deletedProviderModels = { ...(settingsData.deletedProviderModels || {}) };
+      deletedProviderModels[storageAlias] = [...new Set([...(deletedProviderModels[storageAlias] || []), modelId])];
+      const response = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerThinking: updated }),
+        body: JSON.stringify({ deletedProviderModels }),
       });
+      if (!response.ok) throw new Error("删除模型失败");
+      if (disabledModelIds.includes(modelId)) await handleEnableModel(modelId);
+      setDeletedModelIds(deletedProviderModels[storageAlias]);
+      const alias = Object.entries(modelAliases).find(([, value]) => value === `${storageAlias}/${modelId}`)?.[0];
+      if (alias) await handleDeleteAlias(alias);
     } catch (error) {
-      console.log("Error saving thinking config:", error);
+      notify.error(error.message || "删除模型失败");
     }
-  };
-
-  const handleThinkingModeChange = (mode) => {
-    setThinkingMode(mode);
-    saveThinkingConfig(mode);
   };
 
   const handleDeleteAllModels = () => {
     const builtInIds = [...new Set([
       ...models,
       ...kiloFreeModels.filter((item) => !models.some((model) => model.id === item.id)),
-    ].filter((item) => { const kind = getModelKind(item); return !kind || kind === "llm"; }).map((item) => item.id))];
+    ].filter((item) => { const kind = getModelKind(item); return !kind || kind === "llm"; }).map((item) => item.id).filter((id) => !deletedModelIds.includes(id)))];
     const customIds = [...new Set(customModels.filter((entry) => entry.providerAlias === providerStorageAlias && (entry.kind || entry.type || "llm") === "llm").map((entry) => entry.id))];
     const aliasKeys = Object.entries(modelAliases).filter(([, fullModel]) => String(fullModel).startsWith(`${providerStorageAlias}/`)).map(([alias]) => alias);
     if (!builtInIds.length && !customIds.length && !aliasKeys.length) return notify.info("当前没有可删除的模型");
@@ -452,7 +420,7 @@ export default function ProviderDetailPage() {
       onConfirm: async () => {
         setConfirmState(null);
         await Promise.all([
-          ...builtInIds.map((id) => handleDisableModel(id).catch(() => {})),
+          ...builtInIds.map((id) => handleDeleteBuiltInModel(id).catch(() => {})),
           ...customIds.map((id) => handleDeleteCustomModel(id, "llm", providerStorageAlias).catch(() => {})),
           ...aliasKeys.map((alias) => handleDeleteAlias(alias).catch(() => {})),
         ]);
@@ -1134,7 +1102,8 @@ export default function ProviderDetailPage() {
     const allModels = [
       ...models,
       ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
-    ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; });
+    ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; })
+      .filter((m) => !deletedModelIds.includes(m.id));
     const disabledSet = new Set(disabledModelIds);
     const displayModels = allModels.filter((m) => !disabledSet.has(m.id));
     const disabledDisplayModels = allModels.filter((m) => disabledSet.has(m.id));
@@ -1171,7 +1140,6 @@ export default function ProviderDetailPage() {
             isCustom
             isFree={false}
             caps={getCaps(`${providerId}/${model.id}`)}
-            thinkingSuffix={resolveThinkingSuffix(model.id)}
           />
         ))}
 
@@ -1190,14 +1158,13 @@ export default function ProviderDetailPage() {
               copied={copied}
               onCopy={copy}
               onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
-              onDeleteAlias={() => existingAlias ? handleDeleteAlias(existingAlias) : handleDisableModel(model.id)}
+              onDeleteAlias={() => handleDeleteBuiltInModel(model.id)}
               testStatus={modelTestResults[model.id]}
               onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelIds.has(model.id)}
               isFree={model.isFree}
               onDisable={() => handleDisableModel(model.id)}
               caps={getCaps(`${providerId}/${model.id}`)}
-              thinkingSuffix={resolveThinkingSuffix(model.id)}
             />
           );
         })}
@@ -1698,24 +1665,12 @@ export default function ProviderDetailPage() {
             <h2 className="text-lg font-semibold">
               {"Available Models"}
             </h2>
-            {providerThinkingLevels && (
-              <select
-                value={thinkingMode}
-                onChange={(e) => handleThinkingModeChange(e.target.value)}
-                title="Appends (level) suffix to copied model names"
-                className="rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
-              >
-                {providerThinkingLevels.map((opt) => (
-                  <option key={opt} value={opt}>{`Thinking: ${opt.charAt(0).toUpperCase() + opt.slice(1)}`}</option>
-                ))}
-              </select>
-            )}
           </div>
           {!isCompatible && (() => {
             const allIds = [
               ...models,
               ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
-            ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id);
+            ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id).filter((id) => !deletedModelIds.includes(id));
             const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
             return (
               <div className="flex flex-wrap gap-2">

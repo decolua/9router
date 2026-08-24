@@ -176,6 +176,13 @@ const getPageInfo = (pathname, providerDisplayNames = {}) => {
       icon: "api",
       breadcrumbs: [],
     };
+  if (pathname.includes("/keys"))
+    return {
+      title: "密钥",
+      description: "管理 API 访问密钥和密钥分组",
+      icon: "vpn_key",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/profile"))
     return {
       title: "Settings",

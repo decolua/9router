@@ -67,6 +67,7 @@ const DEFAULT_SETTINGS = {
   pricingLastSyncError: "",
   defaultApiKeyGroupId: "default",
   endpointMappings: [],
+  deletedProviderModels: {},
   providerDisplayNames: {},
   providerModelSettings: {},
   providerAutoDisableEnabled: false,
