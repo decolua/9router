@@ -18,6 +18,7 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { FILTERS } from "../../providers/suggested-models/filters.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -220,6 +221,34 @@ async function fetchCompatibleModelIds(connection) {
   }
 }
 
+async function fetchRegisteredModelIds(provider) {
+  const fetcher = provider?.modelsFetcher;
+  const filter = fetcher && FILTERS[fetcher.type];
+  if (!fetcher?.url || !filter) return [];
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(fetcher.url, {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+    if (!response.ok) return [];
+
+    const json = await response.json();
+    const raw = json.data ?? json.models ?? json;
+    return Array.from(new Set(
+      filter(Array.isArray(raw) ? raw : [])
+        .map((model) => model?.id)
+        .filter((modelId) => typeof modelId === "string" && modelId.trim() !== ""),
+    ));
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // Provider matches kindFilter when its serviceKinds intersect the requested kinds.
 // LLM is the default kind for providers missing serviceKinds.
 function providerMatchesKinds(providerId, kindFilter) {
@@ -289,6 +318,16 @@ export async function buildModelsList(kindFilter, options = {}) {
       activeConnectionByProvider.set(conn.provider, conn);
     }
   }
+  for (const provider of Object.values(AI_PROVIDERS)) {
+    if (!provider.noAuth || provider.hidden || activeConnectionByProvider.has(provider.id)) continue;
+    activeConnectionByProvider.set(provider.id, {
+      id: "noauth",
+      provider: provider.id,
+      isActive: true,
+      accessToken: "public",
+      providerSpecificData: {},
+    });
+  }
 
   const models = [];
 
@@ -319,6 +358,21 @@ export async function buildModelsList(kindFilter, options = {}) {
         if (isDisabled(alias, model.id)) continue;
         models.push({
           id: `${alias}/${model.id}`,
+          object: "model",
+          owned_by: alias,
+        });
+      }
+    }
+
+    for (const provider of Object.values(AI_PROVIDERS)) {
+      if (!provider.noAuth || provider.hidden || !providerMatchesKinds(provider.id, kindFilter)) continue;
+      const alias = getProviderAlias(provider.id);
+      const dynamicModelIds = skipDynamicFetch ? [] : await fetchRegisteredModelIds(provider);
+      for (const modelId of dynamicModelIds) {
+        if (!kindFilter.includes(inferKindFromUnknownModelId(modelId))) continue;
+        if (isDisabled(alias, modelId)) continue;
+        models.push({
+          id: `${alias}/${modelId}`,
           object: "model",
           owned_by: alias,
         });
@@ -377,6 +431,12 @@ export async function buildModelsList(kindFilter, options = {}) {
 
       if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
         rawModelIds = await fetchCompatibleModelIds(conn);
+      }
+
+      const providerInfo = AI_PROVIDERS[providerId];
+      if (providerInfo?.noAuth && providerInfo.modelsFetcher && !hasExplicitEnabledModels && !skipDynamicFetch) {
+        const registeredModelIds = await fetchRegisteredModelIds(providerInfo);
+        if (registeredModelIds.length > 0) rawModelIds = registeredModelIds;
       }
 
       // Config-driven live catalog override (e.g. Kiro returns dynamic
@@ -510,7 +570,6 @@ export async function buildModelsList(kindFilter, options = {}) {
       }
 
       // Web search/fetch — provider IS the model, expose as {alias}/search and/or {alias}/fetch with explicit kind
-      const providerInfo = AI_PROVIDERS[providerId];
       if (kindFilter.includes("webSearch") && providerInfo?.searchConfig) {
         models.push({
           id: `${outputAlias}/search`,
