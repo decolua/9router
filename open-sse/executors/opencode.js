@@ -43,6 +43,9 @@ export class OpenCodeExecutor extends BaseExecutor {
 
   buildUrl(model) {
     const base = this.config.baseUrl;
+    if (/muse/i.test(model)) {
+      return `${base}/zen/v1/responses`;
+    }
     return MESSAGES_MODELS.has(model)
       ? `${base}/zen/v1/messages`
       : `${base}/zen/v1/chat/completions`;

@@ -77,7 +77,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (bypassResponse) return bypassResponse;
 
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
-  const modelTargetFormat = getModelTargetFormat(alias, model);
+  const isMuseOnOpenCode = (provider === "opencode" || alias === "oc") && /muse/i.test(model);
+  const modelTargetFormat = isMuseOnOpenCode ? FORMATS.OPENAI_RESPONSES : getModelTargetFormat(alias, model);
   // Multi-endpoint providers: pick transport matching sourceFormat → zero translation.
   // Per-model guard: only use the transport when the model declares support for that
   // sourceFormat — opencode-go models differ in endpoint support (kimi/glm only do
