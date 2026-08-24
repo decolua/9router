@@ -43,9 +43,7 @@ export async function GET(request) {
         source: "RTK events (chars)",
       },
       headroom: {
-        state: tokenSaver.windows.all.proxyTokensSaved > 0 || tokenSaver.windows.all.bodyBytesReduced > 0
-          ? "ok"
-          : "unavailable",
+        state: tokenSaver.windows.all.headroomRequests > 0 ? "ok" : "idle",
         unit: "proxy-reported tokens + effective body bytes",
         label: "proxy-reported tokens",
         source: "aggregate events (no network)",

@@ -9,10 +9,19 @@ beforeEach(() => {
   TMP = fs.mkdtempSync(path.join(os.tmpdir(), "9router-tsapi-"));
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // Reset storage-dir override BEFORE deleting TMP so no later test writes
+  // into a removed dir or inherits this test's override. Dynamic import here
+  // re-resolves whichever module instance the last test created (tests call
+  // vi.resetModules()), keeping the override reset on the live registry.
+  const eventsMod = await import("@/lib/tokenSaver/events.js");
+  eventsMod.__setTokenSaverEventsDirForTest(null);
   fs.rmSync(TMP, { recursive: true, force: true });
+  delete process.env.DATA_DIR;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  // Fresh module graph for the next test regardless of what this one imported.
+  vi.resetModules();
 });
 
 function makeReq(query = "") {
@@ -51,17 +60,53 @@ describe("GET /api/token-saver/stats", () => {
     expect(raw).not.toMatch(/pid|hostname|"host"|endpoint.*url/i);
   });
 
-  it("source failure degrades to unavailable without failing endpoint (fetch stubbed to throw)", async () => {
+  it("readable empty store reports headroom idle, not unavailable", async () => {
     process.env.DATA_DIR = TMP;
     vi.resetModules();
-    vi.stubGlobal("fetch", vi.fn(async () => { throw new Error("network down"); }));
+    const eventsMod = await import("@/lib/tokenSaver/events.js");
+    eventsMod.__setTokenSaverEventsDirForTest(TMP);
     const { GET } = await import("@/app/api/token-saver/stats/route.js");
     const res = await GET(makeReq());
     expect(res.status).toBe(200);
     const j = await res.json();
-    expect(j.windows).toBeDefined();
-    expect(j.sources.headroom.state).toBe("unavailable");
-    expect(vi.mocked(globalThis.fetch).mock.calls.length).toBe(0);
+    expect(j.windows.all.requests).toBe(0);
+    expect(j.sources.headroom.state).toBe("idle");
+  });
+
+  it("zero-savings headroom row counts as activity: state ok with headroomRequests 1", async () => {
+    process.env.DATA_DIR = TMP;
+    vi.resetModules();
+    const eventsMod = await import("@/lib/tokenSaver/events.js");
+    eventsMod.__setTokenSaverEventsDirForTest(TMP);
+    eventsMod.appendTokenSaverEvent({ saver: "headroom", applied: true, tokensSaved: 0, bodyBytesBefore: 100, bodyBytesAfter: 100 });
+    const { GET } = await import("@/app/api/token-saver/stats/route.js");
+    const res = await GET(makeReq());
+    expect(res.status).toBe(200);
+    const j = await res.json();
+    expect(j.windows.all.headroomRequests).toBe(1);
+    expect(j.sources.headroom.state).toBe("ok");
+  });
+
+  it("getTokenSaverStats throwing degrades to HTTP 200 fallback with headroom unavailable (mocked, self-cleaning)", async () => {
+    process.env.DATA_DIR = TMP;
+    vi.resetModules();
+    const eventsMod = await import("@/lib/tokenSaver/events.js");
+    const spy = vi.spyOn(eventsMod, "getTokenSaverStats").mockImplementation(() => { throw new Error("store exploded"); });
+    try {
+      const { GET } = await import("@/app/api/token-saver/stats/route.js");
+      const res = await GET(makeReq());
+      expect(res.status).toBe(200);
+      const j = await res.json();
+      expect(j.sources.headroom.state).toBe("unavailable");
+      expect(j.sources.rtk.state).toBe("unavailable");
+      expect(j.sources.pxpipe.state).toBe("unavailable");
+      expect(j.windows.all.requests).toBe(0);
+      expect(spy).toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+      delete process.env.DATA_DIR;
+      vi.resetModules();
+    }
   });
 
   it("performs no outbound network at all — getPxpipeStats reused directly for pxpipe source", async () => {
