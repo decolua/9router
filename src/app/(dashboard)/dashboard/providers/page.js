@@ -299,7 +299,7 @@ export default function ProvidersPage() {
     }
   };
 
-  const runBatchModelAction = async (action) => {
+  const runBatchModelUpdate = async () => {
     const targets = configuredProviders.filter((item) => selectedProviderIds.includes(item.providerId));
     if (!targets.length || batchModelsLoading) return;
     setBatchModelsLoading(true);
@@ -313,13 +313,6 @@ export default function ProvidersPage() {
       for (const target of targets) {
         const providerId = target.providerId;
         const providerConnections = connections.filter((connection) => connection.provider === providerId && connection.isActive !== false);
-        if (action === "delete") {
-          const oldCustom = customModels.filter((model) => model.providerAlias === providerId && (model.kind || model.type || "llm") === "llm");
-          const oldAliases = Object.entries(aliases).filter(([, fullModel]) => String(fullModel).startsWith(`${providerId}/`)).map(([alias]) => alias);
-          await Promise.all([...oldCustom.map((model) => fetch(`/api/models/custom?providerAlias=${encodeURIComponent(providerId)}&id=${encodeURIComponent(model.id)}&type=llm`, { method: "DELETE" })), ...oldAliases.map((alias) => fetch(`/api/models/alias?alias=${encodeURIComponent(alias)}`, { method: "DELETE" }))]);
-          changed += oldCustom.length + oldAliases.length;
-          continue;
-        }
         if (!providerConnections.length) continue;
         const responses = await Promise.all(providerConnections.map((connection) => fetch(`/api/providers/${connection.id}/models`, { cache: "no-store" }).then(async (response) => ({ response, data: await response.json().catch(() => ({})) }))));
         const models = [...new Set(responses.flatMap(({ data }) => data.models || []).map((model) => typeof model === "string" ? model : model.id || model.name || model.model).filter(Boolean))];
@@ -330,7 +323,7 @@ export default function ProvidersPage() {
         await Promise.all(models.map((id) => fetch("/api/models/custom", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ providerAlias: providerId, id, type: "llm" }) })));
         changed += models.length;
       }
-      notify.success(action === "delete" ? `已删除 ${changed} 个模型` : `已更新 ${changed} 个模型`);
+      notify.success(`已更新 ${changed} 个模型`);
       setSelectedProviderIds([]);
     } catch (error) {
       notify.error(error.message || "批量操作失败");
@@ -499,7 +492,7 @@ export default function ProvidersPage() {
         {configuredProviders.length ? <>
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-bg-subtle px-3 py-2">
             <label className="flex items-center gap-2 text-xs text-text-muted"><input type="checkbox" checked={allProvidersSelected} onChange={toggleAllProviders} />全选提供商</label>
-            <div className="flex flex-wrap items-center gap-2"><span className="text-xs text-text-muted">已选 {selectedProviderIds.length}</span><Button size="sm" variant="secondary" icon="science" disabled={!selectedProviderIds.length || !!testingMode} loading={testingMode === "providers"} onClick={runBatchProviderTest}>批量测试</Button><Button size="sm" variant="secondary" icon="download" disabled={!selectedProviderIds.length || batchModelsLoading} loading={batchModelsLoading} onClick={() => runBatchModelAction("update")}>批量更新模型</Button><Button size="sm" variant="danger" icon="delete_sweep" disabled={!selectedProviderIds.length || batchModelsLoading} onClick={() => runBatchModelAction("delete")}>批量删除模型</Button><Button size="sm" variant="danger" icon="delete" disabled={!selectedProviderIds.length || batchModelsLoading} onClick={() => setBatchDeleteOpen(true)}>批量删除提供商</Button></div>
+            <div className="flex flex-wrap items-center gap-2"><span className="text-xs text-text-muted">已选 {selectedProviderIds.length}</span><Button size="sm" variant="secondary" icon="science" disabled={!selectedProviderIds.length || !!testingMode} loading={testingMode === "providers"} onClick={runBatchProviderTest}>批量测试</Button><Button size="sm" variant="secondary" icon="download" disabled={!selectedProviderIds.length || batchModelsLoading} loading={batchModelsLoading} onClick={runBatchModelUpdate}>批量更新模型</Button><Button size="sm" variant="danger" icon="delete" disabled={!selectedProviderIds.length || batchModelsLoading} onClick={() => setBatchDeleteOpen(true)}>批量删除提供商</Button></div>
           </div>
           {configuredProviders.map((item) => (
           <div key={item.providerId} className="flex flex-col gap-2 border-b border-border px-3 py-2 last:border-b-0 sm:flex-row sm:items-center">

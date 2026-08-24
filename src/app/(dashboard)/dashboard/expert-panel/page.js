@@ -228,7 +228,6 @@ export default function ExpertPanelPage() {
 
   const openPicker = (mode) => {
     setPickerSelection([]);
-    setPickerSearch("");
     setModelPicker(mode);
   };
 
@@ -382,20 +381,28 @@ export default function ExpertPanelPage() {
         <Button icon="note_add" size="md" variant="secondary" disabled={!sessionsReady || sending || judging} onClick={addSession}>新建会话</Button>
         <Button icon="delete" size="md" variant="ghost" disabled={!sessionsReady || sending || judging} onClick={deleteSession}>删除会话</Button>
         {judgeSummary && <p className="min-w-0 flex-1 text-sm text-text-muted">{judgeSummary}</p>}
-        <div className="ml-auto flex items-center gap-2">
-          <span className="shrink-0 text-sm font-medium text-text-main">裁判模型</span>
-          <DropdownSelect className="w-64" value={judgeModel} onChange={setJudgeModel} searchable searchPlaceholder="搜索裁判模型" options={models} placeholder="选择裁判模型" buttonClassName="h-9" />
-          <Button size="md" variant="secondary" loading={judging} disabled={!judgeModel || panels.length === 0 || panels.some((panel) => panel.status !== "done")} onClick={runJudge}>开始评分</Button>
-        </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-8 custom-scrollbar">
-        <section className="mx-auto flex min-h-[360px] w-full max-w-6xl flex-col overflow-hidden rounded-md border border-border bg-surface shadow-sm">
-          <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-            <span className="text-xs font-semibold text-text-muted">专家团</span>
-            {panels.map((panel) => <span key={panel.id} className="inline-flex max-w-52 items-center gap-1 rounded bg-primary/10 px-2 py-1 text-[10px] font-medium text-primary"><span className="truncate" title={panel.model}>{modelLabelMap.get(panel.model) || panel.model}</span><button type="button" disabled={sending} onClick={() => setPanels((current) => current.filter((item) => item.id !== panel.id))} className="rounded text-primary/70 hover:text-red-500 disabled:opacity-40" title="移除模型"><span className="material-symbols-outlined text-[13px]">close</span></button></span>)}
-          </div>
-          <div className="flex min-h-[300px] flex-col gap-4 p-4 text-sm leading-6">
+      <div className="min-h-0 flex-1 px-4 py-4 lg:px-8 lg:py-6 custom-scrollbar">
+        <div className="mx-auto grid h-full min-h-0 w-full max-w-7xl grid-cols-1 gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+          <aside className="flex min-h-0 flex-col overflow-hidden rounded-md border border-border bg-surface shadow-sm">
+            <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
+              <Input icon="search" placeholder="搜索提供商或模型" value={pickerSearch} onChange={(event) => setPickerSearch(event.target.value)} />
+              <Button icon="add" variant="secondary" disabled={sending} onClick={() => openPicker("multiple")}>增加模型</Button>
+              <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-border bg-bg-subtle p-2 custom-scrollbar">
+                <div className="mb-2 text-xs font-semibold text-text-muted">已选专家模型</div>
+                {panels.length ? panels.map((panel) => <div key={panel.id} className="flex items-center justify-between gap-2 border-b border-border/60 px-2 py-2 last:border-b-0"><span className="min-w-0 truncate font-mono text-xs" title={panel.model}>{modelLabelMap.get(panel.model) || panel.model}</span><button type="button" disabled={sending} onClick={() => setPanels((current) => current.filter((item) => item.id !== panel.id))} className="shrink-0 rounded p-1 text-text-muted hover:bg-bg-hover hover:text-red-500 disabled:opacity-40" title="移除模型" aria-label="移除模型"><span className="material-symbols-outlined text-[16px]">close</span></button></div>) : <p className="p-4 text-center text-xs text-text-muted">尚未添加模型</p>}
+              </div>
+            </div>
+            <div className="shrink-0 border-t border-border p-3">
+              <div className="mb-2 text-xs font-semibold text-text-muted">裁判设置</div>
+              <DropdownSelect className="w-full" value={judgeModel} onChange={setJudgeModel} searchable searchPlaceholder="搜索裁判模型" options={models} placeholder="选择裁判模型" buttonClassName="h-9" />
+              <Button className="mt-2 w-full" variant="secondary" loading={judging} disabled={!judgeModel || panels.length === 0 || panels.some((panel) => panel.status !== "done")} onClick={runJudge}>开始评分</Button>
+            </div>
+          </aside>
+
+          <section className="flex min-h-0 flex-col overflow-hidden rounded-md border border-border bg-surface shadow-sm">
+            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 text-sm leading-6 custom-scrollbar">
             {chatEntries.map((entry, index) => {
               if (entry.kind === "user") return <div key={`user-${index}`} className="flex max-w-[92%] flex-col items-end gap-1 self-end"><div className="whitespace-pre-wrap break-words rounded-md bg-primary px-3 py-2 text-white">{entry.message.content}</div><span className="px-1 text-[10px] text-text-muted">{formatMessageTime(entry.message.timestamp)}</span></div>;
               const panel = entry.panel;
@@ -405,26 +412,28 @@ export default function ExpertPanelPage() {
             })}
             {!chatEntries.length && panels.length === 0 && <p className="flex flex-1 items-center justify-center text-center text-text-muted">请先添加模型</p>}
             {!chatEntries.length && panels.length > 0 && <p className="flex flex-1 items-center justify-center text-center text-text-muted">等待发送提示词</p>}
-          </div>
-          {judgeSummary && <article className="border-t border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm"><div className="mb-1 flex items-center gap-2"><span className="rounded bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-600">裁判</span><span className="font-medium">裁判综评</span></div><p className="whitespace-pre-wrap text-text-muted">{judgeSummary}</p><div className="mt-2 text-[10px] text-text-muted">{judgeStartedAt ? formatMessageTime(judgeStartedAt) : ""}{judgeLatencyMs != null ? ` · ${judgeLatencyMs} ms` : ""}</div></article>}
-          <button type="button" onClick={() => openPicker("multiple")} className="m-4 flex min-h-16 items-center justify-center gap-2 rounded-md border border-dashed border-border bg-bg-subtle text-text-muted transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary">
-            <span className="material-symbols-outlined text-[22px]">add_circle</span>
-            <span className="text-sm font-medium">增加模型</span>
-          </button>
-        </section>
-      </div>
-
-      <div className="shrink-0 border-t border-border bg-surface px-4 py-3 lg:px-8">
-        <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-stretch gap-2">
-          <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendPrompt(); } }} placeholder={panels.length ? "向专家团发送提示词" : "请先添加模型"} disabled={panels.length === 0 || sending} className="h-[80px] min-w-0 resize-none rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-60" />
-          <div className="grid h-[80px] w-32 grid-rows-2 gap-2">
-            <Button className="h-full" icon="delete_sweep" disabled={panels.length === 0 || sending || judging} onClick={clearSession}>清空会话</Button>
-            <Button className="h-full" icon="send" disabled={!prompt.trim() || panels.length === 0 || sending} loading={sending} onClick={sendPrompt}>发送</Button>
-          </div>
+            {judgeSummary && <article className="self-start rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-sm"><div className="mb-1 flex items-center gap-2"><span className="rounded bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-600">裁判</span><span className="font-medium">裁判综评</span></div><p className="whitespace-pre-wrap text-text-muted">{judgeSummary}</p><div className="mt-2 text-[10px] text-text-muted">{judgeStartedAt ? formatMessageTime(judgeStartedAt) : ""}{judgeLatencyMs != null ? ` · ${judgeLatencyMs} ms` : ""}</div></article>}
+            </div>
+            <div className="shrink-0 border-t border-border bg-surface px-4 py-3">
+              <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-stretch gap-2">
+                <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendPrompt(); } }} placeholder={panels.length ? "向专家团发送提示词" : "请先添加模型"} disabled={panels.length === 0 || sending} className="h-[80px] min-w-0 resize-none rounded-md border border-border bg-surface px-3 py-2 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:opacity-60" />
+                <div className="grid h-[80px] w-32 grid-rows-2 gap-2">
+                  <Button className="h-full" icon="delete_sweep" disabled={panels.length === 0 || sending || judging} onClick={clearSession}>清空会话</Button>
+                  <Button className="h-full" icon="send" disabled={!prompt.trim() || panels.length === 0 || sending} loading={sending} onClick={sendPrompt}>发送</Button>
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
 
-      <Modal isOpen={!!modelPicker} onClose={() => setModelPicker(null)} title="增加模型" size="lg" footer={<><Button variant="ghost" onClick={() => setModelPicker(null)}>取消</Button><Button disabled={pickerSelection.length === 0} onClick={confirmModels}>加入选中模型</Button></>}>
+      <Modal
+        isOpen={!!modelPicker}
+        onClose={() => setModelPicker(null)}
+        title="增加模型"
+        size="lg"
+        footer={<><Button variant="ghost" onClick={() => setModelPicker(null)}>取消</Button><Button disabled={pickerSelection.length === 0} onClick={confirmModels}>加入选中模型</Button></>}
+      >
         <div className="flex flex-col gap-3">
           <Input icon="search" placeholder="搜索提供商或模型" value={pickerSearch} onChange={(event) => setPickerSearch(event.target.value)} />
           <div className="max-h-[55vh] overflow-y-auto rounded-md border border-border p-2 custom-scrollbar">

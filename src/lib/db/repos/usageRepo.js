@@ -1153,6 +1153,7 @@ export async function getUsageLogs(filter = {}) {
   const conds = [];
   const params = [];
   if (filter.provider) { conds.push("provider = ?"); params.push(filter.provider); }
+  if (filter.endpoint) { conds.push("LOWER(endpoint) LIKE LOWER(?)"); params.push(`%${filter.endpoint}%`); }
   if (filter.status === "success") {
     conds.push("LOWER(status) IN ('ok', 'success', '200 ok')");
   } else if (filter.status === "failed") {
@@ -1182,8 +1183,18 @@ export async function getUsageLogs(filter = {}) {
   const allowedSortFields = new Set(["timestamp", "apiKeyName", "selectedModel", "actualModel", "provider", "endpoint", "inputTokens", "cacheReadTokens", "cacheCreationTokens", "outputTokens", "totalTokens", "latencyMs", "status"]);
   const sortBy = allowedSortFields.has(filter.sortBy) ? filter.sortBy : "timestamp";
   const sortOrder = filter.sortOrder === "asc" ? "ASC" : "DESC";
-  const totalItems = db.get(`SELECT COUNT(*) AS c FROM usageHistory ${where}`, params)?.c || 0;
   const allRows = db.all(`SELECT id, timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta FROM usageHistory ${where} ORDER BY id DESC`, params);
+  const modelFilter = (value) => String(value || "").toLowerCase();
+  const selectedQuery = modelFilter(filter.selectedModel);
+  const actualQuery = modelFilter(filter.actualModel);
+  const filteredRows = allRows.filter((row) => {
+    if (!selectedQuery && !actualQuery) return true;
+    const meta = parseJson(row.meta, {}) || {};
+    const selected = modelFilter(meta.requestedModel || row.model);
+    const actual = modelFilter(meta.actualModel || row.model);
+    return (!selectedQuery || selected.includes(selectedQuery)) && (!actualQuery || actual.includes(actualQuery));
+  });
+  const totalItems = filteredRows.length;
   const rawSortValue = (row) => {
     const tokens = parseJson(row.tokens, {}) || {};
     const meta = parseJson(row.meta, {}) || {};
@@ -1199,7 +1210,7 @@ export async function getUsageLogs(filter = {}) {
     };
     return values[sortBy];
   };
-  const rows = allRows.sort((left, right) => {
+  const rows = filteredRows.sort((left, right) => {
     const a = rawSortValue(left); const b = rawSortValue(right);
     const av = typeof a === "number" ? a : String(a).toLowerCase();
     const bv = typeof b === "number" ? b : String(b).toLowerCase();
