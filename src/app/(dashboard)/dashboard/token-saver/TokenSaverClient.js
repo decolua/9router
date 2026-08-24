@@ -464,6 +464,31 @@ export default function TokenSaverClient() {
       ? "bg-success/15 text-success"
       : "bg-warning/15 text-warning";
 
+  // Aggregate observability (truthful units only; see /api/token-saver/stats)
+  const [tsStats, setTsStats] = useState(undefined); // undefined=loading, null=unavailable
+  useEffect(() => {
+    let alive = true;
+    const ac = new AbortController();
+    (async () => {
+      try {
+        const res = await fetch("/api/token-saver/stats", {
+          headers: { "Cache-Control": "no-store" },
+          signal: ac.signal,
+        });
+        if (!res.ok) throw new Error("stats fetch failed");
+        const data = await res.json();
+        if (alive) setTsStats(data);
+      } catch (e) {
+        if (e?.name === "AbortError") return; // abort: no state update
+        if (alive) setTsStats(null); // fetch/HTTP/JSON failure -> unavailable
+      }
+    })();
+    return () => {
+      alive = false;
+      ac.abort();
+    };
+  }, []);
+
   return (
     <div className="space-y-6 p-6">
       <Card id="rtk">
@@ -775,6 +800,104 @@ export default function TokenSaverClient() {
             onChange={() => handlePxpipeEnabled(!pxpipeEnabled)}
           />
         </div>
+
+        {/* Aggregate observability — three separate units, never summed */}
+        <section className="pt-4 mt-4 border-t border-border" aria-label="Token Saver aggregate statistics">
+          <h3 className="text-base font-semibold mb-2">Aggregate statistics</h3>
+          {tsStats === undefined ? (
+            <p className="text-sm text-text-muted">Loading…</p>
+          ) : tsStats === null ? (
+            <p className="text-sm text-text-muted">Statistics unavailable</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="rounded border border-border p-3">
+                  <p className="text-xs font-medium text-text-muted">RTK</p>
+                  <p className="text-lg font-semibold">
+                    {(tsStats.windows?.today?.charsReduced ?? 0).toLocaleString()}
+                  </p>
+                  <p className="text-xs text-text-muted">chars reduced today</p>
+                </div>
+                <div className="rounded border border-border p-3">
+                  <p className="text-xs font-medium text-text-muted">Headroom</p>
+                  {tsStats.sources?.headroom?.state === "ok" ? (
+                    <>
+                      <p className="text-lg font-semibold">
+                        {(tsStats.windows?.today?.proxyTokensSaved ?? 0).toLocaleString()}
+                      </p>
+                      <p className="text-xs text-text-muted">
+                        proxy-reported tokens saved today ·{" "}
+                        {(tsStats.windows?.today?.bodyBytesReduced ?? 0).toLocaleString()} body bytes reduced
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-xs text-warning">Headroom unavailable</p>
+                  )}
+                </div>
+                <div className="rounded border border-border p-3">
+                  <p className="text-xs font-medium text-text-muted">PXPIPE</p>
+                  <p className="text-lg font-semibold">
+                    {(tsStats.pxpipe?.windows?.today?.tokensSavedEst ?? 0).toLocaleString()}
+                  </p>
+                  <p className="text-xs text-text-muted">estimated tokens saved today</p>
+                </div>
+              </div>
+
+              {/* Phantom warning only when phantom events actually persisted */}
+              {tsStats.recent?.some?.((r) => r.reason === "phantom") && (
+                <p className="text-xs text-warning">
+                  Headroom recently reported token savings while the outbound body barely shrank — savings may be phantom.
+                </p>
+              )}
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <caption className="sr-only">Daily token-saver aggregates by unit</caption>
+                  <thead>
+                    <tr className="text-left text-xs text-text-muted">
+                      <th scope="col" className="py-1 pr-2 font-medium">Day (UTC)</th>
+                      <th scope="col" className="py-1 pr-2 font-medium">RTK chars</th>
+                      <th scope="col" className="py-1 pr-2 font-medium">Headroom tokens</th>
+                      <th scope="col" className="py-1 pr-2 font-medium">PXPIPE est. tokens</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(tsStats.timeline || []).slice(-7).map((row) => (
+                      <tr key={row.date} className="border-t border-border">
+                        <td className="py-1 pr-2">{row.date}</td>
+                        <td className="py-1 pr-2">{(row.charsReduced ?? 0).toLocaleString()}</td>
+                        <td className="py-1 pr-2">{(row.proxyTokensSaved ?? 0).toLocaleString()}</td>
+                        <td className="py-1 pr-2">{(row.estTokensSaved ?? 0).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="rounded border border-border p-3">
+                  <p className="text-xs font-medium text-text-muted">Caveman</p>
+                  <p className="text-sm">
+                    {cavemanEnabled ? `Enabled (${cavemanLevel})` : "Disabled"}
+                  </p>
+                  <p className="text-xs text-text-muted mt-1">
+                    Counterfactual output savings are not measurable.
+                  </p>
+                </div>
+                <div className="rounded border border-border p-3">
+                  <p className="text-xs font-medium text-text-muted">Ponytail</p>
+                  <p className="text-sm">
+                    {ponytailEnabled ? `Enabled (${ponytailLevel})` : "Disabled"}
+                  </p>
+                  <p className="text-xs text-text-muted mt-1">
+                    Counterfactual output savings are not measurable.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+>>>>>>> 79726c62 (feat(token-saver): add truthful aggregate observability)
       </Card>
 
       <Modal
