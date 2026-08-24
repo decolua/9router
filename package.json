@@ -14,7 +14,11 @@
     "build:bun": "bun --bun next build --webpack",
     "start:bun": "bun ./.next/standalone/custom-server.js",
     "cli:pack": "npm --prefix cli run pack:cli",
-    "cli:publish": "npm --prefix cli run publish:cli"
+    "cli:publish": "npm --prefix cli run publish:cli",
+    "qa": "node tests/smoke.mjs --mode dev",
+    "qa:prod": "node tests/smoke.mjs --mode prod",
+    "qa:regression": "node tests/qa/regression-gate.mjs",
+    "qa:baseline": "node tests/qa/regression-gate.mjs --generate"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

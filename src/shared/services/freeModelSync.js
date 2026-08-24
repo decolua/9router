@@ -53,11 +53,27 @@ function providerAlias(entry) {
   return entry.uiAlias || entry.alias || entry.id;
 }
 
+// QA hook: when FREE_MODEL_SYNC_FIXTURE_BASE is set (e.g.
+// http://127.0.0.1:21398), catalog origins are redirected to that local base
+// (paths preserved) so tests/smoke.mjs can exercise a full sync offline
+// against recorded fixtures in tests/fixtures/free-sync/. Unset = live.
+function resolveFetchUrl(url) {
+  const base = process.env.FREE_MODEL_SYNC_FIXTURE_BASE;
+  if (!base) return url;
+  try {
+    const u = new URL(url);
+    const b = new URL(base);
+    return `${b.origin}${u.pathname}${u.search}`;
+  } catch {
+    return url;
+  }
+}
+
 async function fetchProviderModels(entry) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(entry.modelsFetcher.url, {
+    const res = await fetch(resolveFetchUrl(entry.modelsFetcher.url), {
       headers: { ...(entry.transport?.headers || {}) },
       cache: "no-store",
       signal: controller.signal,
