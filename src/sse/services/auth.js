@@ -3,7 +3,7 @@ import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/con
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
-import { getAntigravityQuotaCache } from "./antigravityQuota.js";
+import { getAntigravityQuotaCache, refreshAntigravityQuotas } from "./antigravityQuota.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -77,13 +77,15 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    // Filter out model-locked, excluded, and antigravity quota-exhausted connections
+    // Antigravity quota API returns every model bucket for one account. Refresh all
+    // eligible accounts before dispatch when the per-account cache is stale/cold.
     const isAntigravity = providerId === "antigravity";
-    let antigravityQuotaCache = null;
     if (isAntigravity && model) {
-      antigravityQuotaCache = getAntigravityQuotaCache();
+      await refreshAntigravityQuotas(connections.filter(c => !excludeSet.has(c.id)));
     }
+    const antigravityQuotaCache = isAntigravity && model ? getAntigravityQuotaCache() : null;
 
+    // Filter out model-locked, excluded, and Antigravity quota-exhausted connections.
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
@@ -248,7 +250,10 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     newBackoffLevel = 0;
   } else if (resetsAtMs && resetsAtMs > Date.now()) {
     shouldFallback = true;
-    cooldownMs = Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
+    // Antigravity quota API provides exact per-model resetAt. Do not truncate it.
+    cooldownMs = resolveProviderId(provider) === "antigravity"
+      ? resetsAtMs - Date.now()
+      : Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
     newBackoffLevel = 0;
   } else {
     ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));

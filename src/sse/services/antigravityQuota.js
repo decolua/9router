@@ -27,6 +27,18 @@ export function getAntigravityQuotaCache() {
 }
 
 /**
+ * Refresh quota for all active Antigravity accounts before routing when cache is cold/stale.
+ * Quota API returns all model buckets for one account in a single call.
+ */
+export async function refreshAntigravityQuotas(connections) {
+  await Promise.all(connections.map((conn) => refreshAntigravityQuota(
+    conn.id,
+    conn.accessToken,
+    { ...(conn.providerSpecificData || {}), ...(conn.projectId ? { projectId: conn.projectId } : {}) },
+  )));
+}
+
+/**
  * Refresh quota for a single antigravity connection from upstream API.
  * Updates both in-memory cache and modelLock_* in DB when quota is exhausted.
  * @returns {object|null} quotas map or null on failure
@@ -84,7 +96,7 @@ async function _doRefresh(connectionId, accessToken, providerSpecificData, now) 
 
     if (Object.keys(lockUpdates).length > 0) {
       await updateProviderConnection(connectionId, lockUpdates);
-      log.info("AG_QUOTA", `${connectionId.slice(0, 8)} | locked ${Object.keys(lockUpdates).length} exhausted models from live quota`);
+      log.info("AG_QUOTA", `${connectionId.slice(0, 8)} | locked ${Object.keys(lockUpdates).length} exhausted models to upstream resetAt`);
     }
 
     return usage.quotas;
