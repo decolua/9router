@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   getProviderConnections: vi.fn(),
   getSettings: vi.fn(),
   resolveConnectionProxyConfig: vi.fn(),
+  getObservedConnectionModelLock: vi.fn(),
 }));
 
 vi.mock("@/lib/localDb", () => ({
@@ -13,6 +14,9 @@ vi.mock("@/lib/localDb", () => ({
   getSettings: mocks.getSettings,
   getApiKeyMetadata: vi.fn(),
   getDailyUsageForApiKey: vi.fn(),
+  extendConnectionModelLock: vi.fn(),
+  clearConnectionModelLockIfObserved: vi.fn(),
+  getObservedConnectionModelLock: mocks.getObservedConnectionModelLock,
 }));
 
 vi.mock("@/lib/network/connectionProxy", () => ({
