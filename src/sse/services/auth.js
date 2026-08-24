@@ -2,7 +2,7 @@ import { getProviderConnections, getApiKeyByValue, getApiKeyGroupById, validateA
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
-import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { getProviderAlias, resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
 import { createModelMappingMap, getMappedModelName } from "@/shared/utils/modelMapping.js";
 
@@ -349,6 +349,23 @@ export async function isValidApiKey(apiKey) {
   return await validateApiKey(apiKey);
 }
 
+function getModelAccessNames(value, mappingMap) {
+  const model = String(value || "").trim();
+  if (!model) return [];
+  if (!model.includes("/")) return [model];
+
+  const separator = model.indexOf("/");
+  const provider = resolveProviderId(model.slice(0, separator));
+  const upstreamModel = model.slice(separator + 1);
+  return [
+    model,
+    `${provider}/${upstreamModel}`,
+    `${getProviderAlias(provider)}/${upstreamModel}`,
+    getMappedModelName(mappingMap, provider, upstreamModel),
+    upstreamModel,
+  ];
+}
+
 export async function getApiKeyAccessPolicy(apiKey) {
   if (!apiKey) return { valid: true, unrestricted: true, allowedModels: [], allowedCombos: [] };
   const key = await getApiKeyByValue(apiKey);
@@ -361,14 +378,7 @@ export async function getApiKeyAccessPolicy(apiKey) {
     ? group.allowedCombos.filter(Boolean)
     : (Array.isArray(key.allowedCombos) ? key.allowedCombos.filter(Boolean) : []);
   const mappingMap = createModelMappingMap(await getModelMappings());
-  const allowedModels = [...new Set(configuredModels.flatMap((value) => {
-    const model = String(value || "").trim();
-    if (!model.includes("/")) return [model];
-    const separator = model.indexOf("/");
-    const provider = resolveProviderId(model.slice(0, separator));
-    const upstreamModel = model.slice(separator + 1);
-    return [model, getMappedModelName(mappingMap, provider, upstreamModel), upstreamModel];
-  }).filter(Boolean))];
+  const allowedModels = [...new Set(configuredModels.flatMap((value) => getModelAccessNames(value, mappingMap)).filter(Boolean))];
   return { valid: true, unrestricted: configuredModels.length === 0 && allowedCombos.length === 0, allowedModels, allowedCombos, key, group };
 }
 

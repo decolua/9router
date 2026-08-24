@@ -8,7 +8,7 @@ import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifi
 import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, resolveProviderId } from "@/shared/constants/providers";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -44,6 +44,30 @@ function normalizeCapEntry(entry) {
   return { ...EMPTY_CAP_ENTRY };
 }
 
+async function loadCombosPageData() {
+  const [combosRes, providersRes, settingsRes] = await Promise.all([
+    fetch("/api/combos"),
+    fetch("/api/providers"),
+    fetch("/api/settings"),
+  ]);
+  const [combosData, providersData, settingsData] = await Promise.all([
+    combosRes.json(),
+    providersRes.json(),
+    settingsRes.ok ? settingsRes.json() : {},
+  ]);
+  const rawAdapter = settingsData.capacityAdapter || {};
+  const capacityAdapter = {};
+  for (const cap of CAPACITY_ADAPTER_CAPS) {
+    capacityAdapter[cap.key] = normalizeCapEntry(rawAdapter[cap.key]);
+  }
+  return {
+    combos: combosRes.ok ? (combosData.combos || []).filter((combo) => !combo.kind || combo.kind === "llm") : null,
+    activeProviders: providersRes.ok ? providersData.connections || [] : null,
+    comboStrategies: settingsData.comboStrategies || {},
+    capacityAdapter,
+  };
+}
+
 export default function CombosPage() {
   const [combos, setCombos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -56,39 +80,31 @@ export default function CombosPage() {
   const [confirmState, setConfirmState] = useState(null);
   const { copied, copy } = useCopyToClipboard();
 
-  useEffect(() => {
-    fetchData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const applyPageData = useCallback((data) => {
+    if (data.combos) setCombos(data.combos);
+    if (data.activeProviders) setActiveProviders(data.activeProviders);
+    setComboStrategies(data.comboStrategies);
+    setCapacityAdapter(data.capacityAdapter);
+  }, []);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
-      const [combosRes, providersRes, settingsRes] = await Promise.all([
-        fetch("/api/combos"),
-        fetch("/api/providers"),
-        fetch("/api/settings"),
-      ]);
-      const combosData = await combosRes.json();
-      const providersData = await providersRes.json();
-      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-      
-      // Only LLM combos here - webSearch/webFetch combos belong to media-providers/web
-      if (combosRes.ok) setCombos((combosData.combos || []).filter(c => !c.kind || c.kind === "llm"));
-      if (providersRes.ok) {
-        setActiveProviders(providersData.connections || []);
-      }
-      setComboStrategies(settingsData.comboStrategies || {});
-      const rawAdapter = settingsData.capacityAdapter || {};
-      const normalized = {};
-      for (const cap of CAPACITY_ADAPTER_CAPS) {
-        normalized[cap.key] = normalizeCapEntry(rawAdapter[cap.key]);
-      }
-      setCapacityAdapter(normalized);
+      applyPageData(await loadCombosPageData());
     } catch (error) {
       console.log("Error fetching data:", error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [applyPageData]);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadCombosPageData()
+      .then((data) => { if (!cancelled) applyPageData(data); })
+      .catch((error) => { if (!cancelled) console.log("Error fetching data:", error); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [applyPageData]);
 
   const handleSetCapacityAdapter = async (next) => {
     setCapacityAdapter(next);
@@ -552,7 +568,36 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
   );
 }
 
-function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+function getComboModelDisplay(model, mappings, activeProviders) {
+  const exactMatches = mappings.filter((item) =>
+    item.routeModel === model || `${item.provider}/${item.upstreamModel}` === model
+  );
+  const matches = exactMatches.length
+    ? exactMatches
+    : mappings.filter((item) => item.mappedModel === model);
+
+  if (matches.length) {
+    return {
+      providerName: [...new Set(matches.map((item) => item.providerName).filter(Boolean))].join(" + "),
+      modelName: matches[0].mappedModel || matches[0].upstreamModel,
+    };
+  }
+
+  const separator = model.indexOf("/");
+  if (separator < 0) return { providerName: "Mapped model", modelName: model };
+  const prefix = model.slice(0, separator);
+  const upstreamModel = model.slice(separator + 1);
+  const providerId = resolveProviderId(prefix);
+  const connection = activeProviders.find((item) =>
+    item.provider === providerId || item.providerSpecificData?.prefix === prefix
+  );
+  return {
+    providerName: connection?.providerName || AI_PROVIDERS[providerId]?.name || prefix,
+    modelName: upstreamModel,
+  };
+}
+
+function ModelItem({ id, index, model, providerName, modelName, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -610,11 +655,13 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
         />
       ) : (
         <div
-          className="min-w-0 flex-1 cursor-text truncate rounded px-1.5 py-0.5 font-mono text-xs text-text-main hover:bg-black/5 dark:hover:bg-white/5"
+          className="flex min-w-0 flex-1 cursor-text items-baseline gap-1.5 rounded px-1.5 py-0.5 hover:bg-black/5 dark:hover:bg-white/5"
           onClick={() => setEditing(true)}
-          title="Click to edit"
+          title={`${providerName} / ${modelName}\nRoute: ${model}\nClick to edit route value`}
         >
-          {model}
+          <span className="shrink-0 truncate text-[11px] font-medium text-text-muted">{providerName}</span>
+          <span className="shrink-0 text-[10px] text-text-muted/60">/</span>
+          <span className="min-w-0 truncate font-mono text-xs text-text-main">{modelName}</span>
         </div>
       )}
 
@@ -658,6 +705,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
+  const [modelMappings, setModelMappings] = useState([]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -665,7 +713,11 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   );
 
   // Use stable index-based IDs so duplicates and similar names are handled correctly
-  const modelItems = models.map((model, i) => ({ uid: `item-${i}`, model }));
+  const modelItems = models.map((model, i) => ({
+    uid: `item-${i}`,
+    model,
+    ...getComboModelDisplay(model, modelMappings, activeProviders),
+  }));
 
   const handleDragEnd = (event) => {
     const { active, over } = event;
@@ -678,19 +730,26 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
     }
   };
 
-  const fetchModalData = async () => {
-    try {
-      const aliasesRes = await fetch("/api/models/alias");
-      if (!aliasesRes.ok) return;
-      const aliasesData = await aliasesRes.json();
-      setModelAliases(aliasesData.aliases || {});
-    } catch (error) {
-      console.error("Error fetching modal data:", error);
-    }
-  };
-
   useEffect(() => {
-    if (isOpen) fetchModalData();
+    if (!isOpen) return undefined;
+    let cancelled = false;
+
+    Promise.all([
+      fetch("/api/models/alias"),
+      fetch("/api/model-mappings"),
+    ]).then(async ([aliasesRes, mappingsRes]) => {
+      const [aliasesData, mappingsData] = await Promise.all([
+        aliasesRes.ok ? aliasesRes.json() : null,
+        mappingsRes.ok ? mappingsRes.json() : null,
+      ]);
+      if (cancelled) return;
+      if (aliasesData) setModelAliases(aliasesData.aliases || {});
+      if (mappingsData) setModelMappings(mappingsData.mappings || []);
+    }).catch((error) => {
+      if (!cancelled) console.error("Error fetching modal data:", error);
+    });
+
+    return () => { cancelled = true; };
   }, [isOpen]);
 
   const validateName = (value) => {
@@ -785,12 +844,14 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} modifiers={[restrictToVerticalAxis, restrictToParentElement]}>
               <SortableContext items={modelItems.map((m) => m.uid)} strategy={verticalListSortingStrategy}>
                 <div className="flex max-h-[55vh] min-w-0 flex-col gap-1 overflow-y-auto sm:max-h-[350px]">
-                  {modelItems.map(({ uid, model }, index) => (
+                  {modelItems.map(({ uid, model, providerName, modelName }, index) => (
                     <ModelItem
                       key={uid}
                       id={uid}
                       index={index}
                       model={model}
+                      providerName={providerName}
+                      modelName={modelName}
                       isFirst={index === 0}
                       isLast={index === modelItems.length - 1}
                       onEdit={(newVal) => {

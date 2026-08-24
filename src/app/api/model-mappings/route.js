@@ -27,6 +27,7 @@ async function getCatalog() {
       providerName: settings.providerDisplayNames?.[provider] || model.providerName || provider,
       upstreamModel,
       mappedModel: getMappedModelName(mappingMap, provider, upstreamModel),
+      routeModel: model.routeModel,
     }];
   }).sort((a, b) => a.providerName.localeCompare(b.providerName) || a.upstreamModel.localeCompare(b.upstreamModel));
 }

@@ -50,6 +50,18 @@ describe("API key group access", () => {
     expect((await auth.isApiKeyModelAllowed(key.key, null, "unlisted-combo")).allowed).toBe(false);
   });
 
+  it("treats provider ids and route aliases as the same allowed model", async () => {
+    const group = await dbApi.createApiKeyGroup({
+      name: "provider-alias",
+      allowedModels: ["opencode-go/kimi-k2.7-code"],
+      allowedCombos: [],
+    });
+    const key = await dbApi.createApiKey("provider-alias-key", "machine-provider-alias", group.id);
+
+    expect((await auth.isApiKeyModelAllowed(key.key, "ocg/kimi-k2.7-code")).allowed).toBe(true);
+    expect((await auth.isApiKeyModelAllowed(key.key, "ocg/another-model")).allowed).toBe(false);
+  });
+
   it("a combo-only group does not implicitly permit every direct model", async () => {
     const group = await dbApi.createApiKeyGroup({ name: "combo-only", allowedModels: [], allowedCombos: ["coding"] });
     const key = await dbApi.createApiKey("combo-key", "machine-combo", group.id);
