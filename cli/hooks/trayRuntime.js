@@ -74,7 +74,10 @@ function ensureRuntimeDir() {
 function npmInstall(pkgs, { silent = false } = {}) {
   const cwd = ensureRuntimeDir();
   if (!silent) console.log("⏳ Installing system tray (first run)...");
-  const res = runNpmInstall({ cwd, pkgs, extraArgs: ["--no-save"], timeout: 120000 });
+  // Persist to the runtime package.json (exact version) so installing this does
+  // not prune a sibling runtime dep (e.g. better-sqlite3 from sqliteRuntime.js)
+  // as "extraneous", and so this survives a later sibling install.
+  const res = runNpmInstall({ cwd, pkgs, extraArgs: ["--save-exact"], timeout: 120000 });
   if (!res.ok && !silent) {
     const reason = summarizeNpmError(res.stderr);
     console.warn("⚠️  System tray install failed — tray disabled");
