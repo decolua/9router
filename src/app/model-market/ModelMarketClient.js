@@ -8,6 +8,7 @@ import DashboardLayout from "@/shared/components/layouts/DashboardLayout";
 const formatNumber = (value) => new Intl.NumberFormat("zh-CN").format(Number(value || 0));
 const formatCost = (value) => `$${Number(value || 0).toFixed(6)}`;
 const MODEL_MARKET_LOG_COLUMNS = ["timestamp", "selectedModel", "actualModel", "provider", "endpoint", "input", "cacheRead", "cacheWrite", "output", "total", "latency", "status"];
+const MODEL_MARKET_KEY_STORAGE = "9router:model-market:api-key";
 const toLocalDateTimeValue = (date) => {
   const pad = (value) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
@@ -31,6 +32,16 @@ export default function ModelMarketClient({ isDashboardView = false }) {
       if (Array.isArray(settings?.modelMarketLogColumns) && settings.modelMarketLogColumns.length) setVisibleLogColumns(settings.modelMarketLogColumns);
     }).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (isDashboardView || typeof window === "undefined") return;
+    const cached = window.localStorage.getItem(MODEL_MARKET_KEY_STORAGE);
+    if (cached) {
+      setApiKey(cached);
+      // Apply the cached key automatically when returning to the public page.
+      handleSubmit({ preventDefault() {} }, cached);
+    }
+  }, [isDashboardView]);
 
   const groupedModels = useMemo(() => {
     const groups = new Map();
@@ -62,9 +73,9 @@ export default function ModelMarketClient({ isDashboardView = false }) {
 
   useEffect(() => { if (activeKey) fetchLogs(activeKey, 1).catch(() => {}); }, [logRange.startDate, logRange.endDate]);
 
-  const handleSubmit = async (event) => {
+  const handleSubmit = async (event, submittedKey) => {
     event.preventDefault();
-    const key = apiKey.trim();
+    const key = (submittedKey ?? apiKey).trim();
     if (!key) return;
     setLoading(true);
     setError("");
@@ -77,6 +88,7 @@ export default function ModelMarketClient({ isDashboardView = false }) {
       if (!modelResponse.ok) throw new Error(modelData?.error?.message || "密钥无效或已停用");
       setModels(modelData.data || []);
       setActiveKey(key);
+      if (!isDashboardView && typeof window !== "undefined") window.localStorage.setItem(MODEL_MARKET_KEY_STORAGE, key);
       await fetchLogs(key, 1);
     } catch (requestError) {
       setActiveKey("");

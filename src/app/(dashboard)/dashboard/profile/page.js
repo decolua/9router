@@ -962,10 +962,13 @@ export default function ProfilePage() {
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-0">
       <div className="flex flex-col gap-6">
-        <div className="flex overflow-x-auto rounded-md border border-border bg-bg-subtle p-1">
-          {[
-            ["general", "常规"], ["security", "安全与登录"], ["routing", "路由与恢复"], ["navigation", "导航栏"], ["usage", "流量"], ["network", "网络"], ["observability", "可观测性"],
-          ].map(([value, label]) => <button key={value} type="button" onClick={() => setActiveSettingsTab(value)} className={cn("h-9 shrink-0 rounded px-4 text-sm font-medium", activeSettingsTab === value ? "bg-surface text-text-main shadow-sm" : "text-text-muted hover:text-text-main")}>{label}</button>)}
+        <div className="flex items-center justify-between gap-4 border-b border-border pb-2">
+          <h1 className="shrink-0 text-xl font-semibold text-text-main">设置</h1>
+          <div className="flex min-w-0 justify-end overflow-x-auto rounded-md border border-border bg-bg-subtle p-1">
+            {[
+              ["general", "常规"], ["security", "安全与登录"], ["routing", "路由与恢复"], ["navigation", "导航栏"], ["usage", "流量"], ["network", "网络"], ["observability", "可观测性"],
+            ].map(([value, label]) => <button key={value} type="button" onClick={() => setActiveSettingsTab(value)} className={cn("h-9 shrink-0 rounded px-4 text-sm font-medium", activeSettingsTab === value ? "bg-surface text-text-main shadow-sm" : "text-text-muted hover:text-text-main")}>{label}</button>)}
+          </div>
         </div>
         {/* Local Mode Info */}
         <Card className={activeSettingsTab === "general" ? "" : "hidden"}>

@@ -59,13 +59,23 @@ export async function getPricingForModel(provider, model) {
 // Atomic merge inside transaction (per-provider read-modify-write)
 export async function updatePricing(pricingData) {
   const db = await getAdapter();
+  const now = new Date().toISOString();
   db.transaction(() => {
     for (const [provider, models] of Object.entries(pricingData)) {
       const row = db.get(`SELECT value FROM kv WHERE scope = 'pricing' AND key = ?`, [provider]);
       const current = row ? (parseJson(row.value, {}) || {}) : {};
       const merged = { ...current };
       for (const [model, pricing] of Object.entries(models)) {
-        merged[model] = pricing;
+        const previous = current[model] || {};
+        const comparable = (value) => {
+          if (!value || typeof value !== "object") return value;
+          const { lastUpdated, ...rest } = value;
+          return rest;
+        };
+        const changed = JSON.stringify(comparable(previous)) !== JSON.stringify(comparable(pricing));
+        merged[model] = changed
+          ? { ...pricing, lastUpdated: now }
+          : { ...pricing, lastUpdated: previous.lastUpdated || pricing.lastUpdated || "" };
       }
       db.run(
         `INSERT INTO kv(scope, key, value) VALUES('pricing', ?, ?) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,

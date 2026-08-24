@@ -36,6 +36,8 @@ function PricingForm({ values, onChange, batch = false }) {
 
 const toNumberRates = (values, keepEmpty = false) => Object.fromEntries(FIELDS.flatMap(([field]) => keepEmpty && values?.[field] === "" ? [] : [[field, Number(values?.[field] || 0)]]));
 const itemKey = (item) => `${item.provider}\u0000${item.model}`;
+const SORT_STORAGE_KEY = "9router:pricing:sort";
+const SORTABLE_COLUMNS = ["input", "output", "cached", "cache_creation", "reasoning", "peakEnabled", "lastUpdated"];
 
 export default function PricingSettingsPage() {
   const notify = useNotificationStore();
@@ -52,6 +54,14 @@ export default function PricingSettingsPage() {
   const [deleteTargets, setDeleteTargets] = useState([]);
   const [saving, setSaving] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [sort, setSort] = useState(() => {
+    if (typeof window === "undefined") return { key: "lastUpdated", direction: "desc" };
+    try { return JSON.parse(window.localStorage.getItem(SORT_STORAGE_KEY)) || { key: "lastUpdated", direction: "desc" }; } catch { return { key: "lastUpdated", direction: "desc" }; }
+  });
+
+  useEffect(() => {
+    if (typeof window !== "undefined") window.localStorage.setItem(SORT_STORAGE_KEY, JSON.stringify(sort));
+  }, [sort]);
 
   const loadPricing = async () => {
     setLoading(true);
@@ -68,8 +78,20 @@ export default function PricingSettingsPage() {
     const terms = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
     return terms.length ? items.filter((item) => terms.every((term) => `${item.provider} ${item.model}`.toLowerCase().includes(term))) : items;
   }, [items, search]);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-  const visibleItems = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const sortedItems = useMemo(() => {
+    const valueFor = (item) => {
+      if (sort.key === "lastUpdated") return new Date(item.pricing.lastUpdated || 0).getTime();
+      if (sort.key === "peakEnabled") return item.pricing.peakEnabled ? 1 : 0;
+      return Number(item.pricing[sort.key] || 0);
+    };
+    return [...filtered].sort((left, right) => {
+      const a = valueFor(left); const b = valueFor(right);
+      const result = typeof a === "string" ? String(a).localeCompare(String(b)) : a - b;
+      return sort.direction === "asc" ? result : -result;
+    });
+  }, [filtered, sort]);
+  const totalPages = Math.max(1, Math.ceil(sortedItems.length / pageSize));
+  const visibleItems = sortedItems.slice((page - 1) * pageSize, page * pageSize);
   useEffect(() => { setPage(1); }, [search, pageSize]);
   useEffect(() => { if (page > totalPages) setPage(totalPages); }, [page, totalPages]);
 
@@ -152,11 +174,13 @@ export default function PricingSettingsPage() {
   const allVisibleSelected = visibleKeys.length > 0 && visibleKeys.every((key) => selected.has(key));
   const toggleVisible = () => setSelected((current) => { const next = new Set(current); for (const key of visibleKeys) allVisibleSelected ? next.delete(key) : next.add(key); return next; });
 
+  const sortableHeader = (key, label, className = "text-right") => <th key={key} className={`px-3 py-3 ${className}`}><button type="button" onClick={() => setSort((current) => current.key === key ? { key, direction: current.direction === "asc" ? "desc" : "asc" } : { key, direction: "asc" })} className="inline-flex items-center gap-1 hover:text-primary">{label}<span className="material-symbols-outlined text-[14px]">{sort.key === key ? (sort.direction === "asc" ? "arrow_upward" : "arrow_downward") : "unfold_more"}</span></button></th>;
+
   return <div className="flex min-w-0 flex-col gap-4" data-i18n-skip>
     <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between"><Input icon="search" placeholder="搜索模型或提供商" value={search} onChange={(event) => setSearch(event.target.value)} className="w-full xl:max-w-md" /><div className="flex flex-wrap gap-2"><Button variant="secondary" icon="price_change" disabled={!selected.size} onClick={() => setBatchOpen(true)}>批量定价（{selected.size}）</Button><Button variant="secondary" icon="delete" disabled={!selected.size} onClick={() => setDeleteTargets(items.filter((item) => selected.has(itemKey(item))))}>批量删除</Button><Button icon="sync" loading={syncing} onClick={syncPricing}>从 OpenCode 官网更新</Button></div></div>
-    <Card className="overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[1180px] text-sm"><thead className="border-b border-border bg-surface-2 text-text-muted"><tr><th className="w-12 px-3 py-3"><input type="checkbox" checked={allVisibleSelected} onChange={toggleVisible} aria-label="选择当前页" /></th><th className="px-3 py-3 text-left">提供商</th><th className="px-3 py-3 text-left">模型</th>{FIELDS.map(([, label]) => <th key={label} className="px-3 py-3 text-right">{label}</th>)}<th className="px-3 py-3 text-center">峰谷定价</th><th className="px-3 py-3 text-right">操作</th></tr></thead><tbody className="divide-y divide-border/60">{loading ? <tr><td colSpan={10} className="p-10 text-center text-text-muted">正在加载模型定价...</td></tr> : !visibleItems.length ? <tr><td colSpan={10} className="p-10 text-center text-text-muted">没有匹配的模型</td></tr> : visibleItems.map((item) => {
+    <Card className="overflow-hidden"><div className="overflow-x-auto"><table className="w-full min-w-[1320px] text-sm"><thead className="border-b border-border bg-surface-2 text-text-muted"><tr><th className="w-12 px-3 py-3"><input type="checkbox" checked={allVisibleSelected} onChange={toggleVisible} aria-label="选择当前页" /></th><th className="px-3 py-3 text-left">提供商</th><th className="px-3 py-3 text-left">模型</th>{FIELDS.map(([field, label]) => sortableHeader(field, label))}{sortableHeader("peakEnabled", "峰谷定价", "text-center")}{sortableHeader("lastUpdated", "最后更新时间", "text-left")}<th className="px-3 py-3 text-right">操作</th></tr></thead><tbody className="divide-y divide-border/60">{loading ? <tr><td colSpan={12} className="p-10 text-center text-text-muted">正在加载模型定价...</td></tr> : !visibleItems.length ? <tr><td colSpan={12} className="p-10 text-center text-text-muted">没有匹配的模型</td></tr> : visibleItems.map((item) => {
       const key = itemKey(item);
-      return <tr key={key} className="hover:bg-surface-2/60"><td className="px-3 py-2 text-center"><input type="checkbox" checked={selected.has(key)} onChange={() => setSelected((current) => { const next = new Set(current); next.has(key) ? next.delete(key) : next.add(key); return next; })} aria-label={`选择 ${item.model}`} /></td><td className="px-3 py-2">{item.provider}</td><td className="px-3 py-2 font-mono text-xs">{item.model}</td>{FIELDS.map(([field]) => <td key={field} className="px-3 py-2 text-right tabular-nums">{Number(item.pricing[field] || 0).toFixed(6).replace(/0+$/, "").replace(/\.$/, "")}</td>)}<td className="px-3 py-2 text-center">{item.pricing.peakEnabled ? <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-xs text-emerald-600" title={`中国时间 ${item.pricing.peakWindows}`}>已启用</span> : <span className="text-xs text-text-muted">未启用</span>}</td><td className="px-3 py-2 text-right"><button className="rounded-md p-2 text-text-muted hover:bg-surface-2 hover:text-primary" title="编辑定价" onClick={() => openEdit(item)}><span className="material-symbols-outlined text-[18px]">edit</span></button><button className="rounded-md p-2 text-text-muted hover:bg-red-500/10 hover:text-red-500" title="删除模型" onClick={() => setDeleteTargets([item])}><span className="material-symbols-outlined text-[18px]">delete</span></button></td></tr>;
+      return <tr key={key} className="hover:bg-surface-2/60"><td className="px-3 py-2 text-center"><input type="checkbox" checked={selected.has(key)} onChange={() => setSelected((current) => { const next = new Set(current); next.has(key) ? next.delete(key) : next.add(key); return next; })} aria-label={`选择 ${item.model}`} /></td><td className="px-3 py-2">{item.provider}</td><td className="px-3 py-2 font-mono text-xs">{item.model}</td>{FIELDS.map(([field]) => <td key={field} className="px-3 py-2 text-right tabular-nums">{Number(item.pricing[field] || 0).toFixed(6).replace(/0+$/, "").replace(/\.$/, "")}</td>)}<td className="px-3 py-2 text-center">{item.pricing.peakEnabled ? <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-xs text-emerald-600" title={`中国时间 ${item.pricing.peakWindows}`}>已启用</span> : <span className="text-xs text-text-muted">未启用</span>}</td><td className="whitespace-nowrap px-3 py-2 text-left text-xs text-text-muted">{item.pricing.lastUpdated ? new Date(item.pricing.lastUpdated).toLocaleString("zh-CN", { hour12: false }) : "-"}</td><td className="px-3 py-2 text-right"><button className="rounded-md p-2 text-text-muted hover:bg-surface-2 hover:text-primary" title="编辑定价" onClick={() => openEdit(item)}><span className="material-symbols-outlined text-[18px]">edit</span></button><button className="rounded-md p-2 text-text-muted hover:bg-red-500/10 hover:text-red-500" title="删除模型" onClick={() => setDeleteTargets([item])}><span className="material-symbols-outlined text-text-muted hover:text-red-500">delete</span></button></td></tr>;
     })}</tbody></table></div><div className="flex flex-col gap-3 border-t border-border px-4 py-3 text-sm text-text-muted sm:flex-row sm:items-center sm:justify-between"><span>共 {filtered.length} 个模型</span><div className="flex flex-wrap items-center gap-2"><label>每页 <select className="rounded-md border border-border bg-surface px-2 py-1" value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}><option value={25}>25</option><option value={50}>50</option><option value={100}>100</option></select></label><Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage((value) => value - 1)} icon="chevron_left" aria-label="上一页" /><span>{page} / {totalPages}</span><Button size="sm" variant="secondary" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)} icon="chevron_right" aria-label="下一页" /></div></div></Card>
     <Modal isOpen={!!editing} onClose={() => setEditing(null)} title={editing ? `编辑定价 · ${editing.model}` : "编辑定价"} size="xl" footer={<><Button variant="ghost" onClick={() => setEditing(null)}>取消</Button><Button loading={saving} onClick={saveEdit}>保存</Button></>}><PricingForm values={editValues} onChange={(field, value) => setEditValues((current) => ({ ...current, [field]: value }))} /></Modal>
     <Modal isOpen={batchOpen} onClose={() => setBatchOpen(false)} title={`批量定价 · 已选 ${selected.size} 个模型`} size="xl" footer={<><Button variant="ghost" onClick={() => setBatchOpen(false)}>取消</Button><Button loading={saving} onClick={saveBatch}>应用定价</Button></>}><PricingForm batch values={batchValues} onChange={(field, value) => setBatchValues((current) => ({ ...current, [field]: value }))} /></Modal>

@@ -60,11 +60,11 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
             {copied === `model-${model.id}` ? "Copied!" : "Copy"}
           </span>
         </div>
-        {isCustom ? (
+        {onDeleteAlias ? (
           <button
             onClick={onDeleteAlias}
             className="ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-red-500/10 hover:text-red-500 sm:opacity-0 sm:group-hover:opacity-100"
-            title="Remove custom model"
+            title={isCustom ? "删除自定义模型" : "删除模型"}
           >
             <span className="material-symbols-outlined text-sm">close</span>
           </button>

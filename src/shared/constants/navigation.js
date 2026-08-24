@@ -1,7 +1,7 @@
 export const NAVIGATION_VISIBILITY_OPTIONS = [
   { id: "dashboard", label: "仪表盘", section: "主要功能" },
   { id: "monitor", label: "系统监控", section: "系统" },
-  { id: "endpoint", label: "端点与密钥", section: "主要功能" },
+  { id: "endpoint", label: "端点", section: "工具" },
   { id: "model-market", label: "模型广场", section: "主要功能" },
   { id: "key-groups", label: "密钥分组", section: "主要功能" },
   { id: "providers", label: "提供商", section: "主要功能" },
@@ -22,7 +22,7 @@ export const NAVIGATION_VISIBILITY_OPTIONS = [
   { id: "english", label: "9English", section: "系统" },
 ];
 
-export const DEFAULT_NAVIGATION_SECTIONS = ["主要功能", "成本中心", "系统"];
+export const DEFAULT_NAVIGATION_SECTIONS = ["主要功能", "工具", "成本中心", "系统"];
 
 export const DEFAULT_NAVIGATION_ITEM_ORDER = [
   "dashboard", "endpoint", "model-market", "key-groups", "providers", "combos",

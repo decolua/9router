@@ -34,7 +34,7 @@ function EmptyChart({ icon, text }) {
 export default function SystemMonitorClient() {
   const notifyError = useNotificationStore((state) => state.error);
   const notifyWarning = useNotificationStore((state) => state.warning);
-  const [snapshot, setSnapshot] = useState({ logs: [], connections: [], settings: {} });
+  const [snapshot, setSnapshot] = useState({ logs: [], connections: [], settings: {}, system: null });
   const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [refreshedAt, setRefreshedAt] = useState(null);
@@ -45,15 +45,16 @@ export default function SystemMonitorClient() {
     try {
       const end = new Date();
       const start = new Date(end.getTime() - 60 * 60 * 1000);
-      const [logResponse, providerResponse, settingsResponse] = await Promise.all([
+      const [logResponse, providerResponse, settingsResponse, systemResponse] = await Promise.all([
         fetch(`/api/usage/request-logs?page=1&pageSize=200&startDate=${encodeURIComponent(start.toISOString())}&endDate=${encodeURIComponent(end.toISOString())}`, { cache: "no-store" }),
         fetch("/api/providers", { cache: "no-store" }),
         fetch("/api/settings", { cache: "no-store" }),
+        fetch("/api/system/metrics", { cache: "no-store" }),
       ]);
-      const [logs, providers, settings] = await Promise.all([logResponse.json(), providerResponse.json(), settingsResponse.json()]);
-      setSnapshot({ logs: logResponse.ok ? logs.logs || [] : [], connections: providerResponse.ok ? providers.connections || [] : [], settings: settingsResponse.ok ? settings : {} });
+      const [logs, providers, settings, system] = await Promise.all([logResponse.json(), providerResponse.json(), settingsResponse.json(), systemResponse.json()]);
+      setSnapshot({ logs: logResponse.ok ? logs.logs || [] : [], connections: providerResponse.ok ? providers.connections || [] : [], settings: settingsResponse.ok ? settings : {}, system: systemResponse.ok ? system : null });
       setRefreshedAt(end.getTime());
-      if (!logResponse.ok || !providerResponse.ok || !settingsResponse.ok) notifyWarning("部分监控数据加载失败");
+      if (!logResponse.ok || !providerResponse.ok || !settingsResponse.ok || !systemResponse.ok) notifyWarning("部分监控数据加载失败");
     } catch (error) {
       notifyError(error.message || "系统监控数据加载失败");
     } finally { setLoading(false); }
@@ -169,6 +170,8 @@ export default function SystemMonitorClient() {
   const hasTraffic = trend.some((item) => item.requests > 0 || item.tokens > 0);
   const hasLatency = latencyDistribution.some((item) => item.count > 0);
   const hasErrors = trend.some((item) => item.errors > 0);
+  const system = snapshot.system;
+  const bytesToGiB = (value) => `${(Number(value || 0) / 1024 ** 3).toFixed(2)} GiB`;
   const health = !snapshot.logs.length
     ? { label: "运行中，暂无流量", dot: "bg-blue-500", text: "text-blue-600" }
     : (metrics.errorRate >= 20 || autoDisabledCount > 0)
@@ -181,6 +184,8 @@ export default function SystemMonitorClient() {
     <Card padding="sm" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3"><span className={`size-2.5 rounded-full ${health.dot}`} /><div><p className={`font-semibold ${health.text}`}>{health.label}</p><p className="text-xs text-text-muted">最近刷新：{refreshedAt ? new Date(refreshedAt).toLocaleString("zh-CN") : "等待首次刷新"}</p></div></div><div className="flex items-center gap-3"><label className="flex items-center gap-2 text-sm text-text-muted"><span>自动刷新</span><Toggle size="sm" checked={autoRefresh} onChange={setAutoRefresh} /></label><Button variant="secondary" icon="refresh" loading={loading} onClick={load}>刷新</Button></div></Card>
 
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5"><Stat icon="speed" label="实时吞吐" value={`${metrics.qps.toFixed(2)} QPS`} detail={`${metrics.tps.toFixed(1)} TPS`} color="text-blue-500" /><Stat icon="check_circle" label="成功率" value={metrics.successRate == null ? "--" : `${metrics.successRate.toFixed(2)}%`} detail={`${snapshot.logs.length} 条最近请求`} color="text-emerald-500" /><Stat icon="error" label="错误率" value={metrics.errorRate == null ? "--" : `${metrics.errorRate.toFixed(2)}%`} detail={`${snapshot.logs.filter((log) => log.logType === "failed").length} 条失败`} color={metrics.errorRate ? "text-red-500" : "text-emerald-500"} /><Stat icon="network_ping" label="P99 首 Token 延迟" value={metrics.ttft.p99 ? `${fmt(metrics.ttft.p99)} ms` : "--"} detail={`P50 ${fmt(metrics.ttft.p50)} · P90 ${fmt(metrics.ttft.p90)} · 平均 ${fmt(metrics.ttft.average)}`} color="text-amber-500" /><Stat icon="timer" label="P99 完整响应时长" value={metrics.total.p99 ? `${fmt(metrics.total.p99)} ms` : "--"} detail={`P50 ${fmt(metrics.total.p50)} · P90 ${fmt(metrics.total.p90)} · 平均 ${fmt(metrics.total.average)}`} color="text-rose-500" /></div>
+
+    <Card padding="sm"><div className="mb-3 flex items-center justify-between"><div><h3 className="font-semibold">系统资源</h3><p className="text-xs text-text-muted">仅展示当前 9Router 进程和运行环境可读取的指标</p></div><span className="text-xs text-text-muted">{system?.hostname || "-"}</span></div>{system ? <div className="grid grid-cols-2 gap-2 sm:grid-cols-4"><Stat icon="memory" label="进程内存 RSS" value={bytesToGiB(system.memory?.rssBytes)} detail={`堆 ${bytesToGiB(system.memory?.heapUsedBytes)}`} color="text-cyan-500" /><Stat icon="computer" label="系统内存" value={`${((system.memory?.usedBytes || 0) / Math.max(1, system.memory?.totalBytes || 1) * 100).toFixed(1)}%`} detail={`${bytesToGiB(system.memory?.usedBytes)} / ${bytesToGiB(system.memory?.totalBytes)}`} color="text-indigo-500" /><Stat icon="schedule" label="进程运行时间" value={`${Math.floor((system.uptimeSeconds || 0) / 3600)}h`} detail={`${fmt((system.uptimeSeconds || 0) % 3600 / 60)} 分钟`} color="text-violet-500" /><Stat icon="memory" label="CPU 核心" value={fmt(system.cpuCount)} detail={`${system.platform || "未知平台"} · ${system.node || "Node"}`} color="text-teal-500" /></div> : <EmptyChart icon="memory" text="系统资源指标暂不可用" />}</Card>
 
     <Card padding="sm" className="min-w-0"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">吞吐趋势</h3><span className="text-xs text-text-muted">最近一小时 · 每 5 分钟</span></div>{hasTraffic ? <ResponsiveContainer width="100%" height={270}><AreaChart data={trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}><defs><linearGradient id="monitorTokens" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" stopOpacity={0.25}/><stop offset="90%" stopColor="#10b981" stopOpacity={0.02}/></linearGradient><linearGradient id="monitorRequests" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6" stopOpacity={0.18}/><stop offset="90%" stopColor="#3b82f6" stopOpacity={0.01}/></linearGradient></defs><CartesianGrid vertical={false} strokeDasharray="4 4" strokeOpacity={0.14}/><XAxis dataKey="label" axisLine={false} tickLine={false} tickMargin={10} tick={{ fontSize: 11 }}/><YAxis yAxisId="requests" axisLine={false} tickLine={false} tickMargin={8} allowDecimals={false} width={40} tick={{ fontSize: 11 }}/><YAxis yAxisId="tokens" orientation="right" axisLine={false} tickLine={false} tickMargin={8} tickFormatter={fmt} width={54} tick={{ fontSize: 11 }}/><Tooltip content={<ChartTooltip />} /><Area yAxisId="tokens" type="monotone" dataKey="tokens" name="Token" stroke="#10b981" strokeWidth={2.25} fill="url(#monitorTokens)" activeDot={{ r: 4, strokeWidth: 0 }} /><Area yAxisId="requests" type="monotone" dataKey="requests" name="请求" stroke="#3b82f6" strokeWidth={2.25} fill="url(#monitorRequests)" activeDot={{ r: 4, strokeWidth: 0 }} /></AreaChart></ResponsiveContainer> : <EmptyChart icon="monitoring" text="最近一小时暂无请求流量" />}</Card>
 

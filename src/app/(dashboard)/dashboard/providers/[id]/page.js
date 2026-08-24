@@ -439,19 +439,24 @@ export default function ProviderDetailPage() {
   };
 
   const handleDeleteAllModels = () => {
+    const builtInIds = [...new Set([
+      ...models,
+      ...kiloFreeModels.filter((item) => !models.some((model) => model.id === item.id)),
+    ].filter((item) => { const kind = getModelKind(item); return !kind || kind === "llm"; }).map((item) => item.id))];
     const customIds = [...new Set(customModels.filter((entry) => entry.providerAlias === providerStorageAlias && (entry.kind || entry.type || "llm") === "llm").map((entry) => entry.id))];
     const aliasKeys = Object.entries(modelAliases).filter(([, fullModel]) => String(fullModel).startsWith(`${providerStorageAlias}/`)).map(([alias]) => alias);
-    if (!customIds.length && !aliasKeys.length) return notify.info("当前没有可删除的模型");
+    if (!builtInIds.length && !customIds.length && !aliasKeys.length) return notify.info("当前没有可删除的模型");
     setConfirmState({
       title: "删除全部模型",
-      message: `确认删除该提供商的 ${customIds.length + aliasKeys.length} 个自定义模型？`,
+      message: `确认删除该提供商的 ${builtInIds.length + customIds.length + aliasKeys.length} 个可用模型？`,
       onConfirm: async () => {
         setConfirmState(null);
         await Promise.all([
+          ...builtInIds.map((id) => handleDisableModel(id).catch(() => {})),
           ...customIds.map((id) => handleDeleteCustomModel(id, "llm", providerStorageAlias).catch(() => {})),
           ...aliasKeys.map((alias) => handleDeleteAlias(alias).catch(() => {})),
         ]);
-        notify.success("已删除全部自定义模型");
+        notify.success("已删除全部可用模型");
       },
     });
   };
@@ -1185,7 +1190,7 @@ export default function ProviderDetailPage() {
               copied={copied}
               onCopy={copy}
               onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
-              onDeleteAlias={() => handleDeleteAlias(existingAlias)}
+              onDeleteAlias={() => existingAlias ? handleDeleteAlias(existingAlias) : handleDisableModel(model.id)}
               testStatus={modelTestResults[model.id]}
               onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelIds.has(model.id)}
@@ -1734,7 +1739,7 @@ export default function ProviderDetailPage() {
                      全部禁用
                   </Button>
                 )}
-                {(customModels.some((entry) => entry.providerAlias === providerStorageAlias && (entry.kind || entry.type || "llm") === "llm") || Object.keys(modelAliases).some((key) => key.startsWith(`${providerStorageAlias}/`))) && (
+                {(models.length > 0 || customModels.some((entry) => entry.providerAlias === providerStorageAlias && (entry.kind || entry.type || "llm") === "llm") || Object.keys(modelAliases).some((key) => key.startsWith(`${providerStorageAlias}/`))) && (
                   <Button size="md" variant="danger" icon="delete_sweep" onClick={handleDeleteAllModels}>删除全部模型</Button>
                 )}
               </div>

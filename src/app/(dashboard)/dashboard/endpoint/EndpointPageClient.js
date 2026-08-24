@@ -31,6 +31,10 @@ export default function APIPageClient({ machineId }) {
   const [batchSaving, setBatchSaving] = useState(false);
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
+  const [endpointMappings, setEndpointMappings] = useState([]);
+  const [mappingPath, setMappingPath] = useState("");
+  const [mappingFormat, setMappingFormat] = useState("openai");
+  const [mappingSaving, setMappingSaving] = useState(false);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -208,6 +212,7 @@ export default function APIPageClient({ machineId }) {
         setRequireLogin(data.requireLogin !== false);
         setHasPassword(data.hasPassword || false);
         setTunnelDashboardAccess(data.tunnelDashboardAccess || false);
+        setEndpointMappings(Array.isArray(data.endpointMappings) ? data.endpointMappings : []);
       }
       if (statusRes.ok) {
         const data = await statusRes.json();
@@ -694,6 +699,40 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const saveEndpointMappings = async (next) => {
+    setMappingSaving(true);
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpointMappings: next }),
+      });
+      if (!response.ok) throw new Error("端点映射保存失败");
+      setEndpointMappings(next);
+    } catch (error) {
+      notify.error(error.message || "端点映射保存失败");
+    } finally {
+      setMappingSaving(false);
+    }
+  };
+
+  const addEndpointMapping = async () => {
+    const path = mappingPath.trim();
+    if (!path.startsWith("/")) return notify.warning("端点路径必须以 / 开头");
+    if (endpointMappings.some((item) => item.path === path)) return notify.warning("该端点映射已存在");
+    await saveEndpointMappings([...endpointMappings, { path, format: mappingFormat }]);
+    setMappingPath("");
+  };
+
+  const endpointFormats = [
+    { id: "openai", label: "OpenAI Chat Completions", path: "/v1/chat/completions", icon: "chat" },
+    { id: "openai-responses", label: "OpenAI Responses", path: "/v1/responses", icon: "forum" },
+    { id: "claude", label: "Anthropic Messages", path: "/v1/messages", icon: "article" },
+    { id: "embeddings", label: "Embeddings", path: "/v1/embeddings", icon: "hub" },
+    { id: "images", label: "Images", path: "/v1/images/generations", icon: "image" },
+    { id: "audio", label: "Audio", path: "/v1/audio/speech", icon: "graphic_eq" },
+  ];
+
   const handleKeyGroupChange = async (keyId, groupId) => {
     try {
       const res = await fetch(`/api/keys/${keyId}`, {
@@ -1014,6 +1053,25 @@ export default function APIPageClient({ machineId }) {
           </div>
         )}
       </Card>
+
+        <div className="mt-6 border-t border-border pt-5">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div><h3 className="font-semibold">格式端点</h3><p className="text-xs text-text-muted">按客户端协议查看可用入口。</p></div>
+          </div>
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+            {endpointFormats.map((format) => <div key={format.id} className="flex items-center gap-3 rounded-md border border-border bg-bg-base px-3 py-2.5"><span className="material-symbols-outlined text-primary">{format.icon}</span><div className="min-w-0"><p className="truncate text-sm font-medium">{format.label}</p><code className="text-xs text-text-muted">{baseUrl.replace(/\/v1$/, "")}{format.path}</code></div></div>)}
+          </div>
+        </div>
+
+        <div className="mt-6 border-t border-border pt-5">
+          <div className="mb-3"><h3 className="font-semibold">端点映射</h3><p className="text-xs text-text-muted">将未使用的自定义路径映射到对应格式端点。</p></div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <Input label="自定义路径" value={mappingPath} onChange={(event) => setMappingPath(event.target.value)} placeholder="例如：/v1/compat/chat" className="flex-1" />
+            <DropdownSelect label="目标格式" value={mappingFormat} onChange={setMappingFormat} options={endpointFormats.slice(0, 3).map((format) => ({ value: format.id, label: format.label }))} className="sm:w-64" />
+            <Button icon="add" loading={mappingSaving} disabled={!mappingPath.trim()} onClick={addEndpointMapping}>添加映射</Button>
+          </div>
+          {endpointMappings.length > 0 && <div className="mt-3 overflow-x-auto rounded-md border border-border"><table className="w-full min-w-[560px] text-sm"><thead className="border-b border-border bg-bg-subtle text-xs text-text-muted"><tr><th className="px-3 py-2 text-left">自定义路径</th><th className="px-3 py-2 text-left">目标格式</th><th className="w-16 px-3 py-2 text-right">操作</th></tr></thead><tbody className="divide-y divide-border/60">{endpointMappings.map((mapping) => <tr key={`${mapping.path}-${mapping.format}`}><td className="px-3 py-2 font-mono text-xs">{mapping.path}</td><td className="px-3 py-2">{endpointFormats.find((format) => format.id === mapping.format)?.label || mapping.format}</td><td className="px-3 py-2 text-right"><button type="button" disabled={mappingSaving} onClick={() => saveEndpointMappings(endpointMappings.filter((item) => item !== mapping))} className="rounded p-1.5 text-text-muted hover:bg-red-500/10 hover:text-red-500" title="删除映射"><span className="material-symbols-outlined text-[18px]">delete</span></button></td></tr>)}</tbody></table></div>}
+        </div>
 
       {/* API Keys */}
       <Card id="require-api-key">

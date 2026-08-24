@@ -26,7 +26,6 @@ import {
 import Link from "next/link";
 import { getErrorCode, getRelativeTime } from "@/shared/utils";
 import { useNotificationStore } from "@/store/notificationStore";
-import { useHeaderSearchStore } from "@/store/headerSearchStore";
 import ModelAvailabilityBadge from "./components/ModelAvailabilityBadge";
 import AddCompatibleModal from "./components/AddCompatibleModal";
 
@@ -117,18 +116,9 @@ export default function ProvidersPage() {
   const [providerDisplayNames, setProviderDisplayNames] = useState({});
   const [editingProviderName, setEditingProviderName] = useState(null);
   const notify = useNotificationStore();
-  const searchQuery = useHeaderSearchStore((s) => s.query);
-  const registerSearch = useHeaderSearchStore((s) => s.register);
-  const unregisterSearch = useHeaderSearchStore((s) => s.unregister);
-
-  useEffect(() => {
-    registerSearch("Search providers...");
-    return () => unregisterSearch();
-  }, [registerSearch, unregisterSearch]);
-
-  const matchSearch = (name) =>
-    !searchQuery.trim() ||
-    name.toLowerCase().includes(searchQuery.trim().toLowerCase());
+  // Provider filtering is intentionally omitted: the header search control is
+  // not shown on this page, so the full provider catalog remains visible.
+  const matchSearch = () => true;
   const applyProviderDisplayName = ([providerId, info]) => [
     providerId,
     { ...info, name: providerDisplayNames[providerId] || info.name || providerId },
@@ -427,7 +417,7 @@ export default function ProvidersPage() {
       if (ca !== cb) return ca - cb;
       return (a.name || "").localeCompare(b.name || "");
     });
-  const isApikeySearching = !!searchQuery.trim();
+  const isApikeySearching = false;
   const visibleApikeyEntries =
     isApikeySearching || showAllApikey
       ? apikeyEntries

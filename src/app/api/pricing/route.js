@@ -30,6 +30,7 @@ function buildPricingCatalog(pricing, deletedPricingModels = []) {
       ...(pricing?.[provider]?.[model] || {}),
       peakEnabled: pricing?.[provider]?.[model]?.peakEnabled === true,
       peakWindows: pricing?.[provider]?.[model]?.peakWindows || "",
+      lastUpdated: pricing?.[provider]?.[model]?.lastUpdated || "",
       peakPricing: { ...EMPTY_PRICING, ...(pricing?.[provider]?.[model]?.peakPricing || {}) },
       offPeakPricing: { ...EMPTY_PRICING, ...(pricing?.[provider]?.[model]?.offPeakPricing || {}) },
     },
@@ -88,7 +89,7 @@ export async function PATCH(request) {
         }
 
         // Validate pricing fields
-        const validFields = [...RATE_FIELDS, "peakEnabled", "peakWindows", "peakPricing", "offPeakPricing"];
+        const validFields = [...RATE_FIELDS, "peakEnabled", "peakWindows", "peakPricing", "offPeakPricing", "lastUpdated"];
         for (const [key, value] of Object.entries(pricing)) {
           if (!validFields.includes(key)) {
             return NextResponse.json(
@@ -107,6 +108,9 @@ export async function PATCH(request) {
           }
           if (key === "peakWindows" && typeof value !== "string") {
             return NextResponse.json({ error: `Invalid peak pricing windows for ${provider}/${model}` }, { status: 400 });
+          }
+          if (key === "lastUpdated" && (typeof value !== "string" || (value && Number.isNaN(new Date(value).getTime())))) {
+            return NextResponse.json({ error: `Invalid last updated time for ${provider}/${model}` }, { status: 400 });
           }
           if ((key === "peakPricing" || key === "offPeakPricing") && (typeof value !== "object" || value === null || Object.entries(value).some(([field, rate]) => !RATE_FIELDS.includes(field) || typeof rate !== "number" || isNaN(rate) || rate < 0))) {
             return NextResponse.json({ error: `Invalid ${key} for ${provider}/${model}` }, { status: 400 });
