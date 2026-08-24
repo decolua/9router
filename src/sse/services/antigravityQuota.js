@@ -4,10 +4,8 @@
  * Also triggered by 409/429 error handler to sync exact resetAt from upstream.
  */
 
-import { updateProviderConnection } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { getAntigravityUsage } from "open-sse/services/usage/google.js";
-import { buildModelLockUpdate } from "open-sse/services/accountFallback.js";
 import * as log from "../utils/logger.js";
 
 // In-memory cache: connectionId → { [modelId]: { remainingPercentage, resetAt } }
@@ -27,20 +25,8 @@ export function getAntigravityQuotaCache() {
 }
 
 /**
- * Refresh quota for all active Antigravity accounts before routing when cache is cold/stale.
- * Quota API returns all model buckets for one account in a single call.
- */
-export async function refreshAntigravityQuotas(connections) {
-  await Promise.all(connections.map((conn) => refreshAntigravityQuota(
-    conn.id,
-    conn.accessToken,
-    { ...(conn.providerSpecificData || {}), ...(conn.projectId ? { projectId: conn.projectId } : {}) },
-  )));
-}
-
-/**
  * Refresh quota for a single antigravity connection from upstream API.
- * Updates both in-memory cache and modelLock_* in DB when quota is exhausted.
+ * Updates in-memory cache only. Cache expiry is the upstream model resetAt.
  * @returns {object|null} quotas map or null on failure
  */
 export async function refreshAntigravityQuota(connectionId, accessToken, providerSpecificData) {
@@ -82,23 +68,6 @@ async function _doRefresh(connectionId, accessToken, providerSpecificData, now) 
     quotaCache.set(connectionId, usage.quotas);
     lastRefreshAt.set(connectionId, now);
 
-    // Set modelLock_* for exhausted models so existing fallback chain also respects them
-    const lockUpdates = {};
-    for (const [modelId, quota] of Object.entries(usage.quotas)) {
-      if (quota.remainingPercentage <= 0 && quota.resetAt) {
-        const resetMs = new Date(quota.resetAt).getTime();
-        if (resetMs > now) {
-          const lockUpdate = buildModelLockUpdate(modelId, resetMs - now);
-          Object.assign(lockUpdates, lockUpdate);
-        }
-      }
-    }
-
-    if (Object.keys(lockUpdates).length > 0) {
-      await updateProviderConnection(connectionId, lockUpdates);
-      log.info("AG_QUOTA", `${connectionId.slice(0, 8)} | locked ${Object.keys(lockUpdates).length} exhausted models to upstream resetAt`);
-    }
-
     return usage.quotas;
   } catch (e) {
     log.warn("AG_QUOTA", `${connectionId.slice(0, 8)} | refresh failed: ${e.message}`);
@@ -107,19 +76,18 @@ async function _doRefresh(connectionId, accessToken, providerSpecificData, now) 
 }
 
 /**
- * Handle antigravity 409/429 — trigger immediate quota refresh and set precise modelLock.
+ * Handle Antigravity 409/429 — refresh RAM cache and return model resetAt when exhausted.
  * Called from chat handler error path.
  * @returns {number|null} resetAt timestamp ms (for resetsAtMs passthrough) or null
  */
 export async function handleAntigravityQuotaError(connectionId, status, model, accessToken, providerSpecificData) {
   log.info("AG_QUOTA", `${connectionId.slice(0, 8)} | ${status} on ${model} — refreshing quota`);
 
-  // Force refresh (bypass throttle for error-triggered refresh)
-  lastRefreshAt.delete(connectionId);
+  // Throttle applies to error paths too: one quota request per account/30s.
+  // The first 409/429 populates cache; concurrent or repeated errors reuse it.
+  const quota = (await refreshAntigravityQuota(connectionId, accessToken, providerSpecificData))?.[model];
+  if (!quota || quota.remainingPercentage > 0 || !quota.resetAt) return null;
 
-  const quotas = await refreshAntigravityQuota(connectionId, accessToken, providerSpecificData);
-  if (!quotas?.[model]?.resetAt) return null;
-
-  const resetMs = new Date(quotas[model].resetAt).getTime();
+  const resetMs = new Date(quota.resetAt).getTime();
   return resetMs > Date.now() ? resetMs : null;
 }
