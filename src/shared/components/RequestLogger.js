@@ -6,7 +6,8 @@ import Card from "./Card";
 import Button from "./Button";
 import Modal from "./Modal";
 import DropdownSelect from "./DropdownSelect";
-import UsageDateRangeControl, { getPeriodRange } from "./UsageDateRangeControl";
+import UsageDateRangeControl from "./UsageDateRangeControl";
+import { getPeriodRange, normalizeUsagePeriod } from "@/shared/utils/usagePeriods";
 
 const toLocalDateTimeValue = (date) => {
   const pad = (value) => String(value).padStart(2, "0");
@@ -55,6 +56,7 @@ export default function RequestLogger() {
   const [period, setPeriod] = useState("today");
   const [showColumnSettings, setShowColumnSettings] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState(() => new Set(DEFAULT_LOG_COLUMNS));
+  const [defaultPeriod, setDefaultPeriod] = useState("today");
 
   const fetchLogs = useCallback(async (showLoading = true, page = 1) => {
     if (showLoading) setLoading(true);
@@ -74,6 +76,17 @@ export default function RequestLogger() {
   }, [filters]);
 
   useEffect(() => {
+    fetch("/api/settings", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((settings) => {
+        if (!settings) return;
+        const nextPeriod = normalizeUsagePeriod(settings.trafficLogsDefaultPeriod);
+        const range = getPeriodRange(nextPeriod, new Date(), true);
+        setDefaultPeriod(nextPeriod);
+        setPeriod(nextPeriod);
+        setFilters((current) => ({ ...current, ...range }));
+      })
+      .catch(() => {});
     fetch("/api/keys", { cache: "no-store" }).then((response) => response.ok ? response.json() : null).then((data) => setKeys(data?.keys || [])).catch(() => {});
     fetch("/api/providers", { cache: "no-store" }).then((response) => response.ok ? response.json() : null).then((data) => {
       const unique = new Map();
@@ -83,7 +96,10 @@ export default function RequestLogger() {
       setProviders([...unique.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label)));
     }).catch(() => {});
   }, []);
-  useEffect(() => { fetchLogs(true, 1); }, [fetchLogs]);
+  useEffect(() => {
+    const timeout = setTimeout(() => fetchLogs(true, 1), 0);
+    return () => clearTimeout(timeout);
+  }, [fetchLogs]);
   useEffect(() => {
     if (!autoRefresh) return undefined;
     const interval = setInterval(() => fetchLogs(false, pagination.page), 5000);
@@ -92,8 +108,8 @@ export default function RequestLogger() {
 
   const updateFilter = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
   const resetFilters = () => {
-    const range = getPeriodRange("today", new Date(), true);
-    setPeriod("today");
+    const range = getPeriodRange(defaultPeriod, new Date(), true);
+    setPeriod(defaultPeriod);
     setFilters({ ...getDefaultLogFilters(), ...range });
   };
   const isColumnVisible = (columnId) => visibleColumns.has(columnId);

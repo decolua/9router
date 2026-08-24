@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { Card, Button, Input } from "@/shared/components";
 
 export default function LoginPage() {
@@ -265,6 +266,7 @@ export default function LoginPage() {
           </div>
           )}
         </Card>
+        <Link href="/model-market" className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-md text-sm font-medium text-text-muted hover:bg-surface hover:text-primary"><span className="material-symbols-outlined text-[18px]">storefront</span>无需登录，进入模型广场</Link>
       </div>
     </div>
   );

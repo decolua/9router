@@ -21,6 +21,7 @@ const COMBINED_WEB_ITEM = { id: "web", label: "Web Fetch & Search", icon: "trave
 const navItems = [
   { id: "dashboard", href: "/dashboard", label: "仪表盘", icon: "dashboard", section: "主要功能" },
   { id: "endpoint", href: "/dashboard/endpoint", label: "端点与密钥", icon: "api", section: "主要功能" },
+  { id: "model-market", href: "/model-market", label: "模型广场", icon: "storefront", section: "主要功能" },
   { id: "key-groups", href: "/dashboard/key-groups", label: "密钥分组", icon: "group_work", section: "主要功能" },
   { id: "providers", href: "/dashboard/providers", label: "提供商", icon: "dns", section: "主要功能" },
   // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden

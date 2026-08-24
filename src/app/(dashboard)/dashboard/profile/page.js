@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Card, Button, DropdownSelect, Toggle, Input } from "@/shared/components";
+import { Card, Button, DropdownSelect, Toggle, Input, USAGE_DEFAULT_PERIODS, normalizeUsagePeriod } from "@/shared/components";
 import { DEFAULT_NAVIGATION_SECTIONS, NAVIGATION_VISIBILITY_OPTIONS } from "@/shared/constants/navigation";
 import Modal, { ConfirmModal } from "@/shared/components/Modal";
 import LanguageSwitcher from "@/shared/components/LanguageSwitcher";
@@ -88,6 +88,8 @@ export default function ProfilePage() {
   const [navigationStatus, setNavigationStatus] = useState("");
   const [newNavigationSection, setNewNavigationSection] = useState("");
   const [navigationDeleteSection, setNavigationDeleteSection] = useState("");
+  const [usageDefaultsSaving, setUsageDefaultsSaving] = useState(false);
+  const [usageDefaultsStatus, setUsageDefaultsStatus] = useState("");
 
   useEffect(() => {
     fetch("/api/settings")
@@ -817,6 +819,16 @@ export default function ProfilePage() {
     setNavigationStatus(`已将原主题中的导航项移动到“${fallback}”`);
   };
 
+  const moveNavigationSection = (section, direction) => {
+    const currentIndex = navigationSections.indexOf(section);
+    const nextIndex = currentIndex + direction;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= navigationSections.length) return;
+    const nextSections = [...navigationSections];
+    [nextSections[currentIndex], nextSections[nextIndex]] = [nextSections[nextIndex], nextSections[currentIndex]];
+    setSettings((current) => ({ ...current, navigationSections: nextSections }));
+    setNavigationStatus("");
+  };
+
   const saveNavigationSettings = async () => {
     setNavigationSaving(true);
     setNavigationStatus("");
@@ -838,6 +850,29 @@ export default function ProfilePage() {
       setNavigationStatus(error.message || "保存失败");
     } finally {
       setNavigationSaving(false);
+    }
+  };
+
+  const saveUsageDefaults = async () => {
+    setUsageDefaultsSaving(true);
+    setUsageDefaultsStatus("");
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          usageDefaultPeriod: normalizeUsagePeriod(settings.usageDefaultPeriod),
+          trafficLogsDefaultPeriod: normalizeUsagePeriod(settings.trafficLogsDefaultPeriod),
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "保存失败");
+      setSettings((current) => ({ ...current, ...data }));
+      setUsageDefaultsStatus("默认时间已保存");
+    } catch (error) {
+      setUsageDefaultsStatus(error.message || "保存失败");
+    } finally {
+      setUsageDefaultsSaving(false);
     }
   };
 
@@ -868,7 +903,7 @@ export default function ProfilePage() {
       <div className="flex flex-col gap-6">
         <div className="flex overflow-x-auto rounded-md border border-border bg-bg-subtle p-1">
           {[
-            ["general", "常规"], ["security", "安全与登录"], ["routing", "路由与恢复"], ["navigation", "导航栏"], ["network", "网络"], ["observability", "可观测性"],
+            ["general", "常规"], ["security", "安全与登录"], ["routing", "路由与恢复"], ["navigation", "导航栏"], ["usage", "流量"], ["network", "网络"], ["observability", "可观测性"],
           ].map(([value, label]) => <button key={value} type="button" onClick={() => setActiveSettingsTab(value)} className={cn("h-9 shrink-0 rounded px-4 text-sm font-medium", activeSettingsTab === value ? "bg-surface text-text-main shadow-sm" : "text-text-muted hover:text-text-main")}>{label}</button>)}
         </div>
         {/* Local Mode Info */}
@@ -1641,9 +1676,16 @@ export default function ProfilePage() {
               <Input label="新增主题" placeholder="例如：开发工具" value={newNavigationSection} onChange={(event) => setNewNavigationSection(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addNavigationSection(); } }} className="flex-1" />
               <Button variant="secondary" icon="add" onClick={addNavigationSection}>新增主题</Button>
             </div>
-            {navigationSections.map((section) => (
+            {navigationSections.map((section, sectionIndex) => (
               <div key={section} className="flex flex-col gap-2">
-                <div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold text-text-muted">{section}</p><button type="button" disabled={navigationSections.length <= 1} onClick={() => setNavigationDeleteSection(section)} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-red-500/10 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30" title="删除主题"><span className="material-symbols-outlined text-[18px]">delete</span></button></div>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-semibold text-text-muted">{section}</p>
+                  <div className="flex items-center gap-1">
+                    <button type="button" disabled={sectionIndex === 0} onClick={() => moveNavigationSection(section, -1)} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-30" title="上移主题" aria-label={`上移${section}`}><span className="material-symbols-outlined text-[18px]">arrow_upward</span></button>
+                    <button type="button" disabled={sectionIndex === navigationSections.length - 1} onClick={() => moveNavigationSection(section, 1)} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-30" title="下移主题" aria-label={`下移${section}`}><span className="material-symbols-outlined text-[18px]">arrow_downward</span></button>
+                    <button type="button" disabled={navigationSections.length <= 1} onClick={() => setNavigationDeleteSection(section)} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-red-500/10 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30" title="删除主题" aria-label={`删除${section}`}><span className="material-symbols-outlined text-[18px]">delete</span></button>
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {NAVIGATION_VISIBILITY_OPTIONS.filter((item) => (settings.navigationItemSections?.[item.id] || item.section) === section).map((item) => {
                     const visible = !(settings.hiddenNavigationItems || []).includes(item.id);
@@ -1655,6 +1697,20 @@ export default function ProfilePage() {
             <div className="flex items-center justify-between gap-3 border-t border-border pt-4"><span className="text-xs text-text-muted">{navigationStatus}</span><Button loading={navigationSaving} onClick={saveNavigationSettings}>保存设置</Button></div>
           </div>
           <ConfirmModal isOpen={!!navigationDeleteSection} onClose={() => setNavigationDeleteSection("")} onConfirm={deleteNavigationSection} title="删除导航主题" message={`删除“${navigationDeleteSection}”后，其中的导航项会自动移动到其他主题。`} confirmText="删除" cancelText="取消" variant="danger" />
+        </Card>
+
+        <Card className={activeSettingsTab === "usage" ? "" : "hidden"}>
+          <div className="mb-4 flex items-center gap-3">
+            <div className="rounded-md bg-primary/10 p-2 text-primary"><span className="material-symbols-outlined text-[20px]">date_range</span></div>
+            <div><h3 className="font-semibold">流量页面默认时间</h3><p className="text-xs text-text-muted">设置进入流量分析和流量日志页面时默认展示的时间范围。</p></div>
+          </div>
+          <div className="flex flex-col gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <DropdownSelect label="流量分析" value={normalizeUsagePeriod(settings.usageDefaultPeriod)} options={USAGE_DEFAULT_PERIODS} onChange={(value) => setSettings((current) => ({ ...current, usageDefaultPeriod: value }))} />
+              <DropdownSelect label="流量日志" value={normalizeUsagePeriod(settings.trafficLogsDefaultPeriod)} options={USAGE_DEFAULT_PERIODS} onChange={(value) => setSettings((current) => ({ ...current, trafficLogsDefaultPeriod: value }))} />
+            </div>
+            <div className="flex items-center justify-between gap-3 border-t border-border pt-4"><span className="text-xs text-text-muted">{usageDefaultsStatus}</span><Button loading={usageDefaultsSaving} onClick={saveUsageDefaults}>保存设置</Button></div>
+          </div>
         </Card>
 
         <Card className={activeSettingsTab === "routing" ? "" : "hidden"}>

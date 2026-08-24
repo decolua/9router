@@ -1,8 +1,8 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { UsageStats, CardSkeleton, SegmentedControl, UsageDateRangeControl, getPeriodRange } from "@/shared/components";
+import { UsageStats, CardSkeleton, SegmentedControl, UsageDateRangeControl, getPeriodRange, normalizeUsagePeriod } from "@/shared/components";
 
 export default function UsagePage() {
   return (
@@ -20,6 +20,22 @@ function UsageContent() {
   const initialRange = getPeriodRange("today");
   const [startDate, setStartDate] = useState(initialRange.startDate);
   const [endDate, setEndDate] = useState(initialRange.endDate);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/settings", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((settings) => {
+        if (cancelled || !settings) return;
+        const defaultPeriod = normalizeUsagePeriod(settings.usageDefaultPeriod);
+        const range = getPeriodRange(defaultPeriod);
+        setPeriod(defaultPeriod);
+        setStartDate(range.startDate);
+        setEndDate(range.endDate);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const tabFromUrl = searchParams.get("tab");
   const activeTab = tabFromUrl && ["overview", "keys", "providers", "models", "latency"].includes(tabFromUrl)

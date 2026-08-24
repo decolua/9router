@@ -453,7 +453,16 @@ export default function ProvidersPage() {
             </Link>
             <div className="flex shrink-0 items-center justify-end gap-2">
               <button type="button" className="rounded-md p-1.5 text-text-muted hover:bg-bg-hover hover:text-primary" title="修改显示名称" onClick={() => setEditingProviderName({ providerId: item.providerId, name: item.info.name })}><span className="material-symbols-outlined text-[18px]">edit</span></button>
-              <Button size="sm" variant="ghost" loading={testingMode === item.providerId} onClick={() => handleBatchTest("provider", item.providerId)}>测试</Button>
+              <button
+                type="button"
+                disabled={testingMode === item.providerId}
+                onClick={() => handleBatchTest("provider", item.providerId)}
+                className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+                title="测试提供商连接"
+                aria-label={`测试${item.info.name}连接`}
+              >
+                <span className={`material-symbols-outlined text-[18px] ${testingMode === item.providerId ? "animate-spin" : ""}`}>{testingMode === item.providerId ? "progress_activity" : "science"}</span>
+              </button>
               <Toggle checked={!item.stats.allDisabled} onChange={(active) => handleToggleProvider(item.providerId, item.authTypes, active)} />
               <Link href={`/dashboard/providers/${item.providerId}`} className="rounded-md p-2 text-text-muted hover:bg-bg-hover hover:text-primary" title="管理提供商"><span className="material-symbols-outlined text-[19px]">chevron_right</span></Link>
             </div>

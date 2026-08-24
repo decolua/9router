@@ -2,6 +2,7 @@ export const NAVIGATION_VISIBILITY_OPTIONS = [
   { id: "dashboard", label: "仪表盘", section: "主要功能" },
   { id: "monitor", label: "系统监控", section: "系统" },
   { id: "endpoint", label: "端点与密钥", section: "主要功能" },
+  { id: "model-market", label: "模型广场", section: "主要功能" },
   { id: "key-groups", label: "密钥分组", section: "主要功能" },
   { id: "providers", label: "提供商", section: "主要功能" },
   { id: "combos", label: "组合", section: "主要功能" },

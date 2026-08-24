@@ -1,0 +1,149 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import Link from "next/link";
+import { Button, Card, Input, SegmentedControl } from "@/shared/components";
+
+const formatNumber = (value) => new Intl.NumberFormat("zh-CN").format(Number(value || 0));
+const formatCost = (value) => `$${Number(value || 0).toFixed(6)}`;
+
+export default function ModelMarketPage() {
+  const [apiKey, setApiKey] = useState("");
+  const [activeKey, setActiveKey] = useState("");
+  const [models, setModels] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [pagination, setPagination] = useState({ page: 1, totalPages: 0, totalItems: 0 });
+  const [activeTab, setActiveTab] = useState("models");
+  const [loading, setLoading] = useState(false);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const groupedModels = useMemo(() => {
+    const groups = new Map();
+    for (const model of models) {
+      const owner = model.owned_by || "其他";
+      if (!groups.has(owner)) groups.set(owner, []);
+      groups.get(owner).push(model);
+    }
+    return [...groups.entries()].sort(([left], [right]) => left.localeCompare(right));
+  }, [models]);
+
+  const fetchLogs = async (key, page = 1) => {
+    setLogsLoading(true);
+    try {
+      const response = await fetch(`/api/model-market/logs?page=${page}&pageSize=20`, {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "无法读取流量日志");
+      setLogs(data.logs || []);
+      setPagination(data.pagination || { page, totalPages: 0, totalItems: 0 });
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    const key = apiKey.trim();
+    if (!key) return;
+    setLoading(true);
+    setError("");
+    try {
+      const modelResponse = await fetch("/v1/models", {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      const modelData = await modelResponse.json();
+      if (!modelResponse.ok) throw new Error(modelData?.error?.message || "密钥无效或已停用");
+      setModels(modelData.data || []);
+      setActiveKey(key);
+      await fetchLogs(key, 1);
+    } catch (requestError) {
+      setActiveKey("");
+      setModels([]);
+      setLogs([]);
+      setPagination({ page: 1, totalPages: 0, totalItems: 0 });
+      setError(requestError.message || "加载失败");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const changeLogPage = async (page) => {
+    if (!activeKey || page < 1 || page > Math.max(1, pagination.totalPages)) return;
+    setError("");
+    try {
+      await fetchLogs(activeKey, page);
+    } catch (requestError) {
+      setError(requestError.message || "日志加载失败");
+    }
+  };
+
+  return (
+    <main className="min-h-screen bg-bg text-text-main">
+      <div className="border-b border-border bg-surface/90 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+          <Link href="/model-market" className="flex items-center gap-3">
+            <span className="flex size-9 items-center justify-center rounded-md bg-primary text-white"><span className="material-symbols-outlined text-[20px]">hub</span></span>
+            <span><strong className="block text-sm">9Router 模型广场</strong><span className="block text-xs text-text-muted">按密钥查看可用能力</span></span>
+          </Link>
+          <Link href="/login" className="flex h-9 items-center gap-1 rounded-md px-3 text-sm text-text-muted hover:bg-bg-hover hover:text-text-main"><span className="material-symbols-outlined text-[18px]">admin_panel_settings</span>管理后台</Link>
+        </div>
+      </div>
+
+      <div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-8 sm:px-6 lg:py-12">
+        <section className="max-w-3xl">
+          <p className="mb-2 text-xs font-semibold text-primary">MODEL ACCESS</p>
+          <h1 className="text-3xl font-semibold sm:text-4xl">模型广场</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-text-muted">输入 9Router API 密钥，查看该密钥获准使用的模型及其自身产生的流量日志。密钥仅保留在当前页面内存中。</p>
+        </section>
+
+        <Card className="max-w-3xl">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <Input label="API 密钥" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk_9router..." autoComplete="off" className="flex-1" />
+            <Button type="submit" icon="key" loading={loading} disabled={!apiKey.trim()} className="sm:w-32">查看</Button>
+          </form>
+          {error && <p className="mt-3 flex items-center gap-2 text-sm text-red-500"><span className="material-symbols-outlined text-[18px]">error</span>{error}</p>}
+        </Card>
+
+        {activeKey && (
+          <section className="flex min-w-0 flex-col gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <SegmentedControl options={[{ value: "models", label: `可用模型 ${models.length}` }, { value: "logs", label: `流量日志 ${pagination.totalItems || 0}` }]} value={activeTab} onChange={setActiveTab} className="w-full sm:w-auto" />
+              <p className="text-xs text-text-muted">当前密钥：{activeKey.slice(0, 8)}***</p>
+            </div>
+
+            {activeTab === "models" && (
+              <div className="flex flex-col gap-6">
+                {groupedModels.length ? groupedModels.map(([owner, ownerModels]) => (
+                  <div key={owner}>
+                    <div className="mb-2 flex items-center gap-2"><h2 className="text-sm font-semibold">{owner}</h2><span className="text-xs text-text-muted">{ownerModels.length} 个模型</span></div>
+                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+                      {ownerModels.map((model) => <Card key={model.id} className="flex min-w-0 items-center gap-3 p-3"><span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"><span className="material-symbols-outlined text-[19px]">smart_toy</span></span><div className="min-w-0"><p className="truncate font-mono text-sm" title={model.id}>{model.id}</p><p className="mt-0.5 text-xs text-text-muted">{model.kind || "chat"}</p></div></Card>)}
+                    </div>
+                  </div>
+                )) : <div className="border-y border-border py-16 text-center text-sm text-text-muted">该密钥当前没有可用模型</div>}
+              </div>
+            )}
+
+            {activeTab === "logs" && (
+              <Card className="overflow-hidden p-0">
+                <div className="overflow-x-auto">
+                  {logsLoading ? <div className="p-12 text-center text-sm text-text-muted">正在加载流量日志...</div> : logs.length ? (
+                    <table className="w-full min-w-[900px] border-collapse text-xs">
+                      <thead className="border-b border-border bg-bg-subtle text-text-muted"><tr><th className="px-3 py-2 text-left">时间</th><th className="px-3 py-2 text-left">模型</th><th className="px-3 py-2 text-left">提供商</th><th className="px-3 py-2 text-right">输入</th><th className="px-3 py-2 text-right">输出</th><th className="px-3 py-2 text-right">费用</th><th className="px-3 py-2 text-right">延时</th><th className="px-3 py-2 text-left">状态</th></tr></thead>
+                      <tbody className="divide-y divide-border/60">{logs.map((log) => <tr key={log.id} className="hover:bg-bg-hover"><td className="whitespace-nowrap px-3 py-2 text-text-muted">{new Date(log.timestamp).toLocaleString("zh-CN")}</td><td className="max-w-64 truncate px-3 py-2 font-mono" title={log.model}>{log.model || "-"}</td><td className="px-3 py-2">{log.provider || "-"}</td><td className="px-3 py-2 text-right tabular-nums">{formatNumber(log.inputTokens)}</td><td className="px-3 py-2 text-right tabular-nums">{formatNumber(log.outputTokens)}</td><td className="px-3 py-2 text-right tabular-nums">{formatCost(log.cost)}</td><td className="px-3 py-2 text-right tabular-nums">{log.latencyMs ? `${formatNumber(log.latencyMs)} ms` : "-"}</td><td className="px-3 py-2">{log.status || "-"}</td></tr>)}</tbody>
+                    </table>
+                  ) : <div className="p-12 text-center text-sm text-text-muted">该密钥暂无流量日志</div>}
+                </div>
+                <div className="flex items-center justify-between border-t border-border px-3 py-2 text-xs text-text-muted"><span>共 {pagination.totalItems || 0} 条</span><div className="flex items-center gap-2"><button type="button" disabled={!pagination.hasPrev || logsLoading} onClick={() => changeLogPage(pagination.page - 1)} className="rounded-md border border-border px-2 py-1 hover:bg-bg-hover disabled:opacity-40">上一页</button><span>{pagination.page || 1} / {pagination.totalPages || 1}</span><button type="button" disabled={!pagination.hasNext || logsLoading} onClick={() => changeLogPage(pagination.page + 1)} className="rounded-md border border-border px-2 py-1 hover:bg-bg-hover disabled:opacity-40">下一页</button></div></div>
+              </Card>
+            )}
+          </section>
+        )}
+      </div>
+    </main>
+  );
+}

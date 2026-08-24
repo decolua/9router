@@ -13,6 +13,7 @@ const SETTINGS_RESPONSE_HEADERS = {
 
 // Secrets must never be mass-assigned from request body (CWE-915)
 const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
+const USAGE_DEFAULT_PERIODS = new Set(["today", "24h", "7d", "30d"]);
 
 export async function GET() {
   try {
@@ -41,6 +42,12 @@ export async function PATCH(request) {
 
     // Strip protected secrets before any internal handling sets them
     for (const key of PROTECTED_SETTING_KEYS) delete body[key];
+
+    for (const key of ["usageDefaultPeriod", "trafficLogsDefaultPeriod"]) {
+      if (Object.prototype.hasOwnProperty.call(body, key) && !USAGE_DEFAULT_PERIODS.has(body[key])) {
+        return NextResponse.json({ error: "Invalid default usage period" }, { status: 400 });
+      }
+    }
 
     // If updating password, hash it
     if (body.newPassword) {
