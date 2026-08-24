@@ -142,6 +142,7 @@ function emptyWindow() {
     // headroom — proxy-reported tokens + true body bytes
     proxyTokensSaved: 0,
     bodyBytesReduced: 0,
+    headroomRequests: 0,
     // pxpipe — estimated tokens
     estTokensSaved: 0,
     imagesGenerated: 0,
@@ -156,6 +157,7 @@ function addTo(window, row) {
   else window.bypassed++;
   if (row.saver === "rtk") window.charsReduced += row.charsSaved || 0;
   if (row.saver === "headroom") {
+    window.headroomRequests++;
     window.proxyTokensSaved += row.tokensSaved || 0;
     if (
       Number.isFinite(row.bodyBytesBefore) &&

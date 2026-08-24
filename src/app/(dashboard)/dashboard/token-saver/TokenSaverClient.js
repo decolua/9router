@@ -10,6 +10,9 @@ import {
   PONYTAIL_LEVELS,
 } from "../endpoint/endpointConstants";
 
+const TOKEN_SAVER_STATS_REFRESH_MS = 30_000;
+const TOKEN_SAVER_STATS_TIMEOUT_MS = 10_000;
+
 export default function TokenSaverClient() {
   const [rtkEnabled, setRtkEnabledState] = useState(true);
   const [headroomEnabled, setHeadroomEnabled] = useState(false);
@@ -468,24 +471,48 @@ export default function TokenSaverClient() {
   const [tsStats, setTsStats] = useState(undefined); // undefined=loading, null=unavailable
   useEffect(() => {
     let alive = true;
-    const ac = new AbortController();
-    (async () => {
+    let inFlight = false;
+    let activeController = null;
+    const refresh = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      const requestController = new AbortController();
+      activeController = requestController;
+      let timeoutId;
       try {
+        timeoutId = setTimeout(
+          () => requestController.abort(),
+          TOKEN_SAVER_STATS_TIMEOUT_MS
+        );
         const res = await fetch("/api/token-saver/stats", {
+          cache: "no-store",
           headers: { "Cache-Control": "no-store" },
-          signal: ac.signal,
+          signal: requestController.signal,
         });
         if (!res.ok) throw new Error("stats fetch failed");
         const data = await res.json();
         if (alive) setTsStats(data);
       } catch (e) {
-        if (e?.name === "AbortError") return; // abort: no state update
-        if (alive) setTsStats(null); // fetch/HTTP/JSON failure -> unavailable
+        if (e?.name === "AbortError") {
+          if (!alive) return;
+          // timeout abort while mounted: same as transient network failure
+        }
+        if (alive)
+          setTsStats((current) =>
+            current === undefined ? null : current
+          );
+      } finally {
+        clearTimeout(timeoutId);
+        if (activeController === requestController) activeController = null;
+        inFlight = false;
       }
-    })();
+    };
+    refresh();
+    const timer = setInterval(refresh, TOKEN_SAVER_STATS_REFRESH_MS);
     return () => {
       alive = false;
-      ac.abort();
+      clearInterval(timer);
+      activeController?.abort();
     };
   }, []);
 
@@ -833,8 +860,10 @@ export default function TokenSaverClient() {
                         {(tsStats.windows?.today?.bodyBytesReduced ?? 0).toLocaleString()} body bytes reduced
                       </p>
                     </>
+                  ) : tsStats.sources?.headroom?.state === "idle" ? (
+                    <p className="text-xs text-text-muted">No compression data yet</p>
                   ) : (
-                    <p className="text-xs text-warning">Headroom unavailable</p>
+                    <p className="text-xs text-warning">Headroom statistics unavailable</p>
                   )}
                 </div>
                 <div className="rounded border border-border p-3">
