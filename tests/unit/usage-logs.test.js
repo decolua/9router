@@ -72,6 +72,66 @@ describe("usage logs", () => {
     expect(result.logs[0].cacheCreationTokens).toBe(380);
   });
 
+  it("builds token trend components and cache hit rate from canonical usage", async () => {
+    await db.saveRequestUsage({
+      provider: "trend-breakdown-provider",
+      model: "trend-breakdown-model",
+      status: "200 OK",
+      timestamp: "2026-08-22T03:15:00.000Z",
+      tokens: {
+        prompt_tokens: 500,
+        completion_tokens: 50,
+        cached_tokens: 300,
+        cache_creation_input_tokens: 100,
+      },
+    });
+
+    const chart = await db.getChartData("custom", {
+      startDate: "2026-08-22T11:00",
+      endDate: "2026-08-22T12:00",
+    });
+
+    expect(chart).toHaveLength(1);
+    expect(chart[0]).toMatchObject({
+      label: "11:00",
+      inputTokens: 100,
+      outputTokens: 50,
+      cacheReadTokens: 300,
+      cacheCreationTokens: 100,
+      cacheHitRate: 60,
+      tokens: 550,
+    });
+  });
+
+  it("keeps API keys with the same prefix separate in key analysis", async () => {
+    const timestamp = new Date().toISOString();
+    const base = {
+      provider: "key-collision-provider",
+      model: "key-collision-model",
+      status: "200 OK",
+      timestamp,
+      tokens: { prompt_tokens: 10, completion_tokens: 5 },
+    };
+    await db.saveRequestUsage({ ...base, apiKey: "sk_9router_same_prefix_first_a1b2" });
+    await db.saveRequestUsage({ ...base, apiKey: "sk_9router_same_prefix_second_c3d4" });
+
+    const stats = await db.getUsageStats("24h");
+    const entries = Object.values(stats.byApiKey).filter((entry) => entry.rawModel === "key-collision-model");
+
+    expect(entries).toHaveLength(2);
+    expect(new Set(entries.map((entry) => entry.apiKeyKey)).size).toBe(2);
+    expect(entries.map((entry) => entry.keyName).sort()).toEqual([
+      "sk_9rout...a1b2",
+      "sk_9rout...c3d4",
+    ]);
+  });
+
+  it("aligns rolling 24-hour chart labels to whole hours", async () => {
+    const chart = await db.getChartData("24h");
+    expect(chart).toHaveLength(24);
+    expect(chart.every((point) => /^\d{4}-\d{2}-\d{2} \d{2}:00$/.test(point.label))).toBe(true);
+  });
+
   it("persists terminal failures without duplicating pending or successful lifecycle events", async () => {
     const now = Date.now();
     const base = {

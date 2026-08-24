@@ -304,6 +304,11 @@ describe("DB SQLite layer — public API parity", () => {
     expect(data[0]).toHaveProperty("label");
     expect(data[0]).toHaveProperty("tokens");
     expect(data[0]).toHaveProperty("cost");
+    expect(data[0]).toHaveProperty("inputTokens");
+    expect(data[0]).toHaveProperty("outputTokens");
+    expect(data[0]).toHaveProperty("cacheReadTokens");
+    expect(data[0]).toHaveProperty("cacheCreationTokens");
+    expect(data[0]).toHaveProperty("cacheHitRate");
   });
 
   it("getChartData: 7d buckets", async () => {

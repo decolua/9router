@@ -5,6 +5,8 @@ import PropTypes from "prop-types";
 import {
   AreaChart,
   Area,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -48,7 +50,8 @@ export default function UsageChart({ period = "7d", startDate = "", endDate = ""
   }, [period, startDate, endDate]);
 
   useEffect(() => {
-    fetchData();
+    const timer = setTimeout(fetchData, 0);
+    return () => clearTimeout(timer);
   }, [fetchData]);
 
   const hasData = data.some((d) => d.tokens > 0 || d.cost > 0);
@@ -75,66 +78,31 @@ export default function UsageChart({ period = "7d", startDate = "", endDate = ""
       ) : !hasData ? (
         <div className="h-48 flex items-center justify-center text-text-muted text-sm">No data for this period</div>
       ) : (
-        <ResponsiveContainer width="100%" height={220}>
-          <AreaChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-            <defs>
-              <linearGradient id="gradTokens" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.25} />
-                <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-              </linearGradient>
-              <linearGradient id="gradCost" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.25} />
-                <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.1} />
-            <XAxis
-              dataKey="label"
-              tick={{ fontSize: 10, fill: "currentColor", fillOpacity: 0.5 }}
-              tickLine={false}
-              axisLine={false}
-              interval="preserveStartEnd"
-            />
-            <YAxis
-              tick={{ fontSize: 10, fill: "currentColor", fillOpacity: 0.5 }}
-              tickLine={false}
-              axisLine={false}
-              tickFormatter={viewMode === "tokens" ? fmtTokens : fmtCost}
-              width={50}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "var(--color-bg)",
-                border: "1px solid var(--color-border)",
-                borderRadius: "8px",
-                fontSize: "12px",
-              }}
-              formatter={(value, name) =>
-                name === "tokens" ? [fmtTokens(value), "Tokens"] : [fmtCost(value), "Cost"]
-              }
-            />
-            {viewMode === "tokens" ? (
-              <Area
-                type="monotone"
-                dataKey="tokens"
-                stroke="#6366f1"
-                strokeWidth={2}
-                fill="url(#gradTokens)"
-                dot={false}
-                activeDot={{ r: 4 }}
-              />
-            ) : (
-              <Area
-                type="monotone"
-                dataKey="cost"
-                stroke="#f59e0b"
-                strokeWidth={2}
-                fill="url(#gradCost)"
-                dot={false}
-                activeDot={{ r: 4 }}
-              />
-            )}
-          </AreaChart>
+        <ResponsiveContainer width="100%" height={260}>
+          {viewMode === "tokens" ? (
+            <LineChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.1} />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: "currentColor", fillOpacity: 0.5 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+              <YAxis yAxisId="tokens" tick={{ fontSize: 10, fill: "currentColor", fillOpacity: 0.5 }} tickLine={false} axisLine={false} tickFormatter={fmtTokens} width={52} />
+              <YAxis yAxisId="rate" orientation="right" domain={[0, 100]} tick={{ fontSize: 10, fill: "currentColor", fillOpacity: 0.5 }} tickLine={false} axisLine={false} tickFormatter={(value) => `${value}%`} width={40} />
+              <Tooltip contentStyle={{ backgroundColor: "var(--color-bg)", border: "1px solid var(--color-border)", borderRadius: "6px", fontSize: "12px" }} formatter={(value, name) => name === "缓存命中率" ? [`${Number(value).toFixed(2)}%`, name] : [fmtTokens(value), name]} />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              <Line yAxisId="tokens" type="monotone" dataKey="inputTokens" name="输入" stroke="#3b82f6" strokeWidth={2} dot={false} activeDot={{ r: 3 }} />
+              <Line yAxisId="tokens" type="monotone" dataKey="outputTokens" name="输出" stroke="#10b981" strokeWidth={2} dot={false} activeDot={{ r: 3 }} />
+              <Line yAxisId="tokens" type="monotone" dataKey="cacheCreationTokens" name="缓存写入" stroke="#f59e0b" strokeWidth={2} dot={false} activeDot={{ r: 3 }} />
+              <Line yAxisId="tokens" type="monotone" dataKey="cacheReadTokens" name="缓存读取" stroke="#06b6d4" strokeWidth={2.5} dot={false} activeDot={{ r: 3 }} />
+              <Line yAxisId="rate" type="monotone" dataKey="cacheHitRate" name="缓存命中率" stroke="#8b5cf6" strokeWidth={2} strokeDasharray="4 3" dot={false} activeDot={{ r: 3 }} />
+            </LineChart>
+          ) : (
+            <AreaChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+              <defs><linearGradient id="gradCost" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#f59e0b" stopOpacity={0.25} /><stop offset="95%" stopColor="#f59e0b" stopOpacity={0} /></linearGradient></defs>
+              <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.1} />
+              <XAxis dataKey="label" tick={{ fontSize: 10, fill: "currentColor", fillOpacity: 0.5 }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+              <YAxis tick={{ fontSize: 10, fill: "currentColor", fillOpacity: 0.5 }} tickLine={false} axisLine={false} tickFormatter={fmtCost} width={58} />
+              <Tooltip contentStyle={{ backgroundColor: "var(--color-bg)", border: "1px solid var(--color-border)", borderRadius: "6px", fontSize: "12px" }} formatter={(value) => [fmtCost(value), "费用"]} />
+              <Area type="monotone" dataKey="cost" name="费用" stroke="#f59e0b" strokeWidth={2} fill="url(#gradCost)" dot={false} activeDot={{ r: 4 }} />
+            </AreaChart>
+          )}
         </ResponsiveContainer>
       )}
     </Card>

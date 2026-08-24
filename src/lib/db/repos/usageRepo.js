@@ -1,15 +1,29 @@
 import { EventEmitter } from "events";
+import { createHash } from "node:crypto";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
 import { createModelMappingMap, getMappedModelName } from "@/shared/utils/modelMapping.js";
-import { DAY_MS, formatChinaDate, formatChinaTime, getChinaDateKey, getChinaDayStart, parseChinaDateTime } from "@/shared/utils/chinaTime.js";
+import { DAY_MS, formatChinaDate, formatChinaDateHour, formatChinaTime, getChinaDateKey, getChinaDayStart, parseChinaDateTime } from "@/shared/utils/chinaTime.js";
 import { canonicalizeUsage, normalizeUsage } from "open-sse/utils/usageTracking.js";
 
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
   if (key.length <= 8) return key.charAt(0) + "***";
-  return key.slice(0, 8) + "***";
+  if (key.length <= 12) return `${key.slice(0, 4)}***${key.slice(-2)}`;
+  return `${key.slice(0, 8)}...${key.slice(-4)}`;
+}
+
+function getApiKeyGroupId(key, keyInfo = null) {
+  if (!key) return "local-no-key";
+  if (keyInfo?.id) return keyInfo.id;
+  return `unknown-${createHash("sha256").update(key).digest("hex").slice(0, 16)}`;
+}
+
+function getApiKeyLabel(key, keyInfo = null) {
+  if (!key) return "本地调用（无 API 密钥）";
+  const masked = maskApiKey(key);
+  return keyInfo?.name ? `${keyInfo.name} (${masked})` : masked;
 }
 
 function firstTokenCount(...values) {
@@ -323,30 +337,6 @@ export async function saveRequestUsage(entry) {
     // All 3 writes (history insert, daily upsert, lifetime counter) in ONE transaction.
     // better-sqlite3 is sync → no JS yield mid-transaction → no race in same process.
     db.transaction(() => {
-      const existing = db.get(
-        `SELECT id, endpoint FROM usageHistory
-         WHERE timestamp = ?
-           AND COALESCE(provider, '') = COALESCE(?, '')
-           AND COALESCE(model, '') = COALESCE(?, '')
-           AND COALESCE(connectionId, '') = COALESCE(?, '')
-           AND COALESCE(apiKey, '') = COALESCE(?, '')
-           AND promptTokens = ?
-           AND completionTokens = ?
-         ORDER BY id DESC LIMIT 1`,
-        [
-          entry.timestamp, entry.provider || null, entry.model || null,
-          entry.connectionId || null, entry.apiKey || null,
-          promptTokens, completionTokens,
-        ]
-      );
-
-      if (existing) {
-        if ((!existing.endpoint && entry.endpoint) || entry.meta) {
-          db.run(`UPDATE usageHistory SET endpoint = COALESCE(endpoint, ?), meta = ? WHERE id = ?`, [entry.endpoint || null, stringifyJson(entry.meta || {}), existing.id]);
-        }
-        return;
-      }
-
       db.run(
         `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
@@ -780,7 +770,8 @@ export async function getUsageStats(period = "all", range = {}) {
     const apiKeyValue = row.apiKey && typeof row.apiKey === "string" ? row.apiKey : null;
     const keyInfo = apiKeyValue ? apiKeyMap[apiKeyValue] : null;
     const apiKeyMasked = maskApiKey(apiKeyValue);
-    const keyName = keyInfo?.name || (apiKeyValue ? `${apiKeyValue.slice(0, 8)}...` : "本地调用（无 API 密钥）");
+    const keyName = getApiKeyLabel(apiKeyValue, keyInfo);
+    const apiKeyGroupId = getApiKeyGroupId(apiKeyValue, keyInfo);
     const providerDisplayName = providerNodeNameMap[row.provider] || row.provider || "未知提供商";
     const providerKey = row.provider || "unknown";
     const mappedModel = getMappedModelName(modelMappingMap, row.provider, row.model || "未知模型");
@@ -825,7 +816,7 @@ export async function getUsageStats(period = "all", range = {}) {
     modelTarget.cost += breakdown.totalCost;
     if (new Date(row.timestamp) > new Date(modelTarget.lastUsed)) modelTarget.lastUsed = row.timestamp;
 
-    const statsKey = `${apiKeyMasked || "local-no-key"}|${mappedModel}|${row.provider || "unknown"}`;
+    const statsKey = `${apiKeyGroupId}|${mappedModel}|${row.provider || "unknown"}`;
     if (!stats.byApiKey[statsKey]) {
       stats.byApiKey[statsKey] = {
         requests: 0,
@@ -842,7 +833,7 @@ export async function getUsageStats(period = "all", range = {}) {
         provider: providerDisplayName,
         apiKeyMasked,
         keyName,
-        apiKeyKey: apiKeyMasked || "local-no-key",
+        apiKeyKey: apiKeyGroupId,
         lastUsed: row.timestamp,
       };
     }
@@ -870,103 +861,94 @@ export async function getUsageStats(period = "all", range = {}) {
   return stats;
 }
 
+function createChartBucket(label) {
+  return {
+    label,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheCreationTokens: 0,
+    cacheHitRate: 0,
+    tokens: 0,
+    cost: 0,
+  };
+}
+
+function addRowToChartBucket(bucket, row) {
+  const tokens = parseJson(row.tokens, {}) || {};
+  const promptTokens = Math.max(0, Number(row.promptTokens ?? tokens.prompt_tokens ?? tokens.input_tokens ?? 0));
+  const outputTokens = Math.max(0, Number(row.completionTokens ?? tokens.completion_tokens ?? tokens.output_tokens ?? 0));
+  const { cacheReadTokens, cacheCreationTokens } = getCacheTokenCounts(tokens);
+  const inputTokens = Math.max(0, promptTokens - cacheReadTokens - cacheCreationTokens);
+
+  bucket.inputTokens += inputTokens;
+  bucket.outputTokens += outputTokens;
+  bucket.cacheReadTokens += cacheReadTokens;
+  bucket.cacheCreationTokens += cacheCreationTokens;
+  bucket.tokens += inputTokens + outputTokens + cacheReadTokens + cacheCreationTokens;
+  bucket.cost += Number(row.cost || 0);
+}
+
+function finalizeChartBucket(bucket) {
+  const totalInput = bucket.inputTokens + bucket.cacheReadTokens + bucket.cacheCreationTokens;
+  bucket.cacheHitRate = totalInput > 0 ? Number((bucket.cacheReadTokens / totalInput * 100).toFixed(2)) : 0;
+  return bucket;
+}
+
 export async function getChartData(period = "7d", range = {}) {
   const db = await getAdapter();
   const now = Date.now();
+  const hourMs = 60 * 60 * 1000;
+  let startTime;
+  let endTime;
+  let bucketMs;
+  let bucketCount;
 
   if (period === "today") {
-    const bucketCount = 24;
-    const bucketMs = 3600000;
-    const startTime = getChinaDayStart(now);
-    const endTime = startTime + bucketCount * bucketMs;
-    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: formatChinaTime(startTime + i * bucketMs), tokens: 0, cost: 0 }));
-
-    const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
-      [new Date(startTime).toISOString()]
-    );
-    for (const r of rows) {
-      const t = new Date(r.timestamp).getTime();
-      if (t < startTime || t >= endTime) continue;
-      const idx = Math.floor((t - startTime) / bucketMs);
-      if (idx >= 0 && idx < bucketCount) {
-        buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
-        buckets[idx].cost += r.cost || 0;
-      }
-    }
-    return buckets;
+    startTime = getChinaDayStart(now);
+    endTime = startTime + DAY_MS;
+    bucketMs = hourMs;
+    bucketCount = 24;
+  } else if (period === "24h") {
+    const currentHourStart = Math.floor(now / hourMs) * hourMs;
+    startTime = currentHourStart - 23 * hourMs;
+    endTime = currentHourStart + hourMs;
+    bucketMs = hourMs;
+    bucketCount = 24;
+  } else if (period === "custom" && range.startDate) {
+    startTime = parseChinaDateTime(range.startDate).getTime();
+    endTime = range.endDate ? parseChinaDateTime(range.endDate).getTime() : now;
+    if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime <= startTime) throw new Error("Invalid usage date range");
+    const span = endTime - startTime;
+    const preferredBucketMs = span <= 48 * hourMs ? hourMs : DAY_MS;
+    bucketCount = Math.min(90, Math.max(1, Math.ceil(span / preferredBucketMs)));
+    bucketMs = span / bucketCount;
+  } else {
+    bucketCount = period === "7d" ? 7 : period === "30d" ? 30 : 60;
+    bucketMs = DAY_MS;
+    const todayStart = getChinaDayStart(now);
+    startTime = todayStart - (bucketCount - 1) * DAY_MS;
+    endTime = todayStart + DAY_MS;
   }
 
-  if (period === "24h") {
-    const bucketCount = 24;
-    const bucketMs = 3600000;
-    const startTime = now - bucketCount * bucketMs;
-    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: formatChinaTime(startTime + i * bucketMs), tokens: 0, cost: 0 }));
-
-    const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
-      [new Date(startTime).toISOString()]
-    );
-    for (const r of rows) {
-      const t = new Date(r.timestamp).getTime();
-      if (t < startTime || t > now) continue;
-      const idx = Math.min(Math.floor((t - startTime) / bucketMs), bucketCount - 1);
-      buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
-      buckets[idx].cost += r.cost || 0;
-    }
-    return buckets;
-  }
-
-  if (period === "custom" && range.startDate) {
-    const startTime = parseChinaDateTime(range.startDate).getTime();
-    const endTime = range.endDate ? parseChinaDateTime(range.endDate).getTime() : now;
-    const span = Math.max(1, endTime - startTime);
-    const bucketCount = Math.min(60, Math.max(1, Math.ceil(span / 86400000)));
-    const bucketMs = span / bucketCount;
-    const buckets = Array.from({ length: bucketCount }, (_, i) => ({
-      label: bucketMs < DAY_MS ? formatChinaTime(startTime + i * bucketMs) : formatChinaDate(startTime + i * bucketMs),
-      tokens: 0,
-      cost: 0,
-    }));
-    const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
-      [new Date(startTime).toISOString(), new Date(endTime).toISOString()]
-    );
-    for (const r of rows) {
-      const idx = Math.min(bucketCount - 1, Math.max(0, Math.floor((new Date(r.timestamp).getTime() - startTime) / bucketMs)));
-      buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
-      buckets[idx].cost += r.cost || 0;
-    }
-    return buckets;
-  }
-
-  const bucketCount = period === "7d" ? 7 : period === "30d" ? 30 : 60;
-  const todayStart = getChinaDayStart(now);
-  const startTime = todayStart - (bucketCount - 1) * DAY_MS;
-  const endTime = todayStart + DAY_MS;
-  const dayMap = {};
+  const buckets = Array.from({ length: bucketCount }, (_, index) => {
+    const timestamp = startTime + index * bucketMs;
+    const label = bucketMs < DAY_MS
+      ? (period === "24h" ? formatChinaDateHour(timestamp) : formatChinaTime(timestamp))
+      : formatChinaDate(timestamp);
+    return createChartBucket(label);
+  });
   const rows = db.all(
-    `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND timestamp < ?`,
+    `SELECT timestamp, promptTokens, completionTokens, cost, tokens
+     FROM usageHistory WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp ASC`,
     [new Date(startTime).toISOString(), new Date(endTime).toISOString()],
   );
   for (const row of rows) {
-    const dateKey = getChinaDateKey(new Date(row.timestamp));
-    if (!dayMap[dateKey]) dayMap[dateKey] = { promptTokens: 0, completionTokens: 0, cost: 0 };
-    dayMap[dateKey].promptTokens += Number(row.promptTokens || 0);
-    dayMap[dateKey].completionTokens += Number(row.completionTokens || 0);
-    dayMap[dateKey].cost += Number(row.cost || 0);
+    const timestamp = new Date(row.timestamp).getTime();
+    const index = Math.floor((timestamp - startTime) / bucketMs);
+    if (index >= 0 && index < bucketCount) addRowToChartBucket(buckets[index], row);
   }
-
-  return Array.from({ length: bucketCount }, (_, i) => {
-    const timestamp = todayStart - (bucketCount - 1 - i) * DAY_MS;
-    const dateKey = getChinaDateKey(timestamp);
-    const dayData = dayMap[dateKey];
-    return {
-      label: formatChinaDate(timestamp),
-      tokens: dayData ? (dayData.promptTokens || 0) + (dayData.completionTokens || 0) : 0,
-      cost: dayData ? (dayData.cost || 0) : 0,
-    };
-  });
+  return buckets.map(finalizeChartBucket);
 }
 
 function formatLogDate(date = new Date()) {
@@ -1002,7 +984,9 @@ function getDimensionRange(period, range = {}) {
     end = new Date(start.getTime() + DAY_MS);
     bucketMs = 60 * 60 * 1000;
   } else if (period === "24h") {
-    start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const currentHourStart = Math.floor(now.getTime() / (60 * 60 * 1000)) * 60 * 60 * 1000;
+    start = new Date(currentHourStart - 23 * 60 * 60 * 1000);
+    end = new Date(currentHourStart + 60 * 60 * 1000);
     bucketMs = 60 * 60 * 1000;
   } else if (period === "7d" || period === "30d") {
     const days = period === "7d" ? 7 : 30;
@@ -1036,7 +1020,7 @@ export async function getDimensionChartData(period = "7d", range = {}, dimension
   );
   const { getApiKeys } = await import("./apiKeysRepo.js");
   const apiKeys = dimension === "apiKey" ? await getApiKeys() : [];
-  const keyNames = new Map(apiKeys.map((key) => [key.key, key.name || key.id]));
+  const keyInfoByValue = new Map(apiKeys.map((key) => [key.key, key]));
   const { getModelMappings } = await import("./aliasRepo.js");
   const modelMappingMap = dimension === "model"
     ? createModelMappingMap(await getModelMappings())
@@ -1058,8 +1042,12 @@ export async function getDimensionChartData(period = "7d", range = {}, dimension
     const timestamp = new Date(row.timestamp).getTime();
     const index = Math.floor((timestamp - start.getTime()) / bucketMs);
     if (index < 0 || index >= bucketCount) continue;
-    const group = dimension === "apiKey"
-      ? (row.apiKey ? (keyNames.get(row.apiKey) || `${row.apiKey.slice(0, 8)}...`) : "本地调用（无 API 密钥）")
+    const keyInfo = dimension === "apiKey" && row.apiKey ? keyInfoByValue.get(row.apiKey) : null;
+    const groupId = dimension === "apiKey"
+      ? getApiKeyGroupId(row.apiKey, keyInfo)
+      : dimension === "provider" ? (row.provider || "unknown") : `${row.provider || "unknown"}|${row.model || "unknown"}`;
+    const groupLabel = dimension === "apiKey"
+      ? getApiKeyLabel(row.apiKey, keyInfo)
       : dimension === "provider" ? (providerNames.get(row.provider) || row.provider || "未知提供商") : getMappedModelName(modelMappingMap, row.provider, row.model || "未知模型");
     const tokens = parseJson(row.tokens, {}) || {};
     const latency = Number(parseJson(row.meta, {})?.latency?.total || 0);
@@ -1067,29 +1055,29 @@ export async function getDimensionChartData(period = "7d", range = {}, dimension
       : metric === "latency" ? latency
       : Number(row.promptTokens ?? tokens.prompt_tokens ?? tokens.input_tokens ?? 0) + Number(row.completionTokens ?? tokens.completion_tokens ?? tokens.output_tokens ?? 0);
     if (metric === "latency" && value <= 0) continue;
-    const current = buckets[index].get(group) || { sum: 0, count: 0 };
+    const current = buckets[index].get(groupId) || { sum: 0, count: 0 };
     current.sum += value;
     current.count += 1;
-    buckets[index].set(group, current);
-    const total = totals.get(group) || { sum: 0, count: 0 };
+    buckets[index].set(groupId, current);
+    const total = totals.get(groupId) || { label: groupLabel, sum: 0, count: 0 };
     total.sum += value;
     total.count += 1;
-    totals.set(group, total);
+    totals.set(groupId, total);
   }
 
   const ranked = [...totals.entries()]
     .sort((a, b) => (metric === "latency" ? b[1].sum / b[1].count : b[1].sum) - (metric === "latency" ? a[1].sum / a[1].count : a[1].sum))
     .slice(0, 8);
-  const series = ranked.map(([label], index) => ({ id: `series_${index}`, label }));
+  const series = ranked.map(([groupId, value], index) => ({ id: `series_${index}`, groupId, label: value.label }));
   const data = buckets.map((bucket, index) => {
     const timestamp = start.getTime() + index * bucketMs;
     const point = {
       label: bucketMs < 24 * 60 * 60 * 1000
-        ? formatChinaTime(timestamp)
+        ? (period === "24h" ? formatChinaDateHour(timestamp) : formatChinaTime(timestamp))
         : formatChinaDate(timestamp),
     };
     series.forEach((item) => {
-      const value = bucket.get(item.label);
+      const value = bucket.get(item.groupId);
       point[item.id] = !value ? 0 : metric === "latency" ? Math.round(value.sum / value.count) : value.sum;
     });
     return point;

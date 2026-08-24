@@ -38,6 +38,10 @@ export function formatChinaTime(timestamp) {
   }).format(new Date(timestamp));
 }
 
+export function formatChinaDateHour(timestamp) {
+  return `${getChinaDateKey(timestamp)} ${formatChinaTime(timestamp)}`;
+}
+
 export function formatChinaDate(timestamp) {
   return new Intl.DateTimeFormat("zh-CN", {
     timeZone: CHINA_TIME_ZONE,
