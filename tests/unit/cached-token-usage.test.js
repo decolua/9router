@@ -11,6 +11,32 @@ import { toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
 // Discriminator: Claude reports cache separately (prompt EXCLUDES cache);
 // OpenAI/Gemini report prompt INCLUDING cached_tokens.
 describe("canonicalizeUsage", () => {
+  it("normalizes camelCase and nested Responses cache fields", () => {
+    expect(canonicalizeUsage(normalizeUsage({
+      input_tokens: 500,
+      output_tokens: 50,
+      cached_tokens: 0,
+      cache_creation_input_tokens: 0,
+      input_tokens_details: { cached_tokens: 120, cache_creation_tokens: 40 },
+    }))).toMatchObject({
+      prompt_tokens: 500,
+      completion_tokens: 50,
+      cached_tokens: 120,
+      cache_creation_input_tokens: 40,
+    });
+
+    expect(canonicalizeUsage(normalizeUsage({
+      input_tokens: 100,
+      output_tokens: 50,
+      cacheReadInputTokens: 200,
+      cacheCreationInputTokens: 30,
+    }))).toMatchObject({
+      prompt_tokens: 330,
+      cached_tokens: 200,
+      cache_creation_input_tokens: 30,
+    });
+  });
+
   it("normalizes OpenAI-compatible cache hit and miss aliases without double-counting prompt tokens", () => {
     const normalized = normalizeUsage({
       prompt_tokens: 500,

@@ -454,8 +454,8 @@ export function calculateCostBreakdown(tokens, pricing, timestamp = new Date()) 
   pricing = resolveTimeBasedPricing(pricing, timestamp);
 
   const promptTokens = Number(tokens.prompt_tokens || tokens.input_tokens || 0);
-  const cachedTokens = Number(tokens.cached_tokens || tokens.cache_read_input_tokens || 0);
-  const cacheCreationTokens = Number(tokens.cache_creation_input_tokens || 0);
+  const cachedTokens = Number(tokens.cached_tokens || tokens.cache_read_input_tokens || tokens.cachedTokens || tokens.cacheReadTokens || tokens.cacheReadInputTokens || tokens.prompt_tokens_details?.cached_tokens || tokens.input_tokens_details?.cached_tokens || 0);
+  const cacheCreationTokens = Number(tokens.cache_creation_input_tokens || tokens.cacheCreationInputTokens || tokens.cacheCreationTokens || tokens.cache_write_input_tokens || tokens.cache_write_tokens || tokens.prompt_tokens_details?.cache_creation_tokens || tokens.input_tokens_details?.cache_creation_tokens || 0);
   // prompt_tokens is cache-inclusive (see canonicalizeUsage): cached + cache_creation
   // are subsets, so subtract both to avoid charging them at the full input rate.
   const inputTokens = Math.max(0, promptTokens - cachedTokens - cacheCreationTokens);

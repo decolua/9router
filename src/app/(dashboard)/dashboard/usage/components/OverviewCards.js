@@ -19,7 +19,8 @@ export default function OverviewCards({ stats }) {
       </Card>
       <Card className="flex min-w-0 flex-col gap-1 px-4 py-3">
         <span className="text-text-muted text-sm uppercase font-semibold">Cached Tokens</span>
-        <span className="truncate text-2xl font-bold text-info">{fmt(stats.totalCachedTokens)}</span>
+        <span className="truncate text-2xl font-bold text-info">{fmt((stats.totalCachedTokens || 0) + (stats.totalCacheCreationTokens || 0))}</span>
+        <span className="text-[10px] text-text-muted">读取 {fmt(stats.totalCachedTokens)} · 写入 {fmt(stats.totalCacheCreationTokens)}</span>
       </Card>
       <Card className="flex min-w-0 flex-col gap-1 px-4 py-3">
         <span className="text-text-muted text-sm uppercase font-semibold">Output Tokens</span>

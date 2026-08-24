@@ -211,8 +211,8 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       // Same cache-inclusive total for the recorded detail, so the DB and the
       // client-facing usage can never disagree.
       const inTokensForLog = (usage.input_tokens || 0)
-        + (usage.cache_read_input_tokens || usage.cached_tokens || 0)
-        + (usage.cache_creation_input_tokens || 0);
+        + (usage.cache_read_input_tokens || usage.cached_tokens || usage.input_tokens_details?.cached_tokens || 0)
+        + (usage.cache_creation_input_tokens || usage.input_tokens_details?.cache_creation_tokens || 0);
       const { msgItem, textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
       saveRequestDetail(buildRequestDetail({
         ...ctx,
@@ -233,8 +233,8 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       // where the real prompt was ~5344 with 5332 served from cache. Fold the cache
       // counters in, and keep them visible in prompt_tokens_details so a client can
       // tell a cache hit from a small prompt.
-      const cacheRead = usage.cache_read_input_tokens || usage.cached_tokens || 0;
-      const cacheCreate = usage.cache_creation_input_tokens || 0;
+      const cacheRead = usage.cache_read_input_tokens || usage.cached_tokens || usage.input_tokens_details?.cached_tokens || 0;
+      const cacheCreate = usage.cache_creation_input_tokens || usage.input_tokens_details?.cache_creation_tokens || 0;
       const inTokens = (usage.input_tokens || 0) + cacheRead + cacheCreate;
       const outTokens = usage.output_tokens || 0;
       const cacheDetails = (cacheRead > 0 || cacheCreate > 0)

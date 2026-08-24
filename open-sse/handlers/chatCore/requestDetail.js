@@ -34,7 +34,7 @@ export function extractUsageFromResponse(responseBody) {
       ...(isOpenAIResponsesUsage
         ? { cached_tokens: inputDetails.cached_tokens }
         : { cache_read_input_tokens: responseBody.usage.cache_read_input_tokens }),
-      cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens ?? inputDetails?.cache_creation_tokens
+      cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens ?? responseBody.usage.cacheCreationInputTokens ?? responseBody.usage.cacheCreationTokens ?? inputDetails?.cache_creation_tokens
     };
   }
 
@@ -43,8 +43,8 @@ export function extractUsageFromResponse(responseBody) {
     return {
       prompt_tokens: responseBody.usage.prompt_tokens || 0,
       completion_tokens: responseBody.usage.completion_tokens || 0,
-      cached_tokens: responseBody.usage.prompt_tokens_details?.cached_tokens ?? responseBody.usage.prompt_cache_hit_tokens ?? responseBody.usage.cache_hit_tokens,
-      cache_creation_input_tokens: responseBody.usage.prompt_tokens_details?.cache_creation_tokens ?? responseBody.usage.prompt_cache_miss_tokens ?? responseBody.usage.cache_miss_tokens,
+      cached_tokens: responseBody.usage.prompt_tokens_details?.cached_tokens || responseBody.usage.input_tokens_details?.cached_tokens || responseBody.usage.cached_tokens || responseBody.usage.cachedTokens || responseBody.usage.cacheReadTokens || responseBody.usage.prompt_cache_hit_tokens || responseBody.usage.cache_hit_tokens,
+      cache_creation_input_tokens: responseBody.usage.prompt_tokens_details?.cache_creation_tokens || responseBody.usage.input_tokens_details?.cache_creation_tokens || responseBody.usage.cache_creation_input_tokens || responseBody.usage.cacheCreationInputTokens || responseBody.usage.cacheCreationTokens || responseBody.usage.prompt_cache_miss_tokens || responseBody.usage.cache_miss_tokens,
       reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens
     };
   }
@@ -86,8 +86,8 @@ export function formatDoneLine({ usage, latency }) {
   const u = usage || {};
   const inTok = u.prompt_tokens ?? u.input_tokens ?? 0;
   const outTok = u.completion_tokens ?? u.output_tokens ?? 0;
-  const cacheRead = u.cache_read_input_tokens ?? u.cached_tokens ?? u.prompt_tokens_details?.cached_tokens ?? 0;
-  const cacheCreate = u.cache_creation_input_tokens ?? 0;
+  const cacheRead = u.cache_read_input_tokens || u.cached_tokens || u.cachedTokens || u.cacheReadTokens || u.prompt_tokens_details?.cached_tokens || u.input_tokens_details?.cached_tokens || 0;
+  const cacheCreate = u.cache_creation_input_tokens || u.cacheCreationInputTokens || u.cacheCreationTokens || u.prompt_tokens_details?.cache_creation_tokens || u.input_tokens_details?.cache_creation_tokens || 0;
   let inStr = `IN ${inTok}`;
   if (cacheRead || cacheCreate) {
     const parts = [];

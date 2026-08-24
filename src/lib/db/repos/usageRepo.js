@@ -3,6 +3,8 @@ import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
 import { createModelMappingMap, getMappedModelName } from "@/shared/utils/modelMapping.js";
+import { DAY_MS, formatChinaDate, formatChinaTime, getChinaDateKey, getChinaDayStart, parseChinaDateTime } from "@/shared/utils/chinaTime.js";
+import { canonicalizeUsage, normalizeUsage } from "open-sse/utils/usageTracking.js";
 
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
@@ -30,12 +32,16 @@ function getCacheTokenCounts(tokens = {}) {
   return {
     cacheReadTokens: firstTokenCount(
       tokens.cached_tokens,
+      tokens.cachedTokens,
+      tokens.cacheReadTokens,
       tokens.cache_read_input_tokens,
+      tokens.cacheReadInputTokens,
       tokens.cache_read_tokens,
       tokens.prompt_cache_hit_tokens,
       tokens.cache_hit_tokens,
       promptDetails.cached_tokens,
       inputDetails.cached_tokens,
+      tokens.usageMetadata?.cachedContentTokenCount,
       nestedUsage.cached_tokens,
       nestedUsage.cache_read_input_tokens,
       nestedUsage.cache_read_tokens,
@@ -46,6 +52,8 @@ function getCacheTokenCounts(tokens = {}) {
     ),
     cacheCreationTokens: firstTokenCount(
       tokens.cache_creation_input_tokens,
+      tokens.cacheCreationInputTokens,
+      tokens.cacheCreationTokens,
       tokens.cache_creation_tokens,
       tokens.cache_write_input_tokens,
       tokens.cache_write_tokens,
@@ -55,6 +63,7 @@ function getCacheTokenCounts(tokens = {}) {
       promptDetails.cache_creation_input_tokens,
       inputDetails.cache_creation_tokens,
       inputDetails.cache_creation_input_tokens,
+      tokens.usageMetadata?.cacheCreationTokenCount,
       nestedUsage.cache_creation_input_tokens,
       nestedUsage.cache_creation_tokens,
       nestedUsage.cache_write_input_tokens,
@@ -104,16 +113,16 @@ function scheduleStatsEvent(event, delayMs = 150) {
 }
 
 function getLocalDateKey(timestamp) {
-  const d = timestamp ? new Date(timestamp) : new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return getChinaDateKey(timestamp ? new Date(timestamp) : new Date());
 }
 
 function addToCounter(target, key, values) {
-  if (!target[key]) target[key] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0 };
+  if (!target[key]) target[key] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cacheCreationTokens: 0, cost: 0 };
   target[key].requests += values.requests || 1;
   target[key].promptTokens += values.promptTokens || 0;
   target[key].completionTokens += values.completionTokens || 0;
   target[key].cachedTokens += values.cachedTokens || 0;
+  target[key].cacheCreationTokens += values.cacheCreationTokens || 0;
   target[key].cost += values.cost || 0;
   if (values.meta) Object.assign(target[key], values.meta);
 }
@@ -121,14 +130,15 @@ function addToCounter(target, key, values) {
 function aggregateEntryToDay(day, entry) {
   const promptTokens = entry.tokens?.prompt_tokens || entry.tokens?.input_tokens || 0;
   const completionTokens = entry.tokens?.completion_tokens || entry.tokens?.output_tokens || 0;
-  const cachedTokens = entry.tokens?.cached_tokens || entry.tokens?.cache_read_input_tokens || 0;
+  const { cacheReadTokens: cachedTokens, cacheCreationTokens } = getCacheTokenCounts(entry.tokens || {});
   const cost = entry.cost || 0;
-  const vals = { promptTokens, completionTokens, cachedTokens, cost };
+  const vals = { promptTokens, completionTokens, cachedTokens, cacheCreationTokens, cost };
 
   day.requests = (day.requests || 0) + 1;
   day.promptTokens = (day.promptTokens || 0) + promptTokens;
   day.completionTokens = (day.completionTokens || 0) + completionTokens;
   day.cachedTokens = (day.cachedTokens || 0) + cachedTokens;
+  day.cacheCreationTokens = (day.cacheCreationTokens || 0) + cacheCreationTokens;
   day.cost = (day.cost || 0) + cost;
 
   day.byProvider ||= {};
@@ -301,9 +311,10 @@ export async function saveRequestUsage(entry) {
     const db = await getAdapter();
 
     if (!entry.timestamp) entry.timestamp = new Date().toISOString();
-    entry.cost = await calculateCost(entry.provider, entry.model, entry.tokens, entry.timestamp);
-
-    const tokens = entry.tokens || {};
+    const rawTokens = entry.tokens || {};
+    const tokens = canonicalizeUsage(normalizeUsage(rawTokens) || rawTokens) || rawTokens;
+    entry.tokens = tokens;
+    entry.cost = await calculateCost(entry.provider, entry.model, tokens, entry.timestamp);
     const promptTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
     const completionTokens = tokens.completion_tokens || tokens.output_tokens || 0;
 
@@ -378,8 +389,8 @@ export async function getUsageHistory(filter = {}) {
 
   if (filter.provider) { conds.push("provider = ?"); params.push(filter.provider); }
   if (filter.model) { conds.push("model = ?"); params.push(filter.model); }
-  if (filter.startDate) { conds.push("timestamp >= ?"); params.push(new Date(filter.startDate).toISOString()); }
-  if (filter.endDate) { conds.push("timestamp <= ?"); params.push(new Date(filter.endDate).toISOString()); }
+  if (filter.startDate) { conds.push("timestamp >= ?"); params.push(parseChinaDateTime(filter.startDate).toISOString()); }
+  if (filter.endDate) { conds.push("timestamp <= ?"); params.push(parseChinaDateTime(filter.endDate).toISOString()); }
 
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
   const rows = db.all(`SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ${where} ORDER BY id ASC`, params);
@@ -395,9 +406,7 @@ function loadDaysInRange(adapter, maxDays) {
   if (maxDays == null) {
     return adapter.all(`SELECT dateKey, data FROM usageDaily`);
   }
-  const today = new Date();
-  const cutoff = new Date(today.getFullYear(), today.getMonth(), today.getDate() - maxDays + 1);
-  const cutoffKey = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, "0")}-${String(cutoff.getDate()).padStart(2, "0")}`;
+  const cutoffKey = getChinaDateKey(getChinaDayStart() - (maxDays - 1) * DAY_MS);
   return adapter.all(`SELECT dateKey, data FROM usageDaily WHERE dateKey >= ?`, [cutoffKey]);
 }
 
@@ -435,11 +444,12 @@ export async function getUsageStats(period = "all", range = {}) {
   const recentRequests = recentRows
     .map((r) => {
       const t = parseJson(r.tokens, {}) || {};
+      const { cacheReadTokens } = getCacheTokenCounts(t);
       return {
         timestamp: r.timestamp, model: r.model, provider: r.provider || "",
         promptTokens: t.prompt_tokens || t.input_tokens || 0,
         completionTokens: t.completion_tokens || t.output_tokens || 0,
-        cachedTokens: t.cached_tokens || t.cache_read_input_tokens || 0,
+        cachedTokens: cacheReadTokens,
         status: r.status || "ok",
       };
     })
@@ -628,15 +638,13 @@ export async function getUsageStats(period = "all", range = {}) {
     // 24h / today: live history
     let cutoff;
     if (period === "custom") {
-      cutoff = range.startDate ? new Date(range.startDate).toISOString() : new Date(0).toISOString();
+      cutoff = range.startDate ? parseChinaDateTime(range.startDate).toISOString() : new Date(0).toISOString();
     } else if (period === "today") {
-      const startOfDay = new Date();
-      startOfDay.setHours(0, 0, 0, 0);
-      cutoff = startOfDay.toISOString();
+      cutoff = new Date(getChinaDayStart()).toISOString();
     } else {
       cutoff = new Date(Date.now() - PERIOD_MS["24h"]).toISOString();
     }
-    const customEnd = period === "custom" && range.endDate ? new Date(range.endDate).toISOString() : new Date().toISOString();
+    const customEnd = period === "custom" && range.endDate ? parseChinaDateTime(range.endDate).toISOString() : new Date().toISOString();
     const filtered = db.all(
       `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
       [cutoff, customEnd]
@@ -646,7 +654,7 @@ export async function getUsageStats(period = "all", range = {}) {
       const tokens = parseJson(r.tokens, {}) || {};
       const promptTokens = tokens.prompt_tokens || 0;
       const completionTokens = tokens.completion_tokens || 0;
-      const cachedTokens = tokens.cached_tokens || tokens.cache_read_input_tokens || 0;
+      const { cacheReadTokens: cachedTokens } = getCacheTokenCounts(tokens);
       const entryCost = r.cost || 0;
       const providerDisplayName = providerNodeNameMap[r.provider] || r.provider;
 
@@ -723,18 +731,15 @@ export async function getUsageStats(period = "all", range = {}) {
   let apiKeyStart = new Date(0);
   let apiKeyEnd = new Date();
   if (period === "custom") {
-    apiKeyStart = range.startDate ? new Date(range.startDate) : apiKeyStart;
-    apiKeyEnd = range.endDate ? new Date(range.endDate) : apiKeyEnd;
+    apiKeyStart = range.startDate ? parseChinaDateTime(range.startDate) : apiKeyStart;
+    apiKeyEnd = range.endDate ? parseChinaDateTime(range.endDate) : apiKeyEnd;
   } else if (period === "today") {
-    apiKeyStart = new Date();
-    apiKeyStart.setHours(0, 0, 0, 0);
+    apiKeyStart = new Date(getChinaDayStart());
   } else if (period === "24h") {
     apiKeyStart = new Date(Date.now() - PERIOD_MS["24h"]);
   } else if (["7d", "30d", "60d"].includes(period)) {
     const days = { "7d": 7, "30d": 30, "60d": 60 }[period];
-    apiKeyStart = new Date();
-    apiKeyStart.setHours(0, 0, 0, 0);
-    apiKeyStart.setDate(apiKeyStart.getDate() - days + 1);
+    apiKeyStart = new Date(getChinaDayStart() - (days - 1) * DAY_MS);
   }
 
   const apiKeyRows = db.all(
@@ -855,7 +860,13 @@ export async function getUsageStats(period = "all", range = {}) {
     if (new Date(row.timestamp) > new Date(target.lastUsed)) target.lastUsed = row.timestamp;
   }
 
-  stats.totalRequests = Object.values(stats.byProvider).reduce((sum, p) => sum + (p.requests || 0), 0);
+  const providerTotals = Object.values(stats.byProvider);
+  stats.totalRequests = providerTotals.reduce((sum, item) => sum + (item.requests || 0), 0);
+  stats.totalPromptTokens = providerTotals.reduce((sum, item) => sum + (item.promptTokens || 0) + (item.cachedTokens || 0) + (item.cacheCreationTokens || 0), 0);
+  stats.totalCachedTokens = providerTotals.reduce((sum, item) => sum + (item.cachedTokens || 0), 0);
+  stats.totalCacheCreationTokens = providerTotals.reduce((sum, item) => sum + (item.cacheCreationTokens || 0), 0);
+  stats.totalCompletionTokens = providerTotals.reduce((sum, item) => sum + (item.completionTokens || 0), 0);
+  stats.totalCost = providerTotals.reduce((sum, item) => sum + (item.cost || 0), 0);
   return stats;
 }
 
@@ -866,12 +877,9 @@ export async function getChartData(period = "7d", range = {}) {
   if (period === "today") {
     const bucketCount = 24;
     const bucketMs = 3600000;
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const startTime = startOfDay.getTime();
+    const startTime = getChinaDayStart(now);
     const endTime = startTime + bucketCount * bucketMs;
-    const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
+    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: formatChinaTime(startTime + i * bucketMs), tokens: 0, cost: 0 }));
 
     const rows = db.all(
       `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
@@ -892,9 +900,8 @@ export async function getChartData(period = "7d", range = {}) {
   if (period === "24h") {
     const bucketCount = 24;
     const bucketMs = 3600000;
-    const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
     const startTime = now - bucketCount * bucketMs;
-    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
+    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: formatChinaTime(startTime + i * bucketMs), tokens: 0, cost: 0 }));
 
     const rows = db.all(
       `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
@@ -911,13 +918,13 @@ export async function getChartData(period = "7d", range = {}) {
   }
 
   if (period === "custom" && range.startDate) {
-    const startTime = new Date(range.startDate).getTime();
-    const endTime = range.endDate ? new Date(range.endDate).getTime() : now;
+    const startTime = parseChinaDateTime(range.startDate).getTime();
+    const endTime = range.endDate ? parseChinaDateTime(range.endDate).getTime() : now;
     const span = Math.max(1, endTime - startTime);
     const bucketCount = Math.min(60, Math.max(1, Math.ceil(span / 86400000)));
     const bucketMs = span / bucketCount;
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({
-      label: new Date(startTime + i * bucketMs).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+      label: bucketMs < DAY_MS ? formatChinaTime(startTime + i * bucketMs) : formatChinaDate(startTime + i * bucketMs),
       tokens: 0,
       cost: 0,
     }));
@@ -934,21 +941,28 @@ export async function getChartData(period = "7d", range = {}) {
   }
 
   const bucketCount = period === "7d" ? 7 : period === "30d" ? 30 : 60;
-  const today = new Date();
-  const labelFn = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-
-  // Build map of dateKey → day data
-  const dayRows = loadDaysInRange(db, bucketCount);
+  const todayStart = getChinaDayStart(now);
+  const startTime = todayStart - (bucketCount - 1) * DAY_MS;
+  const endTime = todayStart + DAY_MS;
   const dayMap = {};
-  for (const r of dayRows) dayMap[r.dateKey] = parseJson(r.data, {});
+  const rows = db.all(
+    `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND timestamp < ?`,
+    [new Date(startTime).toISOString(), new Date(endTime).toISOString()],
+  );
+  for (const row of rows) {
+    const dateKey = getChinaDateKey(new Date(row.timestamp));
+    if (!dayMap[dateKey]) dayMap[dateKey] = { promptTokens: 0, completionTokens: 0, cost: 0 };
+    dayMap[dateKey].promptTokens += Number(row.promptTokens || 0);
+    dayMap[dateKey].completionTokens += Number(row.completionTokens || 0);
+    dayMap[dateKey].cost += Number(row.cost || 0);
+  }
 
   return Array.from({ length: bucketCount }, (_, i) => {
-    const d = new Date(today);
-    d.setDate(d.getDate() - (bucketCount - 1 - i));
-    const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const timestamp = todayStart - (bucketCount - 1 - i) * DAY_MS;
+    const dateKey = getChinaDateKey(timestamp);
     const dayData = dayMap[dateKey];
     return {
-      label: labelFn(d),
+      label: formatChinaDate(timestamp),
       tokens: dayData ? (dayData.promptTokens || 0) + (dayData.completionTokens || 0) : 0,
       cost: dayData ? (dayData.cost || 0) : 0,
     };
@@ -984,25 +998,20 @@ function getDimensionRange(period, range = {}) {
   let end = new Date(now);
   let bucketMs;
   if (period === "today") {
-    start = new Date(now);
-    start.setHours(0, 0, 0, 0);
-    end = new Date(start);
-    end.setDate(end.getDate() + 1);
+    start = new Date(getChinaDayStart(now));
+    end = new Date(start.getTime() + DAY_MS);
     bucketMs = 60 * 60 * 1000;
   } else if (period === "24h") {
     start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     bucketMs = 60 * 60 * 1000;
   } else if (period === "7d" || period === "30d") {
     const days = period === "7d" ? 7 : 30;
-    start = new Date(now);
-    start.setHours(0, 0, 0, 0);
-    start.setDate(start.getDate() - days + 1);
-    end = new Date(start);
-    end.setDate(end.getDate() + days);
-    bucketMs = 24 * 60 * 60 * 1000;
+    start = new Date(getChinaDayStart(now) - (days - 1) * DAY_MS);
+    end = new Date(start.getTime() + days * DAY_MS);
+    bucketMs = DAY_MS;
   } else {
-    start = range.startDate ? new Date(range.startDate) : new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    end = range.endDate ? new Date(range.endDate) : now;
+    start = range.startDate ? parseChinaDateTime(range.startDate) : new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    end = range.endDate ? parseChinaDateTime(range.endDate) : now;
     bucketMs = end.getTime() - start.getTime() <= 48 * 60 * 60 * 1000 ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
   }
   if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
@@ -1076,8 +1085,8 @@ export async function getDimensionChartData(period = "7d", range = {}, dimension
     const timestamp = start.getTime() + index * bucketMs;
     const point = {
       label: bucketMs < 24 * 60 * 60 * 1000
-        ? new Date(timestamp).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false })
-        : new Date(timestamp).toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit" }),
+        ? formatChinaTime(timestamp)
+        : formatChinaDate(timestamp),
     };
     series.forEach((item) => {
       const value = bucket.get(item.label);
@@ -1162,8 +1171,8 @@ export async function getUsageLogs(filter = {}) {
     conds.push("status = ?");
     params.push(filter.status);
   }
-  if (filter.startDate) { conds.push("timestamp >= ?"); params.push(new Date(filter.startDate).toISOString()); }
-  if (filter.endDate) { conds.push("timestamp <= ?"); params.push(new Date(filter.endDate).toISOString()); }
+  if (filter.startDate) { conds.push("timestamp >= ?"); params.push(parseChinaDateTime(filter.startDate).toISOString()); }
+  if (filter.endDate) { conds.push("timestamp <= ?"); params.push(parseChinaDateTime(filter.endDate).toISOString()); }
 
   if (filter.apiKey) {
     const { getApiKeys } = await import("./apiKeysRepo.js");

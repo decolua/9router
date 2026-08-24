@@ -509,8 +509,9 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
       // OpenAI Responses API: input_tokens already includes cached_tokens
       // Cache info is in input_tokens_details.cached_tokens
       const cacheReadTokens = responseUsage.input_tokens_details?.cached_tokens || responseUsage.cache_read_input_tokens || 0;
+      const cacheCreationTokens = responseUsage.input_tokens_details?.cache_creation_tokens || responseUsage.cache_creation_input_tokens || 0;
       
-      state.usage = buildUsage({ promptTokens: inputTokens, completionTokens: outputTokens, totalTokens: inputTokens + outputTokens, cachedTokens: cacheReadTokens });
+      state.usage = buildUsage({ promptTokens: inputTokens, completionTokens: outputTokens, totalTokens: inputTokens + outputTokens, cachedTokens: cacheReadTokens, cacheCreationTokens });
     }
     
     if (!state.finishReasonSent) {
