@@ -398,12 +398,11 @@ export default function ExpertPanelPage() {
       <div className="flex flex-wrap items-end gap-3 border-b border-border bg-surface/90 px-4 py-3 lg:px-8">
         <DropdownSelect className="w-56" value={activeSessionId} onChange={switchSession} options={sessions.map((session) => ({ value: session.id, label: session.title }))} placeholder="选择会话" buttonClassName="h-9" />
         <Button icon="note_add" size="md" variant="secondary" disabled={!sessionsReady || sending || judging} onClick={addSession}>新建会话</Button>
-        <Button icon="delete" size="md" variant="ghost" disabled={!sessionsReady || sending || judging} onClick={deleteSession}>删除会话</Button>
-        {judgeSummary && <p className="min-w-0 flex-1 text-sm text-text-muted">{judgeSummary}</p>}
+        <Button icon="delete" size="md" variant="danger" disabled={!sessionsReady || sending || judging} onClick={deleteSession}>删除会话</Button>
       </div>
 
       <div className="min-h-0 flex-1 px-4 py-4 lg:px-8 lg:py-6 custom-scrollbar">
-        <div className="mx-0 grid h-full min-h-0 w-full grid-cols-1 gap-4 lg:grid-cols-[300px_minmax(0,1fr)]">
+        <div className="mx-0 grid h-full min-h-0 w-full grid-cols-1 gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
           <aside className="flex min-h-0 flex-col overflow-visible rounded-md border border-border bg-surface shadow-sm">
             <div className="flex min-h-0 flex-1 flex-col gap-3 p-3">
               <Input icon="search" placeholder="搜索提供商或模型" value={pickerSearch} onChange={(event) => setPickerSearch(event.target.value)} />
@@ -419,7 +418,10 @@ export default function ExpertPanelPage() {
             </div>
             <div className="shrink-0 border-t border-border p-3">
               <div className="mb-2 text-xs font-semibold text-text-muted">裁判设置</div>
-              <Button className="w-full justify-between" variant="secondary" disabled={sending} onClick={() => openPicker("judge")}>{judgeModel ? `${modelProviderMap.get(judgeModel) || "其他"} / ${modelLabelMap.get(judgeModel) || judgeModel}` : "选择裁判模型"}<span className="material-symbols-outlined text-[18px]">expand_more</span></Button>
+              <Button className="w-full justify-between text-left" variant="secondary" disabled={sending} onClick={() => openPicker("judge")}>
+                {judgeModel ? <span className="min-w-0 flex-1 leading-tight"><span className="block truncate text-[10px] font-medium text-text-muted">{modelProviderMap.get(judgeModel) || "其他"}</span><span className="block truncate text-sm">{modelLabelMap.get(judgeModel) || judgeModel}</span></span> : <span className="min-w-0 flex-1 truncate">选择裁判模型</span>}
+                <span className="material-symbols-outlined shrink-0 text-[18px]">expand_more</span>
+              </Button>
               <Button className="mt-2 w-full" variant="secondary" loading={judging} disabled={!judgeModel || panels.length === 0 || panels.some((panel) => panel.status !== "done")} onClick={runJudge}>开始评分</Button>
             </div>
           </aside>
