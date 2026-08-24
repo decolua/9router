@@ -216,6 +216,50 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
  * @param {string|null} model - The specific model that triggered the error
  * @returns {{ shouldFallback: boolean, cooldownMs: number }}
  */
+/**
+ * Human-readable reason for the connection's `lastError`.
+ *
+ * A non-string error used to collapse to the bare string "Provider error", which
+ * is what an operator then sees in the dashboard and in the console line below —
+ * no status, no code, nothing to act on. A failed `fetch` is exactly that case:
+ * Node reports `TypeError: fetch failed` and puts the useful part
+ * (ECONNREFUSED, ENOTFOUND, ETIMEDOUT) on `error.cause.code`.
+ *
+ * Only message-shaped fields and error codes are read. The error object is never
+ * serialized wholesale, so a request body or header that happens to be attached
+ * to it cannot leak into the stored reason.
+ */
+export function describeProviderError(errorText) {
+  const clamp = (value) => String(value).replace(/\s+/g, " ").trim().slice(0, 100);
+
+  if (typeof errorText === "string") return errorText.slice(0, 100);
+  if (!errorText || typeof errorText !== "object") return "Provider error";
+
+  const code = typeof errorText.code === "string" ? errorText.code
+    : typeof errorText.cause?.code === "string" ? errorText.cause.code
+      : null;
+
+  if (errorText instanceof Error) {
+    const message = errorText.message ? clamp(errorText.message) : errorText.name || "Provider error";
+    return code && !message.includes(code) ? clamp(`${message} (${code})`) : message;
+  }
+
+  const candidates = [
+    errorText.error?.message,
+    errorText.message,
+    typeof errorText.error === "string" ? errorText.error : null,
+    errorText.detail,
+    errorText.reason,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return code && !candidate.includes(code) ? clamp(`${candidate} (${code})`) : clamp(candidate);
+    }
+  }
+
+  return code ? clamp(`Provider error (${code})`) : "Provider error";
+}
+
 export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null) {
   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
   const connections = await getProviderConnections({ provider });
@@ -240,7 +284,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
-  const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
+  const reason = describeProviderError(errorText);
   const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
 
   await updateProviderConnection(connectionId, {
