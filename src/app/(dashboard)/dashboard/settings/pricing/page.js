@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Button, Card, Input, Modal, Toggle } from "@/shared/components";
+import { Button, Card, DropdownSelect, Input, Modal, Toggle } from "@/shared/components";
 import { ConfirmModal } from "@/shared/components/Modal";
+import { useNotificationStore } from "@/store/notificationStore";
 
 const FIELDS = [
   ["input", "输入 Token"],
@@ -23,7 +24,7 @@ function PricingForm({ values, onChange, batch = false }) {
   return <div className="flex flex-col gap-5">
     <div><p className="mb-3 text-sm font-semibold">基础定价</p><RateFields values={values} onChange={onChange} emptyHint={batch ? "留空则不修改" : "0"} /></div>
     <div className="border-t border-border pt-4">
-      <div className="flex items-center justify-between gap-4"><div><p className="text-sm font-semibold">峰谷定价</p><p className="text-xs text-text-muted">按 UTC 时间判断，支持多个时段。</p></div>{batch ? <select className="h-10 rounded-md border border-border bg-bg-base px-3 text-sm" value={peakMode} onChange={(event) => onChange("peakEnabled", event.target.value)}><option value="">不修改</option><option value="true">启用</option><option value="false">关闭</option></select> : <Toggle checked={values.peakEnabled === true} onChange={(checked) => onChange("peakEnabled", checked)} />}</div>
+      <div className="flex items-center justify-between gap-4"><div><p className="text-sm font-semibold">峰谷定价</p><p className="text-xs text-text-muted">按 UTC 时间判断，支持多个时段。</p></div>{batch ? <DropdownSelect className="w-32" buttonClassName="h-10" value={peakMode} options={[{ value: "", label: "不修改" }, { value: "true", label: "启用" }, { value: "false", label: "关闭" }]} onChange={(value) => onChange("peakEnabled", value)} /> : <Toggle checked={values.peakEnabled === true} onChange={(checked) => onChange("peakEnabled", checked)} />}</div>
       {(peakMode === true || peakMode === "true") && <div className="mt-4 flex flex-col gap-4">
         <Input label="峰时时段（UTC）" value={values.peakWindows || ""} placeholder="例如：01:00-04:00,06:00-10:00" onChange={(event) => onChange("peakWindows", event.target.value)} />
         <div><p className="mb-3 text-sm font-semibold text-red-500">峰时定价</p><RateFields values={values.peakPricing || EMPTY_RATES} onChange={(field, value) => onChange("peakPricing", { ...(values.peakPricing || {}), [field]: value })} emptyHint={batch ? "留空则不修改" : "0"} /></div>
@@ -37,6 +38,7 @@ const toNumberRates = (values, keepEmpty = false) => Object.fromEntries(FIELDS.f
 const itemKey = (item) => `${item.provider}\u0000${item.model}`;
 
 export default function PricingSettingsPage() {
+  const notify = useNotificationStore();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -58,7 +60,7 @@ export default function PricingSettingsPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "加载模型定价失败");
       setItems(data.items || []);
-    } catch (error) { alert(error.message); } finally { setLoading(false); }
+    } catch (error) { notify.error(error.message || "加载模型定价失败"); } finally { setLoading(false); }
   };
   useEffect(() => { loadPricing(); }, []);
 
@@ -78,7 +80,11 @@ export default function PricingSettingsPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "保存定价失败");
       await loadPricing();
-    } catch (error) { alert(error.message); throw error; } finally { setSaving(false); }
+      return true;
+    } catch (error) {
+      notify.error(error.message || "保存定价失败");
+      return false;
+    } finally { setSaving(false); }
   };
 
   const openEdit = (item) => {
@@ -87,17 +93,19 @@ export default function PricingSettingsPage() {
   };
 
   const saveEdit = async () => {
-    if (editValues.peakEnabled && !editValues.peakWindows.trim()) return alert("请填写峰时时段");
+    if (editValues.peakEnabled && !editValues.peakWindows.trim()) return notify.warning("请填写峰时时段");
     const pricing = { ...toNumberRates(editValues), peakEnabled: editValues.peakEnabled === true, peakWindows: editValues.peakWindows.trim(), peakPricing: toNumberRates(editValues.peakPricing), offPeakPricing: toNumberRates(editValues.offPeakPricing) };
-    await savePayload({ [editing.provider]: { [editing.model]: pricing } });
-    setEditing(null);
+    if (await savePayload({ [editing.provider]: { [editing.model]: pricing } })) {
+      setEditing(null);
+      notify.success("模型定价已保存");
+    }
   };
 
   const saveBatch = async () => {
     const baseChanges = toNumberRates(batchValues, true);
     const peakChanges = toNumberRates(batchValues.peakPricing, true);
     const offPeakChanges = toNumberRates(batchValues.offPeakPricing, true);
-    if (!Object.keys(baseChanges).length && batchValues.peakEnabled === "" && !Object.keys(peakChanges).length && !Object.keys(offPeakChanges).length) return alert("请至少配置一项定价");
+    if (!Object.keys(baseChanges).length && batchValues.peakEnabled === "" && !Object.keys(peakChanges).length && !Object.keys(offPeakChanges).length) return notify.warning("请至少配置一项定价");
     const payload = {};
     for (const item of items.filter((entry) => selected.has(itemKey(entry)))) {
       const next = { ...item.pricing, ...baseChanges };
@@ -108,10 +116,12 @@ export default function PricingSettingsPage() {
       payload[item.provider] ||= {};
       payload[item.provider][item.model] = next;
     }
-    await savePayload(payload);
-    setBatchOpen(false);
-    setBatchValues({ ...EMPTY_VALUES, peakEnabled: "" });
-    setSelected(new Set());
+    if (await savePayload(payload)) {
+      setBatchOpen(false);
+      setBatchValues({ ...EMPTY_VALUES, peakEnabled: "" });
+      setSelected(new Set());
+      notify.success(`已更新 ${Object.keys(payload).reduce((total, provider) => total + Object.keys(payload[provider]).length, 0)} 个模型定价`);
+    }
   };
 
   const confirmDelete = async () => {
@@ -123,7 +133,8 @@ export default function PricingSettingsPage() {
       setDeleteTargets([]);
       setSelected(new Set());
       await loadPricing();
-    } catch (error) { alert(error.message); } finally { setSaving(false); }
+      notify.success("模型定价已删除");
+    } catch (error) { notify.error(error.message || "删除模型定价失败"); } finally { setSaving(false); }
   };
 
   const syncPricing = async () => {
@@ -133,8 +144,8 @@ export default function PricingSettingsPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "从 OpenCode 更新定价失败");
       await loadPricing();
-      alert(`已更新 ${data.updatedCount || 0} 个现有模型，跳过 ${data.skippedCount || 0} 个非现有模型`);
-    } catch (error) { alert(error.message); } finally { setSyncing(false); }
+      notify.success(`已同步 ${data.updatedCount || 0} 个模型，跳过 ${data.skippedCount || 0} 个暂不支持的模型`);
+    } catch (error) { notify.error(error.message || "从 OpenCode 更新定价失败"); } finally { setSyncing(false); }
   };
 
   const visibleKeys = visibleItems.map(itemKey);

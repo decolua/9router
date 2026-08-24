@@ -12,13 +12,13 @@ export const NAVIGATION_VISIBILITY_OPTIONS = [
   { id: "traffic-logs", label: "流量日志", section: "成本中心" },
   { id: "pricing", label: "模型定价", section: "成本中心" },
   { id: "model-mappings", label: "模型映射", section: "成本中心" },
-  { id: "media-providers", label: "媒体提供商", section: "系统", fixedSection: true },
+  { id: "media-providers", label: "媒体提供商", section: "系统" },
   { id: "proxy-pools", label: "代理池", section: "系统" },
   { id: "skills", label: "技能", section: "系统" },
   { id: "console-log", label: "控制台日志", section: "系统" },
   { id: "translator", label: "转换器", section: "系统" },
-  { id: "remote", label: "9Remote", section: "系统", fixedSection: true },
-  { id: "english", label: "9English", section: "系统", fixedSection: true },
+  { id: "remote", label: "9Remote", section: "系统" },
+  { id: "english", label: "9English", section: "系统" },
 ];
 
-export const NAVIGATION_SECTIONS = ["主要功能", "成本中心", "系统"];
+export const DEFAULT_NAVIGATION_SECTIONS = ["主要功能", "成本中心", "系统"];

@@ -1,36 +1,52 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Button, Card } from "@/shared/components";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Button, Card, Toggle } from "@/shared/components";
+import { useNotificationStore } from "@/store/notificationStore";
 
 const fmt = (value) => new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(value || 0);
-const percentile = (values, rate) => values.length ? values[Math.min(values.length - 1, Math.floor(values.length * rate))] : 0;
+const percentile = (values, rate) => values.length ? values[Math.min(values.length - 1, Math.max(0, Math.ceil(values.length * rate) - 1))] : 0;
 
-function Stat({ label, value, detail, color = "text-text-main" }) {
-  return <Card className="p-4"><p className="text-xs text-text-muted">{label}</p><p className={`mt-1 text-2xl font-semibold tabular-nums ${color}`}>{value}</p><p className="mt-1 text-xs text-text-muted">{detail}</p></Card>;
+function Stat({ icon, label, value, detail, color = "text-text-main" }) {
+  return <Card padding="sm" className="flex min-h-24 items-center gap-3"><div className={`flex size-10 shrink-0 items-center justify-center rounded-md bg-surface-2 ${color}`}><span className="material-symbols-outlined text-[21px]">{icon}</span></div><div className="min-w-0"><p className="text-xs text-text-muted">{label}</p><p className={`mt-0.5 text-xl font-semibold tabular-nums ${color}`}>{value}</p><p className="mt-0.5 truncate text-xs text-text-muted">{detail}</p></div></Card>;
+}
+
+function ChartTooltip({ active, payload, label, suffix = "" }) {
+  if (!active || !payload?.length) return null;
+  return <div className="min-w-36 rounded-md border border-border bg-surface px-3 py-2 shadow-xl"><p className="mb-1.5 text-xs font-medium text-text-muted">{label}</p>{payload.filter((item) => item.value != null).map((item) => <div key={item.dataKey} className="flex items-center justify-between gap-4 text-xs"><span className="flex items-center gap-1.5"><span className="size-2 rounded-full" style={{ backgroundColor: item.color }} />{item.name}</span><span className="font-semibold tabular-nums">{fmt(item.value)}{suffix}</span></div>)}</div>;
+}
+
+function EmptyChart({ icon, text }) {
+  return <div className="flex h-[230px] flex-col items-center justify-center text-text-muted"><span className="material-symbols-outlined mb-2 text-3xl">{icon}</span><p className="text-sm">{text}</p></div>;
 }
 
 export default function SystemMonitorClient() {
-  const [snapshot, setSnapshot] = useState({ logs: [], connections: [], stats: {} });
+  const notifyError = useNotificationStore((state) => state.error);
+  const notifyWarning = useNotificationStore((state) => state.warning);
+  const [snapshot, setSnapshot] = useState({ logs: [], connections: [] });
   const [loading, setLoading] = useState(true);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [refreshedAt, setRefreshedAt] = useState(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const end = new Date();
       const start = new Date(end.getTime() - 60 * 60 * 1000);
-      const [logResponse, providerResponse, statsResponse] = await Promise.all([
+      const [logResponse, providerResponse] = await Promise.all([
         fetch(`/api/usage/request-logs?page=1&pageSize=200&startDate=${encodeURIComponent(start.toISOString())}&endDate=${encodeURIComponent(end.toISOString())}`, { cache: "no-store" }),
         fetch("/api/providers", { cache: "no-store" }),
-        fetch("/api/usage/stats?period=today", { cache: "no-store" }),
       ]);
-      const [logs, providers, stats] = await Promise.all([logResponse.json(), providerResponse.json(), statsResponse.json()]);
-      setSnapshot({ logs: logResponse.ok ? logs.logs || [] : [], connections: providerResponse.ok ? providers.connections || [] : [], stats: statsResponse.ok ? stats : {} });
+      const [logs, providers] = await Promise.all([logResponse.json(), providerResponse.json()]);
+      setSnapshot({ logs: logResponse.ok ? logs.logs || [] : [], connections: providerResponse.ok ? providers.connections || [] : [] });
       setRefreshedAt(new Date());
+      if (!logResponse.ok || !providerResponse.ok) notifyWarning("部分监控数据加载失败");
+    } catch (error) {
+      notifyError(error.message || "系统监控数据加载失败");
     } finally { setLoading(false); }
-  }, []);
+  }, [notifyError, notifyWarning]);
+
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (!autoRefresh) return; const timer = setInterval(load, 15000); return () => clearInterval(timer); }, [autoRefresh, load]);
 
@@ -41,7 +57,7 @@ export default function SystemMonitorClient() {
     const failed = logs.filter((log) => log.logType === "failed");
     const latencies = logs.map((log) => Number(log.latencyMs || 0)).filter((value) => value > 0).sort((a, b) => a - b);
     const recentTokens = recent.reduce((sum, log) => sum + (log.inputTokens || 0) + (log.cacheReadTokens || 0) + (log.cacheCreationTokens || 0) + (log.outputTokens || 0), 0);
-    return { qps: recent.length / 60, tps: recentTokens / 60, successRate: logs.length ? (logs.length - failed.length) / logs.length * 100 : 100, errorRate: logs.length ? failed.length / logs.length * 100 : 0, p50: percentile(latencies, 0.5), p90: percentile(latencies, 0.9), p99: percentile(latencies, 0.99), max: latencies.at(-1) || 0, average: latencies.length ? latencies.reduce((a, b) => a + b, 0) / latencies.length : 0 };
+    return { qps: recent.length / 60, tps: recentTokens / 60, successRate: logs.length ? (logs.length - failed.length) / logs.length * 100 : null, errorRate: logs.length ? failed.length / logs.length * 100 : null, p50: percentile(latencies, 0.5), p90: percentile(latencies, 0.9), p99: percentile(latencies, 0.99), average: latencies.length ? latencies.reduce((a, b) => a + b, 0) / latencies.length : 0 };
   }, [snapshot.logs]);
 
   const trend = useMemo(() => {
@@ -61,20 +77,39 @@ export default function SystemMonitorClient() {
 
   const providerRows = useMemo(() => {
     const groups = new Map();
-    snapshot.connections.forEach((connection) => { const key = connection.providerName || connection.provider; const item = groups.get(key) || { name: key, total: 0, enabled: 0, autoDisabled: 0, updatedAt: "" }; item.total += 1; item.enabled += connection.isActive !== false ? 1 : 0; item.autoDisabled += connection.autoDisabled === true ? 1 : 0; if (!item.updatedAt || new Date(connection.updatedAt) > new Date(item.updatedAt)) item.updatedAt = connection.updatedAt; groups.set(key, item); });
-    return [...groups.values()];
+    snapshot.connections.forEach((connection) => {
+      const key = connection.providerName || connection.provider;
+      const item = groups.get(key) || { name: key, total: 0, enabled: 0, autoDisabled: 0, updatedAt: "" };
+      item.total += 1;
+      item.enabled += connection.isActive !== false ? 1 : 0;
+      item.autoDisabled += connection.autoDisabled === true ? 1 : 0;
+      if (!item.updatedAt || new Date(connection.updatedAt) > new Date(item.updatedAt)) item.updatedAt = connection.updatedAt;
+      groups.set(key, item);
+    });
+    return [...groups.values()].sort((a, b) => b.autoDisabled - a.autoDisabled || b.enabled - a.enabled || a.name.localeCompare(b.name));
   }, [snapshot.connections]);
+
   const autoDisabledCount = snapshot.connections.filter((connection) => connection.autoDisabled === true).length;
-  const health = metrics.errorRate >= 20 || autoDisabledCount > 0
-    ? { label: "运行状态异常", dot: "bg-red-500", text: "text-red-600" }
-    : metrics.errorRate > 0
-      ? { label: "运行状态有告警", dot: "bg-amber-500", text: "text-amber-600" }
-      : { label: "运行状态正常", dot: "bg-emerald-500", text: "text-emerald-600" };
+  const hasTraffic = trend.some((item) => item.requests > 0 || item.tokens > 0);
+  const hasLatency = latencyDistribution.some((item) => item.count > 0);
+  const hasErrors = trend.some((item) => item.errors > 0);
+  const health = !snapshot.logs.length
+    ? { label: "运行中，暂无流量", dot: "bg-blue-500", text: "text-blue-600" }
+    : (metrics.errorRate >= 20 || autoDisabledCount > 0)
+      ? { label: "运行状态异常", dot: "bg-red-500", text: "text-red-600" }
+      : metrics.errorRate > 0
+        ? { label: "运行状态有告警", dot: "bg-amber-500", text: "text-amber-600" }
+        : { label: "运行状态正常", dot: "bg-emerald-500", text: "text-emerald-600" };
 
   return <div className="flex min-w-0 flex-col gap-4" data-i18n-skip>
-    <Card className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3"><span className={`size-2 rounded-full ${health.dot}`}/><div><p className={`font-semibold ${health.text}`}>{health.label}</p><p className="text-xs text-text-muted">最近刷新：{refreshedAt ? refreshedAt.toLocaleString("zh-CN") : "等待首次刷新"}</p></div></div><div className="flex items-center gap-2"><label className="flex h-10 items-center gap-2 rounded-md border border-border bg-bg-base px-3 text-sm"><input type="checkbox" checked={autoRefresh} onChange={(event) => setAutoRefresh(event.target.checked)}/>自动刷新</label><Button variant="secondary" icon="refresh" loading={loading} onClick={load}>刷新</Button></div></Card>
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"><Stat label="实时吞吐" value={`${metrics.qps.toFixed(2)} QPS`} detail={`${metrics.tps.toFixed(1)} TPS`} color="text-blue-500"/><Stat label="成功率" value={`${metrics.successRate.toFixed(3)}%`} detail={`${snapshot.logs.length} 条最近请求`} color="text-emerald-500"/><Stat label="错误率" value={`${metrics.errorRate.toFixed(2)}%`} detail={`${snapshot.logs.filter((log) => log.logType === "failed").length} 条失败`} color={metrics.errorRate ? "text-red-500" : "text-emerald-500"}/><Stat label="请求延迟" value={`${fmt(metrics.p99)} ms`} detail={`P50 ${fmt(metrics.p50)} · P90 ${fmt(metrics.p90)} · 平均 ${fmt(metrics.average)}`} color="text-rose-500"/></div>
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[360px_1fr]"><Card className="p-4"><h3 className="mb-4 font-semibold">提供商状态</h3><div className="flex flex-col gap-2">{providerRows.length ? providerRows.map((item) => <div key={item.name} className="rounded-md border border-border bg-bg-base p-3"><div className="flex items-center justify-between gap-3"><span className="truncate font-medium">{item.name}</span><span className={`rounded-full px-2 py-0.5 text-xs ${item.autoDisabled ? "bg-amber-500/10 text-amber-600" : item.enabled ? "bg-emerald-500/10 text-emerald-600" : "bg-surface-2 text-text-muted"}`}>{item.autoDisabled ? "自动禁用" : item.enabled ? "已启用" : "已禁用"}</span></div><p className="mt-2 text-xs text-text-muted">账户 {item.enabled}/{item.total} · 最后修改 {item.updatedAt ? new Date(item.updatedAt).toLocaleString("zh-CN") : "-"}</p></div>) : <p className="py-12 text-center text-sm text-text-muted">暂无已配置提供商</p>}</div></Card><Card className="p-4"><h3 className="mb-4 font-semibold">吞吐趋势</h3><ResponsiveContainer width="100%" height={300}><AreaChart data={trend}><defs><linearGradient id="monitorTokens" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient></defs><CartesianGrid strokeDasharray="3 3" strokeOpacity={0.12}/><XAxis dataKey="label" tick={{ fontSize: 11 }}/><YAxis yAxisId="left" tick={{ fontSize: 11 }}/><YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }}/><Tooltip/><Area yAxisId="right" type="monotone" dataKey="tokens" name="Token" stroke="#10b981" fill="url(#monitorTokens)"/><Line yAxisId="left" type="monotone" dataKey="requests" name="请求" stroke="#3b82f6" strokeWidth={2}/></AreaChart></ResponsiveContainer></Card></div>
-    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2"><Card className="p-4"><h3 className="mb-4 font-semibold">请求时长分布</h3><ResponsiveContainer width="100%" height={260}><BarChart data={latencyDistribution}><CartesianGrid strokeDasharray="3 3" strokeOpacity={0.12}/><XAxis dataKey="label" tick={{ fontSize: 11 }}/><YAxis allowDecimals={false} tick={{ fontSize: 11 }}/><Tooltip/><Bar dataKey="count" name="请求数" fill="#3b82f6" radius={[4,4,0,0]}/></BarChart></ResponsiveContainer></Card><Card className="p-4"><h3 className="mb-4 font-semibold">错误趋势</h3>{trend.some((item) => item.errors) ? <ResponsiveContainer width="100%" height={260}><LineChart data={trend}><CartesianGrid strokeDasharray="3 3" strokeOpacity={0.12}/><XAxis dataKey="label" tick={{ fontSize: 11 }}/><YAxis allowDecimals={false} tick={{ fontSize: 11 }}/><Tooltip/><Line type="monotone" dataKey="errors" name="错误" stroke="#ef4444" strokeWidth={2}/></LineChart></ResponsiveContainer> : <div className="flex h-[260px] flex-col items-center justify-center text-text-muted"><span className="material-symbols-outlined mb-2 text-4xl">check_circle</span><p>最近一小时没有错误</p></div>}</Card></div>
+    <Card padding="sm" className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3"><span className={`size-2.5 rounded-full ${health.dot}`} /><div><p className={`font-semibold ${health.text}`}>{health.label}</p><p className="text-xs text-text-muted">最近刷新：{refreshedAt ? refreshedAt.toLocaleString("zh-CN") : "等待首次刷新"}</p></div></div><div className="flex items-center gap-3"><label className="flex items-center gap-2 text-sm text-text-muted"><span>自动刷新</span><Toggle size="sm" checked={autoRefresh} onChange={setAutoRefresh} /></label><Button variant="secondary" icon="refresh" loading={loading} onClick={load}>刷新</Button></div></Card>
+
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"><Stat icon="speed" label="实时吞吐" value={`${metrics.qps.toFixed(2)} QPS`} detail={`${metrics.tps.toFixed(1)} TPS`} color="text-blue-500" /><Stat icon="check_circle" label="成功率" value={metrics.successRate == null ? "--" : `${metrics.successRate.toFixed(2)}%`} detail={`${snapshot.logs.length} 条最近请求`} color="text-emerald-500" /><Stat icon="error" label="错误率" value={metrics.errorRate == null ? "--" : `${metrics.errorRate.toFixed(2)}%`} detail={`${snapshot.logs.filter((log) => log.logType === "failed").length} 条失败`} color={metrics.errorRate ? "text-red-500" : "text-emerald-500"} /><Stat icon="timer" label="P99 请求延迟" value={metrics.p99 ? `${fmt(metrics.p99)} ms` : "--"} detail={`P50 ${fmt(metrics.p50)} · P90 ${fmt(metrics.p90)} · 平均 ${fmt(metrics.average)}`} color="text-rose-500" /></div>
+
+    <Card padding="sm" className="min-w-0"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">吞吐趋势</h3><span className="text-xs text-text-muted">最近一小时 · 每 5 分钟</span></div>{hasTraffic ? <ResponsiveContainer width="100%" height={270}><AreaChart data={trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}><defs><linearGradient id="monitorTokens" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" stopOpacity={0.25}/><stop offset="90%" stopColor="#10b981" stopOpacity={0.02}/></linearGradient><linearGradient id="monitorRequests" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6" stopOpacity={0.18}/><stop offset="90%" stopColor="#3b82f6" stopOpacity={0.01}/></linearGradient></defs><CartesianGrid vertical={false} strokeDasharray="4 4" strokeOpacity={0.14}/><XAxis dataKey="label" axisLine={false} tickLine={false} tickMargin={10} tick={{ fontSize: 11 }}/><YAxis yAxisId="requests" axisLine={false} tickLine={false} tickMargin={8} allowDecimals={false} width={40} tick={{ fontSize: 11 }}/><YAxis yAxisId="tokens" orientation="right" axisLine={false} tickLine={false} tickMargin={8} tickFormatter={fmt} width={54} tick={{ fontSize: 11 }}/><Tooltip content={<ChartTooltip />} /><Area yAxisId="tokens" type="monotone" dataKey="tokens" name="Token" stroke="#10b981" strokeWidth={2.25} fill="url(#monitorTokens)" activeDot={{ r: 4, strokeWidth: 0 }} /><Area yAxisId="requests" type="monotone" dataKey="requests" name="请求" stroke="#3b82f6" strokeWidth={2.25} fill="url(#monitorRequests)" activeDot={{ r: 4, strokeWidth: 0 }} /></AreaChart></ResponsiveContainer> : <EmptyChart icon="monitoring" text="最近一小时暂无请求流量" />}</Card>
+
+    <Card padding="sm"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">提供商状态</h3><span className="text-xs text-text-muted">{providerRows.length} 个已配置提供商</span></div>{providerRows.length ? <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">{providerRows.map((item) => <div key={item.name} className="rounded-md border border-border bg-bg-base px-3 py-2.5"><div className="flex items-center justify-between gap-3"><span className="truncate text-sm font-medium">{item.name}</span><span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${item.autoDisabled ? "bg-amber-500/10 text-amber-600" : item.enabled ? "bg-emerald-500/10 text-emerald-600" : "bg-surface-2 text-text-muted"}`}>{item.autoDisabled ? "自动禁用" : item.enabled ? "已启用" : "已禁用"}</span></div><p className="mt-1.5 text-xs text-text-muted">账户 {item.enabled}/{item.total} · {item.updatedAt ? new Date(item.updatedAt).toLocaleString("zh-CN") : "无修改时间"}</p></div>)}</div> : <EmptyChart icon="dns" text="暂无已配置提供商" />}</Card>
+
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-2"><Card padding="sm" className="min-w-0"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">请求时长分布</h3><span className="text-xs text-text-muted">最近一小时</span></div>{hasLatency ? <ResponsiveContainer width="100%" height={240}><BarChart data={latencyDistribution} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}><defs><linearGradient id="latencyBars" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6" stopOpacity={0.95}/><stop offset="100%" stopColor="#06b6d4" stopOpacity={0.65}/></linearGradient></defs><CartesianGrid vertical={false} strokeDasharray="4 4" strokeOpacity={0.14}/><XAxis dataKey="label" axisLine={false} tickLine={false} tickMargin={10} tick={{ fontSize: 11 }}/><YAxis axisLine={false} tickLine={false} tickMargin={8} allowDecimals={false} width={34} tick={{ fontSize: 11 }}/><Tooltip content={<ChartTooltip />} /><Bar dataKey="count" name="请求数" fill="url(#latencyBars)" radius={[5, 5, 0, 0]} maxBarSize={54} /></BarChart></ResponsiveContainer> : <EmptyChart icon="timer_off" text="最近一小时暂无延迟数据" />}</Card><Card padding="sm" className="min-w-0"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">错误趋势</h3><span className="text-xs text-text-muted">最近一小时</span></div>{hasErrors ? <ResponsiveContainer width="100%" height={240}><AreaChart data={trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}><defs><linearGradient id="monitorErrors" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#ef4444" stopOpacity={0.24}/><stop offset="90%" stopColor="#ef4444" stopOpacity={0.02}/></linearGradient></defs><CartesianGrid vertical={false} strokeDasharray="4 4" strokeOpacity={0.14}/><XAxis dataKey="label" axisLine={false} tickLine={false} tickMargin={10} tick={{ fontSize: 11 }}/><YAxis axisLine={false} tickLine={false} tickMargin={8} allowDecimals={false} width={34} tick={{ fontSize: 11 }}/><Tooltip content={<ChartTooltip />} /><Area type="monotone" dataKey="errors" name="错误" stroke="#ef4444" strokeWidth={2.25} fill="url(#monitorErrors)" activeDot={{ r: 4, strokeWidth: 0 }} /></AreaChart></ResponsiveContainer> : <EmptyChart icon="check_circle" text="最近一小时没有错误" />}</Card></div>
   </div>;
 }

@@ -72,6 +72,7 @@ const DEFAULT_SETTINGS = {
   providerAutoRecoveryEnabled: true,
   providerAutoRecoveryIntervalMinutes: 15,
   hiddenNavigationItems: [],
+  navigationSections: ["主要功能", "成本中心", "系统"],
   navigationItemSections: {},
   deletedPricingModels: [],
 };

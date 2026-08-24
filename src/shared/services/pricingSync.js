@@ -112,11 +112,17 @@ export async function syncPricingFromOpenCode() {
     ]);
     const pricing = {};
     for (const [model, values] of Object.entries(sourcePricing)) {
-      if (!existingModels.has(model) || deleted.has(`opencode-go\u0000${model}`)) continue;
+      if (!existingModels.has(model)) continue;
       pricing[model] = { ...(currentPricing["opencode-go"]?.[model] || {}), ...values };
+      deleted.delete(`opencode-go\u0000${model}`);
     }
     if (Object.keys(pricing).length) await updatePricing({ "opencode-go": pricing });
-    await updateSettings({ pricingLastSyncAt: now, pricingLastSyncStatus: "success", pricingLastSyncError: "" });
+    await updateSettings({
+      deletedPricingModels: [...deleted],
+      pricingLastSyncAt: now,
+      pricingLastSyncStatus: "success",
+      pricingLastSyncError: "",
+    });
     return {
       provider: "opencode-go",
       pricing,

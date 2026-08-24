@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Card, Button, Toggle, Input } from "@/shared/components";
-import { NAVIGATION_SECTIONS, NAVIGATION_VISIBILITY_OPTIONS } from "@/shared/constants/navigation";
+import { Card, Button, DropdownSelect, Toggle, Input } from "@/shared/components";
+import { DEFAULT_NAVIGATION_SECTIONS, NAVIGATION_VISIBILITY_OPTIONS } from "@/shared/constants/navigation";
 import Modal, { ConfirmModal } from "@/shared/components/Modal";
 import LanguageSwitcher from "@/shared/components/LanguageSwitcher";
 import { useTheme } from "@/shared/hooks/useTheme";
@@ -86,6 +86,8 @@ export default function ProfilePage() {
   const [automationStatus, setAutomationStatus] = useState("");
   const [navigationSaving, setNavigationSaving] = useState(false);
   const [navigationStatus, setNavigationStatus] = useState("");
+  const [newNavigationSection, setNewNavigationSection] = useState("");
+  const [navigationDeleteSection, setNavigationDeleteSection] = useState("");
 
   useEffect(() => {
     fetch("/api/settings")
@@ -782,6 +784,39 @@ export default function ProfilePage() {
     }));
   };
 
+  const navigationSections = Array.isArray(settings.navigationSections) && settings.navigationSections.length
+    ? settings.navigationSections
+    : DEFAULT_NAVIGATION_SECTIONS;
+
+  const addNavigationSection = () => {
+    const section = newNavigationSection.trim();
+    if (!section) return setNavigationStatus("请输入主题名称");
+    if (navigationSections.some((item) => item.toLowerCase() === section.toLowerCase())) return setNavigationStatus("该主题已存在");
+    setSettings((current) => ({ ...current, navigationSections: [...navigationSections, section] }));
+    setNewNavigationSection("");
+    setNavigationStatus("");
+  };
+
+  const deleteNavigationSection = () => {
+    if (!navigationDeleteSection || navigationSections.length <= 1) {
+      setNavigationStatus("至少需要保留一个导航主题");
+      setNavigationDeleteSection("");
+      return;
+    }
+    const remaining = navigationSections.filter((section) => section !== navigationDeleteSection);
+    const fallback = remaining[0];
+    setSettings((current) => {
+      const assignments = { ...(current.navigationItemSections || {}) };
+      for (const item of NAVIGATION_VISIBILITY_OPTIONS) {
+        const currentSection = assignments[item.id] || item.section;
+        if (currentSection === navigationDeleteSection) assignments[item.id] = fallback;
+      }
+      return { ...current, navigationSections: remaining, navigationItemSections: assignments };
+    });
+    setNavigationDeleteSection("");
+    setNavigationStatus(`已将原主题中的导航项移动到“${fallback}”`);
+  };
+
   const saveNavigationSettings = async () => {
     setNavigationSaving(true);
     setNavigationStatus("");
@@ -791,6 +826,7 @@ export default function ProfilePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           hiddenNavigationItems: settings.hiddenNavigationItems || [],
+          navigationSections,
           navigationItemSections: settings.navigationItemSections || {},
         }),
       });
@@ -1601,19 +1637,24 @@ export default function ProfilePage() {
             <div><h3 className="font-semibold">导航栏菜单</h3><p className="text-xs text-text-muted">配置侧边导航栏中显示的功能入口，设置入口始终保留。</p></div>
           </div>
           <div className="flex flex-col gap-5">
-            {NAVIGATION_SECTIONS.map((section) => (
+            <div className="flex flex-col gap-2 rounded-md border border-border bg-bg-base p-3 sm:flex-row sm:items-end">
+              <Input label="新增主题" placeholder="例如：开发工具" value={newNavigationSection} onChange={(event) => setNewNavigationSection(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addNavigationSection(); } }} className="flex-1" />
+              <Button variant="secondary" icon="add" onClick={addNavigationSection}>新增主题</Button>
+            </div>
+            {navigationSections.map((section) => (
               <div key={section} className="flex flex-col gap-2">
-                <p className="text-xs font-semibold text-text-muted">{section}</p>
+                <div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold text-text-muted">{section}</p><button type="button" disabled={navigationSections.length <= 1} onClick={() => setNavigationDeleteSection(section)} className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-red-500/10 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30" title="删除主题"><span className="material-symbols-outlined text-[18px]">delete</span></button></div>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {NAVIGATION_VISIBILITY_OPTIONS.filter((item) => (item.fixedSection ? item.section : settings.navigationItemSections?.[item.id] || item.section) === section).map((item) => {
+                  {NAVIGATION_VISIBILITY_OPTIONS.filter((item) => (settings.navigationItemSections?.[item.id] || item.section) === section).map((item) => {
                     const visible = !(settings.hiddenNavigationItems || []).includes(item.id);
-                    return <div key={item.id} className="grid min-h-11 grid-cols-[minmax(0,1fr)_120px_auto] items-center gap-3 rounded-md border border-border bg-bg-base px-3 py-2"><span className="truncate text-sm font-medium">{item.label}</span><select disabled={item.fixedSection} className="h-8 rounded-md border border-border bg-surface px-2 text-xs disabled:opacity-50" value={item.fixedSection ? item.section : settings.navigationItemSections?.[item.id] || item.section} onChange={(event) => setNavigationSection(item.id, event.target.value)}>{NAVIGATION_SECTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select><Toggle size="sm" checked={visible} onChange={(checked) => toggleNavigationItem(item.id, checked)} /></div>;
+                    return <div key={item.id} className="flex min-h-11 flex-wrap items-center gap-3 rounded-md border border-border bg-bg-base px-3 py-2"><span className="min-w-0 flex-1 truncate text-sm font-medium">{item.label}</span><DropdownSelect className="order-3 w-full sm:order-none sm:w-36" buttonClassName="h-8 min-h-8 text-xs" value={settings.navigationItemSections?.[item.id] || item.section} options={navigationSections.map((option) => ({ value: option, label: option }))} onChange={(value) => setNavigationSection(item.id, value)} /><Toggle size="sm" checked={visible} onChange={(checked) => toggleNavigationItem(item.id, checked)} /></div>;
                   })}
                 </div>
               </div>
             ))}
             <div className="flex items-center justify-between gap-3 border-t border-border pt-4"><span className="text-xs text-text-muted">{navigationStatus}</span><Button loading={navigationSaving} onClick={saveNavigationSettings}>保存设置</Button></div>
           </div>
+          <ConfirmModal isOpen={!!navigationDeleteSection} onClose={() => setNavigationDeleteSection("")} onConfirm={deleteNavigationSection} title="删除导航主题" message={`删除“${navigationDeleteSection}”后，其中的导航项会自动移动到其他主题。`} confirmText="删除" cancelText="取消" variant="danger" />
         </Card>
 
         <Card className={activeSettingsTab === "routing" ? "" : "hidden"}>

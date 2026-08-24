@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG, UPDATER_CONFIG } from "@/shared/constants/config";
+import { DEFAULT_NAVIGATION_SECTIONS } from "@/shared/constants/navigation";
 import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import Button from "./Button";
@@ -61,6 +62,7 @@ export default function Sidebar({ onClose }) {
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
   const [hiddenNavigationItems, setHiddenNavigationItems] = useState([]);
+  const [navigationSections, setNavigationSections] = useState(DEFAULT_NAVIGATION_SECTIONS);
   const [navigationItemSections, setNavigationItemSections] = useState({});
   const { copied, copy } = useCopyToClipboard(2000);
 
@@ -72,6 +74,7 @@ export default function Sidebar({ onClose }) {
       .then(data => {
         if (data.enableTranslator) setEnableTranslator(true);
         setHiddenNavigationItems(Array.isArray(data.hiddenNavigationItems) ? data.hiddenNavigationItems : []);
+        setNavigationSections(Array.isArray(data.navigationSections) && data.navigationSections.length ? data.navigationSections : DEFAULT_NAVIGATION_SECTIONS);
         setNavigationItemSections(data.navigationItemSections || {});
       })
       .catch(() => {});
@@ -90,7 +93,10 @@ export default function Sidebar({ onClose }) {
     return pathname.startsWith(href);
   };
   const isVisible = (id) => !hiddenNavigationItems.includes(id);
-  const itemSection = (item) => navigationItemSections[item.id] || item.section;
+  const itemSection = (item) => {
+    const section = navigationItemSections[item.id] || item.section;
+    return navigationSections.includes(section) ? section : navigationSections[0];
+  };
 
   // Open manual update panel (no countdown yet — user must click Copy to trigger shutdown)
   const handleUpdate = () => {
@@ -176,67 +182,25 @@ export default function Sidebar({ onClose }) {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-4 py-2 space-y-0.5 overflow-y-auto custom-scrollbar">
-          <p className="mb-2 px-4 text-xs font-semibold text-text-muted/60">主要功能</p>
-          {allLinkItems.filter((item) => isVisible(item.id) && itemSection(item) === "主要功能" && (item.id !== "translator" || enableTranslator)).map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onClose}
-              className={cn(
-                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                isActive(item.href)
-                  ? "bg-primary/10 text-primary"
-                  : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-              )}
-            >
-              <span
-                className={cn(
-                  "material-symbols-outlined text-[18px]",
-                  isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                )}
-              >
-                {item.icon}
-              </span>
-              <span className="text-[13px] font-medium">{item.label}</span>
-            </Link>
-          ))}
-
-          <div className="pt-3 mt-2 space-y-0.5">
-            <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
-              成本中心
-            </p>
-            {allLinkItems.filter((item) => isVisible(item.id) && itemSection(item) === "成本中心" && (item.id !== "translator" || enableTranslator)).map((item) => (
-              <Link
+        <nav className="flex-1 overflow-y-auto px-4 py-2 custom-scrollbar">
+          {navigationSections.map((section, sectionIndex) => {
+            const sectionLinks = allLinkItems.filter((item) => isVisible(item.id) && itemSection(item) === section && (item.id !== "translator" || enableTranslator));
+            const showMediaProviders = isVisible("media-providers") && itemSection({ id: "media-providers", section: "系统" }) === section;
+            const showRemote = isVisible("remote") && itemSection({ id: "remote", section: "系统" }) === section;
+            const showEnglish = isVisible("english") && itemSection({ id: "english", section: "系统" }) === section;
+            return <div key={section} className={cn("space-y-0.5", sectionIndex > 0 && "mt-2 pt-3")}>
+              <p className="mb-2 px-4 text-xs font-semibold text-text-muted/60">{section}</p>
+              {sectionLinks.map((item) => <Link
                 key={item.href}
                 href={item.href}
                 onClick={onClose}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                  isActive(item.href)
-                    ? "bg-primary/10 text-primary"
-                    : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-                )}
+                className={cn("flex items-center gap-3 rounded-lg px-3 py-1 transition-all group", isActive(item.href) ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-surface-2 hover:text-text-main")}
               >
-                <span className={cn(
-                  "material-symbols-outlined text-[18px]",
-                  isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                )}>
-                  {item.icon}
-                </span>
+                <span className={cn("material-symbols-outlined text-[18px]", isActive(item.href) ? "fill-1" : "transition-colors group-hover:text-primary")}>{item.icon}</span>
                 <span className="text-[13px] font-medium">{item.label}</span>
-              </Link>
-            ))}
-          </div>
+              </Link>)}
 
-          {/* System section */}
-          <div className="pt-3 mt-2 space-y-0.5">
-            <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
-              系统
-            </p>
-
-            {/* Media Providers accordion */}
-            {isVisible("media-providers") && <button
+            {showMediaProviders && <button
               onClick={() => setMediaOpen((v) => !v)}
               className={cn(
                 "w-full flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
@@ -246,12 +210,12 @@ export default function Sidebar({ onClose }) {
               )}
             >
               <span className="material-symbols-outlined text-[18px]">perm_media</span>
-              <span className="text-[13px] font-medium flex-1 text-left">Media Providers</span>
+              <span className="flex-1 text-left text-[13px] font-medium">媒体提供商</span>
               <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: mediaOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
                 expand_more
               </span>
             </button>}
-            {isVisible("media-providers") && mediaOpen && (
+            {showMediaProviders && mediaOpen && (
               <div className="pl-4">
                 {MEDIA_PROVIDER_KINDS.filter((k) => VISIBLE_MEDIA_KINDS.includes(k.id)).map((kind) => (
                   <Link
@@ -286,32 +250,7 @@ export default function Sidebar({ onClose }) {
               </div>
             )}
 
-            {allLinkItems.filter((item) => isVisible(item.id) && itemSection(item) === "系统" && (item.id !== "translator" || enableTranslator)).map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={onClose}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                  isActive(item.href)
-                    ? "bg-primary/10 text-primary"
-                    : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-                )}
-              >
-                <span
-                  className={cn(
-                    "material-symbols-outlined text-[18px]",
-                    isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                  )}
-                >
-                  {item.icon}
-                </span>
-                <span className="text-[13px] font-medium">{item.label}</span>
-              </Link>
-            ))}
-
-            {/* Remote */}
-            {isVisible("remote") && <button
+            {showRemote && <button
               onClick={() => setShowRemoteModal(true)}
               className={cn(
                 "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group w-full",
@@ -324,8 +263,7 @@ export default function Sidebar({ onClose }) {
               <span className="text-[13px] font-medium">9Remote</span>
             </button>}
 
-            {/* 9English */}
-            {isVisible("english") && <a
+            {showEnglish && <a
               href="https://9english.net/"
               target="_blank"
               rel="noreferrer"
@@ -340,8 +278,10 @@ export default function Sidebar({ onClose }) {
               </span>
               <span className="text-[13px] font-medium">9English</span>
             </a>}
+            </div>;
+          })}
 
-            {/* Settings */}
+          <div className="mt-2 border-t border-border/60 pt-3">
             <Link
               href="/dashboard/profile"
               onClick={onClose}
@@ -360,7 +300,7 @@ export default function Sidebar({ onClose }) {
               >
                 settings
               </span>
-              <span className="text-[13px] font-medium">Settings</span>
+              <span className="text-[13px] font-medium">设置</span>
             </Link>
           </div>
         </nav>
