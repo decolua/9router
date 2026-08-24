@@ -55,6 +55,89 @@ export async function writeStreamError(writer, statusCode, message) {
  * @param {object} [executor] - Optional executor with parseError() override for provider-specific parsing
  * @returns {Promise<{statusCode: number, message: string, resetsAtMs?: number}>}
  */
+// A provider that tells you when it comes back should be believed.
+//
+// markAccountUnavailable already honours a `resetsAtMs` — but only two
+// executors (codex, antigravity) ever produced one, so every other provider
+// fell through to the flat quota rule and got locked for twelve hours. Measured
+// on 2026-08-24: opencode-go returned a 429 whose own text said the limit
+// resets in 1h 6m, and the account was locked for 43,200s. OpenRouter's
+// free-models-per-day 429 cost eleven hours of a model the operator had just
+// made the head of a combo. The default is meant to stop a retry treadmill, not
+// to outlive the fact it is guessing about.
+//
+// Everything below is a standard the provider chose to speak in — RFC 7231
+// Retry-After, the de-facto X-RateLimit-Reset, or the same values echoed into
+// the JSON body. Nothing here is provider-specific; an executor that knows
+// better still wins, because its parseError runs first and returns early.
+const RESET_HEADERS = ["retry-after", "x-ratelimit-reset", "x-ratelimit-reset-requests", "ratelimit-reset"];
+
+/** Epoch seconds, epoch millis, or a delta in seconds — decided by magnitude,
+ *  because providers disagree and none of them say which they mean. */
+function asResetMs(raw, now) {
+  const n = Number(raw);
+  if (Number.isFinite(n) && n > 0) {
+    if (n > 1e12) return n;                    // epoch millis
+    if (n > 1e9) return n * 1000;              // epoch seconds
+    if (n <= 7 * 24 * 3600) return now + n * 1000; // a delta, capped at a week
+    return null;
+  }
+  const t = Date.parse(String(raw));           // HTTP-date, or an ISO timestamp
+  return Number.isFinite(t) && t > now ? t : null;
+}
+
+function fromHeaders(response, now) {
+  for (const h of RESET_HEADERS) {
+    const v = response?.headers?.get?.(h);
+    if (v == null || v === "") continue;
+    const at = asResetMs(v, now);
+    if (at && at > now) return at;
+  }
+  return null;
+}
+
+function fromBody(bodyText, now) {
+  let json;
+  try { json = JSON.parse(bodyText); } catch { json = null; }
+  if (json && typeof json === "object") {
+    const meta = json.error?.metadata ?? json.metadata ?? {};
+    const headers = meta.headers ?? {};
+    const candidates = [
+      json.retryAfter, json.retry_after, json.resets_at, json.resetsAt,
+      json.error?.retryAfter, json.error?.retry_after, json.error?.resets_at,
+      meta.retryAfter, meta.retry_after, meta.resets_at,
+      headers["X-RateLimit-Reset"], headers["x-ratelimit-reset"],
+      headers["Retry-After"], headers["retry-after"],
+    ];
+    for (const c of candidates) {
+      if (c == null || c === "") continue;
+      const at = asResetMs(c, now);
+      if (at && at > now) return at;
+    }
+    const secs = json.error?.resets_in_seconds ?? json.resets_in_seconds;
+    if (Number.isFinite(Number(secs)) && Number(secs) > 0) return now + Number(secs) * 1000;
+  }
+
+  // Last resort: the duration many providers only ever state in prose —
+  // "Monthly usage limit reached. Resets in 1h 6m", "try again in 30 seconds".
+  const m = /(?:reset|retry|try again|available)\D{0,20}?(\d+)\s*(second|sec|s|minute|min|m|hour|hr|h|day|d)\b/i.exec(
+    String(bodyText || "")
+  );
+  if (m) {
+    const n = Number(m[1]);
+    const unit = m[2].toLowerCase();
+    const mult = unit.startsWith("d") ? 86400 : unit.startsWith("h") ? 3600 : unit.startsWith("m") && unit !== "s" ? 60 : 1;
+    if (n > 0) return now + n * mult * 1000;
+  }
+  return null;
+}
+
+/** The provider's own stated return time, or null when it did not give one. */
+export function extractResetsAtMs(response, bodyText) {
+  const now = Date.now();
+  return fromHeaders(response, now) ?? fromBody(bodyText, now);
+}
+
 export async function parseUpstreamError(response, executor = null) {
   let bodyText = "";
   try {
@@ -69,7 +152,13 @@ export async function parseUpstreamError(response, executor = null) {
       const parsed = executor.parseError(response, bodyText);
       if (parsed && typeof parsed === "object") {
         const msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
-        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs };
+        // An executor that knows a provider-specific field wins, but one that
+        // simply did not look should not suppress the standard headers.
+        return {
+          statusCode: parsed.status || response.status,
+          message: msg,
+          resetsAtMs: parsed.resetsAtMs ?? extractResetsAtMs(response, bodyText),
+        };
       }
     } catch { /* fall through to default parsing */ }
   }
@@ -85,7 +174,7 @@ export async function parseUpstreamError(response, executor = null) {
   const messageStr = typeof message === "string" ? message : JSON.stringify(message);
   const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
 
-  return { statusCode: response.status, message: finalMessage };
+  return { statusCode: response.status, message: finalMessage, resetsAtMs: extractResetsAtMs(response, bodyText) };
 }
 
 /**
