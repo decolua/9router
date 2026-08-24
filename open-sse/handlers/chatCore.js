@@ -57,7 +57,7 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, onTokenSaverEvent, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -235,19 +235,52 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     delete translatedBody.tools;
   }
 
-  // Per-request opt-out: client can bypass all token savers via header
-  const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
+  // Per-request opt-out: client can bypass all token savers via header (case-insensitive)
+  const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase?.() !== "off";
 
   // RTK: compress tool_result content
   const rtkStats = compressMessages(translatedBody, tokenSaverEnabled && rtkEnabled);
   const rtkLine = formatRtkLog(rtkStats);
   if (rtkLine) console.log(rtkLine);
+  try {
+    if (tokenSaverEnabled && rtkStats?.hits?.length) {
+      const evt = {
+        saver: "rtk",
+        applied: true,
+        appliedCount: rtkStats.hits.length,
+        charsBefore: rtkStats.bytesBefore,
+        charsAfter: rtkStats.bytesAfter,
+        charsSaved: Math.max(0, (rtkStats.bytesBefore || 0) - (rtkStats.bytesAfter || 0)),
+      };
+      if (typeof onTokenSaverEvent === "function") onTokenSaverEvent(evt);
+    }
+  } catch { /* stats must not break requests */ }
 
   // Headroom: optional external proxy compression; fail open if proxy is absent.
   const headroomDiagnostics = {};
   const headroomStats = await compressWithHeadroom(translatedBody, { enabled: tokenSaverEnabled && headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages, diagnostics: headroomDiagnostics });
   const headroomLine = formatHeadroomLog(headroomStats);
   const headroomSizeLine = formatHeadroomSizeLog(headroomDiagnostics);
+  // Headroom aggregate event: only after bodyBytes actually shrank (diagnostics.after populated)
+  try {
+    if (
+      tokenSaverEnabled &&
+      Number.isFinite(headroomStats?.tokens_saved) &&
+      headroomDiagnostics?.after
+    ) {
+      const evt = {
+        saver: "headroom",
+        applied: true,
+        tokensBefore: headroomStats.tokens_before,
+        tokensAfter: headroomStats.tokens_after,
+        tokensSaved: headroomStats.tokens_saved,
+        bodyBytesBefore: headroomDiagnostics.before?.bodyBytes,
+        bodyBytesAfter: headroomDiagnostics.after?.bodyBytes,
+        reason: isHeadroomPhantomSavings(headroomStats, headroomDiagnostics) ? "phantom" : undefined,
+      };
+      if (typeof onTokenSaverEvent === "function") onTokenSaverEvent(evt);
+    }
+  } catch { /* stats must not break requests */ }
   if (headroomLine) {
     log?.info?.("HEADROOM", `${headroomLine}${headroomSizeLine ? ` | ${headroomSizeLine}` : ""}`);
     if (isHeadroomPhantomSavings(headroomStats, headroomDiagnostics)) {
