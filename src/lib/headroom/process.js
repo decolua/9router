@@ -180,7 +180,8 @@ export async function installHeadroomExtras(extras = []) {
   // so it cannot be poisoned by caller input — the comma-list is a fixed
   // ['proxy', ...requested]. No shell interpolation.
   const extrasList = ["proxy", ...requested].join(",");
-  const spec = `headroom-ai[${extrasList}]`;
+  // Floor at the first version that ships the /v1/compress endpoint.
+  const spec = `headroom-ai[${extrasList}]>=0.5.21`;
   const args = ["-m", "pip", "install", "--upgrade", spec];
 
   ensureDir();

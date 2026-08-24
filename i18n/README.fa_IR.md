@@ -477,7 +477,7 @@ Headroom اختیاری است و به‌طور جداگانه اجرا می‌�
 راه‌اندازی محلی:
 
 ```bash
-pip install "headroom-ai[proxy]"
+pip install "headroom-ai[proxy]>=0.5.21"
 headroom proxy --port 8787
 ```
 
