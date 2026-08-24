@@ -41,9 +41,51 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 }
 
 /**
+ * Wrap the stream controller so a stream that ends without reaching its flush
+ * still records what it produced.
+ *
+ * `onStreamComplete` is called from the transform's flush, which only runs on a
+ * clean upstream EOF. A client disconnect cancels the pipeline and a mid-stream
+ * upstream failure errors it — in both cases the flush never runs, so the usage
+ * row, the request detail and the "done" line were all skipped silently even
+ * though the provider had already generated (and billed) the partial response.
+ *
+ * `record` fires at most once per stream, and a normal completion claims the
+ * slot so the two paths can never both write.
+ */
+function withAbortRecording(streamController, record) {
+  let recorded = false;
+  const fire = (reason) => {
+    if (recorded) return;
+    recorded = true;
+    try {
+      record(reason);
+    } catch (err) {
+      console.error("[Stream] Failed to record aborted stream:", err?.message || err);
+    }
+  };
+
+  return {
+    ...streamController,
+    handleComplete: () => {
+      recorded = true; // the flush path owns the recording for a clean stream
+      streamController.handleComplete();
+    },
+    handleDisconnect: (reason) => {
+      fire(reason || "client_closed");
+      streamController.handleDisconnect(reason);
+    },
+    handleError: (error) => {
+      fire(error?.name === "AbortError" ? "aborted" : (error?.message || "error"));
+      streamController.handleError(error);
+    },
+  };
+}
+
+/**
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
-export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, pxpipe, reqTag, log }) {
+export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, onStreamAborted, streamDetailId, pxpipe, reqTag, log }) {
   if (onRequestSuccess) {
     Promise.resolve()
       .then(onRequestSuccess)
@@ -85,7 +127,10 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
   const onAbortTerminal = isResponsesPassthrough ? buildAbortedResponsesTerminalBytes : null;
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
-  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
+  const recordingController = onStreamAborted
+    ? withAbortRecording(streamController, (reason) => onStreamAborted(transformStream.getStreamSnapshot?.() || null, reason))
+    : streamController;
+  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, recordingController, onAbortTerminal, stallTimeoutMs);
 
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,
@@ -140,5 +185,36 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency }));
   };
 
-  return { onStreamComplete, streamDetailId };
+  // Same bookkeeping for a stream that never reached its flush: the provider has
+  // already generated (and billed) the partial response, so leaving no row makes
+  // usage accounting silently under-count. Recorded as "aborted" with the reason,
+  // and with whatever usage the upstream had sent — estimated from the partial
+  // content when it had sent none, exactly as the completed path estimates it.
+  const onStreamAborted = (snapshot, reason) => {
+    const latency = {
+      ttft: snapshot?.ttftAt ? snapshot.ttftAt - requestStartTime : Date.now() - requestStartTime,
+      total: Date.now() - requestStartTime
+    };
+    const usage = snapshot?.usage || null;
+    const safeContent = snapshot?.content || "[No content before disconnect]";
+
+    saveRequestDetail(buildRequestDetail({
+      provider, model, connectionId,
+      latency,
+      tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
+      request: extractRequestConfig(body, stream),
+      providerRequest: finalBody || translatedBody || null,
+      providerResponse: safeContent,
+      response: { content: safeContent, thinking: snapshot?.thinking || null, type: "streaming", finish_reason: `aborted: ${reason}` },
+      pxpipe,
+      status: "aborted"
+    }, { id: streamDetailId })).catch(err => {
+      console.error("[RequestDetail] Failed to update aborted stream:", err.message);
+    });
+
+    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, label: "STREAM USAGE (aborted)", silent: true });
+    if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency }));
+  };
+
+  return { onStreamComplete, onStreamAborted, streamDetailId };
 }
