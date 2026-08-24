@@ -6,7 +6,11 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const BETTER_SQLITE3_VERSION = "12.6.2";
+// Gate the pinned version by Node major, mirroring src/lib/db/driver.js gating
+// style: 13.x ships prebuilt binaries for current runtimes (incl. Node 26);
+// 12.6.2 stays for older ones where 13.x has no matching prebuild.
+const [NODE_MAJOR] = process.versions.node.split(".").map(Number);
+const BETTER_SQLITE3_VERSION = NODE_MAJOR >= 22 ? "13.0.3" : "12.6.2";
 const SQL_JS_VERSION = "1.14.1";
 
 function getDataDir() {
