@@ -74,6 +74,10 @@ export default function ProviderDetailPage() {
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
   const [importingProviderModels, setImportingProviderModels] = useState(false);
+  const [providerModelsUrl, setProviderModelsUrl] = useState("");
+  const [providerTestModel, setProviderTestModel] = useState("");
+  const [providerModelConfigSaving, setProviderModelConfigSaving] = useState(false);
+  const [providerModelConfigStatus, setProviderModelConfigStatus] = useState("");
   const { copied, copy } = useCopyToClipboard();
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
@@ -299,10 +303,17 @@ export default function ProviderDetailPage() {
       const proxyPoolsData = await proxyPoolsRes.json();
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
       setProviderDisplayName(settingsData.providerDisplayNames?.[providerId] || "");
+      let filteredConnections = [];
       if (connectionsRes.ok) {
-        const filtered = (connectionsData.connections || []).filter(c => c.provider === providerId);
-        setConnections(filtered);
+        filteredConnections = (connectionsData.connections || []).filter(c => c.provider === providerId);
+        setConnections(filteredConnections);
       }
+      const configuredModelSettings = settingsData.providerModelSettings?.[providerId];
+      const legacyModelSettings = filteredConnections.find((connection) => (
+        connection.providerSpecificData?.modelsUrl || connection.providerSpecificData?.testModel
+      ))?.providerSpecificData || {};
+      setProviderModelsUrl(configuredModelSettings?.modelsUrl ?? legacyModelSettings.modelsUrl ?? "");
+      setProviderTestModel(configuredModelSettings?.testModel ?? legacyModelSettings.testModel ?? "");
       if (proxyPoolsRes.ok) {
         setProxyPools(proxyPoolsData.proxyPools || []);
       }
@@ -423,6 +434,38 @@ export default function ProviderDetailPage() {
   const handleThinkingModeChange = (mode) => {
     setThinkingMode(mode);
     saveThinkingConfig(mode);
+  };
+
+  const saveProviderModelConfig = async () => {
+    setProviderModelConfigSaving(true);
+    setProviderModelConfigStatus("");
+    try {
+      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
+      const settingsData = await settingsRes.json();
+      if (!settingsRes.ok) throw new Error(settingsData.error || "读取现有提供商配置失败");
+      const providerModelSettings = {
+        ...(settingsData.providerModelSettings || {}),
+        [providerId]: {
+          modelsUrl: providerModelsUrl.trim(),
+          testModel: providerTestModel.trim(),
+        },
+      };
+      const response = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerModelSettings }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "保存提供商模型配置失败");
+      const saved = data.providerModelSettings?.[providerId] || {};
+      setProviderModelsUrl(saved.modelsUrl || "");
+      setProviderTestModel(saved.testModel || "");
+      setProviderModelConfigStatus("提供商模型配置已保存");
+    } catch (error) {
+      setProviderModelConfigStatus(error.message || "保存提供商模型配置失败");
+    } finally {
+      setProviderModelConfigSaving(false);
+    }
   };
 
   useEffect(() => {
@@ -1314,6 +1357,36 @@ export default function ProviderDetailPage() {
             </a>
           )}
         </div>
+      )}
+
+      {!isFreeNoAuth && (
+        <Card>
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold">提供商模型配置</h2>
+            <p className="mt-1 text-xs text-text-muted">该配置由同一提供商下的全部 API 密钥和 OAuth 连接共用。</p>
+          </div>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Input
+              label="Models URL"
+              type="url"
+              value={providerModelsUrl}
+              onChange={(event) => setProviderModelsUrl(event.target.value)}
+              placeholder="https://api.example.com/v1/models"
+              hint="可选。填写完整的模型列表地址；留空时使用提供商默认地址。"
+            />
+            <Input
+              label="测试模型"
+              value={providerTestModel}
+              onChange={(event) => setProviderTestModel(event.target.value)}
+              placeholder="例如：gpt-4o-mini"
+              hint="自动恢复会使用当前被检测的连接向该模型发送真实请求。"
+            />
+          </div>
+          <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">
+            <span className={`text-xs ${providerModelConfigStatus.includes("失败") ? "text-red-500" : "text-text-muted"}`}>{providerModelConfigStatus}</span>
+            <Button loading={providerModelConfigSaving} onClick={saveProviderModelConfig}>保存配置</Button>
+          </div>
+        </Card>
       )}
 
       {isCompatible && providerNode && (

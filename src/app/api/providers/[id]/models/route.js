@@ -11,6 +11,8 @@ import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
+import { getSettings } from "@/lib/localDb";
+import { getProviderModelSettings } from "@/lib/providerModelSettings";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -471,7 +473,9 @@ export async function GET(request, { params }) {
 
     let configuredModelsUrl = "";
     try {
-      configuredModelsUrl = normalizeConfiguredModelsUrl(connection.providerSpecificData?.modelsUrl);
+      const settings = await getSettings();
+      const modelSettings = getProviderModelSettings(settings, connection.provider, connection.providerSpecificData);
+      configuredModelsUrl = normalizeConfiguredModelsUrl(modelSettings.modelsUrl);
     } catch (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }

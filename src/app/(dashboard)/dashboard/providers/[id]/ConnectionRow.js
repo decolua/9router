@@ -160,8 +160,8 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <p className="text-xs text-text-muted truncate">{secondaryDisplayName}</p>
           )}
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
-            <Badge variant={getStatusVariant()} size="sm" dot>
-              {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
+            <Badge variant={connection.autoDisabled === true ? "warning" : getStatusVariant()} size="sm" dot>
+              {connection.autoDisabled === true ? "自动禁用" : connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
             </Badge>
             <Badge variant="default" size="sm">
               {authLabel}
@@ -175,6 +175,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             {connection.lastError && connection.isActive !== false && (
               <span className="max-w-full truncate text-xs text-red-500 sm:max-w-[300px]" title={connection.lastError}>
                 {connection.lastError}
+              </span>
+            )}
+            {connection.autoDisabled === true && connection.autoDisabledReason && (
+              <span className="max-w-full truncate text-xs text-amber-600 sm:max-w-[300px]" title={connection.autoDisabledReason}>
+                {connection.autoDisabledReason}
               </span>
             )}
             <span className="text-xs text-text-muted">#{connection.priority}</span>
@@ -271,6 +276,8 @@ ConnectionRow.propTypes = {
     modelLockUntil: PropTypes.string,
     testStatus: PropTypes.string,
     isActive: PropTypes.bool,
+    autoDisabled: PropTypes.bool,
+    autoDisabledReason: PropTypes.string,
     lastError: PropTypes.string,
     priority: PropTypes.number,
     globalPriority: PropTypes.number,

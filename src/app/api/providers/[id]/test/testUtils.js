@@ -1,4 +1,4 @@
-import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import { getProviderConnectionById, getSettings, updateProviderConnection } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
@@ -19,6 +19,7 @@ import {
   KIMCHI_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
+import { getProviderModelSettings } from "@/lib/providerModelSettings";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -831,8 +832,8 @@ case "llm7": {
 /**
  * Test a single connection by ID, update DB, and return result.
  */
-function resolveConnectionTestModel(connection) {
-  const configured = String(connection.providerSpecificData?.testModel || "").trim();
+function resolveConnectionTestModel(connection, settings) {
+  const configured = getProviderModelSettings(settings, connection.provider, connection.providerSpecificData).testModel;
   if (!configured) return "";
   if (configured.includes("/")) return configured;
   const prefix = connection.providerSpecificData?.prefix || getProviderAlias(connection.provider) || connection.provider;
@@ -842,6 +843,7 @@ function resolveConnectionTestModel(connection) {
 export async function testSingleConnection(id, options = {}) {
   const connection = await getProviderConnectionById(id);
   if (!connection) return { valid: false, error: "Connection not found", latencyMs: 0, testedAt: new Date().toISOString() };
+  const settings = await getSettings();
 
   const effectiveProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
 
@@ -867,7 +869,7 @@ export async function testSingleConnection(id, options = {}) {
     result = await testOAuthConnection(connection, effectiveProxy);
   }
 
-  const testModel = resolveConnectionTestModel(connection);
+  const testModel = resolveConnectionTestModel(connection, settings);
   if (result.valid && testModel) {
     const modelResult = await pingModelByKind(testModel, "llm", undefined, { connectionId: id });
     result = {

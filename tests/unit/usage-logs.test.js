@@ -215,7 +215,7 @@ describe("usage logs", () => {
       timestamp: new Date().toISOString(),
       tokens: { prompt_tokens: 10, completion_tokens: 5 },
       meta: {
-        requestedModel: "user-facing-model",
+        requestedModel: "combo-name",
         actualModel: "upstream/provider-model",
       },
     });
@@ -223,7 +223,7 @@ describe("usage logs", () => {
     const result = await db.getUsageLogs({ provider: "dual-model-provider" });
 
     expect(result.logs[0]).toMatchObject({
-      selectedModel: "user-facing-model",
+      selectedModel: "combo-name",
       actualModel: "upstream/provider-model",
     });
   });

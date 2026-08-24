@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { normalizeModelsUrl } from "../../src/lib/providerModelsUrl.js";
+import { getProviderModelSettings, normalizeProviderModelSettings } from "../../src/lib/providerModelSettings.js";
 
 describe("provider models URL normalization", () => {
   it("keeps a full HTTPS models endpoint instead of deriving it from the base URL", () => {
@@ -14,5 +15,31 @@ describe("provider models URL normalization", () => {
 
   it("rejects unsupported URL protocols", () => {
     expect(() => normalizeModelsUrl("file:///tmp/models.json")).toThrow("http or https");
+  });
+
+  it("normalizes shared provider model settings", () => {
+    expect(normalizeProviderModelSettings({
+      deepseek: {
+        modelsUrl: " https://example.com/custom/models ",
+        testModel: " deepseek-chat ",
+      },
+    })).toEqual({
+      deepseek: {
+        modelsUrl: "https://example.com/custom/models",
+        testModel: "deepseek-chat",
+      },
+    });
+  });
+
+  it("prefers provider settings and allows them to clear legacy connection values", () => {
+    expect(getProviderModelSettings({
+      providerModelSettings: { deepseek: { modelsUrl: "", testModel: "deepseek-reasoner" } },
+    }, "deepseek", {
+      modelsUrl: "https://legacy.example.com/models",
+      testModel: "deepseek-chat",
+    })).toEqual({
+      modelsUrl: "",
+      testModel: "deepseek-reasoner",
+    });
   });
 });

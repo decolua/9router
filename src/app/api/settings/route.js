@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
+import { normalizeProviderModelSettings } from "@/lib/providerModelSettings";
 import bcrypt from "bcryptjs";
 
 export const dynamic = "force-dynamic";
@@ -46,6 +47,14 @@ export async function PATCH(request) {
     for (const key of ["usageDefaultPeriod", "trafficLogsDefaultPeriod"]) {
       if (Object.prototype.hasOwnProperty.call(body, key) && !USAGE_DEFAULT_PERIODS.has(body[key])) {
         return NextResponse.json({ error: "Invalid default usage period" }, { status: 400 });
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "providerModelSettings")) {
+      try {
+        body.providerModelSettings = normalizeProviderModelSettings(body.providerModelSettings);
+      } catch (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
       }
     }
 

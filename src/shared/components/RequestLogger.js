@@ -60,7 +60,6 @@ export default function RequestLogger() {
   const [keys, setKeys] = useState([]);
   const [providers, setProviders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [autoRefresh, setAutoRefresh] = useState(true);
   const [period, setPeriod] = useState("today");
   const [showColumnSettings, setShowColumnSettings] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState(() => new Set(DEFAULT_LOG_COLUMNS));
@@ -108,12 +107,6 @@ export default function RequestLogger() {
     const timeout = setTimeout(() => fetchLogs(true, 1), 0);
     return () => clearTimeout(timeout);
   }, [fetchLogs]);
-  useEffect(() => {
-    if (!autoRefresh) return undefined;
-    const interval = setInterval(() => fetchLogs(false, pagination.page), 5000);
-    return () => clearInterval(interval);
-  }, [autoRefresh, fetchLogs, pagination.page]);
-
   const updateFilter = (key, value) => setFilters((current) => ({ ...current, [key]: value }));
   const resetFilters = () => {
     const range = getPeriodRange(defaultPeriod, new Date(), true);
@@ -137,7 +130,7 @@ export default function RequestLogger() {
           <DropdownSelect label="模型提供商" value={filters.provider} onChange={(value) => updateFilter("provider", value)} searchable options={[{ value: "", label: "全部提供商" }, ...providers]} />
           <DropdownSelect label="日志类型" value={filters.logType} onChange={(value) => updateFilter("logType", value)} options={[{ value: "", label: "全部类型" }, { value: "success", label: "成功" }, { value: "failed", label: "失败" }]} />
           </div>
-          <div className="flex h-9 shrink-0 flex-nowrap items-center gap-2 text-xs text-text-muted"><button onClick={() => setShowColumnSettings(true)} className="h-9 min-w-20 whitespace-nowrap rounded-md border border-border bg-surface px-3 hover:bg-bg-hover">列设置</button><button onClick={resetFilters} className="h-9 min-w-16 whitespace-nowrap rounded-md border border-border bg-surface px-3 hover:bg-bg-hover">重置</button><button onClick={() => setAutoRefresh((value) => !value)} className={`h-9 min-w-20 whitespace-nowrap rounded-md border bg-surface px-3 ${autoRefresh ? "border-primary text-primary" : "border-border"}`}>{autoRefresh ? "自动刷新" : "已暂停"}</button></div>
+          <div className="flex h-9 shrink-0 flex-nowrap items-center gap-2 text-xs text-text-muted"><button onClick={() => setShowColumnSettings(true)} className="h-9 min-w-20 whitespace-nowrap rounded-md border border-border bg-surface px-3 hover:bg-bg-hover">列设置</button><button onClick={resetFilters} className="h-9 min-w-16 whitespace-nowrap rounded-md border border-border bg-surface px-3 hover:bg-bg-hover">重置</button><button onClick={() => fetchLogs(true, pagination.page)} disabled={loading} className="flex h-9 min-w-20 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-border bg-surface px-3 hover:bg-bg-hover disabled:opacity-50"><span className={`material-symbols-outlined text-[17px] ${loading ? "animate-spin" : ""}`}>refresh</span>刷新</button></div>
         </div>
       </div>
 

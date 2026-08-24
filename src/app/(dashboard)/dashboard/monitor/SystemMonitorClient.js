@@ -98,16 +98,23 @@ export default function SystemMonitorClient() {
     const groups = new Map();
     snapshot.connections.forEach((connection) => {
       const key = connection.provider;
-      const item = groups.get(key) || { id: key, name: connection.providerName || key, total: 0, enabled: 0, autoDisabled: 0, updatedAt: "" };
+      const item = groups.get(key) || { id: key, name: connection.providerName || key, total: 0, enabled: 0, autoDisabled: 0, autoDisabledConnections: [], updatedAt: "" };
       item.total += 1;
       item.enabled += connection.isActive !== false ? 1 : 0;
       item.autoDisabled += connection.autoDisabled === true ? 1 : 0;
+      if (connection.autoDisabled === true) {
+        item.autoDisabledConnections.push({
+          id: connection.id,
+          name: connection.name || connection.email || connection.id,
+          reason: connection.autoDisabledReason || "命中自动禁用规则",
+        });
+      }
       if (!item.updatedAt || new Date(connection.updatedAt) > new Date(item.updatedAt)) item.updatedAt = connection.updatedAt;
       groups.set(key, item);
     });
     snapshot.logs.forEach((log) => {
       const key = log.providerId || log.provider;
-      const item = groups.get(key) || { id: key, name: log.provider || key, total: 0, enabled: 0, autoDisabled: 0, updatedAt: "" };
+      const item = groups.get(key) || { id: key, name: log.provider || key, total: 0, enabled: 0, autoDisabled: 0, autoDisabledConnections: [], updatedAt: "" };
       if (!item.logs) item.logs = [];
       item.logs.push(log);
       groups.set(key, item);
@@ -132,9 +139,33 @@ export default function SystemMonitorClient() {
   }, [snapshot.connections, snapshot.logs, snapshot.settings]);
 
   const autoDisabledCount = snapshot.connections.filter((connection) => connection.autoDisabled === true).length;
-  const autoDisableHistory = Array.isArray(snapshot.settings.providerAutoDisableHistory)
-    ? snapshot.settings.providerAutoDisableHistory.slice(0, 20)
-    : [];
+  const autoDisableHistory = useMemo(() => {
+    const history = Array.isArray(snapshot.settings.providerAutoDisableHistory)
+      ? snapshot.settings.providerAutoDisableHistory
+      : [];
+    const syntheticEvents = snapshot.connections
+      .filter((connection) => connection.autoDisabled === true)
+      .filter((connection) => {
+        const disabledAt = new Date(connection.autoDisabledAt || 0).getTime();
+        return !history.some((event) => (
+          event.type === "disabled"
+          && event.connectionId === connection.id
+          && (!disabledAt || new Date(event.timestamp).getTime() >= disabledAt)
+        ));
+      })
+      .map((connection) => ({
+        id: `current-${connection.id}`,
+        type: "disabled",
+        timestamp: connection.autoDisabledAt || connection.updatedAt || new Date(0).toISOString(),
+        provider: connection.providerName || connection.provider,
+        connectionId: connection.id,
+        connectionName: connection.name || connection.email || connection.id,
+        reason: connection.autoDisabledReason || "命中自动禁用规则",
+      }));
+    return [...history, ...syntheticEvents]
+      .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime())
+      .slice(0, 20);
+  }, [snapshot.connections, snapshot.settings.providerAutoDisableHistory]);
   const hasTraffic = trend.some((item) => item.requests > 0 || item.tokens > 0);
   const hasLatency = latencyDistribution.some((item) => item.count > 0);
   const hasErrors = trend.some((item) => item.errors > 0);
@@ -153,7 +184,7 @@ export default function SystemMonitorClient() {
 
     <Card padding="sm" className="min-w-0"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">吞吐趋势</h3><span className="text-xs text-text-muted">最近一小时 · 每 5 分钟</span></div>{hasTraffic ? <ResponsiveContainer width="100%" height={270}><AreaChart data={trend} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}><defs><linearGradient id="monitorTokens" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#10b981" stopOpacity={0.25}/><stop offset="90%" stopColor="#10b981" stopOpacity={0.02}/></linearGradient><linearGradient id="monitorRequests" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3b82f6" stopOpacity={0.18}/><stop offset="90%" stopColor="#3b82f6" stopOpacity={0.01}/></linearGradient></defs><CartesianGrid vertical={false} strokeDasharray="4 4" strokeOpacity={0.14}/><XAxis dataKey="label" axisLine={false} tickLine={false} tickMargin={10} tick={{ fontSize: 11 }}/><YAxis yAxisId="requests" axisLine={false} tickLine={false} tickMargin={8} allowDecimals={false} width={40} tick={{ fontSize: 11 }}/><YAxis yAxisId="tokens" orientation="right" axisLine={false} tickLine={false} tickMargin={8} tickFormatter={fmt} width={54} tick={{ fontSize: 11 }}/><Tooltip content={<ChartTooltip />} /><Area yAxisId="tokens" type="monotone" dataKey="tokens" name="Token" stroke="#10b981" strokeWidth={2.25} fill="url(#monitorTokens)" activeDot={{ r: 4, strokeWidth: 0 }} /><Area yAxisId="requests" type="monotone" dataKey="requests" name="请求" stroke="#3b82f6" strokeWidth={2.25} fill="url(#monitorRequests)" activeDot={{ r: 4, strokeWidth: 0 }} /></AreaChart></ResponsiveContainer> : <EmptyChart icon="monitoring" text="最近一小时暂无请求流量" />}</Card>
 
-    <Card padding="sm"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">提供商状态</h3><span className="text-xs text-text-muted">{providerRows.length} 个提供商</span></div>{providerRows.length ? <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">{providerRows.map((item) => <div key={item.id} className="rounded-md border border-border bg-bg-base px-3 py-2.5"><div className="flex items-center justify-between gap-3"><span className="truncate text-sm font-medium">{item.name}</span><span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${item.autoDisabled ? "bg-amber-500/10 text-amber-600" : item.enabled ? "bg-emerald-500/10 text-emerald-600" : "bg-surface-2 text-text-muted"}`}>{item.autoDisabled ? "自动禁用" : item.enabled ? "已启用" : "已禁用"}</span></div><p className="mt-1.5 text-xs text-text-muted">账户 {item.enabled}/{item.total} · 最近请求 {item.requests}</p><p className={`mt-1 text-xs ${item.routingWarning ? "font-medium text-amber-600" : "text-text-muted"}`}>调度 {item.strategy === "round-robin" ? `轮询 · 每 ${item.stickyLimit} 次切换` : "顺序优先 · 流量集中首账号"}</p><p className="mt-1 text-xs text-text-muted">{item.requests ? `成功 ${item.successRate.toFixed(1)}% · 首 Token P90 ${item.ttft.p90 ? `${fmt(item.ttft.p90)} ms` : "暂无"} · 完成 P90 ${item.totalLatency.p90 ? `${fmt(item.totalLatency.p90)} ms` : "暂无"}` : "最近一小时暂无请求"}</p></div>)}</div> : <EmptyChart icon="dns" text="暂无已配置提供商" />}</Card>
+    <Card padding="sm"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">提供商状态</h3><span className="text-xs text-text-muted">{providerRows.length} 个提供商</span></div>{providerRows.length ? <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">{providerRows.map((item) => <div key={item.id} className="rounded-md border border-border bg-bg-base px-3 py-2.5"><div className="flex items-center justify-between gap-3"><span className="truncate text-sm font-medium">{item.name}</span><span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${item.autoDisabled ? "bg-amber-500/10 text-amber-600" : item.enabled ? "bg-emerald-500/10 text-emerald-600" : "bg-surface-2 text-text-muted"}`}>{item.autoDisabled ? `自动禁用 ${item.autoDisabled}/${item.total}` : item.enabled ? "已启用" : "已禁用"}</span></div><p className="mt-1.5 text-xs text-text-muted">可用连接 {item.enabled}/{item.total} · 最近请求 {item.requests}</p>{item.autoDisabledConnections[0] && <p className="mt-1 truncate text-xs font-medium text-amber-600" title={`${item.autoDisabledConnections[0].name}: ${item.autoDisabledConnections[0].reason}`}>{item.autoDisabledConnections[0].name}：{item.autoDisabledConnections[0].reason}</p>}<p className={`mt-1 text-xs ${item.routingWarning ? "font-medium text-amber-600" : "text-text-muted"}`}>调度 {item.strategy === "round-robin" ? `轮询 · 每 ${item.stickyLimit} 次切换` : "顺序优先 · 流量集中首账号"}</p><p className="mt-1 text-xs text-text-muted">{item.requests ? `成功 ${item.successRate.toFixed(1)}% · 首 Token P90 ${item.ttft.p90 ? `${fmt(item.ttft.p90)} ms` : "暂无"} · 完成 P90 ${item.totalLatency.p90 ? `${fmt(item.totalLatency.p90)} ms` : "暂无"}` : "最近一小时暂无请求"}</p></div>)}</div> : <EmptyChart icon="dns" text="暂无已配置提供商" />}</Card>
 
     <Card padding="sm"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">自动禁用记录</h3><span className="text-xs text-text-muted">最近 {autoDisableHistory.length} 条</span></div>{autoDisableHistory.length ? <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-xs"><thead className="border-b border-border text-text-muted"><tr><th className="px-3 py-2 font-medium">时间</th><th className="px-3 py-2 font-medium">提供商</th><th className="px-3 py-2 font-medium">连接</th><th className="px-3 py-2 font-medium">事件</th><th className="px-3 py-2 font-medium">原因</th></tr></thead><tbody className="divide-y divide-border/60">{autoDisableHistory.map((event) => <tr key={event.id}><td className="whitespace-nowrap px-3 py-2 text-text-muted">{new Date(event.timestamp).toLocaleString("zh-CN", { hour12: false })}</td><td className="px-3 py-2">{event.provider || "-"}</td><td className="px-3 py-2">{event.connectionName || event.connectionId || "-"}</td><td className="px-3 py-2"><span className={`rounded-full px-2 py-0.5 ${event.type === "recovered" ? "bg-emerald-500/10 text-emerald-600" : "bg-amber-500/10 text-amber-600"}`}>{event.type === "recovered" ? "自动恢复" : "自动禁用"}</span></td><td className="max-w-md truncate px-3 py-2 text-text-muted" title={event.reason}>{event.reason || "-"}</td></tr>)}</tbody></table></div> : <div className="py-8 text-center text-sm text-text-muted">暂无自动禁用记录</div>}</Card>
 

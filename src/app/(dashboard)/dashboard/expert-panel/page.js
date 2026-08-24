@@ -333,14 +333,14 @@ export default function ExpertPanelPage() {
     <div className="flex h-full min-h-0 flex-col bg-bg-base" data-i18n-skip>
       <div className="flex flex-wrap items-end gap-3 border-b border-border bg-surface/90 px-4 py-3 lg:px-8">
         <DropdownSelect className="w-56" value={activeSessionId} onChange={switchSession} options={sessions.map((session) => ({ value: session.id, label: session.title }))} placeholder="选择会话" buttonClassName="h-9" />
-        <Button icon="note_add" size="sm" variant="secondary" disabled={!sessionsReady || sending || judging} onClick={addSession}>新建会话</Button>
-        <Button icon="delete" size="sm" variant="ghost" disabled={!sessionsReady || sending || judging} onClick={deleteSession}>删除会话</Button>
-        <Button icon="add" size="sm" onClick={() => openPicker("multiple")}>批量增加模型</Button>
+        <Button icon="note_add" size="md" variant="secondary" disabled={!sessionsReady || sending || judging} onClick={addSession}>新建会话</Button>
+        <Button icon="delete" size="md" variant="ghost" disabled={!sessionsReady || sending || judging} onClick={deleteSession}>删除会话</Button>
+        <Button icon="add" size="md" onClick={() => openPicker("multiple")}>批量增加模型</Button>
         {judgeSummary && <p className="min-w-0 flex-1 text-sm text-text-muted">{judgeSummary}</p>}
         <div className="ml-auto flex items-center gap-2">
           <span className="shrink-0 text-sm font-medium text-text-main">裁判模型</span>
           <DropdownSelect className="w-64" value={judgeModel} onChange={setJudgeModel} searchable searchPlaceholder="搜索裁判模型" options={models} placeholder="选择裁判模型" buttonClassName="h-9" />
-          <Button className="h-9" size="sm" variant="secondary" loading={judging} disabled={!judgeModel || panels.length === 0 || panels.some((panel) => panel.status !== "done")} onClick={runJudge}>开始评分</Button>
+          <Button size="md" variant="secondary" loading={judging} disabled={!judgeModel || panels.length === 0 || panels.some((panel) => panel.status !== "done")} onClick={runJudge}>开始评分</Button>
         </div>
       </div>
 

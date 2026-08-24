@@ -33,7 +33,7 @@ jobs:
       - name: Install test dependencies
         run: npm --prefix tests install
 
-      - name: Run usage, cache, and request logging tests
+      - name: Run targeted unit tests
         working-directory: tests
         run: >-
           npx vitest run
@@ -43,6 +43,7 @@ jobs:
           unit/request-details-redaction.test.js
           unit/api-key-group-access.test.js
           unit/provider-auto-recovery.test.js
+          unit/provider-models-url.test.js
           unit/dashboard-guard.test.js
           --reporter=verbose
 
