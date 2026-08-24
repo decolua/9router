@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Card, Badge, Button, Toggle, AddCustomEmbeddingModal } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS, getProvidersByKind } from "@/shared/constants/providers";
+import { useNotificationStore } from "@/store/notificationStore";
 
 // Kinds that support combos (currently disabled for image/tts — temporarily hidden).
 // webSearch/webFetch handled by /web page.
@@ -138,6 +139,7 @@ function ComboList({ combos }) {
 }
 
 export default function MediaProviderKindPage() {
+  const notify = useNotificationStore();
   const { kind } = useParams();
   const router = useRouter();
   const [connections, setConnections] = useState([]);
@@ -223,7 +225,7 @@ export default function MediaProviderKindPage() {
       router.push(`/dashboard/media-providers/combo/${created.id}`);
     } else {
       const err = await res.json();
-      alert(err.error || "Failed to create combo");
+      notify.error(err.error || "创建模型组合失败");
     }
   };
 

@@ -380,7 +380,7 @@ export async function getUsageHistory(filter = {}) {
   if (filter.provider) { conds.push("provider = ?"); params.push(filter.provider); }
   if (filter.model) { conds.push("model = ?"); params.push(filter.model); }
   if (filter.startDate) { conds.push("timestamp >= ?"); params.push(parseChinaDateTime(filter.startDate).toISOString()); }
-  if (filter.endDate) { conds.push("timestamp <= ?"); params.push(parseChinaDateTime(filter.endDate).toISOString()); }
+  if (filter.endDate) { conds.push("timestamp < ?"); params.push(parseChinaDateTime(filter.endDate).toISOString()); }
 
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
   const rows = db.all(`SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ${where} ORDER BY id ASC`, params);
@@ -1179,19 +1179,43 @@ export async function getUsageLogs(filter = {}) {
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
   const page = Math.max(1, Number(filter.page) || 1);
   const pageSize = Math.min(200, Math.max(1, Number(filter.pageSize) || 50));
+  const allowedSortFields = new Set(["timestamp", "apiKeyName", "selectedModel", "actualModel", "provider", "endpoint", "inputTokens", "cacheReadTokens", "cacheCreationTokens", "outputTokens", "totalTokens", "latencyMs", "status"]);
+  const sortBy = allowedSortFields.has(filter.sortBy) ? filter.sortBy : "timestamp";
+  const sortOrder = filter.sortOrder === "asc" ? "ASC" : "DESC";
   const totalItems = db.get(`SELECT COUNT(*) AS c FROM usageHistory ${where}`, params)?.c || 0;
-  const rows = db.all(
-    `SELECT id, timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta FROM usageHistory ${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
-    [...params, pageSize, (page - 1) * pageSize]
-  );
-  const [{ getProviderConnections }, { getApiKeys }, { getProviderNodes }, { getSettings }] = await Promise.all([
+  const allRows = db.all(`SELECT id, timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta FROM usageHistory ${where} ORDER BY id DESC`, params);
+  const rawSortValue = (row) => {
+    const tokens = parseJson(row.tokens, {}) || {};
+    const meta = parseJson(row.meta, {}) || {};
+    const cacheRead = getCacheTokenCounts(tokens).cacheReadTokens;
+    const cacheWrite = getCacheTokenCounts(tokens).cacheCreationTokens;
+    const input = Number(row.promptTokens ?? tokens.prompt_tokens ?? tokens.input_tokens ?? 0);
+    const output = Number(row.completionTokens ?? tokens.completion_tokens ?? tokens.output_tokens ?? 0);
+    const values = {
+      timestamp: new Date(row.timestamp).getTime(), apiKeyName: row.apiKey || "", selectedModel: meta.requestedModel || row.model || "",
+      actualModel: meta.actualModel || row.model || "", provider: row.provider || "", endpoint: row.endpoint || "", inputTokens: input,
+      cacheReadTokens: cacheRead, cacheCreationTokens: cacheWrite, outputTokens: output, totalTokens: input + cacheRead + cacheWrite + output,
+      latencyMs: Number(meta.latency?.total || meta.latencyMs || meta.durationMs || 0), status: row.status || "",
+    };
+    return values[sortBy];
+  };
+  const rows = allRows.sort((left, right) => {
+    const a = rawSortValue(left); const b = rawSortValue(right);
+    const av = typeof a === "number" ? a : String(a).toLowerCase();
+    const bv = typeof b === "number" ? b : String(b).toLowerCase();
+    if (av === bv) return Number(right.id) - Number(left.id);
+    return (av < bv ? -1 : 1) * (sortOrder === "ASC" ? 1 : -1);
+  }).slice((page - 1) * pageSize, page * pageSize);
+  const [{ getProviderConnections }, { getApiKeys }, { getProviderNodes }, { getSettings }, { getCombos }] = await Promise.all([
     import("./connectionsRepo.js"),
     import("./apiKeysRepo.js"),
     import("./nodesRepo.js"),
     import("./settingsRepo.js"),
+    import("./combosRepo.js"),
   ]);
-  const [connections, apiKeys, providerNodes, settings] = await Promise.all([
+  const [connections, apiKeys, providerNodes, settings, combos] = await Promise.all([
     getProviderConnections(), getApiKeys(), getProviderNodes(), getSettings(),
+    getCombos(),
   ]);
   const connMap = Object.fromEntries(connections.map((c) => [c.id, c.name || c.email || c.id]));
   const keyMap = Object.fromEntries(apiKeys.map((k) => [k.key, k.name || k.id]));
@@ -1199,6 +1223,7 @@ export async function getUsageLogs(filter = {}) {
   Object.assign(providerNameMap, settings.providerDisplayNames || {});
   const { getModelMappings } = await import("./aliasRepo.js");
   const modelMappingMap = createModelMappingMap(await getModelMappings());
+  const comboNames = new Set((combos || []).map((combo) => combo.name).filter(Boolean));
   const mask = (key) => !key ? null : key.length <= 8 ? `${key[0]}***` : `${key.slice(0, 8)}***`;
   const logs = await Promise.all(rows.map(async (r) => {
     const tokens = parseJson(r.tokens, {}) || {};
@@ -1220,6 +1245,7 @@ export async function getUsageLogs(filter = {}) {
       apiKeyName: r.apiKey ? (keyMap[r.apiKey] || mask(r.apiKey)) : "Local (No API Key)",
       model: mappedModel,
       selectedModel: meta.requestedModel || mappedModel,
+      selectedModelType: comboNames.has(meta.requestedModel) ? "组合" : "模型",
       actualModel: meta.actualModel || r.model || mappedModel,
       providerId: r.provider,
       provider: providerNameMap[r.provider] || r.provider,

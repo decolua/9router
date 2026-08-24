@@ -439,17 +439,18 @@ export default function ProviderDetailPage() {
   };
 
   const handleDeleteAllModels = () => {
-    const ids = [...new Set([
-      ...customModels.filter((entry) => entry.providerAlias === providerStorageAlias && (entry.kind || entry.type || "llm") === "llm").map((entry) => entry.id),
-      ...Object.entries(modelAliases).filter(([key]) => key.startsWith(`${providerStorageAlias}/`)).map(([, alias]) => alias),
-    ])];
-    if (!ids.length) return notify.info("当前没有可删除的模型");
+    const customIds = [...new Set(customModels.filter((entry) => entry.providerAlias === providerStorageAlias && (entry.kind || entry.type || "llm") === "llm").map((entry) => entry.id))];
+    const aliasKeys = Object.entries(modelAliases).filter(([, fullModel]) => String(fullModel).startsWith(`${providerStorageAlias}/`)).map(([alias]) => alias);
+    if (!customIds.length && !aliasKeys.length) return notify.info("当前没有可删除的模型");
     setConfirmState({
       title: "删除全部模型",
-      message: `确认删除该提供商的 ${ids.length} 个自定义模型？`,
+      message: `确认删除该提供商的 ${customIds.length + aliasKeys.length} 个自定义模型？`,
       onConfirm: async () => {
         setConfirmState(null);
-        await Promise.all(ids.map((id) => handleDeleteCustomModel(id, "llm", providerStorageAlias).catch(() => {})));
+        await Promise.all([
+          ...customIds.map((id) => handleDeleteCustomModel(id, "llm", providerStorageAlias).catch(() => {})),
+          ...aliasKeys.map((alias) => handleDeleteAlias(alias).catch(() => {})),
+        ]);
         notify.success("已删除全部自定义模型");
       },
     });
@@ -621,29 +622,20 @@ export default function ProviderDetailPage() {
         return;
       }
 
-      const knownIds = new Set([
-        ...models.map((model) => model.id),
-        ...customModels
-          .filter((entry) => entry.providerAlias === providerStorageAlias && (entry.kind || entry.type || "llm") === "llm")
-          .map((entry) => entry.id),
-        ...Object.values(modelAliases)
-          .filter((model) => model.startsWith(`${providerStorageAlias}/`))
-          .map((model) => model.slice(providerStorageAlias.length + 1)),
-      ]);
       const nonLlmKinds = new Set(["embedding", "image", "tts", "stt", "video", "webSearch", "webFetch"]);
-      let importedCount = 0;
-      for (const model of fetchedModels) {
+      const normalizedFetchedModels = fetchedModels.map((model) => {
         const modelId = typeof model === "string" ? model : (model.id || model.name || model.model);
-        if (!modelId) continue;
-        if (typeof model === "object" && nonLlmKinds.has(model.kind || model.type)) continue;
-
-        const cleanModelId = providerId === "qoder" ? modelId.replace(/^qoder\//, "") : modelId;
-        if (knownIds.has(cleanModelId)) continue;
-
-        await handleAddCustomModel(cleanModelId, "llm", providerStorageAlias);
-        knownIds.add(cleanModelId);
-        importedCount += 1;
-      }
+        if (!modelId || (typeof model === "object" && nonLlmKinds.has(model.kind || model.type))) return null;
+        return providerId === "qoder" ? modelId.replace(/^qoder\//, "") : modelId;
+      }).filter(Boolean);
+      const existingCustomIds = [...new Set(customModels.filter((entry) => entry.providerAlias === providerStorageAlias && (entry.kind || entry.type || "llm") === "llm").map((entry) => entry.id))];
+      const existingAliasKeys = Object.entries(modelAliases).filter(([, fullModel]) => String(fullModel).startsWith(`${providerStorageAlias}/`)).map(([alias]) => alias);
+      await Promise.all([
+        ...existingCustomIds.map((id) => handleDeleteCustomModel(id, "llm", providerStorageAlias).catch(() => {})),
+        ...existingAliasKeys.map((alias) => handleDeleteAlias(alias).catch(() => {})),
+      ]);
+      await Promise.all(normalizedFetchedModels.map((id) => handleAddCustomModel(id, "llm", providerStorageAlias)));
+      const importedCount = normalizedFetchedModels.length;
       
       if (importedCount === 0) {
         notify.info("所有模型都已存在");

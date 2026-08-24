@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Card, Button, Input, Toggle, ModelSelectModal } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { AI_PROVIDERS, MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
+import { useNotificationStore } from "@/store/notificationStore";
 
 // Parse "providerId/model" or just "providerId" → { providerId, model }
 function parseModelEntry(entry) {
@@ -45,6 +46,7 @@ function getListingHref(kind) {
 }
 
 export default function ComboDetailPage() {
+  const notify = useNotificationStore();
   const { id } = useParams();
   const router = useRouter();
   const [combo, setCombo] = useState(null);
@@ -107,7 +109,7 @@ export default function ComboDetailPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     });
-    if (!res.ok) { const err = await res.json(); alert(err.error || "Failed to save"); return false; }
+    if (!res.ok) { const err = await res.json(); notify.error(err.error || "保存失败"); return false; }
     return true;
   };
 

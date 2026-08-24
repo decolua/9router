@@ -3,6 +3,7 @@
 import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button } from "@/shared/components";
+import { ConfirmModal } from "@/shared/components/Modal";
 import { useNotificationStore } from "@/store/notificationStore";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
 function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
@@ -78,6 +79,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   const [importing, setImporting] = useState(false);
   const [testingModelId, setTestingModelId] = useState(null);
   const [modelTestResults, setModelTestResults] = useState({});
+  const [deleteAllOpen, setDeleteAllOpen] = useState(false);
   const notify = useNotificationStore();
 
   const handleTestModel = async (modelId) => {
@@ -142,14 +144,11 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         notify.warning("提供商未返回模型");
         return;
       }
-      let importedCount = 0;
-      for (const model of models) {
-        const modelId = model.id || model.name || model.model;
-        if (!modelId) continue;
-        if (allModels.some((entry) => entry.id === modelId)) continue;
-        await onAddCustomModel(modelId);
-        importedCount += 1;
-      }
+      const existingRows = allModels;
+      await Promise.all(existingRows.map((entry) => (entry.source === "custom" ? onDeleteCustomModel(entry.id) : onDeleteAlias(entry.alias))));
+      const normalizedModels = models.map((model) => model.id || model.name || model.model).filter(Boolean);
+      await Promise.all(normalizedModels.map((modelId) => onAddCustomModel(modelId)));
+      const importedCount = normalizedModels.length;
       if (importedCount === 0) {
         notify.info("没有新增模型");
       }
@@ -161,6 +160,11 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   };
 
   const canImport = connections.some((conn) => conn.isActive !== false);
+  const handleDeleteAll = async () => {
+    setDeleteAllOpen(false);
+    await Promise.all(allModels.map((entry) => entry.source === "custom" ? onDeleteCustomModel(entry.id) : onDeleteAlias(entry.alias)));
+    notify.success("已删除全部模型");
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -187,6 +191,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         <Button size="sm" variant="secondary" icon="download" onClick={handleImport} disabled={!canImport || importing}>
           {importing ? "正在更新..." : "更新模型列表"}
         </Button>
+        {allModels.length > 0 && <Button size="sm" variant="danger" icon="delete_sweep" onClick={() => setDeleteAllOpen(true)}>删除全部模型</Button>}
       </div>
 
       {!canImport && (
@@ -212,6 +217,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
           ))}
         </div>
       )}
+      <ConfirmModal isOpen={deleteAllOpen} onClose={() => setDeleteAllOpen(false)} onConfirm={handleDeleteAll} title="删除全部模型" message={`确认删除该提供商的 ${allModels.length} 个模型？`} confirmText="删除" cancelText="取消" variant="danger" />
     </div>
   );
 }

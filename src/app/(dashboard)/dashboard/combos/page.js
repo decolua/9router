@@ -228,7 +228,7 @@ export default function CombosPage() {
           </ul>
         </div>
         <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto whitespace-nowrap">
-          Create Combo
+          新建模型组合
         </Button>
       </div>
 
@@ -239,10 +239,10 @@ export default function CombosPage() {
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
               <span className="material-symbols-outlined text-[32px]">layers</span>
             </div>
-            <p className="text-text-main font-medium mb-1">No combos yet</p>
-            <p className="text-sm text-text-muted mb-4">Create model combos with fallback support</p>
+            <p className="text-text-main font-medium mb-1">暂无模型组合</p>
+            <p className="text-sm text-text-muted mb-4">创建支持回退策略的模型组合</p>
             <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto">
-              Create Combo
+              新建模型组合
             </Button>
           </div>
         </Card>
@@ -818,13 +818,13 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
       <Modal
         isOpen={isOpen}
         onClose={onClose}
-        title={isEdit ? "Edit Combo" : "Create Combo"}
+        title={isEdit ? "编辑模型组合" : "新建模型组合"}
       >
         <div className="flex flex-col gap-3">
           {/* Name */}
           <div>
             <Input
-              label="Combo Name"
+              label="模型组合名称"
               value={name}
               onChange={handleNameChange}
               placeholder="my-combo"
@@ -837,12 +837,12 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
 
           {/* Models */}
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Models</label>
+            <label className="text-sm font-medium mb-1.5 block">模型</label>
 
             {models.length === 0 ? (
               <div className="text-center py-4 border border-dashed border-black/10 dark:border-white/10 rounded-lg bg-black/[0.01] dark:bg-white/[0.01]">
                 <span className="material-symbols-outlined text-text-muted text-xl mb-1">layers</span>
-                <p className="text-xs text-text-muted">No models added yet</p>
+                <p className="text-xs text-text-muted">尚未添加模型</p>
               </div>
             ) : (
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} modifiers={[restrictToVerticalAxis, restrictToParentElement]}>
@@ -879,14 +879,14 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
               className="w-full mt-2 py-2 border border-dashed border-black/10 dark:border-white/10 rounded-lg text-xs text-primary font-medium hover:text-primary hover:border-primary/50 transition-colors flex items-center justify-center gap-1"
             >
               <span className="material-symbols-outlined text-[16px]">add</span>
-              Add Model
+              增加模型
             </button>
           </div>
 
           {/* Actions */}
           <div className="flex flex-col gap-2 pt-1 sm:flex-row">
             <Button onClick={onClose} variant="ghost" fullWidth size="sm">
-              Cancel
+              取消
             </Button>
             <Button
               onClick={handleSave}
@@ -894,7 +894,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
               size="sm"
               disabled={!name.trim() || !!nameError || saving}
             >
-              {saving ? "Saving..." : isEdit ? "Save" : "Create"}
+              {saving ? "保存中..." : isEdit ? "保存" : "创建"}
             </Button>
           </div>
         </div>
@@ -909,7 +909,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
           onDeselect={handleDeselectModel}
           activeProviders={activeProviders}
           modelAliases={modelAliases}
-          title="Add Model to Combo"
+          title="向模型组合增加模型"
           kindFilter={kindFilter}
           addedModelValues={models}
           closeOnSelect={false}

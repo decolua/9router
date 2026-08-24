@@ -85,7 +85,7 @@ export default function RequestLogger() {
   const fetchLogs = useCallback(async (showLoading = true, page = 1) => {
     if (showLoading) setLoading(true);
     try {
-      const query = new URLSearchParams({ page: String(page), pageSize: "50" });
+      const query = new URLSearchParams({ page: String(page), pageSize: "50", sortBy: sortState.field, sortOrder: sortState.direction });
       Object.entries(filters).forEach(([key, value]) => value && query.set(key, value));
       const response = await fetch(`/api/usage/request-logs?${query.toString()}`, { cache: "no-store" });
       if (!response.ok) throw new Error("无法加载流量日志");
@@ -98,7 +98,7 @@ export default function RequestLogger() {
     } finally {
       if (showLoading) setLoading(false);
     }
-  }, [filters, notify]);
+  }, [filters, notify, sortState]);
 
   useEffect(() => {
     fetch("/api/settings", { cache: "no-store" })
@@ -146,21 +146,14 @@ export default function RequestLogger() {
     try { localStorage.setItem(LOG_SORT_STORAGE_KEY, JSON.stringify(next)); } catch {}
     return next;
   });
-  const sortedLogs = useMemo(() => [...logs].sort((left, right) => {
-    const a = left?.[sortState.field] ?? "";
-    const b = right?.[sortState.field] ?? "";
-    const av = sortState.field === "timestamp" ? new Date(a).getTime() : Number.isFinite(Number(a)) && a !== "" ? Number(a) : String(a).toLowerCase();
-    const bv = sortState.field === "timestamp" ? new Date(b).getTime() : Number.isFinite(Number(b)) && b !== "" ? Number(b) : String(b).toLowerCase();
-    if (av === bv) return 0;
-    return (av < bv ? -1 : 1) * (sortState.direction === "asc" ? 1 : -1);
-  }), [logs, sortState]);
-  const totals = useMemo(() => sortedLogs.reduce((sum, log) => ({
+  const sortedLogs = logs;
+  const totals = useMemo(() => logs.reduce((sum, log) => ({
     input: sum.input + Number(log.inputTokens || 0),
     cacheRead: sum.cacheRead + Number(log.cacheReadTokens || 0),
     cacheWrite: sum.cacheWrite + Number(log.cacheCreationTokens || 0),
     output: sum.output + Number(log.outputTokens || 0),
     cost: sum.cost + Number(log.cost || 0),
-  }), { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, cost: 0 }), [sortedLogs]);
+  }), { input: 0, cacheRead: 0, cacheWrite: 0, output: 0, cost: 0 }), [logs]);
 
   return (
     <div className="flex flex-col gap-4" data-i18n-skip>
@@ -181,7 +174,7 @@ export default function RequestLogger() {
           {loading && !logs.length ? <div className="p-8 text-center text-text-muted">正在加载流量日志...</div> : !logs.length ? <div className="p-8 text-center text-text-muted">暂无流量日志</div> : (
            <table className="w-full min-w-[1280px] border-collapse text-xs">
                <thead className="sticky top-0 z-10 border-b border-border bg-surface text-text-muted"><tr>{isColumnVisible("timestamp") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="timestamp" sortState={sortState} onSort={toggleSort}>时间</SortHeader></th>}{isColumnVisible("apiKey") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="apiKeyName" sortState={sortState} onSort={toggleSort}>API 密钥</SortHeader></th>}{isColumnVisible("selectedModel") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="selectedModel" sortState={sortState} onSort={toggleSort}>用户选择模型</SortHeader></th>}{isColumnVisible("actualModel") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="actualModel" sortState={sortState} onSort={toggleSort}>实际请求模型</SortHeader></th>}{isColumnVisible("provider") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="provider" sortState={sortState} onSort={toggleSort}>提供商</SortHeader></th>}{isColumnVisible("endpoint") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="endpoint" sortState={sortState} onSort={toggleSort}>端点</SortHeader></th>}{isColumnVisible("input") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="inputTokens" align="right" sortState={sortState} onSort={toggleSort}>输入</SortHeader></th>}{isColumnVisible("cacheRead") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="cacheReadTokens" align="right" sortState={sortState} onSort={toggleSort}>缓存读取</SortHeader></th>}{isColumnVisible("cacheWrite") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="cacheCreationTokens" align="right" sortState={sortState} onSort={toggleSort}>缓存写入</SortHeader></th>}{isColumnVisible("output") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="outputTokens" align="right" sortState={sortState} onSort={toggleSort}>输出</SortHeader></th>}{isColumnVisible("total") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="totalTokens" align="right" sortState={sortState} onSort={toggleSort}>总和</SortHeader></th>}{isColumnVisible("latency") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="latencyMs" align="right" sortState={sortState} onSort={toggleSort}>首 Token / 完成</SortHeader></th>}{isColumnVisible("status") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="status" sortState={sortState} onSort={toggleSort}>状态</SortHeader></th>}</tr></thead>
-               <tbody className="divide-y divide-border/60">{sortedLogs.map((log) => <tr key={log.id} className={isSuccessStatus(log.status) ? "hover:bg-bg-hover/60" : "border-l-2 border-red-500/60 bg-red-500/[0.05] hover:bg-red-500/[0.09]"}>{isColumnVisible("timestamp") && <td className="whitespace-nowrap px-3 py-2 text-text-muted">{new Date(log.timestamp).toLocaleString("zh-CN")}</td>}{isColumnVisible("apiKey") && <td className="whitespace-nowrap px-3 py-2">{log.apiKeyName}</td>}{isColumnVisible("selectedModel") && <td className="px-3 py-2 font-mono"><span className="mr-1 rounded bg-primary/10 px-1 text-[10px] text-primary">{String(log.selectedModel || "").startsWith("group:") ? "分组" : "模型"}</span>{String(log.selectedModel || log.model || "-").replace(/^group:/, "")}</td>}{isColumnVisible("actualModel") && <td className="px-3 py-2 font-mono">{log.actualModel || log.model || "-"}</td>}{isColumnVisible("provider") && <td className="whitespace-nowrap px-3 py-2">{log.provider || "-"}</td>}{isColumnVisible("endpoint") && <td className="px-3 py-2">{log.endpoint || "-"}</td>}{isColumnVisible("input") && <MetricCell tokens={log.inputTokens} cost={log.inputCost} color="text-primary" />}{isColumnVisible("cacheRead") && <MetricCell tokens={log.cacheReadTokens} cost={log.cacheReadCost} color="text-sky-500" />}{isColumnVisible("cacheWrite") && <MetricCell tokens={log.cacheCreationTokens} cost={log.cacheCreationCost} color="text-cyan-500" />}{isColumnVisible("output") && <MetricCell tokens={log.outputTokens} cost={log.outputCost} color="text-success" />}{isColumnVisible("total") && <MetricCell tokens={Number(log.inputTokens || 0) + Number(log.cacheReadTokens || 0) + Number(log.cacheCreationTokens || 0) + Number(log.outputTokens || 0)} cost={log.cost} color="text-warning" />}{isColumnVisible("latency") && <LatencyCell ttftMs={log.ttftMs} totalMs={log.latencyMs} />}{isColumnVisible("status") && <td className={`whitespace-nowrap px-3 py-2 font-semibold ${isSuccessStatus(log.status) ? "text-success" : "text-error"}`}>{isSuccessStatus(log.status) ? "成功" : (log.status || "失败")}</td>}</tr>)}</tbody>
+               <tbody className="divide-y divide-border/60">{sortedLogs.map((log) => <tr key={log.id} className={isSuccessStatus(log.status) ? "hover:bg-bg-hover/60" : "border-l-2 border-red-500/60 bg-red-500/[0.05] hover:bg-red-500/[0.09]"}>{isColumnVisible("timestamp") && <td className="whitespace-nowrap px-3 py-2 text-text-muted">{new Date(log.timestamp).toLocaleString("zh-CN")}</td>}{isColumnVisible("apiKey") && <td className="whitespace-nowrap px-3 py-2">{log.apiKeyName}</td>}{isColumnVisible("selectedModel") && <td className="px-3 py-2 font-mono"><span className="mr-1 rounded bg-primary/10 px-1 text-[10px] text-primary">{log.selectedModelType || "模型"}</span>{String(log.selectedModel || log.model || "-").replace(/^group:/, "")}</td>}{isColumnVisible("actualModel") && <td className="px-3 py-2 font-mono">{log.actualModel || log.model || "-"}</td>}{isColumnVisible("provider") && <td className="whitespace-nowrap px-3 py-2">{log.provider || "-"}</td>}{isColumnVisible("endpoint") && <td className="px-3 py-2">{log.endpoint || "-"}</td>}{isColumnVisible("input") && <MetricCell tokens={log.inputTokens} cost={log.inputCost} color="text-primary" />}{isColumnVisible("cacheRead") && <MetricCell tokens={log.cacheReadTokens} cost={log.cacheReadCost} color="text-sky-500" />}{isColumnVisible("cacheWrite") && <MetricCell tokens={log.cacheCreationTokens} cost={log.cacheCreationCost} color="text-cyan-500" />}{isColumnVisible("output") && <MetricCell tokens={log.outputTokens} cost={log.outputCost} color="text-success" />}{isColumnVisible("total") && <MetricCell tokens={Number(log.inputTokens || 0) + Number(log.cacheReadTokens || 0) + Number(log.cacheCreationTokens || 0) + Number(log.outputTokens || 0)} cost={log.cost} color="text-warning" />}{isColumnVisible("latency") && <LatencyCell ttftMs={log.ttftMs} totalMs={log.latencyMs} />}{isColumnVisible("status") && <td className={`whitespace-nowrap px-3 py-2 font-semibold ${isSuccessStatus(log.status) ? "text-success" : "text-error"}`}>{isSuccessStatus(log.status) ? "成功" : (log.status || "失败")}</td>}</tr>)}</tbody>
                <tfoot><tr className="border-t-2 border-border bg-bg-subtle font-semibold"><td colSpan={6} className="px-3 py-2 text-right">当前页合计</td>{isColumnVisible("input") && <MetricCell tokens={totals.input} cost={0} color="text-primary" />}{isColumnVisible("cacheRead") && <MetricCell tokens={totals.cacheRead} cost={0} color="text-sky-500" />}{isColumnVisible("cacheWrite") && <MetricCell tokens={totals.cacheWrite} cost={0} color="text-cyan-500" />}{isColumnVisible("output") && <MetricCell tokens={totals.output} cost={0} color="text-success" />}{isColumnVisible("total") && <MetricCell tokens={totals.input + totals.cacheRead + totals.cacheWrite + totals.output} cost={totals.cost} color="text-warning" />}{isColumnVisible("latency") && <td />}{isColumnVisible("status") && <td />}</tr></tfoot>
             </table>
           )}

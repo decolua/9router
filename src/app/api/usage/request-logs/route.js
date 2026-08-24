@@ -12,6 +12,8 @@ export async function GET(request) {
       apiKey: searchParams.get("apiKey"),
       provider: searchParams.get("provider"),
       status: searchParams.get("logType") || searchParams.get("status"),
+      sortBy: searchParams.get("sortBy"),
+      sortOrder: searchParams.get("sortOrder"),
     });
     return NextResponse.json(result);
   } catch (error) {

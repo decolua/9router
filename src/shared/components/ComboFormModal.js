@@ -110,12 +110,12 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
 
   return (
     <>
-      <Modal isOpen={isOpen} onClose={onClose} title={title || (isEdit ? "Edit Combo" : "Create Combo")}>
+      <Modal isOpen={isOpen} onClose={onClose} title={title || (isEdit ? "编辑模型组合" : "新建模型组合")}>
         <div className="flex flex-col gap-3">
           <div>
             {forcePrefix ? (
               <>
-                <label className="text-sm font-medium mb-1 block">Combo Name</label>
+                <label className="text-sm font-medium mb-1 block">模型组合名称</label>
                 <div className="flex items-stretch">
                   <span className="inline-flex items-center px-2 rounded-l border border-r-0 border-black/10 dark:border-white/10 bg-black/[0.04] dark:bg-white/[0.04] text-text-muted font-mono text-sm">{forcePrefix}</span>
                   <input value={name} onChange={handleNameChange} placeholder="my-combo"
@@ -124,7 +124,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
                 {nameError && <p className="text-[11px] text-red-500 mt-0.5">{nameError}</p>}
               </>
             ) : (
-              <Input label="Combo Name" value={name} onChange={handleNameChange} placeholder="my-combo" error={nameError} />
+              <Input label="模型组合名称" value={name} onChange={handleNameChange} placeholder="my-combo" error={nameError} />
             )}
             <p className="text-[10px] text-text-muted mt-0.5">
               {forcePrefix ? `Auto-prefixed with "${forcePrefix}". ` : ""}Only letters, numbers, -, _ and . allowed
@@ -132,11 +132,11 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
           </div>
 
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Models</label>
+            <label className="text-sm font-medium mb-1.5 block">模型</label>
             {models.length === 0 ? (
               <div className="text-center py-4 border border-dashed border-black/10 dark:border-white/10 rounded-lg bg-black/[0.01] dark:bg-white/[0.01]">
                 <span className="material-symbols-outlined text-text-muted text-xl mb-1">layers</span>
-                <p className="text-xs text-text-muted">No models added yet</p>
+                <p className="text-xs text-text-muted">尚未添加模型</p>
               </div>
             ) : (
               <div className="flex max-h-[55vh] min-w-0 flex-col gap-1 overflow-y-auto sm:max-h-[350px]">
@@ -153,14 +153,14 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
             <button onClick={() => setShowModelSelect(true)}
               className="w-full mt-2 py-2 border border-dashed border-black/10 dark:border-white/10 rounded-lg text-xs text-primary font-medium hover:text-primary hover:border-primary/50 transition-colors flex items-center justify-center gap-1">
               <span className="material-symbols-outlined text-[16px]">add</span>
-              Add Model
+              增加模型
             </button>
           </div>
 
           <div className="flex flex-col gap-2 pt-1 sm:flex-row">
-            <Button onClick={onClose} variant="ghost" fullWidth size="sm">Cancel</Button>
+            <Button onClick={onClose} variant="ghost" fullWidth size="sm">取消</Button>
             <Button onClick={handleSave} fullWidth size="sm" disabled={!name.trim() || !!nameError || saving}>
-              {saving ? "Saving..." : isEdit ? "Save" : "Create"}
+              {saving ? "保存中..." : isEdit ? "保存" : "创建"}
             </Button>
           </div>
         </div>
@@ -170,7 +170,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
         <ModelSelectModal isOpen={showModelSelect} onClose={() => setShowModelSelect(false)}
           onSelect={handleAddModel} onDeselect={handleDeselectModel}
           activeProviders={activeProviders} modelAliases={modelAliases}
-          title="Add Model to Combo" kindFilter={kindFilter}
+          title="向模型组合增加模型" kindFilter={kindFilter}
           addedModelValues={models} closeOnSelect={false} />
       )}
     </>

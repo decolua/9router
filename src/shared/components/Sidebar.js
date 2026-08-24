@@ -77,6 +77,7 @@ export default function Sidebar({ onClose }) {
   const [hiddenNavigationItems, setHiddenNavigationItems] = useState([]);
   const [navigationSections, setNavigationSections] = useState(DEFAULT_NAVIGATION_SECTIONS);
   const [navigationItemSections, setNavigationItemSections] = useState({});
+  const [navigationItemLabels, setNavigationItemLabels] = useState({});
   const [navigationItemOrder, setNavigationItemOrder] = useState(DEFAULT_NAVIGATION_ITEM_ORDER);
   const { copied, copy } = useCopyToClipboard(2000);
 
@@ -90,6 +91,7 @@ export default function Sidebar({ onClose }) {
         setHiddenNavigationItems(Array.isArray(data.hiddenNavigationItems) ? data.hiddenNavigationItems : []);
         setNavigationSections(Array.isArray(data.navigationSections) && data.navigationSections.length ? data.navigationSections : DEFAULT_NAVIGATION_SECTIONS);
         setNavigationItemSections(data.navigationItemSections || {});
+        setNavigationItemLabels(data.navigationItemLabels || {});
         setNavigationItemOrder(normalizeNavigationItemOrder(data.navigationItemOrder));
       })
       .catch(() => {});
@@ -113,6 +115,7 @@ export default function Sidebar({ onClose }) {
     const section = navigationItemSections[item.id] || item.section;
     return navigationSections.includes(section) ? section : navigationSections[0];
   };
+  const itemLabel = (item) => navigationItemLabels[item.id] || item.label;
   const navigationOrderIndex = new Map(navigationItemOrder.map((id, index) => [id, index]));
 
   // Open manual update panel (no countdown yet — user must click Copy to trigger shutdown)
@@ -216,7 +219,7 @@ export default function Sidebar({ onClose }) {
               )}
             >
               <span className="material-symbols-outlined text-[18px]">perm_media</span>
-              <span className="flex-1 text-left text-[13px] font-medium">媒体提供商</span>
+              <span className="flex-1 text-left text-[13px] font-medium">{itemLabel(item)}</span>
               <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: mediaOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
                 expand_more
                 </span>
@@ -265,7 +268,7 @@ export default function Sidebar({ onClose }) {
               <span className="material-symbols-outlined text-[18px] group-hover:text-primary transition-colors">
                 computer
               </span>
-              <span className="text-[13px] font-medium">9Remote</span>
+              <span className="text-[13px] font-medium">{itemLabel(item)}</span>
             </button> : item.id === "english" ? <a
               key={item.id}
               href="https://9english.net/"
@@ -280,7 +283,7 @@ export default function Sidebar({ onClose }) {
               <span className="material-symbols-outlined text-[18px] group-hover:text-primary transition-colors">
                 translate
               </span>
-              <span className="text-[13px] font-medium">9English</span>
+              <span className="text-[13px] font-medium">{itemLabel(item)}</span>
             </a> : <Link
                 key={item.href}
                 href={item.href}
@@ -288,7 +291,7 @@ export default function Sidebar({ onClose }) {
                 className={cn("flex items-center gap-3 rounded-lg px-3 py-1 transition-all group", isActive(item.href) ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-surface-2 hover:text-text-main")}
               >
                 <span className={cn("material-symbols-outlined text-[18px]", isActive(item.href) ? "fill-1" : "transition-colors group-hover:text-primary")}>{item.icon}</span>
-                <span className="text-[13px] font-medium">{item.label}</span>
+                    <span className="text-[13px] font-medium">{itemLabel(item)}</span>
               </Link>)}
             </div>;
           })}

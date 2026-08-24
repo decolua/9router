@@ -80,8 +80,8 @@ const getPageInfo = (pathname, providerDisplayNames = {}) => {
     };
   if (pathname.includes("/combos"))
     return {
-      title: "Combos",
-      description: "Model combos with fallback",
+      title: "模型组合",
+      description: "管理模型组合与回退策略",
       icon: "layers",
       breadcrumbs: [],
     };

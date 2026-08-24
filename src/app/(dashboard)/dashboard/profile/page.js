@@ -14,7 +14,7 @@ import { useNotificationStore } from "@/store/notificationStore";
 
 const MODEL_MARKET_LOG_COLUMN_OPTIONS = [
   ["timestamp", "时间"], ["selectedModel", "用户选择模型"], ["actualModel", "实际请求模型"],
-  ["provider", "提供商"], ["input", "输入"], ["cacheRead", "缓存读取"], ["cacheWrite", "缓存写入"],
+  ["provider", "提供商"], ["endpoint", "端点"], ["input", "输入"], ["cacheRead", "缓存读取"], ["cacheWrite", "缓存写入"],
   ["output", "输出"], ["total", "总和"], ["latency", "延时"], ["status", "状态"],
 ];
 
@@ -898,6 +898,7 @@ export default function ProfilePage() {
           hiddenNavigationItems: settings.hiddenNavigationItems || [],
           navigationSections,
           navigationItemSections: settings.navigationItemSections || {},
+          navigationItemLabels: settings.navigationItemLabels || {},
           navigationItemOrder,
         }),
       });
@@ -1750,7 +1751,7 @@ export default function ProfilePage() {
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {NAVIGATION_VISIBILITY_OPTIONS.filter((item) => (settings.navigationItemSections?.[item.id] || item.section) === section).sort((left, right) => (navigationOrderIndex.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (navigationOrderIndex.get(right.id) ?? Number.MAX_SAFE_INTEGER)).map((item, itemIndex, sectionItems) => {
                     const visible = !(settings.hiddenNavigationItems || []).includes(item.id);
-                    return <div key={item.id} className="flex min-h-11 flex-wrap items-center gap-2 rounded-md border border-border bg-bg-base px-3 py-2"><span className="min-w-0 flex-1 truncate text-sm font-medium">{item.label}</span><div className="flex items-center gap-0.5"><button type="button" disabled={itemIndex === 0} onClick={() => moveNavigationItem(item.id, section, -1)} className="flex size-7 items-center justify-center rounded text-text-muted hover:bg-bg-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-30" title="上移标签" aria-label={`上移${item.label}`}><span className="material-symbols-outlined text-[16px]">arrow_upward</span></button><button type="button" disabled={itemIndex === sectionItems.length - 1} onClick={() => moveNavigationItem(item.id, section, 1)} className="flex size-7 items-center justify-center rounded text-text-muted hover:bg-bg-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-30" title="下移标签" aria-label={`下移${item.label}`}><span className="material-symbols-outlined text-[16px]">arrow_downward</span></button></div><DropdownSelect className="order-3 w-full sm:order-none sm:w-36" buttonClassName="h-8 min-h-8 text-xs" value={settings.navigationItemSections?.[item.id] || item.section} options={navigationSections.map((option) => ({ value: option, label: option }))} onChange={(value) => setNavigationSection(item.id, value)} /><Toggle size="sm" checked={visible} onChange={(checked) => toggleNavigationItem(item.id, checked)} /></div>;
+                    return <div key={item.id} className="flex min-h-11 flex-wrap items-center gap-2 rounded-md border border-border bg-bg-base px-3 py-2"><Input className="min-w-0 flex-1" label="" aria-label={`自定义${item.label}标题`} value={settings.navigationItemLabels?.[item.id] ?? ""} placeholder={item.label} onChange={(event) => setSettings((current) => ({ ...current, navigationItemLabels: { ...(current.navigationItemLabels || {}), [item.id]: event.target.value }}))} /><div className="flex items-center gap-0.5"><button type="button" disabled={itemIndex === 0} onClick={() => moveNavigationItem(item.id, section, -1)} className="flex size-7 items-center justify-center rounded text-text-muted hover:bg-bg-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-30" title="上移标签" aria-label={`上移${item.label}`}><span className="material-symbols-outlined text-[16px]">arrow_upward</span></button><button type="button" disabled={itemIndex === sectionItems.length - 1} onClick={() => moveNavigationItem(item.id, section, 1)} className="flex size-7 items-center justify-center rounded text-text-muted hover:bg-bg-hover hover:text-primary disabled:cursor-not-allowed disabled:opacity-30" title="下移标签" aria-label={`下移${item.label}`}><span className="material-symbols-outlined text-[16px]">arrow_downward</span></button></div><DropdownSelect className="order-3 w-full sm:order-none sm:w-36" buttonClassName="h-8 min-h-8 text-xs" value={settings.navigationItemSections?.[item.id] || item.section} options={navigationSections.map((option) => ({ value: option, label: option }))} onChange={(value) => setNavigationSection(item.id, value)} /><Toggle size="sm" checked={visible} onChange={(checked) => toggleNavigationItem(item.id, checked)} /></div>;
                   })}
                 </div>
               </div>

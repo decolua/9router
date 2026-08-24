@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getApiKeyByValue } from "@/lib/localDb";
+import { getApiKeyByValue, getSettings } from "@/lib/localDb";
 import { getUsageLogs } from "@/lib/usageDb";
 import { extractModelMarketApiKey, sanitizeModelMarketLog } from "@/lib/auth/modelMarket";
 
@@ -25,9 +25,11 @@ export async function GET(request) {
       startDate: searchParams.get("startDate"),
       endDate: searchParams.get("endDate"),
     });
+    const settings = await getSettings();
     return NextResponse.json({
       logs: result.logs.map(sanitizeModelMarketLog),
       pagination: result.pagination,
+      columns: Array.isArray(settings.modelMarketLogColumns) ? settings.modelMarketLogColumns : undefined,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     console.error("[Model Market] Failed to fetch scoped usage logs:", error);

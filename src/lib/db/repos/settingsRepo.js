@@ -76,6 +76,7 @@ const DEFAULT_SETTINGS = {
   hiddenNavigationItems: [],
   navigationSections: ["主要功能", "成本中心", "系统"],
   navigationItemSections: {},
+  navigationItemLabels: {},
   navigationItemOrder: [],
   usageDefaultPeriod: "today",
   trafficLogsDefaultPeriod: "today",

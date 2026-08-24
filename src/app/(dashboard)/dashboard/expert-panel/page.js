@@ -17,6 +17,8 @@ function createSession(index = 1) {
     prompt: "",
     judgeModel: "",
     judgeSummary: "",
+    judgeStartedAt: null,
+    judgeLatencyMs: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -101,6 +103,8 @@ export default function ExpertPanelPage() {
   const [sending, setSending] = useState(false);
   const [judging, setJudging] = useState(false);
   const [judgeSummary, setJudgeSummary] = useState("");
+  const [judgeStartedAt, setJudgeStartedAt] = useState(null);
+  const [judgeLatencyMs, setJudgeLatencyMs] = useState(null);
   const [sessions, setSessions] = useState([]);
   const [activeSessionId, setActiveSessionId] = useState("");
   const [sessionTitle, setSessionTitle] = useState("");
@@ -124,6 +128,8 @@ export default function ExpertPanelPage() {
       setPrompt(active.prompt || "");
       setJudgeModel(active.judgeModel || "");
       setJudgeSummary(active.judgeSummary || "");
+      setJudgeStartedAt(active.judgeStartedAt || null);
+      setJudgeLatencyMs(active.judgeLatencyMs || null);
       setSessionsReady(true);
     }, 0);
     return () => clearTimeout(timeout);
@@ -140,6 +146,8 @@ export default function ExpertPanelPage() {
           prompt,
           judgeModel,
           judgeSummary,
+          judgeStartedAt,
+          judgeLatencyMs,
           createdAt: current.find((session) => session.id === activeSessionId)?.createdAt || new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -151,7 +159,7 @@ export default function ExpertPanelPage() {
       });
     }, 250);
     return () => clearTimeout(timeout);
-  }, [activeSessionId, judgeModel, judgeSummary, panels, prompt, sessionTitle, sessionsReady]);
+  }, [activeSessionId, judgeLatencyMs, judgeModel, judgeStartedAt, judgeSummary, panels, prompt, sessionTitle, sessionsReady]);
 
   useEffect(() => {
     let cancelled = false;
@@ -211,6 +219,8 @@ export default function ExpertPanelPage() {
     setPrompt(session.prompt || "");
     setJudgeModel(session.judgeModel || "");
     setJudgeSummary(session.judgeSummary || "");
+    setJudgeStartedAt(session.judgeStartedAt || null);
+    setJudgeLatencyMs(session.judgeLatencyMs || null);
   };
 
   const snapshotCurrentSession = () => sessions.map((session) => session.id === activeSessionId ? {
@@ -220,6 +230,8 @@ export default function ExpertPanelPage() {
     prompt,
     judgeModel,
     judgeSummary,
+    judgeStartedAt,
+    judgeLatencyMs,
     updatedAt: new Date().toISOString(),
   } : session);
 
@@ -255,7 +267,7 @@ export default function ExpertPanelPage() {
 
   const confirmModels = () => {
     const selected = pickerSelection;
-    setPanels((current) => [...current, ...selected.map((model) => ({ id: createId(), model, messages: [], response: "", status: "idle", score: null, comment: "", latencyMs: null, startedAt: null }))]);
+    setPanels((current) => [...current, ...selected.map((model) => ({ id: createId(), model, messages: [], response: "", status: "idle", score: null, comment: "", latencyMs: null, startedAt: null, judgeTimestamp: null, judgeLatencyMs: null }))]);
     setModelPicker(null);
   };
 
@@ -268,6 +280,8 @@ export default function ExpertPanelPage() {
     setPrompt("");
     setSending(true);
     setJudgeSummary("");
+    setJudgeStartedAt(null);
+    setJudgeLatencyMs(null);
     const requestMessages = new Map(panels.map((panel) => [
       panel.id,
       [...panel.messages, { role: "user", content: text, timestamp: new Date().toISOString() }],
@@ -279,6 +293,8 @@ export default function ExpertPanelPage() {
       response: "",
       score: null,
       comment: "",
+      judgeTimestamp: null,
+      judgeLatencyMs: null,
       latencyMs: null,
       startedAt: Date.now(),
     })));
@@ -302,6 +318,10 @@ export default function ExpertPanelPage() {
     if (!judgeModel || judging || panels.length === 0 || panels.some((panel) => panel.status !== "done")) return;
     setJudging(true);
     setJudgeSummary("");
+    const judgeStartedAtValue = new Date().toISOString();
+    const judgeStartedMs = Date.now();
+    setJudgeStartedAt(judgeStartedAtValue);
+    setJudgeLatencyMs(null);
     try {
       const candidates = panels.map((panel) => ({ model: panel.model, response: panel.response }));
       const judgePrompt = `你是严格的回答质量裁判。请根据正确性、完整性、相关性和清晰度，为每个候选回复评分。只返回 JSON，不要附加说明。格式：{"scores":[{"model":"模型名","score":0,"comment":"简短评语"}],"summary":"总体结论"}\n\n候选回复：\n${JSON.stringify(candidates, null, 2)}`;
@@ -312,12 +332,14 @@ export default function ExpertPanelPage() {
         const score = scoreMap.get(panel.model.toLowerCase())
           || result.scores.find((item) => panel.model.toLowerCase().endsWith(String(item.model).toLowerCase()))
           || (result.scores.length === current.length ? result.scores[index] : null);
-        return score ? { ...panel, score: Number(score.score), comment: score.comment || "" } : panel;
+        return score ? { ...panel, score: Number(score.score), comment: score.comment || "", judgeTimestamp: judgeStartedAtValue, judgeLatencyMs: Date.now() - judgeStartedMs } : panel;
       }));
       setJudgeSummary(result.summary || "评分完成");
+      setJudgeLatencyMs(Date.now() - judgeStartedMs);
       notify.success(result.summary || "评分完成");
     } catch (error) {
       setJudgeSummary(error.message || "评分失败");
+      setJudgeLatencyMs(Date.now() - judgeStartedMs);
       notify.error(error.message || "评分失败");
     } finally {
       setJudging(false);
@@ -326,9 +348,11 @@ export default function ExpertPanelPage() {
 
   const clearSession = () => {
     if (sending || judging || panels.length === 0) return;
-    setPanels((current) => current.map((panel) => ({ ...panel, messages: [], response: "", status: "idle", score: null, comment: "", latencyMs: null, startedAt: null })));
+    setPanels((current) => current.map((panel) => ({ ...panel, messages: [], response: "", status: "idle", score: null, comment: "", latencyMs: null, startedAt: null, judgeTimestamp: null, judgeLatencyMs: null })));
     setPrompt("");
     setJudgeSummary("");
+    setJudgeStartedAt(null);
+    setJudgeLatencyMs(null);
   };
 
   return (
@@ -345,17 +369,17 @@ export default function ExpertPanelPage() {
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden p-4 lg:p-8 custom-scrollbar">
-        <div className="flex h-full min-h-[360px] gap-3">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 lg:p-8 custom-scrollbar">
+        <section className="mx-auto flex min-h-[360px] w-full max-w-6xl flex-col overflow-hidden rounded-md border border-border bg-surface shadow-sm">
           {panels.map((panel) => (
-            <section key={panel.id} className="flex h-full w-[480px] shrink-0 flex-col overflow-hidden rounded-md border border-border bg-surface shadow-sm">
+            <article key={panel.id} className="flex flex-col border-b border-border last:border-b-0">
               <header className="flex items-center gap-2 border-b border-border px-3 py-2">
+                <span className="rounded bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">专家</span>
                 <span className="min-w-0 flex-1 truncate font-mono text-xs font-semibold" title={panel.model}>{modelLabelMap.get(panel.model) || panel.model}</span>
-                {panel.latencyMs !== null && <span className="text-[11px] tabular-nums text-text-muted">{panel.latencyMs} ms</span>}
-                {panel.score !== null && <span className="rounded bg-primary/10 px-2 py-0.5 text-sm font-semibold text-primary">{panel.score}</span>}
+                {panel.score !== null && <span className="rounded bg-primary/10 px-2 py-0.5 text-sm font-semibold text-primary">评分 {panel.score}</span>}
                 <button type="button" disabled={sending} onClick={() => setPanels((current) => current.filter((item) => item.id !== panel.id))} className="rounded p-1 text-text-muted hover:bg-red-500/10 hover:text-red-500 disabled:opacity-40" title="移除模型"><span className="material-symbols-outlined text-[17px]">close</span></button>
               </header>
-              <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3 text-sm leading-6 custom-scrollbar">
+              <div className="flex flex-col gap-3 p-4 text-sm leading-6">
                 {panel.messages.map((message, index) => (
                   <div key={`${panel.id}-${index}`} className={`flex max-w-[92%] flex-col gap-1 ${message.role === "user" ? "self-end items-end" : "self-start items-start"}`}>
                     <div className={`whitespace-pre-wrap break-words rounded-md px-3 py-2 ${message.role === "user" ? "bg-primary text-white" : "border border-border bg-surface-2 text-text-main"}`}>{message.content}</div>
@@ -366,14 +390,15 @@ export default function ExpertPanelPage() {
                 {!panel.response && panel.status === "streaming" && <p className="animate-pulse text-text-muted">正在生成...</p>}
                 {panel.response && panel.status !== "done" && <div className={`max-w-[92%] self-start whitespace-pre-wrap break-words rounded-md border px-3 py-2 ${panel.status === "error" ? "border-red-500/30 bg-red-500/5 text-red-500" : "border-border bg-surface-2"}`}>{panel.response}</div>}
               </div>
-              {panel.comment && <div className="border-t border-border bg-bg-subtle px-3 py-2 text-xs text-text-muted"><span className="font-medium text-text-main">裁判评语：</span>{panel.comment}</div>}
-            </section>
+              {panel.score !== null || panel.comment ? <div className="ml-2 border-l-2 border-primary/30 pl-3 text-xs text-text-muted"><div className="mb-1 flex items-center gap-2"><span className="rounded bg-amber-500/10 px-2 py-0.5 font-semibold text-amber-600">裁判</span><span>评分 {panel.score ?? "-"}</span></div>{panel.comment && <p><span className="font-medium text-text-main">评语：</span>{panel.comment}</p>}<div className="mt-1 text-[10px] text-text-muted">{panel.judgeTimestamp ? formatMessageTime(panel.judgeTimestamp) : ""}{panel.judgeLatencyMs != null ? ` · ${panel.judgeLatencyMs} ms` : ""}</div></div> : null}
+            </article>
           ))}
-          <button type="button" onClick={() => openPicker("multiple")} className="flex h-full min-h-[420px] w-[300px] shrink-0 flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border bg-surface text-text-muted shadow-sm transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary">
-            <span className="material-symbols-outlined text-[30px]">add_circle</span>
-            <span className="text-sm font-medium">待加入</span>
+          {judgeSummary && <article className="border-t border-primary/20 bg-primary/5 px-4 py-3 text-sm"><div className="mb-1 flex items-center gap-2"><span className="rounded bg-amber-500/10 px-2 py-0.5 text-xs font-semibold text-amber-600">裁判</span><span className="font-medium">裁判综评</span></div><p className="whitespace-pre-wrap text-text-muted">{judgeSummary}</p><div className="mt-2 text-[10px] text-text-muted">{judgeStartedAt ? formatMessageTime(judgeStartedAt) : ""}{judgeLatencyMs != null ? ` · ${judgeLatencyMs} ms` : ""}</div></article>}
+          <button type="button" onClick={() => openPicker("multiple")} className="m-4 flex min-h-16 items-center justify-center gap-2 rounded-md border border-dashed border-border bg-bg-subtle text-text-muted transition-colors hover:border-primary hover:bg-primary/5 hover:text-primary">
+            <span className="material-symbols-outlined text-[22px]">add_circle</span>
+            <span className="text-sm font-medium">增加模型</span>
           </button>
-        </div>
+        </section>
       </div>
 
       <div className="shrink-0 border-t border-border bg-surface px-4 py-3 lg:px-8">
@@ -386,7 +411,7 @@ export default function ExpertPanelPage() {
         </div>
       </div>
 
-      <Modal isOpen={!!modelPicker} onClose={() => setModelPicker(null)} title="增加模型" size="lg" footer={<><Button variant="ghost" onClick={() => setModelPicker(null)}>取消</Button><Button disabled={pickerSelection.length === 0} onClick={confirmModels}>批量加入</Button></>}>
+      <Modal isOpen={!!modelPicker} onClose={() => setModelPicker(null)} title="增加模型" size="lg" footer={<><Button variant="ghost" onClick={() => setModelPicker(null)}>取消</Button><Button disabled={pickerSelection.length === 0} onClick={confirmModels}>加入选中模型</Button></>}>
         <div className="flex flex-col gap-3">
           <Input icon="search" placeholder="搜索提供商或模型" value={pickerSearch} onChange={(event) => setPickerSearch(event.target.value)} />
           <div className="max-h-[55vh] overflow-y-auto rounded-md border border-border p-2 custom-scrollbar">

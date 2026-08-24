@@ -17,7 +17,9 @@ import EndpointRow from "./components/EndpointRow";
 import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
+import { useNotificationStore } from "@/store/notificationStore";
 export default function APIPageClient({ machineId }) {
+  const notify = useNotificationStore();
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -704,7 +706,7 @@ export default function APIPageClient({ machineId }) {
       setKeys((prev) => prev.map((key) => key.id === keyId ? data.key : key));
     } catch (error) {
       console.error("Error updating key group:", error);
-      alert(error.message);
+      notify.error(error.message);
     }
   };
 
@@ -735,7 +737,7 @@ export default function APIPageClient({ machineId }) {
       setKeys((current) => current.map((key) => updatedMap.get(key.id) || key));
       setSelectedKeyIds(new Set());
     } catch (error) {
-      alert(error.message);
+      notify.error(error.message);
     } finally {
       setBatchSaving(false);
     }
