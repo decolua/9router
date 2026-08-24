@@ -1,11 +1,13 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind } from "@/shared/constants/models";
 import {
   AI_PROVIDERS,
+  FREE_PROVIDERS,
+  FREE_TIER_PROVIDERS,
   getProviderAlias,
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getFreeModels } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -527,6 +529,39 @@ export async function buildModelsList(kindFilter, options = {}) {
           owned_by: outputAlias,
         });
       }
+    }
+  }
+
+  // Free-tier catalogs synced by the freeModelSync scheduler. noAuth providers
+  // never get stored connections (auth is injected virtually per request), so
+  // without this merge their discovered models would never be listed.
+  let syncedFreeCatalogs = {};
+  try {
+    syncedFreeCatalogs = await getFreeModels();
+  } catch (e) {
+    console.log("Could not fetch free-model catalogs");
+  }
+  for (const [freeProviderId, freeCatalog] of Object.entries(syncedFreeCatalogs)) {
+    if (!FREE_PROVIDERS[freeProviderId] && !FREE_TIER_PROVIDERS[freeProviderId]) continue;
+    if (!providerMatchesKinds(freeProviderId, kindFilter)) continue;
+    const freeAlias = getProviderAlias(freeProviderId);
+    for (const modelId of freeCatalog.ids || []) {
+      const kind = inferKindFromUnknownModelId(modelId);
+      if (!kindFilter.includes(kind)) continue;
+      if (isDisabled(freeAlias, modelId)) continue;
+
+      const model = {
+        id: `${freeAlias}/${modelId}`,
+        object: "model",
+        owned_by: freeAlias,
+      };
+      const caps = kind === LLM_KIND ? getCapabilitiesForModel(freeProviderId, modelId) : null;
+      if (caps) {
+        if (caps.vision || caps.search || caps.reasoning) model.capabilities = caps;
+        if (Number.isFinite(caps.contextWindow)) model.context_length = caps.contextWindow;
+        if (Number.isFinite(caps.maxOutput)) model.max_completion_tokens = caps.maxOutput;
+      }
+      models.push(model);
     }
   }
 

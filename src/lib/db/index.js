@@ -55,6 +55,11 @@ export {
   getDisabledModels, getDisabledByProvider, disableModels, enableModels,
 } from "./repos/disabledModelsRepo.js";
 
+// Free-model catalogs (hourly sync from free-tier providers)
+export {
+  getFreeModels, getFreeModelsForProvider, setFreeModels,
+} from "./repos/freeModelsRepo.js";
+
 // Usage
 export {
   statsEmitter, trackPendingRequest, getActiveRequests,

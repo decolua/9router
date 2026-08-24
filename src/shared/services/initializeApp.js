@@ -118,6 +118,11 @@ async function runHeavyStartup() {
   import("@/sse/services/backgroundTokenRefresh.js")
     .then(({ startBackgroundTokenRefresh }) => startBackgroundTokenRefresh())
     .catch((e) => console.log("[BackgroundTokenRefresh] scheduler start failed:", e.message));
+
+  // Free-model auto-discovery (no-op unless settings.freeModelSync.enabled).
+  import("@/shared/services/freeModelSync.js")
+    .then(({ startFreeModelSync }) => startFreeModelSync())
+    .catch((e) => console.log("[FreeModelSync] scheduler start failed:", e.message));
 }
 
 function hasQuotaAutoPingEnabled(settings) {

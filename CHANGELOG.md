@@ -1,3 +1,21 @@
+# Unreleased
+
+## Features
+- **Providers**: auto-discover free-tier models on a schedule — a background
+  sync fetches the public catalogs of every free/free-tier provider that
+  exposes one (OpenRouter, OpenCode, MiMo Free), filters them to genuinely
+  free models and persists them; toggle + interval (4/8/12/24h) live in the
+  Providers page. Discovered models surface as `alias/model` in `/v1/models`
+  and dashboard pickers even when the provider has no stored connection
+  (noAuth providers get per-request virtual auth but never appear in the old
+  connection-walk listing). Vanished upstream models are pruned again;
+  user-added customs are never touched
+
+## Dashboard
+- **Combos**: "Free Combo" creation — prefills a combo with every discovered
+  free model; optional keep-in-sync rewrites its members on each sync tick
+  (`auto-free` badge marks managed combos)
+
 # v0.5.55 (2026-08-14)
 
 ## Features

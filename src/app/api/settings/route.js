@@ -108,6 +108,15 @@ export async function PATCH(request) {
         .catch((error) => console.warn("[AutoPing] settings update failed:", error.message));
     }
 
+    if (Object.prototype.hasOwnProperty.call(body, "freeModelSync")) {
+      // Reconfigure the free-model discovery scheduler on toggle/interval change.
+      import("@/shared/services/freeModelSync")
+        .then(({ configureFreeModelSync }) => {
+          configureFreeModelSync(settings);
+        })
+        .catch((error) => console.warn("[FreeModelSync] settings update failed:", error.message));
+    }
+
     const { password, oidcClientSecret, ...safeSettings } = settings;
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
     return NextResponse.json(safeSettings, { headers: SETTINGS_RESPONSE_HEADERS });
