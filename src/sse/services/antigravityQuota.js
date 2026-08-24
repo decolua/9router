@@ -64,7 +64,7 @@ async function _doRefresh(connectionId, accessToken, providerSpecificData, now) 
     const usage = await getAntigravityUsage(accessToken, providerSpecificData, proxyOptions);
     if (!usage?.quotas) return null;
 
-    // Update in-memory cache
+    // Update in-memory cache. Caller logs CACHE_BLOCK only if requested model is exhausted.
     quotaCache.set(connectionId, usage.quotas);
     lastRefreshAt.set(connectionId, now);
 
@@ -89,5 +89,8 @@ export async function handleAntigravityQuotaError(connectionId, status, model, a
   if (!quota || quota.remainingPercentage > 0 || !quota.resetAt) return null;
 
   const resetMs = new Date(quota.resetAt).getTime();
-  return resetMs > Date.now() ? resetMs : null;
+  if (resetMs <= Date.now()) return null;
+
+  log.warn("AG_QUOTA", `${connectionId.slice(0, 8)} | UPSTREAM_${status} ${model} — quota exhausted; CACHE_BLOCK until ${quota.resetAt}`);
+  return resetMs;
 }
