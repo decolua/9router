@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 import { findPython310, getInstalledHeadroomExtras, HEADROOM_COMPRESSION_EXTRAS } from "@/lib/headroom/detect";
 import { installHeadroomExtras, uninstallHeadroomExtras, getInstallLogTail } from "@/lib/headroom/process";
+import { hasValidCliToken, isAuthenticated } from "@/dashboardGuard";
 
 export const dynamic = "force-dynamic";
+
+async function requireAuth(request) {
+  if (await hasValidCliToken(request) || await isAuthenticated(request)) return true;
+  return false;
+}
 
 export async function GET(req) {
   try {
@@ -22,6 +28,9 @@ export async function GET(req) {
 }
 
 export async function POST(req) {
+  if (!(await requireAuth(req))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
     const body = await req.json().catch(() => ({}));
     const requested = Array.isArray(body?.extras) ? body.extras : [];
@@ -34,6 +43,9 @@ export async function POST(req) {
 }
 
 export async function DELETE(req) {
+  if (!(await requireAuth(req))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
     const body = await req.json().catch(() => ({}));
     const requested = Array.isArray(body?.extras) ? body.extras : [];
