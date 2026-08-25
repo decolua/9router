@@ -246,14 +246,22 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Account selection shown in the unified "▶" line (acc:...)
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
-    // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
+    // Ensure real project ID is available for providers that need it.
+    // NON-BLOCKING: if projectId is missing (e.g. fresh panen account, or the
+    // cached value was evicted), do NOT stall the request waiting for
+    // loadCodeAssist/onboardUser (which can take 10-30s or fail entirely when
+    // Google returns done=true without project_id). Use the DB value (or the
+    // executor's generated fallback) for THIS request, and kick off a background
+    // fetch so the next request has it cached.
     if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
-      const pid = await getProjectIdForConnection(credentials.connectionId, refreshedCredentials.accessToken, provider);
-      if (pid) {
-        refreshedCredentials.projectId = pid;
-        // Persist to DB in background so subsequent requests have it immediately
-        updateProviderCredentials(credentials.connectionId, { projectId: pid }).catch(() => { });
-      }
+      // Fire-and-forget: fetch + persist in background; never block the hot path.
+      getProjectIdForConnection(credentials.connectionId, refreshedCredentials.accessToken, provider)
+        .then((pid) => {
+          if (pid) {
+            updateProviderCredentials(credentials.connectionId, { projectId: pid }).catch(() => { });
+          }
+        })
+        .catch(() => { });
     }
 
     // Use shared chatCore
