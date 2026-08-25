@@ -134,8 +134,13 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     return { ok: true, latencyMs, error: null, status: res.status };
   }
 
-  const chatPath = options.connectionId ? "/api/dashboard/chat/completions" : "/api/v1/chat/completions";
-  const res = await fetch(`${baseUrl}${chatPath}`, {
+  // Model probes are dashboard-internal operations. Sending them through the
+  // public endpoint attaches an arbitrary active user API key, whose model
+  // allowlist may reject a perfectly usable provider model with HTTP 403.
+  // The dashboard route skips user-key policy checks and optionally pins the
+  // exact provider connection being tested.
+  delete headers.Authorization;
+  const res = await fetch(`${baseUrl}/api/dashboard/chat/completions`, {
     method: "POST",
     headers,
     body: JSON.stringify({

@@ -191,4 +191,39 @@ describe("model test route kind routing", () => {
     expect(body.status).toBe(502);
     expect(body.error).toBe("HTTP 502: bad upstream");
   });
+
+  it("forwards a preferred connection for LLM model tests", async () => {
+    global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: "ok" } }],
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+
+    const { POST } = await import("../../src/app/api/models/test/route.js");
+
+    const req = new Request("http://localhost/api/models/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "openai/gpt-5",
+        kind: "llm",
+        connectionId: "conn-openai",
+      }),
+    });
+
+    const res = await POST(req);
+    const body = await res.json();
+
+    expect(body.ok).toBe(true);
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/dashboard/chat/completions"),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "x-connection-id": "conn-openai",
+          "x-9r-internal-job": "provider-model-test",
+        }),
+      })
+    );
+  });
 });

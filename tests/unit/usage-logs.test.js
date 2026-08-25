@@ -48,6 +48,7 @@ describe("usage logs", () => {
     expect(result.logs).toHaveLength(1);
     expect(result.logs[0].cacheReadTokens).toBe(120);
     expect(result.logs[0].cacheCreationTokens).toBe(40);
+    expect(result.logs[0].cacheHitRate).toBe(24);
     expect(result.logs[0].logType).toBe("success");
   });
 
@@ -70,6 +71,36 @@ describe("usage logs", () => {
     expect(result.logs).toHaveLength(1);
     expect(result.logs[0].cacheReadTokens).toBe(120);
     expect(result.logs[0].cacheCreationTokens).toBe(380);
+    expect(result.logs[0].cacheHitRate).toBe(24);
+  });
+
+  it("sorts traffic logs by cache hit rate", async () => {
+    const timestamp = new Date().toISOString();
+    await db.saveRequestUsage({
+      provider: "cache-rate-provider",
+      model: "low-cache-model",
+      status: "200 OK",
+      timestamp,
+      tokens: { prompt_tokens: 500, completion_tokens: 10, cached_tokens: 100 },
+    });
+    await db.saveRequestUsage({
+      provider: "cache-rate-provider",
+      model: "high-cache-model",
+      status: "200 OK",
+      timestamp,
+      tokens: { prompt_tokens: 500, completion_tokens: 10, cached_tokens: 400 },
+    });
+
+    const result = await db.getUsageLogs({
+      provider: "cache-rate-provider",
+      sortBy: "cacheHitRate",
+      sortOrder: "desc",
+    });
+
+    expect(result.logs.map((log) => [log.model, log.cacheHitRate])).toEqual([
+      ["high-cache-model", 80],
+      ["low-cache-model", 20],
+    ]);
   });
 
   it("builds token trend components and cache hit rate from canonical usage", async () => {

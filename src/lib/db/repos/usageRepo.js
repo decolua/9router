@@ -1198,7 +1198,7 @@ export async function getUsageLogs(filter = {}) {
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
   const page = Math.max(1, Number(filter.page) || 1);
   const pageSize = Math.min(200, Math.max(1, Number(filter.pageSize) || 50));
-  const allowedSortFields = new Set(["timestamp", "apiKeyName", "selectedModel", "actualModel", "provider", "endpoint", "inputTokens", "cacheReadTokens", "cacheCreationTokens", "outputTokens", "totalTokens", "latencyMs", "status"]);
+  const allowedSortFields = new Set(["timestamp", "apiKeyName", "selectedModel", "actualModel", "provider", "endpoint", "inputTokens", "cacheReadTokens", "cacheCreationTokens", "cacheHitRate", "outputTokens", "totalTokens", "latencyMs", "status"]);
   const sortBy = allowedSortFields.has(filter.sortBy) ? filter.sortBy : "timestamp";
   const sortOrder = filter.sortOrder === "asc" ? "ASC" : "DESC";
   const allRows = db.all(`SELECT id, timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta FROM usageHistory ${where} ORDER BY id DESC`, params);
@@ -1228,10 +1228,12 @@ export async function getUsageLogs(filter = {}) {
     const cacheWrite = getCacheTokenCounts(tokens).cacheCreationTokens;
     const input = Number(row.promptTokens ?? tokens.prompt_tokens ?? tokens.input_tokens ?? 0);
     const output = Number(row.completionTokens ?? tokens.completion_tokens ?? tokens.output_tokens ?? 0);
+    const totalInput = Math.max(input, cacheRead + cacheWrite);
     const values = {
       timestamp: new Date(row.timestamp).getTime(), apiKeyName: row.apiKey || "", selectedModel: meta.requestedModel || row.model || "",
       actualModel: meta.actualModel || row.model || "", provider: row.provider || "", endpoint: row.endpoint || "", inputTokens: input,
-      cacheReadTokens: cacheRead, cacheCreationTokens: cacheWrite, outputTokens: output, totalTokens: input + cacheRead + cacheWrite + output,
+      cacheReadTokens: cacheRead, cacheCreationTokens: cacheWrite, cacheHitRate: totalInput > 0 ? cacheRead / totalInput * 100 : 0,
+      outputTokens: output, totalTokens: input + cacheRead + cacheWrite + output,
       latencyMs: Number(meta.latency?.total || meta.latencyMs || meta.durationMs || 0), status: row.status || "",
     };
     return values[sortBy];
@@ -1273,6 +1275,7 @@ export async function getUsageLogs(filter = {}) {
       cache_creation_input_tokens: cacheCreationTokens,
     };
     const breakdown = await calculateBreakdown(r.provider, r.model, normalizedTokens, r.timestamp);
+    const totalInputTokens = breakdown.inputTokens + breakdown.cacheReadTokens + breakdown.cacheCreationTokens;
     const meta = parseJson(r.meta, {}) || {};
     const mappedModel = getMappedModelName(modelMappingMap, r.provider, r.model);
     return {
@@ -1289,6 +1292,7 @@ export async function getUsageLogs(filter = {}) {
       endpoint: r.endpoint,
       account: r.connectionId ? (connMap[r.connectionId] || r.connectionId) : null,
       ...breakdown,
+      cacheHitRate: totalInputTokens > 0 ? Number((breakdown.cacheReadTokens / totalInputTokens * 100).toFixed(2)) : 0,
       cost: breakdown.totalCost || Number(r.cost || 0),
       status: r.status || "ok",
       ttftMs: Number(meta.latency?.ttft || 0),

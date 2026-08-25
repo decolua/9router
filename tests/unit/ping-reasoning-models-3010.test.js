@@ -45,6 +45,21 @@ describe("pingModelByKind reasoning models (#3010)", () => {
     expect(body.max_tokens).toBe(1024);
   });
 
+  it("uses the internal dashboard route without a user API key policy", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ choices: [{ message: { content: "Hi there!" } }] }));
+
+    await pingModelByKind("volcengine-ark/glm-5.3", "llm", "http://127.0.0.1:20127", {
+      connectionId: "connection-ark",
+    });
+
+    expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:20127/api/dashboard/chat/completions");
+    const headers = fetchMock.mock.calls[0][1].headers;
+    expect(headers.Authorization).toBeUndefined();
+    expect(headers["x-9r-cli-token"]).toBe("cli-token");
+    expect(headers["x-connection-id"]).toBe("connection-ark");
+    expect(headers["x-9r-internal-job"]).toBe("provider-model-test");
+  });
+
   it("treats a reasoning-only (length-limited) response as ok:true", async () => {
     fetchMock.mockResolvedValue(
       jsonResponse({

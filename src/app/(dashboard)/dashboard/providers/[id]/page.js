@@ -54,6 +54,7 @@ export default function ProviderDetailPage() {
   const [modelTestResults, setModelTestResults] = useState({});
   const [modelsTestError, setModelsTestError] = useState("");
   const [testingModelIds, setTestingModelIds] = useState(() => new Set());
+  const [batchTestingModels, setBatchTestingModels] = useState(false);
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
   const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
   const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
@@ -1058,23 +1059,111 @@ export default function ProviderDetailPage() {
     </Modal>
   );
 
+  const requestModelTest = async (modelId) => {
+    const res = await fetch("/api/models/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: `${providerStorageAlias}/${modelId}`,
+      }),
+    });
+    const data = await res.json();
+    return { ...data, ok: res.ok && data.ok === true };
+  };
+
+  const updateTestingModels = (modelIds, testing) => {
+    setTestingModelIds((prev) => {
+      const next = new Set(prev);
+      for (const modelId of modelIds) {
+        if (testing) next.add(modelId);
+        else next.delete(modelId);
+      }
+      return next;
+    });
+  };
+
   const handleTestModel = async (modelId) => {
     if (testingModelIds.has(modelId)) return;
-    setTestingModelIds((prev) => new Set(prev).add(modelId));
+    updateTestingModels([modelId], true);
     try {
-      const res = await fetch("/api/models/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}` }),
-      });
-      const data = await res.json();
+      const data = await requestModelTest(modelId);
       setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
       setModelsTestError(data.ok ? "" : (data.error || "Model not reachable"));
     } catch {
       setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
       setModelsTestError("Network error");
     } finally {
-      setTestingModelIds((prev) => { const n = new Set(prev); n.delete(modelId); return n; });
+      updateTestingModels([modelId], false);
+    }
+  };
+
+  const getTestableModelIds = () => {
+    const customRows = getProviderCustomModelRows({
+      customModels,
+      modelAliases,
+      providerAlias: providerStorageAlias,
+      builtInModels: isCompatible ? [] : models,
+      type: "llm",
+    });
+    if (isCompatible) return [...new Set(customRows.map((model) => model.id))];
+
+    const builtInIds = [
+      ...models,
+      ...kiloFreeModels.filter((model) => !models.some((existing) => existing.id === model.id)),
+    ]
+      .filter((model) => { const kind = getModelKind(model); return !kind || kind === "llm"; })
+      .map((model) => model.id)
+      .filter((modelId) => !deletedModelIds.includes(modelId) && !disabledModelIds.includes(modelId));
+    return [...new Set([...customRows.map((model) => model.id), ...builtInIds])];
+  };
+
+  const handleBatchTestModels = async () => {
+    const modelIds = getTestableModelIds();
+    if (batchTestingModels || modelIds.length === 0) return;
+
+    setBatchTestingModels(true);
+    setModelsTestError("");
+    updateTestingModels(modelIds, true);
+    setModelTestResults((prev) => {
+      const next = { ...prev };
+      for (const modelId of modelIds) delete next[modelId];
+      return next;
+    });
+
+    let passed = 0;
+    let firstError = "";
+    try {
+      const concurrency = 4;
+      for (let index = 0; index < modelIds.length; index += concurrency) {
+        const batch = modelIds.slice(index, index + concurrency);
+        const results = await Promise.all(batch.map(async (modelId) => {
+          try {
+            const data = await requestModelTest(modelId);
+            return { modelId, data };
+          } catch {
+            return { modelId, data: { ok: false, error: "Network error" } };
+          }
+        }));
+        setModelTestResults((prev) => {
+          const next = { ...prev };
+          for (const { modelId, data } of results) next[modelId] = data.ok ? "ok" : "error";
+          return next;
+        });
+        for (const { data } of results) {
+          if (data.ok) passed += 1;
+          else if (!firstError) firstError = data.error || "Model not reachable";
+        }
+      }
+      const failed = modelIds.length - passed;
+      if (failed > 0) {
+        setModelsTestError(`${failed} 个模型测试失败${firstError ? `：${firstError}` : ""}`);
+        notify.warning(`批量测试完成：${passed} 个成功，${failed} 个失败`);
+      } else {
+        notify.success(`批量测试完成：${passed} 个模型全部可用`);
+      }
+    } finally {
+      updateTestingModels(modelIds, false);
+      setBatchTestingModels(false);
     }
   };
 
@@ -1094,6 +1183,9 @@ export default function ProviderDetailPage() {
           onDeleteCustomModel={(modelId) => handleDeleteCustomModel(modelId, "llm", providerStorageAlias)}
           connections={connections}
           isAnthropic={isAnthropicCompatible}
+          onTestModel={handleTestModel}
+          modelTestResults={modelTestResults}
+          testingModelIds={testingModelIds}
         />
       );
     }
@@ -1666,6 +1758,19 @@ export default function ProviderDetailPage() {
               {"Available Models"}
             </h2>
           </div>
+          <div className="flex flex-wrap gap-2">
+            {getTestableModelIds().length > 0 && (connections.length > 0 || isFreeNoAuth) && (
+              <Button
+                size="md"
+                variant="secondary"
+                icon="science"
+                onClick={handleBatchTestModels}
+                loading={batchTestingModels}
+                disabled={batchTestingModels || testingModelIds.size > 0}
+              >
+                {batchTestingModels ? "测试中..." : "批量测试"}
+              </Button>
+            )}
           {!isCompatible && (() => {
             const allIds = [
               ...models,
@@ -1673,7 +1778,7 @@ export default function ProviderDetailPage() {
             ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id).filter((id) => !deletedModelIds.includes(id));
             const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
             return (
-              <div className="flex flex-wrap gap-2">
+              <>
                 <Button
                   size="md"
                   variant="secondary"
@@ -1697,9 +1802,10 @@ export default function ProviderDetailPage() {
                 {(models.length > 0 || customModels.some((entry) => entry.providerAlias === providerStorageAlias && (entry.kind || entry.type || "llm") === "llm") || Object.keys(modelAliases).some((key) => key.startsWith(`${providerStorageAlias}/`))) && (
                   <Button size="md" variant="danger" icon="delete_sweep" onClick={handleDeleteAllModels}>删除全部模型</Button>
                 )}
-              </div>
+              </>
             );
           })()}
+          </div>
         </div>
         {!!modelsTestError && (
           <p className="text-xs text-red-500 mb-3 break-words">{modelsTestError}</p>

@@ -23,6 +23,7 @@ export const getDefaultLogFilters = (now = new Date()) => {
 };
 const formatNumber = (value) => new Intl.NumberFormat("zh-CN").format(Number(value || 0));
 const formatCost = (value) => `$${Number(value || 0).toFixed(6)}`;
+const formatPercent = (value) => `${Number(value || 0).toFixed(2)}%`;
 const isSuccessStatus = (status) => ["ok", "success", "200 ok"].includes(String(status || "").toLowerCase());
 const LOG_COLUMNS = [
   { id: "timestamp", label: "时间" },
@@ -34,6 +35,7 @@ const LOG_COLUMNS = [
   { id: "input", label: "输入" },
   { id: "cacheRead", label: "缓存读取" },
   { id: "cacheWrite", label: "缓存写入" },
+  { id: "cacheHitRate", label: "缓存命中率" },
   { id: "output", label: "输出" },
   { id: "total", label: "总和" },
   { id: "latency", label: "延时" },
@@ -41,6 +43,8 @@ const LOG_COLUMNS = [
 ];
 const DEFAULT_LOG_COLUMNS = new Set(LOG_COLUMNS.map((column) => column.id).filter((id) => id !== "endpoint"));
 const LOG_COLUMNS_STORAGE_KEY = "9router:traffic-log-columns";
+const LOG_COLUMNS_SCHEMA_KEY = "9router:traffic-log-columns-schema";
+const LOG_COLUMNS_SCHEMA_VERSION = 2;
 const LOG_SORT_STORAGE_KEY = "9router:traffic-log-sort";
 const MetricCell = ({ tokens, cost, color }) => (
   <td className={`px-3 py-2 text-right tabular-nums ${color}`}>
@@ -49,6 +53,12 @@ const MetricCell = ({ tokens, cost, color }) => (
   </td>
 );
 MetricCell.propTypes = { tokens: PropTypes.number, cost: PropTypes.number, color: PropTypes.string };
+const RateCell = ({ value, color = "text-violet-500" }) => (
+  <td className={`whitespace-nowrap px-3 py-2 text-right font-medium tabular-nums ${color}`}>
+    {formatPercent(value)}
+  </td>
+);
+RateCell.propTypes = { value: PropTypes.number, color: PropTypes.string };
 const LatencyCell = ({ ttftMs, totalMs }) => (
   <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-text-muted">
     <div>{ttftMs > 0 ? `${formatNumber(ttftMs)} ms` : "-"}</div>
@@ -75,12 +85,22 @@ export default function RequestLogger() {
   const notify = useNotificationStore();
 
   useEffect(() => {
-    try {
-      const columns = JSON.parse(localStorage.getItem(LOG_COLUMNS_STORAGE_KEY) || "null");
-      if (Array.isArray(columns) && columns.length) setVisibleColumns(new Set(columns));
-      const sort = JSON.parse(localStorage.getItem(LOG_SORT_STORAGE_KEY) || "null");
-      if (sort?.field) setSortState({ field: sort.field, direction: sort.direction === "asc" ? "asc" : "desc" });
-    } catch {}
+    const timeout = setTimeout(() => {
+      try {
+        const columns = JSON.parse(localStorage.getItem(LOG_COLUMNS_STORAGE_KEY) || "null");
+        if (Array.isArray(columns) && columns.length) {
+          const nextColumns = new Set(columns);
+          const schemaVersion = Number(localStorage.getItem(LOG_COLUMNS_SCHEMA_KEY) || 0);
+          if (schemaVersion < LOG_COLUMNS_SCHEMA_VERSION) nextColumns.add("cacheHitRate");
+          setVisibleColumns(nextColumns);
+          localStorage.setItem(LOG_COLUMNS_STORAGE_KEY, JSON.stringify([...nextColumns]));
+        }
+        localStorage.setItem(LOG_COLUMNS_SCHEMA_KEY, String(LOG_COLUMNS_SCHEMA_VERSION));
+        const sort = JSON.parse(localStorage.getItem(LOG_SORT_STORAGE_KEY) || "null");
+        if (sort?.field) setSortState({ field: sort.field, direction: sort.direction === "asc" ? "asc" : "desc" });
+      } catch {}
+    }, 0);
+    return () => clearTimeout(timeout);
   }, []);
 
   const fetchLogs = useCallback(async (showLoading = true, page = 1) => {
@@ -165,6 +185,8 @@ export default function RequestLogger() {
     cost: sum.cost + Number(log.cost || 0),
   }), { input: 0, inputCost: 0, cacheRead: 0, cacheReadCost: 0, cacheWrite: 0, cacheWriteCost: 0, output: 0, outputCost: 0, cost: 0 }), [logs]);
   const leadingColumnCount = ["timestamp", "apiKey", "selectedModel", "actualModel", "provider", "endpoint"].filter(isColumnVisible).length;
+  const totalInputTokens = totals.input + totals.cacheRead + totals.cacheWrite;
+  const totalCacheHitRate = totalInputTokens > 0 ? totals.cacheRead / totalInputTokens * 100 : 0;
 
   return (
     <div className="flex flex-col gap-4" data-i18n-skip>
@@ -186,10 +208,10 @@ export default function RequestLogger() {
       <Card className="overflow-hidden">
         <div className="max-h-[680px] overflow-auto">
           {loading && !logs.length ? <div className="p-8 text-center text-text-muted">正在加载流量日志...</div> : !logs.length ? <div className="p-8 text-center text-text-muted">暂无流量日志</div> : (
-           <table className="w-full min-w-[1280px] border-collapse text-xs">
-               <thead className="sticky top-0 z-10 border-b border-border bg-surface text-text-muted"><tr>{isColumnVisible("timestamp") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="timestamp" sortState={sortState} onSort={toggleSort}>时间</SortHeader></th>}{isColumnVisible("apiKey") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="apiKeyName" sortState={sortState} onSort={toggleSort}>API 密钥</SortHeader></th>}{isColumnVisible("selectedModel") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="selectedModel" sortState={sortState} onSort={toggleSort}>用户选择</SortHeader></th>}{isColumnVisible("actualModel") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="actualModel" sortState={sortState} onSort={toggleSort}>实际请求模型</SortHeader></th>}{isColumnVisible("provider") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="provider" sortState={sortState} onSort={toggleSort}>提供商</SortHeader></th>}{isColumnVisible("endpoint") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="endpoint" sortState={sortState} onSort={toggleSort}>端点</SortHeader></th>}{isColumnVisible("input") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="inputTokens" align="right" sortState={sortState} onSort={toggleSort}>输入</SortHeader></th>}{isColumnVisible("cacheRead") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="cacheReadTokens" align="right" sortState={sortState} onSort={toggleSort}>缓存读取</SortHeader></th>}{isColumnVisible("cacheWrite") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="cacheCreationTokens" align="right" sortState={sortState} onSort={toggleSort}>缓存写入</SortHeader></th>}{isColumnVisible("output") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="outputTokens" align="right" sortState={sortState} onSort={toggleSort}>输出</SortHeader></th>}{isColumnVisible("total") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="totalTokens" align="right" sortState={sortState} onSort={toggleSort}>总和</SortHeader></th>}{isColumnVisible("latency") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="latencyMs" align="right" sortState={sortState} onSort={toggleSort}>首 Token / 完成</SortHeader></th>}{isColumnVisible("status") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="status" sortState={sortState} onSort={toggleSort}>状态</SortHeader></th>}</tr></thead>
-               <tbody className="divide-y divide-border/60">{sortedLogs.map((log) => <tr key={log.id} className={isSuccessStatus(log.status) ? "hover:bg-bg-hover/60" : "border-l-2 border-red-500/60 bg-red-500/[0.05] hover:bg-red-500/[0.09]"}>{isColumnVisible("timestamp") && <td className="whitespace-nowrap px-3 py-2 text-text-muted">{new Date(log.timestamp).toLocaleString("zh-CN")}</td>}{isColumnVisible("apiKey") && <td className="whitespace-nowrap px-3 py-2">{log.apiKeyName}</td>}{isColumnVisible("selectedModel") && <td className="px-3 py-2 font-mono"><span className="mr-1 rounded bg-primary/10 px-1 text-[10px] text-primary">{log.selectedModelType || "模型"}</span>{String(log.selectedModel || log.model || "-").replace(/^group:/, "")}</td>}{isColumnVisible("actualModel") && <td className="px-3 py-2 font-mono">{log.actualModel || log.model || "-"}</td>}{isColumnVisible("provider") && <td className="whitespace-nowrap px-3 py-2">{log.provider || "-"}</td>}{isColumnVisible("endpoint") && <td className="px-3 py-2">{log.endpoint || "-"}</td>}{isColumnVisible("input") && <MetricCell tokens={log.inputTokens} cost={log.inputCost} color="text-primary" />}{isColumnVisible("cacheRead") && <MetricCell tokens={log.cacheReadTokens} cost={log.cacheReadCost} color="text-sky-500" />}{isColumnVisible("cacheWrite") && <MetricCell tokens={log.cacheCreationTokens} cost={log.cacheCreationCost} color="text-cyan-500" />}{isColumnVisible("output") && <MetricCell tokens={log.outputTokens} cost={log.outputCost} color="text-success" />}{isColumnVisible("total") && <MetricCell tokens={Number(log.inputTokens || 0) + Number(log.cacheReadTokens || 0) + Number(log.cacheCreationTokens || 0) + Number(log.outputTokens || 0)} cost={log.cost} color="text-warning" />}{isColumnVisible("latency") && <LatencyCell ttftMs={log.ttftMs} totalMs={log.latencyMs} />}{isColumnVisible("status") && <td className={`whitespace-nowrap px-3 py-2 font-semibold ${isSuccessStatus(log.status) ? "text-success" : "text-error"}`}>{isSuccessStatus(log.status) ? "成功" : (log.status || "失败")}</td>}</tr>)}</tbody>
-               <tfoot className="sticky bottom-0 z-20"><tr className="border-t-2 border-border bg-white font-semibold shadow-[0_-2px_8px_rgba(0,0,0,0.08)] [&>td]:bg-white"><td colSpan={Math.max(1, leadingColumnCount)} className="px-3 py-2 text-right">当前页合计</td>{isColumnVisible("input") && <MetricCell tokens={totals.input} cost={totals.inputCost} color="text-primary" />}{isColumnVisible("cacheRead") && <MetricCell tokens={totals.cacheRead} cost={totals.cacheReadCost} color="text-sky-500" />}{isColumnVisible("cacheWrite") && <MetricCell tokens={totals.cacheWrite} cost={totals.cacheWriteCost} color="text-cyan-500" />}{isColumnVisible("output") && <MetricCell tokens={totals.output} cost={totals.outputCost} color="text-success" />}{isColumnVisible("total") && <MetricCell tokens={totals.input + totals.cacheRead + totals.cacheWrite + totals.output} cost={totals.cost} color="text-warning" />}{isColumnVisible("latency") && <td />}{isColumnVisible("status") && <td />}</tr></tfoot>
+           <table className="w-full min-w-[1360px] border-collapse text-xs">
+               <thead className="sticky top-0 z-10 border-b border-border bg-surface text-text-muted"><tr>{isColumnVisible("timestamp") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="timestamp" sortState={sortState} onSort={toggleSort}>时间</SortHeader></th>}{isColumnVisible("apiKey") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="apiKeyName" sortState={sortState} onSort={toggleSort}>API 密钥</SortHeader></th>}{isColumnVisible("selectedModel") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="selectedModel" sortState={sortState} onSort={toggleSort}>用户选择</SortHeader></th>}{isColumnVisible("actualModel") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="actualModel" sortState={sortState} onSort={toggleSort}>实际请求模型</SortHeader></th>}{isColumnVisible("provider") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="provider" sortState={sortState} onSort={toggleSort}>提供商</SortHeader></th>}{isColumnVisible("endpoint") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="endpoint" sortState={sortState} onSort={toggleSort}>端点</SortHeader></th>}{isColumnVisible("input") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="inputTokens" align="right" sortState={sortState} onSort={toggleSort}>输入</SortHeader></th>}{isColumnVisible("cacheRead") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="cacheReadTokens" align="right" sortState={sortState} onSort={toggleSort}>缓存读取</SortHeader></th>}{isColumnVisible("cacheWrite") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="cacheCreationTokens" align="right" sortState={sortState} onSort={toggleSort}>缓存写入</SortHeader></th>}{isColumnVisible("cacheHitRate") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="cacheHitRate" align="right" sortState={sortState} onSort={toggleSort}>缓存命中率</SortHeader></th>}{isColumnVisible("output") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="outputTokens" align="right" sortState={sortState} onSort={toggleSort}>输出</SortHeader></th>}{isColumnVisible("total") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="totalTokens" align="right" sortState={sortState} onSort={toggleSort}>总和</SortHeader></th>}{isColumnVisible("latency") && <th className="whitespace-nowrap px-3 py-2 text-right"><SortHeader id="latencyMs" align="right" sortState={sortState} onSort={toggleSort}>首 Token / 完成</SortHeader></th>}{isColumnVisible("status") && <th className="whitespace-nowrap px-3 py-2 text-left"><SortHeader id="status" sortState={sortState} onSort={toggleSort}>状态</SortHeader></th>}</tr></thead>
+               <tbody className="divide-y divide-border/60">{sortedLogs.map((log) => <tr key={log.id} className={isSuccessStatus(log.status) ? "hover:bg-bg-hover/60" : "border-l-2 border-red-500/60 bg-red-500/[0.05] hover:bg-red-500/[0.09]"}>{isColumnVisible("timestamp") && <td className="whitespace-nowrap px-3 py-2 text-text-muted">{new Date(log.timestamp).toLocaleString("zh-CN")}</td>}{isColumnVisible("apiKey") && <td className="whitespace-nowrap px-3 py-2">{log.apiKeyName}</td>}{isColumnVisible("selectedModel") && <td className="px-3 py-2 font-mono"><span className="mr-1 rounded bg-primary/10 px-1 text-[10px] text-primary">{log.selectedModelType || "模型"}</span>{String(log.selectedModel || log.model || "-").replace(/^group:/, "")}</td>}{isColumnVisible("actualModel") && <td className="px-3 py-2 font-mono">{log.actualModel || log.model || "-"}</td>}{isColumnVisible("provider") && <td className="whitespace-nowrap px-3 py-2">{log.provider || "-"}</td>}{isColumnVisible("endpoint") && <td className="px-3 py-2">{log.endpoint || "-"}</td>}{isColumnVisible("input") && <MetricCell tokens={log.inputTokens} cost={log.inputCost} color="text-primary" />}{isColumnVisible("cacheRead") && <MetricCell tokens={log.cacheReadTokens} cost={log.cacheReadCost} color="text-sky-500" />}{isColumnVisible("cacheWrite") && <MetricCell tokens={log.cacheCreationTokens} cost={log.cacheCreationCost} color="text-cyan-500" />}{isColumnVisible("cacheHitRate") && <RateCell value={log.cacheHitRate} />}{isColumnVisible("output") && <MetricCell tokens={log.outputTokens} cost={log.outputCost} color="text-success" />}{isColumnVisible("total") && <MetricCell tokens={Number(log.inputTokens || 0) + Number(log.cacheReadTokens || 0) + Number(log.cacheCreationTokens || 0) + Number(log.outputTokens || 0)} cost={log.cost} color="text-warning" />}{isColumnVisible("latency") && <LatencyCell ttftMs={log.ttftMs} totalMs={log.latencyMs} />}{isColumnVisible("status") && <td className={`whitespace-nowrap px-3 py-2 font-semibold ${isSuccessStatus(log.status) ? "text-success" : "text-error"}`}>{isSuccessStatus(log.status) ? "成功" : (log.status || "失败")}</td>}</tr>)}</tbody>
+               <tfoot className="sticky bottom-0 z-20"><tr className="border-t-2 border-border bg-white font-semibold shadow-[0_-2px_8px_rgba(0,0,0,0.08)] [&>td]:bg-white"><td colSpan={Math.max(1, leadingColumnCount)} className="px-3 py-2 text-right">当前页合计</td>{isColumnVisible("input") && <MetricCell tokens={totals.input} cost={totals.inputCost} color="text-primary" />}{isColumnVisible("cacheRead") && <MetricCell tokens={totals.cacheRead} cost={totals.cacheReadCost} color="text-sky-500" />}{isColumnVisible("cacheWrite") && <MetricCell tokens={totals.cacheWrite} cost={totals.cacheWriteCost} color="text-cyan-500" />}{isColumnVisible("cacheHitRate") && <RateCell value={totalCacheHitRate} />}{isColumnVisible("output") && <MetricCell tokens={totals.output} cost={totals.outputCost} color="text-success" />}{isColumnVisible("total") && <MetricCell tokens={totals.input + totals.cacheRead + totals.cacheWrite + totals.output} cost={totals.cost} color="text-warning" />}{isColumnVisible("latency") && <td />}{isColumnVisible("status") && <td />}</tr></tfoot>
             </table>
           )}
         </div>

@@ -73,11 +73,11 @@ describe("provider test-models route kind routing", () => {
 
     expect(body.provider).toBe("huggingface");
     expect(body.results.some((r) => r.modelId === "black-forest-labs/FLUX.1-schnell" && r.ok)).toBe(true);
-    expect(global.fetch).toHaveBeenCalledWith(
-      expect.stringContaining("/api/v1/images/generations"),
-      expect.objectContaining({
-        method: "POST",
-      })
-    );
+    const imageProbe = global.fetch.mock.calls.find(([url]) => String(url).includes("/api/v1/images/generations"));
+    expect(imageProbe?.[1]).toMatchObject({ method: "POST" });
+    expect(imageProbe?.[1]?.headers).toMatchObject({
+      "x-connection-id": "conn-hf",
+      "x-9r-internal-job": "provider-model-test",
+    });
   });
 });
