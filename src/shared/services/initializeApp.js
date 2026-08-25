@@ -112,6 +112,12 @@ async function runHeavyStartup() {
       .then(({ startQuotaAutoPing }) => startQuotaAutoPing())
       .catch((e) => console.log("[AutoPing] scheduler start failed:", e.message));
   }
+
+  // Proactive OAuth token refresh (e.g. grok-cli ~6h TTL). Module is idempotent
+  // and also started from custom-server.js when that entry is used.
+  import("@/sse/services/backgroundTokenRefresh.js")
+    .then(({ startBackgroundTokenRefresh }) => startBackgroundTokenRefresh())
+    .catch((e) => console.log("[BackgroundTokenRefresh] scheduler start failed:", e.message));
 }
 
 function hasQuotaAutoPingEnabled(settings) {

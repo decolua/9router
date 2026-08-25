@@ -2,17 +2,8 @@ import { PROVIDERS } from "./providers.js";
 import REGISTRY from "../providers/registry/index.js";
 // PROVIDER_MODELS now built from providers/registry (transport + models co-located)
 import { PROVIDER_MODELS } from "../providers/index.js";
-import { modelQuotaFamily, modelStrip, modelTargetFormat, normalizeModelId } from "../providers/models/schema.js";
+import { modelQuotaFamily, modelStrip, modelTargetFormat, modelSupportedFormats, normalizeModelId } from "../providers/models/schema.js";
 import { CODEX_REVIEW_SUFFIX } from "../providers/models/helpers.js";
-
-// Antigravity exposes one Gemini 3.6 wire model; the suffix fixes its thinking tier.
-PROVIDER_MODELS.ag = [
-  { id: "gemini-3.6-flash-high", name: "Gemini 3.6 Flash (High)", upstreamModelId: "gemini-3.6-flash-tiered(high)" },
-  { id: "gemini-3.6-flash-medium", name: "Gemini 3.6 Flash (Medium)", upstreamModelId: "gemini-3.6-flash-tiered(medium)" },
-  { id: "gemini-3.6-flash-low", name: "Gemini 3.6 Flash (Low)", upstreamModelId: "gemini-3.6-flash-tiered(low)" },
-  ...(PROVIDER_MODELS.ag || []),
-];
-
 export { PROVIDER_MODELS };
 
 
@@ -61,6 +52,14 @@ export function getModelTargetFormat(aliasOrId, modelId) {
   const models = PROVIDER_MODELS[aliasOrId];
   if (!models) return null;
   return modelTargetFormat(findModel(models, modelId, aliasOrId));
+}
+
+// Declared upstream formats for a model (registry `supportedFormats`). Drives the
+// per-model guard on the sourceFormat-matched transport; null when undeclared.
+export function getModelSupportedFormats(aliasOrId, modelId) {
+  const models = PROVIDER_MODELS[aliasOrId];
+  if (!models) return null;
+  return modelSupportedFormats(findModel(models, modelId, aliasOrId));
 }
 
 export function getModelType(aliasOrId, modelId) {

@@ -14,6 +14,7 @@ import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
 import { resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
+import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
@@ -104,7 +105,23 @@ const LIVE_MODEL_RESOLVERS = {
       providerSpecificData: conn.providerSpecificData || {},
     }, { log: console });
     return result?.models?.length ? { models: result.models } : null;
-  }
+  },
+  zed: async (conn) => {
+    const result = await resolveZedModels({
+      accessToken: conn.accessToken,
+      providerSpecificData: conn.providerSpecificData || {},
+    });
+    if (!result?.models?.length) return null;
+    return {
+      models: result.models
+        .filter((m) => !m.isDisabled)
+        .map((m) => ({
+          id: m.id,
+          name: m.name,
+          capabilities: m.supportsTools ? { tools: true } : undefined,
+        })),
+    };
+  },
 };
 
 const parseOpenAIStyleModels = (data) => {
@@ -468,6 +485,27 @@ export async function buildModelsList(kindFilter, options = {}) {
           || capabilitiesFromServiceKind(customKind || liveKind)
           || (kind === LLM_KIND ? getCapabilitiesForModel(providerId, modelId) : null);
         if (caps) model.capabilities = caps;
+        // Token limits under the snake_case names the OpenAI/OpenRouter
+        // convention uses. `capabilities.contextWindow` is camelCase and nested,
+        // so clients matching context_length find nothing, fall back to guessing
+        // the window from the model name, and guess high — a 372k model read as
+        // 1.05M never reaches its compaction threshold and hard-fails upstream.
+        // Emitted at top level because not every client recurses into nested
+        // objects; the camelCase `capabilities` block stays for compatibility.
+        if (kind === LLM_KIND || allowAsLlm) {
+          let contextWindow = caps?.contextWindow;
+          let maxOutput = caps?.maxOutput;
+          // Live-catalog and service-kind capabilities are usually partial
+          // (often just { tools: true }), so fill the gaps from the static
+          // table rather than emitting null and leaving clients to guess.
+          if (!Number.isFinite(contextWindow) || !Number.isFinite(maxOutput)) {
+            const fallback = getCapabilitiesForModel(providerId, modelId);
+            if (!Number.isFinite(contextWindow)) contextWindow = fallback.contextWindow;
+            if (!Number.isFinite(maxOutput)) maxOutput = fallback.maxOutput;
+          }
+          if (Number.isFinite(contextWindow)) model.context_length = contextWindow;
+          if (Number.isFinite(maxOutput)) model.max_completion_tokens = maxOutput;
+        }
         models.push(model);
       }
 

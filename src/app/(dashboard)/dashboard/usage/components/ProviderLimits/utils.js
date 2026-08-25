@@ -4,7 +4,7 @@ import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 export const QUOTA_CACHE_KEY = "quotaCacheData";
 export const REFRESH_INTERVAL_MS = 60000;
 // Claude usage/quota endpoint rate-limits; poll it less often than other providers
-export const CLAUDE_REFRESH_INTERVAL_MS = 180000;
+export const CLAUDE_REFRESH_INTERVAL_MS = 600000;
 export const DEPLETED_QUOTA_THRESHOLD = 5;
 export const AUTO_REFRESH_STORAGE_KEY = "quotaAutoRefresh";
 export const CONNECTIONS_PAGE_SIZE = 20;
@@ -36,6 +36,17 @@ export function getConnectionQuotaRemaining(connection, quotaData) {
   return Number.POSITIVE_INFINITY;
 }
 
+// Stable group-by-provider: first-seen provider order, original order within group.
+function groupByProviderStable(connections) {
+  const seen = new Map();
+  for (const conn of connections) {
+    const key = conn.provider || "";
+    if (!seen.has(key)) seen.set(key, []);
+    seen.get(key).push(conn);
+  }
+  return Array.from(seen.values()).flat();
+}
+
 export function sortVisibleConnections(
   connections,
   quotaData,
@@ -58,7 +69,7 @@ export function sortVisibleConnections(
     });
   }
 
-  if (!expiringFirst) return connections;
+  if (!expiringFirst) return groupByProviderStable(connections);
 
   const getEarliestResetTime = (connection) => {
     const resetTimes = (quotaData[connection.id]?.quotas || [])
@@ -479,6 +490,52 @@ export function parseQuotaData(provider, data) {
         // Grok Build credits (on-demand window + prepaid balance).
         // Do NOT forward absolute `remaining` — getRemainingPercentage treats
         // it as a 0–100 percentage (same as Qoder). Use remainingPercentage.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+            });
+          });
+        }
+        break;
+
+      case "kimi":
+        // Weekly / Ratelimit from /v1/usages. Prefer remainingPercentage only.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+            });
+          });
+        }
+        break;
+
+      case "deepseek":
+        // Credit balance — remainingPercentage only (no absolute remaining).
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+            });
+          });
+        }
+        break;
+
+      case "ollama":
+        // Session (5h) / Weekly (7d) usage % from ollama.com/api/usage.
+        // remainingPercentage only — no absolute remaining (UI treats remaining as %).
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([name, quota]) => {
             normalizedQuotas.push({

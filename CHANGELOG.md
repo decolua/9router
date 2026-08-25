@@ -1,3 +1,201 @@
+# v0.5.55 (2026-08-14)
+
+## Features
+- **Auth**: native SAML 2.0 SSO alongside OIDC — AuthnRequest generation, ACS
+  assertion handling, SP metadata export, admin config test, replay-protected
+  via a `saml_state` cookie matched against `InResponseTo`
+- **Providers**: add Alibaba Token Plan (`token-plan.ap-southeast-1`) — the
+  fourth Alibaba key type, Singapore-only and OpenAI-compatible transport only
+- **Providers**: add `glm-5.3` to GLM Coding and GLM (China)
+- **Providers**: Kimchi accepts API keys as well as OAuth (dual auth), with a
+  working Test Connection for both modes
+- **Antigravity**: add Gemini 3.7 Flash and its tiered high/medium/low variants
+  (also in the Gemini registry) with pricing and quota tracking
+- **TTS**: add Fish Audio — model id travels in an HTTP `model` header, voice
+  is a `reference_id` (preset or cloned voice model)
+- **OpenCode-Go**: route by request format via declared transports instead of
+  forcing every client into `/messages` — Codex/OpenAI clients no longer pay a
+  lossy Responses→OpenAI→Claude double translation. Per-model `supportedFormats`
+  guard; the bespoke executor is gone (its shared `_lastModel` cache could cross
+  auth headers between concurrent requests)
+- **Usage**: dedup + cache Claude quota calls (120s TTL keyed by access token,
+  in-flight promise dedup, last-good read on soft failure) to stop multiple
+  tabs tripping 429; manual refresh (↻) sends `force=1` to bypass the cache
+
+## Fixes
+- **Docker**: ship `sql.js` in the image so the pure-JS DB fallback can start —
+  file tracing carried the package's JS without `dist/sql-wasm.wasm`, so a
+  container with no native driver aborted with ENOENT and never got a database
+  (#3248)
+- **Usage**: read Gemini `usageMetadata` out of the antigravity `{ response }`
+  envelope — every non-streaming antigravity request logged `IN 0 | OUT 0`
+  (#3260)
+- **Claude**: re-anchor passthrough cache breakpoints — the client's own
+  `cache_control` markers point at pre-normalization offsets, so the tail was
+  re-cached every request. Last system block and last tool pinned at 1h TTL,
+  last assistant turn at 5m, mid-conversation system messages folded into the
+  neighbouring user turn instead of hoisted into `body.system`
+- **Combos**: detect images from Hermes and attachment payloads (`images[]`,
+  `experimental_attachments`, message-level `image_url`/`audio_url`, inline
+  `data:` URIs) so the Vision Adapter auto-switch fires for Hermes/Ollama/
+  Vercel AI SDK shapes
+- **Kiro**: intercept chat via `x-amz-target` — Kiro IDE 1.0.228+ moved
+  `GenerateAssistantResponse` to `POST /` + header, bypassing MITM. Also emit
+  the now-mandatory initial-response frame and map the `auto` model slot
+- **Kiro**: report real output tokens and stop discarding usable turns
+- **Qoder**: detect billing blocks at stream start and return a synthetic 403
+  so combo/account fallback triggers instead of leaking the error into chat
+- **Antigravity**: strip competitive system prompts (Zed IDE's Claude-agent
+  prompt) that Antigravity flags with a 429 Quota Exhausted
+- **OpenCode**: send the official client fingerprint on free-tier requests so
+  the Console stops classifying traffic as unidentified and rate-limiting it;
+  session id resolves conversation-stable to preserve prompt caching
+- **Responses**: don't close the message on an empty `tool_calls` array — some
+  providers attach one to every chunk, and the truthy check ended the message
+  on the first content token (#3234)
+- **Translator**: preserve `prompt_cache_key` when converting chat to responses
+- **Models**: expose snake_case token limits on `/v1/models`
+- **Combos**: strip `stream_options` from the Fusion panel fan-out to avoid a
+  DeepSeek 400 (#3024); raise the dashboard model-test probe budget to 1024 and
+  soft-pass reasoning-only responses (#3010)
+- **Headroom**: the toggle reflects the `headroomEnabled` setting even when the
+  proxy is down — it previously showed OFF while the engine kept calling
+  `/v1/compress`; proxy status stays visible via the status chip
+- **Hermes**: add the `api_key` parameter to the model block in YAML config
+- **Providers**: add llm7 to provider test support
+
+## Docs
+- **i18n**: add Spanish, French, and Brazilian Portuguese README translations
+
+## Security
+- **Real IP**: `x-9r-real-ip` and the Host fallback were trusted from
+  client-controlled headers whenever `custom-server.js` was not in the request
+  path (`npm run start`, `start:bun`), letting a remote caller pose as local to
+  skip API key auth and reach `LOCAL_ONLY_PATHS` (`/api/mcp/*`,
+  `/api/tunnel/enable`, `/api/auth/reset-password`). The server now stamps a
+  per-process `x-9r-peer-token` on every request it sanitizes and only trusts
+  `x-9r-real-ip` behind it — falling back to Host in development and failing
+  closed in production (GHSA-pjm4-8fpg-f9p6). Also fixes IPv6 loopback
+  detection (`::1`, `::ffff:127.0.0.1`) and routes `npm run start` /
+  `start:bun` through `custom-server.js`
+- **Search**: `resolveBaseUrl()` rejects client-supplied non-public baseUrls
+  (SSRF guard on `/v1/search`)
+- **Login**: fresh-install remote login with the default password returns 403
+  without issuing a JWT
+- **Usage**: `/api/usage/request-details` redacts request/response payloads
+
+# v0.5.50 (2026-08-05)
+
+## Features
+- **Providers**: add TokenRouter (300+ models via OpenAI-compatible gateway) with
+  exact per-model pricing for 110 models and `reasoning_effort` thinking config
+- **Providers**: add Self-hosted STT / TTS / Embedding — point 9Router at your own
+  OpenAI-compatible speech and embedding servers (whisper.cpp, faster-whisper,
+  Kokoro-FastAPI, llama-server, vLLM, Infinity). Unlike the named cloud providers
+  these read `baseUrl` per connection, so one provider can front several machines
+- **Combos**: default-enable vision/audio capacity adapter (auto-routes to a
+  vision/audio-capable model when the target lacks that capability, falling back
+  to `oc/mimo-v2.5-free`), wired into chat handler routing
+- **Endpoint**: auto-provision a "Default Key" for first-time users so `/v1`
+  works without a manual dashboard step
+- **Codex**: support GPT-5.6 Max/Ultra reasoning-level overrides (cx/ routes only)
+- **Qoder**: support PAT (Personal Access Token) connections end-to-end, alongside
+  OAuth device flow
+- **CLI tools**: add OpenDesign (manalkaff/opendesign) support
+- **Headroom**: report effective payload savings (tool schema/history bytes broken
+  out, byte-savings % reflects actual outbound reduction)
+- **Ollama**: Cloud quota tracker (session + weekly) + proactive background OAuth
+  token refresh scheduler for all providers
+
+## Fixes
+- **Providers**: remove Qwen (OAuth flow stopped working reliably)
+- **Passthrough**: detect codex-tui/Codex Desktop as native Codex client — they
+  were falling through to the translator and losing fields like `reasoning.summary`
+- **OAuth**: scope antigravity header fixes to loadCodeAssist/onboardUser only
+- **OAuth**: keep `open` external in the build so xAI/Grok token refresh works on
+  Windows
+- **OAuth**: declare missing `searchParams` in register-session handler (was a
+  500 instead of JSON on error)
+- **DB**: `ENABLE_REQUEST_LOGS` env var now overrides the UI setting correctly;
+  observability defaults to off (opt-in)
+- **Translator**: preserve Codex Responses Lite tool use across chat-native
+  OpenAI-compatible providers
+- **Translator**: don't drop image-only user messages in `prepareClaudeRequest`
+- **Translator**: drop JSON Schema keywords Gemini rejects (`uniqueItems`,
+  `contains`, `multipleOf`, `unevaluatedProperties`, `unevaluatedItems`,
+  `contentSchema`)
+- **Claude**: remove global header cache that leaked one client's identity
+  headers onto another client/account sharing the server; gate `anthropic-beta`
+  by model instead
+- **Antigravity**: drop retired Gemini 3.0 quota tiers, show Gemini 3.6 Flash
+  usage bars
+- **Cloudflare AI**: declare API key authentication (dashboard showed "No
+  connections" despite an active key)
+- **GitHub Copilot**: hold monthly-exhausted accounts until UTC month reset
+  instead of only cooling down 120s
+- **CodeBuddy**: dodge Tencent CN content filter, add usage tracking, normalize
+  codebuddy-intl messages
+- **Usage**: stop losing cached prompt tokens in the forced-SSE→JSON path
+- **Grok CLI**: display the public subscription tier from the OAuth token claim
+- **Providers**: count apikey connections for Ollama free-tier card; free-tier/
+  apikey providers without `authModes` now default to apikey (were treated
+  oauth-only)
+- **Build**: include static/public assets in standalone output (login page hung
+  on 404s when run via PM2)
+- **Server**: support IntelliJ IDEA OpenAI-compatible clients over HTTP (h2c
+  upgrade handling)
+- **Auth**: redirect already-logged-in sessions away from `/login`
+- **CLI tools**: enable Apply button for dynamic OpenAI/Anthropic-compatible
+  provider connections
+- **CLI**: include complete API artifacts in the CLI package
+- **TTS**: a bare self-hosted model name is the MODEL, not the voice — `kokoro`
+  was parsed as a voice against a default model, 404ing or synthesising with the
+  wrong one
+- **Embeddings**: self-hosted embeddings no longer fall back to `api.openai.com`
+  when a connection has no `baseUrl` — that silently sent the input text and API
+  key to OpenAI under a provider named "Self-hosted"
+- **Embeddings**: an adapter that rejects a misconfigured connection now returns
+  400 with the reason instead of escaping the handler uncaught
+- **Embeddings**: bound the upstream fetch with `FETCH_CONNECT_TIMEOUT_MS` — an
+  endpoint that drops packets never returns headers, so the request previously
+  hung indefinitely
+
+## Docs
+- **i18n**: fix port typo, add RTK Token Saver feature descriptions
+
+# v0.5.45 (2026-07-30)
+
+## Features
+- **TTS**: add Xiaomi MiMo text-to-speech (preset voices 冰糖/茉莉/苏打/白桦/Mia/Chloe/Milo/Dean, style control, language hint dropdown with Auto-detect, i18n for Style label/placeholder)
+- **Providers**: add Poolside (OpenAI-compatible)
+- **Providers**: add api-airforce, baidu, bazaarlink, bluesminds, kilo-gateway, llm7, morph, sambanova, tencent
+- **OAuth**: zed / trae / windsurf providers + harden callback proxies
+- **CLI tools**: set Claude Code max context tokens
+- **Qoder**: PAT auth + refresh model list
+- **Gemini**: Gemini 3.6 Flash tier routing + Gemini 3.5 Flash Lite
+- **Claude**: bump default Opus to `claude-opus-5`
+- **Kiro**: add Claude Opus 5 models
+- **Usage**: Kimi and DeepSeek usage handlers
+- **Usage**: SuperGrok weekly pool via gRPC-web
+
+## Fixes
+- **Refresh**: rotate `refresh_token` between retry attempts
+- **Kiro**: canonicalize tool history and route API keys correctly
+- **Kiro**: normalize dashboard thinking intensity models
+- **Cursor**: stop leaking agent tool errors as text
+- **Gemini**: fill empty tool schemas after `$ref` strip
+- **Antigravity**: strip `stream_options` from non-stream requests
+- **Jina-reader**: recover after transient errors, use JSON POST API
+- **Usage**: record exact embedding tokens
+- **Tunnel**: preserve successor cloudflared PID
+- **Console-log**: initialize capture at server boot + prevent SSE proxy buffering
+- **Dashboard**: count dual-auth, free-tier OAuth and API-key connections correctly
+- **Dashboard**: flex quota rows, thin global scrollbars, no hidden-row overflow
+
+## Docs
+- **i18n**: expand pt-BR translation to 986 terms
+- README: Indonesian translation
+
 # v0.5.40 (2026-07-20)
 
 ## Features
