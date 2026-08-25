@@ -254,27 +254,37 @@ export async function saveRequestUsage(entry) {
     // All 3 writes (history insert, daily upsert, lifetime counter) in ONE transaction.
     // better-sqlite3 is sync → no JS yield mid-transaction → no race in same process.
     db.transaction(() => {
-      const existing = db.get(
-        `SELECT id, endpoint FROM usageHistory
-         WHERE timestamp = ?
-           AND COALESCE(provider, '') = COALESCE(?, '')
-           AND COALESCE(model, '') = COALESCE(?, '')
-           AND COALESCE(connectionId, '') = COALESCE(?, '')
-           AND COALESCE(apiKey, '') = COALESCE(?, '')
-           AND promptTokens = ?
-           AND completionTokens = ?
-         ORDER BY id DESC LIMIT 1`,
-        [
-          entry.timestamp, entry.provider || null, entry.model || null,
-          entry.connectionId || null, entry.apiKey || null,
-          promptTokens, completionTokens,
-        ]
-      );
+      // Back-fill only: a row written earlier without its endpoint is the same
+      // request arriving again with one, so complete it instead of inserting.
+      //
+      // The match is deliberately limited to endpoint-less rows. `timestamp` is
+      // an ISO string with millisecond resolution, so matching on the value
+      // tuple alone also swallows genuinely distinct requests that share a
+      // millisecond — same provider, model, connection and token counts. That is
+      // ordinary under parallel load and cost real usage rows plus their
+      // totalRequestsLifetime increments.
+      const backfill = entry.endpoint
+        ? db.get(
+          `SELECT id FROM usageHistory
+           WHERE timestamp = ?
+             AND COALESCE(provider, '') = COALESCE(?, '')
+             AND COALESCE(model, '') = COALESCE(?, '')
+             AND COALESCE(connectionId, '') = COALESCE(?, '')
+             AND COALESCE(apiKey, '') = COALESCE(?, '')
+             AND promptTokens = ?
+             AND completionTokens = ?
+             AND COALESCE(endpoint, '') = ''
+           ORDER BY id DESC LIMIT 1`,
+          [
+            entry.timestamp, entry.provider || null, entry.model || null,
+            entry.connectionId || null, entry.apiKey || null,
+            promptTokens, completionTokens,
+          ]
+        )
+        : null;
 
-      if (existing) {
-        if (!existing.endpoint && entry.endpoint) {
-          db.run(`UPDATE usageHistory SET endpoint = ? WHERE id = ?`, [entry.endpoint, existing.id]);
-        }
+      if (backfill) {
+        db.run(`UPDATE usageHistory SET endpoint = ? WHERE id = ?`, [entry.endpoint, backfill.id]);
         return;
       }
 
