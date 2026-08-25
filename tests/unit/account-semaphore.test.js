@@ -1,0 +1,12 @@
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import { acquireAccountSlot, SemaphoreCapacityError, SemaphoreAbortError, resetAccountSemaphores } from "../../open-sse/services/accountSemaphore.js";
+beforeEach(() => resetAccountSemaphores());
+const args = (extra = {}) => ({ provider: "openai", connectionId: "c1", bucket: "direct", ...extra });
+describe("account semaphore", () => {
+  it("allows three concurrent slots by default", async () => { const slots = await Promise.all([acquireAccountSlot(args()), acquireAccountSlot(args()), acquireAccountSlot(args())]); const fourth = acquireAccountSlot(args(),); slots.forEach(release => release()); await expect(fourth).resolves.toEqual(expect.any(Function)); });
+  it.each([0, "0", null])("bypasses for %s", async value => { const first = await acquireAccountSlot(args({ maxConcurrency: value })); const second = await acquireAccountSlot(args({ maxConcurrency: value })); first(); second(); });
+  it("warns for invalid values", async () => { const warn = vi.fn(); const release = await acquireAccountSlot(args({ maxConcurrency: -1, warn })); release(); expect(warn).toHaveBeenCalled(); });
+  it("preserves FIFO order", async () => { const release = await acquireAccountSlot(args({ maxConcurrency: 1 })); const order = []; const first = acquireAccountSlot(args({ maxConcurrency: 1 })).then(done => { order.push(1); done(); }); const second = acquireAccountSlot(args({ maxConcurrency: 1 })).then(done => { order.push(2); done(); }); release(); await Promise.all([first, second]); expect(order).toEqual([1, 2]); });
+  it("rejects queue overflow, timeout, and abort", async () => { const release = await acquireAccountSlot(args({ maxConcurrency: 1, queueSize: 1 })); const queued = acquireAccountSlot(args({ maxConcurrency: 1, timeoutMs: 1 })); await expect(acquireAccountSlot(args({ maxConcurrency: 1, queueSize: 0 }))).rejects.toBeInstanceOf(SemaphoreCapacityError); await expect(queued).rejects.toBeInstanceOf(SemaphoreCapacityError); const controller = new AbortController(); const pending = acquireAccountSlot(args({ maxConcurrency: 1, signal: controller.signal })); controller.abort(); await expect(pending).rejects.toBeInstanceOf(SemaphoreAbortError); release(); });
+  it("resets cleanly", async () => { const release = await acquireAccountSlot(args({ maxConcurrency: 1 })); const pending = acquireAccountSlot(args({ maxConcurrency: 1 })); resetAccountSemaphores(); release(); await expect(pending).rejects.toBeInstanceOf(SemaphoreCapacityError); });
+});

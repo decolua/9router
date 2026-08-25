@@ -79,6 +79,8 @@ export default function ProviderDetailPage() {
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
   const [importingQoderModels, setImportingQoderModels] = useState(false);
+  const [strictModelAssignment, setStrictModelAssignment] = useState(false);
+  const [assignmentModels, setAssignmentModels] = useState([]);
   const { copied, copy } = useCopyToClipboard();
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
@@ -290,6 +292,12 @@ export default function ProviderDetailPage() {
       .catch(() => {});
   }, [providerId]);
 
+  useEffect(() => {
+    if (providerId !== "freebuff") return;
+    const models = getModelsByProviderId("freebuff").map(m => m.id);
+    if (models.length) setAssignmentModels(models);
+  }, [providerId]);
+
   const fetchConnections = useCallback(async () => {
     try {
       const [connectionsRes, nodesRes, proxyPoolsRes, settingsRes] = await Promise.all([
@@ -305,6 +313,11 @@ export default function ProviderDetailPage() {
       if (connectionsRes.ok) {
         const filtered = (connectionsData.connections || []).filter(c => c.provider === providerId);
         setConnections(filtered);
+
+        if (providerId === "freebuff") {
+          const fbConfig = settingsData?.providerStrategies?.freebuff || {};
+          setStrictModelAssignment(fbConfig.strictModelAssignment || false);
+        }
       }
       if (proxyPoolsRes.ok) {
         setProxyPools(proxyPoolsData.proxyPools || []);
@@ -377,9 +390,23 @@ export default function ProviderDetailPage() {
 
       const updated = { ...current };
       if (Object.keys(override).length === 0) {
-        delete updated[providerId];
+        // If there's an existing object (like { strictModelAssignment: true }), preserve its other properties
+        if (typeof updated[providerId] === "object") {
+          const { fallbackStrategy, stickyRoundRobinLimit, ...rest } = updated[providerId];
+          if (Object.keys(rest).length === 0) {
+            delete updated[providerId];
+          } else {
+            updated[providerId] = rest;
+          }
+        } else {
+          delete updated[providerId];
+        }
       } else {
-        updated[providerId] = override;
+        // Preserve existing properties (like strictModelAssignment) while updating strategy
+        updated[providerId] = {
+          ...(typeof updated[providerId] === "object" ? updated[providerId] : {}),
+          ...override
+        };
       }
 
       await fetch("/api/settings", {
@@ -398,6 +425,56 @@ export default function ProviderDetailPage() {
     if (enabled && !providerStickyLimit) setProviderStickyLimit("1");
     setProviderStrategy(strategy);
     saveProviderStrategy(strategy, sticky);
+  };
+
+  const handleStrictAssignmentToggle = async (enabled) => {
+    const previousState = strictModelAssignment;
+    setStrictModelAssignment(enabled);
+    try {
+      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
+      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+      const current = settingsData?.providerStrategies || {};
+
+      const payload = {
+        providerStrategies: {
+          ...current,
+          [providerId]: {
+            ...(typeof current[providerId] === "object" ? current[providerId] : {}),
+            strictModelAssignment: enabled
+          },
+        }
+      };
+
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        throw new Error(`Settings update failed: ${res.statusText}`);
+      }
+    } catch (error) {
+      console.log("Error saving Freebuff strict assignment:", error);
+      setStrictModelAssignment(previousState);
+    }
+  };
+
+  const handleModelAssignment = async (connectionId, assignedModel) => {
+    try {
+      const res = await fetch(`/api/providers/${connectionId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerSpecificData: { assignedModel: assignedModel || null } }),
+      });
+      if (res.ok) {
+        setConnections((prev) => prev.map((connection) => connection.id === connectionId
+          ? { ...connection, providerSpecificData: { ...(connection.providerSpecificData || {}), assignedModel: assignedModel || null } }
+          : connection));
+      }
+    } catch (error) {
+      console.log("Error saving Freebuff model assignment:", error);
+    }
   };
 
   const handleStickyLimitChange = (value) => {
@@ -955,11 +1032,12 @@ export default function ProviderDetailPage() {
             </div>
             <div className="flex-1 min-w-0">
               <ConnectionRow
-                connection={conn}
-                proxyPools={proxyPools}
-                isOAuth={isOAuth}
-                isFirst={index === 0}
-                isLast={index === connections.length - 1}
+                  connection={conn}
+                  proxyPools={proxyPools}
+                  isOAuth={isOAuth}
+                  isFirst={index === 0}
+                  isLast={index === connections.length - 1}
+                  exactModelId={conn.providerSpecificData?.assignedModel || null}
                 onMoveUp={() => handleSwapPriority(index, index - 1)}
                 onMoveDown={() => handleSwapPriority(index, index + 1)}
                 onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
@@ -987,14 +1065,17 @@ export default function ProviderDetailPage() {
                   }
                 }}
                 onEdit={() => {
-                  setSelectedConnection(conn);
-                  setShowEditModal(true);
-                }}
-                onDelete={() => handleDelete(conn.id)}
-                oneByOneStatus={oneByOneResults[conn.id] || null}
-              />
+                    setSelectedConnection(conn);
+                    setShowEditModal(true);
+                  }}
+                  onDelete={() => handleDelete(conn.id)}
+                  oneByOneStatus={oneByOneResults[conn.id] || null}
+                  modelAssignmentOptions={providerId === "freebuff" ? assignmentModels : null}
+                  onModelAssignmentChange={providerId === "freebuff" ? (model) => handleModelAssignment(conn.id, model) : null}
+                  strictModelAssignment={strictModelAssignment}
+                />
+              </div>
             </div>
-          </div>
         ))}
     </div>
   );
@@ -1485,12 +1566,21 @@ export default function ProviderDetailPage() {
                       onChange={(e) => handleStickyLimitChange(e.target.value)}
                       placeholder="1"
                       className="w-14 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
-                    />
+                      />
+                    </div>
+                  )}
+                </div>
+                {providerId === "freebuff" && (
+                  <div className="flex flex-wrap items-center gap-2 border-t border-black/[0.03] pt-2 dark:border-white/[0.03]">
+                    <div>
+                      <span className="text-xs text-text-muted font-medium">Strict Model Assignment</span>
+                      <p className="text-[10px] text-text-muted">Only assigned accounts can serve each Freebuff model.</p>
+                    </div>
+                    <Toggle checked={strictModelAssignment} onChange={handleStrictAssignmentToggle} />
                   </div>
                 )}
               </div>
             </div>
-          </div>
 
           {connections.length === 0 ? (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

@@ -1,5 +1,7 @@
 import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
 
+export { ADAPTIVE_FAILURE_ACTION, classifyAdaptiveFailure, sanitizeAdaptiveFailureReason } from "./adaptiveFailureClassifier.js";
+
 const QUOTA_EXHAUSTION_MARKERS = [
   "quota exceeded",
   "insufficient_quota",

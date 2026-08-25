@@ -25,6 +25,8 @@ import { useNotificationStore } from "@/store/notificationStore";
 import { useHeaderSearchStore } from "@/store/headerSearchStore";
 import ModelAvailabilityBadge from "./components/ModelAvailabilityBadge";
 import AddCompatibleModal from "./components/AddCompatibleModal";
+import QuotaLockView from "./components/QuotaLockView";
+import { mergeQuotaLockFields } from "./quotaLockView";
 
 function getStatusDisplay(connected, error, errorCode) {
   const parts = [];
@@ -172,6 +174,8 @@ export default function ProvidersPage() {
       (c) => c.provider === providerId && authTypes.includes(c.authType),
     );
 
+    const providerObject = mergeQuotaLockFields(providerConnections);
+
     const getEffectiveStatus = (conn) => {
       const isCooldown = Object.entries(conn).some(
         ([k, v]) =>
@@ -207,7 +211,7 @@ export default function ProvidersPage() {
       ? getRelativeTime(latestError.lastErrorAt)
       : null;
 
-    return { connected, error, total, errorCode, errorTime, allDisabled };
+    return { connected, error, total, errorCode, errorTime, allDisabled, providerObject };
   };
 
   // Toggle all connections for a provider on/off. authType may be a single
@@ -654,7 +658,7 @@ export default function ProvidersPage() {
 }
 
 function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
-  const { connected, error, errorCode, errorTime, allDisabled } = stats;
+  const { connected, error, errorCode, errorTime, allDisabled, providerObject } = stats;
   const isNoAuth = !!provider.noAuth;
 
   const dotColors = {
@@ -707,13 +711,14 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
                       Disabled
                     </span>
                   </Badge>
-                ) : isNoAuth ? (
-                  <Badge variant="success" size="sm" dot>Ready</Badge>
-                ) : (
-                  <>
-                    {getStatusDisplay(connected, error, errorCode)}
-                    {errorTime && (
-                      <span className="text-text-muted">{errorTime}</span>
+                  ) : isNoAuth ? (
+                    <Badge variant="success" size="sm" dot>Ready</Badge>
+                  ) : (
+                    <>
+                      <QuotaLockView provider={providerObject} />
+                      {getStatusDisplay(connected, error, errorCode)}
+                      {errorTime && (
+                        <span className="text-text-muted">{errorTime}</span>
                     )}
                   </>
                 )}
@@ -770,7 +775,7 @@ function ApiKeyProviderCard({
   authType,
   onToggle,
 }) {
-  const { connected, error, errorCode, errorTime, allDisabled } = stats;
+  const { connected, error, errorCode, errorTime, allDisabled, providerObject } = stats;
   const isCompatible = providerId.startsWith(OPENAI_COMPATIBLE_PREFIX);
   const isAnthropicCompatible = providerId.startsWith(
     ANTHROPIC_COMPATIBLE_PREFIX,
@@ -835,10 +840,11 @@ function ApiKeyProviderCard({
                       Disabled
                     </span>
                   </Badge>
-                ) : (
-                  <>
-                    {getStatusDisplay(connected, error, errorCode)}
-                    {isCompatible && (
+                  ) : (
+                    <>
+                      <QuotaLockView provider={providerObject} />
+                      {getStatusDisplay(connected, error, errorCode)}
+                      {isCompatible && (
                       <Badge variant="default" size="sm">
                         {provider.apiType === "responses"
                           ? "Responses"
