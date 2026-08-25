@@ -108,6 +108,27 @@ export default function InicioPageClient() {
     };
   }, []);
 
+  useEffect(() => {
+    const eventSource = new EventSource("/api/usage/stream");
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        setUsage((current) => current ? {
+          ...current,
+          activeRequests: data.activeRequests,
+          recentRequests: data.recentRequests,
+          errorProvider: data.errorProvider,
+          pending: data.pending,
+        } : current);
+      } catch (error) {
+        console.error("[HOME USAGE SSE] parse error:", error);
+      }
+    };
+
+    return () => eventSource.close();
+  }, []);
+
   const providerStats = useMemo(() => {
     const allConnections = connections || [];
     const enabled = allConnections.filter((connection) => connection.isActive !== false);
