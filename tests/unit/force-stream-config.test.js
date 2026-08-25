@@ -49,6 +49,8 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
 
 vi.mock("../../open-sse/translator/formats/claude.js", () => ({
   normalizeClaudePassthrough: vi.fn(),
+  anchorClaudeCache: vi.fn(),
+  prepareClaudeRequest: vi.fn((body) => body),
 }));
 
 vi.mock("../../open-sse/utils/toolDeduper.js", () => ({
@@ -71,6 +73,8 @@ vi.mock("../../open-sse/rtk/index.js", () => ({
 vi.mock("../../open-sse/rtk/headroom.js", () => ({
   compressWithHeadroom: vi.fn(async () => null),
   formatHeadroomLog: vi.fn(() => ""),
+  formatHeadroomSizeLog: vi.fn(() => ""),
+  isHeadroomPhantomSavings: vi.fn(() => false),
 }));
 
 vi.mock("../../open-sse/providers/capabilities.js", () => ({
@@ -149,5 +153,31 @@ describe("forceStream provider config", () => {
 
     expect(executeMock).toHaveBeenCalledTimes(1);
     expect(executeMock.mock.calls[0][0].stream).toBe(true);
+  });
+
+  it.each([
+    ["minimax-m3", "claude", "https://opencode.ai/zen/go/v1/messages", "x-api-key"],
+    ["grok-4.5", "openai-responses", "https://opencode.ai/zen/go/v1/responses", "Authorization"],
+    ["deepseek-v4-pro", "openai", "https://opencode.ai/zen/go/v1/chat/completions", "Authorization"],
+  ])("uses OpenCode Go's canonical endpoint for %s", async (model, format, baseUrl, authHeader) => {
+    const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
+    const body = {
+      model: `ocg/${model}`,
+      stream: false,
+      messages: [{ role: "user", content: "hello" }],
+    };
+
+    await handleChatCore({
+      body,
+      modelInfo: { provider: "opencode-go", model },
+      credentials: { apiKey: "sk-test" },
+      clientRawRequest: { endpoint: "/v1/chat/completions", body, headers: { accept: "application/json" } },
+      connectionId: "test-connection",
+      log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+
+    const dispatched = executeMock.mock.calls[0][0];
+    expect(dispatched.credentials.runtimeTransport).toMatchObject({ format, baseUrl });
+    expect(dispatched.credentials.runtimeTransport.auth.header).toBe(authHeader);
   });
 });

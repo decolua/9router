@@ -142,14 +142,14 @@ export function getTargetFormat(provider, credentials = null) {
   return config.format || "openai";
 }
 
-// Resolve which transport to use for a provider given the client sourceFormat.
-// Multi-endpoint providers (transport.transports[]) pick the entry matching sourceFormat
-// to avoid lossy translation; falls back to the default transport when no match.
-export function resolveTransport(provider, sourceFormat) {
+// Resolve a multi-endpoint provider transport. A model may declare a canonical
+// upstream format when its endpoint is fixed; otherwise preserve source-format
+// passthrough for providers that truly support several dialects per model.
+export function resolveTransport(provider, sourceFormat, modelTransportFormat = null) {
   const config = PROVIDERS[provider];
   const transports = config?.transports;
   if (!Array.isArray(transports) || !transports.length) return null;
-  return transports.find(t => t.format === sourceFormat) || null;
+  return transports.find((t) => t.format === (modelTransportFormat || sourceFormat)) || null;
 }
 
 // Check if last message is from user

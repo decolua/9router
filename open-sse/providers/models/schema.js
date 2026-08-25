@@ -14,7 +14,8 @@ export const MODEL_DEFAULTS = {
   kind: "llm",
   quotaFamily: "normal",
   strip: [],
-  targetFormat: null
+  targetFormat: null,
+  transportFormat: null,
 };
 
 // Normalize a registry model entry: accept terse "id" string, fill name via regex when omitted.
@@ -39,10 +40,8 @@ export function modelTargetFormat(model) {
   return model?.targetFormat || MODEL_DEFAULTS.targetFormat;
 }
 
-// Per-model declared upstream formats (e.g. ["openai", "claude"]). Guards the
-// sourceFormat-matched transport for multi-endpoint providers whose models differ
-// in endpoint support (opencode-go: kimi/glm only do /chat/completions, minimax/qwen
-// also do /messages, deepseek also does /responses).
-export function modelSupportedFormats(model) {
-  return model?.supportedFormats || null;
+// Some providers expose several API dialects but assign a fixed endpoint to each
+// model. This picks that endpoint independently from the client's input format.
+export function modelTransportFormat(model) {
+  return model?.transportFormat || MODEL_DEFAULTS.transportFormat;
 }

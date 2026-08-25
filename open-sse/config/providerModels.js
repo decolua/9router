@@ -2,7 +2,7 @@ import { PROVIDERS } from "./providers.js";
 import REGISTRY from "../providers/registry/index.js";
 // PROVIDER_MODELS now built from providers/registry (transport + models co-located)
 import { PROVIDER_MODELS } from "../providers/index.js";
-import { modelQuotaFamily, modelStrip, modelTargetFormat, modelSupportedFormats, normalizeModelId } from "../providers/models/schema.js";
+import { modelQuotaFamily, modelStrip, modelTargetFormat, modelTransportFormat, normalizeModelId } from "../providers/models/schema.js";
 import { CODEX_REVIEW_SUFFIX } from "../providers/models/helpers.js";
 export { PROVIDER_MODELS };
 
@@ -54,12 +54,11 @@ export function getModelTargetFormat(aliasOrId, modelId) {
   return modelTargetFormat(findModel(models, modelId, aliasOrId));
 }
 
-// Declared upstream formats for a model (registry `supportedFormats`). Drives the
-// per-model guard on the sourceFormat-matched transport; null when undeclared.
-export function getModelSupportedFormats(aliasOrId, modelId) {
+// Canonical upstream transport for a model. Null preserves source-format routing.
+export function getModelTransportFormat(aliasOrId, modelId) {
   const models = PROVIDER_MODELS[aliasOrId];
   if (!models) return null;
-  return modelSupportedFormats(findModel(models, modelId, aliasOrId));
+  return modelTransportFormat(findModel(models, modelId, aliasOrId));
 }
 
 export function getModelType(aliasOrId, modelId) {
