@@ -12,6 +12,7 @@ export const NAVIGATION_VISIBILITY_OPTIONS = [
   { id: "cli-tools", label: "CLI 工具", section: "主要功能" },
   { id: "usage", label: "流量分析", section: "成本中心" },
   { id: "traffic-logs", label: "流量日志", section: "成本中心" },
+  { id: "smart-routing-analysis", label: "智能路由分析", section: "成本中心" },
   { id: "pricing", label: "模型定价", section: "成本中心" },
   { id: "model-mappings", label: "模型映射", section: "成本中心" },
   { id: "media-providers", label: "媒体提供商", section: "系统" },

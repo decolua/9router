@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getApiKeys, getApiKeyUsageSummaries, createApiKey } from "@/lib/localDb";
+import { getApiKeys, getApiKeyUsageSummaries, createApiKey, getSettings } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 
 export const dynamic = "force-dynamic";
@@ -7,10 +7,15 @@ export const dynamic = "force-dynamic";
 // GET /api/keys - List API keys
 export async function GET() {
   try {
-    const [keys, usageByKey] = await Promise.all([getApiKeys(), getApiKeyUsageSummaries()]);
+    const [keys, usageByKey, settings] = await Promise.all([getApiKeys(), getApiKeyUsageSummaries(), getSettings()]);
+    const smartRoutingProvidersByKeyId = {};
+    for (const [provider, config] of Object.entries(settings.smartRoutingProviders || {})) {
+      if (config?.enabled && config.apiKeyId) (smartRoutingProvidersByKeyId[config.apiKeyId] ||= []).push(provider);
+    }
     return NextResponse.json({
       keys: keys.map((key) => ({
         ...key,
+        smartRoutingProviders: smartRoutingProvidersByKeyId[key.id] || [],
         usage: usageByKey[key.key] || { todayCost: 0, thirtyDayCost: 0 },
       })),
     });

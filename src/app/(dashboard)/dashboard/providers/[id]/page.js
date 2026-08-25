@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/providerIcon";
-import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
+import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, DropdownSelect, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
@@ -79,6 +79,10 @@ export default function ProviderDetailPage() {
   const [providerTestModel, setProviderTestModel] = useState("");
   const [providerModelConfigSaving, setProviderModelConfigSaving] = useState(false);
   const [providerModelConfigStatus, setProviderModelConfigStatus] = useState("");
+  const [smartRoutingConfig, setSmartRoutingConfig] = useState({ enabled: false, apiKeyId: "", primaryModels: {} });
+  const [apiKeys, setApiKeys] = useState([]);
+  const [systemModels, setSystemModels] = useState([]);
+  const [smartRoutingSaving, setSmartRoutingSaving] = useState(false);
   const { copied, copy } = useCopyToClipboard();
   const notify = useNotificationStore();
 
@@ -169,6 +173,15 @@ export default function ProviderDetailPage() {
   const providerDisplayAlias = isCompatible
     ? (providerNode?.prefix || providerId)
     : providerAlias;
+  const smartRoutingModels = [...new Map([
+    ...models,
+    ...kiloFreeModels.filter((item) => !models.some((model) => model.id === item.id)),
+    ...customModels.filter((item) => item.providerAlias === providerStorageAlias && (item.kind || item.type || "llm") === "llm"),
+  ].filter((item) => { const kind = getModelKind(item); return !kind || kind === "llm"; }).map((item) => [item.id, item])).values()];
+  const smartRoutingModelOptions = [...new Map([
+    ...systemModels.map((item) => [item.routedModel || item.fullModel, { value: item.routedModel || item.fullModel, label: `${item.provider}/${item.model}` }]),
+    ...customModels.map((item) => [`${item.providerAlias}/${item.id}`, { value: `${item.providerAlias}/${item.id}`, label: `${item.providerAlias}/${item.id}` }]),
+  ]).values()].filter((item) => item.value && item.value.includes("/"));
 
   const fetchDisabledModels = useCallback(async () => {
     try {
@@ -285,6 +298,7 @@ export default function ProviderDetailPage() {
         setConnections(filteredConnections);
       }
       const configuredModelSettings = settingsData.providerModelSettings?.[providerId];
+      setSmartRoutingConfig(settingsData.smartRoutingProviders?.[providerId] || { enabled: false, apiKeyId: "", primaryModels: {} });
       const legacyModelSettings = filteredConnections.find((connection) => (
         connection.providerSpecificData?.modelsUrl || connection.providerSpecificData?.testModel
       ))?.providerSpecificData || {};
@@ -468,6 +482,37 @@ export default function ProviderDetailPage() {
     fetchCustomModels();
     fetchDisabledModels();
   }, [fetchConnections, fetchAliases, fetchCustomModels, fetchDisabledModels]);
+
+  useEffect(() => {
+    Promise.all([fetch("/api/keys", { cache: "no-store" }), fetch("/api/models", { cache: "no-store" })])
+      .then(async ([keysRes, modelsRes]) => {
+        const [keysData, modelsData] = await Promise.all([keysRes.ok ? keysRes.json() : {}, modelsRes.ok ? modelsRes.json() : {}]);
+        setApiKeys(keysData.keys || []);
+        setSystemModels(modelsData.models || []);
+      })
+      .catch(() => {});
+  }, []);
+
+  const saveSmartRoutingConfig = async (nextConfig) => {
+    setSmartRoutingSaving(true);
+    try {
+      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
+      const settings = await settingsRes.json();
+      if (!settingsRes.ok) throw new Error(settings.error || "读取智能路由配置失败");
+      const smartRoutingProviders = { ...(settings.smartRoutingProviders || {}) };
+      if (nextConfig.enabled || nextConfig.apiKeyId || Object.keys(nextConfig.primaryModels || {}).length) smartRoutingProviders[providerId] = nextConfig;
+      else delete smartRoutingProviders[providerId];
+      const response = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ smartRoutingProviders }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "保存智能路由配置失败");
+      setSmartRoutingConfig(data.smartRoutingProviders?.[providerId] || nextConfig);
+      notify.success("智能路由配置已保存");
+    } catch (error) {
+      notify.error(error.message || "保存智能路由配置失败");
+    } finally {
+      setSmartRoutingSaving(false);
+    }
+  };
 
   // Cursor's model availability is account-specific and changes frequently.
   // Load the active account's live catalog for the dashboard; the static
@@ -1782,6 +1827,21 @@ export default function ProviderDetailPage() {
           )}
         </Card>
       )}
+
+      <Card>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div><h2 className="text-lg font-semibold">智能路由提供商</h2><p className="mt-1 text-xs text-text-muted">使用选定的 9Router API 密钥识别该提供商流量，并为每个可用模型设置成本对照主力模型。</p></div>
+            <Toggle checked={smartRoutingConfig.enabled === true} onChange={(enabled) => saveSmartRoutingConfig({ ...smartRoutingConfig, enabled })} label="作为智能路由提供商" />
+          </div>
+          {smartRoutingConfig.enabled && <>
+            <DropdownSelect label="智能路由供应商 API 密钥" value={smartRoutingConfig.apiKeyId || ""} onChange={(apiKeyId) => setSmartRoutingConfig((current) => ({ ...current, apiKeyId }))} searchable options={apiKeys.map((key) => ({ value: key.id, label: `${key.name} (${key.key.slice(0, 8)}...)` }))} placeholder="选择已有 API 密钥" />
+            <div className="border-t border-border pt-4"><div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-semibold">可用模型的主力模型</h3><Button size="sm" onClick={() => saveSmartRoutingConfig(smartRoutingConfig)} loading={smartRoutingSaving} disabled={!smartRoutingConfig.apiKeyId}>保存配置</Button></div>
+              {smartRoutingModels.length === 0 ? <p className="text-sm text-text-muted">当前提供商没有可配置模型。</p> : <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">{smartRoutingModels.map((model) => <div key={model.id} className="flex min-w-0 items-center gap-3 rounded-md border border-border px-3 py-2"><code className="min-w-0 flex-1 truncate text-xs">{providerDisplayAlias}/{model.id}</code><DropdownSelect className="w-64 shrink-0" value={smartRoutingConfig.primaryModels?.[model.id] || ""} onChange={(value) => setSmartRoutingConfig((current) => ({ ...current, primaryModels: { ...(current.primaryModels || {}), [model.id]: value } }))} searchable options={smartRoutingModelOptions} placeholder="选择主力模型" /></div>)}</div>}
+            </div>
+          </>}
+        </div>
+      </Card>
 
       {/* Models */}
       <Card>

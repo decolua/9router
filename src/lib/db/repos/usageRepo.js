@@ -416,22 +416,29 @@ export async function getUsageStats(period = "all", range = {}) {
   for (const c of allConnections) connectionMap[c.id] = c.name || c.email || c.id;
 
   const providerNodeNameMap = {};
+  let smartRoutingApiKeyIds = new Set();
   try {
     const settings = await getSettings();
     const nodes = await getProviderNodes();
     for (const n of nodes) if (n.id && n.name) providerNodeNameMap[n.id] = n.name;
     Object.assign(providerNodeNameMap, settings.providerDisplayNames || {});
+    smartRoutingApiKeyIds = new Set(Object.values(settings.smartRoutingProviders || {})
+      .filter((item) => item?.enabled && item.apiKeyId)
+      .map((item) => item.apiKeyId));
   } catch {}
 
   let allApiKeys = [];
   try { allApiKeys = await getApiKeys(); } catch {}
   const apiKeyMap = {};
   for (const k of allApiKeys) apiKeyMap[k.key] = { name: k.name, id: k.id, createdAt: k.createdAt };
+  const smartRoutingApiKeyValues = new Set(allApiKeys.filter((key) => smartRoutingApiKeyIds.has(key.id)).map((key) => key.key));
+  const isSmartRoutingApiKey = (value) => !!value && smartRoutingApiKeyValues.has(value);
 
   // recentRequests from live history (last 100 entries enough for 20 deduped)
-  const recentRows = db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
+  const recentRows = db.all(`SELECT timestamp, provider, model, apiKey, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
   const seen = new Set();
   const recentRequests = recentRows
+    .filter((r) => !isSmartRoutingApiKey(r.apiKey))
     .map((r) => {
       const t = parseJson(r.tokens, {}) || {};
       const { cacheReadTokens } = getCacheTokenCounts(t);
@@ -490,10 +497,11 @@ export async function getUsageStats(period = "all", range = {}) {
     stats.last10Minutes.push(bucketMap[ts]);
   }
   const recent10 = db.all(
-    `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
+    `SELECT timestamp, apiKey, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
     [tenMinutesAgo.toISOString(), now.toISOString()]
   );
   for (const r of recent10) {
+    if (isSmartRoutingApiKey(r.apiKey)) continue;
     const tt = new Date(r.timestamp).getTime();
     const minuteStart = Math.floor(tt / 60000) * 60000;
     if (bucketMap[minuteStart]) {
@@ -504,7 +512,9 @@ export async function getUsageStats(period = "all", range = {}) {
     }
   }
 
-  const useDailySummary = !["24h", "today", "custom"].includes(period);
+  // Daily aggregates predate smart-routing exclusions and do not retain the
+  // source API-key dimension. Use precise history whenever such a key exists.
+  const useDailySummary = !smartRoutingApiKeyValues.size && !["24h", "today", "custom"].includes(period);
 
   if (useDailySummary) {
     const periodDays = { "7d": 7, "30d": 30, "60d": 60 };
@@ -641,6 +651,7 @@ export async function getUsageStats(period = "all", range = {}) {
     );
 
     for (const r of filtered) {
+      if (isSmartRoutingApiKey(r.apiKey)) continue;
       const tokens = parseJson(r.tokens, {}) || {};
       const promptTokens = tokens.prompt_tokens || 0;
       const completionTokens = tokens.completion_tokens || 0;
@@ -742,7 +753,7 @@ export async function getUsageStats(period = "all", range = {}) {
     import("open-sse/providers/pricing.js"),
   ]);
   const pricingCache = new Map();
-  const pricedRows = await Promise.all(apiKeyRows.map(async (row) => {
+  const pricedRows = await Promise.all(apiKeyRows.filter((row) => !isSmartRoutingApiKey(row.apiKey)).map(async (row) => {
     const tokens = parseJson(row.tokens, {}) || {};
     const { cacheReadTokens, cacheCreationTokens } = getCacheTokenCounts(tokens);
     const normalizedTokens = {
@@ -950,6 +961,110 @@ export async function getChartData(period = "7d", range = {}) {
     if (index >= 0 && index < bucketCount) addRowToChartBucket(buckets[index], row);
   }
   return buckets.map(finalizeChartBucket);
+}
+
+export async function getSmartRoutingCostAnalysis({ startDate, endDate, intervalMinutes = 60 } = {}) {
+  const db = await getAdapter();
+  const [{ getSettings }, { getApiKeys }, { getPricingForModel }] = await Promise.all([
+    import("./settingsRepo.js"),
+    import("./apiKeysRepo.js"),
+    import("./pricingRepo.js"),
+  ]);
+  const { calculateCostBreakdown } = await import("open-sse/providers/pricing.js");
+  const settings = await getSettings();
+  const configs = settings.smartRoutingProviders || {};
+  const enabledConfigs = Object.entries(configs).filter(([, config]) => config?.enabled && config.apiKeyId);
+  if (!enabledConfigs.length) return { buckets: [], series: [], totals: { requests: 0, actualCost: 0, simulatedCost: 0 }, configured: false };
+
+  const apiKeys = await getApiKeys();
+  const apiKeyById = new Map(apiKeys.map((key) => [key.id, key.key]));
+  const configByProvider = new Map(enabledConfigs.map(([provider, config]) => [provider, { ...config, apiKeyValue: apiKeyById.get(config.apiKeyId) }]));
+  const enabledKeyValues = new Set([...configByProvider.values()].map((config) => config.apiKeyValue).filter(Boolean));
+  if (!enabledKeyValues.size) return { buckets: [], series: [], totals: { requests: 0, actualCost: 0, simulatedCost: 0 }, configured: true };
+
+  const start = startDate ? parseChinaDateTime(startDate).getTime() : Date.now() - 7 * DAY_MS;
+  const end = endDate ? parseChinaDateTime(endDate).getTime() : Date.now();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) throw new Error("Invalid smart-routing analysis range");
+  const bucketMs = Math.max(15, Math.min(1440, Number(intervalMinutes) || 60)) * 60 * 1000;
+  const bucketCount = Math.min(1500, Math.max(1, Math.ceil((end - start) / bucketMs)));
+  const buckets = Array.from({ length: bucketCount }, (_, index) => {
+    const timestamp = start + index * bucketMs;
+    return { timestamp: new Date(timestamp).toISOString(), label: bucketMs >= DAY_MS ? formatChinaDate(timestamp) : formatChinaTime(timestamp) };
+  });
+  const rows = db.all(
+    `SELECT timestamp, provider, model, apiKey, promptTokens, completionTokens, tokens, meta
+     FROM usageHistory WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp ASC`,
+    [new Date(start).toISOString(), new Date(end).toISOString()],
+  );
+  const seriesMap = new Map();
+  const pricingCache = new Map();
+  const getBreakdown = async (provider, model, tokens, timestamp) => {
+    const key = `${provider}|${model}`;
+    if (!pricingCache.has(key)) pricingCache.set(key, getPricingForModel(provider, model));
+    const pricing = await pricingCache.get(key);
+    return pricing ? calculateCostBreakdown(tokens, pricing, timestamp) : null;
+  };
+
+  for (const row of rows) {
+    const config = configByProvider.get(row.provider);
+    if (!config || row.apiKey !== config.apiKeyValue || !enabledKeyValues.has(row.apiKey)) continue;
+    const meta = parseJson(row.meta, {}) || {};
+    const routedModel = meta.routerSelectedModel || meta.actualModel || row.model;
+    const routedProvider = meta.routerSelectedProvider || row.provider;
+    const primary = config.primaryModels?.[routedModel] || config.primaryModels?.[row.model];
+    if (!primary || !String(primary).includes("/")) continue;
+    const separator = String(primary).indexOf("/");
+    const primaryProvider = String(primary).slice(0, separator);
+    const primaryModel = String(primary).slice(separator + 1);
+    const rawTokens = parseJson(row.tokens, {}) || {};
+    const { cacheReadTokens, cacheCreationTokens } = getCacheTokenCounts(rawTokens);
+    const tokens = {
+      ...rawTokens,
+      prompt_tokens: Number(row.promptTokens ?? rawTokens.prompt_tokens ?? rawTokens.input_tokens ?? 0),
+      completion_tokens: Number(row.completionTokens ?? rawTokens.completion_tokens ?? rawTokens.output_tokens ?? 0),
+      cached_tokens: cacheReadTokens,
+      cache_creation_input_tokens: cacheCreationTokens,
+    };
+    const [actual, simulated] = await Promise.all([
+      getBreakdown(routedProvider, routedModel, tokens, row.timestamp),
+      getBreakdown(primaryProvider, primaryModel, tokens, row.timestamp),
+    ]);
+    if (!actual && !simulated) continue;
+    const groupId = `${row.provider}|${routedProvider}|${routedModel}`;
+    if (!seriesMap.has(groupId)) {
+      seriesMap.set(groupId, {
+        id: groupId,
+        provider: row.provider,
+        routedProvider,
+        model: routedModel,
+        primaryModel: primary,
+        actual: Array(bucketCount).fill(0),
+        simulated: Array(bucketCount).fill(0),
+        requests: 0,
+      });
+    }
+    const series = seriesMap.get(groupId);
+    const index = Math.floor((new Date(row.timestamp).getTime() - start) / bucketMs);
+    if (index < 0 || index >= bucketCount) continue;
+    series.actual[index] += actual?.totalCost || 0;
+    series.simulated[index] += simulated?.totalCost || 0;
+    series.requests += 1;
+  }
+  const series = [...seriesMap.values()].map((item) => ({
+    ...item,
+    actual: item.actual.map((cost, index) => ({ timestamp: buckets[index].timestamp, cost: Number(cost.toFixed(8)) })),
+    simulated: item.simulated.map((cost, index) => ({ timestamp: buckets[index].timestamp, cost: Number(cost.toFixed(8)) })),
+  }));
+  return {
+    buckets,
+    series,
+    totals: {
+      requests: series.reduce((sum, item) => sum + item.requests, 0),
+      actualCost: Number(series.reduce((sum, item) => sum + item.actual.reduce((subtotal, point) => subtotal + point.cost, 0), 0).toFixed(8)),
+      simulatedCost: Number(series.reduce((sum, item) => sum + item.simulated.reduce((subtotal, point) => subtotal + point.cost, 0), 0).toFixed(8)),
+    },
+    configured: true,
+  };
 }
 
 function formatLogDate(date = new Date()) {
@@ -1204,6 +1319,15 @@ export async function getUsageLogs(filter = {}) {
     }
   }
 
+  const { getSettings: getSmartRoutingSettings } = await import("./settingsRepo.js");
+  const { getApiKeys: getAllApiKeys } = await import("./apiKeysRepo.js");
+  const smartRoutingSettings = await getSmartRoutingSettings();
+  const smartKeyIds = new Set(Object.values(smartRoutingSettings.smartRoutingProviders || {}).filter((item) => item?.enabled && item.apiKeyId).map((item) => item.apiKeyId));
+  const smartKeyValues = (await getAllApiKeys()).filter((key) => smartKeyIds.has(key.id)).map((key) => key.key);
+  if (!apiKeyFilters.length && smartKeyValues.length) {
+    conds.push(`(apiKey IS NULL OR apiKey NOT IN (${smartKeyValues.map(() => "?").join(",")}))`);
+    params.push(...smartKeyValues);
+  }
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
   const page = Math.max(1, Number(filter.page) || 1);
   const pageSize = Math.min(200, Math.max(1, Number(filter.pageSize) || 50));

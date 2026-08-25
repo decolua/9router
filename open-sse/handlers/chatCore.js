@@ -407,6 +407,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       tokens: { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
       providerRequest: translatedBody || null,
+      providerResponse: { error: error.message || String(error), status: error.name === "AbortError" ? 499 : 502 },
       response: { error: error.message || String(error), status: error.name === "AbortError" ? 499 : 502, thinking: null },
       pxpipe: pxpipeSummary,
       status: "error"
@@ -484,6 +485,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       tokens: { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
       providerRequest: finalBody || translatedBody || null,
+      providerResponse: { error: message, status: statusCode },
       response: { error: message, status: statusCode, thinking: null },
       pxpipe: pxpipeSummary,
       status: "error"
