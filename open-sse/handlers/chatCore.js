@@ -31,12 +31,21 @@ import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
 const LLMROUTER_SELECTED_MODEL_HEADER = "x-llmrouter-selected-model";
+const NINE_ROUTER_ACTUAL_MODEL_HEADER = "x-9router-actual-model";
 const MAX_ROUTER_SELECTED_MODEL_LENGTH = 256;
 
 export function extractRouterSelectedModel(response) {
   const value = response?.headers?.get?.(LLMROUTER_SELECTED_MODEL_HEADER)?.trim();
   if (!value || value.length > MAX_ROUTER_SELECTED_MODEL_LENGTH) return null;
   return /^[\x20-\x7e]+$/.test(value) ? value : null;
+}
+
+export function attachActualModelHeader(result, actualModel) {
+  const value = String(actualModel || "").trim();
+  if (!result?.response || !value || value.length > MAX_ROUTER_SELECTED_MODEL_LENGTH) return result;
+  if (!/^[\x20-\x7e]+$/.test(value)) return result;
+  result.response.headers.set(NINE_ROUTER_ACTUAL_MODEL_HEADER, value);
+  return result;
 }
 
 /**
@@ -473,19 +482,23 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Provider forced streaming but client wants JSON
   if (!clientRequestedStreaming && providerRequiresStreaming) {
     const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, customToolNames, trackDone, appendLog });
-    if (result) { streamController.handleComplete(); return result; }
+    if (result) {
+      streamController.handleComplete();
+      return attachActualModelHeader(result, actualModel);
+    }
   }
 
   // True non-streaming response
   if (!stream) {
     const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, reqLogger, toolNameMap, customToolNames, trackDone, appendLog });
     streamController.handleComplete();
-    return result;
+    return attachActualModelHeader(result, actualModel);
   }
 
   // Streaming response
   const { onStreamComplete, streamDetailId } = buildOnStreamComplete({ ...sharedCtx });
-  return handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, userAgent, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId });
+  const result = await handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, userAgent, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId });
+  return attachActualModelHeader(result, actualModel);
 }
 
 export function isTokenExpiringSoon(expiresAt, bufferMs = 5 * 60 * 1000) {

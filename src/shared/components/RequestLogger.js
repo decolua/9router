@@ -69,7 +69,7 @@ LatencyCell.propTypes = { ttftMs: PropTypes.number, totalMs: PropTypes.number };
 const ActualModelCell = ({ log }) => (
   <td className="whitespace-nowrap px-3 py-2 font-mono">
     <span>{log.actualModel || log.model || "-"}</span>
-    {log.routerSelectedModel && <span className="ml-1.5 inline-flex rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-600" title="LLMRouter 实际路由模型">路由 {log.routerSelectedModel}</span>}
+    {log.routerSelectedModel && <span className="ml-1.5 inline-flex rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-600" title="LLMRouter 最终调用模型">实际 {log.routerSelectedModel}</span>}
   </td>
 );
 ActualModelCell.propTypes = { log: PropTypes.object.isRequired };
