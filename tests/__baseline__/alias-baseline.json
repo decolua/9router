@@ -23,6 +23,7 @@
     "anthropic": "anthropic",
     "gemini": "gemini",
     "openrouter": "openrouter",
+    "agentrouter": "agentrouter",
     "glm": "glm",
     "kimi": "kimi",
     "minimax": "minimax",
@@ -119,6 +120,7 @@
     "morphllm": "morph"
   },
   "idToAlias": {
+    "agentrouter": "agentrouter",
     "alicode": "alicode",
     "alicode-intl": "alicode-intl",
     "alims-intl": "alims-intl",
@@ -204,6 +206,7 @@
   "modelKeys": [
     "af",
     "ag",
+    "agentrouter",
     "alicode",
     "alicode-intl",
     "alims-intl",

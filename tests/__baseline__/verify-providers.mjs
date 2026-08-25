@@ -20,6 +20,19 @@ for (const f of ADDED_FIELDS) {
   for (const id of Object.keys(baseline)) delete baseline[id][f];
 }
 
+// Claude CLI fingerprints intentionally reflect the runtime host.
+// Ignore only the platform-dependent anchors while keeping the rest byte-stable.
+for (const providers of [current, baseline]) {
+  for (const config of Object.values(providers)) {
+    const headerSets = [config.headers, ...(config.transports || []).map((transport) => transport.headers)];
+    for (const headers of headerSets) {
+      if (!headers) continue;
+      delete headers["X-Stainless-Arch"];
+      delete headers["X-Stainless-Os"];
+    }
+  }
+}
+
 const diffs = [];
 const allIds = new Set([...Object.keys(baseline), ...Object.keys(current)]);
 for (const id of allIds) {

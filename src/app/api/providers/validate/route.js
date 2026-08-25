@@ -307,11 +307,14 @@ export async function POST(request) {
         case "agentrouter": {
           // Use baseUrl from PROVIDERS (DRY); separate openai-format vs claude-format flow
           const cfg = PROVIDERS[provider];
+          const validationUrl = provider === "agentrouter"
+            ? `${cfg.baseUrl}${cfg.urlSuffix || ""}`
+            : cfg.baseUrl;
           const isOpenAiFormat = provider === "glm-cn" || provider === "alicode" || provider === "alicode-intl" || provider === "alims-intl";
 
           if (isOpenAiFormat) {
             const testModel = getDefaultModel(provider);
-            const res = await fetch(cfg.baseUrl, {
+            const res = await fetch(validationUrl, {
               method: "POST",
               headers: { "Authorization": `Bearer ${apiKey}`, "content-type": "application/json" },
               body: JSON.stringify({ model: testModel, max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
@@ -319,7 +322,7 @@ export async function POST(request) {
             isValid = res.status !== 401 && res.status !== 403;
           } else {
             const testModel = getDefaultModel(provider) || "claude-sonnet-4-20250514";
-            const res = await fetch(cfg.baseUrl, {
+            const res = await fetch(validationUrl, {
               method: "POST",
               headers: {
                 "x-api-key": apiKey,

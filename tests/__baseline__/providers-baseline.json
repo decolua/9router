@@ -1008,5 +1008,85 @@
       "preserveCacheControl": true
     },
     "format": "openai"
+  },
+  "agentrouter": {
+    "baseUrl": "https://agentrouter.org/v1/messages",
+    "format": "claude",
+    "urlSuffix": "?beta=true",
+    "headers": {
+      "Anthropic-Version": "2023-06-01",
+      "Anthropic-Beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28",
+      "Anthropic-Dangerous-Direct-Browser-Access": "true",
+      "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
+      "X-App": "cli",
+      "X-Stainless-Helper-Method": "stream",
+      "X-Stainless-Retry-Count": "0",
+      "X-Stainless-Runtime-Version": "v24.14.0",
+      "X-Stainless-Package-Version": "0.80.0",
+      "X-Stainless-Runtime": "node",
+      "X-Stainless-Lang": "js",
+      "X-Stainless-Arch": "x64",
+      "X-Stainless-Os": "Windows",
+      "X-Stainless-Timeout": "600"
+    },
+    "auth": {
+      "combined": true,
+      "header": "x-api-key",
+      "scheme": "raw"
+    },
+    "transports": [
+      {
+        "format": "openai",
+        "baseUrl": "https://agentrouter.org/v1/chat/completions",
+        "headers": {
+          "originator": "codex_cli_rs",
+          "User-Agent": "codex_cli_rs/0.136.0"
+        },
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer"
+        }
+      },
+      {
+        "format": "claude",
+        "baseUrl": "https://agentrouter.org/v1/messages",
+        "urlSuffix": "?beta=true",
+        "headers": {
+          "Anthropic-Version": "2023-06-01",
+          "Anthropic-Beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28",
+          "Anthropic-Dangerous-Direct-Browser-Access": "true",
+          "User-Agent": "claude-cli/2.1.92 (external, sdk-cli)",
+          "X-App": "cli",
+          "X-Stainless-Helper-Method": "stream",
+          "X-Stainless-Retry-Count": "0",
+          "X-Stainless-Runtime-Version": "v24.14.0",
+          "X-Stainless-Package-Version": "0.80.0",
+          "X-Stainless-Runtime": "node",
+          "X-Stainless-Lang": "js",
+          "X-Stainless-Arch": "x64",
+          "X-Stainless-Os": "Windows",
+          "X-Stainless-Timeout": "600"
+        },
+        "auth": {
+          "combined": true,
+          "header": "x-api-key",
+          "scheme": "raw"
+        }
+      },
+      {
+        "format": "openai-responses",
+        "baseUrl": "https://agentrouter.org/v1/responses",
+        "headers": {
+          "originator": "codex_cli_rs",
+          "User-Agent": "codex_cli_rs/0.136.0"
+        },
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer"
+        }
+      }
+    ]
   }
 }
