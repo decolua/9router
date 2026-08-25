@@ -22,7 +22,14 @@
   alias a routed id can use (`oc/` and `opencode/`, `ocg/` and `opencode-go/`) —
   the combo stores one spelling and the executor logs another, and filing under
   one leaves the other on the default. New `services/modelsDevCatalogue.js`,
-  wired into `startContextWindowLearning`.
+  wired into `startContextWindowLearning`. Verified live: 1,139 windows learned
+  across 24 providers, and a 531,970-token request that would have skipped seven
+  members now skips three — the three that genuinely cannot hold it.
+- **Routing**: `/v1/models` now reports the learned window. It read
+  `getCapabilitiesForModel` directly, the last accessor still bypassing the
+  registry after `shouldSkipModel` and `capacityAdapter` were fixed, so
+  `openrouter/stealth/ox-alpha` was learned at 1,048,576 and still advertised as
+  the 200,000 default to every client sizing itself off the endpoint.
 - **Routing**: a model nobody hand-wrote a table entry for is no longer assumed
   blind. `DEFAULT_CAPABILITIES.vision` is `false`, and two separate paths read it:
   `reorderByCapabilities`, which promotes vision-capable members to the head of a

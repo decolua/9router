@@ -18,6 +18,7 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { learnedContextWindow } from "open-sse/services/contextWindowRegistry.js";
 import { modelEffort, modelFamily, modelMode } from "open-sse/providers/models/schema.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
@@ -516,6 +517,16 @@ export async function buildModelsList(kindFilter, options = {}) {
             if (!Number.isFinite(contextWindow)) contextWindow = fallback.contextWindow;
             if (!Number.isFinite(maxOutput)) maxOutput = fallback.maxOutput;
           }
+          // A window learned from the provider's own catalogue outranks both,
+          // for the same reason it does everywhere else: the provider is the
+          // authority on its own model, and the static table is a snapshot that
+          // goes stale silently. This line is the accessor that was missed when
+          // shouldSkipModel and capacityAdapter were taught to ask
+          // modelContextWindow() — `openrouter/stealth/ox-alpha` was learned at
+          // 1,048,576 and still advertised here as the 200,000 default, so every
+          // client sizing itself off /v1/models believed the smaller number.
+          const learned = learnedContextWindow(`${providerId}/${modelId}`);
+          if (learned) contextWindow = learned;
           if (Number.isFinite(contextWindow)) model.context_length = contextWindow;
           if (Number.isFinite(maxOutput)) model.max_completion_tokens = maxOutput;
         }

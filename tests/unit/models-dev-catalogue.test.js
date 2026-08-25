@@ -40,7 +40,7 @@ const CATALOGUE = {
   "opencode-go": {
     models: { "glm-5.2": { limit: { context: 1000000 } } },
   },
-  // Has a catalogue service of its own; models.dev must not touch it.
+  // Reports its own window; models.dev must not touch it.
   openrouter: {
     models: { "stealth/ox-alpha": { limit: { context: 200000 } } },
   },
@@ -70,7 +70,7 @@ describe("models.dev catalogue", () => {
     expect(got["opencode-go/glm-5.2"]).toBe(1000000);
   });
 
-  it("leaves providers that publish their own catalogue alone", async () => {
+  it("leaves providers that report their own window alone", async () => {
     await refreshModelsDevCatalogue({ force: true });
     expect(recorded()).not.toHaveProperty("openrouter/stealth/ox-alpha");
   });

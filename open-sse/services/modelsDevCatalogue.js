@@ -25,20 +25,22 @@ import REGISTRY from "../providers/registry/index.js";
 // hand-copied snapshot of it. Fetching it instead is the same move
 // openrouterModels.js already made, for the other 24 providers we share with it.
 //
-// PRECEDENCE. A provider that publishes its own catalogue is the authority on
-// its own models, so this never touches one — see OWN_CATALOGUE. The registry
-// itself has no source ranking (last writer wins), so the exclusion has to live
-// here. That list names *providers*, not model windows, which is the distinction
-// contextWindowRegistry.js's header draws: endpoints outlive the models behind
-// them, so a table of them does not go stale.
+// PRECEDENCE. A provider that reports its own window is the authority on it, so
+// this never overwrites one. The registry has no source ranking — last writer
+// wins — so the exclusion has to live here.
+//
+// The test is "does that catalogue service call observeContextWindow", not "does
+// a catalogue service exist". Seven of the eight (grok-cli, kimchi, copilot,
+// cursor, kiro, qoder, clinepass) resolve nothing but ids and names, so
+// excluding them would protect a number they never write and leave their models
+// on the 200K default for nothing. Only openrouterModels.js records a window.
 const MODELS_URL = "https://models.dev/api.json";
 const REFRESH_MS = 6 * 60 * 60 * 1000;
 
-/** Providers with a catalogue service of their own. models.dev must not
- *  overwrite what the provider itself reported. Keyed by provider `id`. */
-const OWN_CATALOGUE = new Set([
-  "openrouter", "grok-cli", "kimchi", "copilot", "cursor", "kiro", "qoder", "clinepass",
-]);
+/** Providers that report their own context window. models.dev must not overwrite
+ *  what the provider itself said. Keyed by provider `id`; add one here only when
+ *  its service actually calls observeContextWindow. */
+const REPORTS_OWN_WINDOW = new Set(["openrouter"]);
 
 let lastFetchedAt = 0;
 let inFlight = null;
@@ -65,7 +67,7 @@ function prefixesOf(entry) {
 function joinable() {
   const byId = new Map();
   for (const entry of REGISTRY) {
-    if (!entry?.id || OWN_CATALOGUE.has(entry.id)) continue;
+    if (!entry?.id || REPORTS_OWN_WINDOW.has(entry.id)) continue;
     byId.set(entry.id, prefixesOf(entry));
   }
   return byId;
