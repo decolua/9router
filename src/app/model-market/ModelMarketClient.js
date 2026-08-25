@@ -137,7 +137,7 @@ export default function ModelMarketClient({ isDashboardView = false }) {
           <section className="flex min-w-0 flex-col gap-4">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <SegmentedControl options={[{ value: "models", label: `可用模型 ${models.length}` }, { value: "logs", label: `流量日志 ${pagination.totalItems || 0}` }]} value={activeTab} onChange={setActiveTab} className="w-full sm:w-auto" />
-              <div className="flex flex-wrap items-center gap-2"><input type="datetime-local" value={logRange.startDate} onChange={(event) => setLogRange((current) => ({ ...current, startDate: event.target.value }))} className="h-9 rounded-md border border-border bg-surface px-2 text-xs" /><span className="text-xs text-text-muted">至</span><input type="datetime-local" value={logRange.endDate} onChange={(event) => setLogRange((current) => ({ ...current, endDate: event.target.value }))} className="h-9 rounded-md border border-border bg-surface px-2 text-xs" /><p className="text-xs text-text-muted">当前密钥：{activeKey.slice(0, 8)}***</p></div>
+              <div className="flex flex-wrap items-center gap-2"><input type="datetime-local" value={logRange.startDate} onChange={(event) => setLogRange((current) => ({ ...current, startDate: event.target.value }))} className="h-9 rounded-md border border-border bg-surface px-2 text-xs" /><span className="text-xs text-text-muted">至</span><input type="datetime-local" value={logRange.endDate} onChange={(event) => setLogRange((current) => ({ ...current, endDate: event.target.value }))} className="h-9 rounded-md border border-border bg-surface px-2 text-xs" /></div>
             </div>
 
             {activeTab === "models" && (

@@ -40,6 +40,7 @@ function sortData(dataMap, pendingMap = {}, sortBy, sortOrder) {
 function getGroupKey(item, keyField) {
   switch (keyField) {
     case "rawModel": return item.rawModel || "Unknown Model";
+    case "providerModel": return item.key || `${item.rawModel || "Unknown Model"}|${item.provider || "Unknown Provider"}`;
     case "accountName": return item.accountName || `Account ${item.connectionId?.slice(0, 8)}...` || "Unknown Account";
     case "keyName": return item.keyName || "Unknown Key";
     case "endpoint": return item.endpoint || "Unknown Endpoint";
@@ -55,6 +56,9 @@ function groupDataByKey(data, keyField) {
     if (!groups[gk]) {
       groups[gk] = {
         groupKey: gk,
+        groupLabel: keyField === "providerModel"
+          ? `${item.rawModel || "Unknown Model"} · ${item.provider || "Unknown Provider"}`
+          : gk,
         summary: { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cacheCreationTokens: 0, totalTokens: 0, cost: 0, inputCost: 0, cachedCost: 0, cacheCreationCost: 0, outputCost: 0, lastUsed: null, pending: 0 },
         items: [],
       };
@@ -110,7 +114,7 @@ const PERIODS = [
   { value: "60d", label: "60D" },
 ];
 
-export default function UsageStats({ period: periodProp, setPeriod: setPeriodProp, startDate = "", endDate = "", hidePeriodSelector = false, view = "overview" } = {}) {
+export default function UsageStats({ period: periodProp, setPeriod: setPeriodProp, startDate = "", endDate = "", hidePeriodSelector = false, view = "overview", mergeModels = true } = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -258,7 +262,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       return {
         title: "模型流量明细",
         columns: MODEL_COLUMNS,
-        groupedData: groupDataByKey(sortData(stats.byModel, {}, sortBy, sortOrder), "rawModel"),
+        groupedData: groupDataByKey(sortData(stats.byModel, {}, sortBy, sortOrder), mergeModels ? "rawModel" : "providerModel"),
         tableType: "model",
         storageKey: "usage-stats:expanded-models",
         emptyMessage: "暂无模型流量记录。",
@@ -291,7 +295,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         </>
       ),
     };
-  }, [stats, sortBy, sortOrder, view]);
+  }, [stats, sortBy, sortOrder, view, mergeModels]);
 
   if (!stats && !loading) return <div className="text-text-muted">无法加载流量统计。</div>;
 
@@ -337,13 +341,14 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           )}
           {loading ? spinner : <UsageChart period={period} startDate={startDate} endDate={endDate} />}
         </>
-      ) : view === "latency" ? (
-        <DimensionUsageChart title="模型平均延迟曲线" dimension="model" metric="latency" period={period} startDate={startDate} endDate={endDate} />
       ) : (
         <div className="flex flex-col gap-3">
           {!loading && view === "keys" && <DimensionUsageChart title="各密钥流量曲线" dimension="apiKey" period={period} startDate={startDate} endDate={endDate} />}
+          {!loading && view === "keys" && <DimensionUsageChart title="各密钥平均延迟曲线" dimension="apiKey" metric="latency" period={period} startDate={startDate} endDate={endDate} />}
           {!loading && view === "providers" && <DimensionUsageChart title="各提供商流量曲线" dimension="provider" period={period} startDate={startDate} endDate={endDate} />}
-          {!loading && view === "models" && <DimensionUsageChart title="各模型流量曲线" dimension="model" period={period} startDate={startDate} endDate={endDate} />}
+          {!loading && view === "providers" && <DimensionUsageChart title="各提供商平均延迟曲线" dimension="provider" metric="latency" period={period} startDate={startDate} endDate={endDate} />}
+          {!loading && view === "models" && <DimensionUsageChart title="各模型流量曲线" dimension="model" period={period} startDate={startDate} endDate={endDate} mergeModels={mergeModels} />}
+          {!loading && view === "models" && <DimensionUsageChart title="各模型平均延迟曲线" dimension="model" metric="latency" period={period} startDate={startDate} endDate={endDate} mergeModels={mergeModels} />}
           {loading ? spinner : activeTableConfig && (
             <UsageTable
               title={activeTableConfig.title}

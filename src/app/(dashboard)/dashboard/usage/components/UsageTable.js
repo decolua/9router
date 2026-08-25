@@ -171,7 +171,7 @@ export default function UsageTable({
                         chevron_right
                       </span>
                       <span className={`font-medium transition-colors ${group.summary.pending > 0 ? "text-primary" : ""}`}>
-                        {group.groupKey}
+                        {group.groupLabel || group.groupKey}
                       </span>
                     </div>
                   </td>

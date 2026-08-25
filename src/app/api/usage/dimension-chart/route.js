@@ -11,7 +11,9 @@ export async function GET(request) {
     const data = await getDimensionChartData(period, {
       startDate: searchParams.get("startDate"),
       endDate: searchParams.get("endDate"),
-    }, searchParams.get("dimension") || "apiKey", searchParams.get("metric") || "tokens");
+    }, searchParams.get("dimension") || "apiKey", searchParams.get("metric") || "tokens", {
+      mergeModels: searchParams.get("mergeModels") !== "false",
+    });
     return NextResponse.json(data);
   } catch (error) {
     console.error("[API] Failed to get dimension chart:", error);

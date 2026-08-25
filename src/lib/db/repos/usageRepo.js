@@ -1009,7 +1009,7 @@ function getDimensionRange(period, range = {}) {
   return { start, end, bucketMs, bucketCount: Math.max(1, Math.ceil(durationMs / bucketMs)) };
 }
 
-export async function getDimensionChartData(period = "7d", range = {}, dimension = "apiKey", metric = "tokens") {
+export async function getDimensionChartData(period = "7d", range = {}, dimension = "apiKey", metric = "tokens", options = {}) {
   const allowedDimensions = new Set(["apiKey", "provider", "model"]);
   const allowedMetrics = new Set(["tokens", "requests", "latency"]);
   if (!allowedDimensions.has(dimension) || !allowedMetrics.has(metric)) throw new Error("Invalid usage chart dimension");
@@ -1028,7 +1028,8 @@ export async function getDimensionChartData(period = "7d", range = {}, dimension
     ? createModelMappingMap(await getModelMappings())
     : new Map();
   const providerNames = new Map();
-  if (dimension === "provider") {
+  const mergeModels = options.mergeModels !== false;
+  if (dimension === "provider" || (dimension === "model" && !mergeModels)) {
     const [{ getProviderNodes }, { getSettings }] = await Promise.all([
       import("./nodesRepo.js"),
       import("./settingsRepo.js"),
@@ -1045,12 +1046,20 @@ export async function getDimensionChartData(period = "7d", range = {}, dimension
     const index = Math.floor((timestamp - start.getTime()) / bucketMs);
     if (index < 0 || index >= bucketCount) continue;
     const keyInfo = dimension === "apiKey" && row.apiKey ? keyInfoByValue.get(row.apiKey) : null;
+    const mappedModel = dimension === "model"
+      ? getMappedModelName(modelMappingMap, row.provider, row.model || "未知模型")
+      : "";
+    const providerLabel = providerNames.get(row.provider) || row.provider || "未知提供商";
     const groupId = dimension === "apiKey"
       ? getApiKeyGroupId(row.apiKey, keyInfo)
-      : dimension === "provider" ? (row.provider || "unknown") : `${row.provider || "unknown"}|${row.model || "unknown"}`;
+      : dimension === "provider"
+        ? (row.provider || "unknown")
+        : mergeModels ? mappedModel : `${row.provider || "unknown"}|${mappedModel}`;
     const groupLabel = dimension === "apiKey"
       ? getApiKeyLabel(row.apiKey, keyInfo)
-      : dimension === "provider" ? (providerNames.get(row.provider) || row.provider || "未知提供商") : getMappedModelName(modelMappingMap, row.provider, row.model || "未知模型");
+      : dimension === "provider"
+        ? providerLabel
+        : mergeModels ? mappedModel : `${mappedModel} · ${providerLabel}`;
     const tokens = parseJson(row.tokens, {}) || {};
     const latency = Number(parseJson(row.meta, {})?.latency?.total || 0);
     const value = metric === "requests" ? 1

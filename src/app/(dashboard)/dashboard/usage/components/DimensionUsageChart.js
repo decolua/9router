@@ -8,12 +8,13 @@ import Card from "@/shared/components/Card";
 const COLORS = ["#ef6a47", "#2563eb", "#16a34a", "#9333ea", "#0891b2", "#ca8a04", "#db2777", "#4f46e5"];
 const formatValue = (value, metric) => metric === "latency" ? `${Number(value || 0).toFixed(0)}ms` : new Intl.NumberFormat("zh-CN", { notation: "compact" }).format(value || 0);
 
-export default function DimensionUsageChart({ title, dimension, metric = "tokens", period, startDate, endDate }) {
+export default function DimensionUsageChart({ title, dimension, metric = "tokens", period, startDate, endDate, mergeModels = true }) {
   const [result, setResult] = useState({ series: [], data: [] });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const query = new URLSearchParams({ dimension, metric, period });
+    if (dimension === "model") query.set("mergeModels", String(mergeModels));
     if (period === "custom") {
       if (startDate) query.set("startDate", startDate);
       if (endDate) query.set("endDate", endDate);
@@ -25,7 +26,7 @@ export default function DimensionUsageChart({ title, dimension, metric = "tokens
       .catch(() => { if (!cancelled) setResult({ series: [], data: [] }); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [dimension, metric, period, startDate, endDate]);
+  }, [dimension, metric, period, startDate, endDate, mergeModels]);
 
   const hasData = result.series.length > 0 && result.data.some((point) => result.series.some((series) => Number(point[series.id] || 0) > 0));
   return (
@@ -61,4 +62,5 @@ DimensionUsageChart.propTypes = {
   period: PropTypes.string.isRequired,
   startDate: PropTypes.string,
   endDate: PropTypes.string,
+  mergeModels: PropTypes.bool,
 };

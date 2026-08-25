@@ -217,6 +217,31 @@ describe("usage logs", () => {
     expect(latency.data.some((point) => point[latencySeries.id] === 640)).toBe(true);
   });
 
+  it("can merge or separate matching model names across providers", async () => {
+    const timestamp = new Date().toISOString();
+    const base = {
+      model: "shared-curve-model",
+      timestamp,
+      tokens: { prompt_tokens: 30, completion_tokens: 10 },
+      meta: { latency: { total: 500 } },
+    };
+    await db.saveRequestUsage({ ...base, provider: "curve-provider-a" });
+    await db.saveRequestUsage({ ...base, provider: "curve-provider-b", meta: { latency: { total: 900 } } });
+
+    const merged = await db.getDimensionChartData("today", {}, "model", "tokens", { mergeModels: true });
+    const separated = await db.getDimensionChartData("today", {}, "model", "latency", { mergeModels: false });
+    const mergedSeries = merged.series.filter((series) => series.label === "shared-curve-model");
+    const separatedSeries = separated.series.filter((series) => series.label.startsWith("shared-curve-model · "));
+
+    expect(mergedSeries).toHaveLength(1);
+    expect(merged.data.reduce((sum, point) => sum + Number(point[mergedSeries[0].id] || 0), 0)).toBe(80);
+    expect(separatedSeries).toHaveLength(2);
+    expect(new Set(separatedSeries.map((series) => series.label))).toEqual(new Set([
+      "shared-curve-model · curve-provider-a",
+      "shared-curve-model · curve-provider-b",
+    ]));
+  });
+
   it("returns custom provider names and request latency in traffic logs", async () => {
     await settingsRepo.updateSettings({ providerDisplayNames: { "renamed-provider": "团队供应商" } });
     await db.saveRequestUsage({
