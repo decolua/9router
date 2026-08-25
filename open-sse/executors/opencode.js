@@ -3,6 +3,7 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 
 const OPENCODE_UA = "opencode";
 const MESSAGES_MODELS = new Set();
@@ -38,11 +39,16 @@ export class OpenCodeExecutor extends BaseExecutor {
 
   transformRequest(model, body, stream, credentials) {
     this._currentSessionId = resolveOpencodeSession(body, credentials);
-    return injectReasoningContent({ provider: this.provider, model, body });
+    const transformed = injectReasoningContent({ provider: this.provider, model, body });
+    stripUnsupportedParams(this.provider, model, transformed);
+    return transformed;
   }
 
   buildUrl(model) {
     const base = this.config.baseUrl;
+    if (/muse/i.test(model)) {
+      return `${base}/zen/v1/responses`;
+    }
     return MESSAGES_MODELS.has(model)
       ? `${base}/zen/v1/messages`
       : `${base}/zen/v1/chat/completions`;

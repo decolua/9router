@@ -157,4 +157,21 @@ describe("OpenCodeExecutor — issue #1543 regression", () => {
     const assistant = out.messages.find((m) => m.role === "assistant");
     expect(assistant.reasoning_content).toBeDefined();
   });
+
+  it("strips token limits rejected by OpenCode Muse models", () => {
+    const executor = new OpenCodeExecutor();
+    const out = executor.transformRequest("muse-free", {
+      model: "muse-free",
+      input: "hi",
+      max_tokens: 0,
+      max_completion_tokens: 9,
+      max_output_tokens: 300,
+    });
+
+    expect(out).toEqual({
+      model: "muse-free",
+      input: "hi",
+      max_output_tokens: 300,
+    });
+  });
 });
