@@ -1,6 +1,28 @@
 # Unreleased
 
 ## Fixes
+- **Routing**: the context window is now learned for every provider we share with
+  models.dev, not just OpenRouter. `openrouterModels.js` made the window dynamic
+  for the one provider whose own `/models` publishes `context_length`; everybody
+  else answers with bare ids, so every model they serve inherited
+  `DEFAULT_CAPABILITIES.contextWindow` = 200,000 and `shouldSkipModel` dropped it
+  from the combo as soon as a conversation passed 200K. On 2026-08-25 Yggdrasil
+  lost `oc/x-preview-f-free`, `ocg/glm-5.2` and `nvidia/z-ai/glm-5.2` that way —
+  all three are 1,000,000-token models — logging `Skipping oc/x-preview-f-free,
+  request needs ~274932 tokens but window is 200000` while the cascade fell
+  through to whatever gemini leg had quota left, and 429'd 21 times in 25 minutes
+  when it did not. The opencode leg is the same ox-alpha the OpenRouter leg serves
+  at 1,048,576, so the redundancy pair had been running on one leg. models.dev is
+  where those numbers were hand-copied from in the first place — the
+  `limit.context -> contextWindow` mapping at the top of `providers/capabilities.js`
+  is its shape — so it is now fetched instead, 6-hourly, alongside the OpenRouter
+  catalogue: 730 models that had no entry at all now carry a real window. A
+  provider that publishes its own catalogue is excluded, because the registry has
+  no source ranking and last writer would win. Windows are recorded under every
+  alias a routed id can use (`oc/` and `opencode/`, `ocg/` and `opencode-go/`) —
+  the combo stores one spelling and the executor logs another, and filing under
+  one leaves the other on the default. New `services/modelsDevCatalogue.js`,
+  wired into `startContextWindowLearning`.
 - **Routing**: a model nobody hand-wrote a table entry for is no longer assumed
   blind. `DEFAULT_CAPABILITIES.vision` is `false`, and two separate paths read it:
   `reorderByCapabilities`, which promotes vision-capable members to the head of a

@@ -19,6 +19,7 @@ import { killAllBridges } from "@/lib/mcp/stdioSseBridge";
 import { primeContextWindows } from "open-sse/services/contextWindowRegistry.js";
 import { primeModalities } from "open-sse/services/modalityRegistry.js";
 import { refreshOpenRouterCatalogue } from "open-sse/services/openrouterModels.js";
+import { refreshModelsDevCatalogue } from "open-sse/services/modelsDevCatalogue.js";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -104,6 +105,7 @@ function startContextWindowLearning() {
       primeContextWindows(),
       primeModalities(),
       refreshOpenRouterCatalogue({ force: true }),
+      refreshModelsDevCatalogue({ force: true }),
     ]).catch((e) => console.warn("[CTXWIN] refresh failed:", e.message));
   run();
   const timer = setInterval(run, CONTEXT_WINDOW_REFRESH_MS);
