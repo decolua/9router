@@ -17,8 +17,7 @@ describe("opencode-go muse-spark tool_choice demotion (Responses)", () => {
     const body = makeBody({ type: "function", name: "web_search" });
     const out = ex.transformRequest("muse-spark-1.2-contributor", body);
     expect(out.tool_choice).toBe("auto");
-    expect(out.tools).toBeDefined();
-    expect(out.tools.length).toBe(1);
+    expect(out.tools).toEqual(body.tools);
   });
 
   it("demotes required to auto", () => {
@@ -47,14 +46,22 @@ describe("opencode-go muse-spark tool_choice demotion (Responses)", () => {
 
   it("handles thinking suffix (max)", () => {
     const ex = new DefaultExecutor("opencode-go");
-    const out = ex.transformRequest("muse-spark-1.2-contributor(max)", makeBody({ type: "function", name: "web_search" }));
+    const body = makeBody({ type: "function", name: "web_search" });
+    const out = ex.transformRequest("muse-spark-1.2-contributor(max)", body);
     expect(out.tool_choice).toBe("auto");
+    expect(out.tools).toEqual(body.tools);
   });
 
   it("handles thinking suffix (8192)", () => {
     const ex = new DefaultExecutor("opencode-go");
     const out = ex.transformRequest("muse-spark-1.2-contributor(8192)", makeBody({ type: "function", name: "web_search" }));
     expect(out.tool_choice).toBe("auto");
+  });
+
+  it("does not demote a bogus thinking suffix", () => {
+    const ex = new DefaultExecutor("opencode-go");
+    const out = ex.transformRequest("muse-spark-1.2-contributor(bogus)", makeBody({ type: "function", name: "web_search" }));
+    expect(out.tool_choice).toEqual({ type: "function", name: "web_search" });
   });
 
   it("does not affect opencode free variant", () => {
