@@ -105,6 +105,10 @@
     "openrouter/stealth/ox-alpha": {
       "family": "ox-alpha",
       "mode": "free"
+    },
+    "oc/x-preview-f-free": {
+      "family": "ox-alpha",
+      "mode": "free"
     }
   },
   "_comboBand": {
@@ -437,7 +441,13 @@
     },
     "Odin": {
       "tokenrouter/qwen/qwen3.8-max-free": 0,
-      "tokenrouter/deepseek/deepseek-v4-pro-0813-free": 1
+      "tokenrouter/deepseek/deepseek-v4-pro-0813-free": 1,
+      "openrouter/stealth/ox-alpha": 2,
+      "oc/x-preview-f-free": 3
+    },
+    "Yggdrasil": {
+      "openrouter/stealth/ox-alpha": 0,
+      "oc/x-preview-f-free": 1
     }
   },
   "_costOverride": {
