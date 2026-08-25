@@ -90,3 +90,4 @@ graphify-out/*
 # Local development artifacts
 .serena/
 apps/
+.worktrees/
