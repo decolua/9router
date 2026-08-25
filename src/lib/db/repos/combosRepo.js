@@ -9,6 +9,9 @@ function rowToCombo(row) {
     name: row.name,
     kind: row.kind,
     models: parseJson(row.models, []),
+    tools: parseJson(row.tools, null),
+    maxTools: row.maxTools !== undefined ? row.maxTools : null,
+    isActive: row.isActive === 1,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -40,13 +43,31 @@ export async function createCombo(data) {
     name: data.name,
     kind: data.kind || null,
     models: data.models || [],
+    tools: data.tools || null,
+    maxTools: data.maxTools !== undefined ? data.maxTools : null,
+    isActive: data.isActive ? 1 : 0,
     createdAt: now,
     updatedAt: now,
   };
-  db.run(
-    `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
-    [combo.id, combo.name, combo.kind, stringifyJson(combo.models), combo.createdAt, combo.updatedAt]
-  );
+  db.transaction(() => {
+    if (combo.kind === "mcp" && combo.isActive) {
+      db.run(`UPDATE combos SET isActive = 0 WHERE kind = 'mcp'`);
+    }
+    db.run(
+      `INSERT INTO combos(id, name, kind, models, tools, maxTools, isActive, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        combo.id,
+        combo.name,
+        combo.kind,
+        stringifyJson(combo.models),
+        combo.tools ? stringifyJson(combo.tools) : null,
+        combo.maxTools,
+        combo.isActive,
+        combo.createdAt,
+        combo.updatedAt
+      ]
+    );
+  });
   return combo;
 }
 
@@ -56,11 +77,49 @@ export async function updateCombo(id, data) {
   db.transaction(() => {
     const row = db.get(`SELECT * FROM combos WHERE id = ?`, [id]);
     if (!row) return;
-    const merged = { ...rowToCombo(row), ...data, updatedAt: new Date().toISOString() };
-    db.run(
-      `UPDATE combos SET name = ?, kind = ?, models = ?, updatedAt = ? WHERE id = ?`,
-      [merged.name, merged.kind, stringifyJson(merged.models || []), merged.updatedAt, id]
-    );
+    
+    // Filter out undefined values to prevent overwriting columns with NULL
+    const cleanData = {};
+    for (const [key, val] of Object.entries(data)) {
+      if (val !== undefined) {
+        cleanData[key] = val;
+      }
+    }
+
+    const merged = { ...rowToCombo(row), ...cleanData, updatedAt: new Date().toISOString() };
+    if (merged.kind === "mcp" && merged.isActive) {
+      db.run(`UPDATE combos SET isActive = 0 WHERE kind = 'mcp' AND id != ?`, [id]);
+    }
+    try {
+      db.run(
+        `UPDATE combos SET name = ?, kind = ?, models = ?, tools = ?, maxTools = ?, isActive = ?, updatedAt = ? WHERE id = ?`,
+        [
+          merged.name,
+          merged.kind,
+          stringifyJson(merged.models || []),
+          merged.tools ? stringifyJson(merged.tools) : null,
+          merged.maxTools !== undefined ? merged.maxTools : null,
+          merged.isActive ? 1 : 0,
+          merged.updatedAt,
+          id
+        ]
+      );
+    } catch (err) {
+      console.error("[DB][updateCombo] SQLITE_CONSTRAINT_NOTNULL details:", {
+        id,
+        data,
+        cleanData,
+        merged,
+        param_name: merged.name,
+        param_kind: merged.kind,
+        param_models: stringifyJson(merged.models || []),
+        param_tools: merged.tools ? stringifyJson(merged.tools) : null,
+        param_maxTools: merged.maxTools !== undefined ? merged.maxTools : null,
+        param_isActive: merged.isActive ? 1 : 0,
+        param_updatedAt: merged.updatedAt,
+      });
+      throw err;
+    }
     result = merged;
   });
   return result;

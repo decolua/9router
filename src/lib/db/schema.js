@@ -80,11 +80,15 @@ export const TABLES = {
       id: "TEXT PRIMARY KEY",
       key: "TEXT UNIQUE NOT NULL",
       name: "TEXT",
+      kind: "TEXT DEFAULT 'llm'",
       machineId: "TEXT",
       isActive: "INTEGER DEFAULT 1",
       createdAt: "TEXT NOT NULL",
     },
-    indexes: ["CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)"],
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)",
+      "CREATE INDEX IF NOT EXISTS idx_ak_kind ON apiKeys(kind)",
+    ],
   },
   combos: {
     columns: {
@@ -92,6 +96,9 @@ export const TABLES = {
       name: "TEXT UNIQUE NOT NULL",
       kind: "TEXT",
       models: "TEXT NOT NULL",
+      tools: "TEXT",
+      maxTools: "INTEGER",
+      isActive: "INTEGER DEFAULT 0",
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT NOT NULL",
     },
@@ -150,6 +157,22 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_provider ON requestDetails(provider)",
       "CREATE INDEX IF NOT EXISTS idx_rd_model ON requestDetails(model)",
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
+    ],
+  },
+  mcpServers: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      name: "TEXT NOT NULL",
+      type: "TEXT NOT NULL",
+      isActive: "INTEGER DEFAULT 1",
+      testStatus: "TEXT",
+      data: "TEXT NOT NULL",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_ms_active ON mcpServers(isActive)",
+      "CREATE INDEX IF NOT EXISTS idx_ms_type ON mcpServers(type)",
     ],
   },
 };

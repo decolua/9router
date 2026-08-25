@@ -27,6 +27,7 @@ const navItems = [
   { href: "/dashboard/token-saver", label: "Token Saver", icon: "savings" },
   // { href: "/dashboard/pxpipe", label: "PXPIPE", icon: "image" },
   { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
+  { href: "/dashboard/mcp-servers", label: "MCP Servers", icon: "hub" },
 ];
 
 const debugItems = [

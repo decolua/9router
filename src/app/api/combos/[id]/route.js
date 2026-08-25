@@ -27,15 +27,16 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
+    const { name, models, kind, tools, maxTools, isActive } = body;
     
     // Validate name format if provided
-    if (body.name) {
-      if (!VALID_NAME_REGEX.test(body.name)) {
+    if (name) {
+      if (!VALID_NAME_REGEX.test(name)) {
         return NextResponse.json({ error: "Name can only contain letters, numbers, -, _ and ." }, { status: 400 });
       }
       
       // Check if name already exists (exclude current combo)
-      const existing = await getComboByName(body.name);
+      const existing = await getComboByName(name);
       if (existing && existing.id !== id) {
         return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
       }
@@ -43,7 +44,7 @@ export async function PUT(request, { params }) {
     
     // Capture previous name to invalidate rotation state on rename
     const prev = await getComboById(id);
-    const combo = await updateCombo(id, body);
+    const combo = await updateCombo(id, { name, models, kind, tools, maxTools, isActive });
     
     if (!combo) {
       return NextResponse.json({ error: "Combo not found" }, { status: 404 });
