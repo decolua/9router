@@ -15,9 +15,12 @@ describe("opencode-go muse-spark tool_choice demotion (Responses)", () => {
   it("demotes named function tool_choice to auto", () => {
     const ex = new DefaultExecutor("opencode-go");
     const body = makeBody({ type: "function", name: "web_search" });
+    const expectedTools = structuredClone(body.tools);
     const out = ex.transformRequest("muse-spark-1.2-contributor", body);
     expect(out.tool_choice).toBe("auto");
-    expect(out.tools).toEqual(body.tools);
+    expect(out.tools).toEqual(expectedTools);
+    expect(out.tools).toHaveLength(expectedTools.length);
+    expect(out.tools[0].name).toBe(expectedTools[0].name);
   });
 
   it("demotes required to auto", () => {
@@ -47,14 +50,21 @@ describe("opencode-go muse-spark tool_choice demotion (Responses)", () => {
   it("handles thinking suffix (max)", () => {
     const ex = new DefaultExecutor("opencode-go");
     const body = makeBody({ type: "function", name: "web_search" });
+    const expectedTools = structuredClone(body.tools);
     const out = ex.transformRequest("muse-spark-1.2-contributor(max)", body);
     expect(out.tool_choice).toBe("auto");
-    expect(out.tools).toEqual(body.tools);
+    expect(out.tools).toEqual(expectedTools);
   });
 
   it("handles thinking suffix (8192)", () => {
     const ex = new DefaultExecutor("opencode-go");
     const out = ex.transformRequest("muse-spark-1.2-contributor(8192)", makeBody({ type: "function", name: "web_search" }));
+    expect(out.tool_choice).toBe("auto");
+  });
+
+  it.each(["auto", "OFF"])("handles thinking suffix (%s)", (level) => {
+    const ex = new DefaultExecutor("opencode-go");
+    const out = ex.transformRequest(`muse-spark-1.2-contributor(${level})`, makeBody({ type: "function", name: "web_search" }));
     expect(out.tool_choice).toBe("auto");
   });
 
