@@ -37,10 +37,13 @@ import {
   QODER_MODEL_MAP,
 } from "../shared/qoder/constants.js";
 import { getQoderModelConfig, resolveQoderModels, isQoderPat, resolveQoderCredentials } from "../services/qoderModels.js";
+import { OPENAI_BLOCK, CLAUDE_BLOCK } from "../translator/schema/blocks.js";
+import { encodeDataUri } from "../translator/concerns/image.js";
 
 /**
  * Hoist role:"system" messages out of the messages array (Qoder rejects
- * system in messages) and flatten any multipart content arrays.
+ * system in messages) and flatten multipart content arrays — EXCEPT image
+ * blocks, which are preserved (see normalizeContent).
  */
 function normalizeMessages(messages) {
   if (!Array.isArray(messages) || messages.length === 0) {
@@ -50,16 +53,70 @@ function normalizeMessages(messages) {
   const out = [];
   for (const msg of messages) {
     if (!msg || typeof msg !== "object") continue;
-    const text = extractText(msg.content);
     if (msg.role === "system") {
+      const text = extractText(msg.content);
       if (text) systemParts.push(text);
       continue;
     }
     const cloned = { ...msg };
-    cloned.content = text;
+    cloned.content = normalizeContent(msg.content);
     out.push(cloned);
   }
   return { messages: out, systemText: systemParts.join("\n\n") };
+}
+
+/**
+ * Normalize one message's content for Qoder.
+ *
+ * Text-only content is flattened to a plain string (Qoder's historical
+ * shape). When images are present the content stays an array and image
+ * blocks are kept as OpenAI-style `image_url` parts — verified against the
+ * upstream: it accepts both http(s) URLs and inline base64 data: URIs
+ * directly, no pre-upload to the /image/upload OSS flow required (that is
+ * a qodercli client-side choice, not a protocol requirement). The legacy
+ * top-level `image_urls` / `chat_context.imageUrls` slots stay null —
+ * qodercli leaves them null too.
+ *
+ * Claude-style `{type:"image", source:{...}}` blocks are converted to
+ * `image_url` so claude-format clients also round-trip.
+ */
+function normalizeContent(content) {
+  if (typeof content === "string") return content;
+  if (content == null) return "";
+  if (!Array.isArray(content)) return String(content);
+
+  const blocks = [];
+  const textParts = [];
+  let hasImage = false;
+  for (const item of content) {
+    if (!item || typeof item !== "object") continue;
+    if (item.type === OPENAI_BLOCK.IMAGE_URL && typeof item.image_url?.url === "string" && item.image_url.url) {
+      blocks.push({ type: OPENAI_BLOCK.IMAGE_URL, image_url: { url: item.image_url.url } });
+      hasImage = true;
+    } else if (item.type === CLAUDE_BLOCK.IMAGE && item.source) {
+      // Claude base64/url image → OpenAI image_url equivalent.
+      const src = item.source;
+      const url = src.type === "base64" && src.data
+        ? encodeDataUri(src.media_type || "image/png", src.data)
+        : typeof src.url === "string" && src.url ? src.url : null;
+      if (url) {
+        blocks.push({ type: OPENAI_BLOCK.IMAGE_URL, image_url: { url } });
+        hasImage = true;
+      }
+    } else if (typeof item.text === "string" && item.text) {
+      if (hasImage || blocks.length) {
+        // Keep ordering faithful once images are in play.
+        blocks.push({ type: OPENAI_BLOCK.TEXT, text: item.text });
+      } else {
+        textParts.push(item.text);
+      }
+    }
+  }
+
+  if (!hasImage) return textParts.join("\n");
+  // Prepend any text collected before the first image block.
+  if (textParts.length) blocks.unshift({ type: OPENAI_BLOCK.TEXT, text: textParts.join("\n") });
+  return blocks;
 }
 
 function extractText(content) {
@@ -84,9 +141,9 @@ function extractText(content) {
 function lastUserText(messages) {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
-    if (m?.role === "user" && typeof m.content === "string") {
-      return m.content;
-    }
+    if (m?.role !== "user") continue;
+    if (typeof m.content === "string") return m.content;
+    if (Array.isArray(m.content)) return extractText(m.content);
   }
   return "";
 }
@@ -110,6 +167,11 @@ function stableChatRecordId(model, messages, tools, maxTokens) {
     if (m.role) { h.update("\0"); h.update(m.role); }
     if (typeof m.content === "string" && m.content) {
       h.update("\0"); h.update(m.content);
+    } else if (Array.isArray(m.content)) {
+      // Include image refs so the same prompt with a different image gets
+      // a distinct chat_record_id.
+      h.update("\0");
+      try { h.update(JSON.stringify(m.content)); } catch {}
     }
   }
   if (tools) {
