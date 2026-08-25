@@ -5,6 +5,7 @@ import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { planBulkAdd } from "@/shared/utils/bulkAdd";
+import { buildProviderSpecificData as buildSpecificData } from "@/shared/utils/providerSpecificData";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
@@ -18,6 +19,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     ? (provider === "grok-web" ? "sso=xxxxx... or just the raw value" : "eyJhbGciOi...")
     : (isXaiApiKey ? "xai-..." : provider === "qoder" ? "pt-..." : "");
 
+  // Providers whose endpoint is per-connection declare it in the registry.
+  const baseUrlField = AI_PROVIDERS?.[provider]?.baseUrlField || null;
+
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
   const providerRegions = AI_PROVIDERS?.[provider]?.regions || null;
@@ -29,7 +33,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     defaultModel: "",
     priority: 1,
     proxyPoolId: NONE_PROXY_POOL_VALUE,
-    ollamaHostUrl: "",
+    baseUrl: "",
   });
   const [azureData, setAzureData] = useState({
     azureEndpoint: "",
@@ -52,26 +56,17 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const [bulkText, setBulkText] = useState("");
   const [bulkResult, setBulkResult] = useState(null); // { success, failed }
 
-  const buildProviderSpecificData = () => {
-    if (isOllamaLocal && formData.ollamaHostUrl.trim()) {
-      return { baseUrl: formData.ollamaHostUrl.trim() };
-    }
-    if (isAzure) {
-      return {
-        azureEndpoint: azureData.azureEndpoint,
-        apiVersion: azureData.apiVersion,
-        deployment: azureData.deployment,
-        organization: azureData.organization,
-      };
-    }
-    if (isCloudflareAi) {
-      return { accountId: cloudflareData.accountId };
-    }
-    if (providerRegions && region) {
-      return { region };
-    }
-    return undefined;
-  };
+  const buildProviderSpecificData = () =>
+    buildSpecificData({
+      hasBaseUrlField: Boolean(baseUrlField),
+      baseUrl: formData.baseUrl,
+      isAzure,
+      azureData,
+      isCloudflareAi,
+      cloudflareData,
+      region,
+      hasRegions: Boolean(providerRegions),
+    });
 
   const handleValidate = async () => {
     setValidating(true);
@@ -233,13 +228,14 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
           placeholder={isOllamaLocal ? "Ollama Local" : "Production Key"}
         />
-        {isOllamaLocal && (
+        {baseUrlField && (
           <div className="flex gap-2">
             <Input
-              label="Ollama Host URL"
-              value={formData.ollamaHostUrl}
-              onChange={(e) => setFormData({ ...formData, ollamaHostUrl: e.target.value })}
-              placeholder="http://localhost:11434"
+              label={baseUrlField.label}
+              value={formData.baseUrl}
+              onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
+              placeholder={baseUrlField.placeholder}
+              hint={baseUrlField.help}
               className="flex-1"
             />
             <div className="pt-6">
