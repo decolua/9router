@@ -77,7 +77,7 @@ export class DefaultExecutor extends BaseExecutor {
       }
       stripUnsupportedParams(this.provider, model, transformed);
       // ponytail: Console Go Muse Spark rejects forced tool_choice (only "auto" supported); demote to auto. Move to registry quirk when a second model needs it.
-      const suffix = typeof model === "string" ? model.match(/\((?:none|minimal|low|medium|high|xhigh|max|ultra|\d+)\)\s*$/) : null;
+      const suffix = typeof model === "string" ? model.match(/\((?:none|off|auto|minimal|low|medium|high|xhigh|max|ultra|\d+)\)\s*$/i) : null;
       const bare = suffix ? model.slice(0, suffix.index).trim() : model;
       if (this.provider === "opencode-go" && bare === "muse-spark-1.2-contributor" && "tool_choice" in transformed) {
         if (transformed.tool_choice !== "auto") transformed.tool_choice = "auto";
