@@ -13,6 +13,7 @@ export function sanitizeModelMarketLog(log) {
     selectedModelType: log.selectedModelType || "模型",
     actualModel: log.actualModel || log.model,
     routerSelectedModel: log.routerSelectedModel || null,
+    routerSelectedProvider: log.routerSelectedProvider || null,
     provider: log.provider,
     endpoint: log.endpoint,
     inputTokens: log.inputTokens,
