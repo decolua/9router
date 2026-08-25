@@ -93,7 +93,7 @@ export function findPython310() {
   let fallback = null;
   for (const candidate of pythonCandidates()) {
     try {
-      const ver = execSync(`${candidate} --version`, {
+      const ver = execFileSync(candidate, ["--version"], {
         stdio: ["ignore", "pipe", "ignore"],
         windowsHide: true,
         env: { ...process.env, PATH: EXTENDED_PATH },
