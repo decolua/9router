@@ -177,11 +177,12 @@ export function createDisconnectAwareStream(transformStream, streamController, o
 
         // Graceful close on network/abort, or when a structured terminal is available
         // (Responses passthrough prefers response.failed + [DONE] over a raw transport error).
-        // terminalTracker counts as a structured terminal too, so an OpenAI/Claude
-        // stream cut by a reset now closes with an explicit error frame rather
-        // than a bare truncation the client cannot interpret.
+        // The tracker fallback is gated on isNetworkClose so a genuine transform
+        // error on a tracked format still propagates via controller.error instead
+        // of being masked by a misleading DROP_MESSAGE frame.
         try {
-          if (!wasConnected || isNetworkClose || onAbortTerminal || terminalTracker) {
+          const isTrackedNetworkClose = isNetworkClose && !!terminalTracker;
+          if (!wasConnected || onAbortTerminal || isTrackedNetworkClose) {
             emitTerminal(controller);
             controller.close();
           } else {

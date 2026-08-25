@@ -18,7 +18,6 @@ import { FORMATS } from "../translator/formats.js";
 import { buildAbortedResponsesTerminalBytes } from "./responsesStreamHelpers.js";
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder("utf-8", { fatal: false });
 
 const DROP_MESSAGE =
   "Upstream stream ended before completing: the provider closed the connection " +
@@ -62,7 +61,9 @@ const HANDLERS = {
     sawTerminal: (text) =>
       text.includes("response.completed") ||
       text.includes("response.failed") ||
-      text.includes("response.incomplete"),
+      text.includes("response.incomplete") ||
+      text.includes("response.done") ||
+      text.includes("error"),
     buildDrop: () => buildAbortedResponsesTerminalBytes(),
   },
 };
@@ -72,13 +73,14 @@ const HANDLERS = {
  * unambiguous terminal marker (in which case the caller must not synthesize
  * anything and behaviour stays as it was).
  *
- * @param {string} targetFormat - the format the CLIENT receives
+ * @param {string} emittedFormat - the format the CLIENT receives
  * @returns {{observe: (chunk: Uint8Array) => void, sawTerminal: () => boolean, buildDrop: () => Uint8Array} | null}
  */
-export function createTerminalTracker(targetFormat) {
-  const handler = HANDLERS[targetFormat];
+export function createTerminalTracker(emittedFormat) {
+  const handler = HANDLERS[emittedFormat];
   if (!handler) return null;
 
+  const decoder = new TextDecoder("utf-8", { fatal: false });
   let seen = false;
   // A terminal marker can straddle two chunks, so keep a small tail of the
   // previous chunk and test the join. Bounded so this never grows with the
