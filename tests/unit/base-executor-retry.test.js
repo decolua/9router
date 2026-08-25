@@ -9,8 +9,8 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
 
 const { BaseExecutor } = await import("../../open-sse/executors/base.js");
 
-function res(status) {
-  return { status, headers: { get: () => "" } };
+function res(status, body = "") {
+  return { status, headers: { get: () => "" }, text: async () => body };
 }
 
 function makeExec(config) {
@@ -24,6 +24,20 @@ const creds = { apiKey: "k" };
 beforeEach(() => fetchMock.mockReset());
 
 describe("BaseExecutor.execute — retry by status (config-driven)", () => {
+  it("retries transient 500 UnknownError responses then succeeds", async () => {
+    const ex = makeExec({ baseUrl: "https://x/api", retry: { 500: { attempts: 3, delayMs: 0 } } });
+    const unknownError = JSON.stringify({ name: "UnknownError", data: { message: "\"Unknown Error\"" } });
+    fetchMock
+      .mockResolvedValueOnce(res(500, unknownError))
+      .mockResolvedValueOnce(res(500, unknownError))
+      .mockResolvedValueOnce(res(200));
+
+    const out = await ex.execute({ model: "m", body: {}, stream: false, credentials: creds });
+
+    expect(out.response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it("retries 502 `attempts` times then succeeds", async () => {
     const ex = makeExec({ baseUrl: "https://x/api", retry: { 502: { attempts: 3, delayMs: 0 } } });
     fetchMock
@@ -88,9 +102,9 @@ describe("BaseExecutor.execute — computeRetryDelay hook veto", () => {
   it("only invokes computeRetryDelay when status has retry config", async () => {
     const ex = makeExec({ baseUrl: "https://x/api", retry: { 503: { attempts: 1, delayMs: 0 } } });
     ex.computeRetryDelay = vi.fn().mockResolvedValue(0);
-    fetchMock.mockResolvedValueOnce(res(500));
+    fetchMock.mockResolvedValueOnce(res(418));
     const out = await ex.execute({ model: "m", body: {}, stream: false, credentials: creds });
-    expect(out.response.status).toBe(500);
+    expect(out.response.status).toBe(418);
     expect(ex.computeRetryDelay).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
