@@ -274,6 +274,7 @@ describe("usage logs", () => {
         requestedModel: "combo-name",
         actualModel: "upstream/provider-model",
         routerSelectedModel: "glm",
+        routerSelectedProvider: "deepseek",
       },
     });
 
@@ -283,6 +284,7 @@ describe("usage logs", () => {
       selectedModel: "combo-name",
       actualModel: "upstream/provider-model",
       routerSelectedModel: "glm",
+      routerSelectedProvider: "deepseek",
     });
   });
 

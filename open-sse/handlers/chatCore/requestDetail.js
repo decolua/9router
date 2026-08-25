@@ -99,7 +99,7 @@ export function formatDoneLine({ usage, latency }) {
   return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
 }
 
-export function saveUsageStats({ provider, model, requestedModel, actualModel, routerSelectedModel, tokens, connectionId, apiKey, endpoint, latency, label = "USAGE", silent = false }) {
+export function saveUsageStats({ provider, model, requestedModel, actualModel, routerSelectedModel, routerSelectedProvider, tokens, connectionId, apiKey, endpoint, latency, label = "USAGE", silent = false }) {
   if (!tokens || typeof tokens !== "object") return;
 
   const normalized = canonicalizeUsage(tokens) || {
@@ -134,6 +134,7 @@ export function saveUsageStats({ provider, model, requestedModel, actualModel, r
       requestedModel: requestedModel || model || "unknown",
       actualModel: actualModel || model || "unknown",
       ...(routerSelectedModel ? { routerSelectedModel } : {}),
+      ...(routerSelectedProvider ? { routerSelectedProvider } : {}),
     },
   }).catch(() => {});
 }

@@ -31,20 +31,35 @@ import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
 const LLMROUTER_SELECTED_MODEL_HEADER = "x-llmrouter-selected-model";
+const LLMROUTER_SELECTED_PROVIDER_HEADER = "x-llmrouter-selected-provider";
 const NINE_ROUTER_ACTUAL_MODEL_HEADER = "x-9router-actual-model";
-const MAX_ROUTER_SELECTED_MODEL_LENGTH = 256;
+const NINE_ROUTER_ACTUAL_PROVIDER_HEADER = "x-9router-actual-provider";
+const MAX_ROUTER_METADATA_LENGTH = 256;
 
-export function extractRouterSelectedModel(response) {
-  const value = response?.headers?.get?.(LLMROUTER_SELECTED_MODEL_HEADER)?.trim();
-  if (!value || value.length > MAX_ROUTER_SELECTED_MODEL_LENGTH) return null;
-  return /^[\x20-\x7e]+$/.test(value) ? value : null;
+function safeRouterMetadataHeader(value) {
+  const normalized = String(value || "").trim();
+  if (!normalized || normalized.length > MAX_ROUTER_METADATA_LENGTH) return null;
+  return /^[\x20-\x7e]+$/.test(normalized) ? normalized : null;
 }
 
-export function attachActualModelHeader(result, actualModel) {
-  const value = String(actualModel || "").trim();
-  if (!result?.response || !value || value.length > MAX_ROUTER_SELECTED_MODEL_LENGTH) return result;
-  if (!/^[\x20-\x7e]+$/.test(value)) return result;
-  result.response.headers.set(NINE_ROUTER_ACTUAL_MODEL_HEADER, value);
+function extractRouterMetadata(response, headerName) {
+  return safeRouterMetadataHeader(response?.headers?.get?.(headerName));
+}
+
+export function extractRouterSelectedModel(response) {
+  return extractRouterMetadata(response, LLMROUTER_SELECTED_MODEL_HEADER);
+}
+
+export function extractRouterSelectedProvider(response) {
+  return extractRouterMetadata(response, LLMROUTER_SELECTED_PROVIDER_HEADER);
+}
+
+export function attachActualRouteHeaders(result, { actualModel, actualProvider }) {
+  if (!result?.response) return result;
+  const modelValue = safeRouterMetadataHeader(actualModel);
+  const providerValue = safeRouterMetadataHeader(actualProvider);
+  if (modelValue) result.response.headers.set(NINE_ROUTER_ACTUAL_MODEL_HEADER, modelValue);
+  if (providerValue) result.response.headers.set(NINE_ROUTER_ACTUAL_PROVIDER_HEADER, providerValue);
   return result;
 }
 
@@ -446,8 +461,16 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   const routerSelectedModel = extractRouterSelectedModel(providerResponse);
-  const responseLogContext = routerSelectedModel
-    ? { ...requestLogContext, meta: { ...requestLogContext.meta, routerSelectedModel } }
+  const routerSelectedProvider = extractRouterSelectedProvider(providerResponse);
+  const responseLogContext = routerSelectedModel || routerSelectedProvider
+    ? {
+        ...requestLogContext,
+        meta: {
+          ...requestLogContext.meta,
+          ...(routerSelectedModel ? { routerSelectedModel } : {}),
+          ...(routerSelectedProvider ? { routerSelectedProvider } : {}),
+        },
+      }
     : requestLogContext;
 
   // Provider returned error
@@ -475,7 +498,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, resetsAtMs);
   }
 
-  const sharedCtx = { provider, model, requestedModel, actualModel, routerSelectedModel, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
+  const sharedCtx = { provider, model, requestedModel, actualModel, routerSelectedModel, routerSelectedProvider, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
   const appendLog = (extra) => appendRequestLog({ ...responseLogContext, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 
@@ -484,7 +507,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, customToolNames, trackDone, appendLog });
     if (result) {
       streamController.handleComplete();
-      return attachActualModelHeader(result, actualModel);
+      return attachActualRouteHeaders(result, { actualModel, actualProvider: provider });
     }
   }
 
@@ -492,13 +515,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (!stream) {
     const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, reqLogger, toolNameMap, customToolNames, trackDone, appendLog });
     streamController.handleComplete();
-    return attachActualModelHeader(result, actualModel);
+    return attachActualRouteHeaders(result, { actualModel, actualProvider: provider });
   }
 
   // Streaming response
   const { onStreamComplete, streamDetailId } = buildOnStreamComplete({ ...sharedCtx });
   const result = await handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, userAgent, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId });
-  return attachActualModelHeader(result, actualModel);
+  return attachActualRouteHeaders(result, { actualModel, actualProvider: provider });
 }
 
 export function isTokenExpiringSoon(expiresAt, bufferMs = 5 * 60 * 1000) {

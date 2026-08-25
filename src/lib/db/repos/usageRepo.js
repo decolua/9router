@@ -1297,6 +1297,9 @@ export async function getUsageLogs(filter = {}) {
       selectedModelType: comboNames.has(meta.requestedModel) ? "组合" : "模型",
       actualModel: meta.actualModel || r.model || mappedModel,
       routerSelectedModel: meta.routerSelectedModel || null,
+      routerSelectedProvider: meta.routerSelectedProvider
+        ? (providerNameMap[meta.routerSelectedProvider] || meta.routerSelectedProvider)
+        : null,
       providerId: r.provider,
       provider: providerNameMap[r.provider] || r.provider,
       endpoint: r.endpoint,
