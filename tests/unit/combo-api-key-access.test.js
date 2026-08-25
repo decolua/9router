@@ -58,7 +58,11 @@ describe("combo API key access", () => {
     mocks.getComboModels.mockImplementation(async (model) =>
       model === "deepseek" ? ["ds/deepseek-v4-flash"] : null
     );
-    mocks.getModelInfo.mockResolvedValue({ provider: "deepseek", model: "deepseek-v4-flash" });
+    mocks.getModelInfo.mockImplementation(async (model) =>
+      model === "deepseek"
+        ? { provider: null, model }
+        : { provider: "deepseek", model: "deepseek-v4-flash" }
+    );
     mocks.isApiKeyModelAllowed.mockImplementation(async (_apiKey, model, comboName) => {
       if (comboName === "deepseek") return { allowed: true };
       return { allowed: false, reason: `API key is not allowed to use model: ${model}` };
@@ -111,6 +115,64 @@ describe("combo API key access", () => {
 
     expect(response.status).toBe(403);
     expect(mocks.isApiKeyModelAllowed).toHaveBeenCalledWith("combo-key", "ds/deepseek-v4-flash");
+    expect(mocks.handleChatCore).not.toHaveBeenCalled();
+  });
+
+  it("authorizes a mapped route as a model instead of a combo", async () => {
+    mocks.getComboModels.mockImplementation(async (model) =>
+      model === "auto" ? ["lr/auto"] : null
+    );
+    mocks.getModelInfo.mockImplementation(async (model) =>
+      model === "auto" || model === "lr/auto"
+        ? { provider: "llmrouter", model: "auto" }
+        : { provider: null, model }
+    );
+    mocks.isApiKeyModelAllowed.mockImplementation(async (_apiKey, model, comboName) => {
+      if (model === "auto" && !comboName) return { allowed: true };
+      return { allowed: false, reason: `Unexpected access check: ${model || comboName}` };
+    });
+
+    const request = new Request("http://localhost/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": "combo-key" },
+      body: JSON.stringify({
+        model: "auto",
+        max_tokens: 16,
+        messages: [{ role: "user", content: "Reply with OK only." }],
+      }),
+    });
+
+    const response = await handleChat(request);
+
+    expect(response.status).toBe(200);
+    expect(mocks.isApiKeyModelAllowed).toHaveBeenCalledTimes(1);
+    expect(mocks.isApiKeyModelAllowed).toHaveBeenCalledWith("combo-key", "auto");
+    expect(mocks.handleChatCore).toHaveBeenCalledWith(expect.objectContaining({
+      modelInfo: { provider: "llmrouter", model: "auto" },
+      requestedModelOverride: "auto",
+    }));
+  });
+
+  it("returns invalid model for an unresolved bare name without combo authorization", async () => {
+    mocks.getComboModels.mockResolvedValue(null);
+    mocks.getModelInfo.mockResolvedValue({ provider: null, model: "unknown-model" });
+    mocks.isApiKeyModelAllowed.mockResolvedValue({ allowed: true });
+
+    const request = new Request("http://localhost/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": "combo-key" },
+      body: JSON.stringify({
+        model: "unknown-model",
+        max_tokens: 16,
+        messages: [{ role: "user", content: "Reply with OK only." }],
+      }),
+    });
+
+    const response = await handleChat(request);
+
+    expect(response.status).toBe(400);
+    expect(mocks.isApiKeyModelAllowed).toHaveBeenCalledTimes(1);
+    expect(mocks.isApiKeyModelAllowed).toHaveBeenCalledWith("combo-key", "unknown-model");
     expect(mocks.handleChatCore).not.toHaveBeenCalled();
   });
 });

@@ -91,10 +91,15 @@ export async function handleChat(request, clientRawRequest = null, options = {})
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
-    const comboAccess = await isApiKeyModelAllowed(apiKey, null, modelStr);
-    if (!comboAccess.allowed) {
-      log.warn("AUTH", comboAccess.reason, { model: modelStr });
-      return errorResponse(HTTP_STATUS.FORBIDDEN, comboAccess.reason);
+    // Explicit combos use the combo allowlist. Model mappings may also expand to
+    // multiple candidates, but remain public model names and use the model allowlist.
+    const routeInfo = await getModelInfo(modelStr);
+    const routeAccess = routeInfo.provider
+      ? await isApiKeyModelAllowed(apiKey, modelStr)
+      : await isApiKeyModelAllowed(apiKey, null, modelStr);
+    if (!routeAccess.allowed) {
+      log.warn("AUTH", routeAccess.reason, { model: modelStr });
+      return errorResponse(HTTP_STATUS.FORBIDDEN, routeAccess.reason);
     }
 
     // Check for combo-specific strategy first, fallback to global
@@ -176,13 +181,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
-    const comboAccess = await isApiKeyModelAllowed(apiKey, null, modelStr);
-    if (!comboAccess.allowed) {
-      log.warn("AUTH", comboAccess.reason, { model: modelStr });
-      return errorResponse(HTTP_STATUS.FORBIDDEN, comboAccess.reason);
-    }
     const comboModels = await getComboModels(modelStr);
     if (comboModels) {
+      const comboAccess = await isApiKeyModelAllowed(apiKey, null, modelStr);
+      if (!comboAccess.allowed) {
+        log.warn("AUTH", comboAccess.reason, { model: modelStr });
+        return errorResponse(HTTP_STATUS.FORBIDDEN, comboAccess.reason);
+      }
       const chatSettings = await getSettings();
       // Check for combo-specific strategy first, fallback to global
       const comboStrategies = chatSettings.comboStrategies || {};
