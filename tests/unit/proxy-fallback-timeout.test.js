@@ -20,11 +20,12 @@ describe("proxyAwareFetch proxy attempt timeout", () => {
       },
     }));
 
-    globalThis.fetch = vi.fn()
+    const fetchMock = vi.fn()
       .mockImplementationOnce((url, options) => new Promise((resolve, reject) => {
         options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true });
       }))
       .mockResolvedValueOnce(new Response("ok", { status: 200 }));
+    globalThis.fetch = fetchMock;
 
     vi.resetModules();
     const { proxyAwareFetch } = await import("../../open-sse/utils/proxyFetch.js");
@@ -36,10 +37,10 @@ describe("proxyAwareFetch proxy attempt timeout", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
-    expect(globalThis.fetch.mock.calls[0][1].dispatcher).toBeDefined();
-    expect(globalThis.fetch.mock.calls[1][1].dispatcher).toBeUndefined();
-    expect(globalThis.fetch.mock.calls[1][1].signal).toBe(callerController.signal);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][1].dispatcher).toBeDefined();
+    expect(fetchMock.mock.calls[1][1].dispatcher).toBeUndefined();
+    expect(fetchMock.mock.calls[1][1].signal).toBe(callerController.signal);
     expect(callerController.signal.aborted).toBe(false);
   });
 });
