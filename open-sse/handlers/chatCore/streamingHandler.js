@@ -43,7 +43,7 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 /**
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
-export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, pxpipe, reqTag, log }) {
+export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, onResilienceEvent, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, pxpipe, reqTag, log }) {
   if (onRequestSuccess) {
     Promise.resolve()
       .then(onRequestSuccess)
@@ -69,6 +69,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     const status = providerResponse.status || 502;
     if (log?.errorLine) log.errorLine(reqTag, "✗", `BLOCKED ${status} · ${provider}/${model} · non-SSE (${upstreamContentType})\n    ${shortMsg}`);
     else console.warn(`[STREAM] ${provider} | ${model} | blocked pipe: ${shortMsg} [${status}]`);
+    onResilienceEvent?.("STREAM_FAILED", { provider, model, connectionId, status, origin: "upstream_http" });
     streamController?.handleError?.(new Error(`upstream non-SSE: ${status}`));
     return {
       success: false,
@@ -85,7 +86,11 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
   const onAbortTerminal = isResponsesPassthrough ? buildAbortedResponsesTerminalBytes : null;
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
-  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
+  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs, {
+    onComplete: () => onResilienceEvent?.("STREAM_COMPLETED", { provider, model, connectionId }),
+    onError: (error) => onResilienceEvent?.("STREAM_FAILED", { provider, model, connectionId, status: Number(error?.status) || providerResponse.status || 502, origin: "upstream_http" }),
+    onDisconnect: () => onResilienceEvent?.("CLIENT_ABORTED", { provider, model, connectionId }),
+  });
 
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,

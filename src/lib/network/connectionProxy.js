@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { getProxyPoolById } from "@/models";
 import { getProxyFitnessReady } from "@/lib/db/driver.js";
 import { fitPoolIds, observePoolFitnessVersion } from "open-sse/services/proxyPoolFitness.js";
@@ -54,6 +55,25 @@ export async function resolveConnectionProxyConfig(providerSpecificData = {}, co
     const freebuffScope = providerSpecificData?.proxyPoolScope?.startsWith("freebuff::") === true;
     return { source: "error", proxyPoolId: null, proxyPool: null, connectionProxyEnabled: false, connectionProxyUrl: "", connectionNoProxy: "", noFitPool: freebuffScope, strictProxy: freebuffScope };
   }
+}
+
+function digest(value) {
+  return createHash("sha256").update(value).digest("hex").slice(0, 24);
+}
+
+export function getProxyBucketIdentity(resolvedConfig) {
+  if (!resolvedConfig || typeof resolvedConfig !== "object") return null;
+  const source = resolvedConfig.source;
+  if (source === "error" || (resolvedConfig.noFitPool === true && source === "pool" && !resolvedConfig.proxyPoolId)) return null;
+  if (source === "none") return `direct:${digest("direct-egress")}`;
+  if (["pool", "vercel", "cloudflare", "deno"].includes(source)) {
+    return resolvedConfig.proxyPoolId ? `pool:${String(resolvedConfig.proxyPoolId)}` : null;
+  }
+  if (source === "legacy") {
+    if (!resolvedConfig.connectionProxyEnabled || !resolvedConfig.connectionProxyUrl) return null;
+    return `legacy:${digest(JSON.stringify({ url: resolvedConfig.connectionProxyUrl, noProxy: resolvedConfig.connectionNoProxy || "" }))}`;
+  }
+  return null;
 }
 
 const poolCursors = new Map();

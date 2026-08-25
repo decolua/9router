@@ -102,6 +102,12 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
             <p className="text-sm font-medium truncate">{displayName}</p>
             <div className="flex flex-wrap items-center gap-2 mt-1">
               <QuotaLockView provider={connection} />
+              {connection.resilience && connection.resilience.state !== "CLOSED" && (
+                <Badge variant={connection.resilience.state === "OPEN" ? "error" : "warning"} size="sm" title={`Failures: ${connection.resilience.failureCount}`}>
+                  {connection.resilience.state} ({connection.resilience.failureCount})
+                  {connection.resilience.retryAfterMs > 0 ? ` · ${Math.ceil(connection.resilience.retryAfterMs / 1000)}s` : ""}
+                </Badge>
+              )}
               <Badge variant={getStatusVariant()} size="sm" dot>
                 {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
               </Badge>

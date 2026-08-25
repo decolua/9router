@@ -1,4 +1,5 @@
 import { BACKOFF_CONFIG, ERROR_RULES, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
+import { HARD_QUOTA_PROVIDERS, HARD_QUOTA_LOCK_DURATION_MS, HARD_QUOTA_POLICY_ENABLED } from "../config/hardQuotaConfig.js";
 
 export const ADAPTIVE_FAILURE_ACTION = Object.freeze({
   TERMINAL: "TERMINAL",
@@ -85,6 +86,8 @@ export function classifyAdaptiveFailure(input, nowMs = Date.now()) {
   if (facts.status === 401 || CREDENTIAL_PATTERN.test(error)) return result(ADAPTIVE_FAILURE_ACTION.CREDENTIAL_FAILURE, facts);
   if (ACCOUNT_QUOTA_PATTERN.test(error) && resets.accountExpiry) return result(ADAPTIVE_FAILURE_ACTION.ACCOUNT_QUOTA_LOCK, facts, resets.accountExpiry);
   if (QUOTA_PATTERN.test(error)) return result(ADAPTIVE_FAILURE_ACTION.MODEL_QUOTA_LOCK, facts, resets.modelExpiry || nowMs + Math.min(fallbackCooldown(error, facts.status), MODEL_LOCK_MAX_MS));
+  const hardQuota = HARD_QUOTA_POLICY_ENABLED && facts.status === 429 && HARD_QUOTA_PROVIDERS.includes(facts.provider) && !resets.modelExpiry && isRetryable(error, facts.status);
+  if (hardQuota) return result(ADAPTIVE_FAILURE_ACTION.MODEL_QUOTA_LOCK, facts, nowMs + HARD_QUOTA_LOCK_DURATION_MS);
   if (typeof facts.selectedPoolId === "string" && facts.selectedPoolId && POOL_PROVENANCE.has(facts.provenance)) return result(ADAPTIVE_FAILURE_ACTION.POOL_UNFIT, facts, null, { poolId: facts.selectedPoolId });
   if (isRetryable(error, facts.status)) return result(ADAPTIVE_FAILURE_ACTION.TRANSIENT_RETRY, facts);
   return result(ADAPTIVE_FAILURE_ACTION.TERMINAL, facts);
