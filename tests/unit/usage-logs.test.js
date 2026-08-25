@@ -170,8 +170,7 @@ describe("usage logs", () => {
     expect(analysis.series).toHaveLength(1);
     expect(analysis.series[0]).toMatchObject({
       provider: "smart-router-provider",
-      routedProvider: "routed-provider",
-      model: "routed-model",
+      model: "auto",
       primaryModel: "primary-provider/primary-model",
       requests: 1,
     });

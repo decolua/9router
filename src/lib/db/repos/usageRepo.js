@@ -1011,7 +1011,7 @@ export async function getSmartRoutingCostAnalysis({ startDate, endDate, interval
     const meta = parseJson(row.meta, {}) || {};
     const routedModel = meta.routerSelectedModel || meta.actualModel || row.model;
     const routedProvider = meta.routerSelectedProvider || row.provider;
-    const primary = config.primaryModels?.[routedModel] || config.primaryModels?.[row.model];
+    const primary = config.primaryModels?.[row.model];
     if (!primary || !String(primary).includes("/")) continue;
     const separator = String(primary).indexOf("/");
     const primaryProvider = String(primary).slice(0, separator);
@@ -1029,15 +1029,13 @@ export async function getSmartRoutingCostAnalysis({ startDate, endDate, interval
       getBreakdown(routedProvider, routedModel, tokens, row.timestamp),
       getBreakdown(primaryProvider, primaryModel, tokens, row.timestamp),
     ]);
-    const groupId = `${row.provider}|${row.model}|${routedProvider}|${routedModel}|${primary}`;
+    const groupId = `${row.provider}|${row.model}|${primary}`;
     if (!seriesMap.has(groupId)) {
       seriesMap.set(groupId, {
         id: groupId,
         provider: row.provider,
         providerName: getProviderName(row.provider),
-        routedProvider,
-        routedProviderName: getProviderName(routedProvider),
-        model: routedModel,
+        model: row.model,
         primaryModel: primary,
         primaryModelName: `${getProviderName(primaryProvider)}/${primaryModel}`,
         actual: Array(bucketCount).fill(0),
