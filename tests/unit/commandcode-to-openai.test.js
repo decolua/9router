@@ -124,4 +124,37 @@ describe("commandcode-to-openai — error event", () => {
     expect(text).toContain("Boom");
     expect(text).not.toContain("[object Object]");
   });
+
+  // An upstream error is routinely the FIRST event on the stream -- a 503 arrives
+  // before any token. Every other content branch opens with `role: "assistant"`;
+  // this one did not, so the only delta a client received for a failed turn had no
+  // role on it.
+  it("opens with the assistant role when the error is the first event", () => {
+    const { chunks } = feed([
+      { type: "error", error: { type: "server_error", message: "Service temporarily unavailable", statusCode: 503 } },
+    ]);
+    expect(chunks[0].choices[0].delta.role).toBe("assistant");
+    expect(chunks[0].choices[0].delta.content).toContain("Service temporarily unavailable");
+  });
+
+  it("does not open with a role when content already went out", () => {
+    const { chunks } = feed([
+      { type: "text-delta", text: "Hello" },
+      { type: "error", error: "boom" },
+    ]);
+    expect(chunks[0].choices[0].delta.role).toBe("assistant");
+    expect(chunks[1].choices[0].delta.role).toBeUndefined();
+  });
+
+  // The branch used to leave chunkIndex at 0, so text arriving after the error still
+  // believed it was the opening chunk and sent a second role delta.
+  it("sends the role exactly once when text follows the error", () => {
+    const { chunks } = feed([
+      { type: "error", error: "boom" },
+      { type: "text-delta", text: "recovered" },
+    ]);
+    const withRole = chunks.filter((c) => c.choices[0].delta.role === "assistant");
+    expect(withRole).toHaveLength(1);
+    expect(chunks[0].choices[0].delta.role).toBe("assistant");
+  });
 });
