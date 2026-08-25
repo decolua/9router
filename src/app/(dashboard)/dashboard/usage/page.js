@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { UsageStats, Button, CardSkeleton, SegmentedControl, Toggle, UsageDateRangeControl, getPeriodRange, normalizeUsagePeriod } from "@/shared/components";
+import SmartRoutingAnalysis from "./components/SmartRoutingAnalysis";
 
 const MERGE_MODELS_STORAGE_KEY = "9router:usage-merge-models";
 
@@ -52,7 +53,7 @@ function UsageContent() {
   }, []);
 
   const tabFromUrl = searchParams.get("tab");
-  const activeTab = tabFromUrl && ["overview", "keys", "providers", "models"].includes(tabFromUrl)
+  const activeTab = tabFromUrl && ["overview", "keys", "providers", "models", "smart-routing"].includes(tabFromUrl)
     ? tabFromUrl
     : "overview";
 
@@ -76,7 +77,8 @@ function UsageContent() {
             { value: "overview", label: "使用概览" },
             { value: "keys", label: "密钥分析" },
             { value: "providers", label: "提供商分析" },
-            { value: "models", label: "模型流量" },
+            { value: "models", label: "模型分析" },
+            { value: "smart-routing", label: "智能路由分析" },
           ]}
           value={activeTab}
           onChange={handleTabChange}
@@ -96,11 +98,12 @@ function UsageContent() {
           <UsageStats key={`overview-${refreshToken}`} period={period} setPeriod={setPeriod} startDate={startDate} endDate={endDate} hidePeriodSelector view="overview" />
         </Suspense>
       )}
-      {activeTab !== "overview" && (
+      {activeTab !== "overview" && activeTab !== "smart-routing" && (
         <Suspense fallback={<CardSkeleton />}>
           <UsageStats key={`${activeTab}-${refreshToken}`} period={period} setPeriod={setPeriod} startDate={startDate} endDate={endDate} hidePeriodSelector view={activeTab} mergeModels={mergeModels} />
         </Suspense>
       )}
+      {activeTab === "smart-routing" && <SmartRoutingAnalysis startDate={startDate} endDate={endDate} refreshToken={refreshToken} />}
     </div>
   );
 }

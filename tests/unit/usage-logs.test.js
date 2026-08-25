@@ -134,6 +134,49 @@ describe("usage logs", () => {
     });
   });
 
+  it("counts outer smart-routing requests independently of the configured internal API key", async () => {
+    await settingsRepo.updateSettings({
+      smartRoutingProviders: {
+        "smart-router-provider": {
+          enabled: true,
+          apiKeyId: "internal-router-key-id",
+          primaryModels: { auto: "primary-provider/primary-model" },
+        },
+      },
+    });
+    await db.saveRequestUsage({
+      provider: "smart-router-provider",
+      model: "auto",
+      apiKey: "client-facing-key",
+      timestamp: "2026-08-25T01:00:00.000Z",
+      tokens: { prompt_tokens: 100, completion_tokens: 20 },
+      meta: { routerSelectedProvider: "routed-provider", routerSelectedModel: "routed-model" },
+    });
+    await db.saveRequestUsage({
+      provider: "routed-provider",
+      model: "routed-model",
+      apiKey: "internal-router-key",
+      timestamp: "2026-08-25T01:00:01.000Z",
+      tokens: { prompt_tokens: 100, completion_tokens: 20 },
+    });
+
+    const analysis = await db.getSmartRoutingCostAnalysis({
+      startDate: "2026-08-25T00:00",
+      endDate: "2026-08-26T00:00",
+      intervalMinutes: 60,
+    });
+
+    expect(analysis.totals.requests).toBe(1);
+    expect(analysis.series).toHaveLength(1);
+    expect(analysis.series[0]).toMatchObject({
+      provider: "smart-router-provider",
+      routedProvider: "routed-provider",
+      model: "routed-model",
+      primaryModel: "primary-provider/primary-model",
+      requests: 1,
+    });
+  });
+
   it("keeps API keys with the same prefix separate in key analysis", async () => {
     const timestamp = new Date().toISOString();
     const base = {

@@ -70,6 +70,7 @@ const DEFAULT_SETTINGS = {
   deletedProviderModels: {},
   providerDisplayNames: {},
   providerModelSettings: {},
+  providerModelDescriptions: {},
   smartRoutingProviders: {},
   providerAutoDisableEnabled: false,
   providerAutoDisableTriggers: "invalid api key\nunauthorized\nforbidden\nrevoked\nquota exceeded\ninsufficient balance",

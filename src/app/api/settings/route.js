@@ -15,6 +15,23 @@ const SETTINGS_RESPONSE_HEADERS = {
 // Secrets must never be mass-assigned from request body (CWE-915)
 const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
 const USAGE_DEFAULT_PERIODS = new Set(["today", "24h", "7d", "30d"]);
+const UNSAFE_OBJECT_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+
+function normalizeProviderModelDescriptions(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid provider model descriptions");
+  const normalized = {};
+  for (const [provider, models] of Object.entries(value)) {
+    if (!provider || UNSAFE_OBJECT_KEYS.has(provider) || !models || typeof models !== "object" || Array.isArray(models)) continue;
+    const descriptions = {};
+    for (const [model, description] of Object.entries(models)) {
+      if (!model || UNSAFE_OBJECT_KEYS.has(model) || typeof description !== "string") continue;
+      const text = description.trim();
+      if (text) descriptions[model] = text.slice(0, 500);
+    }
+    if (Object.keys(descriptions).length) normalized[provider] = descriptions;
+  }
+  return normalized;
+}
 
 export async function GET() {
   try {
@@ -53,6 +70,14 @@ export async function PATCH(request) {
     if (Object.prototype.hasOwnProperty.call(body, "providerModelSettings")) {
       try {
         body.providerModelSettings = normalizeProviderModelSettings(body.providerModelSettings);
+      } catch (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "providerModelDescriptions")) {
+      try {
+        body.providerModelDescriptions = normalizeProviderModelDescriptions(body.providerModelDescriptions);
       } catch (error) {
         return NextResponse.json({ error: error.message }, { status: 400 });
       }

@@ -36,7 +36,6 @@ const navItems = [
 const costCenterItems = [
   { id: "usage", href: "/dashboard/usage", label: "流量分析", icon: "bar_chart", section: "成本中心" },
   { id: "traffic-logs", href: "/dashboard/traffic-logs", label: "流量日志", icon: "receipt_long", section: "成本中心" },
-  { id: "smart-routing-analysis", href: "/dashboard/usage/smart-routing", label: "智能路由分析", icon: "query_stats", section: "成本中心" },
   { id: "pricing", href: "/dashboard/settings/pricing", label: "模型定价", icon: "paid", section: "成本中心" },
   { id: "model-mappings", href: "/dashboard/settings/model-mappings", label: "模型映射", icon: "conversion_path", section: "成本中心" },
 ];

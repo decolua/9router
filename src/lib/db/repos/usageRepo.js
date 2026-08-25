@@ -5,6 +5,7 @@ import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
 import { createModelMappingMap, getMappedModelName } from "@/shared/utils/modelMapping.js";
 import { DAY_MS, formatChinaDate, formatChinaDateHour, formatChinaTime, getChinaDateKey, getChinaDayStart, parseChinaDateTime } from "@/shared/utils/chinaTime.js";
+import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers.js";
 import { canonicalizeUsage, normalizeUsage } from "open-sse/utils/usageTracking.js";
 
 function maskApiKey(key) {
@@ -965,22 +966,21 @@ export async function getChartData(period = "7d", range = {}) {
 
 export async function getSmartRoutingCostAnalysis({ startDate, endDate, intervalMinutes = 60 } = {}) {
   const db = await getAdapter();
-  const [{ getSettings }, { getApiKeys }, { getPricingForModel }] = await Promise.all([
+  const [{ getSettings }, { getProviderNodes }, { getPricingForModel }] = await Promise.all([
     import("./settingsRepo.js"),
-    import("./apiKeysRepo.js"),
+    import("./nodesRepo.js"),
     import("./pricingRepo.js"),
   ]);
   const { calculateCostBreakdown } = await import("open-sse/providers/pricing.js");
-  const settings = await getSettings();
+  const [settings, providerNodes] = await Promise.all([getSettings(), getProviderNodes()]);
   const configs = settings.smartRoutingProviders || {};
   const enabledConfigs = Object.entries(configs).filter(([, config]) => config?.enabled && config.apiKeyId);
   if (!enabledConfigs.length) return { buckets: [], series: [], totals: { requests: 0, actualCost: 0, simulatedCost: 0 }, configured: false };
 
-  const apiKeys = await getApiKeys();
-  const apiKeyById = new Map(apiKeys.map((key) => [key.id, key.key]));
-  const configByProvider = new Map(enabledConfigs.map(([provider, config]) => [provider, { ...config, apiKeyValue: apiKeyById.get(config.apiKeyId) }]));
-  const enabledKeyValues = new Set([...configByProvider.values()].map((config) => config.apiKeyValue).filter(Boolean));
-  if (!enabledKeyValues.size) return { buckets: [], series: [], totals: { requests: 0, actualCost: 0, simulatedCost: 0 }, configured: true };
+  const configByProvider = new Map(enabledConfigs);
+  const providerNames = new Map(providerNodes.filter((node) => node.id && node.name).map((node) => [node.id, node.name]));
+  for (const [providerId, name] of Object.entries(settings.providerDisplayNames || {})) providerNames.set(providerId, name);
+  const getProviderName = (provider) => providerNames.get(provider) || AI_PROVIDERS[provider]?.name || getProviderByAlias(provider)?.name || provider;
 
   const start = startDate ? parseChinaDateTime(startDate).getTime() : Date.now() - 7 * DAY_MS;
   const end = endDate ? parseChinaDateTime(endDate).getTime() : Date.now();
@@ -1007,7 +1007,7 @@ export async function getSmartRoutingCostAnalysis({ startDate, endDate, interval
 
   for (const row of rows) {
     const config = configByProvider.get(row.provider);
-    if (!config || row.apiKey !== config.apiKeyValue || !enabledKeyValues.has(row.apiKey)) continue;
+    if (!config) continue;
     const meta = parseJson(row.meta, {}) || {};
     const routedModel = meta.routerSelectedModel || meta.actualModel || row.model;
     const routedProvider = meta.routerSelectedProvider || row.provider;
@@ -1029,15 +1029,17 @@ export async function getSmartRoutingCostAnalysis({ startDate, endDate, interval
       getBreakdown(routedProvider, routedModel, tokens, row.timestamp),
       getBreakdown(primaryProvider, primaryModel, tokens, row.timestamp),
     ]);
-    if (!actual && !simulated) continue;
-    const groupId = `${row.provider}|${routedProvider}|${routedModel}`;
+    const groupId = `${row.provider}|${row.model}|${routedProvider}|${routedModel}|${primary}`;
     if (!seriesMap.has(groupId)) {
       seriesMap.set(groupId, {
         id: groupId,
         provider: row.provider,
+        providerName: getProviderName(row.provider),
         routedProvider,
+        routedProviderName: getProviderName(routedProvider),
         model: routedModel,
         primaryModel: primary,
+        primaryModelName: `${getProviderName(primaryProvider)}/${primaryModel}`,
         actual: Array(bucketCount).fill(0),
         simulated: Array(bucketCount).fill(0),
         requests: 0,

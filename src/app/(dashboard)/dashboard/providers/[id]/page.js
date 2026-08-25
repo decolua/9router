@@ -79,6 +79,9 @@ export default function ProviderDetailPage() {
   const [providerTestModel, setProviderTestModel] = useState("");
   const [providerModelConfigSaving, setProviderModelConfigSaving] = useState(false);
   const [providerModelConfigStatus, setProviderModelConfigStatus] = useState("");
+  const [modelDescriptions, setModelDescriptions] = useState({});
+  const [modelDescriptionEditor, setModelDescriptionEditor] = useState(null);
+  const [modelDescriptionSaving, setModelDescriptionSaving] = useState(false);
   const [smartRoutingConfig, setSmartRoutingConfig] = useState({ enabled: false, apiKeyId: "", primaryModels: {} });
   const [apiKeys, setApiKeys] = useState([]);
   const [systemModels, setSystemModels] = useState([]);
@@ -306,6 +309,7 @@ export default function ProviderDetailPage() {
       setProviderTestModel(configuredModelSettings?.testModel ?? legacyModelSettings.testModel ?? "");
       const storageAlias = isCompatible ? providerId : providerAlias;
       setDeletedModelIds(Array.isArray(settingsData.deletedProviderModels?.[storageAlias]) ? settingsData.deletedProviderModels[storageAlias] : []);
+      setModelDescriptions(settingsData.providerModelDescriptions?.[storageAlias] || {});
       if (proxyPoolsRes.ok) {
         setProxyPools(proxyPoolsData.proxyPools || []);
       }
@@ -336,7 +340,7 @@ export default function ProviderDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [providerId, isCompatible]);
+  }, [providerId, isCompatible, providerAlias]);
 
   const handleUpdateNode = async (formData) => {
     try {
@@ -511,6 +515,33 @@ export default function ProviderDetailPage() {
       notify.error(error.message || "保存智能路由配置失败");
     } finally {
       setSmartRoutingSaving(false);
+    }
+  };
+
+  const saveModelDescription = async () => {
+    if (!modelDescriptionEditor?.modelId) return;
+    setModelDescriptionSaving(true);
+    try {
+      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
+      const settings = await settingsRes.json();
+      if (!settingsRes.ok) throw new Error(settings.error || "读取模型说明失败");
+      const providerModelDescriptions = { ...(settings.providerModelDescriptions || {}) };
+      const descriptions = { ...(providerModelDescriptions[providerStorageAlias] || {}) };
+      const description = modelDescriptionEditor.value.trim();
+      if (description) descriptions[modelDescriptionEditor.modelId] = description;
+      else delete descriptions[modelDescriptionEditor.modelId];
+      if (Object.keys(descriptions).length) providerModelDescriptions[providerStorageAlias] = descriptions;
+      else delete providerModelDescriptions[providerStorageAlias];
+      const response = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ providerModelDescriptions }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "保存模型说明失败");
+      setModelDescriptions(data.providerModelDescriptions?.[providerStorageAlias] || descriptions);
+      setModelDescriptionEditor(null);
+      notify.success(description ? "模型说明已保存" : "模型说明已清除");
+    } catch (error) {
+      notify.error(error.message || "保存模型说明失败");
+    } finally {
+      setModelDescriptionSaving(false);
     }
   };
 
@@ -1264,6 +1295,8 @@ export default function ProviderDetailPage() {
           onTestModel={handleTestModel}
           modelTestResults={modelTestResults}
           testingModelIds={testingModelIds}
+          modelDescriptions={modelDescriptions}
+          onEditModelDescription={(modelId) => setModelDescriptionEditor({ modelId, value: modelDescriptions[modelId] || "" })}
         />
       );
     }
@@ -1310,6 +1343,8 @@ export default function ProviderDetailPage() {
             isCustom
             isFree={false}
             caps={getCaps(`${providerId}/${model.id}`)}
+            description={modelDescriptions[model.id] || ""}
+            onEditDescription={() => setModelDescriptionEditor({ modelId: model.id, value: modelDescriptions[model.id] || "" })}
           />
         ))}
 
@@ -1335,6 +1370,8 @@ export default function ProviderDetailPage() {
               isFree={model.isFree}
               onDisable={() => handleDisableModel(model.id)}
               caps={getCaps(`${providerId}/${model.id}`)}
+              description={modelDescriptions[model.id] || ""}
+              onEditDescription={() => setModelDescriptionEditor({ modelId: model.id, value: modelDescriptions[model.id] || "" })}
             />
           );
         })}
@@ -1907,6 +1944,21 @@ export default function ProviderDetailPage() {
       </Card>
 
       {bulkActionModal}
+
+      <Modal
+        isOpen={!!modelDescriptionEditor}
+        onClose={() => setModelDescriptionEditor(null)}
+        title="配置模型说明"
+        size="md"
+        footer={<><Button variant="ghost" onClick={() => setModelDescriptionEditor(null)} disabled={modelDescriptionSaving}>取消</Button><Button onClick={saveModelDescription} loading={modelDescriptionSaving}>保存</Button></>}
+      >
+        <div className="flex flex-col gap-3">
+          <code className="rounded-md bg-sidebar px-3 py-2 text-xs text-text-muted">{providerDisplayAlias}/{modelDescriptionEditor?.modelId || ""}</code>
+          <label className="text-sm font-medium text-text-main" htmlFor="model-description-input">模型说明</label>
+          <textarea id="model-description-input" rows={5} maxLength={500} value={modelDescriptionEditor?.value || ""} onChange={(event) => setModelDescriptionEditor((current) => ({ ...current, value: event.target.value }))} placeholder="说明模型用途、能力或适用场景" className="w-full resize-y rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-text-main outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" />
+          <p className="text-right text-xs text-text-muted">{modelDescriptionEditor?.value?.length || 0}/500</p>
+        </div>
+      </Modal>
 
       {/* Modals */}
       {providerId === "kiro" ? (

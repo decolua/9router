@@ -260,7 +260,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     }
     if (view === "models") {
       return {
-        title: "模型流量明细",
+        title: "模型分析明细",
         columns: MODEL_COLUMNS,
         groupedData: groupDataByKey(sortData(stats.byModel, {}, sortBy, sortOrder), mergeModels ? "rawModel" : "providerModel"),
         tableType: "model",

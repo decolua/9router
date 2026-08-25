@@ -6,7 +6,7 @@ import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getModelMappings } from "@/lib/localDb";
+import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getModelMappings, getSettings } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -285,6 +285,20 @@ export async function buildModelsList(kindFilter, options = {}) {
   }
   const isDisabled = (alias, modelId) => Array.isArray(disabledByAlias[alias]) && disabledByAlias[alias].includes(modelId);
 
+  let providerModelDescriptions = {};
+  try {
+    providerModelDescriptions = (await getSettings()).providerModelDescriptions || {};
+  } catch (e) {
+    console.log("Could not fetch provider model descriptions");
+  }
+  const getDescription = (aliases, modelId) => {
+    for (const alias of aliases) {
+      const description = providerModelDescriptions?.[alias]?.[modelId];
+      if (typeof description === "string" && description.trim()) return description.trim();
+    }
+    return "";
+  };
+
   const activeConnectionByProvider = new Map();
   for (const conn of connections) {
     if (!activeConnectionByProvider.has(conn.provider)) {
@@ -319,13 +333,16 @@ export async function buildModelsList(kindFilter, options = {}) {
       for (const model of providerModels) {
         if (!kindFilter.includes(modelKind(model))) continue;
         if (isDisabled(alias, model.id)) continue;
-        models.push({
+        const entry = {
           id: `${alias}/${model.id}`,
           object: "model",
           owned_by: alias,
           upstream_provider: providerId,
           upstream_model: model.id,
-        });
+        };
+        const description = getDescription([alias, providerId], model.id);
+        if (description) entry.description = description;
+        models.push(entry);
       }
     }
 
@@ -339,13 +356,16 @@ export async function buildModelsList(kindFilter, options = {}) {
       const modelId = String(customModel.id).trim();
       if (!modelId) continue;
 
-      models.push({
+      const entry = {
         id: `${providerAlias}/${modelId}`,
         object: "model",
         owned_by: providerAlias,
         upstream_provider: aliasToProviderId[providerAlias] || providerAlias,
         upstream_model: modelId,
-      });
+      };
+      const description = getDescription([providerAlias, entry.upstream_provider], modelId);
+      if (description) entry.description = description;
+      models.push(entry);
     }
   } else {
     for (const [providerId, conn] of activeConnectionByProvider.entries()) {
@@ -485,6 +505,8 @@ export async function buildModelsList(kindFilter, options = {}) {
           upstream_provider: providerId,
           upstream_model: modelId,
         };
+        const description = getDescription([outputAlias, staticAlias, providerId], modelId);
+        if (description) model.description = description;
         // Live-catalog resolvers (kiro/qoder/github/clinepass) mostly only return
         // { id, name } — no per-model capability data. Fall back to the same
         // pattern-matched capabilities the dashboard uses (useModelCaps.js) so
