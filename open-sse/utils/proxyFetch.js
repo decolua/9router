@@ -213,6 +213,19 @@ function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
   return normalizeProxyUrl(proxyUrlRaw);
 }
 
+function withProxyAttemptTimeout(options, proxyOptions) {
+  const timeoutMs = Number(proxyOptions?.proxyAttemptTimeoutMs);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return options;
+
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  return {
+    ...options,
+    signal: options.signal
+      ? AbortSignal.any([options.signal, timeoutSignal])
+      : timeoutSignal,
+  };
+}
+
 /**
  * Create proxy dispatcher lazily (undici-compatible)
  */
@@ -316,7 +329,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       // Proxy resolves DNS externally (not affected by /etc/hosts) — use proxy directly
       try {
         const dispatcher = await getDispatcher(proxyUrl);
-        return await originalFetch(url, { ...options, dispatcher });
+        return await originalFetch(url, { ...withProxyAttemptTimeout(options, proxyOptions), dispatcher });
       } catch (proxyError) {
         if (proxyOptions?.strictProxy === true) {
           throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
@@ -337,7 +350,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   if (proxyUrl) {
     try {
       const dispatcher = await getDispatcher(proxyUrl);
-      return await originalFetch(url, { ...options, dispatcher });
+      return await originalFetch(url, { ...withProxyAttemptTimeout(options, proxyOptions), dispatcher });
     } catch (proxyError) {
       // If strictProxy is enabled, fail hard instead of falling back to direct
       if (proxyOptions?.strictProxy === true) {

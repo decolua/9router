@@ -44,6 +44,9 @@ jobs:
           unit/api-key-group-access.test.js
           unit/provider-auto-recovery.test.js
           unit/provider-models-url.test.js
+          unit/model-test-routing.test.js
+          unit/opencode-go-models.test.js
+          unit/proxy-fallback-timeout.test.js
           unit/dashboard-guard.test.js
           --reporter=verbose
 

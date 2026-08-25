@@ -52,6 +52,7 @@ export default function ProviderDetailPage() {
   const [customModels, setCustomModels] = useState([]);
   const [headerImgError, setHeaderImgError] = useState(false);
   const [modelTestResults, setModelTestResults] = useState({});
+  const [modelTestErrors, setModelTestErrors] = useState({});
   const [modelsTestError, setModelsTestError] = useState("");
   const [testingModelIds, setTestingModelIds] = useState(() => new Set());
   const [batchTestingModels, setBatchTestingModels] = useState(false);
@@ -1169,11 +1170,13 @@ export default function ProviderDetailPage() {
   );
 
   const requestModelTest = async (modelId) => {
+    const connectionId = connections.find((connection) => connection.isActive !== false)?.id;
     const res = await fetch("/api/models/test", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model: `${providerStorageAlias}/${modelId}`,
+        connectionId,
       }),
     });
     const data = await res.json();
@@ -1197,9 +1200,11 @@ export default function ProviderDetailPage() {
     try {
       const data = await requestModelTest(modelId);
       setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
+      setModelTestErrors((prev) => ({ ...prev, [modelId]: data.ok ? "" : (data.error || "Model not reachable") }));
       setModelsTestError(data.ok ? "" : (data.error || "Model not reachable"));
     } catch {
       setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
+      setModelTestErrors((prev) => ({ ...prev, [modelId]: "Network error" }));
       setModelsTestError("Network error");
     } finally {
       updateTestingModels([modelId], false);
@@ -1232,6 +1237,11 @@ export default function ProviderDetailPage() {
 
     setBatchTestingModels(true);
     setModelsTestError("");
+    setModelTestErrors((prev) => {
+      const next = { ...prev };
+      for (const modelId of modelIds) delete next[modelId];
+      return next;
+    });
     updateTestingModels(modelIds, true);
     setModelTestResults((prev) => {
       const next = { ...prev };
@@ -1240,9 +1250,8 @@ export default function ProviderDetailPage() {
     });
 
     let passed = 0;
-    let firstError = "";
     try {
-      const concurrency = 4;
+      const concurrency = providerId === "opencode-go" ? 2 : 4;
       for (let index = 0; index < modelIds.length; index += concurrency) {
         const batch = modelIds.slice(index, index + concurrency);
         const results = await Promise.all(batch.map(async (modelId) => {
@@ -1258,14 +1267,18 @@ export default function ProviderDetailPage() {
           for (const { modelId, data } of results) next[modelId] = data.ok ? "ok" : "error";
           return next;
         });
+        setModelTestErrors((prev) => {
+          const next = { ...prev };
+          for (const { modelId, data } of results) next[modelId] = data.ok ? "" : (data.error || "Model not reachable");
+          return next;
+        });
         for (const { data } of results) {
           if (data.ok) passed += 1;
-          else if (!firstError) firstError = data.error || "Model not reachable";
         }
       }
       const failed = modelIds.length - passed;
       if (failed > 0) {
-        setModelsTestError(`${failed} 个模型测试失败${firstError ? `：${firstError}` : ""}`);
+        setModelsTestError(`${failed} 个模型测试失败，请查看对应模型的错误详情。`);
         notify.warning(`批量测试完成：${passed} 个成功，${failed} 个失败`);
       } else {
         notify.success(`批量测试完成：${passed} 个模型全部可用`);
@@ -1294,6 +1307,7 @@ export default function ProviderDetailPage() {
           isAnthropic={isAnthropicCompatible}
           onTestModel={handleTestModel}
           modelTestResults={modelTestResults}
+          modelTestErrors={modelTestErrors}
           testingModelIds={testingModelIds}
           modelDescriptions={modelDescriptions}
           onEditModelDescription={(modelId) => setModelDescriptionEditor({ modelId, value: modelDescriptions[modelId] || "" })}
@@ -1338,6 +1352,7 @@ export default function ProviderDetailPage() {
               }
             }}
             testStatus={modelTestResults[model.id]}
+            testError={modelTestErrors[model.id]}
             onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
             isTesting={testingModelIds.has(model.id)}
             isCustom
@@ -1365,6 +1380,7 @@ export default function ProviderDetailPage() {
               onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
               onDeleteAlias={() => handleDeleteBuiltInModel(model.id)}
               testStatus={modelTestResults[model.id]}
+              testError={modelTestErrors[model.id]}
               onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelIds.has(model.id)}
               isFree={model.isFree}

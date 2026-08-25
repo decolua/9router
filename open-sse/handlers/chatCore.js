@@ -350,6 +350,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     connectionProxyUrl: credentials?.providerSpecificData?.connectionProxyUrl || "",
     connectionNoProxy: credentials?.providerSpecificData?.connectionNoProxy || "",
     vercelRelayUrl: credentials?.providerSpecificData?.vercelRelayUrl || "",
+    proxyAttemptTimeoutMs: clientRawRequest?.headers?.["x-9r-internal-job"] === "provider-model-test" ? 5000 : undefined,
   };
 
   if (proxyOptions.vercelRelayUrl) {

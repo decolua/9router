@@ -3,6 +3,7 @@ import { UPDATER_CONFIG } from "@/shared/constants/config";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 
 const CLI_TOKEN_SALT = "9r-cli-auth";
+const LLM_MODEL_TEST_TIMEOUT_MS = 45000;
 
 function createSilentWavFile() {
   const sampleRate = 16000;
@@ -153,7 +154,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       stream: false,
       messages: [{ role: "user", content: "hi" }],
     }),
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(LLM_MODEL_TEST_TIMEOUT_MS),
   });
   const latencyMs = Date.now() - start;
 

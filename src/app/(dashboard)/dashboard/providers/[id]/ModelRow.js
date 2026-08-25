@@ -1,7 +1,7 @@
 import PropTypes from "prop-types";
 import { CapacityBadges } from "@/shared/components";
 
-export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable, caps, thinkingSuffix, description, onEditDescription }) {
+export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, testError, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable, caps, thinkingSuffix, description, onEditDescription }) {
   const displayModel = thinkingSuffix ? `${fullModel}(${thinkingSuffix})` : fullModel;
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
@@ -30,6 +30,9 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
             {(description || model.name) && <span className="max-w-[320px] truncate text-[9px] italic text-text-muted/70" title={description || model.name}>{description || model.name}</span>}
             <CapacityBadges caps={caps} colorOverride="text-text-muted/70" size={12} />
           </span>
+          {testStatus === "error" && testError && (
+            <span className="max-w-[72vw] truncate pl-1 text-[9px] text-red-500 sm:max-w-[360px]" title={testError}>{testError}</span>
+          )}
         </div>
         {onEditDescription && (
           <button onClick={onEditDescription} className="shrink-0 rounded p-0.5 text-text-muted hover:bg-sidebar hover:text-primary" title="配置模型说明">
@@ -96,6 +99,7 @@ ModelRow.propTypes = {
   copied: PropTypes.string,
   onCopy: PropTypes.func.isRequired,
   testStatus: PropTypes.oneOf(["ok", "error"]),
+  testError: PropTypes.string,
   isCustom: PropTypes.bool,
   isFree: PropTypes.bool,
   onDeleteAlias: PropTypes.func,

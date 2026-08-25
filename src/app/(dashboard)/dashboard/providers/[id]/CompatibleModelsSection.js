@@ -6,7 +6,7 @@ import { Button } from "@/shared/components";
 import { ConfirmModal } from "@/shared/components/Modal";
 import { useNotificationStore } from "@/store/notificationStore";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
-function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting, description, onEditDescription }) {
+function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, testError, isTesting, description, onEditDescription }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
@@ -30,6 +30,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium truncate">{modelId}</p>
         {description && <p className="mt-1 truncate text-xs text-text-muted" title={description}>{description}</p>}
+        {testStatus === "error" && testError && <p className="mt-1 truncate text-xs text-red-500" title={testError}>{testError}</p>}
         <div className="flex items-center gap-1 mt-1">
           <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
           <div className="relative group/btn">
@@ -77,7 +78,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
   );
 }
 
-export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel, connections, isAnthropic, onTestModel, modelTestResults, testingModelIds, modelDescriptions, onEditModelDescription }) {
+export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel, connections, isAnthropic, onTestModel, modelTestResults, modelTestErrors = {}, testingModelIds, modelDescriptions, onEditModelDescription }) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -196,6 +197,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
               onDeleteAlias={() => source === "custom" ? onDeleteCustomModel(id) : onDeleteAlias(alias)}
               onTest={connections.length > 0 ? () => onTestModel(id) : undefined}
               testStatus={modelTestResults[id]}
+              testError={modelTestErrors[id]}
               isTesting={testingModelIds.has(id)}
               description={modelDescriptions[id] || ""}
               onEditDescription={() => onEditModelDescription(id)}
@@ -225,6 +227,7 @@ CompatibleModelsSection.propTypes = {
   isAnthropic: PropTypes.bool,
   onTestModel: PropTypes.func.isRequired,
   modelTestResults: PropTypes.object.isRequired,
+  modelTestErrors: PropTypes.object,
   testingModelIds: PropTypes.instanceOf(Set).isRequired,
   modelDescriptions: PropTypes.object.isRequired,
   onEditModelDescription: PropTypes.func.isRequired,

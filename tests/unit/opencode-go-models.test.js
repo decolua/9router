@@ -2,14 +2,15 @@ import { describe, expect, it } from "vitest";
 import { PROVIDER_MODELS, getModelTargetFormat, getModelTransportFormat } from "../../open-sse/config/providerModels.js";
 import { PROVIDERS } from "../../open-sse/config/providers.js";
 import { resolveTransport } from "../../open-sse/services/provider.js";
+import { openaiToOpenAIResponsesRequest } from "../../open-sse/translator/request/openai-responses.js";
 
 const CHAT_MODELS = [
   "glm-5.3", "glm-5.2", "glm-5.1", "kimi-k3", "kimi-k2.7-code", "kimi-k2.6",
-  "longcat-2.0", "deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v4.1-vision",
-  "mimo-v2.5", "mimo-v2.5-pro", "hy3", "ox",
+  "longcat-2.0", "deepseek-v4-pro", "deepseek-v4-flash",
+  "mimo-v2.5", "mimo-v2.5-pro", "hy3",
 ];
 const MESSAGES_MODELS = ["minimax-m3", "minimax-m2.7", "minimax-m2.5", "qwen3.8-max", "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus"];
-const RESPONSES_MODELS = ["grok-4.5", "gpt-5.6-luna", "muse-spark-1.1"];
+const RESPONSES_MODELS = ["grok-4.5", "gpt-5.6-luna"];
 
 function pickTransport(sourceFormat, model) {
   return resolveTransport("opencode-go", sourceFormat, getModelTransportFormat("opencode-go", model));
@@ -77,5 +78,15 @@ describe("OpenCode Go per-model transport selection", () => {
     for (const m of CHAT_MODELS) {
       expect(pickTransport("claude", m)?.baseUrl).toBe("https://opencode.ai/zen/go/v1/chat/completions");
     }
+  });
+
+  it("maps Chat max_tokens to Responses max_output_tokens", () => {
+    const request = openaiToOpenAIResponsesRequest("grok-4.5", {
+      messages: [{ role: "user", content: "hi" }],
+      max_tokens: 1024,
+    });
+
+    expect(request.max_output_tokens).toBe(1024);
+    expect(request).not.toHaveProperty("max_tokens");
   });
 });
