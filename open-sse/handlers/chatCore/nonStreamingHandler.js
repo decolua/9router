@@ -281,7 +281,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, requestedModel, actualModel, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, requestedModel, actualModel, routerSelectedModel, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
@@ -319,7 +319,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   const usage = extractUsageFromResponse(responseBody);
   const totalLatency = Date.now() - requestStartTime;
   appendLog({ tokens: usage, status: "200 OK" });
-  saveUsageStats({ provider, model, requestedModel, actualModel, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, latency: { ttft: totalLatency, total: totalLatency }, silent: true });
+  saveUsageStats({ provider, model, requestedModel, actualModel, routerSelectedModel, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, latency: { ttft: totalLatency, total: totalLatency }, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: totalLatency } }));
 
   const translatedResponse = needsTranslation(targetFormat, sourceFormat)

@@ -248,6 +248,7 @@ describe("usage logs", () => {
       meta: {
         requestedModel: "combo-name",
         actualModel: "upstream/provider-model",
+        routerSelectedModel: "glm",
       },
     });
 
@@ -256,6 +257,7 @@ describe("usage logs", () => {
     expect(result.logs[0]).toMatchObject({
       selectedModel: "combo-name",
       actualModel: "upstream/provider-model",
+      routerSelectedModel: "glm",
     });
   });
 

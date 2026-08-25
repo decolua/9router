@@ -30,6 +30,15 @@ import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
+const LLMROUTER_SELECTED_MODEL_HEADER = "x-llmrouter-selected-model";
+const MAX_ROUTER_SELECTED_MODEL_LENGTH = 256;
+
+export function extractRouterSelectedModel(response) {
+  const value = response?.headers?.get?.(LLMROUTER_SELECTED_MODEL_HEADER)?.trim();
+  if (!value || value.length > MAX_ROUTER_SELECTED_MODEL_LENGTH) return null;
+  return /^[\x20-\x7e]+$/.test(value) ? value : null;
+}
+
 /**
  * Core chat handler - shared between SSE and Worker
  * @param {object} options.body - Request body
@@ -427,11 +436,16 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
   }
 
+  const routerSelectedModel = extractRouterSelectedModel(providerResponse);
+  const responseLogContext = routerSelectedModel
+    ? { ...requestLogContext, meta: { ...requestLogContext.meta, routerSelectedModel } }
+    : requestLogContext;
+
   // Provider returned error
   if (!providerResponse.ok) {
     trackPendingRequest(model, provider, connectionId, false, true);
     const { statusCode, message, resetsAtMs } = await parseUpstreamError(providerResponse, executor);
-    appendRequestLog({ ...requestLogContext, status: `FAILED ${statusCode}` }).catch(() => { });
+    appendRequestLog({ ...responseLogContext, status: `FAILED ${statusCode}` }).catch(() => { });
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
       latency: { ttft: 0, total: Date.now() - requestStartTime },
@@ -452,8 +466,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, resetsAtMs);
   }
 
-  const sharedCtx = { provider, model, requestedModel, actualModel, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
-  const appendLog = (extra) => appendRequestLog({ ...requestLogContext, ...extra }).catch(() => { });
+  const sharedCtx = { provider, model, requestedModel, actualModel, routerSelectedModel, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
+  const appendLog = (extra) => appendRequestLog({ ...responseLogContext, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 
   // Provider forced streaming but client wants JSON
