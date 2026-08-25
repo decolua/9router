@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { PROVIDER_MODELS } from "../../open-sse/config/providerModels.js";
+import {
+  getDefaultModel,
+  getModelsByProviderId,
+  PROVIDER_MODELS,
+} from "../../open-sse/config/providerModels.js";
 import { PROVIDERS } from "../../open-sse/config/providers.js";
 import { DefaultExecutor } from "../../open-sse/executors/default.js";
 import REGISTRY from "../../open-sse/providers/registry/index.js";
+import { parseModel, resolveProviderAlias } from "../../open-sse/services/model.js";
 import { resolveTransport } from "../../open-sse/services/provider.js";
 import { AI_PROVIDERS, FREE_TIER_PROVIDERS } from "../../src/shared/constants/providers.js";
 
@@ -12,10 +17,23 @@ describe("AgentRouter provider", () => {
 
   it("is exposed as a free-tier API-key provider", () => {
     expect(entry).toBeDefined();
+    expect(entry.alias).toBe("agr");
     expect(entry.category).toBe("freeTier");
     expect(entry.passthroughModels).toBe(true);
     expect(FREE_TIER_PROVIDERS.agentrouter).toBeDefined();
     expect(AI_PROVIDERS.agentrouter.name).toBe("AgentRouter");
+    expect(AI_PROVIDERS.agentrouter.alias).toBe("agr");
+  });
+
+  it("routes models through the agr/ prefix while retaining the provider ID", () => {
+    expect(resolveProviderAlias("agr")).toBe("agentrouter");
+    expect(resolveProviderAlias("agentrouter")).toBe("agentrouter");
+    expect(parseModel("agr/claude-opus-4-8")).toEqual({
+      provider: "agentrouter",
+      model: "claude-opus-4-8",
+      isAlias: false,
+      providerAlias: "agr",
+    });
   });
 
   it("uses the Claude Code wire image by default", () => {
@@ -71,10 +89,12 @@ describe("AgentRouter provider", () => {
   });
 
   it("seeds the current OmniRoute model catalog while allowing passthrough IDs", () => {
-    expect(PROVIDER_MODELS.agentrouter.map((model) => model.id)).toEqual([
+    expect(PROVIDER_MODELS.agr.map((model) => model.id)).toEqual([
       "claude-opus-4-8",
       "claude-opus-5",
       "gpt-5.6-sol",
     ]);
+    expect(getDefaultModel("agr")).toBe("claude-opus-4-8");
+    expect(getModelsByProviderId("agentrouter")).toBe(PROVIDER_MODELS.agr);
   });
 });

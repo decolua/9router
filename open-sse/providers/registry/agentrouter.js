@@ -8,7 +8,7 @@ const CODEX_CLI_HEADERS = {
 export default {
   id: "agentrouter",
   priority: 15,
-  alias: "agentrouter",
+  alias: "agr",
   display: {
     name: "AgentRouter",
     icon: "router",

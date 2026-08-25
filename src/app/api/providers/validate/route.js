@@ -321,7 +321,8 @@ export async function POST(request) {
             });
             isValid = res.status !== 401 && res.status !== 403;
           } else {
-            const testModel = getDefaultModel(provider) || "claude-sonnet-4-20250514";
+            const modelAlias = provider === "agentrouter" ? "agr" : provider;
+            const testModel = getDefaultModel(modelAlias) || "claude-sonnet-4-20250514";
             const res = await fetch(validationUrl, {
               method: "POST",
               headers: {
