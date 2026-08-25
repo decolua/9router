@@ -24,6 +24,9 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { routeFiniteFreebuff } from "./freebuffRouting.js";
+import { resolveConnectionProxyConfig, getProxyBucketIdentity } from "@/lib/network/connectionProxy";
+import { acquireAccountSlot } from "open-sse/services/accountSemaphore.js";
+import { evaluateCircuit, recordCircuitOutcome } from "open-sse/services/circuitBreaker.js";
 
 /**
  * Handle chat completion request
@@ -310,6 +313,33 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
     }
 
+    const resolvedProxy = await resolveConnectionProxyConfig(refreshedCredentials.providerSpecificData || {}, credentials.connectionId);
+    const bucket = getProxyBucketIdentity(resolvedProxy);
+    if (!bucket) {
+      excludeConnectionIds.add(credentials.connectionId);
+      lastError = "Unable to resolve connection egress bucket";
+      lastStatus = HTTP_STATUS.SERVICE_UNAVAILABLE;
+      continue;
+    }
+    const gate = evaluateCircuit(provider, bucket);
+    if (!gate.allowed) {
+      excludeConnectionIds.add(credentials.connectionId);
+      lastError = "Selected provider route is cooling down";
+      lastStatus = HTTP_STATUS.SERVICE_UNAVAILABLE;
+      continue;
+    }
+    let releaseSlot = null;
+    let resilienceTerminalEventFired = false;
+    try {
+      releaseSlot = await acquireAccountSlot({ provider, connectionId: credentials.connectionId, bucket, maxConcurrency: refreshedCredentials.providerSpecificData?.maxConcurrency, warn: (message) => log.warn("RESILIENCE", message) });
+    } catch (error) {
+      log.warn("RESILIENCE", `${provider}/${model} account capacity unavailable; trying next account`);
+      excludeConnectionIds.add(credentials.connectionId);
+      lastError = error.message;
+      lastStatus = HTTP_STATUS.SERVICE_UNAVAILABLE;
+      continue;
+    }
+
     // Use shared chatCore
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
@@ -349,10 +379,23 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       },
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
-      }
-    });
+      },
+      onResilienceEvent: (event, details) => {
+          if (event === "DISPATCH_FAILED" || event === "STREAM_COMPLETED" || event === "STREAM_FAILED" || event === "CLIENT_ABORTED" || event === "NON_STREAM_COMPLETED") {
+            resilienceTerminalEventFired = true;
+            releaseSlot?.();
+           releaseSlot = null;
+         }
+         recordCircuitOutcome({ provider, bucket, outcome: event, ...details });
+       }
+      });
 
-    if (result.success) return result.response;
+      if (!resilienceTerminalEventFired && !result.success && releaseSlot) {
+        releaseSlot();
+       releaseSlot = null;
+     }
+
+     if (result.success) return result.response;
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
@@ -371,8 +414,29 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
 async function dispatchChatAttempt({ body, provider, model, credentials, log, clientRawRequest, request, apiKey, userAgent }) {
   const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+  const proxyData = refreshedCredentials.providerSpecificData || {};
+  const resolvedProxy = proxyData.proxyPoolId || proxyData.connectionProxyPoolId
+    ? { source: proxyData.vercelRelayUrl ? "vercel" : "pool", proxyPoolId: proxyData.proxyPoolId || proxyData.connectionProxyPoolId }
+    : await resolveConnectionProxyConfig(proxyData, credentials.connectionId);
+  const bucket = getProxyBucketIdentity(resolvedProxy);
+  if (!bucket) return { success: false, status: HTTP_STATUS.SERVICE_UNAVAILABLE, error: "Unable to resolve Freebuff proxy bucket", poolScoped: { poolId: credentials.providerSpecificData?.proxyPoolId } };
+  const gate = evaluateCircuit(provider, bucket);
+  if (!gate.allowed) return { success: false, status: HTTP_STATUS.SERVICE_UNAVAILABLE, error: "Freebuff proxy pool circuit is cooling down", poolScoped: { poolId: credentials.providerSpecificData?.proxyPoolId } };
+  let releaseSlot;
+  try {
+    releaseSlot = await acquireAccountSlot({ provider, connectionId: credentials.connectionId, bucket, maxConcurrency: refreshedCredentials.providerSpecificData?.maxConcurrency, warn: (message) => log.warn("RESILIENCE", message) });
+  } catch (error) {
+    return { success: false, status: HTTP_STATUS.SERVICE_UNAVAILABLE, error: error.message, poolScoped: { poolId: credentials.providerSpecificData?.proxyPoolId } };
+  }
+  const onResilienceEvent = (event, details) => {
+    if (["DISPATCH_FAILED", "STREAM_COMPLETED", "STREAM_FAILED", "CLIENT_ABORTED", "NON_STREAM_COMPLETED"].includes(event)) {
+      releaseSlot?.();
+      releaseSlot = null;
+    }
+    recordCircuitOutcome({ provider, bucket, outcome: event, ...details });
+  };
   const chatSettings = await getSettings();
-  return handleChatCore({
+  const result = await handleChatCore({
     body: { ...body, model: `${provider}/${model}` }, modelInfo: { provider, model }, credentials: refreshedCredentials, log,
     clientRawRequest, connectionId: credentials.connectionId, userAgent, apiKey,
     ccFilterNaming: !!chatSettings.ccFilterNaming, rtkEnabled: !!chatSettings.rtkEnabled,
@@ -385,6 +449,12 @@ async function dispatchChatAttempt({ body, provider, model, credentials, log, cl
     providerThinking: (chatSettings.providerThinking || {})[provider] || null,
     sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
     onCredentialsRefreshed: async (newCreds) => updateProviderCredentials(credentials.connectionId, { ...newCreds, existingProviderSpecificData: credentials.providerSpecificData, testStatus: "active" }),
-    onRequestSuccess: async () => clearAccountError(credentials.connectionId, credentials, model),
-  });
+     onRequestSuccess: async () => clearAccountError(credentials.connectionId, credentials, model),
+     onResilienceEvent,
+   });
+  if (!result.success && releaseSlot) {
+    releaseSlot();
+    releaseSlot = null;
+  }
+  return result;
 }
