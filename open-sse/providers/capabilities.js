@@ -4,7 +4,15 @@
 //   1. PROVIDER_CAPABILITIES[provider][model]  — provider-specific override
 //   2. MODEL_CAPABILITIES[model]               — canonical exact id (handles exceptions)
 //   3. PATTERN_CAPABILITIES                     — glob match, ordered specific -> generic
-//   4. DEFAULT_CAPABILITIES                     — safe floor (always returned)
+//   4. learned input modalities                 — the provider's own catalogue,
+//                                                 services/modalityRegistry.js
+//   5. DEFAULT_CAPABILITIES                     — safe floor (always returned)
+//
+// Step 4 sits BELOW the table, not above it, which is the opposite of how
+// services/contextWindowRegistry.js ranks against the same table. That is
+// deliberate and load-bearing: the entries here that contradict a provider's own
+// advertisement (ag/claude-*, declared vision:false because the executor drops
+// the image) exist precisely to overrule it. See modalityRegistry.js.
 //
 // ── HOW TO ADD / UPDATE A MODEL ──────────────────────────────────────
 // Authoritative data source: https://models.dev/api.json (145 providers, 4000+
@@ -23,6 +31,20 @@
 // 2.0+, Grok, Perplexity). Verify with: curl -s https://models.dev/api.json
 
 import { matchPattern } from "./pricing.js";
+
+/**
+ * Input modalities learned from a provider's own catalogue, injected by
+ * services/modalityRegistry.js when it loads. It stays a registered function
+ * rather than an import because this module is reachable from client components
+ * and that one is not — it reaches SQLite, and importing it here pulls
+ * `node:sqlite` into a browser bundle. Inert until something registers it, so a
+ * bundle without the registry simply falls through to the floor.
+ */
+let learnedModalityLookup = () => null;
+
+export function setLearnedModalityLookup(fn) {
+  learnedModalityLookup = typeof fn === "function" ? fn : () => null;
+}
 
 /**
  * Safe floor — every resolved result is merged over this so consumers
@@ -370,7 +392,7 @@ export const PATTERN_CAPABILITIES = [
 ];
 
 /**
- * Resolve capabilities for a model using the 4-step fallback chain,
+ * Resolve capabilities for a model using the 5-step fallback chain,
  * merged over DEFAULT_CAPABILITIES so the result is always complete.
  *
  * @param {string} provider
@@ -401,6 +423,21 @@ export function getCapabilitiesForModel(provider, model) {
     }
   }
 
-  // 4. Floor
+  // 4. Input modalities learned from the provider's own catalogue.
+  //
+  // Only reached when nothing above named this model, so it can never argue
+  // with a hand-written entry — see the precedence note at the top of this file
+  // and in services/modalityRegistry.js. What it replaces is the all-false
+  // floor, which is a guess, and a guess that costs a 1M vision model its place
+  // at the head of a combo and gets its images deleted on the way to it.
+  //
+  // Synchronous against a warm cache; the catalogue refresh happens out of band.
+  // Routing runs on every request and must never wait on a network call to
+  // decide whether a model can read a picture.
+  const routed = provider ? `${provider}/${model}` : model;
+  const learned = learnedModalityLookup(routed) || learnedModalityLookup(model);
+  if (learned) return { ...DEFAULT_CAPABILITIES, ...learned };
+
+  // 5. Floor
   return { ...DEFAULT_CAPABILITIES };
 }

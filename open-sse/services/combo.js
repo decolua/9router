@@ -8,8 +8,12 @@ import { isQuotaExhausted, isQuotaExhaustion, markQuotaExhausted, quotaRemaining
 import { demoteUnhealthy, recordModelFailure, recordModelSuccess } from "./modelHealth.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
+// Side effect only: registers the learned-modality lookup into capabilities.js
+// for THIS module registry. Next bundles the chat path separately from
+// instrumentation, so importing it at boot is not enough. See modalityRegistry.js.
+import "./modalityRegistry.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
-import { estimateInputTokens, measureBody, IMAGE_TOKEN_ESTIMATE } from "../utils/usageTracking.js";
+import { estimateInputTokens, measureBody, measureFloor, IMAGE_TOKEN_ESTIMATE } from "../utils/usageTracking.js";
 import { charsPerToken, sizingCharsPerToken, isSizingCalibrated } from "./tokenRatio.js";
 import { learnedContextWindow } from "./contextWindowRegistry.js";
 import { extractVisibleText, findDegeneracy, hasAssistantPrefill, GATE_WINDOW_CHARS, GATE_MIN_JUDGEABLE_CHARS, PREFLIGHT_MAX_READS, HOLD_BACK_MS } from "../utils/degeneracy.js";
@@ -629,12 +633,20 @@ export function widestEligibleWindow(models) {
  * Order matters and is the cascade's own: these are the members in the order
  * they will be tried, minus the ones already banned or backing off.
  */
-export function compactCeiling(models, headroomRatio, inputTokens = 0) {
+export function compactCeiling(models, headroomRatio, size = 0) {
+  // `size` is either a flat token count or, better, a function that sizes the
+  // request for one specific member. Per-member sizing matters because the
+  // request is not one number: sizingCharsPerToken varies by provider, so the
+  // same body is 189k tokens for one candidate and 116k for another, and asking
+  // "does it fit" with the pool's worst ratio passes over members that fit
+  // perfectly well. Callers with nothing to size (the /api/context-window
+  // route, which reports the ceiling for an empty request) still pass 0.
+  const needFor = typeof size === "function" ? size : () => size;
   const live = [];
   for (const modelStr of models) {
     if (isQuotaExhausted(modelStr) || isModelCoolingDown(modelStr)) continue;
     const w = modelContextWindow(modelStr);
-    if (w > 0) live.push(w);
+    if (w > 0) live.push({ w, need: needFor(modelStr) });
   }
   if (live.length === 0) return { ceiling: 0, head: 0, next: 0 };
 
@@ -642,9 +654,9 @@ export function compactCeiling(models, headroomRatio, inputTokens = 0) {
   // first one: a member too small for this request is skipped before it is
   // tried, and taking 80% of a window that is about to be passed over asks the
   // client to compact on behalf of a model that was never going to serve it.
-  let headIdx = live.findIndex((w) => w >= inputTokens);
+  let headIdx = live.findIndex(({ w, need }) => w >= need);
   if (headIdx === -1) headIdx = 0; // nothing fits; the onlyTooLarge path owns that
-  const head = live[headIdx];
+  const head = live[headIdx].w;
 
   // "the next model" is the widest thing we could rotate INTO, not the adjacent
   // list entry. The question the rule asks is whether a rotation can still
@@ -652,7 +664,7 @@ export function compactCeiling(models, headroomRatio, inputTokens = 0) {
   // not make the answer no. Reading it literally would cap a 1M head at 200K
   // whenever any small member trailed it, which is the "compact at 20%" the
   // whole exercise is trying to stop.
-  const next = live.slice(headIdx + 1).reduce((a, b) => (b > a ? b : a), 0);
+  const next = live.slice(headIdx + 1).reduce((a, b) => (b.w > a ? b.w : a), 0);
 
   const byRatio = Math.floor(head * headroomRatio);
   const ceiling = next > 0 ? Math.min(byRatio, next) : byRatio;
@@ -821,10 +833,24 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   // tokenizer does; sizing needs the number that cannot under-count. See the
   // header of services/tokenRatio.js for the production trace that forced the
   // distinction — the mean swung 1.84 to 3.63 on one unchanged conversation.
+  //
+  // SIZE EACH CANDIDATE WITH ITS OWN PROVIDER'S RATIO. Called with no argument,
+  // sizingCharsPerToken returns the *worst* ratio in the whole pool, so one
+  // dense-tokenizer provider sizes every request for every other one. Measured
+  // 2026-08-25: ratio 2.39 against a measured mean of 4.32, a 1.8x over-count —
+  // a real 116k conversation was sized at 189k and refused against a 160k
+  // ceiling it was nowhere near. The pool-wide figure is still the honest
+  // default when we do not know who will answer, so it stays as `inputTokens`
+  // for the log and the client-facing messages; every per-model decision below
+  // asks with the model in hand.
   const ratio = sizingCharsPerToken();
-  const inputTokens = calibrated
-    ? Math.ceil(chars / ratio) + images * IMAGE_TOKEN_ESTIMATE
-    : Math.ceil(estimateInputTokens(body) * CONTEXT_ESTIMATE_SAFETY);
+  const sizeOf = (measured, r) =>
+    calibrated
+      ? Math.ceil(measured.chars / r) + measured.images * IMAGE_TOKEN_ESTIMATE
+      : Math.ceil(estimateInputTokens(body) * CONTEXT_ESTIMATE_SAFETY);
+  const sizeFor = (modelStr) =>
+    sizeOf({ chars, images }, sizingCharsPerToken(splitModelStr(modelStr).provider));
+  const inputTokens = sizeOf({ chars, images }, ratio);
   if (chars > 0) {
     log.info(
       "CTXCAL",
@@ -846,19 +872,37 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   //
   // Zero means no member declares a window, and a ceiling cannot be derived
   // from nothing — fall through and let the cascade answer as it always did.
-  const { ceiling, head: headWindow, next: nextWindow } = compactCeiling(rotatedModels, COMPACT_HEADROOM_RATIO, inputTokens);
+  const { ceiling, head: headWindow, next: nextWindow } = compactCeiling(rotatedModels, COMPACT_HEADROOM_RATIO, sizeFor);
   if (ceiling > 0 && inputTokens > ceiling) {
     const boundByNext = nextWindow > 0 && nextWindow < Math.floor(headWindow * COMPACT_HEADROOM_RATIO);
     const why = boundByNext
       ? `the next member after ${rotatedModels[0]} holds only ${nextWindow} tokens`
       : `it exceeds ${Math.round(COMPACT_HEADROOM_RATIO * 100)}% of ${rotatedModels[0]}'s ${headWindow}-token window`;
-    log.warn("COMBO", `Request ~${inputTokens} tokens — asking client to compact: ${why}`);
-    return promptTooLongResponse(
-      inputTokens,
-      ceiling,
-      `Combo "${comboName}" can serve at most ${ceiling} tokens right now: ${why}. ` +
-      `Compact the conversation and retry.`
-    );
+
+    // Only ask for a compaction that can actually work. The request is over the
+    // ceiling, but the ceiling is a SOFT limit — a share of a window the head
+    // can still hold — so refusing is only worth it when dropping history would
+    // bring the next attempt back under it. Measure what compaction cannot
+    // touch; if that alone is already over, the client would compact, retry,
+    // and be refused again with a number that barely moved. It has no third
+    // move. Serving the request is the better answer: the head still fits it,
+    // and the conversation gets a turn in which to shrink.
+    const floor = sizeOf(measureFloor(body), ratio);
+    if (floor > ceiling) {
+      log.warn(
+        "COMBO",
+        `Request ~${inputTokens} tokens over the ${ceiling} ceiling, but ~${floor} of it is ` +
+        `system+tools+current turn — compaction cannot get under it, serving instead (${why})`
+      );
+    } else {
+      log.warn("COMBO", `Request ~${inputTokens} tokens — asking client to compact: ${why}`);
+      return promptTooLongResponse(
+        inputTokens,
+        ceiling,
+        `Combo "${comboName}" can serve at most ${ceiling} tokens right now: ${why}. ` +
+        `Compact the conversation and retry.`
+      );
+    }
   }
 
   // One entry's turn, lifted out of the loop so it can be run twice: once in
@@ -981,7 +1025,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     // Skipped entries are warn, not info: a combo quietly answering from its last
     // entry because the earlier ones were never attempted is the failure mode this
     // level of logging exists to make visible.
-    const skip = await shouldSkipModel(modelStr, { inputTokens, canServe });
+    const skip = await shouldSkipModel(modelStr, { inputTokens: sizeFor(modelStr), canServe });
     if (skip) {
       log.warn("COMBO", `Skipping ${modelStr}, ${skip.reason}`);
       if (skip.tooLarge) {

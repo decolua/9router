@@ -371,6 +371,46 @@ export function measureBody(body) {
   }
 }
 
+/**
+ * The part of a request that compaction CANNOT remove: the system prompt, the
+ * tool schemas, and the current user turn. Same units as measureBody.
+ *
+ * Asking a client to compact is only useful when history is what makes the
+ * request too big. When the floor alone already exceeds the ceiling, the client
+ * compacts, retries, and is refused again with a number that barely moved — a
+ * loop it cannot break, because everything it is able to drop is already gone.
+ * Observed 2026-08-25: a Claude Code session compacted 116,399 tokens down to
+ * 39,532 and the router still measured 167,293 against a 160,000 ceiling,
+ * because eight MCP servers' tool schemas and the system prompt are ~224k
+ * characters before a single message is counted. estimateInputTokens already
+ * says as much about inlined images ("compaction cannot help, because the bulk
+ * was never history"); this measures the whole floor, not just that one case.
+ *
+ * The current turn counts as floor, not history: it is what the user just sent,
+ * and no compaction drops it.
+ */
+export function measureFloor(body) {
+  if (!body || typeof body !== "object") return { chars: 0, images: 0 };
+  const parts = [];
+  // Anthropic keeps the system prompt and tools beside the messages.
+  for (const k of ["system", "tools", "functions", "tool_choice"]) {
+    if (body[k] !== undefined) parts.push(body[k]);
+  }
+  const msgs = Array.isArray(body.messages) ? body.messages : [];
+  // OpenAI-shaped bodies carry the system prompt as a message instead.
+  for (const m of msgs) {
+    if (m?.role === "system" || m?.role === "developer") parts.push(m);
+  }
+  // The trailing run after the last assistant turn is the turn in flight; it can
+  // span several messages (text and image arrive as separate blocks).
+  let i = msgs.length - 1;
+  while (i >= 0 && msgs[i]?.role !== "assistant" && msgs[i]?.role !== "model") i--;
+  for (const m of msgs.slice(i + 1)) {
+    if (m?.role !== "system" && m?.role !== "developer") parts.push(m);
+  }
+  return measureBody(parts);
+}
+
 export function estimateInputTokens(body) {
   if (!body || typeof body !== "object") return 0;
 

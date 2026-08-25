@@ -1,6 +1,40 @@
 # Unreleased
 
 ## Fixes
+- **Routing**: a model nobody hand-wrote a table entry for is no longer assumed
+  blind. `DEFAULT_CAPABILITIES.vision` is `false`, and two separate paths read it:
+  `reorderByCapabilities`, which promotes vision-capable members to the head of a
+  combo when the request carries an image, and `stripUnsupportedModalities`, which
+  deletes the image from a request bound for a model declared unable to read it.
+  `openrouter/stealth/ox-alpha` has no entry, so on 2026-08-25 one screenshot in a
+  Claude Code session demoted the 1M head beneath a 200K vision member, the compact
+  ceiling fell from 838,860 to 160,000, the gateway 413'd, and the client
+  auto-compacted 116,399 tokens down to 39,532 — then was refused again at 167,293.
+  The OpenRouter catalogue had said `input_modalities: ["text","image","video"]` the
+  whole time, and a direct probe confirmed the model reads a two-colour test image
+  correctly. Input modalities are now learned from the provider's own catalogue, in
+  the same fetch that already learned context windows, and consulted as the step
+  below the static table — *below*, deliberately: `ag/claude-*` are declared
+  `vision:false` on purpose against a provider that advertises otherwise, because
+  that executor drops the image, and a learned-wins rule would silently re-break
+  exactly those. New `services/modalityRegistry.js`; `refreshOpenRouterContextWindows`
+  is now `refreshOpenRouterCatalogue`.
+- **Routing**: only ask a client to compact when compaction can work. The compact
+  ceiling is a soft limit, so a request over it was refused even when nothing the
+  client is able to drop would bring it back under — the same session above compacted
+  for 109 seconds and came back 22 tokens' worth of history lighter, because the bulk
+  was the system prompt and eight MCP servers' tool schemas (~224k characters), not
+  history. `measureFloor` now measures what compaction cannot remove — system, tools,
+  and the turn in flight — and when that alone exceeds the ceiling the request is
+  served instead of refused. The 413 itself is unchanged and still intentional.
+- **Routing**: size each candidate with its own provider's chars-per-token ratio.
+  `sizingCharsPerToken()` called with no argument returns the *worst* ratio in the
+  whole pool, so one dense-tokenizer provider sized every request for every other
+  one: measured 2.39 against a measured mean of 4.32, a 1.8x over-count that put a
+  real 116k conversation at 189k. The pool-wide figure remains the honest default for
+  the log line and the client-facing message, where the answering member is not yet
+  known; `compactCeiling` and `shouldSkipModel` now ask with the model in hand.
+
 - **Tuner**: dead models can be demoted again. The tuner read its error signal from
   exactly one place, `requestDetails`, and that table is gated behind
   `enableObservability` — which upstream defaulted to `false` on 2026-08-01 (3fab15ae)

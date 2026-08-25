@@ -13,7 +13,7 @@ vi.mock("../../open-sse/providers/capabilities.js", () => ({
   },
 }));
 
-const { widestEligibleWindow, modelContextWindow } = await import("../../open-sse/services/combo.js");
+const { widestEligibleWindow, modelContextWindow, compactCeiling } = await import("../../open-sse/services/combo.js");
 const { clearModelCooldowns, markModelCooldown } = await import("../../open-sse/services/modelCooldown.js");
 const { markQuotaExhausted, clearQuotaState } = await import("../../open-sse/services/quotaState.js");
 
@@ -111,5 +111,39 @@ describe("context estimate carries a safety factor for sizing", () => {
   it("leaves 1M members eligible, so large requests still route", async () => {
     const { CONTEXT_ESTIMATE_SAFETY } = await import("../../open-sse/config/errorConfig.js");
     expect(Math.ceil(150632 * CONTEXT_ESTIMATE_SAFETY)).toBeLessThan(1000000);
+  });
+});
+
+// Per-member sizing. sizingCharsPerToken() called with no argument returns the
+// WORST chars-per-token ratio in the whole pool, so one dense-tokenizer provider
+// sized every request for every other one: measured 2026-08-25 at ratio 2.39
+// against a measured mean of 4.32, a 1.8x over-count that refused a real 116k
+// conversation against a ceiling it was nowhere near.
+describe("compactCeiling sizes the request per member, not once for the pool", () => {
+  beforeEach(() => {
+    clearModelCooldowns();
+    clearQuotaState?.();
+  });
+
+  it("picks the head each member can actually hold", () => {
+    // Sized pessimistically at 250k the 200K member cannot serve it, so the head
+    // is the 1M one. Sized with its own provider's ratio it fits, and it is.
+    const pooled = compactCeiling(POOL, 0.8, () => 250000);
+    const perMember = compactCeiling(POOL, 0.8, (m) => (m === "ag/small" ? 150000 : 250000));
+    expect(pooled.head).toBe(1000000);
+    expect(perMember.head).toBe(200000);
+  });
+
+  it("still accepts a flat number, for callers with nothing to size", () => {
+    // /api/context-window reports the ceiling for an empty request.
+    expect(compactCeiling(POOL, 0.8, 0).head).toBe(200000);
+    expect(compactCeiling(POOL, 0.8).head).toBe(200000);
+  });
+
+  it("the ceiling still falls back to the next reachable member", () => {
+    const { ceiling, head, next } = compactCeiling(POOL, 0.8, () => 0);
+    expect(head).toBe(200000);
+    expect(next).toBe(1000000);
+    expect(ceiling).toBe(160000); // min(80% of head, next)
   });
 });
