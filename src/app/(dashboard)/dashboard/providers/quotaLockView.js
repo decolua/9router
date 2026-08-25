@@ -83,12 +83,19 @@ export function deriveQuotaLockView(provider, nowArg = null, exactModelId = null
         const reasonRaw = provider[`${modelKey}Reason`];
         const sourceRaw = provider[`${modelKey}Source`];
         const classifiedAtRaw = provider[`${modelKey}ClassifiedAt`];
+        let classifiedAtTime = null;
+        if (classifiedAtRaw) {
+            const parsed = typeof classifiedAtRaw === 'string' ? Date.parse(classifiedAtRaw) : classifiedAtRaw;
+            if (typeof parsed === 'number' && Number.isFinite(parsed)) {
+                classifiedAtTime = parsed;
+            }
+        }
 
         return {
             expiry: expiryTime,
             reason: sanitizeReason(reasonRaw) || 'Quota limit',
             source: sanitizeReason(sourceRaw) || 'legacy',
-            classifiedAt: typeof classifiedAtRaw === 'number' && Number.isFinite(classifiedAtRaw) ? classifiedAtRaw : null
+            classifiedAt: classifiedAtTime
         };
     };
 

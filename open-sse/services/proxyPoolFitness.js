@@ -1,6 +1,5 @@
 import { hydrateFitnessCache } from "./proxyPoolFitnessLifecycle.js";
 import {
-  getProxyPoolById,
   listProxyPoolFitness,
   upsertProxyPoolFitness,
   deleteProxyPoolFitness,
@@ -44,15 +43,10 @@ function removeCached(poolId, scope) {
   scopes.delete(scope);
   if (!scopes.size) fitness.delete(poolId);
 }
-async function migrateLegacyFitness(poolId) {
-  const pool = await getProxyPoolById(poolId);
-  await Promise.all(Object.entries(pool?.fitness || {}).filter(([, entry]) => Number.isFinite(entry?.until)).map(([scope, entry]) => upsertProxyPoolFitness(poolId, scope, entry.until, entry.reason || "")));
-}
 export async function loadPoolFitness(poolId, now = Date.now()) {
   if (!poolId) return false;
   try {
-    let entries = await listProxyPoolFitness(poolId);
-    if (!entries.length) { await migrateLegacyFitness(poolId); entries = await listProxyPoolFitness(poolId); }
+    const entries = await listProxyPoolFitness(poolId);
     setPoolFitness(poolId, entries.filter((entry) => entry.until > now));
     for (const entry of entries.filter((entry) => entry.until <= now)) {
       const result = await deleteProxyPoolFitness(poolId, entry.scope);
@@ -93,7 +87,21 @@ export function isPoolFit(poolId, scope, now = Date.now()) {
 }
 export function fitPoolIds(poolIds, scope, now = Date.now()) { return (poolIds || []).filter((id) => isPoolFit(id, scope, now)); }
 export async function clearAllPoolUnfit(provider = null) {
-  try { await clearProxyPoolFitness(provider); if (!provider) fitness.clear(); return true; }
+  try {
+    await clearProxyPoolFitness(provider);
+    if (!provider) {
+      fitness.clear();
+    } else {
+      const prefix = `${provider}::`;
+      for (const [poolId, scopes] of fitness) {
+        for (const scope of [...scopes.keys()]) {
+          if (scope === provider || scope.startsWith(prefix)) scopes.delete(scope);
+        }
+        if (!scopes.size) fitness.delete(poolId);
+      }
+    }
+    return true;
+  }
   catch (error) { persistenceLog("clear-all", error); return false; }
 }
 export async function resetPoolFitness() { return clearAllPoolUnfit(); }

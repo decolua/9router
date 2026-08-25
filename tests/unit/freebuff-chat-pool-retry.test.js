@@ -217,6 +217,30 @@ describe("Freebuff proxy-pool retry", () => {
     await expect(getProviderCredentials("freebuff", null, "model-a", { forceProxyPoolId: "pool-rogue", allowedProxyPoolIds: ["pool-a"] })).resolves.toBeNull();
   });
 
+  it("locks and excludes A after a non-pool quota failure before B succeeds", async () => {
+    mocks.getProviderConnections.mockResolvedValue([
+      connection("", ["pool-a"], "connection-a"),
+      connection("", ["pool-b"], "connection-b"),
+    ]);
+    mocks.markAccountUnavailable.mockResolvedValueOnce({ shouldFallback: true });
+    mocks.handleChatCore
+      .mockResolvedValueOnce({ success: false, status: 403, error: "Account usage limit reached", resetsAtMs: Date.now() + 60_000 })
+      .mockResolvedValueOnce({ success: true, response: new Response("ok") });
+    const response = await handleChat(new Request("http://router.test/v1/chat/completions", { method: "POST", body: JSON.stringify({ model: "freebuff/model-a", messages: [] }) }));
+    expect(response.status).toBe(200);
+    expect(mocks.markAccountUnavailable).toHaveBeenCalledWith("connection-a", 403, "Account usage limit reached", "freebuff", "model-a", expect.any(Number));
+    expect(mocks.handleChatCore.mock.calls.map(([value]) => value.connectionId)).toEqual(["connection-a", "connection-b"]);
+  });
+
+  it("returns sanitized terminal when a non-pool failure cannot fall back", async () => {
+    mocks.getProviderConnections.mockResolvedValue([connection("", ["pool-a"])]);
+    mocks.markAccountUnavailable.mockResolvedValueOnce({ shouldFallback: false });
+    mocks.handleChatCore.mockResolvedValueOnce({ success: false, status: 502, error: "Authorization: Basic fake-secret extra-visible", response: new Response("raw", { status: 502 }) });
+    const response = await handleChat(new Request("http://router.test/v1/chat/completions", { method: "POST", body: JSON.stringify({ model: "freebuff/model-a", messages: [] }) }));
+    expect(response.status).toBe(502);
+    expect(await response.text()).not.toContain("fake-secret");
+  });
+
   it("returns bounded pool exhaustion without marking the Freebuff account unavailable", async () => {
     mocks.getProviderConnections.mockResolvedValue([connection("", ["pool-a", "pool-b", "pool-c"])]);
     mocks.handleChatCore.mockImplementation(async ({ credentials }) => ({

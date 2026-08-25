@@ -261,7 +261,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         ],
       }),
       dispatch: (credentials) => dispatchChatAttempt({ body, provider, model, credentials, log, clientRawRequest, request, apiKey, userAgent }),
-      shouldFallback: async () => false,
+      shouldFallback: async (credentials, result) => {
+        const fallback = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
+        return fallback.shouldFallback;
+      },
     });
     if (routed.response) return routed.response;
     if (routed.terminal.kind === "quota") {
@@ -350,17 +353,6 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     });
 
     if (result.success) return result.response;
-
-    const failedPoolId = result.poolScoped?.poolId;
-    if (failedPoolId) {
-      if (poolRetries >= maxPoolRetries) return result.response;
-      excludePoolIds.add(failedPoolId);
-      poolRetries += 1;
-      lastError = result.error;
-      lastStatus = result.status;
-      log.warn("FALLBACK", `⇄ POOL:${failedPoolId} UNAVAILABLE (${result.poolScoped.reason}) → NEXT POOL`);
-      continue;
-    }
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);

@@ -23,7 +23,12 @@ export function createFreebuffChat({ buildBody, url, headers, proxyOptions, mode
       try { response = await proxyAwareFetch(url, { method: "POST", headers, body: JSON.stringify(transformedBody), signal: mergedSignal }, proxyOptions); }
       catch (error) {
         if (signal?.aborted || error?.responseStarted) throw error;
-        if (networkAttempts >= 2) { const poolScoped = await markFreebuffPoolFailure({ model, proxyOptions, stage: "chat_submit", error, signal: mergedSignal }); if (poolScoped) error.poolScoped = poolScoped; throw error; }
+        if (networkAttempts >= 2) {
+          const provenance = controller.signal.aborted ? "timeout_before_response" : "proxy_connect";
+          const poolScoped = await markFreebuffPoolFailure({ model, proxyOptions, stage: "chat_submit", error, provenance, signal });
+          if (poolScoped) error.poolScoped = poolScoped;
+          throw error;
+        }
         networkAttempts += 1; await new Promise((resolve) => setTimeout(resolve, 750)); continue;
       } finally { clearTimeout(timer); }
       if (hasTrustedRelayFailure(response)) { const error = Object.assign(new Error(`Freebuff relay failed: ${response.status}`), { status: response.status }); const poolScoped = await markFreebuffPoolFailure({ model, proxyOptions, stage: "chat_submit", status: response.status, error, provenance: "relay_internal" }); if (poolScoped) error.poolScoped = poolScoped; throw error; }
