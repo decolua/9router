@@ -46,6 +46,15 @@ const getPageInfo = (pathname) => {
     };
   }
 
+  if (pathname === "/dashboard/providers/models") {
+    return {
+      title: "Models",
+      description: "Test and manage the models published by /v1/models",
+      icon: "deployed_code",
+      breadcrumbs: [],
+    };
+  }
+
   // Provider detail page: /dashboard/providers/[id]
   const providerMatch = pathname.match(/\/providers\/([^/]+)$/);
   if (providerMatch) {
@@ -335,7 +344,7 @@ function HeaderSearch() {
         type="text"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder={placeholder}
+        placeholder={translate(placeholder)}
         className="w-full h-8 pl-7 pr-7 rounded-lg border border-border bg-surface/60 text-sm focus:outline-none focus:border-primary/50 transition-colors"
       />
       {query && (

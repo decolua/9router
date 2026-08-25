@@ -23,6 +23,7 @@ const homeItems = [
 const routerItems = [
   { href: "/dashboard/endpoint", label: "Endpoint & Key", icon: "key" },
   { href: "/dashboard/providers", label: "Providers", icon: "dns" },
+  { href: "/dashboard/providers/models", label: "Models", icon: "deployed_code" },
   // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
   { href: "/dashboard/combos", label: "Combo & Vision Adapter", icon: "merge_type" },
   { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
@@ -73,6 +74,9 @@ export default function Sidebar({ onClose }) {
   const isActive = (href) => {
     if (href === "/dashboard") {
       return pathname === "/dashboard";
+    }
+    if (href === "/dashboard/providers") {
+      return pathname.startsWith(href) && !pathname.startsWith("/dashboard/providers/models");
     }
     return pathname.startsWith(href);
   };

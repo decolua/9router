@@ -275,12 +275,13 @@ export async function buildModelsList(kindFilter, options = {}) {
   // 9router instance's fetchCompatibleModelIds — skip dynamic fetch to break
   // cross-instance recursive loops.
   const skipDynamicFetch = options.skipDynamicFetch === true;
+  const includeDisabled = options.includeDisabled === true;
   let connections = [];
   try {
     connections = await getProviderConnections();
     connections = connections.filter(c => c.isActive !== false);
   } catch (e) {
-    console.log("Could not fetch providers, returning all models");
+    console.log("Could not fetch providers, listing no-auth models only");
   }
 
   let combos = [];
@@ -310,7 +311,10 @@ export async function buildModelsList(kindFilter, options = {}) {
   } catch (e) {
     console.log("Could not fetch disabled models");
   }
-  const isDisabled = (alias, modelId) => Array.isArray(disabledByAlias[alias]) && disabledByAlias[alias].includes(modelId);
+  const isConfiguredDisabled = (alias, modelId) =>
+    Array.isArray(disabledByAlias[alias]) && disabledByAlias[alias].includes(modelId);
+  const isDisabled = (alias, modelId) =>
+    !includeDisabled && isConfiguredDisabled(alias, modelId);
 
   const activeConnectionByProvider = new Map();
   for (const conn of connections) {
@@ -329,11 +333,26 @@ export async function buildModelsList(kindFilter, options = {}) {
     });
   }
 
+  const disabledAliasesByOwner = new Map();
+  for (const [providerId, conn] of activeConnectionByProvider.entries()) {
+    const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
+    const outputAlias = (
+      conn?.providerSpecificData?.prefix
+      || getProviderAlias(providerId)
+      || staticAlias
+    ).trim();
+    disabledAliasesByOwner.set(
+      outputAlias,
+      Array.from(new Set([outputAlias, staticAlias, providerId].filter(Boolean))),
+    );
+  }
+
   const models = [];
 
   // Combos first (filtered by kind). Web combos expose `kind` so AI knows search vs fetch.
   for (const combo of combos) {
     if (!comboMatchesKinds(combo, kindFilter)) continue;
+    if (isDisabled("combo", combo.name)) continue;
     const entry = {
       id: combo.name,
       object: "model",
@@ -345,58 +364,7 @@ export async function buildModelsList(kindFilter, options = {}) {
     models.push(entry);
   }
 
-  if (connections.length === 0) {
-    // DB unavailable -> return static models, filtered by per-model kind
-    const aliasToProviderId = Object.fromEntries(
-      Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id])
-    );
-    for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
-      const providerId = aliasToProviderId[alias] || alias;
-      if (!providerMatchesKinds(providerId, kindFilter)) continue;
-      for (const model of providerModels) {
-        if (!kindFilter.includes(modelKind(model))) continue;
-        if (isDisabled(alias, model.id)) continue;
-        models.push({
-          id: `${alias}/${model.id}`,
-          object: "model",
-          owned_by: alias,
-        });
-      }
-    }
-
-    for (const provider of Object.values(AI_PROVIDERS)) {
-      if (!provider.noAuth || provider.hidden || !providerMatchesKinds(provider.id, kindFilter)) continue;
-      const alias = getProviderAlias(provider.id);
-      const dynamicModelIds = skipDynamicFetch ? [] : await fetchRegisteredModelIds(provider);
-      for (const modelId of dynamicModelIds) {
-        if (!kindFilter.includes(inferKindFromUnknownModelId(modelId))) continue;
-        if (isDisabled(alias, modelId)) continue;
-        models.push({
-          id: `${alias}/${modelId}`,
-          object: "model",
-          owned_by: alias,
-        });
-      }
-    }
-
-    for (const customModel of customModels) {
-      if (!customModel?.id || (customModel.type && customModel.type !== "llm")) continue;
-      // Custom models without active connection are LLM-only by current schema
-      if (!kindFilter.includes(LLM_KIND)) continue;
-      const providerAlias = customModel.providerAlias;
-      if (!providerAlias) continue;
-
-      const modelId = String(customModel.id).trim();
-      if (!modelId) continue;
-
-      models.push({
-        id: `${providerAlias}/${modelId}`,
-        object: "model",
-        owned_by: providerAlias,
-      });
-    }
-  } else {
-    for (const [providerId, conn] of activeConnectionByProvider.entries()) {
+  for (const [providerId, conn] of activeConnectionByProvider.entries()) {
       if (!providerMatchesKinds(providerId, kindFilter)) continue;
 
       const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
@@ -586,7 +554,6 @@ export async function buildModelsList(kindFilter, options = {}) {
           owned_by: outputAlias,
         });
       }
-    }
   }
 
   const dedupedModels = [];
@@ -597,7 +564,19 @@ export async function buildModelsList(kindFilter, options = {}) {
     dedupedModels.push(model);
   }
 
-  return dedupedModels;
+  if (!includeDisabled) return dedupedModels;
+
+  return dedupedModels.map((model) => {
+    const owner = model.owned_by || String(model.id).split("/")[0];
+    const modelId = owner === "combo"
+      ? model.id
+      : String(model.id).startsWith(`${owner}/`)
+        ? String(model.id).slice(owner.length + 1)
+        : model.id;
+    const aliases = disabledAliasesByOwner.get(owner) || [owner];
+    const disabled = aliases.some((alias) => isConfiguredDisabled(alias, modelId));
+    return disabled ? { ...model, disabled: true } : model;
+  });
 }
 
 /**

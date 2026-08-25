@@ -43,6 +43,9 @@ describe("pingModelByKind reasoning models (#3010)", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.max_tokens).toBe(1024);
+    expect(body.messages).toEqual([
+      { role: "user", content: "Reply only with OK." },
+    ]);
   });
 
   it("treats a reasoning-only (length-limited) response as ok:true", async () => {

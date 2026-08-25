@@ -141,7 +141,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       // See issue #3010.
       max_tokens: 1024,
       stream: false,
-      messages: [{ role: "user", content: "hi" }],
+      messages: [{ role: "user", content: "Reply only with OK." }],
     }),
     signal: AbortSignal.timeout(15000),
   });

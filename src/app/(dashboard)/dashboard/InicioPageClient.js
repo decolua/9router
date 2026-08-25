@@ -78,7 +78,7 @@ export default function InicioPageClient() {
       const sources = [
         ["usage statistics", "/api/usage/stats?period=today"],
         ["providers", "/api/providers"],
-        ["models", "/api/models"],
+        ["models", "/api/models/catalog"],
       ];
       const results = await Promise.allSettled(
         sources.map(async ([, url]) => {
@@ -97,7 +97,9 @@ export default function InicioPageClient() {
 
       if (results[0].status === "fulfilled") setUsage(results[0].value);
       if (results[1].status === "fulfilled") setConnections(results[1].value.connections || []);
-      if (results[2].status === "fulfilled") setModels(results[2].value.models || []);
+      if (results[2].status === "fulfilled") {
+        setModels((results[2].value.data || []).filter((model) => !model.disabled));
+      }
       setFailedSources(failures);
       setLoading(false);
     };
@@ -180,7 +182,7 @@ export default function InicioPageClient() {
 
       <section aria-label={translate("Gateway overview")} className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
         <MetricCard label={translate("Providers")} value={providerStats.providers} detail={translate("configured")} icon="dns" loading={loading && connections === null} />
-        <MetricCard label={translate("Models")} value={numberFormatter.format(models?.length || 0)} detail={translate("Enabled in catalog")} icon="deployed_code" loading={loading && models === null} />
+        <MetricCard label={translate("Models")} value={numberFormatter.format(models?.length || 0)} detail={translate("Visible in /v1/models")} icon="deployed_code" loading={loading && models === null} />
         <MetricCard label={translate("Requests")} value={numberFormatter.format(usage?.totalRequests || 0)} detail={translate("Today")} icon="send" tone="text-primary" loading={loading && usage === null} />
         <MetricCard label={translate("Tokens")} value={numberFormatter.format(tokensToday)} detail={translate("Input + output today")} icon="token" tone="text-info" loading={loading && usage === null} />
         <MetricCard label={translate("In progress")} value={numberFormatter.format(activeRequests)} detail={translate("Active requests")} icon="progress_activity" tone="text-success" loading={loading && usage === null} />
@@ -230,7 +232,14 @@ export default function InicioPageClient() {
       </section>
 
       <section className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
-        <Card title={translate("Recent requests")} subtitle={translate("Latest processed calls")} icon="history" padding="sm">
+        <Card
+          title={translate("Recent requests")}
+          subtitle={translate("Latest processed calls")}
+          icon="history"
+          iconClassName="text-[21px]"
+          iconContainerClassName="bg-info/10 text-info"
+          padding="sm"
+        >
           {loading && usage === null ? (
             <div className="space-y-2">
               {[1, 2, 3, 4].map((item) => <div key={item} className="h-12 animate-pulse rounded bg-bg-subtle" />)}
@@ -258,7 +267,14 @@ export default function InicioPageClient() {
           )}
         </Card>
 
-        <Card title={translate("Quick access")} subtitle={translate("Configuration shortcuts")} icon="bolt" padding="sm">
+        <Card
+          title={translate("Quick access")}
+          subtitle={translate("Configuration shortcuts")}
+          icon="bolt"
+          iconClassName="text-[21px]"
+          iconContainerClassName="bg-warning/10 text-warning"
+          padding="sm"
+        >
           <nav aria-label={translate("Dashboard shortcuts")} className="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
             {quickLinks.map((item) => (
               <Link key={item.href} href={item.href} className="group flex items-center gap-3 rounded-[10px] border border-border-subtle bg-bg px-3 py-3 transition-colors hover:border-primary/30 hover:bg-bg-hover">

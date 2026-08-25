@@ -7,6 +7,8 @@ export default function Card({
   title,
   subtitle,
   icon,
+  iconClassName,
+  iconContainerClassName,
   action,
   padding = "md",
   hover = false,
@@ -37,8 +39,13 @@ export default function Card({
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
             {icon && (
-              <div className="p-2 rounded-[10px] bg-bg text-text-muted">
-                <span className="material-symbols-outlined text-[20px]">{icon}</span>
+              <div
+                className={cn(
+                  "flex size-9 shrink-0 items-center justify-center rounded-[10px] bg-bg text-text-muted",
+                  iconContainerClassName,
+                )}
+              >
+                <span className={cn("material-symbols-outlined text-[20px]", iconClassName)}>{icon}</span>
               </div>
             )}
             <div>
