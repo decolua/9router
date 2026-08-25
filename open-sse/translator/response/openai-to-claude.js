@@ -11,13 +11,52 @@ import { extractReasoningText } from "../concerns/reasoning.js";
 const CLAUDE_OAUTH_TOOL_PREFIX = "proxy_";
 
 // Sanitize tool call arguments to fix bad params from non-Anthropic models
+// (e.g. stealth/ox-alpha, DeepSeek, Qwen, and other OpenAI-format models)
 function sanitizeToolArgs(toolName, argsJson) {
   try {
     const args = JSON.parse(argsJson);
+    if (!args || typeof args !== "object" || Array.isArray(args)) return argsJson;
+
     const name = toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)
       ? toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length)
       : toolName;
-    if (name === "Read") sanitizeReadArgs(args);
+
+    switch (name) {
+      case "Read":
+        sanitizeReadArgs(args);
+        break;
+      case "Grep":
+        sanitizeGrepArgs(args);
+        break;
+      case "Glob":
+        sanitizeGlobArgs(args);
+        break;
+      case "Write":
+        sanitizeWriteArgs(args);
+        break;
+      case "Edit":
+        sanitizeEditArgs(args);
+        break;
+      case "WebFetch":
+        sanitizeWebFetchArgs(args);
+        break;
+      case "WebSearch":
+        sanitizeWebSearchArgs(args);
+        break;
+      case "Bash":
+        sanitizeBashArgs(args);
+        break;
+      case "TaskCreate":
+        sanitizeTaskCreateArgs(args);
+        break;
+      case "TaskUpdate":
+        sanitizeTaskUpdateArgs(args);
+        break;
+      case "TaskGet":
+        sanitizeTaskGetArgs(args);
+        break;
+    }
+
     return JSON.stringify(args);
   } catch {
     return argsJson;
@@ -25,6 +64,10 @@ function sanitizeToolArgs(toolName, argsJson) {
 }
 
 function sanitizeReadArgs(args) {
+  // Alias mapping
+  if (!args.file_path && args.filePath) args.file_path = args.filePath;
+  if (!args.file_path && args.path) args.file_path = args.path;
+
   if (typeof args.limit === "string" && /^\d+$/.test(args.limit)) args.limit = Number(args.limit);
   if (typeof args.offset === "string" && /^-?\d+$/.test(args.offset)) args.offset = Number(args.offset);
 
@@ -37,6 +80,152 @@ function sanitizeReadArgs(args) {
   if ("pages" in args && !isValidPdfPagesArg(args.file_path, args.pages)) {
     delete args.pages;
   }
+}
+
+function sanitizeGrepArgs(args) {
+  // Alias: pattern aliases
+  if (!args.pattern && args.query) args.pattern = args.query;
+  if (!args.pattern && args.regex) args.pattern = args.regex;
+  if (!args.pattern && args.search) args.pattern = args.search;
+  if (typeof args.pattern !== "string") args.pattern = String(args.pattern || "");
+
+  // Path cleanup: cannot be array, null, undefined string
+  if (Array.isArray(args.path)) args.path = args.path[0] || undefined;
+  if (args.path === null || args.path === "null" || args.path === "undefined" || args.path === "") {
+    delete args.path;
+  }
+  if (!args.path && args.dir) args.path = args.dir;
+  if (!args.path && args.directory) args.path = args.directory;
+
+  // Type coercions
+  if (typeof args["-i"] === "string") args["-i"] = args["-i"] === "true";
+  if (typeof args["-n"] === "string") args["-n"] = args["-n"] === "true";
+  if (typeof args.multiline === "string") args.multiline = args.multiline === "true";
+
+  // Numeric coercions
+  if (typeof args.head_limit === "string" && /^\d+$/.test(args.head_limit)) args.head_limit = Number(args.head_limit);
+  if (typeof args.offset === "string" && /^\d+$/.test(args.offset)) args.offset = Number(args.offset);
+  if (typeof args.context === "string" && /^\d+$/.test(args.context)) args.context = Number(args.context);
+  if (typeof args["-C"] === "string" && /^\d+$/.test(args["-C"])) args["-C"] = Number(args["-C"]);
+  if (typeof args["-A"] === "string" && /^\d+$/.test(args["-A"])) args["-A"] = Number(args["-A"]);
+  if (typeof args["-B"] === "string" && /^\d+$/.test(args["-B"])) args["-B"] = Number(args["-B"]);
+
+  // Valid output_mode enum
+  const validModes = new Set(["content", "files_with_matches", "count"]);
+  if (args.output_mode && !validModes.has(args.output_mode)) {
+    delete args.output_mode;
+  }
+}
+
+function sanitizeGlobArgs(args) {
+  // Alias: pattern aliases
+  if (!args.pattern && args.glob) args.pattern = args.glob;
+  if (!args.pattern && args.query) args.pattern = args.query;
+  if (typeof args.pattern !== "string") args.pattern = String(args.pattern || "**/*");
+
+  // Path cleanup: Claude Code schema explicitly says "DO NOT enter 'undefined' or 'null'"
+  if (Array.isArray(args.path)) args.path = args.path[0] || undefined;
+  if (args.path === null || args.path === "null" || args.path === "undefined" || args.path === "") {
+    delete args.path;
+  }
+  if (!args.path && args.dir) args.path = args.dir;
+  if (!args.path && args.directory) args.path = args.directory;
+}
+
+function sanitizeWriteArgs(args) {
+  // Alias: file_path
+  if (!args.file_path && args.filePath) args.file_path = args.filePath;
+  if (!args.file_path && args.path) args.file_path = args.path;
+  if (!args.file_path && args.filename) args.file_path = args.filename;
+
+  // Alias: content
+  if (args.content === undefined && args.contents !== undefined) args.content = args.contents;
+  if (args.content === undefined && args.text !== undefined) args.content = args.text;
+  if (args.content === undefined && args.body !== undefined) args.content = args.body;
+  if (typeof args.content !== "string") args.content = String(args.content ?? "");
+}
+
+function sanitizeEditArgs(args) {
+  // Alias: file_path
+  if (!args.file_path && args.filePath) args.file_path = args.filePath;
+  if (!args.file_path && args.path) args.file_path = args.path;
+  if (!args.file_path && args.filename) args.file_path = args.filename;
+
+  // Alias: old_string
+  if (args.old_string === undefined && args.oldString !== undefined) args.old_string = args.oldString;
+  if (args.old_string === undefined && args.old_str !== undefined) args.old_string = args.old_str;
+  if (args.old_string === undefined && args.oldText !== undefined) args.old_string = args.oldText;
+  if (args.old_string === undefined && args.old !== undefined) args.old_string = args.old;
+
+  // Alias: new_string
+  if (args.new_string === undefined && args.newString !== undefined) args.new_string = args.newString;
+  if (args.new_string === undefined && args.new_str !== undefined) args.new_string = args.new_str;
+  if (args.new_string === undefined && args.newText !== undefined) args.new_string = args.newText;
+  if (args.new_string === undefined && args.new !== undefined) args.new_string = args.new;
+
+  if (typeof args.old_string !== "string") args.old_string = String(args.old_string ?? "");
+  if (typeof args.new_string !== "string") args.new_string = String(args.new_string ?? "");
+
+  if (typeof args.replace_all === "string") args.replace_all = args.replace_all === "true";
+}
+
+function sanitizeWebFetchArgs(args) {
+  if (!args.url && args.URL) args.url = args.URL;
+  if (!args.url && args.link) args.url = args.link;
+  if (!args.url && args.href) args.url = args.href;
+
+  // Claude Code requires 'prompt' on WebFetch
+  if (!args.prompt) {
+    args.prompt = "Extract and summarize the main content of this page relevant to the user request.";
+  }
+}
+
+function sanitizeWebSearchArgs(args) {
+  if (!args.query && args.q) args.query = args.q;
+  if (!args.query && args.search_query) args.query = args.search_query;
+  if (!args.query && args.prompt) args.query = args.prompt;
+}
+
+function sanitizeBashArgs(args) {
+  // Alias: command
+  if (!args.command && args.cmd) args.command = args.cmd;
+  if (!args.command && args.script) args.command = args.script;
+  if (Array.isArray(args.command)) args.command = args.command.join(" ");
+  if (typeof args.command !== "string") args.command = String(args.command || "");
+
+  if (typeof args.dangerouslyDisableSandbox === "string") {
+    args.dangerouslyDisableSandbox = args.dangerouslyDisableSandbox === "true";
+  }
+  if (typeof args.run_in_background === "string") {
+    args.run_in_background = args.run_in_background === "true";
+  }
+  if (typeof args.timeout === "string" && /^\d+$/.test(args.timeout)) {
+    args.timeout = Number(args.timeout);
+  }
+}
+
+function sanitizeTaskCreateArgs(args) {
+  if (!args.subject && args.title) args.subject = args.title;
+  if (!args.subject && args.name) args.subject = args.name;
+  if (!args.description && args.desc) args.description = args.desc;
+  if (!args.description) args.description = args.subject || "Task";
+}
+
+function sanitizeTaskUpdateArgs(args) {
+  if (!args.taskId && args.task_id) args.taskId = String(args.task_id);
+  if (!args.taskId && args.id) args.taskId = String(args.id);
+  if (args.taskId !== undefined && typeof args.taskId !== "string") args.taskId = String(args.taskId);
+
+  const validStatuses = new Set(["pending", "in_progress", "completed", "deleted"]);
+  if (args.status && !validStatuses.has(args.status)) {
+    delete args.status;
+  }
+}
+
+function sanitizeTaskGetArgs(args) {
+  if (!args.taskId && args.task_id) args.taskId = String(args.task_id);
+  if (!args.taskId && args.id) args.taskId = String(args.id);
+  if (args.taskId !== undefined && typeof args.taskId !== "string") args.taskId = String(args.taskId);
 }
 
 function isValidPdfPagesArg(filePath, pages) {
