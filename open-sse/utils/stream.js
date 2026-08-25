@@ -408,8 +408,21 @@ export function createSSEStream(options = {}) {
         }
 
         if (buffer.trim()) {
-          const parsed = parseSSELine(buffer.trim());
-          if (parsed && !parsed.done) {
+          // Same parse as the transform loop: without targetFormat this only
+          // accepts "data: " lines, so an NDJSON provider (Ollama) lost whatever
+          // arrived without its closing newline.
+          const parsed = parseSSELine(buffer.trim(), targetFormat);
+          // parseSSELine turns the SSE sentinel "data: [DONE]" into { done: true },
+          // which must not be translated. An Ollama chunk also carries done:true,
+          // but it is the real final chunk — it holds finish_reason and the token
+          // counts — so it has to go through.
+          const isDoneSentinel = parsed?.done && targetFormat !== FORMATS.OLLAMA;
+          if (parsed && !isDoneSentinel) {
+            // Same accumulation the transform loop does, so finalizeStream() can
+            // log a tail chunk's tokens instead of falling back to null.
+            const extracted = extractUsage(parsed);
+            if (extracted) state.usage = mergeUsage(state.usage, extracted);
+
             const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
 
             if (translated?._openaiIntermediate) {
