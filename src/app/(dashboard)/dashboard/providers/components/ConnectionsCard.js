@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
 import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal, ConfirmModal } from "@/shared/components";
+import { useNotificationStore } from "@/store/notificationStore";
 
 // ── CooldownTimer ──────────────────────────────────────────────
 function CooldownTimer({ until }) {
@@ -30,7 +31,7 @@ function CooldownTimer({ until }) {
 CooldownTimer.propTypes = { until: PropTypes.string.isRequired };
 
 // ── ConnectionRow ──────────────────────────────────────────────
-function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {
+function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onTest, onEdit, onDelete, testing = false }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const [isCooldown, setIsCooldown] = useState(false);
@@ -155,6 +156,14 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
               )}
             </div>
           )}
+          <button
+            onClick={onTest}
+            disabled={testing}
+            className="flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <span className={`material-symbols-outlined text-[18px] ${testing ? "animate-spin" : ""}`}>{testing ? "progress_activity" : "science"}</span>
+            <span className="text-[10px] leading-tight">{testing ? "Testing" : "Test"}</span>
+          </button>
           <button onClick={onEdit} className="flex flex-col items-center px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary">
             <span className="material-symbols-outlined text-[18px]">edit</span>
             <span className="text-[10px] leading-tight">Edit</span>
@@ -189,8 +198,10 @@ ConnectionRow.propTypes = {
   onMoveDown: PropTypes.func.isRequired,
   onToggleActive: PropTypes.func.isRequired,
   onUpdateProxy: PropTypes.func,
+  onTest: PropTypes.func.isRequired,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
+  testing: PropTypes.bool,
 };
 
 // ── AddApiKeyModal ─────────────────────────────────────────────
@@ -305,6 +316,8 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("1");
   const [confirmState, setConfirmState] = useState(null);
+  const [testingConnectionIds, setTestingConnectionIds] = useState(() => new Set());
+  const notify = useNotificationStore();
 
   const fetch_ = useCallback(async () => {
     try {
@@ -382,6 +395,28 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
     } catch (e) { console.log("proxy error:", e); }
   };
 
+  const handleTestConnection = async (connection) => {
+    if (testingConnectionIds.has(connection.id)) return;
+    setTestingConnectionIds((prev) => new Set(prev).add(connection.id));
+    try {
+      const res = await fetch(`/api/providers/${connection.id}/test`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      const valid = res.ok && data.valid === true;
+      const error = data.error || "Test failed";
+      if (valid) notify.success(`${connection.name || "Connection"} 测试成功`);
+      else notify.error(`${connection.name || "Connection"} 测试失败：${error}`);
+      await fetch_();
+    } catch (error) {
+      notify.error(`${connection.name || "Connection"} 测试失败：${error.message || "Test failed"}`);
+    } finally {
+      setTestingConnectionIds((prev) => {
+        const next = new Set(prev);
+        next.delete(connection.id);
+        return next;
+      });
+    }
+  };
+
   const handleSaveApiKey = async (formData) => {
     try {
       const res = await fetch("/api/providers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: providerId, ...formData }) });
@@ -447,8 +482,10 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
                   onMoveDown={() => handleSwapPriority(idx, idx + 1)}
                   onToggleActive={(isActive) => handleToggleActive(conn.id, isActive)}
                   onUpdateProxy={(poolId) => handleUpdateProxy(conn.id, poolId)}
+                  onTest={() => handleTestConnection(conn)}
                   onEdit={() => { setSelectedConnection(conn); setShowEditModal(true); }}
                   onDelete={() => handleDelete(conn.id)}
+                  testing={testingConnectionIds.has(conn.id)}
                 />
               ))}
             </div>

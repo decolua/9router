@@ -166,7 +166,7 @@ export default function PricingSettingsPage() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "从 OpenCode 更新定价失败");
       await loadPricing();
-      notify.success(`已同步 ${data.updatedCount || 0} 个模型，跳过 ${data.skippedCount || 0} 个暂不支持的模型`);
+      notify.success(`已同步 ${data.syncedCount || 0} 个模型，已更新 ${data.updatedCount || 0} 个模型，跳过 ${data.skippedCount || 0} 个暂不支持的模型`);
     } catch (error) { notify.error(error.message || "从 OpenCode 更新定价失败"); } finally { setSyncing(false); }
   };
 

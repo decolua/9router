@@ -711,6 +711,37 @@ export default function ProviderDetailPage() {
     }
   };
 
+  const handleTestConnection = async (connection) => {
+    if (oneByOneRunning || oneByOneResults[connection.id]?.state === "testing") return;
+
+    setOneByOneResults((prev) => ({
+      ...prev,
+      [connection.id]: { state: "testing", error: null },
+    }));
+
+    try {
+      const res = await fetch(`/api/providers/${connection.id}/test`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      const valid = res.ok && data.valid === true;
+      const error = valid ? null : (data.error || "Test failed");
+
+      setOneByOneResults((prev) => ({
+        ...prev,
+        [connection.id]: { state: valid ? "success" : "failed", error },
+      }));
+      if (valid) notify.success(`${connection.name || connection.email || "Connection"} 测试成功`);
+      else notify.error(`${connection.name || connection.email || "Connection"} 测试失败：${error}`);
+      await fetchConnections();
+    } catch (error) {
+      const message = error.message || "Test failed";
+      setOneByOneResults((prev) => ({
+        ...prev,
+        [connection.id]: { state: "failed", error: message },
+      }));
+      notify.error(`${connection.name || connection.email || "Connection"} 测试失败：${message}`);
+    }
+  };
+
   const handleStopOneByOneTest = () => {
     if (!oneByOneRunning) return;
     stopOneByOneRef.current = true;
@@ -999,7 +1030,9 @@ export default function ProviderDetailPage() {
                   setSelectedConnection(conn);
                   setShowEditModal(true);
                 }}
+                onTest={() => handleTestConnection(conn)}
                 onDelete={() => handleDelete(conn.id)}
+                testDisabled={oneByOneRunning}
                 oneByOneStatus={oneByOneResults[conn.id] || null}
               />
             </div>

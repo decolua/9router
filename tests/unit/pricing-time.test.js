@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isPeakPricingTime } from "../../open-sse/providers/pricing.js";
-import { parseOpenCodePricing, shiftPricingWindows } from "../../src/shared/services/pricingSync.js";
+import { hasPricingChanges, parseOpenCodePricing, shiftPricingWindows } from "../../src/shared/services/pricingSync.js";
 
 describe("China-time peak pricing", () => {
   it("evaluates configured windows in China Standard Time", () => {
@@ -20,5 +20,12 @@ describe("China-time peak pricing", () => {
       <tr><td>GLM-5.2 (Off-Peak)</td><td>$0.5</td><td>$1</td><td>$0.05</td><td>$0.1</td></tr></table>`;
 
     expect(parseOpenCodePricing(html)["glm-5.2"].peakWindows).toBe("09:00-12:00,14:00-18:00");
+  });
+
+  it("counts only pricing fields changed by the OpenCode source", () => {
+    const current = { input: 1, output: 2, cached: 0.1, reasoning: 3, lastUpdated: "2026-08-25T00:00:00.000Z" };
+
+    expect(hasPricingChanges(current, { input: 1, output: 2, cached: 0.1 })).toBe(false);
+    expect(hasPricingChanges(current, { input: 1.5, output: 2, cached: 0.1 })).toBe(true);
   });
 });

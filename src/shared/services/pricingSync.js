@@ -127,6 +127,12 @@ export function parseOpenCodePricing(html) {
   return pricing;
 }
 
+export function hasPricingChanges(currentPricing, sourcePricing) {
+  return Object.entries(sourcePricing || {}).some(([field, value]) => (
+    JSON.stringify(currentPricing?.[field]) !== JSON.stringify(value)
+  ));
+}
+
 export async function syncPricingFromOpenCode() {
   const now = new Date().toISOString();
   try {
@@ -141,8 +147,10 @@ export async function syncPricingFromOpenCode() {
       ...Object.keys(currentPricing["opencode-go"] || {}),
     ]);
     const pricing = {};
+    let updatedCount = 0;
     for (const [model, values] of Object.entries(sourcePricing)) {
       if (!existingModels.has(model)) continue;
+      if (hasPricingChanges(currentPricing["opencode-go"]?.[model], values)) updatedCount += 1;
       pricing[model] = { ...(currentPricing["opencode-go"]?.[model] || {}), ...values };
       deleted.delete(`opencode-go\u0000${model}`);
     }
@@ -156,7 +164,8 @@ export async function syncPricingFromOpenCode() {
     return {
       provider: "opencode-go",
       pricing,
-      updatedCount: Object.keys(pricing).length,
+      syncedCount: Object.keys(pricing).length,
+      updatedCount,
       skippedCount: Object.keys(sourcePricing).length - Object.keys(pricing).length,
       source: SOURCE_URL,
       syncedAt: now,
