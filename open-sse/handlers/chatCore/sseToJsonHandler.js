@@ -179,7 +179,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, requestedModel, actualModel, routerSelectedModel, routerSelectedProvider, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, customToolNames, trackDone, appendLog, reqTag, log }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, requestedModel, actualModel, routerSelectedModel, routerSelectedProvider, requestDetailId, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, customToolNames, trackDone, appendLog, reqTag, log }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -205,7 +205,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       const usage = jsonResponse.usage || {};
       const totalLatency = Date.now() - requestStartTime;
       appendLog({ tokens: usage, status: "200 OK" });
-      saveUsageStats({ provider, model, requestedModel, actualModel, routerSelectedModel, routerSelectedProvider, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, latency: { ttft: totalLatency, total: totalLatency }, silent: true });
+      saveUsageStats({ provider, model, requestedModel, actualModel, routerSelectedModel, routerSelectedProvider, requestDetailId, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, latency: { ttft: totalLatency, total: totalLatency }, silent: true });
       if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: totalLatency } }));
 
       // Same cache-inclusive total for the recorded detail, so the DB and the
@@ -218,9 +218,10 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         ...ctx,
         latency: { ttft: totalLatency, total: totalLatency },
         tokens: { prompt_tokens: inTokensForLog, completion_tokens: usage.output_tokens || 0 },
+        providerResponse: jsonResponse,
         response: { content: textContent, thinking: null, finish_reason: jsonResponse.status || "unknown" },
         status: "success"
-      }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
+      }, { id: requestDetailId, endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
 
       // Client is Responses API → return as-is
       if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
@@ -304,20 +305,21 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     const usage = parsed.usage || {};
     const totalLatency = Date.now() - requestStartTime;
     appendLog({ tokens: usage, status: "200 OK" });
-    saveUsageStats({ provider, model, requestedModel, actualModel, routerSelectedModel, routerSelectedProvider, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, latency: { ttft: totalLatency, total: totalLatency }, silent: true });
+    saveUsageStats({ provider, model, requestedModel, actualModel, routerSelectedModel, routerSelectedProvider, requestDetailId, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, latency: { ttft: totalLatency, total: totalLatency }, silent: true });
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: totalLatency } }));
 
     saveRequestDetail(buildRequestDetail({
       ...ctx,
       latency: { ttft: totalLatency, total: totalLatency },
       tokens: usage,
+      providerResponse: parsed,
       response: {
         content: parsed.choices?.[0]?.message?.content || null,
         thinking: parsed.choices?.[0]?.message?.reasoning_content || null,
         finish_reason: parsed.choices?.[0]?.finish_reason || "unknown"
       },
       status: "success"
-    }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
+    }, { id: requestDetailId, endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
 
     // Re-attach usage explicitly. This handler already HAS the correct usage — it is
     // the same object written to the usage DB, and for a cached Claude request that DB

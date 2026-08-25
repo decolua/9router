@@ -107,6 +107,11 @@ export const captureThinking = extractThinking;
 
 // Resolve thinking format: provider override > capability > derive(targetFormat).
 function resolveFormat(targetFormat, model, provider) {
+  // The Responses API uses a nested reasoning object even though it shares
+  // OpenAI's thinking levels with Chat Completions.
+  if (targetFormat === "openai-responses" || targetFormat === "openai-response") {
+    return "openai-responses";
+  }
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   if (providerFmt) return providerFmt;
   const caps = getCapabilitiesForModel(provider, model);
@@ -233,6 +238,16 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
       const level = toLevel(eff);
       if (level) body.reasoning_effort = normalizeOpenAILevel(level, supportedLevels);
+      break;
+    }
+    case "openai-responses": {
+      const level = none && canDisable ? "none" : toLevel(eff);
+      if (level) {
+        body.reasoning = {
+          effort: normalizeOpenAILevel(level, supportedLevels),
+          summary: "auto",
+        };
+      }
       break;
     }
     case "claude-adaptive": {

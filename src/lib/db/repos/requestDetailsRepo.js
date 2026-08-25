@@ -68,7 +68,25 @@ function sanitizeHeaders(headers) {
   return sanitized;
 }
 
-export const __test__ = { sanitizeHeaders };
+function toResponseDiagnostic(detail) {
+  return {
+    id: detail?.id,
+    provider: detail?.provider || "unknown",
+    model: detail?.model || "unknown",
+    connectionId: detail?.connectionId || undefined,
+    timestamp: detail?.timestamp || new Date().toISOString(),
+    latency: detail?.latency || { ttft: 0, total: 0 },
+    tokens: detail?.tokens || { prompt_tokens: 0, completion_tokens: 0 },
+    request: null,
+    providerRequest: null,
+    providerResponse: detail?.providerResponse || null,
+    response: detail?.response || {},
+    status: detail?.status || "error",
+    diagnosticOnly: true,
+  };
+}
+
+export const __test__ = { sanitizeHeaders, toResponseDiagnostic };
 
 function generateDetailId(model) {
   const timestamp = new Date().toISOString();
@@ -116,6 +134,7 @@ async function flushToDatabase() {
             providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
             response: truncateField(item.response, config.maxJsonSize),
             pxpipe: item.pxpipe || undefined,
+            diagnosticOnly: item.diagnosticOnly === true,
           };
 
           db.run(
@@ -140,11 +159,17 @@ async function flushToDatabase() {
   }
 }
 
-export async function saveRequestDetail(detail) {
+export async function saveRequestDetail(detail, options = {}) {
   const config = await getObservabilityConfig();
-  if (!config.enabled) {return;}
+  if (!config.enabled && options.persistDiagnostic !== true) return;
 
-  writeBuffer.push(detail);
+  writeBuffer.push(config.enabled ? detail : toResponseDiagnostic(detail));
+
+  if (options.persistDiagnostic === true) {
+    if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+    await flushToDatabase();
+    return;
+  }
 
   // Trigger immediate flush if batch threshold reached.
   // flushToDatabase() drains entire buffer in a loop, so all pushes during await are persisted.

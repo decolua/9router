@@ -81,6 +81,10 @@ export function buildRequestDetail(base, overrides = {}) {
   };
 }
 
+export function createRequestDetailId(startedAt = Date.now()) {
+  return `${startedAt}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
 // Build the "done" summary: duration, ttft, in/out tokens with cache breakdown
 export function formatDoneLine({ usage, latency }) {
   const u = usage || {};
@@ -99,7 +103,7 @@ export function formatDoneLine({ usage, latency }) {
   return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
 }
 
-export function saveUsageStats({ provider, model, requestedModel, actualModel, routerSelectedModel, routerSelectedProvider, tokens, connectionId, apiKey, endpoint, latency, label = "USAGE", silent = false }) {
+export function saveUsageStats({ provider, model, requestedModel, actualModel, routerSelectedModel, routerSelectedProvider, requestDetailId, tokens, connectionId, apiKey, endpoint, latency, label = "USAGE", silent = false }) {
   if (!tokens || typeof tokens !== "object") return;
 
   const normalized = canonicalizeUsage(tokens) || {
@@ -133,6 +137,7 @@ export function saveUsageStats({ provider, model, requestedModel, actualModel, r
       ...(latency ? { latency } : {}),
       requestedModel: requestedModel || model || "unknown",
       actualModel: actualModel || model || "unknown",
+      ...(requestDetailId ? { requestDetailId } : {}),
       ...(routerSelectedModel ? { routerSelectedModel } : {}),
       ...(routerSelectedProvider ? { routerSelectedProvider } : {}),
     },

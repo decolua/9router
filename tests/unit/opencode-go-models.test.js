@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { PROVIDER_MODELS, getModelTargetFormat, getModelTransportFormat } from "../../open-sse/config/providerModels.js";
 import { PROVIDERS } from "../../open-sse/config/providers.js";
 import { resolveTransport } from "../../open-sse/services/provider.js";
+import { translateRequest } from "../../open-sse/translator/index.js";
+import { FORMATS } from "../../open-sse/translator/formats.js";
 import { openaiToOpenAIResponsesRequest } from "../../open-sse/translator/request/openai-responses.js";
 
 const CHAT_MODELS = [
@@ -88,5 +90,45 @@ describe("OpenCode Go per-model transport selection", () => {
 
     expect(request.max_output_tokens).toBe(1024);
     expect(request).not.toHaveProperty("max_tokens");
+  });
+
+  it("uses nested reasoning.effort after the full Claude to Responses translation", () => {
+    const request = translateRequest(
+      FORMATS.CLAUDE,
+      FORMATS.OPENAI_RESPONSES,
+      "gpt-5.6-luna",
+      {
+        model: "gpt-5.6-luna",
+        messages: [{ role: "user", content: "hi" }],
+        output_config: { effort: "xhigh" },
+        stream: true,
+      },
+      true,
+      null,
+      "opencode-go",
+    );
+
+    expect(request.reasoning).toEqual({ effort: "xhigh", summary: "auto" });
+    expect(request).not.toHaveProperty("reasoning_effort");
+  });
+
+  it("normalizes legacy reasoning_effort on Responses passthrough requests", () => {
+    const request = translateRequest(
+      FORMATS.OPENAI_RESPONSES,
+      FORMATS.OPENAI_RESPONSES,
+      "gpt-5.6-luna",
+      {
+        model: "gpt-5.6-luna",
+        input: [{ role: "user", content: [{ type: "input_text", text: "hi" }] }],
+        reasoning_effort: "high",
+        stream: true,
+      },
+      true,
+      null,
+      "opencode-go",
+    );
+
+    expect(request.reasoning).toEqual({ effort: "high", summary: "auto" });
+    expect(request).not.toHaveProperty("reasoning_effort");
   });
 });

@@ -41,6 +41,7 @@ jobs:
           unit/cached-token-usage.test.js
           unit/usage-concern.test.js
           unit/request-details-redaction.test.js
+          unit/traffic-log-detail.test.js
           unit/api-key-group-access.test.js
           unit/provider-auto-recovery.test.js
           unit/provider-models-url.test.js
