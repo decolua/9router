@@ -89,6 +89,8 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
         }
         
         for (const event of events) {
+           if (abortControllerRef.current !== abortController) break;
+           
            accumulator.record(event, Date.now());
            if (event.type === "delta" && event.text) {
                setMessages((prev) => {
@@ -112,9 +114,20 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
         }
         
         if (done) break;
+        if (accumulator.snapshot().terminalState !== null) {
+            reader.cancel();
+            break;
+        }
       }
 
     } catch (err) {
+      if (abortControllerRef.current !== abortController) {
+          if (err.name === "AbortError") {
+            accumulator.abort(Date.now());
+          }
+          return;
+      }
+
       if (err.name === "AbortError") {
         accumulator.abort(Date.now());
       } else {
@@ -122,29 +135,29 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
         setError(err.message);
       }
     } finally {
+      const snapshot = accumulator.snapshot();
+      
       if (abortControllerRef.current === abortController) {
           abortControllerRef.current = null;
           setIsStreaming(false);
+          
+          if (snapshot.terminalState === "complete") {
+             setMessages((prev) => {
+                if (prev.length === 0) return prev;
+                const lastIndex = prev.length - 1;
+                const lastMsg = prev[lastIndex];
+                if (lastMsg.role !== "assistant") return prev;
+                return [
+                    ...prev.slice(0, lastIndex),
+                    { ...lastMsg, partial: false }
+                ];
+             });
+          } else if (snapshot.terminalState === "incomplete") {
+             setError("Stream ended unexpectedly.");
+          }
       }
       
-      const snapshot = accumulator.snapshot();
-      
-      if (snapshot.terminalState === "complete") {
-         setMessages((prev) => {
-            if (prev.length === 0) return prev;
-            const lastIndex = prev.length - 1;
-            const lastMsg = prev[lastIndex];
-            if (lastMsg.role !== "assistant") return prev;
-            return [
-                ...prev.slice(0, lastIndex),
-                { ...lastMsg, partial: false }
-            ];
-         });
-      } else if (snapshot.terminalState === "incomplete") {
-         setError("Stream ended unexpectedly.");
-      }
-
-      if (onMetricsUpdate) {
+      if (onMetricsUpdate && snapshot.terminalState !== null) {
          onMetricsUpdate(snapshot);
       }
     }
