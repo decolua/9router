@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createDisconnectAwareStream } from "../../open-sse/utils/streamHandler.js";
-import { buildAbortedResponsesTerminalBytes } from "../../open-sse/utils/responsesStreamHelpers.js";
+import { buildAbortedChatCompletionsTerminalBytes, buildAbortedResponsesTerminalBytes } from "../../open-sse/utils/responsesStreamHelpers.js";
 
 // Minimal stream controller stub
 function makeController() {
@@ -51,10 +51,10 @@ describe("Responses abort terminal synthesis", () => {
     expect(text).toContain("data: [DONE]");
   });
 
-  it("does not synthesize terminal for non-Responses streams (callback null)", async () => {
+  it("emits a retryable API error for Chat Completions stream failures", async () => {
     const upstream = new ReadableStream({
       start(controller) {
-        controller.enqueue(new TextEncoder().encode("data: hi\n\n"));
+        controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"hi"}}]}\n\n'));
         controller.error(new Error("socket hang up"));
       },
     });
@@ -62,11 +62,12 @@ describe("Responses abort terminal synthesis", () => {
     const out = createDisconnectAwareStream(
       { readable: upstream, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
       makeController(),
-      null
+      buildAbortedChatCompletionsTerminalBytes
     );
 
     const text = await readAll(out);
-    expect(text).not.toContain("response.failed");
-    expect(text).not.toContain("[DONE]");
+    expect(text).toContain('"type":"upstream_error"');
+    expect(text).toContain('"code":502');
+    expect(text).toContain("data: [DONE]");
   });
 });
