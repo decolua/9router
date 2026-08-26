@@ -32,6 +32,7 @@ export default {
   models: [
     { id: "grok-4.5", name: "Grok 4.5", targetFormat: "openai-responses", transportFormat: "openai-responses" },
     { id: "gpt-5.6-luna", name: "GPT 5.6 Luna", targetFormat: "openai-responses", transportFormat: "openai-responses" },
+    { id: "glm-5.3-flash", name: "GLM 5.3 Flash", targetFormat: "openai", transportFormat: "openai" },
     { id: "glm-5.3", name: "GLM 5.3", targetFormat: "openai", transportFormat: "openai" },
     { id: "glm-5.2", name: "GLM 5.2", targetFormat: "openai", transportFormat: "openai" },
     { id: "glm-5.1", name: "GLM 5.1", targetFormat: "openai", transportFormat: "openai" },

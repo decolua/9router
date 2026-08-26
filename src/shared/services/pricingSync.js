@@ -1,32 +1,6 @@
 import { getPricingModels, getSettings, updateSettings, upsertPricingModels } from "@/lib/localDb";
 
 const SOURCE_URL = "https://opencode.ai/docs/zh-cn/go/";
-const MODEL_IDS = {
-  "Grok 4.5": "grok-4.5",
-  "GPT 5.6 Luna": "gpt-5.6-luna",
-  "GLM-5.3": "glm-5.3",
-  "GLM-5.2": "glm-5.2",
-  "GLM-5.1": "glm-5.1",
-  "Kimi K3": "kimi-k3",
-  "Kimi K2.7 Code": "kimi-k2.7-code",
-  "Kimi K2.6": "kimi-k2.6",
-  "MiMo V2.5": "mimo-v2.5",
-  "MiMo-V2.5": "mimo-v2.5",
-  "MiMo V2.5 Pro": "mimo-v2.5-pro",
-  "MiMo-V2.5-Pro": "mimo-v2.5-pro",
-  "MiniMax M3": "minimax-m3",
-  "MiniMax M2.7": "minimax-m2.7",
-  "MiniMax M2.5": "minimax-m2.5",
-  "Muse Spark 1.2 Contributor": "muse-spark-1.2-contributor",
-  "Qwen3.8 Max": "qwen3.8-max",
-  "Qwen3.7 Max": "qwen3.7-max",
-  "Qwen3.7 Plus": "qwen3.7-plus",
-  "Qwen3.6 Plus": "qwen3.6-plus",
-  "DeepSeek V4 Pro": "deepseek-v4-pro",
-  "DeepSeek V4 Flash": "deepseek-v4-flash",
-  "DeepSeek V4 Flash Vision Exp": "deepseek-v4-flash-vision-exp",
-  Hy3: "hy3",
-};
 
 function decodeHtml(value) {
   return String(value || "")
@@ -46,6 +20,39 @@ function parsePrice(value) {
 
 function stripVariant(name) {
   return name.replace(/\s+\((?:≤|>|Off-Peak|Peak).*$/, "").trim();
+}
+
+function parseTableRows(table) {
+  return [...String(table || "").matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
+    .map((match) => [...match[1].matchAll(/<(?:td|th)\b[^>]*>([\s\S]*?)<\/(?:td|th)>/gi)]
+      .map((cell) => decodeHtml(cell[1].replace(/<[^>]+>/g, "").trim())))
+    .filter((cells) => cells.length);
+}
+
+function normalizeModelName(name) {
+  return String(name || "").normalize("NFKC").trim().toLowerCase();
+}
+
+function modelNameToId(name) {
+  return normalizeModelName(name)
+    .replace(/[\u2018\u2019']/g, "")
+    .replace(/[^a-z0-9.]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function parseModelIds(tables) {
+  const modelIds = new Map();
+  for (const table of tables) {
+    const rows = parseTableRows(table);
+    if (!rows[0]?.some((cell) => /(?:模型|model)\s*id/i.test(cell))) continue;
+    for (const row of rows.slice(1)) {
+      const modelName = String(row[0] || "").trim();
+      const modelId = String(row[1] || "").trim();
+      if (!modelName || !/^[a-z0-9][a-z0-9._-]*$/i.test(modelId)) continue;
+      modelIds.set(normalizeModelName(modelName), modelId);
+    }
+  }
+  return modelIds;
 }
 
 const OPENCODE_PEAK_WINDOWS_UTC = "01:00-04:00,06:00-10:00";
@@ -90,18 +97,16 @@ function parseRowPricing(row) {
 }
 
 export function parseOpenCodePricing(html) {
-  const table = [...String(html || "").matchAll(/<table\b[^>]*>[\s\S]*?<\/table>/gi)]
-    .map((match) => match[0])
-    .find((candidate) => /缓存读取/i.test(decodeHtml(candidate)) && /缓存写入/i.test(decodeHtml(candidate)));
+  const tables = [...String(html || "").matchAll(/<table\b[^>]*>[\s\S]*?<\/table>/gi)].map((match) => match[0]);
+  const table = tables.find((candidate) => /缓存读取/i.test(decodeHtml(candidate)) && /缓存写入/i.test(decodeHtml(candidate)));
   if (!table) throw new Error("OpenCode pricing table not found");
-  const rows = [...table.matchAll(/<tr\b[^>]*>([\s\S]*?)<\/tr>/gi)]
-    .map((match) => [...match[1].matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map((cell) => decodeHtml(cell[1].replace(/<[^>]+>/g, "").trim())))
-    .filter((cells) => cells.length >= 5);
+  const rows = parseTableRows(table).filter((cells) => cells.length >= 5);
+  const modelIds = parseModelIds(tables);
   const pricing = {};
   const tiered = {};
   for (const row of rows) {
     const modelName = stripVariant(row[0]);
-    const model = MODEL_IDS[modelName];
+    const model = modelIds.get(normalizeModelName(modelName)) || modelNameToId(modelName);
     const rowPricing = parseRowPricing(row);
     if (!model || !rowPricing) continue;
     const variant = row[0].match(/\((Off-Peak|Peak)\)\s*$/i)?.[1]?.toLowerCase();
