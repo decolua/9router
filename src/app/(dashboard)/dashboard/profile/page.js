@@ -15,7 +15,7 @@ import { useNotificationStore } from "@/store/notificationStore";
 const MODEL_MARKET_LOG_COLUMN_OPTIONS = [
   ["timestamp", "时间"], ["selectedModel", "用户选择模型"], ["actualModel", "实际请求模型"],
   ["provider", "提供商"], ["endpoint", "端点"], ["input", "输入"], ["cacheRead", "缓存读取"], ["cacheWrite", "缓存写入"],
-  ["output", "输出"], ["total", "总和"], ["latency", "延时"], ["status", "状态"],
+  ["cacheHitRate", "缓存命中率"], ["output", "输出"], ["total", "总和"], ["latency", "延时"], ["status", "状态"],
 ];
 
 function getLocaleFromCookie() {

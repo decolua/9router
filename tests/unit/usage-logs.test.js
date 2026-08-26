@@ -7,6 +7,7 @@ const originalDataDir = process.env.DATA_DIR;
 let tempDir;
 let db;
 let settingsRepo;
+let pricingRepo;
 
 beforeAll(async () => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-usage-logs-"));
@@ -14,6 +15,7 @@ beforeAll(async () => {
   vi.resetModules();
   db = await import("@/lib/db/repos/usageRepo.js");
   settingsRepo = await import("@/lib/db/repos/settingsRepo.js");
+  pricingRepo = await import("@/lib/db/repos/pricingRepo.js");
 });
 
 afterAll(() => {
@@ -328,6 +330,60 @@ describe("usage logs", () => {
       routerSelectedModel: "glm",
       routerSelectedProvider: "deepseek",
     });
+  });
+
+  it("prices smart-routing log components with the final routed model", async () => {
+    await pricingRepo.updatePricing({
+      "outer-router-provider": {
+        auto: { input: 90, output: 180, cached: 45, cache_creation: 60 },
+      },
+      "final-price-provider": {
+        "final-price-model": { input: 3, output: 15, cached: 0.3, cache_creation: 3.75 },
+      },
+    });
+    await db.saveRequestUsage({
+      provider: "outer-router-provider",
+      model: "auto",
+      timestamp: new Date().toISOString(),
+      tokens: { prompt_tokens: 330, completion_tokens: 50, cached_tokens: 200, cache_creation_input_tokens: 30 },
+      meta: {
+        routerSelectedProvider: "final-price-provider",
+        routerSelectedModel: "final-price-model",
+      },
+    });
+
+    const result = await db.getUsageLogs({ provider: "outer-router-provider" });
+    const log = result.logs[0];
+
+    expect(log.inputCost).toBeCloseTo(100 * 3 / 1_000_000, 12);
+    expect(log.cacheReadCost).toBeCloseTo(200 * 0.3 / 1_000_000, 12);
+    expect(log.cacheCreationCost).toBeCloseTo(30 * 3.75 / 1_000_000, 12);
+    expect(log.outputCost).toBeCloseTo(50 * 15 / 1_000_000, 12);
+    expect(log.cost).toBeCloseTo((100 * 3 + 200 * 0.3 + 30 * 3.75 + 50 * 15) / 1_000_000, 12);
+  });
+
+  it("keeps zero final-model pricing instead of falling back to the outer router cost", async () => {
+    await pricingRepo.updatePricing({
+      "paid-outer-router": {
+        auto: { input: 10, output: 20, cached: 5, cache_creation: 8 },
+      },
+      "free-final-provider": {
+        "free-final-model": { input: 0, output: 0, cached: 0, cache_creation: 0 },
+      },
+    });
+    await db.saveRequestUsage({
+      provider: "paid-outer-router",
+      model: "auto",
+      timestamp: new Date().toISOString(),
+      tokens: { prompt_tokens: 100, completion_tokens: 20 },
+      meta: {
+        routerSelectedProvider: "free-final-provider",
+        routerSelectedModel: "free-final-model",
+      },
+    });
+
+    const result = await db.getUsageLogs({ provider: "paid-outer-router" });
+    expect(result.logs[0]).toMatchObject({ inputCost: 0, cacheReadCost: 0, cacheCreationCost: 0, outputCost: 0, cost: 0 });
   });
 
   it("covers the complete custom range when chart data is capped at 90 points", async () => {

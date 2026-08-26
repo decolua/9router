@@ -84,6 +84,7 @@ const DEFAULT_SETTINGS = {
   navigationItemOrder: [],
   usageDefaultPeriod: "today",
   trafficLogsDefaultPeriod: "today",
+  modelMarketLogColumns: ["timestamp", "selectedModel", "actualModel", "provider", "endpoint", "input", "cacheRead", "cacheWrite", "cacheHitRate", "output", "total", "latency", "status"],
   deletedPricingModels: [],
 };
 

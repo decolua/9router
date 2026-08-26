@@ -1399,6 +1399,7 @@ export async function getUsageLogs(filter = {}) {
   const mask = (key) => !key ? null : key.length <= 8 ? `${key[0]}***` : `${key.slice(0, 8)}***`;
   const logs = await Promise.all(rows.map(async (r) => {
     const tokens = parseJson(r.tokens, {}) || {};
+    const meta = parseJson(r.meta, {}) || {};
     const { cacheReadTokens, cacheCreationTokens } = getCacheTokenCounts(tokens);
     const normalizedTokens = {
       ...tokens,
@@ -1407,9 +1408,11 @@ export async function getUsageLogs(filter = {}) {
       cached_tokens: cacheReadTokens,
       cache_creation_input_tokens: cacheCreationTokens,
     };
-    const breakdown = await calculateBreakdown(r.provider, r.model, normalizedTokens, r.timestamp);
+    const usesRouterPricing = Boolean(meta.routerSelectedModel || meta.routerSelectedProvider);
+    const pricingProvider = meta.routerSelectedProvider || r.provider;
+    const pricingModel = meta.routerSelectedModel || r.model;
+    const breakdown = await calculateBreakdown(pricingProvider, pricingModel, normalizedTokens, r.timestamp);
     const totalInputTokens = breakdown.inputTokens + breakdown.cacheReadTokens + breakdown.cacheCreationTokens;
-    const meta = parseJson(r.meta, {}) || {};
     const mappedModel = getMappedModelName(modelMappingMap, r.provider, r.model);
     return {
       id: r.id,
@@ -1430,7 +1433,7 @@ export async function getUsageLogs(filter = {}) {
       account: r.connectionId ? (connMap[r.connectionId] || r.connectionId) : null,
       ...breakdown,
       cacheHitRate: totalInputTokens > 0 ? Number((breakdown.cacheReadTokens / totalInputTokens * 100).toFixed(2)) : 0,
-      cost: breakdown.totalCost || Number(r.cost || 0),
+      cost: usesRouterPricing ? breakdown.totalCost : (breakdown.totalCost || Number(r.cost || 0)),
       status: r.status || "ok",
       ttftMs: Number(meta.latency?.ttft || 0),
       latencyMs: Number(meta.latency?.total || meta.latencyMs || meta.durationMs || 0),

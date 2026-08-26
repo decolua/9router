@@ -1,21 +1,9 @@
 import { NextResponse } from "next/server";
 import { getAdapter } from "@/lib/db/driver";
 import { parseJson } from "@/lib/db/helpers/jsonCol";
+import { findRequestDetailRow, sanitizeTrafficLogDetail } from "@/lib/trafficLogDetail";
 
-export function findRequestDetailRow(db, log, meta = {}) {
-  const requestDetailId = typeof meta.requestDetailId === "string" ? meta.requestDetailId.trim() : "";
-  if (requestDetailId) {
-    const exact = db.get("SELECT data FROM requestDetails WHERE id = ?", [requestDetailId]);
-    if (exact) return exact;
-  }
-
-  return db.get(
-    `SELECT data FROM requestDetails
-     WHERE provider = ? AND model = ? AND COALESCE(connectionId, '') = COALESCE(?, '')
-     ORDER BY ABS(julianday(timestamp) - julianday(?)) ASC LIMIT 1`,
-    [log.provider, log.model, log.connectionId, log.timestamp],
-  );
-}
+export { findRequestDetailRow } from "@/lib/trafficLogDetail";
 
 export async function GET(_request, { params }) {
   try {
@@ -28,21 +16,9 @@ export async function GET(_request, { params }) {
     }
     const meta = parseJson(log.meta, {}) || {};
     const detail = findRequestDetailRow(db, log, meta);
-    const rawDetail = detail ? parseJson(detail.data, {}) : null;
-    // Detail payloads contain user prompts and credentials-adjacent request
-    // metadata. The traffic-log viewer only needs response diagnostics.
-    const safeDetail = rawDetail ? {
-      id: rawDetail.id,
-      timestamp: rawDetail.timestamp,
-      status: rawDetail.status,
-      latency: rawDetail.latency,
-      tokens: rawDetail.tokens,
-      providerResponse: rawDetail.providerResponse,
-      response: rawDetail.response,
-    } : null;
     return NextResponse.json({
       log: { id: log.id, timestamp: log.timestamp, provider: log.provider, model: log.model, status: log.status, meta },
-      detail: safeDetail,
+      detail: sanitizeTrafficLogDetail(detail?.data),
     });
   } catch (error) {
     console.error("[API] Failed to get traffic log detail:", error);

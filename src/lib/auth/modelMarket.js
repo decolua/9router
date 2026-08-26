@@ -22,10 +22,13 @@ export function sanitizeModelMarketLog(log) {
     cacheReadCost: log.cacheReadCost,
     cacheCreationTokens: log.cacheCreationTokens,
     cacheCreationCost: log.cacheCreationCost,
+    cacheHitRate: log.cacheHitRate,
     outputTokens: log.outputTokens,
     outputCost: log.outputCost,
     cost: log.cost,
     status: log.status,
+    ttftMs: log.ttftMs,
     latencyMs: log.latencyMs,
+    logType: log.logType,
   };
 }

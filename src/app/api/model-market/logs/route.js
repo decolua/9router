@@ -24,10 +24,16 @@ export async function GET(request) {
       apiKey: keyRecord.id,
       startDate: searchParams.get("startDate"),
       endDate: searchParams.get("endDate"),
+      provider: searchParams.get("provider"),
+      endpoint: searchParams.get("endpoint"),
+      selectedModel: searchParams.get("selectedModel"),
+      actualModel: searchParams.get("actualModel"),
+      status: searchParams.get("logType") || searchParams.get("status"),
     });
     const settings = await getSettings();
     return NextResponse.json({
       logs: result.logs.map(sanitizeModelMarketLog),
+      filterOptions: result.filterOptions,
       pagination: result.pagination,
       columns: Array.isArray(settings.modelMarketLogColumns) ? settings.modelMarketLogColumns : undefined,
     }, { headers: { "Cache-Control": "no-store" } });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { __test__ as requestDetails } from "../../src/lib/db/repos/requestDetailsRepo.js";
 import { findRequestDetailRow } from "../../src/app/api/usage/logs/[id]/detail/route.js";
+import { sanitizeTrafficLogDetail } from "../../src/lib/trafficLogDetail.js";
 
 describe("traffic log response diagnostics", () => {
   it("keeps upstream failure information without persisting request payloads", () => {
@@ -62,5 +63,38 @@ describe("traffic log response diagnostics", () => {
       "conn-1",
       "2026-08-25T15:01:07.000Z",
     ]);
+  });
+
+  it("can disable nearest-time fallback for API-key scoped viewers", () => {
+    const db = { get: () => { throw new Error("fallback lookup must not run"); } };
+    expect(findRequestDetailRow(db, {
+      provider: "opencode-go",
+      model: "gpt-5.6-luna",
+      connectionId: "conn-1",
+      timestamp: "2026-08-25T15:01:07.000Z",
+    }, {}, { allowLegacyFallback: false })).toBeNull();
+  });
+
+  it("returns response diagnostics without request payloads", () => {
+    const detail = sanitizeTrafficLogDetail(JSON.stringify({
+      id: "detail-1",
+      request: { messages: [{ content: "secret" }] },
+      providerRequest: { input: "secret" },
+      providerResponse: { status: 400, error: "bad request" },
+      response: { status: 400 },
+      status: "error",
+    }));
+
+    expect(detail).toEqual({
+      id: "detail-1",
+      timestamp: undefined,
+      status: "error",
+      latency: undefined,
+      tokens: undefined,
+      providerResponse: { status: 400, error: "bad request" },
+      response: { status: 400 },
+    });
+    expect(detail).not.toHaveProperty("request");
+    expect(detail).not.toHaveProperty("providerRequest");
   });
 });
