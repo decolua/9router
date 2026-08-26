@@ -147,7 +147,7 @@ export default function ModelMarketClient({ isDashboardView = false }) {
                   <div key={owner}>
                     <div className="mb-2 flex items-center gap-2"><h2 className="text-sm font-semibold">{owner}</h2><span className="text-xs text-text-muted">{ownerModels.length} 个模型</span></div>
                     <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
-                      {ownerModels.map((model) => <Card key={model.id} className="flex min-w-0 items-start gap-3 p-3"><span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"><span className="material-symbols-outlined text-[19px]">smart_toy</span></span><div className="min-w-0"><p className="truncate font-mono text-sm" title={model.id}>{model.id}</p><p className="mt-1 line-clamp-2 text-xs leading-5 text-text-muted" title={model.description || ""}>{model.description || model.kind || "chat"}</p></div></Card>)}
+                      {ownerModels.map((model) => <Card key={model.id} className="flex min-w-0 items-start gap-3 p-3"><span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"><span className="material-symbols-outlined text-[19px]">smart_toy</span></span><div className="min-w-0"><p className="truncate font-mono text-sm" title={model.id}>{model.id}</p>{model.description && <p className="mt-1 line-clamp-2 text-xs leading-5 text-text-muted" title={model.description}>{model.description}</p>}</div></Card>)}
                     </div>
                   </div>
                 )) : <div className="border-y border-border py-16 text-center text-sm text-text-muted">该密钥当前没有可用模型</div>}

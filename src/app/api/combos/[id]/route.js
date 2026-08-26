@@ -5,6 +5,11 @@ import { resetComboRotation } from "open-sse/services/combo.js";
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
+function normalizeDescription(value) {
+  if (typeof value !== "string") throw new TypeError("Description must be a string");
+  return value.trim().slice(0, 500);
+}
+
 // GET /api/combos/[id] - Get combo by ID
 export async function GET(request, { params }) {
   try {
@@ -27,6 +32,14 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
+
+    if (Object.prototype.hasOwnProperty.call(body, "description")) {
+      try {
+        body.description = normalizeDescription(body.description);
+      } catch (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+    }
     
     // Validate name format if provided
     if (body.name) {

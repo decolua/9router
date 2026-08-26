@@ -316,6 +316,9 @@ export async function buildModelsList(kindFilter, options = {}) {
       object: "model",
       owned_by: "combo",
     };
+    if (typeof combo.description === "string" && combo.description.trim()) {
+      entry.description = combo.description.trim();
+    }
     if (combo.kind === "webSearch" || combo.kind === "webFetch") {
       entry.kind = combo.kind;
     }

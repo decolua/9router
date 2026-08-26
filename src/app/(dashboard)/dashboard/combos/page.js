@@ -329,6 +329,7 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
           </div>
           <div className="min-w-0 flex-1">
             <code className="block truncate font-mono text-sm font-medium">{combo.name}</code>
+            {combo.description && <p className="mt-1 line-clamp-2 text-xs text-text-muted" title={combo.description}>{combo.description}</p>}
             <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
               {combo.models.length === 0 ? (
                 <span className="text-xs text-text-muted italic">No models</span>
@@ -704,6 +705,7 @@ function ModelItem({ id, index, model, providerName, modelName, isFirst, isLast,
 function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
+  const [description, setDescription] = useState(combo?.description || "");
   const [models, setModels] = useState(combo?.models || []);
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -807,7 +809,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const handleSave = async () => {
     if (!validateName(name)) return;
     setSaving(true);
-    await onSave({ name: name.trim(), models });
+    await onSave({ name: name.trim(), description: description.trim(), models });
     setSaving(false);
   };
 
@@ -833,6 +835,20 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
             <p className="text-[10px] text-text-muted mt-0.5">
               Only letters, numbers, -, _ and . allowed
             </p>
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-sm font-medium" htmlFor="combo-description">备注</label>
+            <textarea
+              id="combo-description"
+              rows={3}
+              maxLength={500}
+              value={description}
+              onChange={(event) => setDescription(event.target.value)}
+              placeholder="说明模型组合的用途、能力或适用场景"
+              className="w-full resize-y rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-text-main outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+            />
+            <p className="mt-0.5 text-right text-[10px] text-text-muted">{description.length}/500</p>
           </div>
 
           {/* Models */}

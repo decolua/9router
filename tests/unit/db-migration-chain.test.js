@@ -38,6 +38,8 @@ describe("Schema migrations", () => {
       "proxyPools", "apiKeys", "apiKeyGroups", "combos", "kv", "usageHistory", "usageDaily", "requestDetails",
     ]));
     expect(db.get(`SELECT name FROM apiKeyGroups WHERE id = 'default'`)?.name).toBe("默认分组");
+    const comboColumns = db.all(`PRAGMA table_info(combos)`).map((column) => column.name);
+    expect(comboColumns).toContain("description");
   });
 
   it("existing DB at older schemaVersion → re-applies pending migrations on restart", async () => {

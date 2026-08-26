@@ -6,6 +6,12 @@ export const dynamic = "force-dynamic";
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
+function normalizeDescription(value) {
+  if (value === undefined || value === null) return "";
+  if (typeof value !== "string") throw new TypeError("Description must be a string");
+  return value.trim().slice(0, 500);
+}
+
 // GET /api/combos - Get all combos
 export async function GET() {
   try {
@@ -22,6 +28,12 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const { name, models, kind } = body;
+    let description;
+    try {
+      description = normalizeDescription(body.description);
+    } catch (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
 
     if (!name) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -38,7 +50,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
     }
 
-    const combo = await createCombo({ name, models: models || [], kind: kind || null });
+    const combo = await createCombo({ name, description, models: models || [], kind: kind || null });
 
     return NextResponse.json(combo, { status: 201 });
   } catch (error) {

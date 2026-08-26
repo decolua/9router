@@ -154,15 +154,35 @@ describe("DB SQLite layer — public API parity", () => {
   });
 
   it("combos: CRUD", async () => {
-    const c = await sqliteDb.createCombo({ name: "combo1", models: ["m1", "m2"], kind: "fallback" });
+    const c = await sqliteDb.createCombo({ name: "combo1", description: "适合代码审查", models: ["m1", "m2"], kind: "fallback" });
     expect(c.id).toBeDefined();
+    expect(c.description).toBe("适合代码审查");
     expect(c.models).toEqual(["m1", "m2"]);
     const byName = await sqliteDb.getComboByName("combo1");
     expect(byName.id).toBe(c.id);
-    await sqliteDb.updateCombo(c.id, { models: ["m3"] });
+    expect(byName.description).toBe("适合代码审查");
+    await sqliteDb.updateCombo(c.id, { description: "新的组合备注", models: ["m3"] });
     const updated = await sqliteDb.getComboById(c.id);
+    expect(updated.description).toBe("新的组合备注");
     expect(updated.models).toEqual(["m3"]);
     expect(await sqliteDb.deleteCombo(c.id)).toBe(true);
+  });
+
+  it("v1 models exposes combo descriptions", async () => {
+    const combo = await sqliteDb.createCombo({
+      name: "described-combo",
+      description: "适合复杂编码任务",
+      models: ["oc/mimo-v2.5-free"],
+    });
+    const { buildModelsList } = await import("@/app/api/v1/models/route.js");
+
+    const models = await buildModelsList(["llm"], { skipDynamicFetch: true });
+
+    expect(models.find((model) => model.id === combo.name)).toMatchObject({
+      owned_by: "combo",
+      description: "适合复杂编码任务",
+    });
+    await sqliteDb.deleteCombo(combo.id);
   });
 
   it("modelAliases: KV ops", async () => {
