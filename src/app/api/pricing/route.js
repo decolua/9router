@@ -1,201 +1,124 @@
 import { NextResponse } from "next/server";
-import { getPricing, getSettings, updatePricing, resetPricing, resetAllPricing, updateSettings } from "@/lib/localDb.js";
-import { getDefaultPricing, getPricingForModel as getDefaultPricingForModel } from "open-sse/providers/pricing.js";
-import { PROVIDER_MODELS } from "open-sse/config/providerModels.js";
+import {
+  deletePricingModel,
+  getPricingModels,
+  replacePricingMappings,
+  setPricingMappings,
+  updateSettings,
+  upsertPricingModels,
+} from "@/lib/localDb.js";
+import { getPricingPageData } from "@/shared/services/pricingCatalog.js";
 
-const EMPTY_PRICING = { input: 0, output: 0, cached: 0, cache_creation: 0, reasoning: 0 };
-const RATE_FIELDS = Object.keys(EMPTY_PRICING);
+export const dynamic = "force-dynamic";
 
-function buildPricingCatalog(pricing, deletedPricingModels = []) {
-  const deleted = new Set(deletedPricingModels);
-  const pairs = new Map();
-  const add = (provider, model) => {
-    if (!provider || !model) return;
-    pairs.set(`${provider}\u0000${model}`, { provider, model });
-  };
-  for (const [provider, models] of Object.entries(PROVIDER_MODELS)) {
-    for (const model of models || []) add(provider, typeof model === "string" ? model : model?.id);
+const RATE_FIELDS = ["input", "output", "cached", "cache_creation", "reasoning"];
+
+function normalizePricing(value, source = "manual") {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("定价格式无效");
+  const pricing = {};
+  for (const field of RATE_FIELDS) {
+    const rate = Number(value[field] || 0);
+    if (!Number.isFinite(rate) || rate < 0) throw new Error(`${field} 必须是非负数`);
+    pricing[field] = rate;
   }
-  for (const [provider, models] of Object.entries(pricing || {})) {
-    for (const model of Object.keys(models || {})) add(provider, model);
+  pricing.peakEnabled = value.peakEnabled === true;
+  pricing.peakWindows = String(value.peakWindows || "").trim();
+  for (const tier of ["peakPricing", "offPeakPricing"]) {
+    pricing[tier] = {};
+    for (const field of RATE_FIELDS) {
+      const rate = Number(value[tier]?.[field] ?? pricing[field]);
+      if (!Number.isFinite(rate) || rate < 0) throw new Error(`${tier}.${field} 必须是非负数`);
+      pricing[tier][field] = rate;
+    }
   }
-  return [...pairs.values()]
-  .filter(({ provider, model }) => !deleted.has(`${provider}\u0000${model}`))
-  .map(({ provider, model }) => ({
-    provider,
-    model,
-    pricing: {
-      ...EMPTY_PRICING,
-      ...(getDefaultPricingForModel(provider, model) || {}),
-      ...(pricing?.[provider]?.[model] || {}),
-      peakEnabled: pricing?.[provider]?.[model]?.peakEnabled === true,
-      peakWindows: pricing?.[provider]?.[model]?.peakWindows || "",
-      lastUpdated: pricing?.[provider]?.[model]?.lastUpdated || "",
-      peakPricing: { ...EMPTY_PRICING, ...(pricing?.[provider]?.[model]?.peakPricing || {}) },
-      offPeakPricing: { ...EMPTY_PRICING, ...(pricing?.[provider]?.[model]?.offPeakPricing || {}) },
-    },
-  })).sort((a, b) => a.provider.localeCompare(b.provider) || a.model.localeCompare(b.model));
+  if (pricing.peakEnabled && !pricing.peakWindows) throw new Error("启用峰谷定价时必须填写峰时时段");
+  return { ...pricing, source };
 }
 
-/**
- * GET /api/pricing
- * Get current pricing configuration (merged user + defaults)
- */
+async function requirePricingModel(model) {
+  const pricingModels = await getPricingModels();
+  if (!pricingModels[model]) throw new Error(`定价模型不存在：${model}`);
+}
+
 export async function GET() {
   try {
-    const [pricing, settings] = await Promise.all([getPricing(), getSettings()]);
-    return NextResponse.json({ items: buildPricingCatalog(pricing, settings.deletedPricingModels) });
+    return NextResponse.json(await getPricingPageData());
   } catch (error) {
     console.error("Error fetching pricing:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch pricing" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "加载模型定价失败" }, { status: 500 });
   }
 }
 
-/**
- * PATCH /api/pricing
- * Update pricing configuration
- * Body: { provider: { model: { input: number, output: number, cached: number, ... } } }
- */
 export async function PATCH(request) {
   try {
     const body = await request.json();
+    const action = body?.action;
 
-    // Validate body structure
-    if (typeof body !== "object" || body === null) {
-      return NextResponse.json(
-        { error: "Invalid pricing data format" },
-        { status: 400 }
+    if (action === "upsertPricing") {
+      const model = String(body.model || "").trim();
+      if (!model) return NextResponse.json({ error: "模型名称不能为空" }, { status: 400 });
+      await upsertPricingModels({ [model]: normalizePricing(body.pricing) });
+    } else if (action === "setDefault") {
+      const model = String(body.model || "").trim();
+      await requirePricingModel(model);
+      await updateSettings({ defaultPricingModel: model });
+    } else if (action === "setMappings") {
+      const pricingModel = String(body.pricingModel || "").trim();
+      await requirePricingModel(pricingModel);
+      await replacePricingMappings(pricingModel, body.models);
+    } else if (action === "mapModels") {
+      const pricingModel = String(body.pricingModel || "").trim();
+      await requirePricingModel(pricingModel);
+      const mappings = (Array.isArray(body.models) ? body.models : []).map((item) => ({
+        provider: item.provider,
+        model: item.model,
+        pricingModel,
+      }));
+      await setPricingMappings(mappings);
+    } else if (action === "bulkMapSameName") {
+      const overwrite = body.overwrite === true;
+      const data = await getPricingPageData();
+      const candidates = data.providerModels.filter((item) =>
+        item.recommendedPricingModel && (overwrite || !item.mappedPricingModel),
       );
+      await setPricingMappings(candidates.map((item) => ({
+        provider: item.provider,
+        model: item.model,
+        pricingModel: item.recommendedPricingModel,
+      })));
+      return NextResponse.json({
+        ...(await getPricingPageData()),
+        result: {
+          mappedCount: candidates.length,
+          skippedCount: data.providerModels.length - candidates.length,
+        },
+      });
+    } else {
+      return NextResponse.json({ error: "不支持的定价操作" }, { status: 400 });
     }
 
-    // Validate pricing structure
-    for (const [provider, models] of Object.entries(body)) {
-      if (typeof models !== "object" || models === null) {
-        return NextResponse.json(
-          { error: `Invalid pricing for provider: ${provider}` },
-          { status: 400 }
-        );
-      }
-
-      for (const [model, pricing] of Object.entries(models)) {
-        if (typeof pricing !== "object" || pricing === null) {
-          return NextResponse.json(
-            { error: `Invalid pricing for model: ${provider}/${model}` },
-            { status: 400 }
-          );
-        }
-
-        // Validate pricing fields
-        const validFields = [...RATE_FIELDS, "peakEnabled", "peakWindows", "peakPricing", "offPeakPricing", "lastUpdated"];
-        for (const [key, value] of Object.entries(pricing)) {
-          if (!validFields.includes(key)) {
-            return NextResponse.json(
-              { error: `Invalid pricing field: ${key} for ${provider}/${model}` },
-              { status: 400 }
-            );
-          }
-          if (RATE_FIELDS.includes(key) && (typeof value !== "number" || isNaN(value) || value < 0)) {
-            return NextResponse.json(
-              { error: `Invalid pricing value for ${key} in ${provider}/${model}: must be non-negative number` },
-              { status: 400 }
-            );
-          }
-          if (key === "peakEnabled" && typeof value !== "boolean") {
-            return NextResponse.json({ error: `Invalid peak pricing switch for ${provider}/${model}` }, { status: 400 });
-          }
-          if (key === "peakWindows" && typeof value !== "string") {
-            return NextResponse.json({ error: `Invalid peak pricing windows for ${provider}/${model}` }, { status: 400 });
-          }
-          if (key === "lastUpdated" && (typeof value !== "string" || (value && Number.isNaN(new Date(value).getTime())))) {
-            return NextResponse.json({ error: `Invalid last updated time for ${provider}/${model}` }, { status: 400 });
-          }
-          if ((key === "peakPricing" || key === "offPeakPricing") && (typeof value !== "object" || value === null || Object.entries(value).some(([field, rate]) => !RATE_FIELDS.includes(field) || typeof rate !== "number" || isNaN(rate) || rate < 0))) {
-            return NextResponse.json({ error: `Invalid ${key} for ${provider}/${model}` }, { status: 400 });
-          }
-        }
-      }
-    }
-
-    const settings = await getSettings();
-    const restored = new Set(settings.deletedPricingModels || []);
-    for (const [provider, models] of Object.entries(body)) {
-      for (const model of Object.keys(models)) restored.delete(`${provider}\u0000${model}`);
-    }
-    const [updatedPricing] = await Promise.all([
-      updatePricing(body),
-      updateSettings({ deletedPricingModels: [...restored] }),
-    ]);
-    return NextResponse.json(updatedPricing);
+    return NextResponse.json(await getPricingPageData());
   } catch (error) {
+    const message = error?.message || "保存模型定价失败";
+    const status = /不存在|不能为空|必须|无效/.test(message) ? 400 : 500;
     console.error("Error updating pricing:", error);
-    return NextResponse.json(
-      { error: "Failed to update pricing" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: message }, { status });
   }
 }
 
-/**
- * DELETE /api/pricing
- * Reset pricing to defaults
- * Query params: ?provider=xxx&model=yyy (optional)
- */
 export async function DELETE(request) {
   try {
     const { searchParams } = new URL(request.url);
-    const provider = searchParams.get("provider");
-    const model = searchParams.get("model");
-    let requestedModels = [];
-    try {
-      const body = await request.json();
-      requestedModels = Array.isArray(body?.models) ? body.models : [];
-    } catch {}
-
-    if (requestedModels.length || (provider && model)) {
-      const models = requestedModels.length ? requestedModels : [{ provider, model }];
-      const validModels = models.filter((item) => item?.provider && item?.model);
-      const settings = await getSettings();
-      const deleted = new Set(settings.deletedPricingModels || []);
-      for (const item of validModels) {
-        await resetPricing(item.provider, item.model);
-        deleted.add(`${item.provider}\u0000${item.model}`);
-      }
-      await updateSettings({ deletedPricingModels: [...deleted] });
-    } else if (provider) {
-      // Reset entire provider
-      await resetPricing(provider);
-    } else {
-      // Reset all pricing
-      await resetAllPricing();
+    const model = String(searchParams.get("model") || "").trim();
+    if (!model) return NextResponse.json({ error: "模型名称不能为空" }, { status: 400 });
+    const data = await getPricingPageData();
+    if (data.defaultPricingModel === model) {
+      return NextResponse.json({ error: "默认定价模型不能删除，请先设置其他默认模型" }, { status: 409 });
     }
-
-    const pricing = await getPricing();
-    return NextResponse.json(pricing);
+    await deletePricingModel(model);
+    return NextResponse.json(await getPricingPageData());
   } catch (error) {
-    console.error("Error resetting pricing:", error);
-    return NextResponse.json(
-      { error: "Failed to reset pricing" },
-      { status: 500 }
-    );
-  }
-}
-
-/**
- * GET /api/pricing/defaults
- * Get default pricing configuration
- */
-export async function GET_DEFAULTS() {
-  try {
-    const defaultPricing = getDefaultPricing();
-    return NextResponse.json(defaultPricing);
-  } catch (error) {
-    console.error("Error fetching default pricing:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch default pricing" },
-      { status: 500 }
-    );
+    console.error("Error deleting pricing:", error);
+    return NextResponse.json({ error: error?.message || "删除模型定价失败" }, { status: 500 });
   }
 }

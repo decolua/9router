@@ -1,5 +1,4 @@
-import { getPricing, getSettings, updateSettings, updatePricing } from "@/lib/localDb";
-import { PROVIDER_MODELS } from "open-sse/config/providerModels.js";
+import { getPricingModels, getSettings, updateSettings, upsertPricingModels } from "@/lib/localDb";
 
 const SOURCE_URL = "https://opencode.ai/docs/zh-cn/go/";
 const MODEL_IDS = {
@@ -139,34 +138,26 @@ export async function syncPricingFromOpenCode() {
     const response = await fetch(SOURCE_URL, { signal: AbortSignal.timeout(15000), cache: "no-store" });
     if (!response.ok) throw new Error(`Source returned ${response.status}`);
     const sourcePricing = parseOpenCodePricing(await response.text());
-    const currentPricing = await getPricing();
+    const currentPricing = await getPricingModels();
     const settings = await getSettings();
-    const deleted = new Set(settings.deletedPricingModels || []);
-    const existingModels = new Set([
-      ...(PROVIDER_MODELS["opencode-go"] || []).map((model) => typeof model === "string" ? model : model?.id).filter(Boolean),
-      ...Object.keys(currentPricing["opencode-go"] || {}),
-    ]);
     const pricing = {};
     let updatedCount = 0;
     for (const [model, values] of Object.entries(sourcePricing)) {
-      if (!existingModels.has(model)) continue;
-      if (hasPricingChanges(currentPricing["opencode-go"]?.[model], values)) updatedCount += 1;
-      pricing[model] = { ...(currentPricing["opencode-go"]?.[model] || {}), ...values };
-      deleted.delete(`opencode-go\u0000${model}`);
+      if (hasPricingChanges(currentPricing[model], values)) updatedCount += 1;
+      pricing[model] = { ...(currentPricing[model] || {}), ...values, source: "opencode" };
     }
-    if (Object.keys(pricing).length) await updatePricing({ "opencode-go": pricing });
+    if (Object.keys(pricing).length) await upsertPricingModels(pricing);
     await updateSettings({
-      deletedPricingModels: [...deleted],
       pricingLastSyncAt: now,
       pricingLastSyncStatus: "success",
       pricingLastSyncError: "",
     });
     return {
-      provider: "opencode-go",
+      provider: "global",
       pricing,
       syncedCount: Object.keys(pricing).length,
       updatedCount,
-      skippedCount: Object.keys(sourcePricing).length - Object.keys(pricing).length,
+      skippedCount: 0,
       source: SOURCE_URL,
       syncedAt: now,
     };
