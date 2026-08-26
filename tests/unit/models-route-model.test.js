@@ -41,4 +41,38 @@ describe("models route model metadata", () => {
       owned_by: "ocg",
     });
   });
+
+  it("keeps provider-specific routes that share the same public id", () => {
+    const models = [
+      {
+        id: "ocg/glm-5.2",
+        object: "model",
+        owned_by: "ocg",
+        upstream_provider: "opencode-go",
+        upstream_model: "glm-5.2",
+      },
+      {
+        id: "glm-cn/glm-5.2",
+        object: "model",
+        owned_by: "glm-cn",
+        upstream_provider: "glm-cn",
+        upstream_model: "glm-5.2",
+      },
+    ];
+
+    expect(finalizeModelsForResponse(models, createModelMappingMap([]))).toEqual([
+      {
+        id: "glm-5.2",
+        route_model: "ocg/glm-5.2",
+        object: "model",
+        owned_by: "ocg",
+      },
+      {
+        id: "glm-5.2",
+        route_model: "glm-cn/glm-5.2",
+        object: "model",
+        owned_by: "glm-cn",
+      },
+    ]);
+  });
 });

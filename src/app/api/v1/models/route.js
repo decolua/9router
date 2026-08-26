@@ -570,14 +570,14 @@ export async function buildModelsList(kindFilter, options = {}) {
 
 export function finalizeModelsForResponse(models, mappingMap, applyMappings = true) {
   const dedupedModels = [];
-  const seenModelIds = new Set();
+  const seenRouteModelIds = new Set();
   for (const model of models) {
     if (!model?.id) continue;
     const mappedId = applyMappings && model.upstream_provider && model.upstream_model
       ? getMappedModelName(mappingMap, model.upstream_provider, model.upstream_model)
       : model.id;
-    if (seenModelIds.has(mappedId)) continue;
-    seenModelIds.add(mappedId);
+    if (seenRouteModelIds.has(model.id)) continue;
+    seenRouteModelIds.add(model.id);
     if (applyMappings) {
       const { upstream_provider, upstream_model, ...publicModel } = model;
       dedupedModels.push({ ...publicModel, id: mappedId, route_model: model.id });
