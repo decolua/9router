@@ -20,7 +20,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
     : undefined;
 
   return (
-    <div className={`flex items-center gap-3 p-3 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
+    <div className={`flex min-h-24 min-w-0 items-center gap-3 rounded-md border p-3 ${borderColor} hover:bg-sidebar/50`}>
       <span
         className="material-symbols-outlined text-base text-text-muted"
         style={iconColor ? { color: iconColor } : undefined}
@@ -157,9 +157,9 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         Add {isAnthropic ? "Anthropic" : "OpenAI"}-compatible models manually or import them from the configured models endpoint.
       </p>
 
-      <div className="flex items-end gap-2 flex-wrap">
-        <div className="flex-1 min-w-[240px]">
-          <label htmlFor="new-compatible-model-input" className="text-xs text-text-muted mb-1 block">Model ID</label>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-[260px] flex-1 items-center gap-2">
+          <label htmlFor="new-compatible-model-input" className="shrink-0 text-xs font-medium text-text-muted">模型 ID</label>
           <input
             id="new-compatible-model-input"
             type="text"
@@ -167,16 +167,16 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
             onChange={(e) => setNewModel(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
             placeholder={isAnthropic ? "claude-3-opus-20240229" : "gpt-4o"}
-            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+            className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-sm focus:border-primary focus:outline-none"
           />
         </div>
-        <Button size="sm" icon="add" onClick={handleAdd} disabled={!newModel.trim() || adding}>
+        <Button size="md" icon="add" onClick={handleAdd} disabled={!newModel.trim() || adding}>
           {adding ? "Adding..." : "Add"}
         </Button>
-        <Button size="sm" variant="secondary" icon="download" onClick={handleImport} disabled={!canImport || importing}>
+        <Button size="md" variant="secondary" icon="download" onClick={handleImport} disabled={!canImport || importing}>
           {importing ? "正在更新..." : "更新模型列表"}
         </Button>
-        {allModels.length > 0 && <Button size="sm" variant="danger" icon="delete_sweep" onClick={() => setDeleteAllOpen(true)}>删除全部模型</Button>}
+        {allModels.length > 0 && <Button size="md" variant="danger" icon="delete_sweep" onClick={() => setDeleteAllOpen(true)}>删除全部模型</Button>}
       </div>
 
       {!canImport && (
@@ -186,7 +186,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
       )}
 
       {allModels.length > 0 && (
-        <div className="flex flex-col gap-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {allModels.map(({ id, alias, source }) => (
             <CompatibleModelRow
               key={`${source}-${providerStorageAlias}/${id}`}

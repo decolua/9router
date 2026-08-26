@@ -6,7 +6,7 @@ import PropTypes from "prop-types";
 import { Badge, Toggle } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onTest, onEdit, onDelete, testDisabled = false, oneByOneStatus = null }) {
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onTest, onEdit, onConfigureExpiration, onDelete, testDisabled = false, oneByOneStatus = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null);
@@ -70,6 +70,8 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   const isCookieConnection = rowAuthType === "cookie";
   const authIcon = isCookieConnection ? "cookie" : isOAuthConnection ? "lock" : "key";
   const authLabel = isOAuthConnection ? "OAuth" : isCookieConnection ? "Cookie" : "API Key";
+  const isApiKeyConnection = rowAuthType === "apikey";
+  const apiKeyExpiresOn = connection.providerSpecificData?.apiKeyExpiresOn;
   const displayName = connection.name?.trim()
     || connection.email?.trim()
     || connection.displayName?.trim()
@@ -191,6 +193,12 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 {getOneByOneLabel()}
               </Badge>
             )}
+            {isApiKeyConnection && apiKeyExpiresOn && (
+              <span className="inline-flex items-center gap-1 text-xs text-text-muted" title={`密钥过期日期：${apiKeyExpiresOn}`}>
+                <span className="material-symbols-outlined text-[14px]">event</span>
+                过期日期 {apiKeyExpiresOn}
+              </span>
+            )}
           </div>
           {hasAnyProxy && (
             <div className="mt-1 flex items-center gap-2 flex-wrap">
@@ -212,7 +220,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
         </div>
       </div>
       <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
-        <div className={`grid flex-1 gap-1 sm:flex sm:flex-none ${(proxyPools || []).length > 0 ? "grid-cols-4" : "grid-cols-3"}`}>
+        <div className={`grid flex-1 gap-1 sm:flex sm:flex-none ${(proxyPools || []).length > 0 ? (isApiKeyConnection ? "grid-cols-5" : "grid-cols-4") : (isApiKeyConnection ? "grid-cols-4" : "grid-cols-3")}`}>
           {/* Proxy button with inline dropdown */}
           {(proxyPools || []).length > 0 && (
             <div className="relative" ref={proxyDropdownRef}>
@@ -261,6 +269,12 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <span className="material-symbols-outlined text-[18px]">edit</span>
             <span className="text-[10px] leading-tight">Edit</span>
           </button>
+          {isApiKeyConnection && (
+            <button onClick={onConfigureExpiration} className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5" title="配置密钥过期日期">
+              <span className="material-symbols-outlined text-[18px]">event</span>
+              <span className="text-[10px] leading-tight">Expiry</span>
+            </button>
+          )}
           <button onClick={onDelete} className="flex flex-col items-center rounded px-2 py-1 text-red-500 hover:bg-red-500/10">
             <span className="material-symbols-outlined text-[18px]">delete</span>
             <span className="text-[10px] leading-tight">Delete</span>
@@ -308,6 +322,7 @@ ConnectionRow.propTypes = {
   onUpdateProxy: PropTypes.func,
   onTest: PropTypes.func.isRequired,
   onEdit: PropTypes.func.isRequired,
+  onConfigureExpiration: PropTypes.func,
   onDelete: PropTypes.func.isRequired,
   testDisabled: PropTypes.bool,
   oneByOneStatus: PropTypes.shape({

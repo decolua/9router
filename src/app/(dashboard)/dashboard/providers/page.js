@@ -504,7 +504,7 @@ export default function ProvidersPage() {
               </div>
             </Link>
             <div className="flex shrink-0 items-center justify-end gap-2">
-              <button type="button" className="rounded-md p-1.5 text-text-muted hover:bg-bg-hover hover:text-primary" title="修改显示名称" onClick={() => setEditingProviderName({ providerId: item.providerId, name: item.info.name })}><span className="material-symbols-outlined text-[18px]">edit</span></button>
+              <button type="button" className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-hover hover:text-primary" title="修改显示名称" onClick={() => setEditingProviderName({ providerId: item.providerId, name: item.info.name })}><span className="material-symbols-outlined text-[18px]">edit</span></button>
               <button
                 type="button"
                 disabled={testingMode === item.providerId}

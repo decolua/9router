@@ -7,6 +7,7 @@ import {
   updateSettings,
   upsertPricingModels,
 } from "@/lib/localDb.js";
+import { disableModels } from "@/lib/disabledModelsDb.js";
 import { getPricingPageData } from "@/shared/services/pricingCatalog.js";
 
 export const dynamic = "force-dynamic";
@@ -93,6 +94,17 @@ export async function PATCH(request) {
           skippedCount: data.providerModels.length - candidates.length,
         },
       });
+    } else if (action === "disableProviderModels") {
+      const groups = new Map();
+      for (const item of Array.isArray(body.models) ? body.models : []) {
+        const provider = String(item?.provider || "").trim();
+        const model = String(item?.model || "").trim();
+        if (!provider || !model) continue;
+        if (!groups.has(provider)) groups.set(provider, []);
+        groups.get(provider).push(model);
+      }
+      if (!groups.size) return NextResponse.json({ error: "请选择要禁用的模型" }, { status: 400 });
+      await Promise.all([...groups.entries()].map(([provider, ids]) => disableModels(provider, ids)));
     } else {
       return NextResponse.json({ error: "不支持的定价操作" }, { status: 400 });
     }

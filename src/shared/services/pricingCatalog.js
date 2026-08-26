@@ -1,7 +1,8 @@
 import { getCustomModels, getPricingMappings, getPricingModels, getProviderConnections, getProviderNodes, getSettings } from "@/lib/localDb";
+import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
-import { FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { FREE_PROVIDERS, getProviderAlias } from "@/shared/constants/providers.js";
 
 const RATE_FIELDS = ["input", "output", "cached", "cache_creation", "reasoning"];
 export const EMPTY_PRICING = Object.fromEntries(RATE_FIELDS.map((field) => [field, 0]));
@@ -28,17 +29,25 @@ function normalizeModelId(value, prefixes) {
 }
 
 export async function getProviderPricingCatalog() {
-  const [connections, nodes, customModels, settings] = await Promise.all([
+  const [connections, nodes, customModels, settings, disabledModels] = await Promise.all([
     getProviderConnections(),
     getProviderNodes(),
     getCustomModels(),
     getSettings(),
+    getDisabledModels(),
   ]);
   const { names, providerIds } = providerMetadata();
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   for (const node of nodes) {
     providerIds.set(node.id, node.id);
     if (node.prefix) providerIds.set(node.prefix, node.id);
+  }
+  const disabledByProvider = new Map();
+  for (const [provider, ids] of Object.entries(disabledModels || {})) {
+    const canonicalProvider = providerIds.get(provider) || provider;
+    const current = disabledByProvider.get(canonicalProvider) || new Set();
+    for (const id of Array.isArray(ids) ? ids : []) current.add(String(id));
+    disabledByProvider.set(canonicalProvider, current);
   }
   const smartRoutingProviders = new Set(
     Object.entries(settings.smartRoutingProviders || {})
@@ -58,11 +67,12 @@ export async function getProviderPricingCatalog() {
   const add = (provider, model) => {
     const cleanProvider = String(providerIds.get(provider) || provider || "").trim();
     const cleanModel = String(model || "").trim();
-    if (!cleanProvider || !cleanModel || !availableProviders.has(cleanProvider) || smartRoutingProviders.has(cleanProvider)) return;
+    if (!cleanProvider || !cleanModel || !availableProviders.has(cleanProvider) || smartRoutingProviders.has(cleanProvider) || disabledByProvider.get(cleanProvider)?.has(cleanModel)) return;
     const id = `${cleanProvider}\u0000${cleanModel}`;
     if (!catalog.has(id)) catalog.set(id, {
       id,
       provider: cleanProvider,
+      disableProviderAlias: nodeById.has(cleanProvider) ? cleanProvider : getProviderAlias(cleanProvider),
       providerName: settings.providerDisplayNames?.[cleanProvider] || nodeById.get(cleanProvider)?.name || names.get(cleanProvider) || cleanProvider,
       model: cleanModel,
     });

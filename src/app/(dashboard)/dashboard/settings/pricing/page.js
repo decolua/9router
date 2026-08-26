@@ -113,6 +113,7 @@ export default function PricingSettingsPage() {
   const [batchTarget, setBatchTarget] = useState("");
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [bulkConfirm, setBulkConfirm] = useState(false);
+  const [disableConfirm, setDisableConfirm] = useState(null);
 
   const loadPricing = async () => {
     setLoading(true);
@@ -261,6 +262,19 @@ export default function PricingSettingsPage() {
     }
   };
 
+  const confirmDisableModels = async () => {
+    const items = disableConfirm?.items || [];
+    const result = await mutate({
+      action: "disableProviderModels",
+      models: items.map(({ provider, disableProviderAlias, model }) => ({ provider: disableProviderAlias || provider, model })),
+    });
+    if (result) {
+      setDisableConfirm(null);
+      setSelectedUnpriced(new Set());
+      notifySuccess(`已禁用 ${items.length} 个模型`);
+    }
+  };
+
   const confirmDelete = async () => {
     setSaving(true);
     try {
@@ -312,6 +326,7 @@ export default function PricingSettingsPage() {
       {activeTab === "unpriced" && <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
         <DropdownSelect searchable value={batchTarget} options={pricingOptions} placeholder="选择目标定价模型" onChange={setBatchTarget} className="w-full sm:w-72" />
         <Button icon="link" disabled={!selectedUnpriced.size || !batchTarget} loading={saving} onClick={mapSelected}>映射已选（{selectedUnpriced.size}）</Button>
+        <Button variant="danger" icon="block" disabled={!selectedUnpriced.size} loading={saving} onClick={() => setDisableConfirm({ items: data.unpriced.filter((item) => selectedUnpriced.has(providerModelKey(item))) })}>禁用已选（{selectedUnpriced.size}）</Button>
       </div>}
     </div>
 
@@ -348,7 +363,7 @@ export default function PricingSettingsPage() {
             <th className="px-3 py-3 text-left">模型</th>
             <th className="px-3 py-3 text-left">推荐映射</th>
             <th className="px-3 py-3 text-left">当前有效定价</th>
-            <th className="px-3 py-3 text-right">配置映射</th>
+            <th className="px-3 py-3 text-right">操作</th>
           </tr></thead>
           <tbody className="divide-y divide-border/60">
             {loading ? <tr><td colSpan={6} className="p-10 text-center text-text-muted">正在加载模型目录...</td></tr> : !visible.length ? <tr><td colSpan={6} className="p-10 text-center text-text-muted">没有未定价模型</td></tr> : visible.map((item) => {
@@ -359,7 +374,7 @@ export default function PricingSettingsPage() {
                 <td className="px-3 py-2 font-mono text-xs">{item.model}</td>
                 <td className="px-3 py-2 text-xs">{item.recommendedPricingModel || <span className="text-text-muted">无同名定价</span>}</td>
                 <td className="px-3 py-2 text-xs">{item.usesDefault ? <span className="text-text-muted">默认 · {item.effectivePricingModel}</span> : <span className="text-amber-600">未配置</span>}</td>
-                <td className="px-3 py-2 text-right"><DropdownSelect searchable value="" options={pricingOptions} placeholder="选择定价" onChange={(value) => mapSingle(item, value)} className="ml-auto w-56" menuPlacement="top" /></td>
+                <td className="px-3 py-2 text-right"><div className="ml-auto flex w-fit items-center gap-1"><DropdownSelect searchable value="" options={pricingOptions} placeholder="选择定价" onChange={(value) => mapSingle(item, value)} className="w-56" menuPlacement="top" /><button type="button" disabled={saving} onClick={() => setDisableConfirm({ items: [item] })} className="flex size-9 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-red-500/10 hover:text-red-500 disabled:opacity-50" title="禁用模型" aria-label={`禁用 ${item.provider}/${item.model}`}><span className="material-symbols-outlined text-[18px]">block</span></button></div></td>
               </tr>;
             })}
           </tbody>
@@ -396,5 +411,6 @@ export default function PricingSettingsPage() {
 
     <ConfirmModal isOpen={!!deleteTarget} onClose={() => setDeleteTarget(null)} onConfirm={confirmDelete} loading={saving} title="删除定价模型" message={`删除 ${deleteTarget?.model || ""} 后，其显式映射也会被移除，并回退到默认定价。`} confirmText="删除" cancelText="取消" />
     <ConfirmModal isOpen={bulkConfirm} onClose={() => setBulkConfirm(false)} onConfirm={runBulkMapping} loading={saving} title="批量映射同名模型" message="系统将忽略大小写，自动映射所有尚未显式配置且与定价模型同名的提供商模型。已有手工映射不会被覆盖。" confirmText="开始映射" cancelText="取消" variant="primary" />
+    <ConfirmModal isOpen={!!disableConfirm} onClose={() => setDisableConfirm(null)} onConfirm={confirmDisableModels} loading={saving} title="禁用模型" message={`确认禁用已选 ${disableConfirm?.items?.length || 0} 个模型？禁用后这些模型将不再对外提供。`} confirmText="禁用" cancelText="取消" variant="danger" />
   </div>;
 }

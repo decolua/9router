@@ -45,6 +45,7 @@ export default function ProviderDetailPage() {
   const [addConnectionError, setAddConnectionError] = useState("");
   const [showBulkImportCodex, setShowBulkImportCodex] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [expirationEditor, setExpirationEditor] = useState(null);
   const [showEditNodeModal, setShowEditNodeModal] = useState(false);
   const [showBulkProxyModal, setShowBulkProxyModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
@@ -1210,6 +1211,10 @@ export default function ProviderDetailPage() {
                   setSelectedConnection(conn);
                   setShowEditModal(true);
                 }}
+                onConfigureExpiration={() => setExpirationEditor({
+                  connection: conn,
+                  value: conn.providerSpecificData?.apiKeyExpiresOn || "",
+                })}
                 onTest={() => handleTestConnection(conn)}
                 onDelete={() => handleDelete(conn.id)}
                 testDisabled={oneByOneRunning}
@@ -1284,6 +1289,30 @@ export default function ProviderDetailPage() {
     });
     const data = await res.json();
     return { ...data, ok: res.ok && data.ok === true };
+  };
+
+  const handleSaveApiKeyExpiration = async () => {
+    if (!expirationEditor?.connection?.id) return;
+    try {
+      const apiKeyExpiresOn = String(expirationEditor.value || "").trim();
+      const res = await fetch(`/api/providers/${expirationEditor.connection.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          providerSpecificData: {
+            ...(expirationEditor.connection.providerSpecificData || {}),
+            apiKeyExpiresOn: apiKeyExpiresOn || null,
+          },
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "保存密钥过期日期失败");
+      await fetchConnections();
+      setExpirationEditor(null);
+      notify.success(apiKeyExpiresOn ? "密钥过期日期已保存" : "密钥过期日期已清除");
+    } catch (error) {
+      notify.error(error.message || "保存密钥过期日期失败");
+    }
   };
 
   const updateTestingModels = (modelIds, testing) => {
@@ -1436,7 +1465,7 @@ export default function ProviderDetailPage() {
     });
 
     return (
-      <div className="flex flex-wrap gap-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         {/* Custom models first */}
         {customModelRows.map((model) => (
           <ModelRow
@@ -1498,7 +1527,7 @@ export default function ProviderDetailPage() {
         {/* Add model button — inline, same style as model chips */}
         <button
           onClick={() => setShowAddCustomModel(true)}
-          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2 text-xs text-primary transition-colors hover:border-primary hover:bg-primary/5 sm:w-auto"
+          className="flex min-h-16 w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-primary/40 px-3 py-2 text-xs text-primary transition-colors hover:border-primary hover:bg-primary/5"
         >
           <span className="material-symbols-outlined text-sm">add</span>
           Add Model
@@ -1516,7 +1545,7 @@ export default function ProviderDetailPage() {
           );
           if (notAdded.length === 0) return null;
           return (
-            <div className="w-full mt-2">
+            <div className="col-span-full mt-2 w-full">
               <p className="text-xs text-text-muted mb-2">Suggested free models (≥200k context):</p>
               <div className="flex flex-wrap gap-2">
                 {notAdded.map((m) => (
@@ -1539,7 +1568,7 @@ export default function ProviderDetailPage() {
 
         {/* Disabled models — restorable */}
         {disabledDisplayModels.length > 0 && (
-          <div className="w-full mt-2">
+          <div className="col-span-full mt-2 w-full">
             <p className="text-xs text-text-muted mb-2">Disabled models ({disabledDisplayModels.length}):</p>
             <div className="flex flex-wrap gap-2">
               {disabledDisplayModels.map((m) => (
@@ -2161,6 +2190,22 @@ export default function ProviderDetailPage() {
         onSave={handleUpdateConnection}
         onClose={() => setShowEditModal(false)}
       />
+      <Modal
+        isOpen={!!expirationEditor}
+        onClose={() => setExpirationEditor(null)}
+        title="配置密钥过期日期"
+        footer={<><Button variant="ghost" onClick={() => setExpirationEditor(null)}>取消</Button><Button onClick={handleSaveApiKeyExpiration}>保存</Button></>}
+      >
+        <div className="flex flex-col gap-3">
+          <Input
+            label="过期日期"
+            type="date"
+            value={expirationEditor?.value || ""}
+            onChange={(event) => setExpirationEditor((current) => current ? { ...current, value: event.target.value } : current)}
+          />
+          <p className="text-xs text-text-muted">该日期仅用于配置展示，不会自动禁用密钥。清空后保存可移除日期。</p>
+        </div>
+      </Modal>
       {isCompatible && (
         <EditCompatibleNodeModal
           isOpen={showEditNodeModal}

@@ -32,8 +32,7 @@ export default function ModelMarketClient({ isDashboardView = false }) {
   const [logFilters, setLogFilters] = useState({ provider: null, endpoint: null, selectedModel: null, actualModel: null, logType: null });
   const [filterOptions, setFilterOptions] = useState(EMPTY_FILTER_OPTIONS);
   const [visibleLogColumns, setVisibleLogColumns] = useState(MODEL_MARKET_LOG_COLUMNS);
-  const [dashboardKeys, setDashboardKeys] = useState([]);
-  const [keysLoading, setKeysLoading] = useState(isDashboardView);
+  const [dashboardKeys, setDashboardKeys] = useState(isDashboardView ? null : []);
   const [selectedLog, setSelectedLog] = useState(null);
   const [logDetail, setLogDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -53,10 +52,16 @@ export default function ModelMarketClient({ isDashboardView = false }) {
         if (cancelled) return;
         setDashboardKeys((data.keys || []).filter((key) => key.isActive !== false));
       })
-      .catch((requestError) => { if (!cancelled) setError(requestError.message || "无法读取 API 密钥"); })
-      .finally(() => { if (!cancelled) setKeysLoading(false); });
+      .catch((requestError) => {
+        if (cancelled) return;
+        setDashboardKeys([]);
+        setError(requestError.message || "无法读取 API 密钥");
+      });
     return () => { cancelled = true; };
   }, [isDashboardView]);
+
+  const keysLoading = isDashboardView && dashboardKeys === null;
+  const availableDashboardKeys = dashboardKeys || [];
 
   const groupedModels = useMemo(() => {
     const groups = new Map();
@@ -186,10 +191,10 @@ export default function ModelMarketClient({ isDashboardView = false }) {
 
         <Card className="max-w-3xl">
           <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            {isDashboardView ? <DropdownSelect label="API 密钥" value={apiKey} onChange={setApiKey} options={dashboardKeys.map((key) => ({ value: key.key, label: `${key.name} (${key.key.slice(0, 8)}...)` }))} placeholder={keysLoading ? "正在加载密钥..." : "选择已有 API 密钥"} disabled={keysLoading || !dashboardKeys.length} searchable className="flex-1" /> : <Input label="API 密钥" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk_9router..." autoComplete="off" className="flex-1" />}
+            {isDashboardView ? <DropdownSelect label="API 密钥" value={apiKey} onChange={setApiKey} options={availableDashboardKeys.map((key) => ({ value: key.key, label: `${key.name} (${key.key.slice(0, 8)}...)` }))} placeholder={keysLoading ? "正在加载密钥..." : "选择已有 API 密钥"} disabled={keysLoading || !availableDashboardKeys.length} searchable className="flex-1" /> : <Input label="API 密钥" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk_9router..." autoComplete="off" className="flex-1" />}
             <Button type="submit" icon="key" loading={loading} disabled={keysLoading || !apiKey.trim()} className="sm:w-32">查看</Button>
           </form>
-          {isDashboardView && !keysLoading && !dashboardKeys.length && !error && <p className="mt-3 text-sm text-text-muted">暂无可用 API 密钥，请先在端点页面创建并启用密钥。</p>}
+          {isDashboardView && !keysLoading && !availableDashboardKeys.length && !error && <p className="mt-3 text-sm text-text-muted">暂无可用 API 密钥，请先在端点页面创建并启用密钥。</p>}
           {error && <p className="mt-3 flex items-center gap-2 text-sm text-red-500"><span className="material-symbols-outlined text-[18px]">error</span>{error}</p>}
         </Card>
 
@@ -203,9 +208,9 @@ export default function ModelMarketClient({ isDashboardView = false }) {
               <div className="flex flex-col gap-6">
                 {groupedModels.length ? groupedModels.map(([owner, ownerModels]) => (
                   <div key={owner}>
-                    <div className="mb-2 flex items-center gap-2"><h2 className="text-sm font-semibold">{owner}</h2><span className="text-xs text-text-muted">{ownerModels.length} 个模型</span></div>
-                    <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
-                      {ownerModels.map((model) => <Card key={model.id} className="flex min-w-0 items-start gap-3 p-3"><span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"><span className="material-symbols-outlined text-[19px]">smart_toy</span></span><div className="min-w-0"><p className="truncate font-mono text-sm" title={model.id}>{model.id}</p>{model.description && <p className="mt-1 line-clamp-2 text-xs leading-5 text-text-muted" title={model.description}>{model.description}</p>}</div></Card>)}
+                    <div className="mb-3 flex items-center gap-2"><h2 className="text-sm font-semibold">{owner}</h2><span className="rounded bg-surface-2 px-2 py-0.5 text-[11px] text-text-muted">{ownerModels.length} 个模型</span></div>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+                      {ownerModels.map((model) => <Card key={model.id} className="group flex min-h-28 min-w-0 flex-col justify-between gap-4 border-border/80 p-4 transition-colors hover:border-primary/35 hover:bg-surface-2/40"><div className="flex min-w-0 items-center gap-3"><span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"><span className="material-symbols-outlined text-[19px]">smart_toy</span></span><p className="min-w-0 truncate font-mono text-sm font-semibold" title={model.id}>{model.id}</p></div>{model.description ? <p className="line-clamp-2 border-t border-border/60 pt-3 text-xs leading-5 text-text-muted" title={model.description}>{model.description}</p> : <p className="border-t border-border/60 pt-3 text-xs text-text-muted/70">暂无模型备注</p>}</Card>)}
                     </div>
                   </div>
                 )) : <div className="border-y border-border py-16 text-center text-sm text-text-muted">该密钥当前没有可用模型</div>}

@@ -7,6 +7,11 @@ const state = vi.hoisted(() => ({
   pricingModels: {},
   mappings: [],
   settings: {},
+  disabledModels: {},
+}));
+
+vi.mock("@/lib/disabledModelsDb", () => ({
+  getDisabledModels: vi.fn(async () => state.disabledModels),
 }));
 
 vi.mock("@/lib/localDb", () => ({
@@ -26,6 +31,7 @@ beforeEach(() => {
     { provider: "glm-cn", isActive: false },
     { provider: "opencode-go", isActive: false, autoDisabled: true },
     { provider: "github", isActive: true },
+    { provider: "claude", isActive: true },
     { provider: "custom-node", isActive: true, providerSpecificData: { enabledModels: ["custom-node/live-model"] } },
     { provider: "legacy-auto", isActive: false, autoDisabledReason: "quota exceeded", providerSpecificData: { enabledModels: ["legacy-model"] } },
   ];
@@ -48,6 +54,7 @@ beforeEach(() => {
     providerDisplayNames: {},
     smartRoutingProviders: { github: { enabled: true } },
   };
+  state.disabledModels = {};
 });
 
 describe("pricing provider catalog filtering", () => {
@@ -61,6 +68,7 @@ describe("pricing provider catalog filtering", () => {
     expect(providers).toContain("legacy-auto");
     expect(providers).not.toContain("glm-cn");
     expect(providers).not.toContain("github");
+    expect(catalog).toContainEqual(expect.objectContaining({ provider: "claude", disableProviderAlias: "cc" }));
     expect(catalog).toContainEqual(expect.objectContaining({ provider: "glm", model: "glm-custom" }));
     expect(catalog).not.toContainEqual(expect.objectContaining({ model: "disabled-custom" }));
     expect(catalog).not.toContainEqual(expect.objectContaining({ model: "smart-custom" }));
@@ -72,5 +80,14 @@ describe("pricing provider catalog filtering", () => {
 
     expect(glmPricing.mappedCount).toBe(1);
     expect(data.providerModels.some((item) => item.provider === "glm-cn")).toBe(false);
+  });
+
+  it("excludes disabled models after normalizing provider aliases", async () => {
+    state.disabledModels = { glm: ["glm-5.3", "glm-custom"] };
+
+    const catalog = await getProviderPricingCatalog();
+
+    expect(catalog).not.toContainEqual(expect.objectContaining({ provider: "glm", model: "glm-5.3" }));
+    expect(catalog).not.toContainEqual(expect.objectContaining({ provider: "glm", model: "glm-custom" }));
   });
 });
