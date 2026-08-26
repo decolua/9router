@@ -60,7 +60,28 @@ describe("Antigravity quota-aware routing", () => {
     }
   });
 
-  it("skips only exhausted account/model while reset time remains in future", async () => {
+  it("skips exhausted account/model and selects the next account", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
+    mocks.getProviderConnections.mockResolvedValue([
+      { id: "ag-a", email: "a@example.com", isActive: true },
+      { id: "ag-b", email: "b@example.com", isActive: true },
+    ]);
+    getAntigravityQuotaCache().set("ag-a", {
+      [MODEL]: { remainingPercentage: 0, resetAt: FUTURE_RESET },
+    });
+
+    try {
+      await expect(getProviderCredentials("antigravity", null, MODEL)).resolves.toMatchObject({
+        connectionId: "ag-b",
+        connectionName: "b@example.com",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports retry time when every account is cache-blocked", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
     mocks.getProviderConnections.mockResolvedValue([{ id: "ag-a", email: "a@example.com", isActive: true }]);
