@@ -15,7 +15,6 @@ const resolved = {
   tokenUrls: {
     claude: PROVIDERS.claude?.tokenUrl,
     codex: PROVIDERS.codex?.tokenUrl,
-    qwen: PROVIDERS.qwen?.tokenUrl,
     iflow: PROVIDERS.iflow?.tokenUrl,
     kiro: PROVIDERS.kiro?.tokenUrl,
     xai: PROVIDERS.xai?.tokenUrl,
@@ -25,7 +24,6 @@ const resolved = {
     kimi: PROVIDERS.kimi?.tokenUrl,
   },
   authUrls: {
-    qwen: PROVIDERS.qwen?.authUrl,
     iflow: PROVIDERS.iflow?.authUrl,
     kiro: PROVIDERS.kiro?.authUrl,
   },
@@ -38,7 +36,6 @@ const resolved = {
   clientIds: {
     claude: PROVIDERS.claude?.clientId,
     codex: PROVIDERS.codex?.clientId,
-    qwen: PROVIDERS.qwen?.clientId,
     iflow: PROVIDERS.iflow?.clientId,
     kimi: PROVIDERS.kimi?.clientId,
     "grok-cli": PROVIDERS["grok-cli"]?.clientId,
