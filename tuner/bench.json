@@ -102,14 +102,7 @@
     "tokenrouter/qwen/qwen3.8-max": {
       "family": "qwen3.8-max"
     },
-    "openrouter/stealth/ox-alpha": {
-      "family": "ox-alpha",
-      "mode": "free"
-    },
-    "oc/x-preview-f-free": {
-      "family": "ox-alpha",
-      "mode": "free"
-    }
+    "_note_ox_alpha": "The two ox-alpha ids were removed here on 2026-08-26, which is what actually drops them from every combo: band() resolves through this map, and an id with no entry bands null and is filtered out of the pool. Both were withdrawn by their providers the same day - see the _pins comment for the exact responses. The 'ox-alpha' family entry under models[] is deliberately left in place so restoring the pair is one line each here, whenever the model is unmasked under a real id."
   },
   "_comboBand": {
     "Odin": "fable",
@@ -435,19 +428,9 @@
     "openrouter": "account"
   },
   "_pins": {
+    "_comment": "A pin forces position; it does not check that the entry can answer. On 2026-08-26 all three combos led with entries that could not: Yggdrasil 0+1 and Odin 2+3 were the ox-alpha redundancy pair, and BOTH legs had been withdrawn by their providers that day - openrouter/stealth/ox-alpha answers 404 'No endpoints found' and is absent from openrouter's /v1/models (416 models, zero stealth/*), oc/x-preview-f-free answers 401 'Model is not supported' and is absent from opencode zen's catalogue. Fenrir 0 and Odin 0/1 were tokenrouter ids, and tokenrouter has no credentials configured at all ('No active credentials for provider: tokenrouter'), so every request to them answers 404. Removed rather than reordered: a pin on a model that does not exist is not a preference, it is a guaranteed wasted round trip at the head of the cascade. Re-add ox-alpha under whatever id it is unmasked as, and re-add tokenrouter once a connection exists.",
     "Fenrir": {
-      "tokenrouter/qwen/qwen3.8-max-free": 0,
-      "cx/gpt-5.6-terra": 1
-    },
-    "Odin": {
-      "tokenrouter/qwen/qwen3.8-max-free": 0,
-      "tokenrouter/deepseek/deepseek-v4-pro-0813-free": 1,
-      "openrouter/stealth/ox-alpha": 2,
-      "oc/x-preview-f-free": 3
-    },
-    "Yggdrasil": {
-      "openrouter/stealth/ox-alpha": 0,
-      "oc/x-preview-f-free": 1
+      "cx/gpt-5.6-terra": 0
     }
   },
   "_costOverride": {

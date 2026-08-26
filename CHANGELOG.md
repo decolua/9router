@@ -1,6 +1,22 @@
 # Unreleased
 
 ## Fixes
+- **Tuner**: dropped the pins that made three combos lead with models that cannot
+  answer. The ox-alpha redundancy pair was withdrawn by both its providers on
+  2026-08-26 — `openrouter/stealth/ox-alpha` returns `404 "No endpoints found"`
+  and is gone from openrouter's `/v1/models` (416 models, zero `stealth/*`);
+  `oc/x-preview-f-free` returns `401 "Model is not supported"` and is gone from
+  opencode zen's catalogue — yet it was pinned at Yggdrasil 0+1 and Odin 2+3.
+  `tokenrouter` was pinned at Fenrir 0 and Odin 0+1 while having no credentials
+  configured at all, so those entries answered `404 No active credentials` on
+  every pass. A pin forces position without checking that the entry can serve, so
+  each of these was a guaranteed wasted round trip at the head of the cascade —
+  and the reason the combos looked far deeper than they were. The two dead ox-alpha
+  ids are also removed from `_modelIdentity`, which is what actually drops them
+  from the pools; the `ox-alpha` family entry is kept so restoring the pair is one
+  line each when the model is unmasked. tokenrouter's identities are kept: a 404
+  earns the 30-minute operator cooldown and self-heals the moment a connection is
+  added.
 - **Accounts**: a request-level `400` no longer locks the account that reported it.
   `markAccountUnavailable` writes `modelLock_<model>` on the connection, and
   `probeAccountCapacity` reads those locks on behalf of *every* concurrent caller —
