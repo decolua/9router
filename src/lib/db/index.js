@@ -1,4 +1,5 @@
 // Public API barrel — all DB functions
+import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
 import { assignLegacyApiKeyGroups } from "./migrations/002-api-key-groups.js";
@@ -41,7 +42,14 @@ export {
 // Combos
 export {
   getCombos, getComboById, getComboByName,
-  createCombo, updateCombo, deleteCombo,
+  createCombo, updateCombo, deleteCombo, deleteCombosByIds,
+} from "./repos/combosRepo.js";
+
+// Combo lists (page-only organization)
+export {
+  DEFAULT_COMBO_LIST_ID,
+  getComboLists, getComboListById, createComboList, renameComboList, deleteComboList,
+  reorderComboLists, moveCombosToList,
 } from "./repos/combosRepo.js";
 
 // Aliases (model + custom + mitm)
@@ -88,7 +96,8 @@ export async function exportDb() {
     proxyPools: db.all(`SELECT * FROM proxyPools`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, isActive: r.isActive === 1, testStatus: r.testStatus, createdAt: r.createdAt, updatedAt: r.updatedAt })),
     apiKeyGroups: db.all(`SELECT * FROM apiKeyGroups`).map((r) => ({ id: r.id, name: r.name, allowedModels: parseJson(r.allowedModels, []), allowedCombos: parseJson(r.allowedCombos, []), createdAt: r.createdAt, updatedAt: r.updatedAt })),
     apiKeys: db.all(`SELECT * FROM apiKeys`).map((r) => ({ id: r.id, key: r.key, name: r.name, machineId: r.machineId, isActive: r.isActive === 1, allowedModels: parseJson(r.allowedModels, []), allowedCombos: parseJson(r.allowedCombos, []), groupId: r.groupId, createdAt: r.createdAt })),
-    combos: db.all(`SELECT * FROM combos`).map((r) => ({ id: r.id, name: r.name, description: r.description || "", kind: r.kind, models: parseJson(r.models, []), createdAt: r.createdAt, updatedAt: r.updatedAt })),
+    combos: db.all(`SELECT * FROM combos`).map((r) => ({ id: r.id, name: r.name, description: r.description || "", kind: r.kind, models: parseJson(r.models, []), listId: r.listId || "default", createdAt: r.createdAt, updatedAt: r.updatedAt })),
+    comboLists: db.all(`SELECT * FROM comboLists`).map((r) => ({ id: r.id, name: r.name, sortOrder: Number(r.sortOrder || 0), createdAt: r.createdAt, updatedAt: r.updatedAt })),
     modelAliases: {},
     modelMappings: [],
     customModels: [],
@@ -138,7 +147,24 @@ export async function importDb(payload) {
     db.run(`DELETE FROM apiKeys`);
     db.run(`DELETE FROM apiKeyGroups`);
     db.run(`DELETE FROM combos`);
+    db.run(`DELETE FROM comboLists`);
     db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'modelMappings', 'customModels', 'mitmAlias', 'pricing', 'modelPricing', 'pricingMappings', 'pricingMeta')`);
+
+    // Combo lists: restore from payload; old backups without lists get the default.
+    // sortOrder -1 pins a missing default ahead of every restored list (-1 < 0).
+    const nowLists = new Date().toISOString();
+    const importedLists = (Array.isArray(payload.comboLists) && payload.comboLists.length)
+      ? payload.comboLists
+      : [{ id: "default", name: "默认清单", sortOrder: 0, createdAt: nowLists, updatedAt: nowLists }];
+    if (!importedLists.some((list) => list.id === "default")) {
+      db.run(`INSERT INTO comboLists(id, name, sortOrder, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?)`, ["default", "默认清单", -1, nowLists, nowLists]);
+    }
+    for (const list of importedLists) {
+      db.run(
+        `INSERT OR REPLACE INTO comboLists(id, name, sortOrder, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?)`,
+        [list.id || uuidv4(), list.name, Number(list.sortOrder || 0), list.createdAt || nowLists, list.updatedAt || nowLists]
+      );
+    }
 
     // Settings
     if (payload.settings) {
@@ -180,9 +206,11 @@ export async function importDb(payload) {
     }
     if (!hasImportedGroups) assignLegacyApiKeyGroups(db);
     for (const c of payload.combos || []) {
+      // Unknown/missing listId (old backups) → default list; never orphaned.
+      const listId = importedLists.some((list) => list.id === c.listId) ? c.listId : "default";
       db.run(
-        `INSERT OR REPLACE INTO combos(id, name, description, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
-        [c.id, c.name, c.description || null, c.kind || null, stringifyJson(c.models || []), c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
+        `INSERT OR REPLACE INTO combos(id, name, description, kind, models, listId, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
+        [c.id, c.name, c.description || null, c.kind || null, stringifyJson(c.models || []), listId, c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
       );
     }
     for (const [a, m] of Object.entries(payload.modelAliases || {})) {

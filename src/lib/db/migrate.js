@@ -149,9 +149,10 @@ function importLegacyMain(adapter, data) {
   }, (k) => ({ id: k.id ?? null, name: k.name ?? null }));
 
   importWithAssertion(adapter, "combos", data.combos || [], (c) => {
+    // Legacy db.json has no lists — combos land in the default list.
     adapter.run(
-      `INSERT OR REPLACE INTO combos(id, name, description, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
-      [c.id, c.name, c.description || null, c.kind || null, stringifyJson(c.models || []), c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
+      `INSERT OR REPLACE INTO combos(id, name, description, kind, models, listId, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
+      [c.id, c.name, c.description || null, c.kind || null, stringifyJson(c.models || []), "default", c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
     );
   }, (c) => ({ id: c.id ?? null, name: c.name ?? null }));
 

@@ -5,7 +5,8 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
-import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle } from "@/shared/components";
+import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle, PopupMenu, PopupMenuItem } from "@/shared/components";
+import { useRef } from "react";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, resolveProviderId } from "@/shared/constants/providers";
@@ -46,15 +47,17 @@ function normalizeCapEntry(entry) {
 }
 
 async function loadCombosPageData() {
-  const [combosRes, providersRes, settingsRes] = await Promise.all([
+  const [combosRes, providersRes, settingsRes, listsRes] = await Promise.all([
     fetch("/api/combos"),
     fetch("/api/providers"),
     fetch("/api/settings"),
+    fetch("/api/combo-lists"),
   ]);
-  const [combosData, providersData, settingsData] = await Promise.all([
+  const [combosData, providersData, settingsData, listsData] = await Promise.all([
     combosRes.json(),
     providersRes.json(),
     settingsRes.ok ? settingsRes.json() : {},
+    listsRes.ok ? listsRes.json() : { lists: [] },
   ]);
   const rawAdapter = settingsData.capacityAdapter || {};
   const capacityAdapter = {};
@@ -68,7 +71,18 @@ async function loadCombosPageData() {
       : null,
     comboStrategies: settingsData.comboStrategies || {},
     capacityAdapter,
+    lists: listsData.lists || [],
   };
+}
+
+// Normalize list name input: trim, length cap, duplicate rejection.
+// Returns an error string or null when valid.
+function validateListName(value, existingNames) {
+  const name = value.trim();
+  if (!name) return "清单名称不能为空";
+  if (name.length > 50) return "清单名称不能超过 50 个字符";
+  if (existingNames.includes(name)) return "同名清单已存在";
+  return null;
 }
 
 export default function CombosPage() {
@@ -84,12 +98,39 @@ export default function CombosPage() {
   const [confirmState, setConfirmState] = useState(null);
   const { copied, copy } = useCopyToClipboard();
 
+  // ── Combo lists (page-only organization) ──
+  const [lists, setLists] = useState([]); // [{id, name, sortOrder, comboCount}]
+  // Current tab: always the lowest-sortOrder list on entry — selection is not
+  // persisted/shared across pages.
+  const [activeListId, setActiveListId] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set()); // batch selection
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [listMenuOpen, setListMenuOpen] = useState(false); // "清单管理" menu
+  const [manageTarget, setManageTarget] = useState(null); // {mode: 'create'} | {mode:'rename', list}
+  const [listNameDraft, setListNameDraft] = useState("");
+  const [listNameError, setListNameError] = useState("");
+  const [moveMenuFor, setMoveMenuFor] = useState(null); // combo id whose move-menu is open
+  const moveBtnRefs = useRef({}); // combo id → button element (menu anchor)
+  const batchMoveBtnRef = useRef(null);
+  const manageBtnRef = useRef(null);
+
   const applyPageData = useCallback((data) => {
     if (data.combos) setCombos(data.combos);
     if (data.activeProviders) setActiveProviders(data.activeProviders);
     setComboStrategies(data.comboStrategies);
     setCapacityAdapter(data.capacityAdapter);
+    if (data.lists) setLists(data.lists);
   }, []);
+
+  // Drop selections that no longer point at combos in the current list.
+  const pruneSelection = useCallback((currentListId) => {
+    setSelectedIds((current) => {
+      if (!current.size) return current;
+      const validIds = new Set(combos.filter((c) => c.listId === currentListId).map((c) => c.id));
+      const next = new Set([...current].filter((id) => validIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [combos]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -104,11 +145,168 @@ export default function CombosPage() {
   useEffect(() => {
     let cancelled = false;
     loadCombosPageData()
-      .then((data) => { if (!cancelled) applyPageData(data); })
+      .then((data) => {
+        if (cancelled) return;
+        applyPageData(data);
+        // Enter page on the first (lowest sortOrder) list; no persisted selection.
+        setActiveListId((current) => current || [...data.lists].sort((a, b) => a.sortOrder - b.sortOrder)[0]?.id || "default");
+      })
       .catch((error) => { if (!cancelled) console.log("Error fetching data:", error); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [applyPageData]);
+
+  // Selections are pruned at the action sites (tab switch / delete / move
+  // success) instead of an effect — no cascading renders.
+
+  // ── List management handlers ──
+  const openCreateList = () => {
+    setManageTarget({ mode: "create" });
+    setListNameDraft("");
+    setListNameError("");
+  };
+  const openRenameList = (list) => {
+    setManageTarget({ mode: "rename", list });
+    setListNameDraft(list.name);
+    setListNameError("");
+  };
+
+  const saveListName = async () => {
+    const error = validateListName(listNameDraft, lists.map((l) => l.name).filter((n) => manageTarget?.mode !== "rename" || n !== manageTarget.list.name));
+    if (error) return setListNameError(error);
+    try {
+      if (manageTarget.mode === "create") {
+        const res = await fetch("/api/combo-lists", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: listNameDraft.trim() }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "创建清单失败");
+        setLists((current) => [...current, data.list]);
+        setActiveListId(data.list.id); // jump into the freshly created list
+      } else {
+        const res = await fetch(`/api/combo-lists/${manageTarget.list.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: listNameDraft.trim() }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "重命名清单失败");
+        setLists(data.lists);
+      }
+      setManageTarget(null);
+      notify.success(manageTarget.mode === "create" ? "清单已创建" : "清单已重命名");
+    } catch (error) {
+      notify.error(error.message || "保存清单失败");
+    }
+  };
+
+  const handleDeleteList = (list) => {
+    setConfirmState({
+      title: "删除清单",
+      message: `删除“${list.name}”后，其中全部 ${list.comboCount ?? 0} 个模型组合将移动到默认清单，组合本身不会被删除。`,
+      onConfirm: async () => {
+        setConfirmState(null);
+        try {
+          const res = await fetch(`/api/combo-lists/${list.id}`, { method: "DELETE" });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "删除清单失败");
+          setLists(data.lists);
+          if (activeListId === list.id) {
+            setSelectedIds(new Set());
+            setActiveListId("default"); // deleted current tab → fall back to default
+          } else pruneSelection(activeListId);
+          notify.success("清单已删除");
+        } catch (error) {
+          notify.error(error.message || "删除清单失败");
+        }
+      },
+    });
+  };
+
+  // Move a list one slot up/down and persist the compacted order immediately.
+  const handleMoveList = async (listId, delta) => {
+    const ids = [...lists].sort((a, b) => a.sortOrder - b.sortOrder).map((l) => l.id);
+    const from = ids.indexOf(listId);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= ids.length) return;
+    [ids[from], ids[to]] = [ids[to], ids[from]];
+    const previous = lists;
+    setLists((current) => [...current].sort((a, b) => {
+      const ia = ids.indexOf(a.id), ib = ids.indexOf(b.id);
+      return ia - ib;
+    }));
+    try {
+      const res = await fetch("/api/combo-lists/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderedIds: ids }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "排序失败");
+      setLists(data.lists);
+    } catch (error) {
+      setLists(previous); // revert failed optimistic sort
+      notify.error(error.message || "排序清单失败");
+    }
+  };
+
+  // ── Combo move / batch ops ──
+  const moveCombos = async (comboIds, targetListId) => {
+    setBatchBusy(true);
+    try {
+      const res = await fetch("/api/combos", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "move", ids: comboIds, listId: targetListId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "转移组合失败");
+      setCombos(data.combos);
+      // 清理选区：移出当前清单的组合不再处于选中状态。
+      setSelectedIds((current) => targetListId === activeListId ? current : new Set([...current].filter((id) => !data.movedIds.includes(id))));
+      const targetName = lists.find((l) => l.id === targetListId)?.name || "";
+      notify.success(`已转移 ${data.movedIds.length} 个组合到「${targetName}」`);
+    } catch (error) {
+      notify.error(error.message || "转移组合失败");
+    } finally {
+      setBatchBusy(false);
+    }
+  };
+
+  const deleteCombosBatch = (ids) => {
+    setConfirmState({
+      title: "批量删除模型组合",
+      message: `确定删除选中的 ${ids.length} 个模型组合？此操作不可撤销。`,
+      onConfirm: async () => {
+        setConfirmState(null);
+        setBatchBusy(true);
+        try {
+          const res = await fetch("/api/combos", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "delete", ids }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "批量删除失败");
+          setCombos(data.combos);
+          setSelectedIds(new Set());
+          notify.success(`已删除 ${data.deletedIds.length} 个模型组合`);
+        } catch (error) {
+          notify.error(error.message || "批量删除失败");
+        } finally {
+          setBatchBusy(false);
+        }
+      },
+    });
+  };
+
+  const toggleSelectCombo = (comboId) => setSelectedIds((current) => {
+    const next = new Set(current);
+    next.has(comboId) ? next.delete(comboId) : next.add(comboId);
+    return next;
+  });
 
   const handleSetCapacityAdapter = async (next) => {
     setCapacityAdapter(next);
@@ -128,7 +326,7 @@ export default function CombosPage() {
       const res = await fetch("/api/combos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...data, listId: activeListId || "default" }), // new combo joins current tab's list
       });
       if (res.ok) {
         await fetchData();
@@ -213,34 +411,90 @@ export default function CombosPage() {
     );
   }
 
+  const sortedLists = [...lists].sort((a, b) => a.sortOrder - b.sortOrder);
+  const currentList = sortedLists.find((l) => l.id === activeListId);
+  // Combos shown in the current tab only (list-scoped view).
+  const listCombos = activeListId ? combos.filter((c) => c.listId === activeListId) : [];
+
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
-      {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="min-w-0">
-          <p className="text-sm text-text-muted mt-1">
-            Group models under one name, then pick a strategy per combo:
-          </p>
-          <ul className="text-sm text-text-muted mt-2 flex flex-col gap-1">
-            <li><span className="font-medium text-text-main">Fallback</span> — tries models in order (next on failure)</li>
-            <li><span className="font-medium text-text-main">Round Robin</span> — rotates models across requests to spread load</li>
-            <li><span className="font-medium text-text-main">Fusion</span> — queries all models in parallel, then a judge synthesizes one answer. Best quality, but costs the most: every request bills all panel models + the judge (N+1 calls)</li>
-          </ul>
+      {/* Tab bar: list tabs left; "清单管理" + "新建模型组合" right */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1" role="tablist" aria-label="模型组合清单">
+          {sortedLists.map((list) => (
+            <button
+              key={list.id}
+              type="button"
+              role="tab"
+              aria-selected={list.id === activeListId}
+              title={`${list.name} · ${list.comboCount ?? combos.filter((c) => c.listId === list.id).length} 个组合`}
+              onClick={() => { setActiveListId(list.id); pruneSelection(list.id); }}
+              className={`max-w-[180px] truncate rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                list.id === activeListId
+                  ? "bg-primary/10 text-primary"
+                  : "text-text-muted hover:bg-black/5 hover:text-text-main dark:hover:bg-white/5"
+              }`}
+            >
+              {list.name}{" "}
+              <span className="text-xs opacity-70">{list.comboCount ?? combos.filter((c) => c.listId === list.id).length}</span>
+            </button>
+          ))}
         </div>
-        <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto whitespace-nowrap">
-          新建模型组合
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <span ref={manageBtnRef} className="inline-flex">
+            <Button variant="secondary" size="sm" icon="format_list_bulleted" aria-haspopup="menu" aria-expanded={listMenuOpen} onClick={() => setListMenuOpen((v) => !v)}>
+              清单管理
+            </Button>
+          </span>
+          <Button icon="add" onClick={() => setShowCreateModal(true)}>
+            新建模型组合
+          </Button>
+        </div>
       </div>
 
-      {/* Combos List */}
-      {combos.length === 0 ? (
+      {/* Batch action bar: slides in between tabs and the list when ≥1 selected */}
+      <div
+        className={`overflow-hidden transition-all duration-200 ${selectedIds.size > 0 ? "max-h-16 opacity-100" : "max-h-0 opacity-0"}`}
+        aria-hidden={selectedIds.size === 0}
+      >
+        <div className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-surface-2/60 px-4 py-2.5 slide-in-top">
+          <span className="text-sm font-medium">已选 {selectedIds.size} 个组合</span>
+          <span ref={batchMoveBtnRef} className="ml-auto inline-flex">
+            <Button size="sm" variant="secondary" icon="drive_file_move" aria-haspopup="menu" aria-expanded={moveMenuFor === "__batch__"} disabled={batchBusy || !sortedLists.some((l) => l.id !== activeListId)} onClick={() => setMoveMenuFor("__batch__")}>
+              转移
+            </Button>
+          </span>
+          <Button
+            size="sm"
+            variant="danger"
+            icon="delete"
+            disabled={batchBusy}
+            onClick={() => deleteCombosBatch([...selectedIds])}
+          >
+            删除
+          </Button>
+        </div>
+      </div>
+
+      {/* Batch move menu — portal; anchored to the batch bar's 转移 button */}
+      <BatchMoveMenu
+        open={moveMenuFor === "__batch__"}
+        onClose={() => setMoveMenuFor(null)}
+        anchorRef={batchMoveBtnRef}
+        lists={sortedLists.filter((l) => l.id !== activeListId)}
+        activeListId={activeListId}
+        onPick={(targetId) => { setMoveMenuFor(null); moveCombos([...selectedIds], targetId); }}
+      />
+
+      {/* Combos List — scoped to the current tab's list */}
+      {listCombos.length === 0 ? (
         <Card>
           <div className="text-center py-12">
             <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-primary/10 text-primary mb-4">
               <span className="material-symbols-outlined text-[32px]">layers</span>
             </div>
-            <p className="text-text-main font-medium mb-1">暂无模型组合</p>
-            <p className="text-sm text-text-muted mb-4">创建支持回退策略的模型组合</p>
+            <p className="text-text-main font-medium mb-1">「{currentList?.name || "当前清单"}」暂无模型组合</p>
+            <p className="text-sm text-text-muted mb-4">新建的组合将归入此清单；也可从其他清单转移组合过来</p>
             <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto">
               新建模型组合
             </Button>
@@ -248,7 +502,7 @@ export default function CombosPage() {
         </Card>
       ) : (
         <div className="flex flex-col gap-4">
-          {combos.map((combo) => (
+          {listCombos.map((combo) => (
             <ComboCard
               key={combo.id}
               combo={combo}
@@ -256,14 +510,32 @@ export default function CombosPage() {
               activeProviders={activeProviders}
               copied={copied}
               onCopy={copy}
+              selected={selectedIds.has(combo.id)}
+              onToggleSelect={() => toggleSelectCombo(combo.id)}
               onEdit={() => setEditingCombo(combo)}
               onDelete={() => handleDelete(combo.id)}
+              onMoveToList={(targetId) => moveCombos([combo.id], targetId)}
+              lists={sortedLists.filter((l) => l.id !== activeListId)}
+              moveMenuOpen={moveMenuFor === combo.id}
+              onMoveMenuOpenChange={(open) => setMoveMenuFor(open ? combo.id : null)}
               strategy={comboStrategies[combo.name] || {}}
               onSetStrategy={(patch) => handleSetComboStrategy(combo.name, patch)}
             />
           ))}
         </div>
       )}
+
+      {/* 清单管理 menu (portal, anchored to its trigger button) */}
+      <ListManageMenu
+        open={listMenuOpen}
+        onClose={() => setListMenuOpen(false)}
+        triggerRef={manageBtnRef}
+        lists={sortedLists}
+        onCreate={openCreateList}
+        onRename={openRenameList}
+        onDelete={handleDeleteList}
+        onMove={(id, delta) => handleMoveList(id, delta)}
+      />
 
       {/* Capacity Adapter */}
       <CapacityAdapterSection
@@ -295,6 +567,31 @@ export default function CombosPage() {
         />
       )}
 
+      {/* Create/rename list modal */}
+      <Modal
+        isOpen={!!manageTarget}
+        onClose={() => setManageTarget(null)}
+        title={manageTarget?.mode === "create" ? "新建清单" : "重命名清单"}
+        size="sm"
+      >
+        <div className="flex flex-col gap-3">
+          <Input
+            label="清单名称"
+            value={listNameDraft}
+            autoFocus
+            onChange={(e) => { setListNameDraft(e.target.value); setListNameError(""); }}
+            onKeyDown={(e) => e.key === "Enter" && saveListName()}
+            placeholder="例如：编码、写作"
+            error={listNameError}
+            maxLength={50}
+          />
+          <div className="flex gap-2">
+            <Button variant="ghost" fullWidth size="sm" onClick={() => setManageTarget(null)}>取消</Button>
+            <Button fullWidth size="sm" onClick={saveListName} disabled={!listNameDraft.trim() || !!listNameError}>保存</Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Confirm Delete Modal */}
       <ConfirmModal
         isOpen={!!confirmState}
@@ -308,22 +605,111 @@ export default function CombosPage() {
   );
 }
 
+// Portal menu for managing lists: create / rename / delete / move up / move down.
+function ListManageMenu({ open, onClose, triggerRef, lists, onCreate, onRename, onDelete, onMove }) {
+  return (
+    <PopupMenu open={open} onClose={onClose} triggerRef={triggerRef} minWidth={260} className="max-h-[70vh] overflow-y-auto custom-scrollbar">
+      {() => (
+        <div className="p-1">
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => { onClose(); onCreate(); }}
+            className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-left text-sm text-primary hover:bg-primary/10"
+          >
+            <span className="material-symbols-outlined text-[18px]">add</span>
+            新建清单
+          </button>
+          {lists.map((list, index) => (
+            <div key={list.id} className="mt-0.5 border-t border-border/60 pt-1 first:border-0 first:pt-0">
+              <div className="flex items-center justify-between gap-1 px-2.5 py-1">
+                <span className="min-w-0 truncate text-sm font-medium" title={list.name}>{list.name}</span>
+                <div className="flex shrink-0 items-center">
+                  <ListIconBtn label="上移" icon="arrow_upward" disabled={index === 0} onClick={() => onMove(list.id, -1)} />
+                  <ListIconBtn label="下移" icon="arrow_downward" disabled={index === lists.length - 1} onClick={() => onMove(list.id, 1)} />
+                  <ListIconBtn label="重命名" icon="edit" onClick={() => { onClose(); onRename(list); }} />
+                  {list.id !== "default" ? (
+                    <ListIconBtn label="删除" icon="delete" onClick={() => { onClose(); onDelete(list); }} className="hover:text-red-500" />
+                  ) : (
+                    <ListIconBtn label="默认清单不能删除" icon="lock" disabled className="text-text-muted/30" />
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </PopupMenu>
+  );
+}
+
+function ListIconBtn({ label, icon, disabled, onClick, className }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className={`rounded p-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5 disabled:cursor-not-allowed ${className || ""}`}
+    >
+      <span className="material-symbols-outlined text-[16px]">{icon}</span>
+    </button>
+  );
+}
+
+// Move-target menu. Two anchoring modes:
+// - anchorRef given (batch bar): menu anchors to the external trigger element.
+// - no anchorRef (per-row): renders its own icon button and anchors to it.
+function BatchMoveMenu({ open, onClose, anchorRef, lists, activeListId, onPick }) {
+  void activeListId;
+  const internalRef = useRef(null);
+  const btnRef = anchorRef || internalRef;
+  return (
+    <PopupMenu open={open} onClose={onClose} triggerRef={btnRef} minWidth={200}>
+      {() => (
+        <div role="listbox" className="max-h-60 overflow-y-auto p-1 custom-scrollbar">
+          {lists.length ? lists.map((list) => (
+            <PopupMenuItem key={list.id} active={false} onClick={() => onPick(list.id)}>
+              <span className="truncate">{list.name}</span>
+            </PopupMenuItem>
+          )) : <p className="px-3 py-4 text-center text-xs text-text-muted">没有其他清单</p>}
+        </div>
+      )}
+    </PopupMenu>
+  );
+}
+
 const STRATEGY_OPTIONS = [
   { value: "fallback", label: "Fallback — try in order" },
   { value: "round-robin", label: "Round Robin — rotate" },
   { value: "fusion", label: "Fusion — panel + judge" },
 ];
 
-function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
+function ComboCard({
+  combo, getCaps, activeProviders = [], copied, onCopy,
+  selected, onToggleSelect, onEdit, onDelete,
+  lists = [], moveMenuOpen, onMoveMenuOpenChange, onMoveToList,
+  strategy = {}, onSetStrategy,
+}) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
   const isFusion = current === "fusion";
+  const moveBtnRef = useRef(null);
 
   return (
-    <Card padding="sm" className="group">
+    <Card padding="sm" className={`group ${selected ? "ring-1 ring-primary/40" : ""}`}>
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
+          {/* Row selection checkbox */}
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggleSelect}
+            aria-label={`选择组合 ${combo.name}`}
+            className="mt-1 shrink-0 sm:mt-0"
+          />
           <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
             <span className="material-symbols-outlined text-primary text-[18px]">layers</span>
           </div>
@@ -383,7 +769,30 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-1 sm:flex">
+          <div className="grid grid-cols-4 gap-1 sm:flex">
+            {/* 转移至清单 */}
+            <button
+              ref={moveBtnRef}
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={moveMenuOpen}
+              aria-label={`转移组合 ${combo.name} 至其他清单`}
+              onClick={() => onMoveMenuOpenChange(!moveMenuOpen)}
+              className={`flex flex-col items-center rounded px-2 py-1 transition-colors ${moveMenuOpen ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"}`}
+              title="转移至清单"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <span className="material-symbols-outlined text-[18px]">drive_file_move</span>
+              <span className="text-[10px] leading-tight">转移</span>
+            </button>
+            <BatchMoveMenu
+              open={moveMenuOpen}
+              onClose={() => onMoveMenuOpenChange(false)}
+              anchorRef={moveBtnRef}
+              lists={lists}
+              activeListId={combo.listId}
+              onPick={(targetId) => { onMoveMenuOpenChange(false); onMoveToList(targetId); }}
+            />
             <button
               onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
               className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"

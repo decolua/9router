@@ -158,6 +158,7 @@ describe("DB SQLite layer — public API parity", () => {
     expect(c.id).toBeDefined();
     expect(c.description).toBe("适合代码审查");
     expect(c.models).toEqual(["m1", "m2"]);
+    expect(c.listId).toBe("default"); // created outside any list → default list
     const byName = await sqliteDb.getComboByName("combo1");
     expect(byName.id).toBe(c.id);
     expect(byName.description).toBe("适合代码审查");

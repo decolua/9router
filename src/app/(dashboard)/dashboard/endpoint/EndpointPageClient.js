@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, DropdownSelect, Badge } from "@/shared/components";
+import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, DropdownSelect, Badge, PopupMenu, PopupMenuItem } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import {
   TUNNEL_BENEFITS,
@@ -733,7 +733,17 @@ export default function APIPageClient({ machineId, mode = "endpoint" }) {
     { id: "audio", label: "Audio", path: "/v1/audio/speech", icon: "graphic_eq" },
   ];
 
+  const [keyGroupSaving, setKeyGroupSaving] = useState(false);
+
   const handleKeyGroupChange = async (keyId, groupId) => {
+    // Optimistic update with rollback on failure.
+    let previous = null;
+    setKeys((prev) => prev.map((key) => {
+      if (key.id !== keyId) return key;
+      previous = key;
+      return { ...key, groupId };
+    }));
+    setKeyGroupSaving(true);
     try {
       const res = await fetch(`/api/keys/${keyId}`, {
         method: "PUT",
@@ -745,7 +755,10 @@ export default function APIPageClient({ machineId, mode = "endpoint" }) {
       setKeys((prev) => prev.map((key) => key.id === keyId ? data.key : key));
     } catch (error) {
       console.error("Error updating key group:", error);
-      notify.error(error.message);
+      if (previous) setKeys((prev) => prev.map((key) => key.id === keyId ? previous : key));
+      notify.error(error.message || "更新密钥分组失败");
+    } finally {
+      setKeyGroupSaving(false);
     }
   };
 
@@ -1155,7 +1168,7 @@ export default function APIPageClient({ machineId, mode = "endpoint" }) {
                     <td className="px-3 py-2 text-center"><input type="checkbox" checked={selectedKeyIds.has(key.id)} onChange={() => toggleKeySelection(key.id)} aria-label={`选择 ${key.name}`} /></td>
                     <td className="max-w-44 px-3 py-2 font-medium"><div className="flex min-w-0 items-center gap-1.5"><span className="truncate" title={key.name}>{key.name}</span>{key.smartRoutingProviders?.length > 0 && <span className="shrink-0 rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-medium text-sky-600" title={`智能路由提供商：${key.smartRoutingProviders.join(", ")}`}>智能路由</span>}</div></td>
                     <td className="px-3 py-2"><div className="flex items-center gap-1.5"><code className="max-w-48 truncate rounded bg-bg-subtle px-2 py-1 font-mono text-xs text-text-muted">{maskKey(key.key)}</code><button type="button" onClick={() => copy(key.key, key.id)} className="rounded p-1 text-text-muted hover:bg-primary/10 hover:text-primary" title="复制 API 密钥"><span className="material-symbols-outlined text-[16px]">{copied === key.id ? "check" : "content_copy"}</span></button></div></td>
-                    <td className="px-3 py-2"><DropdownSelect value={key.groupId || "default"} onChange={(value) => handleKeyGroupChange(key.id, value)} searchable buttonClassName="h-8 min-h-8 py-1 text-xs" options={keyGroups.map((group) => ({ value: group.id, label: group.name }))} /></td>
+                    <td className="px-3 py-2"><KeyGroupMenu keyId={key.id} groupId={key.groupId || "default"} groupName={keyGroups.find((g) => g.id === (key.groupId || "default"))?.name || key.groupName || "默认分组"} groups={keyGroups} saving={keyGroupSaving} onChange={handleKeyGroupChange} /></td>
                     <td className="px-3 py-2 text-xs tabular-nums"><div>今日：${Number(key.usage?.todayCost || 0).toFixed(4)}</div><div className="mt-0.5 text-text-muted">近 30 天：${Number(key.usage?.thirtyDayCost || 0).toFixed(4)}</div></td>
                     <td className="px-3 py-2">{key.isActive === false ? <Badge variant="neutral" size="sm" dot>已禁用</Badge> : <Badge variant="success" size="sm" dot>已启用</Badge>}</td>
                     <td className="whitespace-nowrap px-3 py-2 text-xs text-text-muted">{new Date(key.createdAt).toLocaleString("zh-CN", { hour12: false })}</td>
@@ -1402,6 +1415,62 @@ export default function APIPageClient({ machineId, mode = "endpoint" }) {
   );
 }
 
+
+// Per-key group switcher: button showing current group + portal menu listing all
+// groups. Replaces the old DropdownSelect that got clipped by the table scroller.
+function KeyGroupMenu({ keyId, groupId, groupName, groups, saving, onChange }) {
+  const btnRef = useRef(null);
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        disabled={saving}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`更改密钥分组（当前：${groupName}）`}
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-8 min-h-8 w-full max-w-44 items-center justify-between gap-1 rounded-md border border-border bg-surface px-2 py-1 text-left text-xs text-text-main outline-none transition-colors hover:border-primary/50 focus:border-primary focus:ring-2 focus:ring-primary/15 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <span className="min-w-0 truncate">{groupName}</span>
+        <span className={`material-symbols-outlined shrink-0 text-[16px] text-text-muted transition-transform ${open ? "rotate-180" : ""}`}>expand_more</span>
+      </button>
+      <PopupMenu open={open} onClose={() => setOpen(false)} triggerRef={btnRef} minWidth={170}>
+        {(query) => {
+          const matched = query ? groups.filter((g) => g.name.toLowerCase().includes(query)) : groups;
+          return (
+            <div role="listbox" className="max-h-60 overflow-y-auto p-1 custom-scrollbar">
+              {matched.length ? matched.map((group) => (
+                <PopupMenuItem
+                  key={group.id}
+                  active={group.id === groupId}
+                  disabled={saving}
+                  onClick={() => {
+                    setOpen(false);
+                    if (group.id !== groupId) onChange(keyId, group.id); // reuse existing handler; no-op if unchanged
+                  }}
+                >
+                  <span className="min-w-0 truncate">{group.name}</span>
+                </PopupMenuItem>
+              )) : <p className="px-3 py-4 text-center text-xs text-text-muted">没有匹配项</p>}
+            </div>
+          );
+        }}
+      </PopupMenu>
+    </>
+  );
+}
+
+KeyGroupMenu.propTypes = {
+  keyId: PropTypes.string.isRequired,
+  groupId: PropTypes.string,
+  groupName: PropTypes.string.isRequired,
+  groups: PropTypes.arrayOf(PropTypes.shape({ id: PropTypes.string, name: PropTypes.string })).isRequired,
+  saving: PropTypes.bool,
+  onChange: PropTypes.func.isRequired,
+};
 
 APIPageClient.propTypes = {
   machineId: PropTypes.string.isRequired,

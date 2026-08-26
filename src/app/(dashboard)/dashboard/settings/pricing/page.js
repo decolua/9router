@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Button, Card, ConfirmModal, DropdownSelect, Input, Modal, Toggle } from "@/shared/components";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Button, Card, ConfirmModal, DropdownSelect, Input, Modal, PopupMenu, PopupMenuItem, Toggle } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
 
 const FIELDS = [
@@ -69,6 +69,49 @@ function PricingForm({ model, values, editing, onModelChange, onChange }) {
       </div>}
     </div>
   </div>;
+}
+
+// Compact per-row "选择定价" entry: icon button + portal menu (searchable).
+// Replaces the old w-56 DropdownSelect which got clipped by the table scroller.
+function MapPricingMenu({ item, options, disabled, onSelect }) {
+  const btnRef = useRef(null);
+  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        type="button"
+        disabled={disabled || !options.length}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={`为 ${item.provider}/${item.model} 选择定价`}
+        title={!options.length ? "暂无可选定价模型" : "选择定价"}
+        onClick={() => setOpen((v) => !v)}
+        className="flex size-9 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        <span className="material-symbols-outlined text-[18px]">sell</span>
+      </button>
+      <PopupMenu open={open} onClose={() => setOpen(false)} triggerRef={btnRef} searchable searchPlaceholder="搜索定价模型" minWidth={220}>
+        {(query) => {
+          const matched = query ? options.filter((o) => o.label.toLowerCase().includes(query)) : options;
+          return (
+            <div role="listbox" className="max-h-64 overflow-y-auto p-1 custom-scrollbar">
+              {matched.length ? matched.map((option) => (
+                <PopupMenuItem
+                  key={option.value}
+                  active={false}
+                  onClick={() => { setOpen(false); onSelect(option.value); }}
+                >
+                  <span className="truncate font-mono text-xs">{option.label}</span>
+                </PopupMenuItem>
+              )) : <p className="px-3 py-5 text-center text-xs text-text-muted">没有匹配项</p>}
+            </div>
+          );
+        }}
+      </PopupMenu>
+    </>
+  );
 }
 
 function toPricing(values) {
@@ -374,7 +417,7 @@ export default function PricingSettingsPage() {
                 <td className="px-3 py-2 font-mono text-xs">{item.model}</td>
                 <td className="px-3 py-2 text-xs">{item.recommendedPricingModel || <span className="text-text-muted">无同名定价</span>}</td>
                 <td className="px-3 py-2 text-xs">{item.usesDefault ? <span className="text-text-muted">默认 · {item.effectivePricingModel}</span> : <span className="text-amber-600">未配置</span>}</td>
-                <td className="px-3 py-2 text-right"><div className="ml-auto flex w-fit items-center gap-1"><DropdownSelect searchable value="" options={pricingOptions} placeholder="选择定价" onChange={(value) => mapSingle(item, value)} className="w-56" menuPlacement="top" /><button type="button" disabled={saving} onClick={() => setDisableConfirm({ items: [item] })} className="flex size-9 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-red-500/10 hover:text-red-500 disabled:opacity-50" title="禁用模型" aria-label={`禁用 ${item.provider}/${item.model}`}><span className="material-symbols-outlined text-[18px]">block</span></button></div></td>
+                <td className="px-3 py-2 text-right"><div className="ml-auto flex w-fit items-center gap-1"><MapPricingMenu item={item} options={pricingOptions} disabled={saving} onSelect={(value) => mapSingle(item, value)} /><button type="button" disabled={saving} onClick={() => setDisableConfirm({ items: [item] })} className="flex size-9 shrink-0 items-center justify-center rounded-md text-text-muted hover:bg-red-500/10 hover:text-red-500 disabled:opacity-50" title="禁用模型" aria-label={`禁用 ${item.provider}/${item.model}`}><span className="material-symbols-outlined text-[18px]">block</span></button></div></td>
               </tr>;
             })}
           </tbody>
