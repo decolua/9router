@@ -28,6 +28,7 @@ import { getErrorCode, getRelativeTime } from "@/shared/utils";
 import { useNotificationStore } from "@/store/notificationStore";
 import ModelAvailabilityBadge from "./components/ModelAvailabilityBadge";
 import AddCompatibleModal from "./components/AddCompatibleModal";
+import { isFreeProviderEnabled } from "@/shared/utils/freeProviderState";
 
 function getStatusDisplay(connected, error, errorCode) {
   const parts = [];
@@ -114,6 +115,7 @@ export default function ProvidersPage() {
   const [showCatalog, setShowCatalog] = useState(false);
   const [usageByProvider, setUsageByProvider] = useState({});
   const [providerDisplayNames, setProviderDisplayNames] = useState({});
+  const [freeProviderStates, setFreeProviderStates] = useState({});
   const [editingProviderName, setEditingProviderName] = useState(null);
   const notify = useNotificationStore();
   // Provider filtering is intentionally omitted: the header search control is
@@ -168,7 +170,10 @@ export default function ProvidersPage() {
           setConnections(connectionsData.connections || []);
         if (nodesRes.ok) setProviderNodes(nodesData.nodes || []);
         if (usageRes.ok) setUsageByProvider(usageData.byProvider || {});
-        if (settingsRes.ok) setProviderDisplayNames(settingsData.providerDisplayNames || {});
+        if (settingsRes.ok) {
+          setProviderDisplayNames(settingsData.providerDisplayNames || {});
+          setFreeProviderStates(settingsData.freeProviderStates || {});
+        }
       } catch (error) {
         console.log("Error fetching data:", error);
       } finally {
@@ -286,6 +291,23 @@ export default function ProvidersPage() {
       notify.error("Provider test failed");
     } finally {
       setTestingMode(null);
+    }
+  };
+
+  const handleToggleFreeProvider = async (providerId, enabled) => {
+    const nextStates = { ...freeProviderStates, [providerId]: enabled };
+    setFreeProviderStates(nextStates);
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ freeProviderStates: nextStates }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "更新免费提供商状态失败");
+    } catch (error) {
+      setFreeProviderStates(freeProviderStates);
+      notify.error(error.message || "更新免费提供商状态失败");
     }
   };
 
@@ -423,7 +445,7 @@ export default function ProvidersPage() {
       ? apikeyEntries
       : apikeyEntries.slice(0, APIKEY_INITIAL_VISIBLE);
   const hiddenApikeyCount = apikeyEntries.length - APIKEY_INITIAL_VISIBLE;
-  const configuredProviders = [...new Set(connections.map((connection) => connection.provider))]
+  const connectionConfiguredProviders = [...new Set(connections.map((connection) => connection.provider))]
     .map((providerId) => {
       const providerConnections = connections.filter((connection) => connection.provider === providerId);
       const node = providerNodes.find((item) => item.id === providerId);
@@ -441,13 +463,32 @@ export default function ProvidersPage() {
           return !latest || new Date(value) > new Date(latest) ? value : latest;
         }, null),
         totalCost: Number(usageByProvider[providerId]?.cost || 0),
+        billingType: FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId] ? "免费" : "付费",
+        isFreeVirtual: false,
       };
     })
-    .filter((item) => matchSearch(item.info.name || item.providerId))
+    .filter((item) => matchSearch(item.info.name || item.providerId));
+  const enabledFreeProviders = Object.entries(FREE_PROVIDERS)
+    .filter(([, info]) => info.noAuth && !info.hidden)
+    .filter(([providerId]) => isFreeProviderEnabled({ freeProviderStates }, providerId))
+    .filter(([providerId]) => !connections.some((connection) => connection.provider === providerId))
+    .map(([providerId, info]) => ({
+      providerId,
+      info: { ...info, name: providerDisplayNames[providerId] || info.name || providerId },
+      authTypes: [],
+      stats: { connected: 1, error: 0, total: 0, errorCode: null, errorTime: null, allDisabled: false },
+      autoDisabled: false,
+      autoDisabledReason: "",
+      lastModified: null,
+      totalCost: Number(usageByProvider[providerId]?.cost || 0),
+      billingType: "免费",
+      isFreeVirtual: true,
+    }));
+  const configuredProviders = [...connectionConfiguredProviders, ...enabledFreeProviders]
     .sort((a, b) => (a.info.name || a.providerId).localeCompare(b.info.name || b.providerId));
 
   const toggleProviderSelection = (providerId) => setSelectedProviderIds((current) => current.includes(providerId) ? current.filter((id) => id !== providerId) : [...current, providerId]);
-  const configuredProviderIds = configuredProviders.map((item) => item.providerId);
+  const configuredProviderIds = configuredProviders.filter((item) => !item.isFreeVirtual).map((item) => item.providerId);
   const allProvidersSelected = configuredProviderIds.length > 0 && configuredProviderIds.every((id) => selectedProviderIds.includes(id));
   const toggleAllProviders = () => setSelectedProviderIds(allProvidersSelected ? [] : configuredProviderIds);
 
@@ -484,9 +525,10 @@ export default function ProvidersPage() {
             <label className="flex items-center gap-2 text-xs text-text-muted"><input type="checkbox" checked={allProvidersSelected} onChange={toggleAllProviders} />全选提供商</label>
             <div className="flex flex-wrap items-center gap-2"><span className="text-xs text-text-muted">已选 {selectedProviderIds.length}</span><Button size="sm" variant="secondary" icon="science" disabled={!selectedProviderIds.length || !!testingMode} loading={testingMode === "providers"} onClick={runBatchProviderTest}>批量测试</Button><Button size="sm" variant="secondary" icon="download" disabled={!selectedProviderIds.length || batchModelsLoading} loading={batchModelsLoading} onClick={runBatchModelUpdate}>批量更新模型</Button><Button size="sm" variant="danger" icon="delete" disabled={!selectedProviderIds.length || batchModelsLoading} onClick={() => setBatchDeleteOpen(true)}>批量删除提供商</Button></div>
           </div>
+          <div className="hidden grid-cols-[24px_minmax(0,1fr)_64px_128px] items-center gap-3 border-b border-border px-3 py-2 text-xs text-text-muted sm:grid"><span /><span>提供商</span><span className="text-center">类型</span><span className="text-right">操作</span></div>
           {configuredProviders.map((item) => (
-          <div key={item.providerId} className="flex flex-col gap-2 border-b border-border px-3 py-2 last:border-b-0 sm:flex-row sm:items-center">
-            <input type="checkbox" checked={selectedProviderIds.includes(item.providerId)} onChange={() => toggleProviderSelection(item.providerId)} aria-label={`选择${item.info.name}`} />
+          <div key={item.providerId} className="flex flex-col gap-2 border-b border-border px-3 py-2 last:border-b-0 sm:grid sm:grid-cols-[24px_minmax(0,1fr)_64px_128px] sm:items-center sm:gap-3">
+            {item.isFreeVirtual ? <span className="hidden sm:block" /> : <input type="checkbox" checked={selectedProviderIds.includes(item.providerId)} onChange={() => toggleProviderSelection(item.providerId)} aria-label={`选择${item.info.name}`} />}
             <Link href={`/dashboard/providers/${item.providerId}`} className="flex min-w-0 flex-1 items-center gap-3">
               <ProviderIcon providerId={item.providerId} size={30} alt={item.info.name} fallbackText={(item.info.name || item.providerId).slice(0, 2).toUpperCase()} />
               <div className="min-w-0">
@@ -495,17 +537,18 @@ export default function ProvidersPage() {
                   {item.autoDisabled ? <Badge variant="warning" size="sm" dot>自动禁用</Badge> : item.stats.allDisabled ? <Badge variant="neutral" size="sm" dot>已禁用</Badge> : <Badge variant="success" size="sm" dot>已启用</Badge>}
                 </div>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-text-muted">
-                  <span>{item.stats.total} 个连接</span>
+                  <span>{item.isFreeVirtual ? "免费直连" : `${item.stats.total} 个连接`}</span>
                   {getStatusDisplay(item.stats.connected, item.stats.error, item.stats.errorCode)}
-                  <span>最后修改 {item.lastModified ? new Date(item.lastModified).toLocaleString("zh-CN") : "-"}</span>
+                  {!item.isFreeVirtual && <span>最后修改 {item.lastModified ? new Date(item.lastModified).toLocaleString("zh-CN") : "-"}</span>}
                   <span>累计消费 ${item.totalCost.toFixed(4)}</span>
                   {item.autoDisabledReason && <span className="max-w-lg truncate" title={item.autoDisabledReason}>{item.autoDisabledReason}</span>}
                 </div>
               </div>
             </Link>
+            <Badge variant={item.billingType === "免费" ? "success" : "default"} size="sm">{item.billingType}</Badge>
             <div className="flex shrink-0 items-center justify-end gap-2">
               <button type="button" className="flex size-8 items-center justify-center rounded-md text-text-muted hover:bg-bg-hover hover:text-primary" title="修改显示名称" onClick={() => setEditingProviderName({ providerId: item.providerId, name: item.info.name })}><span className="material-symbols-outlined text-[18px]">edit</span></button>
-              <button
+              {!item.isFreeVirtual && <button
                 type="button"
                 disabled={testingMode === item.providerId}
                 onClick={() => handleBatchTest("provider", item.providerId)}
@@ -514,8 +557,8 @@ export default function ProvidersPage() {
                 aria-label={`测试${item.info.name}连接`}
               >
                 <span className={`material-symbols-outlined text-[18px] ${testingMode === item.providerId ? "animate-spin" : ""}`}>{testingMode === item.providerId ? "progress_activity" : "science"}</span>
-              </button>
-              <Toggle checked={!item.stats.allDisabled} onChange={(active) => handleToggleProvider(item.providerId, item.authTypes, active)} />
+              </button>}
+              <Toggle checked={!item.stats.allDisabled} onChange={(active) => item.isFreeVirtual ? handleToggleFreeProvider(item.providerId, active) : handleToggleProvider(item.providerId, item.authTypes, active)} />
               <Link href={`/dashboard/providers/${item.providerId}`} className="rounded-md p-2 text-text-muted hover:bg-bg-hover hover:text-primary" title="管理提供商"><span className="material-symbols-outlined text-[19px]">chevron_right</span></Link>
             </div>
           </div>
@@ -578,9 +621,6 @@ export default function ProvidersPage() {
                   provider={info}
                   stats={getProviderStats(info.id, "apikey")}
                   authType="compatible"
-                  onToggle={(active) =>
-                    handleToggleProvider(info.id, "apikey", active)
-                  }
                 />
               ),
             )}
@@ -627,7 +667,6 @@ export default function ProvidersPage() {
                 provider={info}
                 stats={getProviderStats(key, authTypes)}
                 authType="oauth"
-                onToggle={(active) => handleToggleProvider(key, authTypes, active)}
               />
             );
           })}
@@ -673,9 +712,8 @@ export default function ProvidersPage() {
                 provider={info}
                 stats={getProviderStats(key, freeAuthTypes)}
                 authType="free"
-                onToggle={(active) =>
-                  handleToggleProvider(key, freeAuthTypes, active)
-                }
+                freeEnabled={isFreeProviderEnabled({ freeProviderStates }, key)}
+                onEnable={() => handleToggleFreeProvider(key, true)}
               />
             );
           })}
@@ -688,7 +726,6 @@ export default function ProvidersPage() {
                 provider={info}
                 stats={getProviderStats(key, freeAuthTypes)}
                 authType={Array.isArray(freeAuthTypes) ? (freeAuthTypes[0] ?? "apikey") : freeAuthTypes}
-                onToggle={(active) => handleToggleProvider(key, freeAuthTypes, active)}
               />
             );
           })}
@@ -730,7 +767,6 @@ export default function ProvidersPage() {
               provider={info}
               stats={getProviderStats(key, "apikey")}
               authType="apikey"
-              onToggle={(active) => handleToggleProvider(key, "apikey", active)}
             />
           ))}
         </div>
@@ -824,28 +860,16 @@ export default function ProvidersPage() {
   );
 }
 
-function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
+function ProviderCard({ providerId, provider, stats, freeEnabled = true, onEnable }) {
   const { connected, error, errorCode, errorTime, allDisabled } = stats;
   const isNoAuth = !!provider.noAuth;
-
-  const dotColors = {
-    free: "bg-green-500",
-    oauth: "bg-blue-500",
-    apikey: "bg-amber-500",
-    compatible: "bg-orange-500",
-  };
-  const dotLabels = {
-    free: "Free",
-    oauth: "OAuth",
-    apikey: "API Key",
-    compatible: "Compatible",
-  };
+  const isDisabled = isNoAuth && !freeEnabled;
 
   return (
     <Link href={`/dashboard/providers/${providerId}`} className="group min-w-0">
       <Card
         padding="xs"
-        className={`h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer ${allDisabled ? "opacity-50" : ""}`}
+        className={`h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer ${allDisabled || isDisabled ? "opacity-50" : ""}`}
       >
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -869,7 +893,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
             <div className="min-w-0">
               <h3 className="truncate font-semibold">{provider.name}</h3>
               <div className="flex min-w-0 items-center gap-1.5 text-xs flex-wrap">
-                {allDisabled ? (
+                {allDisabled || isDisabled ? (
                   <Badge variant="default" size="sm">
                     <span className="flex items-center gap-1">
                       <span className="material-symbols-outlined text-[12px]">
@@ -892,23 +916,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {stats.total > 0 && (
-              <div
-                className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onToggle(!allDisabled ? false : true);
-                }}
-              >
-                <Toggle
-                  size="sm"
-                  checked={!allDisabled}
-                  onChange={() => {}}
-                  title={allDisabled ? "Enable provider" : "Disable provider"}
-                />
-              </div>
-            )}
+            {isDisabled && onEnable && <Button size="sm" onClick={(event) => { event.preventDefault(); event.stopPropagation(); onEnable(); }}>启用</Button>}
           </div>
         </div>
       </Card>
@@ -930,8 +938,8 @@ ProviderCard.propTypes = {
     errorCode: PropTypes.string,
     errorTime: PropTypes.string,
   }).isRequired,
-  authType: PropTypes.string,
-  onToggle: PropTypes.func,
+  freeEnabled: PropTypes.bool,
+  onEnable: PropTypes.func,
 };
 
 function ApiKeyProviderCard({
@@ -939,7 +947,6 @@ function ApiKeyProviderCard({
   provider,
   stats,
   authType,
-  onToggle,
 }) {
   const { connected, error, errorCode, errorTime, allDisabled } = stats;
   const isCompatible = providerId.startsWith(OPENAI_COMPATIBLE_PREFIX);
@@ -1029,25 +1036,7 @@ function ApiKeyProviderCard({
               </div>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {stats.total > 0 && (
-              <div
-                className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onToggle(!allDisabled ? false : true);
-                }}
-              >
-                <Toggle
-                  size="sm"
-                  checked={!allDisabled}
-                  onChange={() => {}}
-                  title={allDisabled ? "Enable provider" : "Disable provider"}
-                />
-              </div>
-            )}
-          </div>
+          <div className="flex shrink-0 items-center gap-2" />
         </div>
       </Card>
     </Link>
@@ -1070,7 +1059,6 @@ ApiKeyProviderCard.propTypes = {
     errorTime: PropTypes.string,
   }).isRequired,
   authType: PropTypes.string,
-  onToggle: PropTypes.func,
 };
 
 function ProviderTestResultsView({ results }) {

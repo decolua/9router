@@ -13,6 +13,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat } from "open-sse/services/combo.js";
 import * as log from "../utils/logger.js";
+import { isFreeProviderEnabled } from "@/shared/utils/freeProviderState.js";
 
 // Providers that don't require credentials (noAuth)
 const NO_AUTH_PROVIDERS = new Set(["sdwebui", "comfyui"]);
@@ -75,6 +76,7 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
 
   // noAuth providers — no credential needed
   if (NO_AUTH_PROVIDERS.has(provider)) {
+    if (!isFreeProviderEnabled(await getSettings(), provider)) return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, `Provider disabled: ${provider}`);
     const result = await handleImageGenerationCore({
       body,
       modelInfo: { provider, model },

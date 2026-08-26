@@ -27,6 +27,11 @@ function getApiKeyLabel(key, keyInfo = null) {
   return keyInfo?.name ? `${keyInfo.name} (${masked})` : masked;
 }
 
+function getApiKeyChartLabel(key, keyInfo = null) {
+  if (!key) return "本地调用（无 API 密钥）";
+  return keyInfo?.name || maskApiKey(key);
+}
+
 function firstTokenCount(...values) {
   let fallback = 0;
   for (const value of values) {
@@ -143,6 +148,8 @@ function addToCounter(target, key, values) {
 }
 
 function aggregateEntryToDay(day, entry) {
+  const provider = entry.finalProvider || entry.provider;
+  const model = entry.finalModel || entry.model;
   const promptTokens = entry.tokens?.prompt_tokens || entry.tokens?.input_tokens || 0;
   const completionTokens = entry.tokens?.completion_tokens || entry.tokens?.output_tokens || 0;
   const { cacheReadTokens: cachedTokens, cacheCreationTokens } = getCacheTokenCounts(entry.tokens || {});
@@ -162,22 +169,22 @@ function aggregateEntryToDay(day, entry) {
   day.byApiKey ||= {};
   day.byEndpoint ||= {};
 
-  if (entry.provider) addToCounter(day.byProvider, entry.provider, vals);
+  if (provider) addToCounter(day.byProvider, provider, vals);
 
-  const modelKey = entry.provider ? `${entry.model}|${entry.provider}` : entry.model;
-  addToCounter(day.byModel, modelKey, { ...vals, meta: { rawModel: entry.model, provider: entry.provider } });
+  const modelKey = provider ? `${model}|${provider}` : model;
+  addToCounter(day.byModel, modelKey, { ...vals, meta: { rawModel: model, provider } });
 
   if (entry.connectionId) {
-    addToCounter(day.byAccount, entry.connectionId, { ...vals, meta: { rawModel: entry.model, provider: entry.provider } });
+    addToCounter(day.byAccount, entry.connectionId, { ...vals, meta: { rawModel: model, provider } });
   }
 
   const apiKeyVal = entry.apiKey && typeof entry.apiKey === "string" ? entry.apiKey : "local-no-key";
-  const akModelKey = `${apiKeyVal}|${entry.model}|${entry.provider || "unknown"}`;
-  addToCounter(day.byApiKey, akModelKey, { ...vals, meta: { rawModel: entry.model, provider: entry.provider, apiKey: entry.apiKey || null } });
+  const akModelKey = `${apiKeyVal}|${model}|${provider || "unknown"}`;
+  addToCounter(day.byApiKey, akModelKey, { ...vals, meta: { rawModel: model, provider, apiKey: entry.apiKey || null } });
 
   const endpoint = entry.endpoint || "Unknown";
-  const epKey = `${endpoint}|${entry.model}|${entry.provider || "unknown"}`;
-  addToCounter(day.byEndpoint, epKey, { ...vals, meta: { endpoint, rawModel: entry.model, provider: entry.provider } });
+  const epKey = `${endpoint}|${model}|${provider || "unknown"}`;
+  addToCounter(day.byEndpoint, epKey, { ...vals, meta: { endpoint, rawModel: model, provider } });
 }
 
 function pushToRing(entry) {
@@ -212,24 +219,6 @@ async function ensureRingInitialized() {
       tokens: parseJson(r.tokens, {}),
     }));
   } catch {}
-}
-
-async function calculateCost(provider, model, tokens, timestamp) {
-  if (!tokens || !provider || !model) return 0;
-  try {
-    const { getPricingForModel } = await import("./pricingRepo.js");
-    const pricing = await getPricingForModel(provider, model);
-    if (!pricing) return 0;
-
-    // Delegate the actual math to the single source of truth (avoids the two
-    // copies drifting apart — see open-sse/providers/pricing.js for the
-    // cache-inclusive prompt_tokens convention this assumes).
-    const { calculateCostFromTokens } = await import("open-sse/providers/pricing.js");
-    return calculateCostFromTokens(tokens, pricing, timestamp);
-  } catch (e) {
-    console.error("Error calculating cost:", e);
-    return 0;
-  }
 }
 
 export function trackPendingRequest(model, provider, connectionId, started, error = false) {
@@ -329,7 +318,21 @@ export async function saveRequestUsage(entry) {
     const rawTokens = entry.tokens || {};
     const tokens = canonicalizeUsage(normalizeUsage(rawTokens) || rawTokens) || rawTokens;
     entry.tokens = tokens;
-    entry.cost = await calculateCost(entry.provider, entry.model, tokens, entry.timestamp);
+    const meta = entry.meta || {};
+    entry.requestedModel = meta.requestedModel || null;
+    entry.actualModel = meta.actualModel || entry.model || null;
+    entry.smartRoutingProvider = meta.routerSelectedProvider || meta.routerSelectedModel ? (entry.provider || null) : null;
+    entry.smartRoutingModel = meta.routerSelectedProvider || meta.routerSelectedModel ? (entry.model || null) : null;
+    entry.finalProvider = meta.routerSelectedProvider || null;
+    entry.finalModel = meta.routerSelectedModel || null;
+    const pricingProvider = entry.finalProvider || entry.provider;
+    const pricingModel = entry.finalModel || entry.model;
+    const breakdown = await calculateBreakdown(pricingProvider, pricingModel, tokens, entry.timestamp);
+    entry.inputCost = breakdown.inputCost;
+    entry.cacheReadCost = breakdown.cacheReadCost;
+    entry.cacheCreationCost = breakdown.cacheCreationCost;
+    entry.outputCost = breakdown.outputCost;
+    entry.cost = breakdown.totalCost;
     const promptTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
     const completionTokens = tokens.completion_tokens || tokens.output_tokens || 0;
 
@@ -339,12 +342,19 @@ export async function saveRequestUsage(entry) {
     // better-sqlite3 is sync → no JS yield mid-transaction → no race in same process.
     db.transaction(() => {
       db.run(
-        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO usageHistory(
+          timestamp, provider, model, connectionId, apiKey, endpoint,
+          promptTokens, completionTokens, inputCost, cacheReadCost, cacheCreationCost, outputCost, costBreakdownStored, cost,
+          requestedModel, actualModel, smartRoutingProvider, smartRoutingModel, finalProvider, finalModel,
+          status, tokens, meta
+        ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
-          promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson(entry.meta || {}),
+          promptTokens, completionTokens,
+          entry.inputCost || 0, entry.cacheReadCost || 0, entry.cacheCreationCost || 0, entry.outputCost || 0, 1, entry.cost || 0,
+          entry.requestedModel, entry.actualModel, entry.smartRoutingProvider, entry.smartRoutingModel, entry.finalProvider, entry.finalModel,
+          entry.status || "ok", stringifyJson(tokens), stringifyJson(meta),
         ]
       );
 
@@ -384,12 +394,20 @@ export async function getUsageHistory(filter = {}) {
   if (filter.endDate) { conds.push("timestamp < ?"); params.push(parseChinaDateTime(filter.endDate).toISOString()); }
 
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
-  const rows = db.all(`SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ${where} ORDER BY id ASC`, params);
+  const rows = db.all(`SELECT timestamp, provider, model, connectionId, apiKey, endpoint,
+    inputCost, cacheReadCost, cacheCreationCost, outputCost, cost,
+    requestedModel, actualModel, smartRoutingProvider, smartRoutingModel, finalProvider, finalModel,
+    status, tokens FROM usageHistory ${where} ORDER BY id ASC`, params);
 
   return rows.map((r) => ({
     timestamp: r.timestamp, provider: r.provider, model: r.model,
     connectionId: r.connectionId, apiKeyMasked: maskApiKey(r.apiKey), endpoint: r.endpoint,
-    cost: r.cost, status: r.status, tokens: parseJson(r.tokens, {}),
+    inputCost: r.inputCost, cacheReadCost: r.cacheReadCost,
+    cacheCreationCost: r.cacheCreationCost, outputCost: r.outputCost, cost: r.cost,
+    requestedModel: r.requestedModel, actualModel: r.actualModel,
+    smartRoutingProvider: r.smartRoutingProvider, smartRoutingModel: r.smartRoutingModel,
+    finalProvider: r.finalProvider, finalModel: r.finalModel,
+    status: r.status, tokens: parseJson(r.tokens, {}),
   }));
 }
 
@@ -647,7 +665,7 @@ export async function getUsageStats(period = "all", range = {}) {
     }
     const customEnd = period === "custom" && range.endDate ? parseChinaDateTime(range.endDate).toISOString() : new Date().toISOString();
     const filtered = db.all(
-      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
+      `SELECT timestamp, provider, model, finalProvider, finalModel, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
       [cutoff, customEnd]
     );
 
@@ -658,23 +676,25 @@ export async function getUsageStats(period = "all", range = {}) {
       const completionTokens = tokens.completion_tokens || 0;
       const { cacheReadTokens: cachedTokens } = getCacheTokenCounts(tokens);
       const entryCost = r.cost || 0;
-      const providerDisplayName = providerNodeNameMap[r.provider] || r.provider;
+      const provider = r.finalProvider || r.provider;
+      const model = r.finalModel || r.model;
+      const providerDisplayName = providerNodeNameMap[provider] || provider;
 
       stats.totalPromptTokens += promptTokens;
       stats.totalCompletionTokens += completionTokens;
       stats.totalCachedTokens += cachedTokens;
       stats.totalCost += entryCost;
 
-      if (!stats.byProvider[r.provider]) stats.byProvider[r.provider] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0 };
-      stats.byProvider[r.provider].requests++;
-      stats.byProvider[r.provider].promptTokens += promptTokens;
-      stats.byProvider[r.provider].completionTokens += completionTokens;
-      stats.byProvider[r.provider].cachedTokens += cachedTokens;
-      stats.byProvider[r.provider].cost += entryCost;
+      if (!stats.byProvider[provider]) stats.byProvider[provider] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0 };
+      stats.byProvider[provider].requests++;
+      stats.byProvider[provider].promptTokens += promptTokens;
+      stats.byProvider[provider].completionTokens += completionTokens;
+      stats.byProvider[provider].cachedTokens += cachedTokens;
+      stats.byProvider[provider].cost += entryCost;
 
-      const modelKey = r.provider ? `${r.model} (${r.provider})` : r.model;
+      const modelKey = provider ? `${model} (${provider})` : model;
       if (!stats.byModel[modelKey]) {
-        stats.byModel[modelKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, lastUsed: r.timestamp };
+        stats.byModel[modelKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: model, provider: providerDisplayName, lastUsed: r.timestamp };
       }
       stats.byModel[modelKey].requests++;
       stats.byModel[modelKey].promptTokens += promptTokens;
@@ -685,9 +705,9 @@ export async function getUsageStats(period = "all", range = {}) {
 
       if (r.connectionId) {
         const accountName = connectionMap[r.connectionId] || `Account ${r.connectionId.slice(0, 8)}...`;
-        const accountKey = `${r.model} (${r.provider} - ${accountName})`;
+        const accountKey = `${model} (${provider} - ${accountName})`;
         if (!stats.byAccount[accountKey]) {
-          stats.byAccount[accountKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, connectionId: r.connectionId, accountName, lastUsed: r.timestamp };
+          stats.byAccount[accountKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: model, provider: providerDisplayName, connectionId: r.connectionId, accountName, lastUsed: r.timestamp };
         }
         stats.byAccount[accountKey].requests++;
         stats.byAccount[accountKey].promptTokens += promptTokens;
@@ -701,16 +721,16 @@ export async function getUsageStats(period = "all", range = {}) {
         const keyInfo = apiKeyMap[r.apiKey];
         const keyName = keyInfo?.name || r.apiKey.slice(0, 8) + "...";
         const apiKeyMasked = maskApiKey(r.apiKey);
-        const akKey = `${apiKeyMasked}|${r.model}|${r.provider || "unknown"}`;
+        const akKey = `${apiKeyMasked}|${model}|${provider || "unknown"}`;
         if (!stats.byApiKey[akKey]) {
-          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey: apiKeyMasked, lastUsed: r.timestamp };
+          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: model, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey: apiKeyMasked, lastUsed: r.timestamp };
         }
         const ake = stats.byApiKey[akKey];
         ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cachedTokens += cachedTokens; ake.cost += entryCost;
         if (new Date(r.timestamp) > new Date(ake.lastUsed)) ake.lastUsed = r.timestamp;
       } else {
         if (!stats.byApiKey["local-no-key"]) {
-          stats.byApiKey["local-no-key"] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked: null, keyName: "Local (No API Key)", apiKeyKey: "local-no-key", lastUsed: r.timestamp };
+          stats.byApiKey["local-no-key"] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: model, provider: providerDisplayName, apiKeyMasked: null, keyName: "Local (No API Key)", apiKeyKey: "local-no-key", lastUsed: r.timestamp };
         }
         const ake = stats.byApiKey["local-no-key"];
         ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cachedTokens += cachedTokens; ake.cost += entryCost;
@@ -718,9 +738,9 @@ export async function getUsageStats(period = "all", range = {}) {
       }
 
       const endpoint = r.endpoint || "Unknown";
-      const epKey = `${endpoint}|${r.model}|${r.provider || "unknown"}`;
+      const epKey = `${endpoint}|${model}|${provider || "unknown"}`;
       if (!stats.byEndpoint[epKey]) {
-        stats.byEndpoint[epKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, endpoint, rawModel: r.model, provider: providerDisplayName, lastUsed: r.timestamp };
+        stats.byEndpoint[epKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, endpoint, rawModel: model, provider: providerDisplayName, lastUsed: r.timestamp };
       }
       const epe = stats.byEndpoint[epKey];
       epe.requests++; epe.promptTokens += promptTokens; epe.completionTokens += completionTokens; epe.cachedTokens += cachedTokens; epe.cost += entryCost;
@@ -745,7 +765,8 @@ export async function getUsageStats(period = "all", range = {}) {
   }
 
   const apiKeyRows = db.all(
-    `SELECT timestamp, provider, model, apiKey, promptTokens, completionTokens, tokens
+    `SELECT timestamp, provider, model, finalProvider, finalModel, apiKey, promptTokens, completionTokens,
+            inputCost, cacheReadCost, cacheCreationCost, outputCost, cost, costBreakdownStored, tokens
      FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
     [apiKeyStart.toISOString(), apiKeyEnd.toISOString()],
   );
@@ -764,13 +785,31 @@ export async function getUsageStats(period = "all", range = {}) {
       cached_tokens: cacheReadTokens,
       cache_creation_input_tokens: cacheCreationTokens,
     };
-    const pricingKey = `${row.provider || ""}|${row.model || ""}`;
-    if (!pricingCache.has(pricingKey)) pricingCache.set(pricingKey, getPricingForModel(row.provider, row.model));
-    const pricing = await pricingCache.get(pricingKey);
-    const breakdown = pricing
-      ? calculateCostBreakdown(normalizedTokens, pricing, row.timestamp)
-      : await calculateBreakdown(row.provider, row.model, normalizedTokens, row.timestamp);
-    return { row, breakdown };
+    const effectiveProvider = row.finalProvider || row.provider;
+    const effectiveModel = row.finalModel || row.model;
+    let breakdown;
+    if (row.costBreakdownStored) {
+      breakdown = {
+        inputTokens: Math.max(0, Number(normalizedTokens.prompt_tokens || 0) - cacheReadTokens - cacheCreationTokens),
+        cacheReadTokens,
+        cacheCreationTokens,
+        outputTokens: Math.max(0, Number(normalizedTokens.completion_tokens || 0)) + Math.max(0, Number(normalizedTokens.reasoning_tokens || 0)),
+        inputCost: Number(row.inputCost || 0),
+        cacheReadCost: Number(row.cacheReadCost || 0),
+        cacheCreationCost: Number(row.cacheCreationCost || 0),
+        outputCost: Number(row.outputCost || 0),
+        totalCost: Number(row.cost || 0),
+      };
+    } else {
+      const pricingKey = `${effectiveProvider || ""}|${effectiveModel || ""}`;
+      if (!pricingCache.has(pricingKey)) pricingCache.set(pricingKey, getPricingForModel(effectiveProvider, effectiveModel));
+      const pricing = await pricingCache.get(pricingKey);
+      breakdown = pricing
+        ? calculateCostBreakdown(normalizedTokens, pricing, row.timestamp)
+        : await calculateBreakdown(effectiveProvider, effectiveModel, normalizedTokens, row.timestamp);
+      if (!breakdown.totalCost && Number(row.cost || 0) > 0) breakdown = { ...breakdown, totalCost: Number(row.cost) };
+    }
+    return { row: { ...row, effectiveProvider, effectiveModel }, breakdown };
   }));
 
   stats.byApiKey = {};
@@ -784,9 +823,9 @@ export async function getUsageStats(period = "all", range = {}) {
     const apiKeyMasked = maskApiKey(apiKeyValue);
     const keyName = getApiKeyLabel(apiKeyValue, keyInfo);
     const apiKeyGroupId = getApiKeyGroupId(apiKeyValue, keyInfo);
-    const providerDisplayName = providerNodeNameMap[row.provider] || row.provider || "未知提供商";
-    const providerKey = row.provider || "unknown";
-    const mappedModel = getMappedModelName(modelMappingMap, row.provider, row.model || "未知模型");
+    const providerDisplayName = providerNodeNameMap[row.effectiveProvider] || row.effectiveProvider || "未知提供商";
+    const providerKey = row.effectiveProvider || "unknown";
+    const mappedModel = getMappedModelName(modelMappingMap, row.effectiveProvider, row.effectiveModel || "未知模型");
     if (!stats.byProvider[providerKey]) {
       stats.byProvider[providerKey] = {
         provider: providerDisplayName,
@@ -828,7 +867,7 @@ export async function getUsageStats(period = "all", range = {}) {
     modelTarget.cost += breakdown.totalCost;
     if (new Date(row.timestamp) > new Date(modelTarget.lastUsed)) modelTarget.lastUsed = row.timestamp;
 
-    const statsKey = `${apiKeyGroupId}|${mappedModel}|${row.provider || "unknown"}`;
+    const statsKey = `${apiKeyGroupId}|${mappedModel}|${row.effectiveProvider || "unknown"}`;
     if (!stats.byApiKey[statsKey]) {
       stats.byApiKey[statsKey] = {
         requests: 0,
@@ -992,7 +1031,7 @@ export async function getSmartRoutingCostAnalysis({ startDate, endDate, interval
     return { timestamp: new Date(timestamp).toISOString(), label: bucketMs >= DAY_MS ? formatChinaDate(timestamp) : formatChinaTime(timestamp) };
   });
   const rows = db.all(
-    `SELECT timestamp, provider, model, apiKey, promptTokens, completionTokens, tokens, meta
+    `SELECT timestamp, provider, model, apiKey, promptTokens, completionTokens, tokens, meta, finalProvider, finalModel
      FROM usageHistory WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp ASC`,
     [new Date(start).toISOString(), new Date(end).toISOString()],
   );
@@ -1009,8 +1048,8 @@ export async function getSmartRoutingCostAnalysis({ startDate, endDate, interval
     const config = configByProvider.get(row.provider);
     if (!config) continue;
     const meta = parseJson(row.meta, {}) || {};
-    const routedModel = meta.routerSelectedModel || meta.actualModel || row.model;
-    const routedProvider = meta.routerSelectedProvider || row.provider;
+    const routedModel = row.finalModel || meta.routerSelectedModel || meta.actualModel || row.model;
+    const routedProvider = row.finalProvider || meta.routerSelectedProvider || row.provider;
     const primary = config.primaryModels?.[row.model];
     if (!primary || !String(primary).includes("/")) continue;
     const separator = String(primary).indexOf("/");
@@ -1131,7 +1170,7 @@ export async function getDimensionChartData(period = "7d", range = {}, dimension
   const db = await getAdapter();
   const { start, end, bucketMs, bucketCount } = getDimensionRange(period, range);
   const rows = db.all(
-    `SELECT timestamp, provider, model, apiKey, promptTokens, completionTokens, tokens, meta
+    `SELECT timestamp, provider, model, finalProvider, finalModel, apiKey, promptTokens, completionTokens, tokens, meta
      FROM usageHistory WHERE timestamp >= ? AND timestamp < ? ORDER BY timestamp ASC`,
     [start.toISOString(), end.toISOString()],
   );
@@ -1161,17 +1200,19 @@ export async function getDimensionChartData(period = "7d", range = {}, dimension
     const index = Math.floor((timestamp - start.getTime()) / bucketMs);
     if (index < 0 || index >= bucketCount) continue;
     const keyInfo = dimension === "apiKey" && row.apiKey ? keyInfoByValue.get(row.apiKey) : null;
+    const effectiveProvider = row.finalProvider || row.provider;
+    const effectiveModel = row.finalModel || row.model;
     const mappedModel = dimension === "model"
-      ? getMappedModelName(modelMappingMap, row.provider, row.model || "未知模型")
+      ? getMappedModelName(modelMappingMap, effectiveProvider, effectiveModel || "未知模型")
       : "";
-    const providerLabel = providerNames.get(row.provider) || row.provider || "未知提供商";
+    const providerLabel = providerNames.get(effectiveProvider) || effectiveProvider || "未知提供商";
     const groupId = dimension === "apiKey"
       ? getApiKeyGroupId(row.apiKey, keyInfo)
       : dimension === "provider"
-        ? (row.provider || "unknown")
-        : mergeModels ? mappedModel : `${row.provider || "unknown"}|${mappedModel}`;
+        ? (effectiveProvider || "unknown")
+        : mergeModels ? mappedModel : `${effectiveProvider || "unknown"}|${mappedModel}`;
     const groupLabel = dimension === "apiKey"
-      ? getApiKeyLabel(row.apiKey, keyInfo)
+      ? getApiKeyChartLabel(row.apiKey, keyInfo)
       : dimension === "provider"
         ? providerLabel
         : mergeModels ? mappedModel : `${mappedModel} · ${providerLabel}`;
@@ -1280,7 +1321,11 @@ export async function getUsageLogs(filter = {}) {
   const providerFilters = asList(filter.provider);
   const endpointFilters = asList(filter.endpoint);
   if (providerFilters.includes("__none__") || endpointFilters.includes("__none__")) conds.push("1 = 0");
-  if (providerFilters.length && !providerFilters.includes("__none__")) { conds.push(`provider IN (${providerFilters.map(() => "?").join(",")})`); params.push(...providerFilters); }
+  if (providerFilters.length && !providerFilters.includes("__none__")) {
+    const placeholders = providerFilters.map(() => "?").join(",");
+    conds.push(`(provider IN (${placeholders}) OR finalProvider IN (${placeholders}))`);
+    params.push(...providerFilters, ...providerFilters);
+  }
   if (endpointFilters.length && !endpointFilters.includes("__none__")) { conds.push(`endpoint IN (${endpointFilters.map(() => "?").join(",")})`); params.push(...endpointFilters); }
   const statusFilters = asList(filter.status);
   if (statusFilters.includes("__none__")) {
@@ -1334,23 +1379,26 @@ export async function getUsageLogs(filter = {}) {
   const allowedSortFields = new Set(["timestamp", "apiKeyName", "selectedModel", "actualModel", "provider", "endpoint", "inputTokens", "cacheReadTokens", "cacheCreationTokens", "cacheHitRate", "outputTokens", "totalTokens", "latencyMs", "status"]);
   const sortBy = allowedSortFields.has(filter.sortBy) ? filter.sortBy : "timestamp";
   const sortOrder = filter.sortOrder === "asc" ? "ASC" : "DESC";
-  const allRows = db.all(`SELECT id, timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta FROM usageHistory ${where} ORDER BY id DESC`, params);
+  const allRows = db.all(`SELECT id, timestamp, provider, model, connectionId, apiKey, endpoint,
+    promptTokens, completionTokens, inputCost, cacheReadCost, cacheCreationCost, outputCost, costBreakdownStored, cost,
+    requestedModel, actualModel, smartRoutingProvider, smartRoutingModel, finalProvider, finalModel,
+    status, tokens, meta FROM usageHistory ${where} ORDER BY id DESC`, params);
   const uniqueValues = (values) => [...new Set(values.filter(Boolean).map((value) => String(value)))].sort((a, b) => a.localeCompare(b));
   const filterOptions = {
     endpoints: uniqueValues(allRows.map((row) => row.endpoint)),
-    providers: uniqueValues(allRows.map((row) => row.provider)),
-    selectedModels: uniqueValues(allRows.map((row) => parseJson(row.meta, {})?.requestedModel || row.model)),
-    actualModels: uniqueValues(allRows.map((row) => parseJson(row.meta, {})?.actualModel || row.model)),
+    providers: uniqueValues(allRows.flatMap((row) => [row.provider, row.finalProvider])),
+    selectedModels: uniqueValues(allRows.map((row) => row.requestedModel || parseJson(row.meta, {})?.requestedModel || row.model)),
+    actualModels: uniqueValues(allRows.flatMap((row) => [row.actualModel || parseJson(row.meta, {})?.actualModel || row.model, row.finalModel])),
   };
   const modelFilter = (value) => String(value || "").toLowerCase();
   const selectedQuery = asList(filter.selectedModel).map(modelFilter);
   const actualQuery = asList(filter.actualModel).map(modelFilter);
   const filteredRows = allRows.filter((row) => {
     const meta = parseJson(row.meta, {}) || {};
-    const selected = modelFilter(meta.requestedModel || row.model);
-    const actual = modelFilter(meta.actualModel || row.model);
+    const selected = modelFilter(row.requestedModel || meta.requestedModel || row.model);
+    const actualValues = [row.actualModel || meta.actualModel || row.model, row.finalModel || meta.routerSelectedModel].map(modelFilter);
     const selectedMatches = selectedQuery.includes("__none__") ? false : (!selectedQuery.length || selectedQuery.includes(selected));
-    const actualMatches = actualQuery.includes("__none__") ? false : (!actualQuery.length || actualQuery.includes(actual));
+    const actualMatches = actualQuery.includes("__none__") ? false : (!actualQuery.length || actualQuery.some((query) => actualValues.includes(query)));
     return selectedMatches && actualMatches;
   });
   const totalItems = filteredRows.length;
@@ -1363,10 +1411,14 @@ export async function getUsageLogs(filter = {}) {
     const output = Number(row.completionTokens ?? tokens.completion_tokens ?? tokens.output_tokens ?? 0);
     const totalInput = Math.max(input, cacheRead + cacheWrite);
     const values = {
-      timestamp: new Date(row.timestamp).getTime(), apiKeyName: row.apiKey || "", selectedModel: meta.requestedModel || row.model || "",
-      actualModel: meta.actualModel || row.model || "", provider: row.provider || "", endpoint: row.endpoint || "", inputTokens: input,
-      cacheReadTokens: cacheRead, cacheCreationTokens: cacheWrite, cacheHitRate: totalInput > 0 ? cacheRead / totalInput * 100 : 0,
-      outputTokens: output, totalTokens: input + cacheRead + cacheWrite + output,
+      timestamp: new Date(row.timestamp).getTime(), apiKeyName: row.apiKey || "", selectedModel: row.requestedModel || meta.requestedModel || row.model || "",
+      actualModel: row.actualModel || meta.actualModel || row.model || "", provider: row.provider || "", endpoint: row.endpoint || "",
+      inputTokens: row.costBreakdownStored ? Number(row.inputCost || 0) : input,
+      cacheReadTokens: row.costBreakdownStored ? Number(row.cacheReadCost || 0) : cacheRead,
+      cacheCreationTokens: row.costBreakdownStored ? Number(row.cacheCreationCost || 0) : cacheWrite,
+      cacheHitRate: totalInput > 0 ? cacheRead / totalInput * 100 : 0,
+      outputTokens: row.costBreakdownStored ? Number(row.outputCost || 0) : output,
+      totalTokens: row.costBreakdownStored ? Number(row.cost || 0) : input + cacheRead + cacheWrite + output,
       latencyMs: Number(meta.latency?.total || meta.latencyMs || meta.durationMs || 0), status: row.status || "",
     };
     return values[sortBy];
@@ -1408,10 +1460,23 @@ export async function getUsageLogs(filter = {}) {
       cached_tokens: cacheReadTokens,
       cache_creation_input_tokens: cacheCreationTokens,
     };
-    const usesRouterPricing = Boolean(meta.routerSelectedModel || meta.routerSelectedProvider);
-    const pricingProvider = meta.routerSelectedProvider || r.provider;
-    const pricingModel = meta.routerSelectedModel || r.model;
-    const breakdown = await calculateBreakdown(pricingProvider, pricingModel, normalizedTokens, r.timestamp);
+    const finalProvider = r.finalProvider || meta.routerSelectedProvider || null;
+    const finalModel = r.finalModel || meta.routerSelectedModel || null;
+    const pricingProvider = finalProvider || r.provider;
+    const pricingModel = finalModel || r.model;
+    const breakdown = r.costBreakdownStored
+      ? {
+          inputTokens: Math.max(0, Number(normalizedTokens.prompt_tokens || 0) - cacheReadTokens - cacheCreationTokens),
+          cacheReadTokens,
+          cacheCreationTokens,
+          outputTokens: Math.max(0, Number(normalizedTokens.completion_tokens || 0)) + Math.max(0, Number(normalizedTokens.reasoning_tokens || 0)),
+          inputCost: Number(r.inputCost || 0),
+          cacheReadCost: Number(r.cacheReadCost || 0),
+          cacheCreationCost: Number(r.cacheCreationCost || 0),
+          outputCost: Number(r.outputCost || 0),
+          totalCost: Number(r.cost || 0),
+        }
+      : await calculateBreakdown(pricingProvider, pricingModel, normalizedTokens, r.timestamp);
     const totalInputTokens = breakdown.inputTokens + breakdown.cacheReadTokens + breakdown.cacheCreationTokens;
     const mappedModel = getMappedModelName(modelMappingMap, r.provider, r.model);
     return {
@@ -1420,12 +1485,14 @@ export async function getUsageLogs(filter = {}) {
       apiKey: mask(r.apiKey),
       apiKeyName: r.apiKey ? (keyMap[r.apiKey] || mask(r.apiKey)) : "Local (No API Key)",
       model: mappedModel,
-      selectedModel: meta.requestedModel || mappedModel,
-      selectedModelType: comboNames.has(meta.requestedModel) ? "组合" : "模型",
-      actualModel: meta.actualModel || r.model || mappedModel,
-      routerSelectedModel: meta.routerSelectedModel || null,
-      routerSelectedProvider: meta.routerSelectedProvider
-        ? (providerNameMap[meta.routerSelectedProvider] || meta.routerSelectedProvider)
+      selectedModel: r.requestedModel || meta.requestedModel || mappedModel,
+      selectedModelType: comboNames.has(r.requestedModel || meta.requestedModel) ? "组合" : "模型",
+      actualModel: r.actualModel || meta.actualModel || r.model || mappedModel,
+      smartRoutingProvider: r.smartRoutingProvider || (finalProvider || finalModel ? r.provider : null),
+      smartRoutingModel: r.smartRoutingModel || (finalProvider || finalModel ? r.model : null),
+      routerSelectedModel: finalModel,
+      routerSelectedProvider: finalProvider
+        ? (providerNameMap[finalProvider] || finalProvider)
         : null,
       providerId: r.provider,
       provider: providerNameMap[r.provider] || r.provider,
@@ -1433,7 +1500,7 @@ export async function getUsageLogs(filter = {}) {
       account: r.connectionId ? (connMap[r.connectionId] || r.connectionId) : null,
       ...breakdown,
       cacheHitRate: totalInputTokens > 0 ? Number((breakdown.cacheReadTokens / totalInputTokens * 100).toFixed(2)) : 0,
-      cost: usesRouterPricing ? breakdown.totalCost : (breakdown.totalCost || Number(r.cost || 0)),
+      cost: r.costBreakdownStored ? breakdown.totalCost : (breakdown.totalCost || Number(r.cost || 0)),
       status: r.status || "ok",
       ttftMs: Number(meta.latency?.ttft || 0),
       latencyMs: Number(meta.latency?.total || meta.latencyMs || meta.durationMs || 0),

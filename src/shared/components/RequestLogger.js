@@ -48,8 +48,8 @@ const LOG_COLUMNS_SCHEMA_VERSION = 2;
 const LOG_SORT_STORAGE_KEY = "9router:traffic-log-sort";
 const MetricCell = ({ tokens, cost, color }) => (
   <td className={`px-3 py-2 text-right tabular-nums ${color}`}>
-    <div className="font-medium">{formatNumber(tokens)}</div>
-    <div className="mt-0.5 text-[10px] text-text-muted">{formatCost(cost)}</div>
+    <div className="font-medium">{formatCost(cost)}</div>
+    <div className="mt-0.5 text-[10px] text-text-muted">{formatNumber(tokens)} Token</div>
   </td>
 );
 MetricCell.propTypes = { tokens: PropTypes.number, cost: PropTypes.number, color: PropTypes.string };
@@ -68,15 +68,15 @@ const LatencyCell = ({ ttftMs, totalMs }) => (
 LatencyCell.propTypes = { ttftMs: PropTypes.number, totalMs: PropTypes.number };
 const ActualModelCell = ({ log }) => (
   <td className="whitespace-nowrap px-3 py-2 text-center font-mono">
-    <div>{log.actualModel || log.model || "-"}</div>
-    {log.routerSelectedModel && <div className="mt-1"><span className="inline-flex rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-600" title="LLMRouter 最终调用模型">实际 {log.routerSelectedModel}</span></div>}
+    <div>{log.smartRoutingModel || log.actualModel || log.model || "-"}</div>
+    {log.routerSelectedModel && <div className="mt-1"><span className="inline-flex rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-600" title="智能路由最终调用模型">最终 {log.routerSelectedModel}</span></div>}
   </td>
 );
 ActualModelCell.propTypes = { log: PropTypes.object.isRequired };
 const ProviderCell = ({ log }) => (
   <td className="whitespace-nowrap px-3 py-2 text-center">
     <div>{log.provider || "-"}</div>
-    {log.routerSelectedProvider && <div className="mt-1"><span className="inline-flex rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-600" title="LLMRouter 最终调用提供商">实际 {log.routerSelectedProvider}</span></div>}
+    {log.routerSelectedProvider && <div className="mt-1"><span className="inline-flex rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-600" title="智能路由最终调用提供商">最终 {log.routerSelectedProvider}</span></div>}
   </td>
 );
 ProviderCell.propTypes = { log: PropTypes.object.isRequired };
@@ -89,7 +89,7 @@ export default function RequestLogger() {
   const [filters, setFilters] = useState(() => getDefaultLogFilters());
   const [keys, setKeys] = useState([]);
   const [providers, setProviders] = useState([]);
-  const [filterOptions, setFilterOptions] = useState({ endpoints: [], selectedModels: [], actualModels: [] });
+  const [filterOptions, setFilterOptions] = useState({ providers: [], endpoints: [], selectedModels: [], actualModels: [] });
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState("today");
   const [showColumnSettings, setShowColumnSettings] = useState(false);
@@ -133,7 +133,7 @@ export default function RequestLogger() {
       if (!response.ok) throw new Error("无法加载流量日志");
       const data = await response.json();
       setLogs(data.logs || []);
-      setFilterOptions(data.filterOptions || { endpoints: [], selectedModels: [], actualModels: [] });
+      setFilterOptions(data.filterOptions || { providers: [], endpoints: [], selectedModels: [], actualModels: [] });
       setPagination(data.pagination || { page, pageSize: 50, totalPages: 0 });
     } catch (error) {
       console.error("Failed to fetch logs:", error);
@@ -206,6 +206,11 @@ export default function RequestLogger() {
     }
   };
   const sortedLogs = logs;
+  const providerOptions = useMemo(() => {
+    const options = new Map(providers.map((item) => [item.value, item.label]));
+    for (const provider of filterOptions.providers || []) if (!options.has(provider)) options.set(provider, provider);
+    return [...options.entries()].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [filterOptions.providers, providers]);
   const totals = useMemo(() => logs.reduce((sum, log) => ({
     input: sum.input + Number(log.inputTokens || 0),
     inputCost: sum.inputCost + Number(log.inputCost || 0),
@@ -230,7 +235,7 @@ export default function RequestLogger() {
           </div>
           <div className="grid w-full grid-cols-1 items-end gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <DropdownSelect className="min-w-0 w-full" label="API 密钥" multiple value={filters.apiKey} onChange={(value) => updateFilter("apiKey", value)} searchable options={keys.map((key) => ({ value: key.id, label: key.name }))} />
-            <DropdownSelect className="min-w-0 w-full" label="模型提供商" multiple value={filters.provider} onChange={(value) => updateFilter("provider", value)} searchable options={providers} />
+            <DropdownSelect className="min-w-0 w-full" label="模型提供商" multiple value={filters.provider} onChange={(value) => updateFilter("provider", value)} searchable options={providerOptions} />
             <DropdownSelect className="min-w-0 w-full" label="端点" multiple value={filters.endpoint} onChange={(value) => updateFilter("endpoint", value)} searchable options={filterOptions.endpoints.map((value) => ({ value, label: value }))} />
             <DropdownSelect className="min-w-0 w-full" label="用户选择" multiple value={filters.selectedModel} onChange={(value) => updateFilter("selectedModel", value)} searchable options={filterOptions.selectedModels.map((value) => ({ value, label: value }))} />
             <DropdownSelect className="min-w-0 w-full" label="实际请求模型" multiple value={filters.actualModel} onChange={(value) => updateFilter("actualModel", value)} searchable options={filterOptions.actualModels.map((value) => ({ value, label: value }))} />

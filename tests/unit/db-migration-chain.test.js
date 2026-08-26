@@ -40,6 +40,11 @@ describe("Schema migrations", () => {
     expect(db.get(`SELECT name FROM apiKeyGroups WHERE id = 'default'`)?.name).toBe("默认分组");
     const comboColumns = db.all(`PRAGMA table_info(combos)`).map((column) => column.name);
     expect(comboColumns).toContain("description");
+    const usageColumns = db.all(`PRAGMA table_info(usageHistory)`).map((column) => column.name);
+    expect(usageColumns).toEqual(expect.arrayContaining([
+      "inputCost", "cacheReadCost", "cacheCreationCost", "outputCost",
+      "smartRoutingProvider", "smartRoutingModel", "finalProvider", "finalModel",
+    ]));
   });
 
   it("existing DB at older schemaVersion → re-applies pending migrations on restart", async () => {

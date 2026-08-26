@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Card, Button, Input, Select, Toggle } from "@/shared/components";
+import { Card, Button, Input, Select } from "@/shared/components";
 import { AI_PROVIDERS, AUTH_METHODS } from "@/shared/constants/config";
 
 const providerOptions = Object.values(AI_PROVIDERS).map((p) => ({
@@ -24,7 +24,6 @@ export default function NewProviderPage() {
     authMethod: "api_key",
     apiKey: "",
     displayName: "",
-    isActive: true,
   });
   const [errors, setErrors] = useState({});
 
@@ -184,14 +183,6 @@ export default function NewProviderPage() {
             value={formData.displayName}
             onChange={(e) => handleChange("displayName", e.target.value)}
             hint="Optional. A friendly name to identify this configuration."
-          />
-
-          {/* Active Toggle */}
-          <Toggle
-            checked={formData.isActive}
-            onChange={(checked) => handleChange("isActive", checked)}
-            label="Active"
-            description="Enable this provider for use in your applications"
           />
 
           {/* Error Message */}

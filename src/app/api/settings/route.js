@@ -4,6 +4,7 @@ import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
 import { normalizeProviderModelSettings } from "@/lib/providerModelSettings";
 import bcrypt from "bcryptjs";
+import { FREE_PROVIDERS } from "@/shared/constants/providers";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -31,6 +32,14 @@ function normalizeProviderModelDescriptions(value) {
     if (Object.keys(descriptions).length) normalized[provider] = descriptions;
   }
   return normalized;
+}
+
+function normalizeFreeProviderStates(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid free provider states");
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([providerId, enabled]) => Object.prototype.hasOwnProperty.call(FREE_PROVIDERS, providerId) && typeof enabled === "boolean"),
+  );
 }
 
 export async function GET() {
@@ -78,6 +87,14 @@ export async function PATCH(request) {
     if (Object.prototype.hasOwnProperty.call(body, "providerModelDescriptions")) {
       try {
         body.providerModelDescriptions = normalizeProviderModelDescriptions(body.providerModelDescriptions);
+      } catch (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "freeProviderStates")) {
+      try {
+        body.freeProviderStates = normalizeFreeProviderStates(body.freeProviderStates);
       } catch (error) {
         return NextResponse.json({ error: error.message }, { status: 400 });
       }

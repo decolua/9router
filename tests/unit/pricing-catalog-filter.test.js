@@ -90,4 +90,12 @@ describe("pricing provider catalog filtering", () => {
     expect(catalog).not.toContainEqual(expect.objectContaining({ provider: "glm", model: "glm-5.3" }));
     expect(catalog).not.toContainEqual(expect.objectContaining({ provider: "glm", model: "glm-custom" }));
   });
+
+  it("excludes no-auth free providers after they are disabled", async () => {
+    state.settings.freeProviderStates = { opencode: false };
+
+    const catalog = await getProviderPricingCatalog();
+
+    expect(catalog).not.toContainEqual(expect.objectContaining({ provider: "opencode" }));
+  });
 });

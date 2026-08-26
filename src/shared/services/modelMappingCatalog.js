@@ -1,6 +1,7 @@
 import { getCustomModels, getProviderConnections, getProviderNodes, getSettings } from "@/lib/localDb";
 import { AI_MODELS } from "@/shared/constants/models.js";
 import { AI_PROVIDERS, FREE_PROVIDERS, getProviderAlias, resolveProviderId } from "@/shared/constants/providers.js";
+import { isFreeProviderEnabled } from "@/shared/utils/freeProviderState.js";
 
 function normalizeUpstreamModel(value, prefixes) {
   const model = String(value || "").trim();
@@ -20,7 +21,7 @@ export async function getModelMappingCatalog() {
   const activeConnections = connections.filter((connection) => connection.isActive !== false);
   const activeProviders = new Set(activeConnections.map((connection) => connection.provider));
   for (const provider of Object.values(FREE_PROVIDERS)) {
-    if (provider.noAuth) activeProviders.add(provider.id);
+    if (provider.noAuth && isFreeProviderEnabled(settings, provider.id)) activeProviders.add(provider.id);
   }
   const includeAll = activeProviders.size === 0;
   const nodeById = new Map(nodes.map((node) => [node.id, node]));

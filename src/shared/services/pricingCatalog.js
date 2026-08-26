@@ -3,6 +3,7 @@ import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
 import { FREE_PROVIDERS, getProviderAlias } from "@/shared/constants/providers.js";
+import { isFreeProviderEnabled } from "@/shared/utils/freeProviderState.js";
 
 const RATE_FIELDS = ["input", "output", "cached", "cache_creation", "reasoning"];
 export const EMPTY_PRICING = Object.fromEntries(RATE_FIELDS.map((field) => [field, 0]));
@@ -61,7 +62,7 @@ export async function getProviderPricingCatalog() {
       .filter((provider) => !smartRoutingProviders.has(provider)),
   );
   for (const provider of Object.values(FREE_PROVIDERS)) {
-    if (provider.noAuth && !smartRoutingProviders.has(provider.id)) availableProviders.add(provider.id);
+    if (provider.noAuth && isFreeProviderEnabled(settings, provider.id) && !smartRoutingProviders.has(provider.id)) availableProviders.add(provider.id);
   }
   const catalog = new Map();
   const add = (provider, model) => {

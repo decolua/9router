@@ -261,6 +261,28 @@ describe("usage logs", () => {
     expect(latency.data.some((point) => point[latencySeries.id] === 640)).toBe(true);
   });
 
+  it("uses only the API key name in dimension chart legends", async () => {
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const adapter = await getAdapter();
+    adapter.run(
+      `INSERT INTO apiKeys(id, key, name, machineId, isActive, allowedModels, allowedCombos, groupId, createdAt)
+       VALUES(?, ?, ?, ?, 1, '[]', '[]', 'default', ?)`,
+      ["legend-key-id", "sk-legend-secret-suffix", "主密钥", "legend-machine", new Date().toISOString()],
+    );
+    await db.saveRequestUsage({
+      provider: "legend-provider",
+      model: "legend-model",
+      apiKey: "sk-legend-secret-suffix",
+      timestamp: new Date().toISOString(),
+      tokens: { prompt_tokens: 20, completion_tokens: 5 },
+    });
+
+    const chart = await db.getDimensionChartData("today", {}, "apiKey", "tokens");
+
+    expect(chart.series.some((series) => series.label === "主密钥")).toBe(true);
+    expect(chart.series.some((series) => series.label.includes("sk-legend"))).toBe(false);
+  });
+
   it("can merge or separate matching model names across providers", async () => {
     const timestamp = new Date().toISOString();
     const base = {
@@ -360,6 +382,25 @@ describe("usage logs", () => {
     expect(log.cacheCreationCost).toBeCloseTo(30 * 3.75 / 1_000_000, 12);
     expect(log.outputCost).toBeCloseTo(50 * 15 / 1_000_000, 12);
     expect(log.cost).toBeCloseTo((100 * 3 + 200 * 0.3 + 30 * 3.75 + 50 * 15) / 1_000_000, 12);
+
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const stored = (await getAdapter()).get(
+      `SELECT inputCost, cacheReadCost, cacheCreationCost, outputCost, costBreakdownStored,
+              smartRoutingProvider, smartRoutingModel, finalProvider, finalModel
+       FROM usageHistory WHERE provider = ? ORDER BY id DESC LIMIT 1`,
+      ["outer-router-provider"],
+    );
+    expect(stored).toMatchObject({
+      costBreakdownStored: 1,
+      smartRoutingProvider: "outer-router-provider",
+      smartRoutingModel: "auto",
+      finalProvider: "final-price-provider",
+      finalModel: "final-price-model",
+    });
+    expect(stored.inputCost).toBeCloseTo(log.inputCost, 12);
+    expect(stored.cacheReadCost).toBeCloseTo(log.cacheReadCost, 12);
+    expect(stored.cacheCreationCost).toBeCloseTo(log.cacheCreationCost, 12);
+    expect(stored.outputCost).toBeCloseTo(log.outputCost, 12);
   });
 
   it("keeps zero final-model pricing instead of falling back to the outer router cost", async () => {

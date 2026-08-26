@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
+import { isFreeProviderEnabled } from "@/shared/utils/freeProviderState";
 
 // Keep providers without serviceKinds (default LLM) or with "llm" in serviceKinds
 function isLLMProvider(id) {
@@ -145,8 +146,9 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     Promise.all([
       fetch("/api/providers").then((r) => r.ok ? r.json() : null),
       fetch("/api/provider-nodes").then((r) => r.ok ? r.json() : null),
+      fetch("/api/settings", { cache: "no-store" }).then((r) => r.ok ? r.json() : {}),
     ])
-      .then(([d, nodesData]) => {
+      .then(([d, nodesData, settings]) => {
         // Build node name lookup for custom providers
         const nodeNameMap = {};
         for (const node of (nodesData?.nodes || [])) {
@@ -165,7 +167,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           nodeName: nodeNameMap[c.provider] || null,
         }));
         const noAuthProviders = Object.values(FREE_PROVIDERS)
-          .filter((p) => p.noAuth && !seen.has(p.id) && isLLMProvider(p.id))
+          .filter((p) => p.noAuth && isFreeProviderEnabled(settings, p.id) && !seen.has(p.id) && isLLMProvider(p.id))
           .map((p) => ({ provider: p.id, providerName: d?.providerDisplayNames?.[p.id] || p.name, name: d?.providerDisplayNames?.[p.id] || p.name }));
         setProviders([...unique, ...noAuthProviders]);
       })

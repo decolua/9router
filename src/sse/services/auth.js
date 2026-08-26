@@ -5,6 +5,7 @@ import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { getProviderAlias, resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
 import { createModelMappingMap, getMappedModelName } from "@/shared/utils/modelMapping.js";
+import { isFreeProviderEnabled } from "@/shared/utils/freeProviderState.js";
 
 // Keep round-robin selection consistent without serializing unrelated providers.
 const selectionMutexes = new Map();
@@ -54,6 +55,10 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     // Inject a virtual connection for no-auth free providers (with optional proxy pool from settings)
     if (FREE_PROVIDERS[providerId]?.noAuth) {
       const settings = await getSettings();
+      if (!isFreeProviderEnabled(settings, providerId)) {
+        log.warn("AUTH", `Free provider ${providerId} is disabled`);
+        return null;
+      }
       const override = (settings.providerStrategies || {})[providerId] || {};
       const strategy = override.rotateStrategy || "none";
       let pickedId = override.proxyPoolId || null;
