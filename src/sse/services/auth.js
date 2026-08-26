@@ -89,7 +89,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       if (isAntigravity && model && antigravityQuotaCache) {
         const quota = antigravityQuotaCache.get(c.id)?.[model];
         if (quota && quota.remainingPercentage <= 0 && quota.resetAt && new Date(quota.resetAt).getTime() > Date.now()) {
-          const account = c.email || c.name || c.id?.slice(0, 8) || "unknown";
+          const account = c.id?.slice(0, 8) || "unknown";
           log.info("AG_QUOTA", `${account} | CACHE_BLOCK ${model} — skip upstream until ${quota.resetAt}`);
           return false;
         }
