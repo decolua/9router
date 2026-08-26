@@ -101,7 +101,12 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
                        { ...lastMsg, content: lastMsg.content + event.text }
                    ];
                });
-           } else if (event.type === "error") {
+           } else if (event.type === "error" || event.type === "malformed") {
+               if (event.type === "malformed") {
+                   const errorMsg = "Malformed stream frame received";
+                   accumulator.record({ type: "error", message: errorMsg }, Date.now());
+                   throw new Error(errorMsg);
+               }
                throw new Error(event.message);
            }
         }
