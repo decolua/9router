@@ -39,10 +39,10 @@ describe("learned chars-per-token ratio", () => {
 
   it("moves gradually after the first sample rather than tracking noise", () => {
     observeTokenRatio("ag", 100000, 50000);   // 2.0
-    observeTokenRatio("ag", 100000, 100000);  // 1.0 — one odd request
+    observeTokenRatio("ag", 100000, 62500);   // 1.6 — one odd request
     const r = charsPerToken("ag");
     expect(r).toBeLessThan(2.0);
-    expect(r).toBeGreaterThan(1.7);           // EWMA, not a jump to 1.0
+    expect(r).toBeGreaterThan(1.7);           // EWMA, not a jump to 1.6
   });
 
   it("ignores samples that cannot be a real ratio", () => {
@@ -89,7 +89,11 @@ describe("sizing ratio is pessimistic and stable, not the mean", () => {
   it("ignores a provider seen only once, so one freak sample cannot set the floor", () => {
     feed("antigravity", 3.0);
     const before = sizingCharsPerToken();
-    observeTokenRatio("weird", 100000, 200000); // ratio 0.5, the guard-rail floor
+    // 1.6, just inside the guard rail. This read 0.5 until 2026-08-26, when the
+    // floor rose to 1.5 — a value that low is now rejected on arrival, which
+    // tests the wrong gate. The point here is the sample COUNT, not the value:
+    // a provider seen once must not speak, however plausible its number.
+    observeTokenRatio("weird", 100000, 62500);
     // Recorded, but not yet allowed to speak: one sample is an anecdote, and
     // because sizing takes the minimum this one would otherwise halve the
     // estimate for every provider at once.

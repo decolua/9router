@@ -56,7 +56,28 @@ const BOOTSTRAP_CHARS_PER_TOKEN = 1.6;
 
 // Guard rails. A ratio outside this band is not a tokenizer, it is a bug — a
 // truncated body, a cached-token accounting mismatch, a provider reporting zero.
-const MIN_RATIO = 0.5;
+//
+// The floor was 0.5, which is below anything a tokenizer can do and so caught
+// none of the bugs it was written for. Measured 2026-08-26: antigravity reported
+// 458,135 input tokens for a body this module measured at 466,255 chars — a ratio
+// of 1.02, accepted, and because sizingCharsPerToken takes the MINIMUM across
+// providers, that one number then sized every request in every cascade. A 133K
+// conversation was sized at 684,446 tokens, every member under a megatoken was
+// skipped for window, and the combo reported exhaustion with a pool that could
+// have served it.
+//
+// The cause is not a tokenizer at all: `chars` is measured with media stripped
+// and Gemini counts media as tokens, so the sample compares two different bodies.
+// The real repair is to stop sampling requests whose media was stripped; this
+// floor is the guard that makes such a sample impossible to trust in the meantime.
+//
+// 1.5 is chosen to sit above the observed 1.02 and below any real tokenizer on
+// this traffic — dense JSON and code run 2.0 and up, English 3.5 to 4. It would
+// wrongly reject genuine CJK text, which can approach 1.0 chars per token. That
+// trade is deliberate: rejecting a sample costs nothing (the ratio falls back to
+// other providers), while accepting a false one poisons the pool minimum until
+// the process restarts.
+const MIN_RATIO = 1.5;
 const MAX_RATIO = 8;
 
 // Below this the sample is noise: a tiny request's fixed overhead dominates.
@@ -140,8 +161,18 @@ export function sizingCharsPerToken(provider = null) {
     if (p.samples < MIN_SAMPLES_TO_TRUST) continue;
     if (worst === null || p.ratio < worst) worst = p.ratio;
   }
-  if (worst !== null) return worst * SIZING_MARGIN;
-  return (global.samples > 0 ? global.ratio : BOOTSTRAP_CHARS_PER_TOKEN) * SIZING_MARGIN;
+  if (worst !== null) return clampSizing(worst * SIZING_MARGIN);
+  return clampSizing((global.samples > 0 ? global.ratio : BOOTSTRAP_CHARS_PER_TOKEN) * SIZING_MARGIN);
+}
+
+// One provider's number becomes the whole pool's number here, so state the floor
+// as an invariant rather than trusting every future caller of observeTokenRatio
+// to have filtered correctly. Lowering MIN_RATIO again would otherwise silently
+// re-open the 2026-08-26 failure, which was invisible from outside: a healthy
+// pool, no errors on the members, and a combo reporting exhaustion.
+function clampSizing(ratio) {
+  const floor = MIN_RATIO * SIZING_MARGIN;
+  return ratio < floor ? floor : ratio;
 }
 
 /** True once at least one provider has spoken often enough to be trusted. */
