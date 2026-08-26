@@ -1,0 +1,23 @@
+
+> 9router-app@0.5.55 dev
+> next dev --port 20127
+
+▲ Next.js 16.3.2 (Turbopack)
+- Local:         http://localhost:20127
+- Network:       http://192.168.11.123:20127
+✓ Ready in 4.3s
+✓ Running next.config.mjs took 33ms
+- Experiments (use with caution):
+  · optimizePackageImports
+  · proxyClientMaxBodySize: "128mb"
+  ✓ webpackBuildWorker
+  ✓ webpackMemoryOptimizations
+
+✓ Compiled in 260ms
+✓ Compiled in 164ms
+✓ Compiled in 246ms
+✓ Compiled in 322ms
+✓ Compiled in 145ms
+✓ Compiled in 146ms
+✓ Compiled in 550ms
+✓ Compiled in 192ms
