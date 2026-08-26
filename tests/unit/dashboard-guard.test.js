@@ -268,6 +268,38 @@ describe("dashboard guard local-only access", () => {
   });
 });
 
+describe("dashboard guard Git update access", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+  });
+
+  it("requires authentication even when dashboard login is disabled", async () => {
+    const response = await proxy(request("/api/version/git-update", {
+      host: "router.example.com",
+    }));
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe("Unauthorized");
+  });
+
+  it("allows a valid dashboard session", async () => {
+    mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+    const apiRequest = request("/api/version/git-update", {
+      host: "router.example.com",
+    });
+    apiRequest.cookies.get.mockReturnValue({ value: "valid-session" });
+
+    const response = await proxy(apiRequest);
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.verifyDashboardAuthToken).toHaveBeenCalledWith("valid-session");
+  });
+});
+
 describe("dashboard guard helpers", () => {
   it("extracts bearer API keys before x-api-key", () => {
     const apiRequest = request("/v1/chat/completions", {
