@@ -84,13 +84,17 @@ describe("POST /api/version/git-update", () => {
       updateAvailable: true,
       canUpdate: true,
       repoRoot: "/srv/9router",
+      pm2Process: "router-production",
     });
     mocks.startGitUpdate.mockReturnValue(operation);
 
     const response = await POST();
 
     expect(response.status).toBe(202);
-    expect(mocks.startGitUpdate).toHaveBeenCalledWith({ repoRoot: "/srv/9router" });
+    expect(mocks.startGitUpdate).toHaveBeenCalledWith({
+      repoRoot: "/srv/9router",
+      processName: "router-production",
+    });
     expect(response.body).toMatchObject({ success: true, operation });
   });
 });

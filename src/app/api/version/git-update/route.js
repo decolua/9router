@@ -43,7 +43,10 @@ export async function POST() {
       );
     }
 
-    const operation = startGitUpdate({ repoRoot: status.repoRoot });
+    const operation = startGitUpdate({
+      repoRoot: status.repoRoot,
+      processName: status.pm2Process,
+    });
     return NextResponse.json(
       { success: true, message: "Git update started", operation },
       { status: 202, headers: RESPONSE_HEADERS },

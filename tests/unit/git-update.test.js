@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  getPm2ProcessName,
   getGitUpdateStatus,
   readGitUpdateState,
   startGitUpdate,
@@ -40,13 +41,33 @@ function createGitCommandMock({ counts = "0\t2", porcelain = "" } = {}) {
 }
 
 beforeEach(() => {
+  vi.stubEnv("PM2_PROCESS", "");
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-git-update-"));
   statePath = path.join(tempDir, "state.json");
   logPath = path.join(tempDir, "update.log");
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+describe("getPm2ProcessName", () => {
+  it("uses 9router by default", () => {
+    expect(getPm2ProcessName()).toBe("9router");
+  });
+
+  it("reads the configured PM2 process", () => {
+    vi.stubEnv("PM2_PROCESS", "router-production");
+
+    expect(getPm2ProcessName()).toBe("router-production");
+  });
+
+  it("rejects unsupported process names before updating", () => {
+    vi.stubEnv("PM2_PROCESS", "router & shutdown");
+
+    expect(() => getPm2ProcessName()).toThrow("unsupported characters");
+  });
 });
 
 describe("getGitUpdateStatus", () => {
@@ -56,6 +77,7 @@ describe("getGitUpdateStatus", () => {
     const status = await getGitUpdateStatus({ cwd: tempDir, runCommand, statePath });
 
     expect(status).toMatchObject({
+      pm2Process: "9router",
       branch: "main",
       upstream: "origin/main",
       ahead: 0,
@@ -113,6 +135,7 @@ describe("getGitUpdateStatus", () => {
 
 describe("startGitUpdate", () => {
   it("persists state and starts a detached Node worker", () => {
+    vi.stubEnv("PM2_PROCESS", "router-production");
     const scriptsDir = path.join(tempDir, "scripts");
     fs.mkdirSync(scriptsDir, { recursive: true });
     const workerPath = path.join(scriptsDir, "git-update-worker.mjs");
@@ -145,7 +168,7 @@ describe("startGitUpdate", () => {
       repoRoot: tempDir,
       statePath,
       logPath,
-      processName: "9router",
+      processName: "router-production",
     });
   });
 

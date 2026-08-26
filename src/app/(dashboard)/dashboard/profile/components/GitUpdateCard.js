@@ -8,7 +8,6 @@ const PHASE_LABELS = {
   starting: "Starting update...",
   pulling: "Running git pull...",
   building: "Running npm run build...",
-  restarting: "Running pm2 restart 9router...",
   done: "Update completed successfully.",
   error: "Update failed.",
 };
@@ -82,8 +81,9 @@ export default function GitUpdateCard() {
   }, [loadStatus, updateRunning]);
 
   const handleUpdate = async () => {
+    const pm2Process = status?.pm2Process || "9router";
     const confirmed = globalThis.confirm(
-      "Update 9Router now? This will run git pull, npm run build, and pm2 restart 9router.",
+      `Update 9Router now? This will run git pull, npm run build, and pm2 restart ${pm2Process}.`,
     );
     if (!confirmed) return;
 
@@ -108,7 +108,9 @@ export default function GitUpdateCard() {
   };
 
   const operation = status?.operation;
-  const phaseMessage = operation?.message || PHASE_LABELS[operation?.phase];
+  const pm2Process = status?.pm2Process || "9router";
+  const phaseMessage = operation?.message
+    || (operation?.phase === "restarting" ? `Running pm2 restart ${pm2Process}...` : PHASE_LABELS[operation?.phase]);
   const feedbackClass = feedback.type === "error"
     ? "text-red-500 border-red-500/20 bg-red-500/10"
     : feedback.type === "warning"
@@ -173,7 +175,7 @@ export default function GitUpdateCard() {
             loading={checking}
             disabled={starting || updateRunning}
             onClick={() => loadStatus(true)}
-            className="w-full sm:w-auto"
+            className="w-full"
           >
             Check for updates
           </Button>
@@ -192,7 +194,7 @@ export default function GitUpdateCard() {
         </div>
 
         <p className="text-xs text-text-muted">
-          Automatic update runs <code>git pull --ff-only</code>, <code>npm run build</code>, then <code>pm2 restart 9router</code>.
+          Automatic update runs <code>git pull --ff-only</code>, <code>npm run build</code>, then <code>pm2 restart {pm2Process}</code>.
         </p>
       </div>
     </Card>

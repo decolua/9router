@@ -9,9 +9,19 @@ import { DATA_DIR } from "./dataDir.js";
 const execFileAsync = promisify(execFile);
 const COMMAND_TIMEOUT_MS = 120000;
 const UPDATE_STALE_MS = 60 * 60 * 1000;
+const DEFAULT_PM2_PROCESS = "9router";
+const VALID_PM2_PROCESS = /^[a-zA-Z0-9._:@/+\-]+$/;
 
 export const GIT_UPDATE_STATE_PATH = path.join(DATA_DIR, "git-update-state.json");
 export const GIT_UPDATE_LOG_PATH = path.join(DATA_DIR, "git-update.log");
+
+export function getPm2ProcessName(env = process.env) {
+  const processName = String(env.PM2_PROCESS || DEFAULT_PM2_PROCESS).trim();
+  if (!processName || !VALID_PM2_PROCESS.test(processName)) {
+    throw new Error("PM2_PROCESS contains unsupported characters");
+  }
+  return processName;
+}
 
 function outputOf(result) {
   if (typeof result === "string") return result.trim();
@@ -72,6 +82,7 @@ export async function getGitUpdateStatus({
   runCommand = executeCommand,
   statePath = GIT_UPDATE_STATE_PATH,
 } = {}) {
+  const pm2Process = getPm2ProcessName();
   const operationState = readGitUpdateState(statePath);
   const updateInProgress = isGitUpdateRunning(operationState);
   const repoRoot = outputOf(await runCommand("git", ["rev-parse", "--show-toplevel"], { cwd }));
@@ -113,6 +124,7 @@ export async function getGitUpdateStatus({
 
   return {
     repositoryAvailable: true,
+    pm2Process,
     repoRoot,
     branch,
     upstream,
@@ -136,7 +148,7 @@ export function startGitUpdate({
   spawnProcess = spawn,
   statePath = GIT_UPDATE_STATE_PATH,
   logPath = GIT_UPDATE_LOG_PATH,
-  processName = "9router",
+  processName = getPm2ProcessName(),
 } = {}) {
   const currentState = readGitUpdateState(statePath);
   if (isGitUpdateRunning(currentState)) throw new Error("An update is already in progress");
