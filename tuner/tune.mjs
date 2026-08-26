@@ -636,14 +636,6 @@ async function main() {
       const db2 = dead(b) ? 1 : 0;
       if (da !== db2) return da - db2;
       if (capabilityFirst) {
-        const ra2 = bandRank(a);
-        const rb2 = bandRank(b);
-        if (ra2 !== rb2) return ra2 - rb2;
-        // Paid before free: the inverse of the rule below, and the only line that
-        // differs in intent rather than order.
-        const pa2 = cost(bench, a) > 0 ? 0 : 1;
-        const pb2 = cost(bench, b) > 0 ? 0 : 1;
-        if (pa2 !== pb2) return pa2 - pb2;
         const sa2 = rankScore(a);
         const sb2 = rankScore(b);
         if (sa2 !== sb2) return sb2 - sa2;

@@ -528,6 +528,14 @@ export async function buildModelsList(kindFilter, options = {}) {
           const learned = learnedContextWindow(`${providerId}/${modelId}`);
           if (learned) contextWindow = learned;
           if (Number.isFinite(contextWindow)) model.context_length = contextWindow;
+          // The nested camelCase block is kept for compatibility, so it has to
+          // carry the same number. Correcting only the snake_case field left one
+          // response answering 1,048,576 and 200,000 to the same question, which
+          // is worse than the stale value alone: a client reading either one is
+          // reading this endpoint correctly.
+          if (model.capabilities && Number.isFinite(contextWindow)) {
+            model.capabilities = { ...model.capabilities, contextWindow };
+          }
           if (Number.isFinite(maxOutput)) model.max_completion_tokens = maxOutput;
         }
         models.push(model);
