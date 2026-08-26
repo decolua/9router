@@ -129,6 +129,23 @@
     "Fenrir": [],
     "Yggdrasil": []
   },
+  "_comboExclude": {
+    "_comment": "Models to permanently exclude from a combo, written back by the tuner. Unlike health==0 (which sends a model to the tail but keeps it), an excluded model is dropped from the written member list entirely and never served. Use this for providers/models that are structurally dead: withdrawn by the upstream, permanently 404ing, or otherwise non-recoverable without manual re-evaluation. Models removed by health are kept for resilience; models here are judged gone for good.",
+    "Yggdrasil": [
+      "openrouter/poolside/laguna-s-2.1:free",
+      "cf/@cf/qwen/qwq-32b",
+      "cmc/deepseek/deepseek-v4-pro",
+      "ocg/qwen3.7-max",
+      "nvidia/z-ai/glm-5.2",
+      "bb/gpt-5.5",
+      "gc/gemini-2.5-flash",
+      "gemini/gemma-4-31b-it",
+      "groq/llama-3.3-70b-versatile",
+      "tokenrouter/deepseek/deepseek-v4-pro-0813-free",
+      "tokenrouter/qwen/qwen3.8-max-free",
+      "ag/gpt-oss-120b-medium"
+    ]
+  },
   "_anthropicAnchors": {
     "claude-fable-5": {
       "swe_verified": 95

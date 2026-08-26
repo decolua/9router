@@ -326,7 +326,7 @@ function benchScore(bench, id, identities) {
   const m = matchBench(bench, id, identities);
   if (!m) return 0;
   const e = m[1];
-  return e.swe_verified ?? e.swe_pro ?? e.terminal_bench ?? 0;
+  return e.swe_verified ?? e.swe_pro ?? e.terminal_bench ?? e.gpqa_diamond ?? 0;
 }
 
 const VARIANT_SUFFIXES = ['-thinking-agentic', '-extra-low', '-agentic', '-thinking', '-review', '-medium', '-high', '-low', '-fast'];
@@ -584,7 +584,10 @@ async function main() {
     const allowed = bandOrder.slice(idx, idx + 1 + depth).filter(Boolean);
     const poolBand = [...candidates].filter((id) => allowed.includes(bandOf(id)));
     const required = (bench._comboRequires?.[row.name] ?? []).filter((k) => k !== '_comment');
-    const pool = poolBand.filter((id) => required.every((k) => caps.get(id)?.[k] === true));
+    const excluded = new Set((bench._comboExclude?.[row.name] ?? []).filter((id) => id !== '_comment'));
+    const pool = poolBand
+      .filter((id) => required.every((k) => caps.get(id)?.[k] === true))
+      .filter((id) => !excluded.has(id));
     const bandRank = (id) => {
       const i = allowed.indexOf(bandOf(id));
       return i === -1 ? 99 : i;

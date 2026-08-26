@@ -410,6 +410,9 @@ export function getCapabilitiesForModel(provider, model) {
     const providerCaps = PROVIDER_CAPABILITIES[provider];
     if (providerCaps?.[model]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[model] };
     if (providerCaps?.[baseModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] };
+    // If the provider exists but has no model-specific entry, fall through to
+    // canonical/pattern lookup — the provider override only covered OTHER models.
+    // This fixes ag/gemini-pro-agent returning contextWindow:0 (cold-start).
   }
 
   // 2. Canonical exact
