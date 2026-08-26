@@ -159,9 +159,12 @@ describe('ChatWorkspace', () => {
     
     await waitFor(() => {
         expect(screen.getByTestId('chat-error')).toBeTruthy();
+        expect(screen.getByText('API Rate Limit Exceeded')).toBeTruthy();
     });
     
-    expect(screen.getByText('API Rate Limit Exceeded')).toBeTruthy();
+    await waitFor(() => {
+        expect(mockOnMetricsUpdate).toHaveBeenCalled();
+    });
     const metricsSnapshot = mockOnMetricsUpdate.mock.calls[mockOnMetricsUpdate.mock.calls.length - 1][0];
     expect(metricsSnapshot.terminalState).toBe('error');
   });
@@ -180,9 +183,12 @@ describe('ChatWorkspace', () => {
     
     await waitFor(() => {
         expect(screen.getByTestId('chat-error')).toBeTruthy();
+        expect(screen.getByText('HTTP error 400')).toBeTruthy();
     });
-    expect(screen.getByText('HTTP error 400')).toBeTruthy();
     
+    await waitFor(() => {
+        expect(mockOnMetricsUpdate).toHaveBeenCalled();
+    });
     const metricsSnapshot = mockOnMetricsUpdate.mock.calls[mockOnMetricsUpdate.mock.calls.length - 1][0];
     expect(metricsSnapshot.terminalState).toBe('error');
   });
