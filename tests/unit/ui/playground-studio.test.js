@@ -35,15 +35,53 @@ describe('PlaygroundStudio Shell', () => {
     expect(chatTabBtn).toBeDefined();
     expect(compareTabBtn).toBeDefined();
 
+    // Verify accessibility attributes
+    expect(screen.getByRole('tablist')).toBeDefined();
+    expect(chatTabBtn.getAttribute('role')).toBe('tab');
+    expect(compareTabBtn.getAttribute('role')).toBe('tab');
+    expect(chatTabBtn.getAttribute('aria-selected')).toBe('true');
+    expect(compareTabBtn.getAttribute('aria-selected')).toBe('false');
+
     expect(chatTabBtn.className).toContain('text-primary');
     expect(screen.getByText('Chat tab placeholder')).toBeDefined();
-    expect(screen.queryByText('Compare tab placeholder')).toBeNull();
+    expect(screen.getByText('Chat tab placeholder').parentElement.getAttribute('hidden')).toBeNull();
+    expect(screen.getByText('Compare tab placeholder').parentElement.getAttribute('hidden')).toBe('');
 
     fireEvent.click(compareTabBtn);
 
     expect(compareTabBtn.className).toContain('text-primary');
-    expect(screen.getByText('Compare tab placeholder')).toBeDefined();
-    expect(screen.queryByText('Chat tab placeholder')).toBeNull();
+    expect(chatTabBtn.getAttribute('aria-selected')).toBe('false');
+    expect(compareTabBtn.getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByText('Compare tab placeholder').parentElement.getAttribute('hidden')).toBeNull();
+    expect(screen.getByText('Chat tab placeholder').parentElement.getAttribute('hidden')).toBe('');
+  });
+
+  test('handles keyboard navigation between tabs', async () => {
+    modelCatalog.fetchModelCatalog.mockResolvedValue({ models: [] });
+
+    render(React.createElement(PlaygroundStudio));
+    
+    const chatTabBtn = screen.getByTestId('playground-chat-tab');
+    const compareTabBtn = screen.getByTestId('playground-compare-tab');
+    
+    // Initial state
+    expect(chatTabBtn.getAttribute('aria-selected')).toBe('true');
+    
+    // Right arrow
+    fireEvent.keyDown(chatTabBtn, { key: 'ArrowRight' });
+    expect(compareTabBtn.getAttribute('aria-selected')).toBe('true');
+    
+    // Left arrow
+    fireEvent.keyDown(compareTabBtn, { key: 'ArrowLeft' });
+    expect(chatTabBtn.getAttribute('aria-selected')).toBe('true');
+    
+    // End key
+    fireEvent.keyDown(chatTabBtn, { key: 'End' });
+    expect(compareTabBtn.getAttribute('aria-selected')).toBe('true');
+    
+    // Home key
+    fireEvent.keyDown(compareTabBtn, { key: 'Home' });
+    expect(chatTabBtn.getAttribute('aria-selected')).toBe('true');
   });
 
   test('handles loading, empty, and error states gracefully without exposing secrets', async () => {
@@ -73,7 +111,13 @@ describe('PlaygroundStudio Shell', () => {
 
   test('preserves configuration across tab switches', async () => {
     modelCatalog.fetchModelCatalog.mockResolvedValue({
-      models: [{ id: 'model-1', name: 'Model 1', provider: 'test' }]
+      models: [{
+        id: "alpha/zeta",
+        label: "Zeta",
+        provider: { id: "alpha", name: "Alpha", connectionId: "connection-a" },
+        available: true,
+        capabilities: { vision: true, reasoning: true, maxOutput: 1024 },
+      }]
     });
 
     render(React.createElement(PlaygroundStudio));

@@ -111,3 +111,24 @@ export function normalizeModelCatalog({ connections, staticModelsByProvider, liv
     .map(({ source, ...model }) => model)
     .sort((left, right) => left.id.localeCompare(right.id));
 }
+
+export async function fetchModelCatalog() {
+  const res = await fetch("/api/providers");
+  if (!res.ok) throw new Error(`Failed to fetch providers: ${res.status}`);
+  const providers = await res.json();
+  const connections = Array.isArray(providers) ? providers : providers.data || [];
+  
+  // Basic mock integration until Todo 3/4 completes live capability discovery
+  const mockPayload = {
+    connections,
+    staticModelsByProvider: {},
+    liveModelsByConnection: Object.fromEntries(
+      connections.map(c => [
+        c.id, 
+        c.models?.map(m => typeof m === "string" ? { id: m } : m) || []
+      ])
+    )
+  };
+  
+  return { models: normalizeModelCatalog(mockPayload) };
+}

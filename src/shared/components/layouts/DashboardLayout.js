@@ -95,8 +95,8 @@ export default function DashboardLayout({ children }) {
         {/* Faint grid background */}
         <div className="landing-grid absolute inset-0 pointer-events-none -z-10" aria-hidden="true" />
         <Header key={pathname} onMenuClick={() => setSidebarOpen(true)} />
-        <div className={`flex-1 overflow-y-auto custom-scrollbar ${(pathname === "/dashboard/basic-chat" || pathname === "/dashboard/playground") ? "" : "p-6 lg:p-10"} ${(pathname === "/dashboard/basic-chat" || pathname === "/dashboard/playground") ? "flex flex-col overflow-hidden" : ""}`}>
-          <div className={`${(pathname === "/dashboard/basic-chat" || pathname === "/dashboard/playground") ? "flex-1 w-full h-full flex flex-col" : "max-w-7xl mx-auto"}`}>{children}</div>
+        <div className={`flex-1 overflow-y-auto custom-scrollbar ${pathname === "/dashboard/playground" ? "" : "p-6 lg:p-10"} ${pathname === "/dashboard/playground" ? "flex flex-col overflow-hidden" : ""}`}>
+          <div className={`${pathname === "/dashboard/playground" ? "flex-1 w-full h-full flex flex-col" : "max-w-7xl mx-auto"}`}>{children}</div>
         </div>
       </main>
     </div>

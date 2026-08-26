@@ -61,7 +61,7 @@ export default function StudioConfigPane({ config, onChange }) {
               <option value="">Select a model...</option>
               {models.map(m => (
                 <option key={m.id} value={m.id}>
-                  {m.name || m.id} ({m.provider})
+                  {m.label || m.id} ({m.provider?.name || m.provider?.id || "Unknown"})
                 </option>
               ))}
             </select>
