@@ -66,22 +66,28 @@ describe('PlaygroundStudio Shell', () => {
     
     // Initial state
     expect(chatTabBtn.getAttribute('aria-selected')).toBe('true');
+    chatTabBtn.focus();
+    expect(document.activeElement).toBe(chatTabBtn);
     
     // Right arrow
     fireEvent.keyDown(chatTabBtn, { key: 'ArrowRight' });
     expect(compareTabBtn.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(compareTabBtn);
     
     // Left arrow
     fireEvent.keyDown(compareTabBtn, { key: 'ArrowLeft' });
     expect(chatTabBtn.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(chatTabBtn);
     
     // End key
     fireEvent.keyDown(chatTabBtn, { key: 'End' });
     expect(compareTabBtn.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(compareTabBtn);
     
     // Home key
     fireEvent.keyDown(compareTabBtn, { key: 'Home' });
     expect(chatTabBtn.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(chatTabBtn);
   });
 
   test('handles loading, empty, and error states gracefully without exposing secrets', async () => {

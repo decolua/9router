@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import StudioConfigPane from "./components/StudioConfigPane";
 
 export default function PlaygroundStudio() {
@@ -11,6 +11,11 @@ export default function PlaygroundStudio() {
     maxTokens: 2000,
     model: null // Selected model object from catalog
   });
+
+  const tabRefs = {
+    chat: useRef(null),
+    compare: useRef(null)
+  };
 
   const handleKeyDown = (e, tabs) => {
     const index = tabs.indexOf(activeTab);
@@ -26,8 +31,9 @@ export default function PlaygroundStudio() {
     }
     
     if (nextIndex !== index) {
-      setActiveTab(tabs[nextIndex]);
-      // Optional: focus management can be added here
+      const nextTab = tabs[nextIndex];
+      setActiveTab(nextTab);
+      tabRefs[nextTab].current?.focus();
       e.preventDefault();
     }
   };
@@ -44,6 +50,7 @@ export default function PlaygroundStudio() {
         >
           <button
             type="button"
+            ref={tabRefs.chat}
             role="tab"
             id="tab-chat"
             aria-selected={activeTab === "chat"}
@@ -62,6 +69,7 @@ export default function PlaygroundStudio() {
           </button>
           <button
             type="button"
+            ref={tabRefs.compare}
             role="tab"
             id="tab-compare"
             aria-selected={activeTab === "compare"}
