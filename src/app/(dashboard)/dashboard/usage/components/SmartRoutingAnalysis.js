@@ -3,13 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import { CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { Card, DropdownSelect } from "@/shared/components";
+import { Card } from "@/shared/components";
 
 const COLORS = ["#0284c7", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#0891b2"];
 const EMPTY_DATA = { buckets: [], series: [], totals: { requests: 0, actualCost: 0, simulatedCost: 0 }, configured: false };
 
-export default function SmartRoutingAnalysis({ startDate, endDate, refreshToken = 0 }) {
-  const [intervalMinutes, setIntervalMinutes] = useState(60);
+export default function SmartRoutingAnalysis({ startDate, endDate, intervalMinutes, refreshToken = 0 }) {
   const requestKey = `${startDate}|${endDate}|${intervalMinutes}|${refreshToken}`;
   const [result, setResult] = useState(null);
   const data = result?.key === requestKey ? result.data : null;
@@ -37,10 +36,6 @@ export default function SmartRoutingAnalysis({ startDate, endDate, refreshToken 
 
   return (
     <div className="flex min-w-0 flex-col gap-5" data-i18n-skip>
-      <div className="flex justify-end">
-        <DropdownSelect className="w-40" label="聚合颗粒度" value={intervalMinutes} onChange={setIntervalMinutes} options={[{ value: 15, label: "15 分钟" }, { value: 30, label: "30 分钟" }, { value: 60, label: "1 小时" }, { value: 1440, label: "1 天" }]} />
-      </div>
-
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Metric title="路由请求" value={String(data?.totals?.requests || 0)} />
         <Metric title="真实费用" value={`$${Number(data?.totals?.actualCost || 0).toFixed(6)}`} />
@@ -62,6 +57,7 @@ export default function SmartRoutingAnalysis({ startDate, endDate, refreshToken 
 SmartRoutingAnalysis.propTypes = {
   startDate: PropTypes.string.isRequired,
   endDate: PropTypes.string.isRequired,
+  intervalMinutes: PropTypes.number.isRequired,
   refreshToken: PropTypes.number,
 };
 

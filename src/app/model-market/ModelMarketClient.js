@@ -1,15 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Button, Card, Input, SegmentedControl } from "@/shared/components";
+import { Button, Card, DropdownSelect, Input, SegmentedControl } from "@/shared/components";
 import DashboardLayout from "@/shared/components/layouts/DashboardLayout";
 
 const formatNumber = (value) => new Intl.NumberFormat("zh-CN").format(Number(value || 0));
 const formatCost = (value) => `$${Number(value || 0).toFixed(6)}`;
 const renderRoutedValue = (value, routedValue, title) => <><div>{value || "-"}</div>{routedValue && <div className="mt-1"><span className="inline-flex rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] text-sky-600" title={title}>实际 {routedValue}</span></div>}</>;
 const MODEL_MARKET_LOG_COLUMNS = ["timestamp", "selectedModel", "actualModel", "provider", "endpoint", "input", "cacheRead", "cacheWrite", "output", "total", "latency", "status"];
-const MODEL_MARKET_KEY_STORAGE = "9router:model-market:api-key";
 const toLocalDateTimeValue = (date) => {
   const pad = (value) => String(value).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
@@ -18,6 +17,7 @@ const toLocalDateTimeValue = (date) => {
 export default function ModelMarketClient({ isDashboardView = false }) {
   const [apiKey, setApiKey] = useState("");
   const [activeKey, setActiveKey] = useState("");
+  const activeKeyRef = useRef("");
   const [models, setModels] = useState([]);
   const [logs, setLogs] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, totalPages: 0, totalItems: 0 });
@@ -27,6 +27,8 @@ export default function ModelMarketClient({ isDashboardView = false }) {
   const [error, setError] = useState("");
   const [logRange, setLogRange] = useState(() => { const start = new Date(); start.setHours(0, 0, 0, 0); const end = new Date(start); end.setDate(end.getDate() + 1); return { startDate: toLocalDateTimeValue(start), endDate: toLocalDateTimeValue(end) }; });
   const [visibleLogColumns, setVisibleLogColumns] = useState(MODEL_MARKET_LOG_COLUMNS);
+  const [dashboardKeys, setDashboardKeys] = useState([]);
+  const [keysLoading, setKeysLoading] = useState(isDashboardView);
 
   useEffect(() => {
     fetch("/api/settings", { cache: "no-store" }).then((response) => response.ok ? response.json() : null).then((settings) => {
@@ -35,13 +37,17 @@ export default function ModelMarketClient({ isDashboardView = false }) {
   }, []);
 
   useEffect(() => {
-    if (isDashboardView || typeof window === "undefined") return;
-    const cached = window.localStorage.getItem(MODEL_MARKET_KEY_STORAGE);
-    if (cached) {
-      setApiKey(cached);
-      // Apply the cached key automatically when returning to the public page.
-      handleSubmit({ preventDefault() {} }, cached);
-    }
+    if (!isDashboardView) return;
+    let cancelled = false;
+    fetch("/api/keys", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("无法读取 API 密钥")))
+      .then((data) => {
+        if (cancelled) return;
+        setDashboardKeys((data.keys || []).filter((key) => key.isActive !== false));
+      })
+      .catch((requestError) => { if (!cancelled) setError(requestError.message || "无法读取 API 密钥"); })
+      .finally(() => { if (!cancelled) setKeysLoading(false); });
+    return () => { cancelled = true; };
   }, [isDashboardView]);
 
   const groupedModels = useMemo(() => {
@@ -54,7 +60,7 @@ export default function ModelMarketClient({ isDashboardView = false }) {
     return [...groups.entries()].sort(([left], [right]) => left.localeCompare(right));
   }, [models]);
 
-  const fetchLogs = async (key, page = 1) => {
+  const fetchLogs = useCallback(async (key, page = 1) => {
     setLogsLoading(true);
     try {
       const params = new URLSearchParams({ page: String(page), pageSize: "20", startDate: logRange.startDate, endDate: logRange.endDate });
@@ -70,9 +76,14 @@ export default function ModelMarketClient({ isDashboardView = false }) {
     } finally {
       setLogsLoading(false);
     }
-  };
+  }, [logRange.endDate, logRange.startDate]);
 
-  useEffect(() => { if (activeKey) fetchLogs(activeKey, 1).catch(() => {}); }, [logRange.startDate, logRange.endDate]);
+  useEffect(() => {
+    const key = activeKeyRef.current;
+    if (!key) return undefined;
+    const timeout = setTimeout(() => fetchLogs(key, 1).catch(() => {}), 0);
+    return () => clearTimeout(timeout);
+  }, [fetchLogs]);
 
   const handleSubmit = async (event, submittedKey) => {
     event.preventDefault();
@@ -88,10 +99,11 @@ export default function ModelMarketClient({ isDashboardView = false }) {
       const modelData = await modelResponse.json();
       if (!modelResponse.ok) throw new Error(modelData?.error?.message || "密钥无效或已停用");
       setModels(modelData.data || []);
+      activeKeyRef.current = key;
       setActiveKey(key);
-      if (!isDashboardView && typeof window !== "undefined") window.localStorage.setItem(MODEL_MARKET_KEY_STORAGE, key);
       await fetchLogs(key, 1);
     } catch (requestError) {
+      activeKeyRef.current = "";
       setActiveKey("");
       setModels([]);
       setLogs([]);
@@ -123,14 +135,15 @@ export default function ModelMarketClient({ isDashboardView = false }) {
         <section className="max-w-3xl">
           <p className="mb-2 text-xs font-semibold text-primary">MODEL ACCESS</p>
           <h1 className="text-3xl font-semibold sm:text-4xl">模型广场</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-text-muted">输入 9Router API 密钥，查看该密钥获准使用的模型及其自身产生的流量日志。密钥仅保留在当前页面内存中。</p>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-text-muted">{isDashboardView ? "选择管理平台中的 API 密钥，查看该密钥获准使用的模型及其自身产生的流量日志。" : "输入 9Router API 密钥，查看该密钥获准使用的模型及其自身产生的流量日志。密钥仅保留在当前页面内存中。"}</p>
         </section>
 
         <Card className="max-w-3xl">
           <form onSubmit={handleSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <Input label="API 密钥" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk_9router..." autoComplete="off" className="flex-1" />
-            <Button type="submit" icon="key" loading={loading} disabled={!apiKey.trim()} className="sm:w-32">查看</Button>
+            {isDashboardView ? <DropdownSelect label="API 密钥" value={apiKey} onChange={setApiKey} options={dashboardKeys.map((key) => ({ value: key.key, label: `${key.name} (${key.key.slice(0, 8)}...)` }))} placeholder={keysLoading ? "正在加载密钥..." : "选择已有 API 密钥"} disabled={keysLoading || !dashboardKeys.length} searchable className="flex-1" /> : <Input label="API 密钥" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk_9router..." autoComplete="off" className="flex-1" />}
+            <Button type="submit" icon="key" loading={loading} disabled={keysLoading || !apiKey.trim()} className="sm:w-32">查看</Button>
           </form>
+          {isDashboardView && !keysLoading && !dashboardKeys.length && !error && <p className="mt-3 text-sm text-text-muted">暂无可用 API 密钥，请先在端点页面创建并启用密钥。</p>}
           {error && <p className="mt-3 flex items-center gap-2 text-sm text-red-500"><span className="material-symbols-outlined text-[18px]">error</span>{error}</p>}
         </Card>
 

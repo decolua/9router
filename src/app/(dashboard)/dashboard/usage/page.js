@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { UsageStats, Button, CardSkeleton, SegmentedControl, Toggle, UsageDateRangeControl, getPeriodRange, normalizeUsagePeriod } from "@/shared/components";
+import { UsageStats, Button, CardSkeleton, DropdownSelect, SegmentedControl, Toggle, UsageDateRangeControl, getPeriodRange, normalizeUsagePeriod } from "@/shared/components";
 import SmartRoutingAnalysis from "./components/SmartRoutingAnalysis";
 
 const MERGE_MODELS_STORAGE_KEY = "9router:usage-merge-models";
@@ -25,6 +25,7 @@ function UsageContent() {
   const [endDate, setEndDate] = useState(initialRange.endDate);
   const [refreshToken, setRefreshToken] = useState(0);
   const [mergeModels, setMergeModels] = useState(true);
+  const [smartRoutingInterval, setSmartRoutingInterval] = useState(60);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,7 +72,7 @@ function UsageContent() {
 
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
-      <div>
+      <div className="flex w-full flex-wrap items-center gap-3">
         <SegmentedControl
           options={[
             { value: "overview", label: "使用概览" },
@@ -84,12 +85,13 @@ function UsageContent() {
           onChange={handleTabChange}
           className="w-full sm:w-auto"
         />
+        <Button className="ml-auto shrink-0" variant="secondary" icon="refresh" onClick={() => setRefreshToken((value) => value + 1)}>刷新</Button>
       </div>
       <div className="flex w-full flex-wrap items-center gap-3">
         <UsageDateRangeControl className="min-w-0" period={period} startDate={startDate} endDate={endDate} onPeriodChange={setPeriod} onStartDateChange={setStartDate} onEndDateChange={setEndDate} todayEndsTomorrow />
         <div className="ml-auto flex shrink-0 items-center gap-3">
           {activeTab === "models" && <Toggle size="sm" label="整合同名模型" checked={mergeModels} onChange={handleMergeModelsChange} />}
-          <Button className="shrink-0" variant="secondary" icon="refresh" onClick={() => setRefreshToken((value) => value + 1)}>刷新</Button>
+          {activeTab === "smart-routing" && <DropdownSelect className="w-40" label="聚合颗粒度" value={smartRoutingInterval} onChange={setSmartRoutingInterval} options={[{ value: 15, label: "15 分钟" }, { value: 30, label: "30 分钟" }, { value: 60, label: "1 小时" }, { value: 1440, label: "1 天" }]} />}
         </div>
       </div>
 
@@ -103,7 +105,7 @@ function UsageContent() {
           <UsageStats key={`${activeTab}-${refreshToken}`} period={period} setPeriod={setPeriod} startDate={startDate} endDate={endDate} hidePeriodSelector view={activeTab} mergeModels={mergeModels} />
         </Suspense>
       )}
-      {activeTab === "smart-routing" && <SmartRoutingAnalysis startDate={startDate} endDate={endDate} refreshToken={refreshToken} />}
+      {activeTab === "smart-routing" && <SmartRoutingAnalysis startDate={startDate} endDate={endDate} intervalMinutes={smartRoutingInterval} refreshToken={refreshToken} />}
     </div>
   );
 }
