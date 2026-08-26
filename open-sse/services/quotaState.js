@@ -10,7 +10,7 @@ const exhausted = new Map();
 
 // Matches the phrasings providers actually use for hard quota exhaustion, as
 // opposed to per-minute rate limiting which is a normal cooldown.
-const QUOTA_TEXT = /(quota|billing|insufficient balance|credit|out of credits|exceeded your current quota|free tier|daily limit|monthly limit)/i;
+const QUOTA_TEXT = /(quota|billing|insufficient balance|credit|out of credits|exceeded your current quota|free tier|daily limit|monthly limit|individual quota)/i;
 const RATE_TEXT = /(rate limit|too many requests|requests per (minute|second)|slow down)/i;
 
 export function isQuotaExhaustion(status, errorText) {
