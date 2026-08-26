@@ -121,8 +121,8 @@ describe("Antigravity quota-aware routing", () => {
     let resolveUsage;
     mocks.getAntigravityUsage.mockReturnValue(new Promise(resolve => { resolveUsage = resolve; }));
 
-    const first = refreshAntigravityQuota("ag-a", "token", {});
-    const second = refreshAntigravityQuota("ag-a", "token", {});
+    const first = refreshAntigravityQuota("ag-concurrent", "token", {});
+    const second = refreshAntigravityQuota("ag-concurrent", "token", {});
     resolveUsage({ quotas: { [MODEL]: { remainingPercentage: 0, resetAt: FUTURE_RESET } } });
 
     await expect(Promise.all([first, second])).resolves.toEqual([
@@ -130,5 +130,43 @@ describe("Antigravity quota-aware routing", () => {
       { [MODEL]: { remainingPercentage: 0, resetAt: FUTURE_RESET } },
     ]);
     expect(mocks.getAntigravityUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves strict proxy policy for usage refresh", async () => {
+    mocks.resolveConnectionProxyConfig.mockResolvedValue({ strictProxy: true });
+    mocks.getAntigravityUsage.mockResolvedValue({ quotas: {} });
+
+    await refreshAntigravityQuota("ag-strict-proxy", "token", {});
+
+    expect(mocks.getAntigravityUsage).toHaveBeenCalledWith("token", {}, expect.objectContaining({
+      strictProxy: true,
+    }));
+  });
+
+  it("keeps known cache when quota endpoint returns an error payload", async () => {
+    const cached = { [MODEL]: { remainingPercentage: 0, resetAt: FUTURE_RESET } };
+    getAntigravityQuotaCache().set("ag-error-response", cached);
+    mocks.getAntigravityUsage.mockResolvedValue({ message: "Unauthorized", quotas: {} });
+
+    await expect(refreshAntigravityQuota("ag-error-response", "token", {})).resolves.toBeNull();
+    expect(getAntigravityQuotaCache().get("ag-error-response")).toBe(cached);
+  });
+
+  it("throttles failed refresh attempts for 30 seconds", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
+    mocks.getAntigravityUsage.mockRejectedValue(new Error("usage unavailable"));
+
+    try {
+      await refreshAntigravityQuota("ag-failed-refresh", "token", {});
+      await refreshAntigravityQuota("ag-failed-refresh", "token", {});
+      expect(mocks.getAntigravityUsage).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      await refreshAntigravityQuota("ag-failed-refresh", "token", {});
+      expect(mocks.getAntigravityUsage).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

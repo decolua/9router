@@ -31,16 +31,18 @@ export function getAntigravityQuotaCache() {
  */
 export async function refreshAntigravityQuota(connectionId, accessToken, providerSpecificData) {
   const now = Date.now();
+  // Coalesce concurrent refreshes before applying the interval gate.
+  const inflight = inflightRefresh.get(connectionId);
+  if (inflight) return inflight;
+
   const lastRefresh = lastRefreshAt.get(connectionId) || 0;
   if (now - lastRefresh < MIN_REFRESH_INTERVAL_MS) {
     log.debug("AG_QUOTA", `${connectionId.slice(0, 8)} | skip refresh (${Math.round((now - lastRefresh) / 1000)}s ago)`);
     return quotaCache.get(connectionId) || null;
   }
 
-  // Coalesce concurrent refreshes for same connection
-  const inflight = inflightRefresh.get(connectionId);
-  if (inflight) return inflight;
-
+  // Record every attempt so failed quota calls cannot amplify an upstream 429 burst.
+  lastRefreshAt.set(connectionId, now);
   const promise = _doRefresh(connectionId, accessToken, providerSpecificData, now);
   inflightRefresh.set(connectionId, promise);
   try {
@@ -58,15 +60,16 @@ async function _doRefresh(connectionId, accessToken, providerSpecificData, now) 
       connectionProxyUrl: proxyCfg.connectionProxyUrl || "",
       connectionNoProxy: proxyCfg.connectionNoProxy || "",
       vercelRelayUrl: proxyCfg.vercelRelayUrl || "",
-      strictProxy: false,
+      strictProxy: proxyCfg.strictProxy === true,
     };
 
     const usage = await getAntigravityUsage(accessToken, providerSpecificData, proxyOptions);
-    if (!usage?.quotas) return null;
+    // 401/403 usage responses can contain an empty quotas object plus message.
+    // Preserve known cache instead of replacing it with an upstream error response.
+    if (!usage?.quotas || usage.message) return null;
 
     // Update in-memory cache. Caller logs CACHE_BLOCK only if requested model is exhausted.
     quotaCache.set(connectionId, usage.quotas);
-    lastRefreshAt.set(connectionId, now);
 
     return usage.quotas;
   } catch (e) {
