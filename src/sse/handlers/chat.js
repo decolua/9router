@@ -2,13 +2,15 @@ import "open-sse/index.js";
 
 import {
   getProviderCredentials,
+  probeAccountCapacity,
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
+import { buildDisciplineLock } from "open-sse/utils/disciplineLock.js";
 import { getSettings } from "@/lib/localDb";
-import { getModelInfo, getComboModels } from "../services/model.js";
+import { getModelInfo, getComboModels, resolveBandToCombo } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
@@ -22,6 +24,32 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+
+/**
+ * Build the cascade's account-capacity probe for a single request.
+ *
+ * The cascade asks before passing an entry over, so one account's rate limit can
+ * never hide a provider whose other accounts are idle. An entry that doesn't
+ * resolve to a provider gets `null` — no opinion — and the cascade decides for
+ * itself rather than being told there is capacity.
+ *
+ * Memoized per request: a cascade asks about the same handful of entries, and
+ * each answer costs a model resolution plus a connections query. Nothing here is
+ * cached across requests, so a lock that expires mid-flight is seen immediately.
+ */
+function makeCanServe() {
+  const answers = new Map();
+  return (modelStr) => {
+    if (!answers.has(modelStr)) {
+      answers.set(modelStr, (async () => {
+        const { provider, model } = await getModelInfo(modelStr);
+        if (!provider) return null;
+        return probeAccountCapacity(provider, model);
+      })());
+    }
+    return answers.get(modelStr);
+  };
+}
 
 /**
  * Handle chat completion request
@@ -46,7 +74,9 @@ export async function handleChat(request, clientRawRequest = null) {
       headers: Object.fromEntries(request.headers.entries())
     };
   }
-  const modelStr = body.model;
+  let modelStr = body.model;
+  // Resolve band names (e.g. "haiku") to combo names (e.g. "Sleipnir") for agent-team support
+  modelStr = await resolveBandToCombo(modelStr);
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
 
@@ -122,13 +152,14 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: augmentedModels,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, modelStr, 0),
         adapterAdded
       ),
       log,
       comboName: modelStr,
       comboStrategy,
-      comboStickyLimit
+      comboStickyLimit,
+      canServe: makeCanServe()
     });
   }
 
@@ -147,7 +178,8 @@ export async function handleChat(request, clientRawRequest = null) {
       ),
       log,
       comboName: modelStr,
-      comboStrategy: getActiveAdapterStrategy(requiredCapabilities, settings)
+      comboStrategy: getActiveAdapterStrategy(requiredCapabilities, settings),
+      canServe: makeCanServe()
     });
   }
 
@@ -157,7 +189,9 @@ export async function handleChat(request, clientRawRequest = null) {
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+// comboName/chainDepth are set only when this is invoked from a combo cascade;
+// a direct single-model request leaves them null/0.
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, comboName = null, chainDepth = 0) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -199,13 +233,14 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         body,
         models: augmentedModels,
         handleSingleModel: withCapacityAdapterStripping(
-          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, modelStr, 0),
           adapterAdded
         ),
         log,
         comboName: modelStr,
         comboStrategy,
-        comboStickyLimit
+        comboStickyLimit,
+        canServe: makeCanServe()
       });
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });
@@ -233,7 +268,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
         log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
-        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman, { accountsLocked: true });
       }
       if (excludeConnectionIds.size === 0) {
         log.warn("AUTH", `No active credentials for provider: ${provider}`);
@@ -268,6 +303,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       connectionId: credentials.connectionId,
       userAgent,
       apiKey,
+      comboName,
+      chainDepth,
       ccFilterNaming: !!chatSettings.ccFilterNaming,
       rtkEnabled: !!chatSettings.rtkEnabled,
       headroomEnabled: !!chatSettings.headroomEnabled,
@@ -295,16 +332,33 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       },
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
-      }
+      },
+      onDisciplineLock: buildDisciplineLock({
+        markAccountUnavailable,
+        connectionId: credentials.connectionId,
+        provider,
+        model,
+        status: HTTP_STATUS.BAD_REQUEST,
+        onError: (error) => log.warn("DISCIPLINE", `Failed to lock ${provider}/${model}: ${error.message}`)
+      })
     });
 
     if (result.success) return result.response;
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
+    const { shouldFallback, requestScoped } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
 
     if (shouldFallback) {
-      log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
+      // Two different facts wore the same word. "UNAVAILABLE" is what sent me
+      // hunting for exhausted quota on an account that was serving other sessions
+      // in the same minute — say which one it is, since only one of them means
+      // the account is out.
+      log.warn(
+        "FALLBACK",
+        requestScoped
+          ? `⇄ ACC:${credentials.connectionName} REJECTED THIS REQUEST (${result.status}, still available) → NEXT ACCOUNT`
+          : `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`
+      );
       excludeConnectionIds.add(credentials.connectionId);
       lastError = result.error;
       lastStatus = result.status;

@@ -1,6 +1,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { DEFAULT_THINKING_AG_SIGNATURE, DEFAULT_THINKING_GEMINI_CLI_SIGNATURE } from "../../config/defaultThinkingSignature.js";
+import { emptyTurnParts, isEmptyTurnParts } from "../../config/emptyTurn.js";
 import { openaiToClaudeRequestForAntigravity } from "./openai-to-claude.js";
 function generateUUID() {
   return crypto.randomUUID();
@@ -34,15 +35,46 @@ function sanitizeGeminiFunctionName(name) {
   return sanitized.substring(0, 64);
 }
 
-function normalizeGeminiContents(contents) {
+const EMPTY_TURN_PARTS = emptyTurnParts;
+
+// A trailing model turn is a prefill: Gemini continues from it rather than
+// answering. A placeholder there would invite exactly the completion behaviour
+// the placeholder exists to prevent, and the last turn has no neighbours to keep
+// apart, so it is dropped.
+export function dropTrailingEmptyModelTurn(contents) {
+  const last = contents.at(-1);
+  if (last?.role === GEMINI_ROLE.MODEL && isEmptyTurnParts(last.parts)) contents.pop();
+  return contents;
+}
+
+export function normalizeGeminiContents(contents) {
   const out = [];
   for (const c of contents || []) {
-    if (!c?.role || !Array.isArray(c.parts) || c.parts.length === 0) continue;
+    if (!c?.role) continue;
+    // Dropping an empty turn is what makes this dangerous: its neighbours become
+    // adjacent, the merge below fuses them, and a model turn disappears from the
+    // history. Repeat that over an agentic session — where every tool result
+    // arrives as a `user` turn — and Gemini is handed a transcript in which it
+    // has never spoken, so it continues the user's monologue instead of
+    // answering it. Keep the turn; merge only what was genuinely adjacent.
+    const parts = Array.isArray(c.parts) && c.parts.length > 0 ? [...c.parts] : EMPTY_TURN_PARTS();
     const last = out.at(-1);
-    if (last?.role === c.role) last.parts.push(...c.parts);
-    else out.push({ ...c, parts: [...c.parts] });
+    if (last?.role === c.role) last.parts.push(...parts);
+    else out.push({ ...c, parts });
   }
   return out;
+}
+
+// Last line of defence for the above. If the source carried a model voice and
+// the translation does not, the transcript reads as an unfinished user turn and
+// inviting a completion is the predictable result. Returns a reason, or null.
+export function findSpeakerBoundaryViolation(messages, contents) {
+  if (!Array.isArray(messages) || !Array.isArray(contents)) return null;
+  const spokeInSource = messages.some((m) => m?.role === ROLE.ASSISTANT);
+  if (!spokeInSource) return null;
+  const spokeInOutput = contents.some((c) => c?.role === GEMINI_ROLE.MODEL);
+  if (spokeInOutput) return null;
+  return "history carries assistant turns but no model turn survived translation";
 }
 
 // Core: Convert OpenAI request to Gemini format (base for all variants)
@@ -148,9 +180,13 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
             toolCallIds.push(tc.id);
           }
 
-          if (parts.length > 0) {
-            result.contents.push({ role: GEMINI_ROLE.MODEL, parts });
-          }
+          // Pushed even when empty. `tool_calls` entries that are not
+          // `type: "function"` are skipped above, and real clients do send
+          // function-shaped tools with no parent `type` (see the #2435 note in
+          // openai-to-claude.js) — so an assistant turn can reach here with
+          // nothing accumulated and would otherwise vanish along with its tool
+          // result, fusing the user turns on either side.
+          result.contents.push({ role: GEMINI_ROLE.MODEL, parts: parts.length > 0 ? parts : EMPTY_TURN_PARTS() });
 
           // Check if there are actual tool responses in the next messages
           const hasActualResponses = toolCallIds.some(fid => toolResponses[fid]);
@@ -190,8 +226,11 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
               result.contents.push({ role: GEMINI_ROLE.USER, parts: toolParts });
             }
           }
-        } else if (parts.length > 0) {
-          result.contents.push({ role: GEMINI_ROLE.MODEL, parts });
+        } else {
+          // Pushed even when empty. An assistant reply scrubbed to nothing by
+          // the echo filter still happened, and erasing it here is how the
+          // model's voice leaves the history one turn at a time.
+          result.contents.push({ role: GEMINI_ROLE.MODEL, parts: parts.length > 0 ? parts : EMPTY_TURN_PARTS() });
         }
       }
     }
@@ -227,7 +266,20 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
     }
   }
 
-  result.contents = normalizeGeminiContents(result.contents);
+  // Judged before the trailing turn is dropped. That drop is deliberate and
+  // legitimate, so measuring after it reports a violation on any request whose
+  // only assistant message was a trailing empty one — a warning with nothing
+  // wrong behind it, which is how a diagnostic stops being read.
+  const normalized = normalizeGeminiContents(result.contents);
+  const violationBeforeTrim = findSpeakerBoundaryViolation(body?.messages, normalized);
+  result.contents = dropTrailingEmptyModelTurn(normalized);
+
+  // Diagnostic, not enforcement: this logs and the request still goes out. It
+  // exists so a future edit that reintroduces the erasure is visible instead of
+  // silent — the original went undiagnosed for weeks because nothing anywhere
+  // said the history had been rewritten.
+  if (violationBeforeTrim) console.error(`[gemini-request] speaker boundary: ${violationBeforeTrim}`);
+
   return result;
 }
 
@@ -369,12 +421,12 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
         parts.push({ text: msg.content });
       }
 
-      if (parts.length > 0) {
-        envelope.request.contents.push({
-          role: msg.role === ROLE.ASSISTANT ? GEMINI_ROLE.MODEL : GEMINI_ROLE.USER,
-          parts
-        });
-      }
+      // Same rule as the base translator: a turn that came out empty keeps its
+      // slot rather than letting its neighbours fuse. See normalizeGeminiContents.
+      envelope.request.contents.push({
+        role: msg.role === ROLE.ASSISTANT ? GEMINI_ROLE.MODEL : GEMINI_ROLE.USER,
+        parts: parts.length > 0 ? parts : EMPTY_TURN_PARTS()
+      });
     }
   }
 
@@ -415,7 +467,10 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
     envelope.request.systemInstruction = { role: GEMINI_ROLE.USER, parts: systemParts };
   }
 
-  envelope.request.contents = normalizeGeminiContents(envelope.request.contents);
+  const normalizedEnvelope = normalizeGeminiContents(envelope.request.contents);
+  const envelopeViolation = findSpeakerBoundaryViolation(claudeRequest?.messages, normalizedEnvelope);
+  envelope.request.contents = dropTrailingEmptyModelTurn(normalizedEnvelope);
+  if (envelopeViolation) console.error(`[antigravity-request] speaker boundary: ${envelopeViolation}`);
   return envelope;
 }
 

@@ -16,6 +16,10 @@ import {
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 import { killAllBridges } from "@/lib/mcp/stdioSseBridge";
+import { primeContextWindows } from "open-sse/services/contextWindowRegistry.js";
+import { primeModalities } from "open-sse/services/modalityRegistry.js";
+import { refreshOpenRouterCatalogue } from "open-sse/services/openrouterModels.js";
+import { refreshModelsDevCatalogue } from "open-sse/services/modelsDevCatalogue.js";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -79,8 +83,38 @@ export async function initializeApp() {
   }
 }
 
+/** Six hours. Model windows change when a provider ships, not by the minute,
+ *  and the catalogue is a public unauthenticated GET — cheap, but not free. */
+const CONTEXT_WINDOW_REFRESH_MS = 6 * 60 * 60 * 1000;
+
+// Learn every model's real context window AND its input modalities from the
+// providers that publish them, instead of inheriting the static defaults. Both
+// defaults are load-bearing. The 200,000 window is read by shouldSkipModel and
+// compactCeiling, so a 1M model nobody has hand-written a table entry for gets
+// advertised at 200K and the gateway throws away 80% of the window it chose that
+// model for. The `vision:false` is read by reorderByCapabilities and
+// stripUnsupportedModalities, so a vision model nobody has named is demoted
+// beneath a narrower member and has its images deleted on the way out. See
+// services/contextWindowRegistry.js and services/modalityRegistry.js for the two
+// incidents that forced this.
+function startContextWindowLearning() {
+  if (g.contextWindowLearningStarted) return;
+  g.contextWindowLearningStarted = true;
+  const run = () =>
+    Promise.all([
+      primeContextWindows(),
+      primeModalities(),
+      refreshOpenRouterCatalogue({ force: true }),
+      refreshModelsDevCatalogue({ force: true }),
+    ]).catch((e) => console.warn("[CTXWIN] refresh failed:", e.message));
+  run();
+  const timer = setInterval(run, CONTEXT_WINDOW_REFRESH_MS);
+  if (typeof timer.unref === "function") timer.unref();
+}
+
 async function runHeavyStartup() {
   await cleanupProviderConnections();
+  startContextWindowLearning();
   const settings = await getSettings();
 
   // Auto-resume tunnel (once per process)

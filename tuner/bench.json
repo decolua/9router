@@ -1,0 +1,466 @@
+{
+  "_comment": "Static scoring tables for 9r-tuner. Bands are hand-assigned, not computed: SWE-bench alone cannot separate Sonnet-5 (72.7 verified) from Haiku-4.5 (73.3 verified). Scores recorded as justification. Review this file rather than trusting the script to infer tiers.",
+  "quotaGroup": {
+    "_comment": "Prefixes in one named group share one quota/failure domain regardless of provider prefix (cx and ocg are one OpenAI Codex subscription; if one 429s, the other already exhausted). Absent prefixes use their own prefix as group. With quotaScope, key = group for account, group/family for family, group/model for model.",
+    "cx": "codex-subscription",
+    "ocg": "codex-subscription"
+  },
+  "_bands": [
+    "fable",
+    "opus",
+    "sonnet",
+    "haiku",
+    "below"
+  ],
+  "_effortBandOffset": {
+    "_comment": "Effort is a declared compute level, not part of a model's identity, so it shifts the FAMILY's band instead of inheriting it. Offsets are signed in quality terms: -1 is one band worse, i.e. one step further down _bands; both ends clamp rather than wrap. This table is the whole policy - one reviewable decision instead of one judgement per variant, and it is why a low-effort variant can no longer reach a fable-band combo by any path (2026-08-11: ag/gemini-3.1-pro-low served Odin for two sessions because substring matching gave it gemini-3.1-pro's opus band). A model with no declared effort keeps its family's band unchanged, which is correct - it IS the full model. An effort absent from this table is also treated as no shift, so adding a new effort name here is a deliberate act.",
+    "max": 0,
+    "high": 0,
+    "medium": -1,
+    "low": -2,
+    "extra-low": -3,
+    "minimal": -3
+  },
+  "_modelIdentity": {
+    "_comment": "Declared (family, effort, mode) for candidate ids that have NO registry entry to carry them - custom models registered against a provider node, which reach the tuner from the DB rather than from /v1/models. Same role as _costOverride, and checked before every other rule, so it can also correct a registry declaration without a redeploy. Registry models declare their identity in open-sse/providers/registry/*.js instead; do not duplicate them here.",
+    "_comment2": "Every entry below is a FREE-TIER id: the same model served on a free quota, not a weaker variant. A free tier is not an effort - it costs less, it does not think less - so these carry their family's band unshifted and mode:free records the tier. They were added 2026-08-11 after deleting substring inference dropped all of them out of their combos at once, including the free heads of Odin and Sleipnir. See docs/adr/0001.",
+    "nvidia/nemotron-3-ultra-550b-a55b": {
+      "family": "nemotron-3-ultra"
+    },
+    "oc/deepseek-v4-flash-free": {
+      "family": "deepseek-v4-flash",
+      "mode": "free"
+    },
+    "oc/laguna-s-2.1-free": {
+      "family": "laguna-s-2.1",
+      "mode": "free"
+    },
+    "oc/ling-3.0-flash-free": {
+      "family": "ling-3.0-flash",
+      "mode": "free"
+    },
+    "oc/mimo-v2.5-free": {
+      "family": "mimo-v2.5",
+      "mode": "free"
+    },
+    "oc/nemotron-3-ultra-free": {
+      "family": "nemotron-3-ultra",
+      "mode": "free"
+    },
+    "oc/north-mini-code-free": {
+      "family": "north-mini-code",
+      "mode": "free"
+    },
+    "openrouter/cohere/north-mini-code:free": {
+      "family": "north-mini-code",
+      "mode": "free"
+    },
+    "openrouter/google/gemma-4-26b-a4b-it:free": {
+      "family": "gemma-4-26b",
+      "mode": "free"
+    },
+    "openrouter/google/gemma-4-31b-it:free": {
+      "family": "gemma-4-31b",
+      "mode": "free"
+    },
+    "openrouter/inclusionai/ling-3.0-flash:free": {
+      "family": "ling-3.0-flash",
+      "mode": "free"
+    },
+    "openrouter/nvidia/nemotron-3-nano-30b-a3b:free": {
+      "family": "nemotron-3-nano-30b",
+      "mode": "free"
+    },
+    "openrouter/nvidia/nemotron-3-super-120b-a12b:free": {
+      "family": "nemotron-3-super-120b",
+      "mode": "free"
+    },
+    "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free": {
+      "family": "nemotron-3-ultra",
+      "mode": "free"
+    },
+    "openrouter/poolside/laguna-s-2.1:free": {
+      "family": "laguna-s-2.1",
+      "mode": "free"
+    },
+    "openrouter/poolside/laguna-xs-2.1:free": {
+      "family": "laguna-xs-2.1",
+      "mode": "free"
+    },
+    "tokenrouter/deepseek/deepseek-v4-pro-0813-free": {
+      "family": "deepseek-v4-pro",
+      "mode": "free"
+    },
+    "tokenrouter/moonshotai/kimi-k3-free": {
+      "family": "kimi-k3",
+      "mode": "free"
+    },
+    "tokenrouter/qwen/qwen3.8-max-free": {
+      "family": "qwen3.8-max",
+      "mode": "free"
+    },
+    "tokenrouter/qwen/qwen3.8-max": {
+      "family": "qwen3.8-max"
+    },
+    "_note_ox_alpha": "The two ox-alpha ids were removed here on 2026-08-26, after both were withdrawn by their providers - see the _pins comment for the exact responses. Removing them here is NECESSARY BUT NOT SUFFICIENT, which cost a deploy to learn: identityOf() reads `declared.family ?? exact`, where `exact` matches the id's tail against models[]. oc/x-preview-f-free has no matching family and did drop out; openrouter/stealth/ox-alpha has the tail 'ox-alpha', so the family entry kept re-banding it fable and it sat at Yggdrasil #0 with its identity row already deleted. The family entry had to go too - see the note under models[]."
+  },
+  "_comboBand": {
+    "Odin": "fable",
+    "Fenrir": "opus",
+    "Valkyrie": "sonnet",
+    "Sleipnir": "haiku",
+    "Yggdrasil": "fable"
+  },
+  "_comboDepth": {
+    "_comment": "How many bands BELOW the target band a combo may fall back to. 0 = strict, only the target band. Odin is 1 because only 2 fable-band models exist and both sit on one account (cx); strict would kill Odin whenever codex quota dies. Sleipnir is 1 because it is the system's last-resort tier where availability beats purity. Fenrir and Valkyrie are strict: they have 8 and 12 target-band members respectively and do not need the crutch. Yggdrasil is 4: it starts at fable and falls through every band (fable->opus->sonnet->haiku->below), so it is the union of all four combos and cannot run dry. It exists so DSH has one model id that never stops; the four banded combos keep their guarantees.",
+    "Odin": 1,
+    "Fenrir": 0,
+    "Valkyrie": 0,
+    "Sleipnir": 1,
+    "Yggdrasil": 4
+  },
+  "_comboOrder": {
+    "_comment": "Per-combo ordering mode. Absent means 'free-first': cost class decides before band, so every free model sorts above every paid one and a subscription is never spent while free capacity is idle. That is right for the four banded combos, which exist to be cheap. Yggdrasil is the opposite promise - it is the id that must never run dry and is reached for when the answer matters - so it runs 'capability-first': band decides first, paid before free within a band, and the free members become the tail that keeps it alive once the paid quota is gone. Setting this also waives the bottom-prefix demotion and the subscription-at-index-0 pin guard for that combo, both of which encode the free-first premise.",
+    "Yggdrasil": "capability-first"
+  },
+  "_comboRequires": {
+    "_comment": "Capability flags a model must have (from /v1/models capabilities) to be eligible for this combo. A model whose capabilities are unknown - not present in /v1/models - is treated as NOT having the capability, so it is excluded. Currently EMPTY for all combos: the user cleared the vision requirement on 2026-08-01 to regain depth, accepting that an image request may land on a non-vision model. Re-enable by setting a combo's list back to [\"vision\"].",
+    "Odin": [],
+    "Fenrir": [],
+    "Yggdrasil": []
+  },
+  "_comboExclude": {
+    "_comment": "Models to permanently exclude from a combo, written back by the tuner. Unlike health==0 (which sends a model to the tail but keeps it), an excluded model is dropped from the written member list entirely and never served. Use this for providers/models that are structurally dead: withdrawn by the upstream, permanently 404ing, or otherwise non-recoverable without manual re-evaluation. Models removed by health are kept for resilience; models here are judged gone for good.",
+    "Yggdrasil": [
+      "openrouter/poolside/laguna-s-2.1:free",
+      "cf/@cf/qwen/qwq-32b",
+      "cmc/deepseek/deepseek-v4-pro",
+      "ocg/qwen3.7-max",
+      "nvidia/z-ai/glm-5.2",
+      "bb/gpt-5.5",
+      "gc/gemini-2.5-flash",
+      "gemini/gemma-4-31b-it",
+      "groq/llama-3.3-70b-versatile",
+      "tokenrouter/deepseek/deepseek-v4-pro-0813-free",
+      "tokenrouter/qwen/qwen3.8-max-free",
+      "ag/gpt-oss-120b-medium"
+    ]
+  },
+  "_anthropicAnchors": {
+    "claude-fable-5": {
+      "swe_verified": 95
+    },
+    "claude-opus-5": {
+      "swe_verified": 96
+    },
+    "claude-sonnet-5": {
+      "swe_verified": 72.7,
+      "terminal_bench": 76.1,
+      "gpqa_diamond": 78
+    },
+    "claude-haiku-4.5": {
+      "swe_verified": 73.3
+    }
+  },
+  "models": {
+    "gpt-5.6-sol": {
+      "band": "opus",
+      "swe_verified": 96.2,
+      "terminal_bench": 88.8,
+      "aa_coding_agent": 80
+    },
+    "kimi-k3": {
+      "band": "fable",
+      "swe_deepswe": 67.5,
+      "terminal_bench": 88.3,
+      "frontier_swe": 81.2,
+      "program_bench": 77.8
+    },
+    "claude-opus-4.7": {
+      "band": "opus",
+      "swe_verified": 87.6,
+      "swe_pro": 64.3
+    },
+    "claude-opus-4.8": {
+      "band": "opus",
+      "swe_verified": 79.4,
+      "swe_pro": 69.2
+    },
+    "claude-opus-4-6-thinking": {
+      "band": "opus",
+      "swe_verified": 80.8,
+      "swe_pro": 53.4,
+      "gpqa_diamond": 91.3
+    },
+    "deepseek-v4-pro": {
+      "band": "opus",
+      "swe_verified": 80.6
+    },
+    "qwen3.7-max": {
+      "band": "opus",
+      "swe_verified": 80.4,
+      "swe_pro": 60.6
+    },
+    "claude-sonnet-4-6": {
+      "band": "opus",
+      "swe_verified": 79.6
+    },
+    "gemini-3.1-pro": {
+      "band": "opus",
+      "gpqa_diamond": 94.3
+    },
+    "grok-4.5": {
+      "band": "opus",
+      "gpqa_diamond": 93,
+      "swe_pro": 64.7
+    },
+    "claude-sonnet-4.5": {
+      "band": "sonnet",
+      "swe_verified": 77.2
+    },
+    "laguna-s-2.1": {
+      "band": "sonnet",
+      "terminal_bench": 70.2,
+      "context": "1M"
+    },
+    "glm-5.2": {
+      "band": "sonnet",
+      "swe_pro": 62.1
+    },
+    "minimax-m3": {
+      "band": "sonnet",
+      "swe_pro": 59,
+      "terminal_bench": 66,
+      "mcp_atlas": 74.2,
+      "aa_agentic": 71.9
+    },
+    "gpt-5.5": {
+      "band": "sonnet",
+      "swe_pro": 58.6
+    },
+    "gpt-5.6-terra": {
+      "band": "opus",
+      "note": "Fenrir Codex fallback; approximately gpt-5.5 quality"
+    },
+    "mimo-v2.5-pro": {
+      "band": "sonnet",
+      "swe_pro": 57.2
+    },
+    "minimax-m2.7": {
+      "band": "sonnet",
+      "swe_pro": 56.2
+    },
+    "gpt-5.3-codex": {
+      "band": "sonnet"
+    },
+    "gpt-5.3-codex-spark": {
+      "band": "sonnet",
+      "note": "Its own model, not a variant of gpt-5.3-codex - it has its own price profile (3.00/12.00 vs 1.75/14.00) and the -review entry points at it, not at gpt-5.3-codex. No published benchmark; banded from price, which sits between gpt-5.6-luna (haiku, 1.00/6.00) and gpt-5.6-terra (opus, 2.50/15.00), so level with gpt-5.3-codex itself."
+    },
+    "gpt-5.5-pro": {
+      "band": "sonnet",
+      "note": "No published benchmark. Priced 30.00/180.00 - six times gpt-5.6-sol (opus, 5.00/30.00) - which argues for a higher band, but price is a proxy and this file bands from benchmarks. Held at gpt-5.5's tier because understating a model only costs it work it could have done, while overstating puts it in a combo it has not earned. Promote deliberately once there is a score."
+    },
+    "kimi-k2.7-code": {
+      "band": "sonnet",
+      "note": "vendor-reported only, no independent verification"
+    },
+    "claude-haiku-4.5": {
+      "band": "haiku",
+      "swe_verified": 73.3
+    },
+    "gpt-5.6-luna": {
+      "band": "haiku",
+      "note": "cheapest latency-optimised tier of gpt-5.6 family"
+    },
+    "nemotron-3-ultra": {
+      "band": "haiku",
+      "aa_index": 38,
+      "aa_coding": 74.2,
+      "aa_agentic": 51.7,
+      "note": "coding-strong but agentic-weak; must never head an agentic combo"
+    },
+    "nemotron-3-super-120b": {
+      "band": "haiku"
+    },
+    "laguna-xs-2.1": {
+      "band": "haiku"
+    },
+    "deepseek-v4-flash": {
+      "band": "haiku"
+    },
+    "mimo-v2.5": {
+      "band": "haiku"
+    },
+    "north-mini-code": {
+      "band": "haiku"
+    },
+    "ling-3.0-flash": {
+      "band": "haiku"
+    },
+    "gpt-5.4-mini": {
+      "band": "haiku"
+    },
+    "gpt-5.4-nano": {
+      "band": "haiku"
+    },
+    "gemini-2.5-flash": {
+      "band": "haiku"
+    },
+    "gemini-3.6-flash": {
+      "band": "haiku"
+    },
+    "gemini-flash-lite": {
+      "band": "haiku"
+    },
+    "gpt-oss-120b": {
+      "band": "below"
+    },
+    "llama-3.3-70b": {
+      "band": "below"
+    },
+    "llama-3.1-70b": {
+      "band": "below"
+    },
+    "llama-3.1-8b": {
+      "band": "below"
+    },
+    "llama-3.2-3b": {
+      "band": "below"
+    },
+    "llama-3.2-1b": {
+      "band": "below"
+    },
+    "qwq-32b": {
+      "band": "below"
+    },
+    "gemma-4-31b": {
+      "band": "below"
+    },
+    "gemma-4-26b": {
+      "band": "below"
+    },
+    "nemotron-3-nano-30b": {
+      "band": "below"
+    },
+    "mistral-small-3.1-24b": {
+      "band": "below"
+    },
+    "deepseek-r1-distill-qwen-32b": {
+      "band": "below"
+    },
+    "glm-4.7-flash": {
+      "band": "below"
+    },
+    "gpt-oss:120b": {
+      "band": "below",
+      "note": "ollama colon-form id; live 200"
+    },
+    "gpt-oss:20b": {
+      "band": "below",
+      "note": "ollama colon-form id; live 200"
+    },
+    "nemotron-3-super": {
+      "band": "haiku",
+      "note": "ollama id lacks the -120b-a12b suffix; live 200"
+    },
+    "nemotron-3-nano:30b": {
+      "band": "below",
+      "note": "ollama colon-form id; live 200"
+    },
+    "gemma4:31b": {
+      "band": "below",
+      "note": "ollama colon-form id; live 200"
+    },
+    "qwen3.8-max": {
+      "band": "opus",
+      "swe_verified": 80.4,
+      "swe_pro": 60.6,
+      "note": "TokenRouter qwen3.8 line; band mirrors qwen3.7-max (same class, one revision on)"
+    },
+    "_note_ox_alpha": "The 'ox-alpha' family entry was removed on 2026-08-26, when both ids serving it were withdrawn by their providers. It had to go from HERE, not just from _modelIdentity: identityOf() falls back to `bench.models[tail]`, and the tail of openrouter/stealth/ox-alpha is literally 'ox-alpha', so the family entry alone kept re-banding the id fable and holding it at Yggdrasil #0 after its identity row was already gone. Restoring the pair therefore needs both halves back - a family entry here with band 'fable' (assigned on the operator's call, not on a published benchmark: no score exists for a stealth model, and benchScore() returning 0 reads as 'unmeasured' to rankScore(), not as 'worst') and one _modelIdentity row per id."
+  },
+  "costClass": {
+    "_comment": "0=free or free-with-quota, 2=subscription (finite paid allowance, must be preserved). Lower sorts first. Confirmed by the user 2026-08-01: the ONLY subscription providers are ag, cmc, cx, ocg. Rate-limited free tiers (gcli rolling 24h, ollama weekly, kr/gemini daily) need no separate class - their 429s drive health down and the scorer sinks them automatically.",
+    "oc": 0,
+    "openrouter": 0,
+    "bb": 0,
+    "kr": 0,
+    "ollama": 0,
+    "gemini": 0,
+    "gc": 0,
+    "gcli": 0,
+    "nvidia": 0,
+    "cf": 0,
+    "groq": 0,
+    "xai": 0,
+    "ag": 2,
+    "cmc": 2,
+    "cx": 2,
+    "ocg": 2,
+    "tokenrouter": 0
+  },
+  "providerByPrefix": {
+    "oc": "opencode",
+    "ocg": "opencode-go",
+    "bb": "blackbox",
+    "cx": "codex",
+    "ag": "antigravity",
+    "kr": "kiro",
+    "gcli": "grok-cli",
+    "gc": "gemini-cli",
+    "gemini": "gemini",
+    "cf": "cloudflare-ai",
+    "nvidia": "nvidia",
+    "groq": "groq",
+    "openrouter": "openrouter",
+    "ollama": "ollama",
+    "xai": "xai",
+    "kc": "kilocode",
+    "cmc": "commandcode",
+    "tokenrouter": "tokenrouter"
+  },
+  "quotaScope": {
+    "_comment": "account = one shared pool, all models die together. family = one pool per model family within the provider (antigravity meters anthropic and gemini separately). model = per base model. Default when a prefix is absent is account (safe assumption). tokenrouter moved account -> model on 2026-08-17, user-confirmed: each free model registered on the node carries its own allowance, so MAX_PER_POOL=1 no longer lets one TokenRouter id evict another from a combo.",
+    "oc": "account",
+    "ocg": "account",
+    "bb": "account",
+    "cx": "account",
+    "ag": "family",
+    "kr": "account",
+    "ollama": "account",
+    "cf": "account",
+    "groq": "account",
+    "nvidia": "model",
+    "cmc": "account",
+    "kc": "account",
+    "xai": "account",
+    "gcli": "model",
+    "gemini": "model",
+    "tokenrouter": "model",
+    "gc": "account",
+    "openrouter": "account"
+  },
+  "_pins": {
+    "_comment": "A pin forces position; it does not check that the entry can answer. On 2026-08-26 all three combos led with entries that could not: Yggdrasil 0+1 and Odin 2+3 were the ox-alpha redundancy pair, and BOTH legs had been withdrawn by their providers that day - openrouter/stealth/ox-alpha answers 404 'No endpoints found' and is absent from openrouter's /v1/models (416 models, zero stealth/*), oc/x-preview-f-free answers 401 'Model is not supported' and is absent from opencode zen's catalogue. Fenrir 0 and Odin 0/1 were tokenrouter ids, and tokenrouter has no credentials configured at all ('No active credentials for provider: tokenrouter'), so every request to them answers 404. Removed rather than reordered: a pin on a model that does not exist is not a preference, it is a guaranteed wasted round trip at the head of the cascade. Re-add ox-alpha under whatever id it is unmasked as, and re-add tokenrouter once a connection exists.",
+    "Fenrir": {
+      "cx/gpt-5.6-terra": 0
+    }
+  },
+  "_costOverride": {
+    "_comment": "Per-model cost class, checked BEFORE the costClass prefix lookup. TokenRouter exposes 108 upstream models but only these two are free (user-confirmed 2026-08-01: 'token router is basically free model on 2 that i registered... the rest are paying'). The tokenrouter prefix therefore has NO costClass entry and falls to the default 3 (most expensive, sorts last); only these two ids are priced 0.",
+    "tokenrouter/moonshotai/kimi-k3-free": 0,
+    "tokenrouter/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": 0
+  },
+  "_bottomPrefixes": {
+    "_comment": "Providers that always sort last in every combo regardless of score/health. These are duplicate deepseek accounts (cmc, ocg) we keep for backup but should never burn quota while other providers work.",
+    "prefixes": [
+      "cmc",
+      "ocg"
+    ]
+  },
+  "_deadCredentials": [
+    "kc",
+    "cline"
+  ]
+}

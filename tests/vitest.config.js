@@ -7,6 +7,9 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 export default defineConfig({
   test: {
     environment: "node",
+    // Redirects DATA_DIR to a temp dir so no test can write the developer's
+    // live ~/.9router database. See tests/setup.js.
+    setupFiles: ["./setup.js"],
     globals: true,
     include: ["**/*.test.js"],
     // Don't scan into git worktrees nested under .claude/ — they carry their

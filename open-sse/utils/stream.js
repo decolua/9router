@@ -1,8 +1,9 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
-import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
+import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS, estimateInputTokens } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
+import { extractLastUserText } from "./userEcho.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
@@ -49,7 +50,8 @@ export function createSSEStream(options = {}) {
     connectionId = null,
     body = null,
     onStreamComplete = null,
-    apiKey = null
+    apiKey = null,
+    onDisciplineLock = null
   } = options;
 
   let buffer = "";
@@ -58,9 +60,27 @@ export function createSSEStream(options = {}) {
   // Per-stream decoder with stream:true to correctly handle multi-byte chars split across chunks
   const decoder = new TextDecoder("utf-8", { fatal: false });
 
-  const state = mode === STREAM_MODE.TRANSLATE
-    ? { ...initState(sourceFormat), provider, toolNameMap, customToolNames: new Set(customToolNames || []), model }
-    : null;
+  const state = mode === STREAM_MODE.TRANSLATE ? {
+    ...initState(sourceFormat),
+    provider,
+    toolNameMap,
+    customToolNames: new Set(customToolNames || []),
+    model,
+    servingModel: provider && model ? `${provider}/${model}` : model,
+    onDisciplineLock,
+    // For the user-echo guard: body is already in scope here, so the request's
+    // own last user turn travels with the stream state without touching any
+    // caller signature.
+    lastUserText: extractLastUserText(body),
+    // Claude's message_start carries input_tokens; an OpenAI-compatible upstream
+    // does not report usage until the FINAL chunk, so the translator emitted
+    // zero there and clients read the context as empty. Claude Code sizes its
+    // context meter off message_start, so it sat at 0% through a 200k
+    // conversation and never compacted on its own — it just hit the wall.
+    // The real count replaces this the moment the provider sends one; until
+    // then an estimate is strictly better than a zero that means "no context".
+    inputTokenHint: estimateInputTokens(body),
+  } : null;
 
   let totalContentLength = 0;
   let accumulatedContent = "";
@@ -467,7 +487,7 @@ export function createSSEStream(options = {}) {
   });
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, onDisciplineLock = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -480,7 +500,8 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    onDisciplineLock
   });
 }
 

@@ -4,7 +4,15 @@
 //   1. PROVIDER_CAPABILITIES[provider][model]  — provider-specific override
 //   2. MODEL_CAPABILITIES[model]               — canonical exact id (handles exceptions)
 //   3. PATTERN_CAPABILITIES                     — glob match, ordered specific -> generic
-//   4. DEFAULT_CAPABILITIES                     — safe floor (always returned)
+//   4. learned input modalities                 — the provider's own catalogue,
+//                                                 services/modalityRegistry.js
+//   5. DEFAULT_CAPABILITIES                     — safe floor (always returned)
+//
+// Step 4 sits BELOW the table, not above it, which is the opposite of how
+// services/contextWindowRegistry.js ranks against the same table. That is
+// deliberate and load-bearing: the entries here that contradict a provider's own
+// advertisement (ag/claude-*, declared vision:false because the executor drops
+// the image) exist precisely to overrule it. See modalityRegistry.js.
 //
 // ── HOW TO ADD / UPDATE A MODEL ──────────────────────────────────────
 // Authoritative data source: https://models.dev/api.json (145 providers, 4000+
@@ -23,6 +31,20 @@
 // 2.0+, Grok, Perplexity). Verify with: curl -s https://models.dev/api.json
 
 import { matchPattern } from "./pricing.js";
+
+/**
+ * Input modalities learned from a provider's own catalogue, injected by
+ * services/modalityRegistry.js when it loads. It stays a registered function
+ * rather than an import because this module is reachable from client components
+ * and that one is not — it reaches SQLite, and importing it here pulls
+ * `node:sqlite` into a browser bundle. Inert until something registers it, so a
+ * bundle without the registry simply falls through to the floor.
+ */
+let learnedModalityLookup = () => null;
+
+export function setLearnedModalityLookup(fn) {
+  learnedModalityLookup = typeof fn === "function" ? fn : () => null;
+}
 
 /**
  * Safe floor — every resolved result is merged over this so consumers
@@ -71,6 +93,7 @@ export function capabilitiesFromServiceKind(kind) {
  * otherwise mis-match. Only declare deltas vs DEFAULT.
  */
 export const MODEL_CAPABILITIES = {
+
   // Claude Opus 5, 4.6/4.7/4.8, and Kiro Sonnet 5 have 1M context + adaptive thinking (override generic claude pattern)
   "claude-opus-5":     { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
   "claude-opus-5-thinking": { vision: true, reasoning: true, search: true, thinkingFormat: "claude-adaptive", contextWindow: 1000000, maxOutput: 128000 },
@@ -121,6 +144,57 @@ const CODEX_GPT_56_DEFAULT_CAPS = { vision: true, reasoning: true, search: true,
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
 export const PROVIDER_CAPABILITIES = {
+  // Claude models served through Antigravity never receive the image.
+  //
+  // Measured 2026-08-23 against the live gateway with a 64x64 half-red/half-green
+  // PNG and a forced answer format. `ag/claude-opus-4-6-thinking` and
+  // `ag/claude-sonnet-4-6` both answered `SEEN=NO`; `ag/gemini-pro-agent` and
+  // `ag/gemini-3-flash` — same provider, same request, same translator — answered
+  // `SEEN=YES LEFT=red RIGHT=green`. So this is the Claude-specific branch in
+  // executors/antigravity.js, not Antigravity as a whole and not the OpenAI->Gemini
+  // part conversion.
+  //
+  // Advertising vision here is worse than having none: the combo happily routes a
+  // screenshot to a model that silently answers from the text alone, and the reply
+  // is a confident guess. Declaring it false makes reorderByCapabilities pick a
+  // member that can actually see. Remove this once the executor is fixed — the
+  // capability is real, the transport is not.
+  //
+  // Keyed by BOTH the prefix and the provider name on purpose: the combo cascade
+  // calls getCapabilitiesForModel with the id prefix ("ag"), while provider-name
+  // callers use "antigravity".
+  "ag": {
+    // contextWindow corrected 2026-08-24. This override was added for the
+    // MEASURED vision:false finding; the 200000 rode along with it and was never
+    // tested. Probed against the live provider: a 362,664-token prompt was
+    // accepted and answered correctly, so 200000 is simply wrong — it was
+    // throwing away most of the window on the head of Yggdrasil and forcing the
+    // client to compact at 160K. 1000000 is the canonical figure this repo
+    // already asserts for claude-opus-4.6 (see capabilities-opus-context.test.js);
+    // the true Antigravity ceiling above 362,664 is untested, because the
+    // router's own compaction ceiling stopped the next probe at 897,517 before
+    // it reached the provider. If the real cap turns out lower, the cascade
+    // falls through on the provider's own error — strictly better than
+    // discarding 800K of a window we are paying for.
+    "claude-opus-4-6-thinking": { vision: false, reasoning: true, contextWindow: 1000000, maxOutput: 64000 },
+    "claude-sonnet-4-6": { vision: false, reasoning: true, contextWindow: 200000, maxOutput: 64000 },
+  },
+  "antigravity": {
+    // contextWindow corrected 2026-08-24. This override was added for the
+    // MEASURED vision:false finding; the 200000 rode along with it and was never
+    // tested. Probed against the live provider: a 362,664-token prompt was
+    // accepted and answered correctly, so 200000 is simply wrong — it was
+    // throwing away most of the window on the head of Yggdrasil and forcing the
+    // client to compact at 160K. 1000000 is the canonical figure this repo
+    // already asserts for claude-opus-4.6 (see capabilities-opus-context.test.js);
+    // the true Antigravity ceiling above 362,664 is untested, because the
+    // router's own compaction ceiling stopped the next probe at 897,517 before
+    // it reached the provider. If the real cap turns out lower, the cascade
+    // falls through on the provider's own error — strictly better than
+    // discarding 800K of a window we are paying for.
+    "claude-opus-4-6-thinking": { vision: false, reasoning: true, contextWindow: 1000000, maxOutput: 64000 },
+    "claude-sonnet-4-6": { vision: false, reasoning: true, contextWindow: 200000, maxOutput: 64000 },
+  },
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue
   "nvidia": {
@@ -318,7 +392,7 @@ export const PATTERN_CAPABILITIES = [
 ];
 
 /**
- * Resolve capabilities for a model using the 4-step fallback chain,
+ * Resolve capabilities for a model using the 5-step fallback chain,
  * merged over DEFAULT_CAPABILITIES so the result is always complete.
  *
  * @param {string} provider
@@ -336,6 +410,9 @@ export function getCapabilitiesForModel(provider, model) {
     const providerCaps = PROVIDER_CAPABILITIES[provider];
     if (providerCaps?.[model]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[model] };
     if (providerCaps?.[baseModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] };
+    // If the provider exists but has no model-specific entry, fall through to
+    // canonical/pattern lookup — the provider override only covered OTHER models.
+    // This fixes ag/gemini-pro-agent returning contextWindow:0 (cold-start).
   }
 
   // 2. Canonical exact
@@ -349,6 +426,21 @@ export function getCapabilitiesForModel(provider, model) {
     }
   }
 
-  // 4. Floor
+  // 4. Input modalities learned from the provider's own catalogue.
+  //
+  // Only reached when nothing above named this model, so it can never argue
+  // with a hand-written entry — see the precedence note at the top of this file
+  // and in services/modalityRegistry.js. What it replaces is the all-false
+  // floor, which is a guess, and a guess that costs a 1M vision model its place
+  // at the head of a combo and gets its images deleted on the way to it.
+  //
+  // Synchronous against a warm cache; the catalogue refresh happens out of band.
+  // Routing runs on every request and must never wait on a network call to
+  // decide whether a model can read a picture.
+  const routed = provider ? `${provider}/${model}` : model;
+  const learned = learnedModalityLookup(routed) || learnedModalityLookup(model);
+  if (learned) return { ...DEFAULT_CAPABILITIES, ...learned };
+
+  // 5. Floor
   return { ...DEFAULT_CAPABILITIES };
 }

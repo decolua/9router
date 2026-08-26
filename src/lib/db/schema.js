@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 3;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -121,12 +121,21 @@ export const TABLES = {
       status: "TEXT",
       tokens: "TEXT",
       meta: "TEXT",
+      // Request attribution: which combo served the request, how deep in that
+      // combo's fallback cascade it landed, and the client session it belongs
+      // to. Nullable by design — direct (non-combo) requests have no combo or
+      // chain, and sessionId is only set when the client sends one.
+      comboName: "TEXT",
+      chainDepth: "INTEGER DEFAULT 0",
+      sessionId: "TEXT",
     },
     indexes: [
       "CREATE INDEX IF NOT EXISTS idx_uh_ts ON usageHistory(timestamp DESC)",
       "CREATE INDEX IF NOT EXISTS idx_uh_provider ON usageHistory(provider)",
       "CREATE INDEX IF NOT EXISTS idx_uh_model ON usageHistory(model)",
       "CREATE INDEX IF NOT EXISTS idx_uh_conn ON usageHistory(connectionId)",
+      "CREATE INDEX IF NOT EXISTS idx_uh_combo ON usageHistory(comboName)",
+      "CREATE INDEX IF NOT EXISTS idx_uh_session ON usageHistory(sessionId)",
     ],
   },
   usageDaily: {
@@ -134,6 +143,40 @@ export const TABLES = {
       dateKey: "TEXT PRIMARY KEY",
       data: "TEXT NOT NULL",
     },
+  },
+  // Routing health, recorded at the seam where a combo member is actually tried.
+  //
+  // This is NOT logging and must never be made switchable. requestDetails is a
+  // debug feature: it is gated behind `enableObservability` (off by default
+  // since 2026-08-01), it stores multi-KB JSON blobs, and it prunes to a single
+  // GLOBAL row cap — so even switched on, one chatty model can evict every other
+  // model's history and a 1-day health window reads back empty. The tuner used
+  // it as its only error signal, which is why nine permanently-dead models sat
+  // in Yggdrasil at health 0.500 for eighteen days: no rows, no errors, no
+  // opinion, no demotion.
+  //
+  // So health gets its own store, with the properties the tuner needs:
+  //   - always written, no config gate;
+  //   - counters, not payloads, so it costs nothing to keep;
+  //   - bucketed per model per hour, so retention is bounded PER MODEL. No
+  //     global cap can starve one model's window.
+  // `modelId` is the routed id exactly as combos store it (e.g. "bb/gpt-5.5"),
+  // not a provider/model pair — that is what the router tries and what the
+  // tuner orders, so no name-mapping can lose the match in between.
+  modelHealth: {
+    columns: {
+      modelId: "TEXT NOT NULL",
+      bucket: "TEXT NOT NULL",        // ISO hour, e.g. "2026-08-23T15"
+      ok: "INTEGER NOT NULL DEFAULT 0",
+      err: "INTEGER NOT NULL DEFAULT 0",
+      lastOkAt: "TEXT",
+      lastErrAt: "TEXT",
+    },
+    primaryKey: "PRIMARY KEY (modelId, bucket)",
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_mh_bucket ON modelHealth(bucket)",
+      "CREATE INDEX IF NOT EXISTS idx_mh_model ON modelHealth(modelId)",
+    ],
   },
   requestDetails: {
     columns: {

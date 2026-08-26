@@ -335,16 +335,111 @@ export function mergeUsage(prev, next) {
  * Estimate input tokens from request body
  * Calculate total body size for more accurate estimation
  */
+/**
+ * Flat per-image cost. Vision models tile an image rather than tokenizing its
+ * bytes, so cost tracks dimensions, not payload size — and dimensions are not
+ * knowable here without decoding. 1600 is the ceiling of the ranges the major
+ * providers publish (Anthropic caps around 1600 for a 1568px edge; OpenAI's
+ * high-detail 1024x1024 lands near 1105), so a request this admits genuinely
+ * fits and the estimate errs toward refusing too little rather than too much.
+ */
+export const IMAGE_TOKEN_ESTIMATE = 1600;
+
+/** A long string that is plausibly base64 — the alphabet, allowing wrapped whitespace. */
+function looksBase64(value) {
+  return value.length > 1024 && /^[A-Za-z0-9+/=\s]+$/.test(value.slice(0, 256));
+}
+
+/**
+ * Serialize a body for sizing, with inlined base64 media stripped and counted
+ * separately. Returns the raw character count so a caller can divide by a
+ * measured chars-per-token ratio instead of a hardcoded constant.
+ */
+export function measureBody(body) {
+  if (!body || typeof body !== "object") return { chars: 0, images: 0 };
+  try {
+    let images = 0;
+    const bodyStr = JSON.stringify(body, (key, value) => {
+      if (typeof value !== "string") return value;
+      if (value.startsWith("data:") && value.includes(";base64,")) { images++; return ""; }
+      if (key === "data" && looksBase64(value)) { images++; return ""; }
+      return value;
+    });
+    return { chars: bodyStr.length, images };
+  } catch {
+    return { chars: 0, images: 0 };
+  }
+}
+
+/**
+ * The part of a request that compaction CANNOT remove: the system prompt, the
+ * tool schemas, and the current user turn. Same units as measureBody.
+ *
+ * Asking a client to compact is only useful when history is what makes the
+ * request too big. When the floor alone already exceeds the ceiling, the client
+ * compacts, retries, and is refused again with a number that barely moved — a
+ * loop it cannot break, because everything it is able to drop is already gone.
+ * Observed 2026-08-25: a Claude Code session compacted 116,399 tokens down to
+ * 39,532 and the router still measured 167,293 against a 160,000 ceiling,
+ * because eight MCP servers' tool schemas and the system prompt are ~224k
+ * characters before a single message is counted. estimateInputTokens already
+ * says as much about inlined images ("compaction cannot help, because the bulk
+ * was never history"); this measures the whole floor, not just that one case.
+ *
+ * The current turn counts as floor, not history: it is what the user just sent,
+ * and no compaction drops it.
+ */
+export function measureFloor(body) {
+  if (!body || typeof body !== "object") return { chars: 0, images: 0 };
+  const parts = [];
+  // Anthropic keeps the system prompt and tools beside the messages.
+  for (const k of ["system", "tools", "functions", "tool_choice"]) {
+    if (body[k] !== undefined) parts.push(body[k]);
+  }
+  const msgs = Array.isArray(body.messages) ? body.messages : [];
+  // OpenAI-shaped bodies carry the system prompt as a message instead.
+  for (const m of msgs) {
+    if (m?.role === "system" || m?.role === "developer") parts.push(m);
+  }
+  // The trailing run after the last assistant turn is the turn in flight; it can
+  // span several messages (text and image arrive as separate blocks).
+  let i = msgs.length - 1;
+  while (i >= 0 && msgs[i]?.role !== "assistant" && msgs[i]?.role !== "model") i--;
+  for (const m of msgs.slice(i + 1)) {
+    if (m?.role !== "system" && m?.role !== "developer") parts.push(m);
+  }
+  return measureBody(parts);
+}
+
 export function estimateInputTokens(body) {
   if (!body || typeof body !== "object") return 0;
 
   try {
-    // Calculate total body size (includes messages, tools, system, thinking config, etc.)
-    const bodyStr = JSON.stringify(body);
-    const totalChars = bodyStr.length;
+    // Images must NOT be measured as text. An inlined image arrives base64 —
+    // `data:image/jpeg;base64,...` in OpenAI content parts, a bare
+    // `source.data` string in Anthropic ones — and base64 is ~4/3 of the raw
+    // bytes, so char/4 scores a 3MB photo at over a million tokens while the
+    // provider bills it around a thousand. That gap is not cosmetic: this
+    // estimate feeds the per-model context check in services/combo.js, so a
+    // single phone photo made every model in a combo look too small and the
+    // request was refused with context_length_exceeded before it was ever
+    // sent. Compaction cannot help, because the bulk was never history.
+    let images = 0;
+    const bodyStr = JSON.stringify(body, (key, value) => {
+      if (typeof value !== "string") return value;
+      if (value.startsWith("data:") && value.includes(";base64,")) {
+        images++;
+        return "";
+      }
+      if (key === "data" && looksBase64(value)) {
+        images++;
+        return "";
+      }
+      return value;
+    });
 
     // Estimate: ~4 chars per token (rough average across all tokenizers)
-    return Math.ceil(totalChars / 4);
+    return Math.ceil(bodyStr.length / 4) + images * IMAGE_TOKEN_ESTIMATE;
   } catch (err) {
     // Fallback if stringify fails
     return 0;

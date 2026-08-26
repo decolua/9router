@@ -19,7 +19,7 @@ import { DEFAULT_RETRY_CONFIG, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtim
  * @property {Object}  [transport]    Runtime HTTP config (see TransportConfig below). Builds PROVIDERS[id].
  * @property {Object}  [oauth]        OAuth flow config (see OAuthConfig). Builds PROVIDER_OAUTH[id].
  * @property {Object}  [media]        Non-LLM services (see MediaConfig). Builds PROVIDER_MEDIA[id].
- * @property {Array}   [models]       Model list; omit = no model key, [] = explicit empty.
+ * @property {Array}   [models]       Model list (see ModelEntry below); omit = no model key, [] = explicit empty.
  * @property {Object}  [features]     Feature flags, e.g. {usage:true}.
  * @property {Object}  [thinkingConfig] Reasoning UI: {options:[...],defaultMode}.
  * @property {boolean} [passthroughModels] Forward client model id untouched.
@@ -36,6 +36,24 @@ import { DEFAULT_RETRY_CONFIG, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtim
  * MediaConfig: { serviceKinds:[...], ttsConfig, sttConfig, embeddingConfig, imageConfig,
  *   searchViaChat:{defaultModel,pricingUrl}, hiddenKinds } — each *Config: {baseUrl,authType,authHeader,
  *   format,defaultModel,models:[{id,name,dimensions?}]}.
+ *
+ * ModelEntry (an item of `models`) — a terse string is accepted and widened to { id }.
+ * @typedef {Object} ModelEntry
+ * @property {string}   id              Wire name the client sends. REQUIRED.
+ * @property {string}  [name]           Display name; derived from `id` when omitted.
+ * @property {string}  [upstreamModelId] Id actually sent upstream when it differs from `id`.
+ * @property {string}  [kind]           "llm"|"image"|"tts"|"stt"|"embedding" (legacy alias: `type`).
+ * @property {string}  [family]         Capability class carrying the band — "gemini-3.1-pro".
+ * @property {string}  [effort]         Declared compute level — "low"|"medium"|"high"|…
+ * @property {string}  [mode]           Orthogonal behaviour switch — "thinking"|"agentic"|…
+ * @property {string}  [quotaFamily]    Quota grouping key. NOT `family`; unrelated concept.
+ * @property {string[]}[strip]          Request fields to drop before dispatch.
+ * @property {string}  [targetFormat]   Force a translator target for this model.
+ * @property {string[]}[capabilities]   Declared service capabilities, e.g. ["textToImage"].
+ *
+ * `id` is a wire name, not a description: `family`/`effort`/`mode` declare what the id only
+ * implies, so bands are never inferred by substring-matching an id. Full rationale and the
+ * rules for when to declare them live in models/schema.js; see docs/adr/0001.
  */
 
 // Shared transport defaults — provider only overrides fields that differ.

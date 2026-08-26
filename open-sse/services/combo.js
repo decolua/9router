@@ -3,13 +3,58 @@
  */
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
+import { isModelCoolingDown, markModelCooldownFrom, modelCooldownRemaining } from "./modelCooldown.js";
+import { isQuotaExhausted, isQuotaExhaustion, markQuotaExhausted, quotaRemainingMs } from "./quotaState.js";
+import { demoteUnhealthy, recordModelFailure, recordModelSuccess } from "./modelHealth.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
+// Side effect only: registers the learned-modality lookup into capabilities.js
+// for THIS module registry. Next bundles the chat path separately from
+// instrumentation, so importing it at boot is not enough. See modalityRegistry.js.
+import "./modalityRegistry.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
+import { measureBody, measureFloor, IMAGE_TOKEN_ESTIMATE } from "../utils/usageTracking.js";
+import { charsPerToken, sizingCharsPerToken, isSizingCalibrated } from "./tokenRatio.js";
+import { learnedContextWindow } from "./contextWindowRegistry.js";
+import { extractVisibleText, findDegeneracy, hasAssistantPrefill, GATE_WINDOW_CHARS, GATE_MIN_JUDGEABLE_CHARS, PREFLIGHT_MAX_READS, HOLD_BACK_MS } from "../utils/degeneracy.js";
+import { COMBO_RESPONSE_TIMEOUT_MS, COMBO_FIRST_EVENT_TIMEOUT_MS, COMPACT_HEADROOM_RATIO } from "../config/errorConfig.js";
+import { isPaidModel } from "../config/costClasses.js";
+import { isEmptyTurnNotice } from "../translator/response/emptyTurn.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
 const HARD_CAPS = new Set(["vision", "pdf", "audioInput", "videoInput"]);
+
+// Statuses that mean "come back later", as opposed to "this request is wrong".
+// Clients and agent loops branch on exactly this distinction.
+function isRetryableStatus(status) {
+  return status === 429 || status === 408 || (status >= 500 && status <= 599);
+}
+
+// Bound a wait so a silent upstream cascades instead of hanging. The rejection
+// carries `comboFallbackStatus`, so it lands in the same catch that already
+// moves to the next entry: a timeout is a supply failure like any other, and no
+// caller has to learn a new shape to handle it.
+//
+// Distinct from `withTimeout` further down, which serves the fusion panel and
+// *resolves* with a sentinel so a slow panellist is merely dropped from a vote.
+// Here the wait ending is a failure that must propagate, so this one rejects.
+function raceDeadline(promise, ms, label) {
+  if (!ms || ms <= 0) return promise;
+  let timer;
+  const guarded = Promise.resolve(promise);
+  const bell = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error(`${label} exceeded ${ms}ms`);
+      err.comboFallbackStatus = 504;
+      reject(err);
+      // The loser may still arrive. Nothing will read it, so release the socket
+      // rather than leave an orphaned body open for the life of the process.
+      guarded.then((v) => { try { v?.body?.cancel?.(); } catch { /* already gone */ } }, () => {});
+    }, ms);
+  });
+  return Promise.race([guarded, bell]).finally(() => clearTimeout(timer));
+}
 
 // Prefixes used when flattening tool turns into plain prose for panel models.
 const TOOL_CALL_PREFIX = "[Called tools: ";
@@ -60,6 +105,15 @@ function flattenToolHistory(messages) {
 
 // Reorder combo models by capability fit. Stable; never drops a model (fallback intact).
 // Tier 0: satisfies all hard + all soft. Tier 1: all hard only. Tier 2: rest.
+//
+// Cost breaks ties INSIDE a tier, free before paid. Capability is a yes/no question —
+// a model either reads the image or it does not — so once the tier is settled there is
+// nothing left to spend a subscription on. Without this, a combo ordered
+// capability-first hands every screenshot to its most expensive member, which is
+// backwards: looking at an image is the cheapest thing a vision model does.
+//
+// This does NOT reorder across tiers. A free model that cannot read the image is
+// still useless, and demoting a capable paid model beneath it would drop the image.
 export function reorderByCapabilities(models, required) {
   if (!required || required.size === 0 || !Array.isArray(models) || models.length <= 1) return models;
   const hard = [...required].filter((c) => HARD_CAPS.has(c));
@@ -74,10 +128,11 @@ export function reorderByCapabilities(models, required) {
     return soft.every((c) => caps[c] === true) ? 0 : 1;
   };
 
-  // Stable sort by tier (Array.prototype.sort is stable in modern engines).
+  // Stable sort by tier, then cost class (Array.prototype.sort is stable in modern
+  // engines, so equal-cost entries keep the pool's own order).
   return models
-    .map((m, i) => ({ m, i, t: tierOf(m) }))
-    .sort((a, b) => a.t - b.t || a.i - b.i)
+    .map((m, i) => ({ m, i, t: tierOf(m), paid: isPaidModel(m) ? 1 : 0 }))
+    .sort((a, b) => a.t - b.t || a.paid - b.paid || a.i - b.i)
     .map((x) => x.m);
 }
 
@@ -114,9 +169,23 @@ export function detectRequiredCapabilities(body) {
     else if (mime.startsWith("video/")) required.add("videoInput");
   };
 
-  const scanBlock = (b) => {
+  const scanBlock = (b, depth = 0) => {
     if (!b || typeof b !== "object") return;
     const t = b.type;
+
+    // A tool result carries its own content blocks, and an image inside one is
+    // still an image the model has to see. This is not an edge case: an agent
+    // that reads a file off disk — Claude Code's Read tool — is the ONLY way an
+    // attachment reaches the router from a chat front end, so a screenshot sent
+    // through one arrived as `{type:"tool_result", content:[{type:"image"...}]}`,
+    // matched nothing here, and the request was served by whichever model
+    // happened to head the combo. It answered confidently about an image it had
+    // never been given.
+    if (t === "tool_result" && depth < 4) {
+      if (Array.isArray(b.content)) for (const inner of b.content) scanBlock(inner, depth + 1);
+      else if (typeof b.content === "string" && b.content.includes("data:image/")) required.add("vision");
+      return;
+    }
     if (t === "image_url" || t === "image" || t === "input_image") required.add("vision");
     if (t === "input_audio" || t === "audio_url" || t === "audio") required.add("audioInput");
     if (t === "input_video" || t === "video_url" || t === "video") required.add("videoInput");
@@ -265,6 +334,436 @@ export function getComboModelsFromData(modelStr, combosData) {
   return null;
 }
 
+async function preflightSseResponse(response, isPrefill = false) {
+  const contentType = response.headers.get("content-type") || "";
+  if (!response.body || !contentType.toLowerCase().includes("text/event-stream")) return response;
+
+  const reader = response.body.getReader();
+  try {
+    // One deadline for the whole hunt, not per read: a provider that streams an
+    // endless run of empty frames never finishes this loop, and a per-read bound
+    // resets on each of them. The throw lands in this function's own catch,
+    // which cancels the reader and re-flags it as a cascade.
+    let first;
+    const firstEventBy = Date.now() + COMBO_FIRST_EVENT_TIMEOUT_MS;
+    do {
+      first = await raceDeadline(
+        reader.read(),
+        Math.max(1, firstEventBy - Date.now()),
+        "first stream event"
+      );
+    } while (!first.done && (!first.value || first.value.byteLength === 0));
+
+    if (first.done) throw new Error("stream ended before first event");
+
+    // Hold-back window. Nothing has reached the client yet, so this is the last
+    // point at which a bad answer can still be replaced by a different model's.
+    // Read a little further than the first chunk — enough visible text to judge
+    // the opening — then decide. Everything read is replayed, so a stream that
+    // passes is delivered byte-for-byte.
+    const held = [first.value];
+    let visible = "";
+    let decodedUpTo = 0;
+    let reads = 0;
+    const decoder = new TextDecoder();
+    let sseTail = "";
+
+    // An error met while reading ahead is replayed to the client, never turned
+    // into a cascade. Reading ahead is our doing, not the client's: the first
+    // chunk arrived intact, and re-running the model from here would repeat work
+    // the upstream has already charged for. Only a failure *before* the first
+    // chunk cascades, which is the invariant the preflight had to begin with.
+    let readAheadError = null;
+    // A read left in flight when the budget expires. A reader permits one read
+    // at a time, so it has to be carried into the replay rather than abandoned.
+    let pendingRead = null;
+    let streamDone = false;
+
+    // Three bounds, because the judging window sits in front of every streamed
+    // response and must never become a stall: a chunk budget, a wall-clock
+    // budget, and stopping the moment there is enough text to judge. The clock
+    // only runs when the stream actually pauses — back-to-back chunks resolve
+    // immediately and cost nothing.
+    const deadline = Date.now() + HOLD_BACK_MS;
+    const TIMED_OUT = Symbol("timed-out");
+
+    while (reads < PREFLIGHT_MAX_READS) {
+      while (decodedUpTo < held.length) {
+        sseTail += decoder.decode(held[decodedUpTo++], { stream: true });
+      }
+      const lines = sseTail.split("\n");
+      sseTail = lines.pop() || "";
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const payload = trimmed.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+        try {
+          const text = extractVisibleText(JSON.parse(payload));
+          if (text) visible += text;
+        } catch { /* a frame we cannot read is not evidence of anything */ }
+      }
+
+      if (visible.trim().length >= GATE_MIN_JUDGEABLE_CHARS || visible.length >= GATE_WINDOW_CHARS) break;
+
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+
+      reads++;
+      const inFlight = reader.read();
+      let timer;
+      let next;
+      try {
+        next = await Promise.race([
+          inFlight,
+          new Promise((resolve) => { timer = setTimeout(() => resolve(TIMED_OUT), remaining); }),
+        ]);
+      } catch (error) {
+        readAheadError = error;
+        break;
+      } finally {
+        clearTimeout(timer);
+      }
+
+      if (next === TIMED_OUT) { pendingRead = inFlight; break; }
+      if (next.done) { streamDone = true; break; }
+      if (next.value?.byteLength) held.push(next.value);
+    }
+
+    // Only judge what was actually read cleanly. A stream that errored or that
+    // produced no prose has told us nothing about how it opens.
+    // An upstream that answered with nothing at all is not an answer. The
+    // translator turns that into a visible notice, which reaches the client as a
+    // perfectly well-formed stream and therefore used to end the turn — a wall in
+    // the one place the cascade is supposed to make walls impossible. It is caught
+    // here rather than in the translator because here, and only here, nothing has
+    // been sent yet and another member can still take the request.
+    if (visible && !readAheadError && isEmptyTurnNotice(visible)) {
+      const failure = new Error("upstream produced an empty turn");
+      failure.comboFallbackStatus = 502;
+      throw failure;
+    }
+
+    const degeneracy = visible && !readAheadError && !isPrefill ? findDegeneracy(visible) : null;
+    if (degeneracy) {
+      const failure = new Error(`degenerate opening: ${degeneracy}`);
+      failure.comboFallbackStatus = 502;
+      throw failure;
+    }
+
+    let queue = held;
+    let buffered = null;
+    return new Response(new ReadableStream({
+      async pull(controller) {
+        if (queue && queue.length > 0) {
+          controller.enqueue(queue.shift());
+          if (queue.length === 0) queue = null;
+          return;
+        }
+        if (buffered) {
+          controller.enqueue(buffered);
+          buffered = null;
+          return;
+        }
+        // Everything held has now been delivered, so whatever ended the judging
+        // window is replayed in the position it would have occupied anyway.
+        if (readAheadError) {
+          const error = readAheadError;
+          readAheadError = null;
+          await reader.cancel(error).catch(() => {});
+          // Errors rather than closes, unlike the branch below, and the
+          // difference is deliberate. combo-stream-fallback.test.js pins that a
+          // stream which delivered its first chunk and then aborted surfaces the
+          // abort to the client instead of being silently truncated or retried.
+          // Review suggested unifying on the clean close; that test is the
+          // authority, and a silent truncation here would look like a complete
+          // answer that simply stopped.
+          controller.error(error);
+          return;
+        }
+        if (streamDone) { controller.close(); return; }
+        if (pendingRead) {
+          const inFlight = pendingRead;
+          pendingRead = null;
+          try {
+            const { done, value } = await inFlight;
+            if (done) controller.close();
+            else controller.enqueue(value);
+          } catch (error) {
+            await reader.cancel(error).catch(() => {});
+            controller.error(error);
+          }
+          return;
+        }
+        try {
+          const { done, value } = await reader.read();
+          if (done) controller.close();
+          else controller.enqueue(value);
+        } catch (error) {
+          await reader.cancel(error).catch(() => {});
+          // Clean close, never error: a controller.error() here terminates the
+          // ReadableStream with an error that the harness wraps as [CommandCode
+          // error: "Upstream stream ended before terminal chunk"], leaking
+          // transport noise into visible output. controller.close() is the SSE
+          // equivalent of `data: [DONE]` — harness never wraps it.
+          // (2026-08-03, inyund fork)
+          controller.close();
+        }
+      },
+      cancel(reason) {
+        return reader.cancel(reason);
+      }
+    }), {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers
+    });
+  } catch (error) {
+    await reader.cancel(error).catch(() => {});
+    const failure = new Error(error?.message || "SSE preflight failed", { cause: error });
+    failure.comboFallbackStatus = 502;
+    throw failure;
+  }
+}
+
+/**
+ * The one place a combo entry is passed over without being tried.
+ *
+ * Returns null to attempt the model, or `{ reason }` naming why it was skipped —
+ * the caller logs it. Every skip rule lives here so that "the combo answered from
+ * its last entry" is a diagnosable event instead of a silent one: three rules
+ * deciding independently in-line is how a healthy provider disappears from a
+ * cascade with nothing in the log to say so.
+ *
+ * `canServe` is the authority when supplied. The quota/cooldown maps below are a
+ * per-model guess held in one process; the caller's account layer knows which
+ * individual accounts are locked and until when. A guess must never outlive the
+ * fact: if any account can serve the model right now, we try it, whatever an
+ * earlier account's 429 wrote into the map. Without `canServe` (open-sse used
+ * standalone, no account layer) the maps stand on their own as before.
+ *
+ * The probe answers `null` when it has no opinion — a no-auth free provider with
+ * no per-account state to track, or one with nothing configured. Silence is not
+ * capacity: in that case the maps below are the only thing standing between the
+ * cascade and a round trip it already knows will fail, so they still decide.
+ *
+ * @param {string} modelStr - Combo entry, e.g. "ag/gemini-3.1-pro-low"
+ * @param {Object} ctx
+ * @param {number} [ctx.inputTokens] - Estimated tokens in the request
+ * @param {(modelStr: string) => Promise<{serveable: boolean, retryAfter?: string}|null>} [ctx.canServe]
+ *   Account-layer probe: has any account capacity for this model? `null` = no opinion.
+ * @returns {Promise<{ reason: string, retryAfter?: string }|null>}
+ */
+/** Split "provider/model" the way shouldSkipModel does, so both read one window. */
+function splitModelStr(modelStr) {
+  const slash = modelStr.indexOf("/");
+  return slash > 0
+    ? { provider: modelStr.slice(0, slash), model: modelStr.slice(slash + 1) }
+    : { provider: "", model: modelStr };
+}
+
+/**
+ * A member's input window, or 0 when nothing declares one.
+ *
+ * A window LEARNED from the provider's own catalogue wins over the static
+ * table, because the provider is the authority on its own model and a static
+ * entry is stale the moment they ship. The table stays as the seed for
+ * providers that publish no catalogue — and as the answer for the many models
+ * whose windows genuinely are fixed.
+ *
+ * The lookup is synchronous against a warm cache; the catalogue refresh happens
+ * out of band. Sizing runs on every request and must never wait on a network
+ * call to decide whether a model can hold one.
+ */
+export function modelContextWindow(modelStr) {
+  const learned = learnedContextWindow(modelStr);
+  if (learned) return learned;
+  const { provider, model } = splitModelStr(modelStr);
+  return getCapabilitiesForModel(provider, model).contextWindow || 0;
+}
+
+/**
+ * The widest window still reachable, counting only members that are not already
+ * banned or backing off. Those two checks are synchronous and local — no probe,
+ * no round trip — so this is cheap enough to run before every cascade.
+ *
+ * Deliberately NOT the widest window in the pool: a 1M member that is quota-
+ * exhausted for the next six hours cannot hold anything, and letting it raise
+ * the ceiling is what allows a conversation to grow past the point where the
+ * members that CAN answer are able to take it. That is the failure the
+ * operator's "next model cant handle the context" clause describes.
+ */
+export function widestEligibleWindow(models) {
+  let widest = 0;
+  for (const modelStr of models) {
+    if (isQuotaExhausted(modelStr) || isModelCoolingDown(modelStr)) continue;
+    const w = modelContextWindow(modelStr);
+    if (w > widest) widest = w;
+  }
+  return widest;
+}
+
+/**
+ * The compaction ceiling, as the operator specified it on 2026-08-23:
+ *
+ *   "if it will hit rotate and the next model cant handle the context, it
+ *    should compact. if it can handle the context, then compact at 80%.
+ *    dont check turn +1. because compacting itself needs the next model."
+ *
+ * Two clauses, one number:
+ *
+ *   80% of the HEAD's window     — the model that is about to answer. This is
+ *                                  the ordinary case and the one the ratio is
+ *                                  for.
+ *   the NEXT member's window     — a hard bound, not a percentage of one. If
+ *                                  the head fails we rotate, and the request
+ *                                  has to fit whatever we rotate into. That
+ *                                  request is the compaction itself, which is
+ *                                  why it is the next member's full window and
+ *                                  not 80% of it: no turn after this one is
+ *                                  being reserved for. ("dont check turn +1.")
+ *
+ * The lower of the two wins. Using the WIDEST eligible window instead — which
+ * is what this did until now — reads the pool's best member rather than the
+ * two that are actually about to be used: a 1M head in front of a 200K
+ * fallback produced a 838K ceiling, so the conversation was allowed to grow
+ * past the point where the fallback could take it, which is precisely the
+ * "next model cant handle the context" case the rule exists for.
+ *
+ * Order matters and is the cascade's own: these are the members in the order
+ * they will be tried, minus the ones already banned or backing off.
+ */
+export function compactCeiling(models, headroomRatio, size = 0) {
+  // `size` is either a flat token count or, better, a function that sizes the
+  // request for one specific member. Per-member sizing matters because the
+  // request is not one number: sizingCharsPerToken varies by provider, so the
+  // same body is 189k tokens for one candidate and 116k for another, and asking
+  // "does it fit" with the pool's worst ratio passes over members that fit
+  // perfectly well. Callers with nothing to size (the /api/context-window
+  // route, which reports the ceiling for an empty request) still pass 0.
+  const needFor = typeof size === "function" ? size : () => size;
+  const live = [];
+  for (const modelStr of models) {
+    if (isQuotaExhausted(modelStr) || isModelCoolingDown(modelStr)) continue;
+    const w = modelContextWindow(modelStr);
+    if (w > 0) live.push({ w, need: needFor(modelStr) });
+  }
+  if (live.length === 0) return { ceiling: 0, head: 0, next: 0 };
+
+  // The head is the member that will ACTUALLY answer, which is not always the
+  // first one: a member too small for this request is skipped before it is
+  // tried, and taking 80% of a window that is about to be passed over asks the
+  // client to compact on behalf of a model that was never going to serve it.
+  let headIdx = live.findIndex(({ w, need }) => w >= need);
+  if (headIdx === -1) headIdx = 0; // nothing fits; the onlyTooLarge path owns that
+  const head = live[headIdx].w;
+
+  // "the next model" is the widest thing we could rotate INTO, not the adjacent
+  // list entry. The question the rule asks is whether a rotation can still
+  // carry the conversation — and a 200K member sitting between two 1M ones does
+  // not make the answer no. Reading it literally would cap a 1M head at 200K
+  // whenever any small member trailed it, which is the "compact at 20%" the
+  // whole exercise is trying to stop.
+  const next = live.slice(headIdx + 1).reduce((a, b) => (b.w > a ? b.w : a), 0);
+
+  const byRatio = Math.floor(head * headroomRatio);
+  const ceiling = next > 0 ? Math.min(byRatio, next) : byRatio;
+  return { ceiling, head, next };
+}
+
+/**
+ * A 413 shaped so the client compacts instead of erroring.
+ *
+ * Claude Code classifies an upstream failure as `prompt_too_long` only for
+ * HTTP 413 whose message matches /prompt is too long[^0-9]*(\d+) tokens? > (\d+)/
+ * — it then subtracts the two numbers and drops exactly that many tokens of
+ * history before retrying (its "reactive compact", trigger "ptl"). A 413 whose
+ * message does not carry both numbers in that order is surfaced to the user as
+ * a plain API error, which is what the previous wording did: correct code,
+ * unparseable text, so the one client that could have self-healed did not.
+ *
+ * The numbers are the real ones. `limit` is the ceiling we are enforcing, not
+ * the model's raw window, so the gap the client trims is the gap that actually
+ * has to go.
+ */
+function promptTooLongResponse(actualTokens, limitTokens, detail) {
+  const message =
+    `Prompt is too long: ${actualTokens} tokens > ${limitTokens} tokens. ${detail}`;
+  return new Response(
+    JSON.stringify({
+      error: { message, type: "invalid_request_error", code: "context_length_exceeded" },
+    }),
+    { status: 413, headers: { "Content-Type": "application/json" } }
+  );
+}
+
+export async function shouldSkipModel(modelStr, { inputTokens = 0, canServe = null } = {}) {
+  const slash = modelStr.indexOf("/");
+  const provider = slash > 0 ? modelStr.slice(0, slash) : "";
+  const model = slash > 0 ? modelStr.slice(slash + 1) : modelStr;
+
+  // Only the input is weighed against the input window. The output budget is a
+  // separate allowance upstream, so counting it here silently removes big-window
+  // models from long conversations. If a provider really does share one budget,
+  // it says so upstream and the cascade falls through on a real answer.
+  //
+  // Via modelContextWindow, NOT getCapabilitiesForModel directly. This line read
+  // the static table straight and so never saw a learned window: /api/context-window
+  // reported ox-alpha at 1,048,576 while this skip check still used 200,000, and
+  // the cascade dropped to gemini the moment the conversation crossed 200K —
+  // "Skipping openrouter/stealth/ox-alpha, request needs ~202065 tokens but
+  // window is 200000". One accessor for one question; there is no reason for a
+  // second path to the same number.
+  const contextWindow = modelContextWindow(modelStr);
+  // Sized with the pool-wide worst case, deliberately. Refining this per member
+  // looks obvious and does not work: `provider` here is the ROUTING PREFIX (ag,
+  // kr, cmc) while tokenRatio keys on the executor provider name (antigravity,
+  // kiro, commandcode), so every per-member lookup would miss and silently fall
+  // back to this same number. Wire a prefix->provider map first, then refine.
+  if (contextWindow && inputTokens > contextWindow) {
+    // Flagged, because this skip is the one kind that waiting cannot fix. Every
+    // other skip and failure here is a supply problem that resolves on its own;
+    // an oversized request is a property of the request and is still oversized
+    // in an hour. The tail uses this to answer 413 instead of a retryable 503.
+    return {
+      reason: `request needs ~${inputTokens} tokens but window is ${contextWindow}`,
+      tooLarge: true,
+      window: contextWindow,
+    };
+  }
+
+  if (canServe) {
+    let verdict = null;
+    try {
+      verdict = await canServe(modelStr);
+    } catch {
+      verdict = null; // probe broke: fall back to local memory rather than guess
+    }
+    if (verdict) {
+      if (verdict.serveable) return null;
+      return {
+        reason: "no account has capacity for it right now",
+        retryAfter: verdict.retryAfter || null,
+      };
+    }
+  }
+
+  // Quota exhaustion outlives a cooldown by hours — skip rather than spend a
+  // request rediscovering it. If every model is out, the cascade still falls
+  // through to the normal exhausted path.
+  if (isQuotaExhausted(modelStr)) {
+    return { reason: `quota exhausted for ${Math.round(quotaRemainingMs(modelStr) / 60000)}m` };
+  }
+
+  // A model that told us to back off is skipped until its window elapses —
+  // retrying it only spends a round trip to be told the same thing again.
+  if (isModelCoolingDown(modelStr)) {
+    return { reason: `cooling down for ${Math.round(modelCooldownRemaining(modelStr) / 1000)}s` };
+  }
+
+  return null;
+}
+
 /**
  * Handle combo chat with fallback
  * @param {Object} options
@@ -275,9 +774,12 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
  * @param {string} [options.comboStrategy] - Strategy: "fallback" or "round-robin"
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
+ * @param {Function} [options.canServe] - (modelStr) => boolean: does any account still
+ *   have capacity for this model? Supplied by the app's account layer; when omitted the
+ *   cascade falls back to its own per-model quota/cooldown memory.
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, canServe = null }) {
   // Apply rotation strategy if enabled
   let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
 
@@ -292,71 +794,306 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       rotatedModels = reordered;
     }
   }
+
+  // Health-aware demotion, applied last so it wins over rotation but never over
+  // a capability requirement being unmet — sick models move to the back, none
+  // are dropped, so a combo whose models are all sick still tries them all.
+  const healthOrdered = demoteUnhealthy(rotatedModels);
+  if (healthOrdered !== rotatedModels) {
+    log.info("COMBO", `health demotion → trying ${healthOrdered[0]} first`);
+    rotatedModels = healthOrdered;
+  }
   
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
+  // The most recent failure a client should come back from. Kept beside the last
+  // failure so a permanent-looking code from a trailing entry cannot bury the
+  // fact that an earlier one was merely busy.
+  let lastRetryable = null;
+  // Did EVERY entry drop out purely because the request does not fit it? Only
+  // then is the request itself the problem. One real attempt, or one skip for
+  // any supply reason, means the combo still had somewhere to go and the answer
+  // stays retryable. Starts true and is cleared by the first counter-example.
+  let onlyTooLarge = true;
+  let widestWindow = 0;
+  // Size from a MEASURED chars-per-token ratio once one exists. The ratio is
+  // learned from the provider's own input_tokens on every response (see
+  // services/tokenRatio.js), so after the first real call this stops being an
+  // estimate. Until then it falls back to the old constant times a safety factor,
+  // which is a guess and is labelled as one in the log.
+  const { chars, images } = measureBody(body);
+  const calibrated = isSizingCalibrated();
+  // sizingCharsPerToken, not charsPerToken. The mean is what we believe the
+  // tokenizer does; sizing needs the number that cannot under-count. See the
+  // header of services/tokenRatio.js for the production trace that forced the
+  // distinction — the mean swung 1.84 to 3.63 on one unchanged conversation.
+  //
+  // SIZE EACH CANDIDATE WITH ITS OWN PROVIDER'S RATIO. Called with no argument,
+  // sizingCharsPerToken returns the *worst* ratio in the whole pool, so one
+  // dense-tokenizer provider sizes every request for every other one. Measured
+  // 2026-08-25: ratio 2.39 against a measured mean of 4.32, a 1.8x over-count —
+  // a real 116k conversation was sized at 189k and refused against a 160k
+  // ceiling it was nowhere near. The pool-wide figure is still the honest
+  // default when we do not know who will answer, so it stays as `inputTokens`
+  // for the log and the client-facing messages; every per-model decision below
+  // asks with the model in hand.
+  const ratio = sizingCharsPerToken();
+  // ONE divisor, calibrated or not. The uncalibrated arm used to ignore `r` and
+  // fall back to `estimateInputTokens(body) * CONTEXT_ESTIMATE_SAFETY`, which is
+  // chars/4 * 2.5 — a fixed chars/1.6 — while the log printed `r` beside it. So
+  // the logged ratio was a number the code had not used, and every constant in
+  // tokenRatio.js was inert until a provider had answered three times.
+  //
+  // Measured 2026-08-26: a 549,218-char body was sized at 347,263 tokens against
+  // a real count near 147,000. At that figure the cascade skipped kr/claude-
+  // sonnet-4.5 (200K), oc/mimo-v2.5-free (200K) and openrouter/poolside/
+  // laguna-s-2.1:free (262K) for window — the last of them being the free member
+  // that had just served the same conversation and reported 3.74 chars/token. The
+  // combo then reported exhaustion with three members it could have used.
+  //
+  // The bootstrap is now the uncalibrated answer, which is what it was written to
+  // be: "the stopgap this module replaces". Nothing else changes — sizing still
+  // errs high, still takes the pool's worst ratio, still adds the image estimate.
+  const sizeOf = (measured, r) =>
+    Math.ceil(measured.chars / r) + measured.images * IMAGE_TOKEN_ESTIMATE;
+  const sizeFor = (modelStr) =>
+    sizeOf({ chars, images }, sizingCharsPerToken(splitModelStr(modelStr).provider));
+  const inputTokens = sizeOf({ chars, images }, ratio);
+  if (chars > 0) {
+    log.info(
+      "CTXCAL",
+      `chars=${chars} tokens=${inputTokens} ratio=${ratio.toFixed(2)} ` +
+      `mean=${charsPerToken().toFixed(2)} source=${calibrated ? "measured" : "assumed"}`
+    );
+  }
+
+  // Ask the client to compact BEFORE spending the cascade, not after exhausting
+  // it. Serving a request that already fills the widest eligible window means
+  // the next turn has nowhere to go: the reply only grows the conversation, and
+  // by then the members that could have answered are the ones it no longer fits.
+  //
+  // The ceiling is a share of the widest window still reachable, so it tracks
+  // live supply — as members exhaust or back off, the ceiling falls with them
+  // and the compact is requested earlier. That is both halves of the operator's
+  // rule in one number, and it is why this cannot live in the client: only the
+  // router knows which members are eligible on this request.
+  //
+  // Zero means no member declares a window, and a ceiling cannot be derived
+  // from nothing — fall through and let the cascade answer as it always did.
+  const { ceiling, head: headWindow, next: nextWindow } = compactCeiling(rotatedModels, COMPACT_HEADROOM_RATIO, sizeFor);
+  if (ceiling > 0 && inputTokens > ceiling) {
+    const boundByNext = nextWindow > 0 && nextWindow < Math.floor(headWindow * COMPACT_HEADROOM_RATIO);
+    const why = boundByNext
+      ? `the next member after ${rotatedModels[0]} holds only ${nextWindow} tokens`
+      : `it exceeds ${Math.round(COMPACT_HEADROOM_RATIO * 100)}% of ${rotatedModels[0]}'s ${headWindow}-token window`;
+
+    // Only ask for a compaction that can actually work. The request is over the
+    // ceiling, but the ceiling is a SOFT limit — a share of a window the head
+    // can still hold — so refusing is only worth it when dropping history would
+    // bring the next attempt back under it. Measure what compaction cannot
+    // touch; if that alone is already over, the client would compact, retry,
+    // and be refused again with a number that barely moved. It has no third
+    // move. Serving the request is the better answer: the head still fits it,
+    // and the conversation gets a turn in which to shrink.
+    const floor = sizeOf(measureFloor(body), ratio);
+    if (floor > ceiling) {
+      log.warn(
+        "COMBO",
+        `Request ~${inputTokens} tokens over the ${ceiling} ceiling, but ~${floor} of it is ` +
+        `system+tools+current turn — compaction cannot get under it, serving instead (${why})`
+      );
+    } else {
+      log.warn("COMBO", `Request ~${inputTokens} tokens — asking client to compact: ${why}`);
+      return promptTooLongResponse(
+        inputTokens,
+        ceiling,
+        `Combo "${comboName}" can serve at most ${ceiling} tokens right now: ${why}. ` +
+        `Compact the conversation and retry.`
+      );
+    }
+  }
+
+  // One entry's turn, lifted out of the loop so it can be run twice: once in
+  // pool order, and again over the entries the first pass never reached. Returns
+  // the deliverable Response on success and null on failure, recording the
+  // failure in the trackers above exactly as the single-pass version did.
+  const attemptModel = async (modelStr, i) => {
+  try {
+    // Third arg is the cascade position (0 = first choice), recorded as
+    // usageHistory.chainDepth. handleFusionChat's callback uses a third arg
+    // for isPanel, but that is a separate closure — this one is only ever
+    // paired with handleComboChat's (b, m) callback.
+    const result = await raceDeadline(
+      handleSingleModel(body, modelStr, i),
+      COMBO_RESPONSE_TIMEOUT_MS,
+      `${modelStr} response`
+    );
+
+    // Success (2xx) - verify an SSE stream produces data before committing to it.
+    if (result.ok) {
+      const ready = await preflightSseResponse(result, hasAssistantPrefill(body));
+      log.info("COMBO", `Model ${modelStr} succeeded`);
+      recordModelSuccess(modelStr);
+      return ready;
+    }
+
+    // Extract error info from response
+    let errorText = result.statusText || "";
+    let retryAfter = null;
+    let accountsLocked = false;
+    try {
+      const errorBody = await result.clone().json();
+      errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
+      retryAfter = errorBody?.retryAfter || null;
+      accountsLocked = errorBody?.accountsLocked === true;
+    } catch {
+      // Ignore JSON parse errors
+    }
+
+    // Track earliest retryAfter across all combo models
+    if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
+      earliestRetryAfter = retryAfter;
+    }
+
+    // Normalize error text to string (Worker-safe)
+    if (typeof errorText !== "string") {
+      try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
+    }
+
+    // Check if should fallback to next model
+    const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
+
+    // `accountsLocked` marks our own reply, synthesized when the account layer
+    // found every account locked. It quotes the provider's original text, so
+    // reading it back as a fresh verdict lets one provider 429 renew its own
+    // ban indefinitely. The account layer already holds the real expiry — the
+    // per-model memory below stays out of it.
+    if (!accountsLocked) {
+      // Remember it for subsequent requests, not just this cascade.
+      markModelCooldownFrom(modelStr, retryAfter, cooldownMs);
+      // Bound the ban by the provider's own reset time when it gave one; the
+      // default hour is a guess, and a guess should not outlive the fact.
+      if (isQuotaExhaustion(result.status, errorText)) {
+        // Only a reset time in the future replaces the default window. A value
+        // that parses to the past — or to an epoch offset, as a bare
+        // `retryAfter: 30` does — would otherwise store an already-expired ban,
+        // which is no ban at all.
+        const until = retryAfter ? new Date(retryAfter).getTime() : NaN;
+        const ttlMs = until > Date.now() ? until - Date.now() : undefined;
+        markQuotaExhausted(modelStr, Date.now(), ttlMs);
+      }
+    }
+    recordModelFailure(modelStr);
+
+    if (!shouldFallback) {
+      log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
+      return result;
+    }
+
+    // For transient errors (503/502/504), wait for cooldown before falling through
+    // so a briefly-overloaded provider gets a chance to recover rather than being
+    // skipped immediately (fixes: combo falls through on transient 503)
+    if (cooldownMs && cooldownMs > 0 && cooldownMs <= 5000 &&
+        (result.status === 503 || result.status === 502 || result.status === 504)) {
+      log.info("COMBO", `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
+      await new Promise(r => setTimeout(r, cooldownMs));
+    }
+
+    // Fallback to next model. Status and message move together: they describe
+    // one failure, and keeping the first status beside the last message hands
+    // the client a code from one provider explaining another provider's error.
+    lastError = errorText || String(result.status);
+    lastStatus = result.status;
+    if (isRetryableStatus(lastStatus)) lastRetryable = { status: lastStatus, error: lastError };
+    log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
+  } catch (error) {
+    // Catch unexpected exceptions to ensure fallback continues
+    lastError = error.message || String(error);
+    lastStatus = error.comboFallbackStatus || 500;
+    if (isRetryableStatus(lastStatus)) lastRetryable = { status: lastStatus, error: lastError };
+    // Score throw-class failures too. The returned-Response path records at
+    // the status branch above; without this, a model whose failure mode is
+    // "HTTP 200 then the stream ends before the first event" (preflight
+    // throws with comboFallbackStatus 502) stays permanently healthy and
+    // keeps winning first place over models that fail honestly.
+    recordModelFailure(modelStr);
+    log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
+  }
+    return null;
+  };
+
+  // Entries passed over for a supply reason — cooling down, quota-banned, no
+  // account capacity. Every one of those is a guess about the future, and the
+  // guess is only worth honouring while something else can still answer.
+  const deferred = [];
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
+
+    // Skipped entries are warn, not info: a combo quietly answering from its last
+    // entry because the earlier ones were never attempted is the failure mode this
+    // level of logging exists to make visible.
+    const skip = await shouldSkipModel(modelStr, { inputTokens: sizeFor(modelStr), canServe });
+    if (skip) {
+      log.warn("COMBO", `Skipping ${modelStr}, ${skip.reason}`);
+      if (skip.tooLarge) {
+        if (skip.window > widestWindow) widestWindow = skip.window;
+      } else {
+        // A supply-side skip is a prediction, not a fact about this request.
+        // Keep the entry so the second pass can test the prediction rather than
+        // let the combo report exhaustion with untried models in it.
+        onlyTooLarge = false;
+        deferred.push({ modelStr, i });
+      }
+      if (skip.retryAfter && (!earliestRetryAfter || new Date(skip.retryAfter) < new Date(earliestRetryAfter))) {
+        earliestRetryAfter = skip.retryAfter;
+      }
+      // A skipped entry is still a reason the request failed. Recording it keeps
+      // the all-failed response from degrading to a bare 503 with no detail and
+      // no Retry-After when every entry was skipped rather than tried. A real
+      // attempt's error is more informative, so it overwrites this below.
+      if (!lastError) {
+        lastError = `[${modelStr}] ${skip.reason}`;
+        lastStatus = 503;
+        lastRetryable = { status: lastStatus, error: lastError };
+      }
+      continue;
+    }
+    // Reached only when the entry was actually attempted: whatever happens next
+    // is a supply failure, not a sizing one.
+    onlyTooLarge = false;
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
-    try {
-      const result = await handleSingleModel(body, modelStr);
-      
-      // Success (2xx) - return response
-      if (result.ok) {
-        log.info("COMBO", `Model ${modelStr} succeeded`);
-        return result;
+    const served = await attemptModel(modelStr, i);
+    if (served) return served;
+  }
+
+  // Second pass — the reason this combo cannot report exhaustion while it still
+  // holds untried entries. Everything above either failed for real or was passed
+  // over on a *prediction*: cooling down, quota-banned, no account capacity. Those
+  // predictions are cheap to make and routinely wrong — a cooldown is a fixed
+  // guess at a provider's recovery, a quota ban defaults to an hour whether or not
+  // the provider said so, and the account probe answers for the account layer's
+  // bookkeeping rather than for the upstream. Spending one real request to find
+  // out beats handing the client a 503 with a pool of untouched models behind it.
+  //
+  // Only supply-side skips come back. An oversized request is excluded at the
+  // point it is recorded: no amount of retrying shrinks the conversation, and
+  // `onlyTooLarge` still owns that case below.
+  if (deferred.length > 0) {
+    log.warn(
+      "COMBO",
+      `Every available entry in "${comboName}" failed — re-trying ${deferred.length} deferred ` +
+      `entr${deferred.length === 1 ? "y" : "ies"}, ignoring cooldown and quota state`
+    );
+    for (const { modelStr, i } of deferred) {
+      log.info("COMBO", `Last resort ${modelStr} (was skipped, trying anyway)`);
+      const served = await attemptModel(modelStr, i);
+      if (served) {
+        log.info("COMBO", `Last resort ${modelStr} succeeded — the skip was a stale prediction`);
+        return served;
       }
-
-      // Extract error info from response
-      let errorText = result.statusText || "";
-      let retryAfter = null;
-      try {
-        const errorBody = await result.clone().json();
-        errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
-        retryAfter = errorBody?.retryAfter || null;
-      } catch {
-        // Ignore JSON parse errors
-      }
-
-      // Track earliest retryAfter across all combo models
-      if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
-        earliestRetryAfter = retryAfter;
-      }
-
-      // Normalize error text to string (Worker-safe)
-      if (typeof errorText !== "string") {
-        try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
-      }
-
-      // Check if should fallback to next model
-      const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
-
-      if (!shouldFallback) {
-        log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
-        return result;
-      }
-
-      // For transient errors (503/502/504), wait for cooldown before falling through
-      // so a briefly-overloaded provider gets a chance to recover rather than being
-      // skipped immediately (fixes: combo falls through on transient 503)
-      if (cooldownMs && cooldownMs > 0 && cooldownMs <= 5000 &&
-          (result.status === 503 || result.status === 502 || result.status === 504)) {
-        log.info("COMBO", `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
-        await new Promise(r => setTimeout(r, cooldownMs));
-      }
-
-      // Fallback to next model
-      lastError = errorText || String(result.status);
-      if (!lastStatus) lastStatus = result.status;
-      log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
-    } catch (error) {
-      // Catch unexpected exceptions to ensure fallback continues
-      lastError = error.message || String(error);
-      if (!lastStatus) lastStatus = 500;
-      log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
   }
 
@@ -364,9 +1101,32 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   // Use 503 (Service Unavailable) rather than 406 (Not Acceptable) — 406 implies
   // the request itself is invalid, but here the providers are simply unavailable
   // or have no active credentials. 503 is more accurate and retryable by clients.
-  const allDisabled = lastError && lastError.toLowerCase().includes("no credentials");
-  const status = allDisabled ? 503 : (lastStatus || 503);
-  const msg = lastError || "All combo models unavailable";
+  // Quote a failure the client can act on. A 400 from the last entry ends an
+  // agent loop that a 429 from an earlier one would have survived, so when the
+  // trailing failure looks permanent but an earlier one was transient, the
+  // transient one is reported — status and message together, still one failure.
+  // Nothing in the combo was even tried, and every entry was passed over for the
+  // same reason: the request is bigger than the model. Reporting that as 503 —
+  // which is what the skip path records at `lastStatus` — tells the client the
+  // providers are down and invites a retry, so the agent loops on a condition
+  // that cannot change until the conversation is compacted. 413 is the honest
+  // code: not retryable, and the message says what to do about it.
+  if (onlyTooLarge && widestWindow > 0) {
+    const msg =
+      `Request is ~${inputTokens} tokens; the largest context window in ` +
+      `combo "${comboName}" is ${widestWindow}. No model in this combo can serve it — ` +
+      `compact the conversation or switch to a combo with a larger window.`;
+    log.warn("COMBO", `All models skipped for context size | ${msg}`);
+    return promptTooLongResponse(inputTokens, widestWindow, msg);
+  }
+
+  const quoted = (lastRetryable && !isRetryableStatus(lastStatus))
+    ? lastRetryable
+    : { status: lastStatus, error: lastError };
+
+  const allDisabled = quoted.error && quoted.error.toLowerCase().includes("no credentials");
+  const status = allDisabled ? 503 : (quoted.status || 503);
+  const msg = quoted.error || "All combo models unavailable";
 
   if (earliestRetryAfter) {
     const retryHuman = formatRetryAfter(earliestRetryAfter);

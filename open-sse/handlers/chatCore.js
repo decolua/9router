@@ -22,10 +22,13 @@ import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.j
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
+import { injectDisciplineNudge } from "../rtk/disciplineNudge.js";
+import { injectLanguageLock } from "../rtk/languageLock.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { compressWithPxpipe } from "../rtk/pxpipe.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
+import "../services/modalityRegistry.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
@@ -57,7 +60,7 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisciplineLock, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, comboName = null, chainDepth = 0, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -270,6 +273,34 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     xf.push(`PONYTAIL:${ponytailLevel}`);
   }
 
+  // Discipline nudge: one corrective line on the request that follows a
+  // malformed-output strike (doubled tool JSON, echoed harness XML). Armed by
+  // recordStrike, consumed once here — unconditional, since a model that just
+  // emitted garbage needs correcting whether or not token-saver is on.
+  if (injectDisciplineNudge(translatedBody, finalFormat, provider, model)) {
+    xf.push("NUDGE");
+  }
+
+  // Language lock: pin every part of the response to one language. Unconditional
+  // for the same reason as the discipline nudge — a policy setting, not a token
+  // saver. See rtk/languageLock.js for why this is an instruction and not a
+  // filter over the output.
+  //
+  // This replaced the orchestration nudge (ADR 0003), which stated the live
+  // novel-context count whenever a session was past a delegation cap of 6. Two
+  // measurements retired it. The cap was below its own break-even: a delegation
+  // costs a median 313,582 units against 34,514 for a main-thread turn, so it is
+  // worth ~9 inline turns and the nudge fired at 6, pushing every session it
+  // touched into a losing trade. And it did not work — ADR 0003 conceded it
+  // "nudges and cannot compel", then session dce6e9bd took 23 further inline
+  // calls with the nudge firing at `firm` on all five logged turns. An
+  // ineffective instruction on every request is not free; it is a standing tax
+  // on the system prompt that also trains the model to discount what it says.
+  const lockedLanguage = injectLanguageLock(translatedBody, finalFormat);
+  if (lockedLanguage) {
+    xf.push(`LANG:${lockedLanguage}`);
+  }
+
   // PXPIPE: image bulky context (Claude-format bodies only), last saver before dispatch
   let pxpipeSummary = null;
   if (pxpipeEnabled) {
@@ -438,7 +469,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, resetsAtMs);
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
+  // sessionSeed is the resolved client session (sessionManager.resolveSessionId).
+  // Passing it as sessionId puts request attribution in reach of every usage
+  // writer — all four response paths spread sharedCtx.
+  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, sessionId: sessionSeed || null, comboName: comboName || null, chainDepth: chainDepth || 0, clientRawRequest, onRequestSuccess, onDisciplineLock, pxpipe: pxpipeSummary, reqTag, log };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 

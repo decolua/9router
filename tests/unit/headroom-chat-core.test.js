@@ -194,9 +194,13 @@ describe("handleChatCore Headroom diagnostics", () => {
       },
     });
 
+    // arrayContaining, not an exact array: rtk/languageLock.js prepends a system
+    // message to every outbound body. What this test is about is that the
+    // compressed message reached the executor and the original did not, which
+    // the next assertion pins.
     expect(executeMock).toHaveBeenCalledWith(expect.objectContaining({
       body: expect.objectContaining({
-        messages: [{ role: "user", content: compressed }],
+        messages: expect.arrayContaining([{ role: "user", content: compressed }]),
       }),
     }));
     expect(JSON.stringify(executeMock.mock.calls[0][0].body)).not.toContain(original);
@@ -288,9 +292,12 @@ describe("handleChatCore Headroom diagnostics", () => {
 
     expect(global.fetch).not.toHaveBeenCalled();
     expect(pxpipeTransform).not.toHaveBeenCalled();
+    // arrayContaining for the same reason as above: the language lock adds a
+    // system message even when the client asks for token savers to be bypassed,
+    // because it is a policy setting rather than a saver.
     expect(executeMock).toHaveBeenCalledWith(expect.objectContaining({
       body: expect.objectContaining({
-        messages: [{ role: "user", content: "Write polished prose." }],
+        messages: expect.arrayContaining([{ role: "user", content: "Write polished prose." }]),
       }),
     }));
   });

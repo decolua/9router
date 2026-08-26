@@ -1,7 +1,8 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
-import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { MAX_RATE_LIMIT_COOLDOWN_MS, MAX_QUOTA_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { isQuotaExhaustion } from "open-sse/services/quotaState.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import * as log from "../utils/logger.js";
 
@@ -207,6 +208,42 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 }
 
 /**
+ * Does any account still have capacity for this provider+model right now?
+ *
+ * A read-only probe, deliberately free of the selection side effects (mutex,
+ * lastUsedAt bookkeeping, round-robin advance) that getProviderCredentials
+ * carries. The combo cascade asks before passing over an entry, so a single
+ * account's rate limit can't hide a provider whose other accounts are idle.
+ *
+ * Returns `null` to mean "no opinion", which the cascade reads as "decide for
+ * yourself" rather than as capacity. Two cases have no per-account state worth
+ * consulting: no-auth free providers, which never get a lock written against
+ * them and so would look eternally available, and providers with nothing
+ * configured, which should be attempted so the caller surfaces the real
+ * no-credentials error instead of a silent skip.
+ *
+ * @param {string} provider - Provider id or alias
+ * @param {string|null} model - Provider-native model name
+ * @returns {Promise<{serveable: boolean, retryAfter: string|null}|null>}
+ */
+export async function probeAccountCapacity(provider, model = null) {
+  const providerId = resolveProviderId(provider);
+  if (FREE_PROVIDERS[providerId]?.noAuth) return null;
+
+  const connections = await getProviderConnections({ provider: providerId, isActive: true });
+  if (connections.length === 0) return null;
+
+  if (connections.some((c) => !isModelLockActive(c, model))) {
+    return { serveable: true, retryAfter: null };
+  }
+
+  // Every account is locked — hand back when the first one frees up so the
+  // cascade can still tell the client when to come back.
+  const expiries = connections.map((c) => getEarliestModelLockUntil(c)).filter(Boolean).sort();
+  return { serveable: false, retryAfter: expiries[0] || null };
+}
+
+/**
  * Mark account+model as unavailable — locks modelLock_${model} in DB.
  * All errors (429, 401, 5xx, etc.) lock per model, not per account.
  * @param {string} connectionId
@@ -226,26 +263,55 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const githubResetAtMs = githubMonthlyResetMs(status, errorText, provider);
 
   // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
-  let shouldFallback, cooldownMs, newBackoffLevel;
+  let shouldFallback, cooldownMs, newBackoffLevel, requestScoped;
   if (githubResetAtMs) {
     shouldFallback = true;
     cooldownMs = githubResetAtMs - Date.now();
     newBackoffLevel = 0;
   } else if (resetsAtMs && resetsAtMs > Date.now()) {
+    // A hard quota states its own return time and means it; a rolling rate limit
+    // gets the shorter cap so a bad estimate can't sideline an account for days.
+    const cap = isQuotaExhaustion(status, errorText) ? MAX_QUOTA_COOLDOWN_MS : MAX_RATE_LIMIT_COOLDOWN_MS;
     shouldFallback = true;
-    cooldownMs = Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
+    cooldownMs = Math.min(resetsAtMs - Date.now(), cap);
     newBackoffLevel = 0;
   } else {
-    ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));
+    ({ shouldFallback, cooldownMs, newBackoffLevel, requestScoped } =
+      checkFallbackError(status, errorText, backoffLevel));
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
+
+  // The failure belongs to the request, not to this account. Falling over is still
+  // right — this request has to go somewhere else — but writing a lock would answer
+  // a question nobody asked: `probeAccountCapacity` reads these locks on behalf of
+  // every concurrent caller, so a lock here withdraws a healthy model from sessions
+  // whose requests are fine. Leave the connection row untouched for the same reason;
+  // an account that served the previous request and will serve the next one is not
+  // "unavailable", and marking it so turns one client's bad payload into an operator
+  // alert. The upstream error is still logged in full by the caller.
+  if (requestScoped) {
+    const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
+    const scopedReason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
+    log.warn(
+      "AUTH",
+      `${connName} rejected this request for ${model || "the account"} [${status}] — ` +
+        `request-scoped, no lock written: ${scopedReason}`
+    );
+    return { shouldFallback: true, cooldownMs: 0, requestScoped: true };
+  }
 
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
   const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
 
+  // "unavailable" reads as busy — it clears itself once the window passes. A 401
+  // or 403 will not: the account is refused, not throttled, and only an operator
+  // re-authorizing it changes that. "expired" already renders as an error state
+  // in the dashboard, so it distinguishes the two without inventing a status.
+  const refused = Number(status) === 401 || Number(status) === 403;
+
   await updateProviderConnection(connectionId, {
     ...lockUpdate,
-    testStatus: "unavailable",
+    testStatus: refused ? "expired" : "unavailable",
     lastError: reason,
     errorCode: status,
     lastErrorAt: new Date().toISOString(),

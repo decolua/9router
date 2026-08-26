@@ -1,7 +1,22 @@
 import { NextResponse } from "next/server";
-import { getCombos, createCombo, getComboByName } from "@/lib/localDb";
+import { cookies } from "next/headers";
+import { getCombos, createCombo, getComboByName, getSettings } from "@/lib/localDb";
+import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 
 export const dynamic = "force-dynamic";
+
+// This route mutates routing configuration and is reachable on the public host.
+// There is no middleware.js in this app, so nothing else guards it. Same check
+// /api/auth/oidc/test uses: honour requireLogin=false for local-only setups,
+// otherwise require a valid dashboard session.
+async function canEditCombos() {
+  const settings = await getSettings();
+  if (settings.requireLogin === false) return true;
+  const cookieStore = await cookies();
+  return await verifyDashboardAuthToken(cookieStore.get("auth_token")?.value);
+}
+
+const unauthorized = () => NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -20,6 +35,7 @@ export async function GET() {
 // POST /api/combos - Create new combo
 export async function POST(request) {
   try {
+    if (!(await canEditCombos())) return unauthorized();
     const body = await request.json();
     const { name, models, kind } = body;
 

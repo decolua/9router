@@ -40,8 +40,13 @@ npx vitest run unit/capabilities.test.js   # single file (path relative to tests
 ```
 > The committed `tests/package.json` `test` script hardcodes Unix paths (`NODE_PATH=/tmp/node_modules …`) — a shared-install workaround from upstream. On Windows (or anywhere), ignore it and use the `npx vitest` form above; `vitest.config.js` resolves the `open-sse`/`@/` aliases from the repo root regardless of where vitest lives.
 >
-> **The suite is NOT expected to be all-green on a plain checkout.** ~938 pass, ~64 fail. Judge regressions with `tests/__baseline__/verify-no-regression.mjs`, not a raw run. Expected red:
-> - 26 catalogued in `tests/__baseline__/known-fails.txt` (rtk, oauth-cursor-auto-import, translator-request-normalization, …).
+> **The suite is NOT expected to be all-green on a plain checkout.** 1846 pass, 84 fail (re-measured 2026-08-12). Judge regressions with `tests/__baseline__/verify-no-regression.mjs`, not a raw run:
+> ```bash
+> cd tests && npx vitest run --reporter=json --outputFile=/tmp/results.json
+> cd .. && node tests/__baseline__/verify-no-regression.mjs /tmp/results.json
+> ```
+> - All are catalogued in `tests/__baseline__/known-fails.txt`, so the gate is meaningful again. It had drifted badly — 24 entries against 98 actual failures — and the verifier itself only worked inside the container, because it recovered the repo-relative path by splitting on `/app/`. It now anchors on the `tests/` segment, so it runs anywhere. Regenerate the list the same way you verify, writing the failures to that file, and only when you have confirmed the new reds are not yours. Regenerate from the **union of two runs** — one on your branch and one on a stashed clean tree. `unit/cli-xai-video.test.js` and `unit/xai-oauth-service.test.js` alternate between passing and failing across runs, so a baseline built from a single run makes the next run look like a regression.
+> - The largest block, 35 in `unit/cursor-agent-proto.test.js`, imports `buildAgentRunFrame`, `encodeAgentValue` and six other symbols that **exist nowhere in the source** — it is a test for a Cursor AgentService codec that was never written. Delete it or write the codec; do not "fix" it.
 > - `unit/embeddings.cloud.test.js` imports `cloud/src/handlers/embeddings.js` — the `cloud/` worker dir is **not in this repo**, so it always fails here.
 > - `unit/xai-oauth-service.test.js` times out (5s) when the xAI endpoint-discovery fetch isn't reachable/mocked.
 > - `real/*.real.test.js` make live provider calls — need credentials, skip otherwise.
@@ -82,10 +87,23 @@ State is **no longer `db.json`**. It's a SQLite layer under `src/lib/db/` with a
 ### RTK token saver (`open-sse/rtk/`)
 Pre-translate hooks that compress `tool_result` content in-place to cut tokens. **Fail-open**: any error returns null and leaves the body untouched — never throw out of them. Skips `is_error`/`status:"error"` results to preserve traces.
 
+Not everything here is compression. `systemInject.js` is the shared, format-aware system-prompt appender (Claude `system[]`, Gemini `systemInstruction.parts`, OpenAI `messages[]`/`instructions`), and three hooks build on it: `caveman`/`ponytail` (style, opt-in), `disciplineNudge` (corrects a past malformed-output strike; **stateful**, armed by `recordStrike` and consumed once), and `orchestrationNudge` (states the live delegation count when a session is over cap; **stateless** — it recomputes from the request body each turn because the condition is still true, see `docs/adr/0003`). The last two are unconditional: they are policy corrections, not token savers, so they do not check `tokenSaverEnabled`. Note the ordering — `translateRequest` runs first (`handlers/chatCore.js`), then RTK/Headroom, then these injectors; anything counting client-shaped tool blocks must read the **source** body and inject into the **translated** one.
+
 ## Conventions & gotchas
 
 - Plain JavaScript (ESM), no TypeScript. `@/*` path alias → `src/*` (`jsconfig.json`).
 - `custom-server.js` wraps the Next standalone server to derive client IP from the TCP socket and strip attacker-controlled `X-Forwarded-For` — trusting forwarding headers only from a loopback reverse proxy. Preserve this when touching request/IP/rate-limit code.
 - Security-sensitive env: `JWT_SECRET` (session cookie), `INITIAL_PASSWORD` (default `123456` — must override), `API_KEY_SECRET`, `MACHINE_ID_SALT`. Full env contract in `.env.example` and ARCHITECTURE.md's env matrix.
 - Binary/protobuf upstreams (kiro EventStream, cursor protobuf, commandcode NDJSON) don't round-trip through OpenAI — they're handled inside their own executor, not the translator.
-- Versioning: root and `cli/` are versioned independently; changes are logged in `CHANGELOG.md`. Commit style is Conventional Commits (`fix(translator): …`, `feat(...)`).
+- Upstream merges follow a fixed policy, and it is automated: `.github/workflows/upstream-sync.yml`
+  runs daily, and `scripts/upstream-assess.mjs` splits incoming commits into **clean** (touch no
+  file this fork has changed — nothing to decide) and **contended** (they do, and each names the
+  fork commits that touched the same file). The rule for a contended commit: if upstream already
+  handles what our change was for, **take upstream and fix forward from it**, even when it still
+  needs work — do not reinstate ours. Only where no official equivalent exists does our version
+  win. The job never writes to `inyund`; it opens a PR, because a commit merged on a green tick
+  is a commit merged without assessment. Its regression gate is the baseline verifier, not a raw
+  pass count — and a clean automerge is not a working one.
+- Versioning: root and `cli/` are versioned independently; changes are logged in `CHANGELOG.md` under a `# Unreleased` heading at the top, folded into the version section when a release is cut. Commit style is Conventional Commits (`fix(translator): …`, `feat(...)`).
+- Model identity: registry model entries declare `family` / `effort` / `mode` — a band is never inferred from the shape of an id. Read `CONTEXT.md` for the vocabulary and `docs/adr/0001` before touching `tuner/tune.mjs` banding or adding an effort-suffixed model.
+- On Windows, set `git config core.fileMode false` in your clone. Windows cannot represent the exec bit, so the default reports `cli/cli.js`, `scripts/translate-readme.js` and `start.sh` as permanently modified (`100755 → 100644`) with zero content change, which blocks `git stash pop` and pollutes every diff. The `100755` modes stay correct in the index either way.

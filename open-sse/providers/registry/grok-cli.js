@@ -74,9 +74,13 @@ export default {
       maxOutputTokens: 64000,
     },
     { id: "grok-4.5", name: "Grok 4.5" },
-    { id: "grok-4.5-high", name: "Grok 4.5 (High)", upstreamModelId: "grok-4.5" },
-    { id: "grok-4.5-medium", name: "Grok 4.5 (Medium)", upstreamModelId: "grok-4.5" },
-    { id: "grok-4.5-low", name: "Grok 4.5 (Low)", upstreamModelId: "grok-4.5" },
+    // One upstream model, three efforts. Before these declarations all three
+    // substring-matched `grok-4.5` and shared its opus band, so the low variant
+    // was eligible wherever the full model was - the same defect that put
+    // ag/gemini-3.1-pro-low into a fable-band combo.
+    { id: "grok-4.5-high", name: "Grok 4.5 (High)", upstreamModelId: "grok-4.5", family: "grok-4.5", effort: "high" },
+    { id: "grok-4.5-medium", name: "Grok 4.5 (Medium)", upstreamModelId: "grok-4.5", family: "grok-4.5", effort: "medium" },
+    { id: "grok-4.5-low", name: "Grok 4.5 (Low)", upstreamModelId: "grok-4.5", family: "grok-4.5", effort: "low" },
   ],
   features: {
     usage: true,

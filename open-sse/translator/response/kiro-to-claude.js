@@ -15,6 +15,9 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
+// Shared with openai-to-claude rather than copied: duplicating this filter is
+// exactly how it ended up missing from two of three response paths.
+import { filterEchoText, filterUserEcho } from "./openai-to-claude.js";
 
 function stopThinkingBlock(state, results) {
   if (!state.thinkingBlockStarted) return;
@@ -64,7 +67,12 @@ export function kiroToClaudeResponse(chunk, state) {
 
   const results = [];
   const choice = data.choices[0];
-  const delta = choice.delta || {};
+  // `let`, not `const`: the echo guards below rebind this after filtering. The
+  // upstream v0.5.55 merge brought in a `const` declaration here while our echo
+  // filtering kept its reassignment further down, and git merged both without
+  // reporting a conflict — leaving a TypeError on every text chunk through this
+  // path. Nothing catches that at review time; only running it does.
+  let delta = choice.delta || {};
 
   // Track usage if present on the chunk.
   if (data.usage && typeof data.usage === "object") {
@@ -130,6 +138,15 @@ export function kiroToClaudeResponse(chunk, state) {
   }
 
   // Regular text content.
+  // Second →Claude path, so it needs the same echo guards openai-to-claude has:
+  // harness XML the model parroted back, and the user's own message returned
+  // verbatim. Filtering here rather than at the emit below keeps the block
+  // bookkeeping untouched when everything is dropped.
+  if (delta.content) {
+    const filtered = filterUserEcho(state, filterEchoText(state, delta.content));
+    if (!filtered) return results;
+    delta = { ...delta, content: filtered };
+  }
   if (delta.content) {
     stopThinkingBlock(state, results);
     if (!state.textBlockStarted) {

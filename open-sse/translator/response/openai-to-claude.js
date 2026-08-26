@@ -3,6 +3,8 @@ import { FORMATS } from "../formats.js";
 import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK } from "../schema/index.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
+import { recordStrike } from "../../utils/discipline.js";
+import { isUserEcho } from "../../utils/userEcho.js";
 
 // Legacy "proxy_" prefix used by older request translators. Response strips it
 // defensively so tool names from such turns resolve back (e.g. proxy_Read → Read
@@ -10,8 +12,14 @@ import { extractReasoningText } from "../concerns/reasoning.js";
 // is then a no-op. Kept intentionally; do NOT couple to request's empty prefix.
 const CLAUDE_OAUTH_TOOL_PREFIX = "proxy_";
 
+function recordToolJsonStrike(state) {
+  const { shouldLock } = recordStrike(state.servingModel, "doubled-json");
+  if (!shouldLock) return;
+  try { state.onDisciplineLock?.("doubled-json"); } catch { /* discipline must not break output */ }
+}
+
 // Sanitize tool call arguments to fix bad params from non-Anthropic models
-function sanitizeToolArgs(toolName, argsJson) {
+function sanitizeToolArgs(state, toolName, argsJson, strikeRecorded = false) {
   try {
     const args = JSON.parse(argsJson);
     const name = toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)
@@ -20,6 +28,14 @@ function sanitizeToolArgs(toolName, argsJson) {
     if (name === "Read") sanitizeReadArgs(args);
     return JSON.stringify(args);
   } catch {
+    // Known non-Anthropic failure: the complete args JSON emitted twice
+    // back-to-back ({...}{...}), which the client cannot parse. Halve and retry.
+    const half = argsJson.length / 2;
+    if (Number.isInteger(half) && argsJson.slice(0, half) === argsJson.slice(half)) {
+      if (!strikeRecorded) recordToolJsonStrike(state);
+      return sanitizeToolArgs(state, toolName, argsJson.slice(0, half), true);
+    }
+    if (!strikeRecorded) recordToolJsonStrike(state);
     return argsJson;
   }
 }
@@ -46,6 +62,117 @@ function isValidPdfPagesArg(filePath, pages) {
     /^\d+(?:-\d+)?$/.test(pages);
 }
 
+// Some models (gemini family observed) echo the client harness's XML wrapper
+// blocks (<instructions>, <system-reminder>, ...) verbatim into their visible
+// output. Models never legitimately emit these tags, so drop the whole block.
+// Streaming-safe: tags split across chunks are held in state.echoCarry.
+// `analysis` was added 2026-08-23. Claude Code's compaction prompt asks the model
+// for an <analysis> block followed by a <summary> block; once one of those replies
+// is in the transcript the model copies the shape on ordinary turns too, and its
+// reasoning arrives as visible text rather than as a thinking block. Observed on
+// ag/gemini-pro-agent: a full page of "First, let's address..." rendered to the
+// user as the answer. The Gemini thought->thinking mapping is not at fault and
+// was checked — these parts arrive with thought unset, as plain text.
+//
+// `summary` is deliberately NOT in this list and must not be added. During
+// compaction that block IS the payload the client consumes; stripping it would
+// leave Claude Code with nothing to compact to and break the session outright,
+// which is a far worse failure than showing a tag.
+const ECHO_TAGS = ["instructions", "system-reminder", "task-notification", "command-message", "command-name", "analysis"];
+
+// Longest attribute run tolerated inside an opening tag before it stops looking
+// like one. Bounds state.echoCarry: without it, `<instructions ` with no closing
+// `>` would buffer the rest of the stream.
+const MAX_OPEN_TAG_SPAN = 512;
+
+// A model repeating the user's own message back as its reply. Judged on the
+// accumulated visible text rather than per chunk, because the regurgitation
+// only becomes recognisable once enough of it has arrived. Conservative by
+// design — see userEcho.js; a short quote of the user is never touched.
+export function filterUserEcho(state, out) {
+  if (!out || !state.lastUserText || state.userEchoDropped) return out;
+  state.echoSeen = (state.echoSeen || "") + out;
+  if (!isUserEcho(state.echoSeen, state.lastUserText)) return out;
+  state.userEchoDropped = true;
+  try { recordStrike(state.servingModel, "echo"); } catch { /* discipline must not break output */ }
+  return "";
+}
+
+export function filterEchoText(state, text) {
+  let buf = (state.echoCarry || "") + text;
+  state.echoCarry = "";
+  let out = "";
+  while (buf.length) {
+    if (state.echoDropTag) {
+      const close = "</" + state.echoDropTag + ">";
+      const i = buf.indexOf(close);
+      if (i === -1) {
+        // hold a tail that could be the start of a split closing tag
+        state.echoCarry = buf.slice(Math.max(0, buf.length - (close.length - 1)));
+        return out;
+      }
+      buf = buf.slice(i + close.length);
+      state.echoDropTag = null;
+      continue;
+    }
+    const lt = buf.indexOf("<");
+    if (lt === -1) { out += buf; break; }
+    out += buf.slice(0, lt);
+    buf = buf.slice(lt);
+    let matched = false, partial = false;
+    for (const tag of ECHO_TAGS) {
+      // Matched WITH ATTRIBUTES: this compared against the literal "<tag>", and a
+      // model got a whole block through by opening it
+      // `<task-notification task_id="...">`. See echoScrub.js for the incident.
+      // Only whitespace may follow the name, so `<system-reminders>` is still not
+      // `<system-reminder>`.
+      const prefix = "<" + tag;
+      if (buf.startsWith(prefix)) {
+        const rest = buf.slice(prefix.length);
+        if (!rest) { partial = true; break; }   // one more character decides it
+        let consumed = -1;
+        if (rest[0] === ">") {
+          consumed = prefix.length + 1;
+        } else if (/\s/.test(rest[0])) {
+          const gt = rest.indexOf(">");
+          // Attributes can straddle a chunk boundary, so an unterminated tag is
+          // held — but only up to a bound. A model that emits `<instructions `
+          // and never closes it must not stall the stream indefinitely.
+          if (gt === -1) {
+            if (rest.length <= MAX_OPEN_TAG_SPAN) { partial = true; break; }
+            continue;                            // give up; emit as ordinary text
+          }
+          if (gt > MAX_OPEN_TAG_SPAN) continue;
+          consumed = prefix.length + gt + 1;
+        }
+        if (consumed === -1) continue;           // e.g. <system-reminders>, not ours
+        state.echoDropTag = tag;
+        buf = buf.slice(consumed);
+        matched = true;
+        // Echoing harness XML is a discipline strike. It never locks the model
+        // (only doubled-json counts toward the threshold) but it arms a nudge
+        // on this model's next request.
+        try { recordStrike(state.servingModel, "echo"); } catch { /* discipline must not break output */ }
+        break;
+      }
+      if (prefix.startsWith(buf)) partial = true;
+    }
+    if (matched) continue;
+    if (partial) { state.echoCarry = buf; return out; }
+    out += "<";
+    buf = buf.slice(1);
+  }
+  return out;
+}
+
+// End of stream: an unclosed echo block is dropped; a held non-tag prefix is real text.
+export function flushEchoText(state) {
+  const tail = state.echoDropTag ? "" : (state.echoCarry || "");
+  state.echoCarry = "";
+  state.echoDropTag = null;
+  return tail;
+}
+
 // Helper: stop thinking block if started
 function stopThinkingBlock(state, results) {
   if (!state.thinkingBlockStarted) return;
@@ -69,7 +196,85 @@ function stopTextBlock(state, results) {
 
 // Convert OpenAI stream chunk to Claude format
 export function openaiToClaudeResponse(chunk, state) {
-  if (!chunk || !chunk.choices?.[0]) return null;
+  if (!chunk || !chunk.choices?.[0]) {
+    if (!state.finishHandled && state.messageStartSent) {
+      state.finishHandled = true;
+      const results = [];
+      const echoTail = flushEchoText(state);
+      if (echoTail) {
+        if (!state.textBlockStarted) {
+          state.textBlockIndex = state.nextBlockIndex++;
+          state.textBlockStarted = true;
+          state.textBlockClosed = false;
+          results.push({
+            type: "content_block_start",
+            index: state.textBlockIndex,
+            content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+          });
+        }
+        results.push({
+          type: "content_block_delta",
+          index: state.textBlockIndex,
+          delta: { type: "text_delta", text: echoTail }
+        });
+      }
+      // Emitting message_stop having opened no block at all hands the client an
+      // empty message. Claude Code renders nothing for that, persists no
+      // assistant entry, and injects "[Your previous response had no visible
+      // output. Please continue...]" — which produces another empty turn, and
+      // the loop never terminates. 238 instances of that marker were found
+      // across ~/.claude/projects, spanning every provider that lands on this
+      // route, not just gemini. See gemini-to-claude.js for the same guard on
+      // the direct route.
+      if (!state.textBlockStarted && !state.thinkingBlockStarted && !(state.toolCalls?.size > 0)) {
+        state.textBlockIndex = state.nextBlockIndex++;
+        state.textBlockStarted = true;
+        state.textBlockClosed = false;
+        results.push({
+          type: "content_block_start",
+          index: state.textBlockIndex,
+          content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+        });
+        results.push({
+          type: "content_block_delta",
+          index: state.textBlockIndex,
+          delta: {
+            type: "text_delta",
+            text: `[9router] ${state.model || "upstream"} closed the stream without producing any content.`
+              + " This is an upstream failure, not a tool error. Retry, or switch model —"
+              + " repeating the request unchanged may fail the same way."
+          }
+        });
+      }
+      stopThinkingBlock(state, results);
+      stopTextBlock(state, results);
+      for (const [idx, toolInfo] of state.toolCalls) {
+        const buffered = state.toolArgBuffers?.get(idx);
+        if (buffered) {
+          const sanitized = sanitizeToolArgs(state, toolInfo.name, buffered);
+          results.push({
+            type: "content_block_delta",
+            index: toolInfo.blockIndex,
+            delta: { type: "input_json_delta", partial_json: sanitized }
+          });
+        }
+        results.push({
+          type: "content_block_stop",
+          index: toolInfo.blockIndex
+        });
+      }
+      state.finishReason = "end_turn";
+      const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+      results.push({
+        type: "message_delta",
+        delta: { stop_reason: "end_turn", stop_sequence: null },
+        usage: finalUsage
+      });
+      results.push({ type: "message_stop" });
+      return results.length > 0 ? results : null;
+    }
+    return null;
+  }
 
   const results = [];
   const choice = chunk.choices[0];
@@ -130,7 +335,15 @@ export function openaiToClaudeResponse(chunk, state) {
         content: [],
         stop_reason: null,
         stop_sequence: null,
-        usage: { input_tokens: 0, output_tokens: 0 }
+        // Not a hardcoded zero. An OpenAI-compatible upstream reports usage only
+        // in its final chunk, so the true input count does not exist yet — but
+        // Claude's message_start is where clients read it, and Claude Code sizes
+        // its context meter from exactly this field. Emitting 0 told it the
+        // conversation was empty, so the meter read 0% through a 200k session
+        // and it never compacted on its own; it just hit the wall. The hint is
+        // seeded from the request body in utils/stream.js and is superseded by
+        // the provider's real number as soon as one arrives.
+        usage: { input_tokens: state.inputTokenHint || 0, output_tokens: 0 }
       }
     });
   }
@@ -159,24 +372,27 @@ export function openaiToClaudeResponse(chunk, state) {
 
   // Handle regular content
   if (delta?.content) {
-    stopThinkingBlock(state, results);
+    const emitText = filterUserEcho(state, filterEchoText(state, delta.content));
+    if (emitText) {
+      stopThinkingBlock(state, results);
 
-    if (!state.textBlockStarted) {
-      state.textBlockIndex = state.nextBlockIndex++;
-      state.textBlockStarted = true;
-      state.textBlockClosed = false;
+      if (!state.textBlockStarted) {
+        state.textBlockIndex = state.nextBlockIndex++;
+        state.textBlockStarted = true;
+        state.textBlockClosed = false;
+        results.push({
+          type: "content_block_start",
+          index: state.textBlockIndex,
+          content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+        });
+      }
+
       results.push({
-        type: "content_block_start",
+        type: "content_block_delta",
         index: state.textBlockIndex,
-        content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+        delta: { type: "text_delta", text: emitText }
       });
     }
-
-    results.push({
-      type: "content_block_delta",
-      index: state.textBlockIndex,
-      delta: { type: "text_delta", text: delta.content }
-    });
   }
 
   // Tool calls
@@ -215,14 +431,40 @@ export function openaiToClaudeResponse(chunk, state) {
         if (toolInfo) {
           // Buffer args instead of streaming — sanitize at finish to fix bad params
           if (!state.toolArgBuffers) state.toolArgBuffers = new Map();
-          state.toolArgBuffers.set(idx, (state.toolArgBuffers.get(idx) || "") + tc.function.arguments);
+          const prev = state.toolArgBuffers.get(idx) || "";
+          const inc = tc.function.arguments;
+          // Some providers stream cumulative args (each chunk restates the full
+          // string so far) — appending would duplicate the JSON. Replace when
+          // the new chunk already carries the buffer as its prefix.
+          state.toolArgBuffers.set(idx, prev && inc.startsWith(prev) ? inc : prev + inc);
         }
       }
     }
   }
 
-  // Finish
-  if (choice.finish_reason) {
+  // Finish. Guarded: some providers repeat finish_reason on a trailing usage
+  // chunk — re-running this block would emit the buffered args a second time.
+  if (choice.finish_reason && !state.finishHandled) {
+    state.finishHandled = true;
+    // Flush any text held back by the echo filter (a non-tag "<..." prefix).
+    const echoTail = flushEchoText(state);
+    if (echoTail) {
+      if (!state.textBlockStarted) {
+        state.textBlockIndex = state.nextBlockIndex++;
+        state.textBlockStarted = true;
+        state.textBlockClosed = false;
+        results.push({
+          type: "content_block_start",
+          index: state.textBlockIndex,
+          content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+        });
+      }
+      results.push({
+        type: "content_block_delta",
+        index: state.textBlockIndex,
+        delta: { type: "text_delta", text: echoTail }
+      });
+    }
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
 
@@ -230,7 +472,7 @@ export function openaiToClaudeResponse(chunk, state) {
       // Emit buffered + sanitized args as single delta before stop
       const buffered = state.toolArgBuffers?.get(idx);
       if (buffered) {
-        const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
+        const sanitized = sanitizeToolArgs(state, toolInfo.name, buffered);
         results.push({
           type: "content_block_delta",
           index: toolInfo.blockIndex,

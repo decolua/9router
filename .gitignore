@@ -49,8 +49,11 @@ data/
 logs/*
 source/*
 .cursor/*
+# scratch and vendored docs stay local; committed docs are re-included by name
 docs/*
 !docs/ARCHITECTURE.md
+# architecture decision records, referenced by CONTEXT.md
+!docs/adr/
 test/*
 open-sse/test/*
 RM.vn.md

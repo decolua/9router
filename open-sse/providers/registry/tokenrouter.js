@@ -34,9 +34,9 @@ export default {
     { id: "anthropic/claude-opus-4.5", name: "Claude Opus 4.5" },
     { id: "anthropic/claude-opus-4.6", name: "Claude Opus 4.6" },
     { id: "anthropic/claude-opus-4.7", name: "Claude Opus 4.7" },
-    { id: "anthropic/claude-opus-4.7-fast", name: "Claude Opus 4.7 Fast" },
+    { id: "anthropic/claude-opus-4.7-fast", name: "Claude Opus 4.7 Fast", family: "claude-opus-4.7", mode: "fast" },
     { id: "anthropic/claude-opus-4.8", name: "Claude Opus 4.8" },
-    { id: "anthropic/claude-opus-4.8-fast", name: "Claude Opus 4.8 Fast" },
+    { id: "anthropic/claude-opus-4.8-fast", name: "Claude Opus 4.8 Fast", family: "claude-opus-4.8", mode: "fast" },
     { id: "anthropic/claude-opus-5", name: "Claude Opus 5" },
     { id: "anthropic/claude-opus-5-fast", name: "Claude Opus 5 Fast" },
     { id: "anthropic/claude-sonnet-4", name: "Claude Sonnet 4" },
@@ -50,7 +50,7 @@ export default {
     { id: "claude-opus-4-8-m-aws", name: "Claude Opus 4 8 M Aws" },
     { id: "deepseek/deepseek-v3.2", name: "Deepseek V3.2" },
     { id: "deepseek/deepseek-v4-flash", name: "Deepseek V4 Flash" },
-    { id: "deepseek/deepseek-v4-flash-0731", name: "Deepseek V4 Flash 0731" },
+    { id: "deepseek/deepseek-v4-flash-0731", name: "Deepseek V4 Flash 0731", family: "deepseek-v4-flash" },
     { id: "deepseek/deepseek-v4-pro", name: "Deepseek V4 Pro" },
     { id: "ex/gpt-5.4", name: "Gpt 5.4" },
     { id: "google/gemini-2.5-flash-image", name: "Gemini 2.5 Flash Image" },
@@ -58,12 +58,12 @@ export default {
     { id: "google/gemini-3-pro-image-preview", name: "Gemini 3 Pro Image Preview" },
     { id: "google/gemini-3.1-flash-image-preview", name: "Gemini 3.1 Flash Image Preview" },
     { id: "google/gemini-3.1-flash-lite-image", name: "Gemini 3.1 Flash Lite Image" },
-    { id: "google/gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview" },
+    { id: "google/gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview", family: "gemini-3.1-pro", mode: "preview" },
     { id: "google/gemini-3.5-flash", name: "Gemini 3.5 Flash" },
     { id: "google/gemini-3.5-flash-lite", name: "Gemini 3.5 Flash Lite" },
     { id: "google/gemini-3.6-flash", name: "Gemini 3.6 Flash" },
     { id: "google/gemini-embedding-2", name: "Gemini Embedding 2" },
-    { id: "google/gemma-4-26b-a4b-it", name: "Gemma 4 26B A4B It" },
+    { id: "google/gemma-4-26b-a4b-it", name: "Gemma 4 26B A4B It", family: "gemma-4-26b" },
     { id: "happyhorse-1.0-t2v", name: "Happyhorse 1.0 T2V", kind: "video" },
     { id: "kling-3.0-turbo", name: "Kling 3.0 Turbo", kind: "video" },
     { id: "kling-v2-6", name: "Kling V2 6", kind: "video" },
@@ -75,7 +75,7 @@ export default {
     { id: "minimax/minimax-m2.1-highspeed", name: "Minimax M2.1 Highspeed" },
     { id: "minimax/minimax-m2.5", name: "Minimax M2.5" },
     { id: "minimax/minimax-m2.7", name: "Minimax M2.7" },
-    { id: "minimax/minimax-m2.7-highspeed", name: "Minimax M2.7 Highspeed" },
+    { id: "minimax/minimax-m2.7-highspeed", name: "Minimax M2.7 Highspeed", family: "minimax-m2.7", mode: "highspeed" },
     { id: "miromind/mirothinker-1-7-deepresearch", name: "Mirothinker 1 7 Deepresearch" },
     { id: "miromind/mirothinker-1-7-deepresearch-mini", name: "Mirothinker 1 7 Deepresearch Mini" },
     { id: "mistralai/devstral-2512", name: "Devstral 2512" },
@@ -86,9 +86,9 @@ export default {
     { id: "moonshotai/kimi-k2.6", name: "Kimi K2.6" },
     { id: "moonshotai/kimi-k2.7-code", name: "Kimi K2.7 Code" },
     { id: "moonshotai/kimi-k3", name: "Kimi K3" },
-    { id: "moonshotai/kimi-k3-free", name: "Kimi K3 Free" },
+    { id: "moonshotai/kimi-k3-free", name: "Kimi K3 Free", family: "kimi-k3", mode: "free" },
     { id: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", name: "Nemotron 3 Nano Omni 30B A3B Reasoning:Free" },
-    { id: "nvidia/nemotron-3-super-120b-a12b", name: "Nemotron 3 Super 120B A12B" },
+    { id: "nvidia/nemotron-3-super-120b-a12b", name: "Nemotron 3 Super 120B A12B", family: "nemotron-3-super-120b" },
     { id: "openai/gpt-4o-mini", name: "Gpt 4O Mini" },
     { id: "openai/gpt-5", name: "Gpt 5" },
     { id: "openai/gpt-5-image", name: "Gpt 5 Image" },
@@ -101,7 +101,7 @@ export default {
     { id: "openai/gpt-5.4-nano", name: "Gpt 5.4 Nano" },
     { id: "openai/gpt-5.4-pro", name: "Gpt 5.4 Pro" },
     { id: "openai/gpt-5.5", name: "Gpt 5.5" },
-    { id: "openai/gpt-5.5-pro", name: "Gpt 5.5 Pro" },
+    { id: "openai/gpt-5.5-pro", name: "Gpt 5.5 Pro", family: "gpt-5.5-pro" },
     { id: "openai/gpt-5.6-luna", name: "Gpt 5.6 Luna" },
     { id: "openai/gpt-5.6-sol", name: "Gpt 5.6 Sol" },
     { id: "openai/gpt-5.6-terra", name: "Gpt 5.6 Terra" },
@@ -118,7 +118,29 @@ export default {
     { id: "qwen/qwen3.6-plus", name: "Qwen3.6 Plus" },
     { id: "qwen/qwen3.7-max", name: "Qwen3.7 Max" },
     { id: "qwen/qwen3.7-plus", name: "Qwen3.7 Plus" },
-    { id: "qwen/qwen3.8-max", name: "Qwen3.8 Max" },
+    // The stopgap that stood here borrowed family "qwen3.7-max" because no
+    // qwen3.8-max family existed, and it was justified by bench.json being
+    // unwritable. That premise was wrong: bench.json is a repo file baked into
+    // the image at build, and writing it never needed the dashboard, the MCP
+    // tools, or the password those tools were failing on. A real qwen3.8-max
+    // family now exists (band opus, mirroring qwen3.7-max — same capability
+    // class one revision on), so these carry their own identity.
+    { id: "qwen/qwen3.8-max", name: "Qwen3.8 Max", family: "qwen3.8-max" },
+    // Declared like moonshotai/kimi-k3-free above, and for the same reason: a
+    // bare id carries no family, identityOf returns family null, bandOf returns
+    // null, and tune.mjs's pool filter drops it from every combo — so the model
+    // is reachable by direct request and invisible to the tuner. Observed
+    // 2026-08-15: added via the dashboard, served two successful calls, and
+    // still reported band=none with "Not present in any combo's current or
+    // desired order". A mode never moves a band (CONTEXT.md), so the free
+    // variant inherits whatever qwen3.8-max is banded at.
+    //
+    // This entry alone is NOT what fixes it. The dashboard registers it as a
+    // custom model against a provider node, so it reaches the tuner from the DB
+    // and never passes through this registry at all — which is why re-adding it
+    // by hand kept failing. bench.json's _modelIdentity carries the identity for
+    // that path and is checked first; both are declared so either route works.
+    { id: "qwen/qwen3.8-max-free", name: "Qwen3.8 Max Free", family: "qwen3.8-max", mode: "free" },
     { id: "qwen3.5-omni-plus", name: "Qwen3.5 Omni Plus" },
     { id: "qwen3.6-flash", name: "Qwen3.6 Flash" },
     { id: "sakana/fugu-ultra", name: "Fugu Ultra" },

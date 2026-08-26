@@ -19,7 +19,7 @@ export default {
     validateUrl: "https://api.groq.com/openai/v1/models",
   },
   models: [
-    { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B" },
+    { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B", family: "llama-3.3-70b" },
     { id: "meta-llama/llama-4-maverick-17b-128e-instruct", name: "Llama 4 Maverick" },
     { id: "qwen/qwen3-32b", name: "Qwen3 32B" },
     { id: "openai/gpt-oss-120b", name: "GPT-OSS 120B" },

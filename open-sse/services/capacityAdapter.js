@@ -8,6 +8,7 @@
  * front only when none of the original models can handle the request — so this
  * never overrides a combo that already has a member covering the capability.
  */
+import { modelContextWindow } from "./combo.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 
 const CAPABILITY_KEYS = ["vision", "pdf", "audioInput", "videoInput"];
@@ -162,11 +163,10 @@ export function withCapacityAdapterStripping(handleSingleModel, adapterModels) {
   if (adapterSet.size === 0) return handleSingleModel;
   return (body, modelStr, ...rest) => {
     if (adapterSet.has(modelStr)) {
-      const slash = modelStr.indexOf("/");
-      const provider = slash > 0 ? modelStr.slice(0, slash) : "";
-      const model = slash > 0 ? modelStr.slice(slash + 1) : modelStr;
-      const { contextWindow } = getCapabilitiesForModel(provider, model);
-      body = stripHistoryForContext(body, contextWindow);
+      // Same accessor the cascade sizes with, so a learned window is honoured
+      // here too — trimming history against a stale 200K default would throw
+      // away context the model could have held.
+      body = stripHistoryForContext(body, modelContextWindow(modelStr));
     }
     return handleSingleModel(body, modelStr, ...rest);
   };

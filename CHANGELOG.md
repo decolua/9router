@@ -1,3 +1,386 @@
+# Unreleased
+
+## Fixes
+- **Tuner**: dropped the pins that made three combos lead with models that cannot
+  answer. The ox-alpha redundancy pair was withdrawn by both its providers on
+  2026-08-26 — `openrouter/stealth/ox-alpha` returns `404 "No endpoints found"`
+  and is gone from openrouter's `/v1/models` (416 models, zero `stealth/*`);
+  `oc/x-preview-f-free` returns `401 "Model is not supported"` and is gone from
+  opencode zen's catalogue — yet it was pinned at Yggdrasil 0+1 and Odin 2+3.
+  `tokenrouter` was pinned at Fenrir 0 and Odin 0+1 while having no credentials
+  configured at all, so those entries answered `404 No active credentials` on
+  every pass. A pin forces position without checking that the entry can serve, so
+  each of these was a guaranteed wasted round trip at the head of the cascade —
+  and the reason the combos looked far deeper than they were. The two dead ox-alpha
+  ids also leave `_modelIdentity` **and** the `ox-alpha` family leaves `models[]` —
+  both halves are required, which cost a deploy to learn: `identityOf()` resolves
+  `declared.family ?? exact`, where `exact` matches the id's *tail* against
+  `models[]`. `oc/x-preview-f-free` has no matching family and dropped out on the
+  identity removal alone, but the tail of `openrouter/stealth/ox-alpha` is literally
+  `ox-alpha`, so the family entry kept re-banding it `fable` and it held Yggdrasil #0
+  with its identity row already deleted. tokenrouter's identities are kept: a 404
+  earns the 30-minute operator cooldown and self-heals the moment a connection is
+  added.
+- **Accounts**: a request-level `400` no longer locks the account that reported it.
+  `markAccountUnavailable` writes `modelLock_<model>` on the connection, and
+  `probeAccountCapacity` reads those locks on behalf of *every* concurrent caller —
+  so a 400 caused by one client's payload withdrew the model from every other
+  session. On 2026-08-26 a single session (558 messages, 119 tool definitions,
+  ~230K tokens) drew 33 opaque `400 "Provider returned error"` responses from
+  openrouter's Stealth upstream. Each one locked both OpenRouter accounts for two
+  minutes, so `openrouter/stealth/ox-alpha` — the head of Yggdrasil, healthy, and
+  answering other sessions in the same minute — was skipped as `no account has
+  capacity for it right now`, the cascade fell through to members that really were
+  out of quota, and the client was told its keys were exhausted by a 429 naming
+  `opencode-go`. 87 of the 154 account locks in a three-hour window were applied
+  for 400s, not 429s. The 2026-08-23 finding that a 400 is not congestion still
+  holds; only its *subject* was wrong. Error rules can now be marked
+  `requestScoped`, which keeps the fallback and drops the lock, and `{ status: 400 }`
+  is the first such rule. A 400 whose cause outlives the request is unaffected:
+  billing (`insufficient credits`), a malformed body the provider always rejects
+  (`improperly formed request`), and `Malformed model output` — the strike lock
+  `disciplineLock` synthesises, which is the one 400 that really is the account's
+  fault — all match text rules ahead of it and still lock. The `FALLBACK` log line
+  now distinguishes `REJECTED THIS REQUEST (still available)` from `UNAVAILABLE`,
+  because reading the second when the first was true is what sent this
+  investigation after exhausted quota on healthy accounts.
+- **Routing**: the context window is now learned for every provider we share with
+  models.dev, not just OpenRouter. `openrouterModels.js` made the window dynamic
+  for the one provider whose own `/models` publishes `context_length`; everybody
+  else answers with bare ids, so every model they serve inherited
+  `DEFAULT_CAPABILITIES.contextWindow` = 200,000 and `shouldSkipModel` dropped it
+  from the combo as soon as a conversation passed 200K. On 2026-08-25 Yggdrasil
+  lost `oc/x-preview-f-free`, `ocg/glm-5.2` and `nvidia/z-ai/glm-5.2` that way —
+  all three are 1,000,000-token models — logging `Skipping oc/x-preview-f-free,
+  request needs ~274932 tokens but window is 200000` while the cascade fell
+  through to whatever gemini leg had quota left, and 429'd 21 times in 25 minutes
+  when it did not. The opencode leg is the same ox-alpha the OpenRouter leg serves
+  at 1,048,576, so the redundancy pair had been running on one leg. models.dev is
+  where those numbers were hand-copied from in the first place — the
+  `limit.context -> contextWindow` mapping at the top of `providers/capabilities.js`
+  is its shape — so it is now fetched instead, 6-hourly, alongside the OpenRouter
+  catalogue: 730 models that had no entry at all now carry a real window. A
+  provider that publishes its own catalogue is excluded, because the registry has
+  no source ranking and last writer would win. Windows are recorded under every
+  alias a routed id can use (`oc/` and `opencode/`, `ocg/` and `opencode-go/`) —
+  the combo stores one spelling and the executor logs another, and filing under
+  one leaves the other on the default. New `services/modelsDevCatalogue.js`,
+  wired into `startContextWindowLearning`. Verified live: 1,139 windows learned
+  across 24 providers, and a 531,970-token request that would have skipped seven
+  members now skips three — the three that genuinely cannot hold it.
+- **Routing**: `/v1/models` now reports the learned window. It read
+  `getCapabilitiesForModel` directly, the last accessor still bypassing the
+  registry after `shouldSkipModel` and `capacityAdapter` were fixed, so
+  `openrouter/stealth/ox-alpha` was learned at 1,048,576 and still advertised as
+  the 200,000 default to every client sizing itself off the endpoint.
+- **Routing**: a model nobody hand-wrote a table entry for is no longer assumed
+  blind. `DEFAULT_CAPABILITIES.vision` is `false`, and two separate paths read it:
+  `reorderByCapabilities`, which promotes vision-capable members to the head of a
+  combo when the request carries an image, and `stripUnsupportedModalities`, which
+  deletes the image from a request bound for a model declared unable to read it.
+  `openrouter/stealth/ox-alpha` has no entry, so on 2026-08-25 one screenshot in a
+  Claude Code session demoted the 1M head beneath a 200K vision member, the compact
+  ceiling fell from 838,860 to 160,000, the gateway 413'd, and the client
+  auto-compacted 116,399 tokens down to 39,532 — then was refused again at 167,293.
+  The OpenRouter catalogue had said `input_modalities: ["text","image","video"]` the
+  whole time, and a direct probe confirmed the model reads a two-colour test image
+  correctly. Input modalities are now learned from the provider's own catalogue, in
+  the same fetch that already learned context windows, and consulted as the step
+  below the static table — *below*, deliberately: `ag/claude-*` are declared
+  `vision:false` on purpose against a provider that advertises otherwise, because
+  that executor drops the image, and a learned-wins rule would silently re-break
+  exactly those. New `services/modalityRegistry.js`; `refreshOpenRouterContextWindows`
+  is now `refreshOpenRouterCatalogue`.
+- **Routing**: only ask a client to compact when compaction can work. The compact
+  ceiling is a soft limit, so a request over it was refused even when nothing the
+  client is able to drop would bring it back under — the same session above compacted
+  for 109 seconds and came back 22 tokens' worth of history lighter, because the bulk
+  was the system prompt and eight MCP servers' tool schemas (~224k characters), not
+  history. `measureFloor` now measures what compaction cannot remove — system, tools,
+  and the turn in flight — and when that alone exceeds the ceiling the request is
+  served instead of refused. The 413 itself is unchanged and still intentional.
+- **Routing**: size each candidate with its own provider's chars-per-token ratio.
+  `sizingCharsPerToken()` called with no argument returns the *worst* ratio in the
+  whole pool, so one dense-tokenizer provider sized every request for every other
+  one: measured 2.39 against a measured mean of 4.32, a 1.8x over-count that put a
+  real 116k conversation at 189k. The pool-wide figure remains the honest default for
+  the log line and the client-facing message, where the answering member is not yet
+  known; `compactCeiling` and `shouldSkipModel` now ask with the model in hand.
+
+- **Tuner**: dead models can be demoted again. The tuner read its error signal from
+  exactly one place, `requestDetails`, and that table is gated behind
+  `enableObservability` — which upstream defaulted to `false` on 2026-08-01 (3fab15ae)
+  while switching the key it reads from the never-present `enableObservability2` to
+  the now-always-present `enableObservability`. Two changes that each look harmless;
+  together they turned request logging off. Production wrote its last row on
+  2026-08-05T17:25 and nothing said so, because a model with no rows reads back
+  `ok=0 err=0` and the health formula calls that 0.5 — "no opinion", not "no data".
+  Nine permanently-dead members of Yggdrasil (400 ×5, 404 ×3, 410 ×1) were therefore
+  indistinguishable from nine nobody had tried, and were retried on every cascade for
+  eighteen days. Even switched on it would not have been enough: a cascade member that
+  fails never reached that table at all — `attemptModel` recorded it into an in-memory
+  Map that dies with the process — and the table prunes to a single **global** row cap,
+  so one chatty model can empty a 1-day window for every other. Health now has its own
+  store: a `modelHealth` table of hourly ok/err counters keyed by the routed id, written
+  unconditionally at the routing seam, retained per model for 7 days. A debug toggle can
+  no longer blind the router. Observability itself is left off — it is a debug feature,
+  and this is the last thing that depended on it.
+- **Tuner**: health can now actually move a model. It sat below band, cost class, exact
+  cost and bench score in both comparators, so two models had to agree on all four
+  before health was read — a model that 404s every request held index #11 of Yggdrasil
+  while scoring 0. A model observed failing with no successes (`health === 0`, which
+  absence of data cannot produce) is now sent to the tail of its combo, applied after
+  `interleaveByProvider` for the same reason the bottom-prefix demotion is: interleave
+  groups on `bandRank|cost` and would otherwise re-promote it mid-pack. It reorders and
+  never drops, exactly as the runtime's `demoteUnhealthy` does.
+- **Tests**: the suite no longer writes the developer's live `~/.9router` database.
+  `tests/setup.js` points `DATA_DIR` at a temp dir for the run.
+- **Router**: an image request no longer goes to the most expensive member of a combo.
+  `reorderByCapabilities` floated capable models to the front but kept the pool's own
+  order among them, so a capability-first combo handed every screenshot to its priciest
+  entry. Cost now breaks ties **inside** a tier, free before paid — capability is a
+  yes/no question, so once the tier is settled there is nothing left to spend a
+  subscription on. It does not reorder *across* tiers: a free model that cannot read the
+  image is still useless, and promoting it would drop the image to save nothing.
+- **Router**: Claude served through Antigravity is no longer advertised as
+  vision-capable. Measured against the live gateway with a half-red/half-green PNG and a
+  forced answer format: `ag/claude-opus-4-6-thinking` and `ag/claude-sonnet-4-6` both
+  answered `SEEN=NO`, while `ag/gemini-pro-agent` and `ag/gemini-3-flash` — same
+  provider, same request, same translator — answered `SEEN=YES LEFT=red RIGHT=green`.
+  The image is dropped in the Claude-specific branch of `executors/antigravity.js`, so
+  the model answers from the text alone and returns a confident guess (it called a red
+  square "Blue"). Advertising a modality that silently discards data is worse than
+  having none: the combo routed screenshots straight to it. This is a capability
+  correction, not the fix — the executor still needs repairing, and the comment says so.
+
+- **Router**: a combo no longer reports exhaustion while it still holds entries it never
+  tried. Every skip in the cascade is a *prediction* — a cooldown guesses when a provider
+  recovers, a quota ban defaults to an hour whether or not the provider said so, and the
+  account probe answers for the account layer's bookkeeping rather than for the upstream.
+  Honouring those while some other entry can answer is free; honouring them when nothing
+  else can turns a working pool into a 503. `handleComboChat` now collects supply-side
+  skips and, only after the first pass has genuinely failed, retries them ignoring
+  cooldown and quota state. Oversized requests are excluded — no amount of retrying
+  shrinks a conversation, so `onlyTooLarge` still answers 413.
+- **Router**: a silent upstream cascades instead of hanging. Nothing bounded the wait for
+  a provider's response or for the first event of its stream, so one provider that
+  accepted the connection and then went quiet consumed the client's entire budget with a
+  full pool of untried models behind it — surfacing as a client timeout that no fallback
+  ever saw. Both waits now have deadlines (`COMBO_RESPONSE_TIMEOUT_MS`, default 90s;
+  `COMBO_FIRST_EVENT_TIMEOUT_MS`, default 150s), and expiry is raised as an ordinary
+  cascade failure. Generous on purpose: they exist to break a hang, not to police latency,
+  since a premature cascade pays two providers for one answer.
+
+- **Router**: `estimateInputTokens` no longer measures inlined images as prose. It
+  stringified the whole body and divided by 4, but base64 runs ~4/3 of the raw bytes, so
+  a 3MB phone photo scored over a million tokens where a provider bills it around a
+  thousand. The estimate feeds the per-model context check in `services/combo.js`, so one
+  image made every model in a combo look too small and the request was refused with
+  `context_length_exceeded` before it was ever sent — observed on Yggdrasil at ~1083798
+  tokens against a 1048576 window, while the client's own meter read ~20K. Compaction was
+  no help: compacting 226 history items moved the total by 1516 tokens, because the bulk
+  was never history. Images are now excluded from the character count and charged a flat
+  1600 each, the ceiling of the published per-image ranges. `estimateUsage` shares the
+  estimator, so recorded usage and cost stop being inflated by attachments too.
+- **Router**: the orchestration nudge is removed (`rtk/orchestrationNudge.js`,
+  ADR 0003, now marked superseded). It stated a live novel-context count whenever a
+  session passed a delegation cap of 6. Two measurements retired it. The cap was below
+  its own break-even — a delegation costs a median 313,582 units against 34,514 for a
+  main-thread turn, so it is worth ~9 inline turns, and firing at 6 pushed every session
+  it touched into a losing trade. And it did not work: ADR 0003 conceded it "nudges and
+  cannot compel", then session dce6e9bd took 23 further inline calls with the nudge
+  firing at `firm` on all five logged turns. An ineffective instruction on every request
+  is a standing tax on the system prompt that also trains the model to discount it.
+- **Router**: new `rtk/languageLock.js` pins every part of a response to one language
+  (`NINER_RESPONSE_LANGUAGE`, default English), taking the slot the nudge vacated in
+  `chatCore.js`. Cheaper bands reason in Chinese and occasionally carry it into visible
+  output — 135 Han occurrences across 223 transcripts, nearly all inside `thinking`
+  blocks, which this operator reads directly because the client runs in verbose mode.
+  Filtering the output was rejected: stripping CJK would corrupt any legitimate quotation
+  of file content, and it treats the symptom at the last possible moment. An instruction
+  reaches the model before it generates and costs ~40 tokens.
+- **Translator (gemini→claude)**: a started stream can no longer end without
+  renderable content. Gemini omits `content.parts` entirely when it blocks a
+  candidate, so a `SAFETY`/`RECITATION`/`PROHIBITED_CONTENT` finish emitted
+  `message_start` → `message_delta` → `message_stop` with no content block at
+  all. Claude Code renders nothing for that, persists no assistant entry, and
+  injects `[Your previous response had no visible output. Please continue...]`,
+  which goes back upstream and is blocked again — a livelock, not a refusal.
+  The marker appears **238 times** across `~/.claude/projects`; in one session
+  the user sent ten messages into the silence before giving up. The finish now
+  emits a visible block naming `finishReason`, `promptFeedback.blockReason` and
+  any blocked safety categories. `[DONE]`, an unparseable body and a non-object
+  chunk each used to `return null` on their own, so a stream ending any of those
+  ways emitted no `message_stop` either; all terminators now route through one
+  `finishStream` and an unparseable body travels with the notice instead of
+  being swallowed. A terminator on a stream that never sent `message_start` is
+  still a no-op — the HTTP-level version of that failure is caught by status in
+  `services/combo.js` preflight and cascades to the next member.
+- **Translator (openai→claude)**: the same guard on the pivot route, which most
+  providers land on. A chunk arriving with no `choices` now flushes the echo
+  tail, closes any dangling thinking/text/tool blocks and emits `message_stop`
+  instead of returning null — and when the stream opened without ever producing
+  a renderable block, it says so rather than closing empty. A terminator on a
+  stream that never sent `message_start` stays a no-op.
+- **Tuner**: `getHealth` matched usage rows on the exact registered model name
+  only, so an id whose logged name drops the vendor namespace
+  (`nvidia/deepseek-ai/deepseek-v4-pro`) matched nothing, `ok === 0 && err === 0`
+  pinned health at the 0.5 default, and the model became invisible to scoring in
+  both directions — never demoted on failures, never promoted on successes.
+  Fenrir's head sat at `ok=0/err=0` while that model served 1,119 turns. Falls
+  back to last-path-segment matching within the same provider, only when the
+  exact compare yields nothing. Candidates that still have no observations are
+  now warned about by name — `reportUnbanded` already shouted about ids that
+  fail to resolve, but nothing shouted about ids that resolve, band correctly
+  and still carry no data, which is the state that silently freezes a combo.
+- **Translator**: harness tags are now stripped when the model opens them with
+  attributes. Both echo filters compared against the literal `"<tag>"`, so a reply
+  that opened `<task-notification task_id="a424703057daa789f">` matched nothing and
+  the whole block reached the client as visible text — the tag was in `ECHO_TAGS`
+  and the filter did run, it simply could not see it. Fixed in the whole-text
+  scrubber (`utils/echoScrub.js`) and in the streaming filter
+  (`translator/response/openai-to-claude.js`, which `gemini-to-claude.js` and
+  `kiro-to-claude.js` both reuse). Only whitespace may follow the tag name, so
+  `<system-reminders>` is still not `<system-reminder>`, and an unterminated
+  opening tag is held across chunk boundaries only up to a bound, so a model
+  emitting `<instructions ` without a closing `>` cannot buffer the rest of the
+  stream. Known gap left open: the Codex/Responses path
+  (`translator/response/openai-responses.js`) applies no echo filter at all, for
+  any tag — that mechanism was removed by the revert in `81b6fcd4` and would have
+  to be rebuilt rather than edited.
+
+## Changes
+- **Tuner**: combos can choose their ordering with `_comboOrder`. The default stays
+  `free-first` — cost class decides before band, so a subscription is never spent while
+  free capacity is idle, which is what the four banded combos are for. **Yggdrasil** now
+  runs `capability-first`: band decides first and paid sorts before free within a band, so
+  its head is the most capable model available and the free members become the tail that
+  keeps it alive once the paid quota is gone. It is the combo that must never run dry and
+  the one reached for when the answer matters, so free-first had it backwards. Setting the
+  mode also waives the bottom-prefix demotion and the subscription-at-index-0 pin guard for
+  that combo, both of which encode the free-first premise. Measured against the live DB:
+  Yggdrasil's head moves from `oc/laguna-s-2.1-free` (bench 70.2, no vision) to
+  `ag/claude-opus-4-6-thinking` (bench 80.8, vision-capable); Odin, Fenrir, Valkyrie and
+  Sleipnir are unchanged.
+- **Tuner**: a dry run prints the full desired order for combos it would rewrite, not just
+  the head. A head-only summary cannot verify an ordering change, which is the one thing a
+  dry run is for before touching the comparator.
+
+## Features
+- **Router**: an orchestration nudge now states the live delegation count back to
+  the model when a session runs past its cap. The delegation rule lives in the
+  client's `CLAUDE.md`, but a rule read once at the start is buried under 174K of
+  context by turn 40 and stops being acted on — one observed session made 83
+  consecutive `cat`/`grep`/`find` calls with zero delegations, served by a
+  legitimate Fenrir-band model that had received both the rule and the Agent tool
+  intact. The rule was delivered; it was forgotten. The count does not need to be
+  remembered, because the client sends the whole conversation on every turn, so
+  the router recomputes it from the tool blocks already in the request body and
+  injects the actual number at the moment it matters — reminding at the cap and
+  escalating at double it, and also naming a previous delegation that specified no
+  model and therefore silently inherited the session's expensive one. Counted on
+  the source body, where tool blocks are still in the client's shape, and injected
+  into the translated body via the existing format-aware `systemInject`, so it
+  reaches every combo and every provider format without per-handler wiring.
+  Deliberately stateless, unlike the discipline nudge: that one corrects a past
+  event and must self-clear, while this reflects a condition that is still true
+  and should keep firing until a delegation resets the count. Fail-open — any
+  error leaves the body untouched. This nudges; it cannot compel. A model that
+  ignores it is now measurable, which is the evidence for not making it a lead
+
+## Fixes
+- **Router**: a degenerate opening no longer reaches the client. The combo
+  preflight, which already read the first chunk before committing to a model,
+  now holds a short window open — bounded by a chunk budget, a 300ms wall clock
+  that only runs when the stream actually pauses, and stopping the moment there
+  is enough prose to judge — and fails over to the next combo member when the
+  opening is a continuation rather than a reply: it begins on sentence
+  punctuation, or resumes mid-sentence after a single stray space. Failing over
+  is the right response where deleting text is
+  not: a retry costs one upstream call, a wrong deletion costs the answer. The
+  rules are structural and narrow, because a false positive here discards a
+  working model: indentation never counts (a reply opening on a code line is
+  not a continuation), and a prefill — a request whose last turn is the
+  assistant's — is exempt outright, since resuming mid-sentence is exactly what
+  a prefill asks for. Verbatim regurgitation is deliberately left to the
+  existing `utils/userEcho.js`, where a mistake costs less than a discarded
+  model. An error met while reading ahead is replayed, never cascaded, so the
+  existing "no cascade once the first chunk arrived" rule still holds
+- **Router**: responses now carry `x-9r-serving-model`, the provider/model that
+  actually answered. A request names a combo alias and the router picks a
+  member, so one conversation could be served by several models with nothing
+  saying so — observed as three models on one thread while the client displayed
+  one alias throughout
+- **Translator**: `claude:gemini` is a direct route. The pair was crossing two
+  rebuilds of its message list via the OpenAI pivot, which is where its turn
+  structure was being lost; `CLAUDE.md` already prescribes a direct route for
+  fragile pairs. Gemini also delivers a functionCall whole, so the direct path
+  has no partial-argument accumulation and none of the doubling the
+  openai-compat path defends against
+- **Translator**: a Gemini-served model would stop replying and start completing
+  the user's sentence — mid-word, in the user's voice — after enough turns. Two
+  rules combined to cause it: an assistant turn whose parts came out empty was
+  never pushed, and `normalizeGeminiContents` merged whatever ended up adjacent.
+  Drop a model turn between two user turns and those user turns fuse. In an
+  agentic session, where every tool result arrives as a `user` turn, the model's
+  voice eroded a little each round until Gemini was handed a transcript in which
+  it had never spoken — an unfinished monologue, which it continued. A six-round
+  tool exchange lost half its model turns. Empty turns now keep their slot on
+  all three affected paths (`openai-to-gemini`, the Antigravity envelope, and
+  `openai-to-claude`, which dropped the turn one hop earlier), never as a
+  trailing prefill. `findSpeakerBoundaryViolation` asserts the invariant so a
+  future edit that reintroduces the erasure is loud rather than silent.
+  The echo scrubbers made this worse over time: each scrub emptied an assistant
+  turn, and the emptied turn was then dropped from the next request. The
+  placeholder is non-whitespace because `hasValidContent` filters blank blocks
+  straight back out, and is never left trailing, where an assistant turn is a
+  prefill the model continues from
+- **Tests**: `verify-no-regression.mjs` recovered the repo-relative path by
+  splitting on `/app/`, so outside the container every entry became
+  `undefined :: <name>`, matched nothing in the baseline, and reported all 98
+  failures as regressions — the gate only ever worked in Docker. It anchors on
+  the `tests/` segment now, and `known-fails.txt` is re-measured (87 entries,
+  was 24), built from the union of a branch run and a clean-tree run so the two
+  flaky xai files cannot masquerade as regressions
+- **Tests**: the 13 `security-audit` assertions that read repo source resolved
+  `src/...` against the process cwd, so running the suite the documented way
+  (`cd tests && npx vitest run`) failed every one with ENOENT on `tests/src/...`.
+  They anchor on the file's own location and pass from anywhere
+- **Tuner**: bands are derived from a model's declared identity instead of guessed
+  from its id. `matchBench` ended in a substring scan, which failed in both
+  directions on the same model — `ag/gemini-3.1-pro-low` matched `gemini-3.1-pro`
+  and inherited an `opus` band it never earned, while `ag/gemini-pro-agent`, the
+  HIGH variant, matched no key at all and was invisible to every combo. A
+  fable-band combo served the low variant for two full sessions while the high one
+  sat unused. `gcli/grok-4.5-low` and `-medium` had the same defect
+- **Tuner**: an unbanded candidate is still invisible to every combo, but no longer
+  silently — every run names it, says whether its family is undeclared or merely
+  unbanded, records it in the tuner state, and posts to the Discord webhook when
+  the list changes
+- **Tuner**: TTS, image and STT models are no longer banded as chat models. Eleven
+  ids (`mimo-v2.5-tts*`, `gemini-2.5-flash-preview-tts`, `gemini-2.5-flash-image`,
+  `gpt-5.5-image`, …) were substring-matching a chat family and competing for
+  combo slots
+- **Tuner**: `gpt-5.3-codex-spark` and `gpt-5.5-pro` get their own `bench.json`
+  entries instead of borrowing a neighbour's tier. Both stay at their former band —
+  neither has a published benchmark, and an unproven model is banded low
+
+## Features
+- **Providers**: registry model entries declare `family`, `effort` and `mode`
+  beside `upstreamModelId`. Bands attach to families; `effort` shifts a band by a
+  declared offset from `bench._effortBandOffset`; `mode` (`thinking`, `agentic`,
+  `review`, …) never moves one. Matching is exact — substring inference is gone, so
+  a low-effort variant cannot reach its family's tier by any path
+- **Endpoint**: `/v1/models` reports a model's declared `family` / `effort` / `mode`
+  when it has them, so the tuner (a separate process) can band without re-deriving
+
+## Docs
+- **CONTEXT.md**: new glossary for the routing vocabulary — family, effort, mode,
+  route, band, candidate, pool, combo, quota domain, frame integrity. Much of this
+  previously lived only inside `bench.json` `_comment` strings
+- **ADR**: `docs/adr/0001` records why model identity is `(family, effort, mode)`
+  and why bands are never inferred from ids, with the four alternatives rejected
+
 # v0.5.55 (2026-08-14)
 
 ## Features

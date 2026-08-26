@@ -29,7 +29,7 @@ export default {
     { id: "gpt-5.4-nano", name: "GPT-5.4 Nano", contextLength: 400000 },
     { id: "grok-4.3", name: "Grok 4.3", contextLength: 1000000 },
     { id: "grok-4.20", name: "Grok 4.20", contextLength: 2000000 },
-    { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro", contextLength: 1048576 },
+    { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro", contextLength: 1048576, family: "gemini-3.1-pro", mode: "preview" },
     { id: "gemini-3-flash-preview", name: "Gemini 3 Flash", contextLength: 1048576 },
     { id: "gemini-3.1-flash-lite-preview", name: "Gemini 3.1 Flash Lite", contextLength: 1048576 },
     { id: "kimi-k2.6", name: "Kimi K2.6", contextLength: 262144 },
@@ -42,6 +42,6 @@ export default {
     { id: "minimax-m2.7", name: "MiniMax M2.7", contextLength: 204800 },
     { id: "minimax-m2.5", name: "MiniMax M2.5", contextLength: 204800 },
     { id: "qwen3.6-plus", name: "Qwen 3.6 Plus", contextLength: 1000000 },
-    { id: "nemotron-3-super-120b-a12b", name: "Nemotron 3 Super", contextLength: 1000000 },
+    { id: "nemotron-3-super-120b-a12b", name: "Nemotron 3 Super", contextLength: 1000000, family: "nemotron-3-super-120b" },
   ],
 };
