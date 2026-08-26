@@ -93,14 +93,16 @@ export async function parseUpstreamError(response, executor = null) {
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
  * @param {number} [resetsAtMs] - Optional precise cooldown expiry (ms epoch) for provider-specific quota errors
- * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number }}
+ * @param {number} [accountStatus] - Original provider status used for account fallback classification
+ * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number, accountStatus?: number }}
  */
-export function createErrorResult(statusCode, message, resetsAtMs) {
+export function createErrorResult(statusCode, message, resetsAtMs, accountStatus = statusCode) {
   return {
     success: false,
     status: statusCode,
     error: message,
     resetsAtMs,
+    accountStatus,
     response: errorResponse(statusCode, message)
   };
 }

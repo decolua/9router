@@ -77,6 +77,7 @@ export const RETRY_CONFIG = {
 // Backward compat: if value is a number, treated as attempts with RETRY_CONFIG.delayMs
 export const DEFAULT_RETRY_CONFIG = {
   429: { attempts: 0, delayMs: 0 },
+  400: { attempts: 1, delayMs: 1000 },
   500: { attempts: 3, delayMs: 2000 },
   502: { attempts: 3, delayMs: 3000 },
   503: { attempts: 3, delayMs: 2000 },

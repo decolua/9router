@@ -435,7 +435,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       log.errorLine(reqTag, "✗", `ERROR ${statusCode} · ${provider}/${model} · ${Date.now() - requestStartTime}ms${urlStr}\n    ${errMsg}`);
     }
     reqLogger.logError(new Error(message), finalBody || translatedBody);
-    return createErrorResult(statusCode, errMsg, resetsAtMs);
+    // Provider request errors are retryable from Kilo's perspective after the
+    // router has exhausted its own retry. Keep the original status for logs
+    // and account classification, but expose 502 so the client retries.
+    const clientStatusCode = statusCode === HTTP_STATUS.BAD_REQUEST
+      ? HTTP_STATUS.BAD_GATEWAY
+      : statusCode;
+    return createErrorResult(clientStatusCode, errMsg, resetsAtMs, statusCode);
   }
 
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };

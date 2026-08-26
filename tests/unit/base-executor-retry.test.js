@@ -10,7 +10,12 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
 const { BaseExecutor } = await import("../../open-sse/executors/base.js");
 
 function res(status, body = "") {
-  return { status, headers: { get: () => "" }, text: async () => body };
+  return {
+    status,
+    headers: { get: () => "" },
+    text: async () => body,
+    clone: () => ({ text: async () => body })
+  };
 }
 
 function makeExec(config) {
@@ -24,6 +29,32 @@ const creds = { apiKey: "k" };
 beforeEach(() => fetchMock.mockReset());
 
 describe("BaseExecutor.execute — retry by status (config-driven)", () => {
+  it("retries a generic 400 upstream error once then succeeds", async () => {
+    const ex = makeExec({ baseUrl: "https://x/api" });
+    const upstreamError = JSON.stringify({ error: { message: "Bad Request", type: "upstream_error" } });
+    fetchMock
+      .mockResolvedValueOnce(res(400, upstreamError))
+      .mockResolvedValueOnce(res(200));
+
+    const out = await ex.execute({ model: "m", body: {}, stream: false, credentials: creds });
+
+    expect(out.response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries an explicit malformed request error once", async () => {
+    const ex = makeExec({ baseUrl: "https://x/api" });
+    const malformedRequest = JSON.stringify({ error: { message: "Malformed tool arguments" } });
+    fetchMock
+      .mockResolvedValueOnce(res(400, malformedRequest))
+      .mockResolvedValueOnce(res(200));
+
+    const out = await ex.execute({ model: "m", body: {}, stream: false, credentials: creds });
+
+    expect(out.response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("retries transient 500 UnknownError responses then succeeds", async () => {
     const ex = makeExec({ baseUrl: "https://x/api", retry: { 500: { attempts: 3, delayMs: 0 } } });
     const unknownError = JSON.stringify({ name: "UnknownError", data: { message: "\"Unknown Error\"" } });
