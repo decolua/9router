@@ -83,7 +83,7 @@ try {
   });
   await run("pm2", ["restart", processName], {
     phase: "restarting",
-    message: `Restarting PM2 process ${processName}...`,
+    message: "Restarting application...",
     timeoutMs: 60 * 1000,
   });
 

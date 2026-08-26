@@ -159,7 +159,7 @@ export default function GitUpdateCard() {
           </div>
         )}
 
-        <div className="flex flex-col sm:flex-row gap-2 pt-1">
+        <div className="flex flex-col gap-2 pt-1">
           <Button
             variant="secondary"
             icon="refresh"
@@ -177,7 +177,7 @@ export default function GitUpdateCard() {
               loading={starting}
               disabled={!status.canUpdate || updateRunning || checking}
               onClick={handleUpdate}
-              className="w-full sm:w-auto"
+              className="w-full"
             >
               Update now
             </Button>

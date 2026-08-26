@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   getPm2ProcessName,
   getGitUpdateStatus,
+  reconcileRestartedOperation,
   readGitUpdateState,
   startGitUpdate,
   writeGitUpdateState,
@@ -67,6 +68,54 @@ describe("getPm2ProcessName", () => {
     vi.stubEnv("PM2_PROCESS", "router & shutdown");
 
     expect(() => getPm2ProcessName()).toThrow("unsupported characters");
+  });
+});
+
+describe("reconcileRestartedOperation", () => {
+  it("marks a restarting operation successful after the application process restarts", () => {
+    const restartRequestedAt = Date.parse("2026-08-26T10:00:00.000Z");
+    const state = {
+      operationId: "operation-1",
+      status: "running",
+      phase: "restarting",
+      message: "Restarting application...",
+      startedAt: "2026-08-26T09:59:00.000Z",
+      updatedAt: new Date(restartRequestedAt).toISOString(),
+      finishedAt: null,
+    };
+
+    const result = reconcileRestartedOperation(
+      state,
+      statePath,
+      restartRequestedAt + 10_000,
+      restartRequestedAt + 5_000,
+    );
+
+    expect(result).toMatchObject({
+      status: "success",
+      phase: "done",
+      message: "Update completed successfully.",
+    });
+    expect(readGitUpdateState(statePath)).toEqual(result);
+  });
+
+  it("keeps the operation running in the original application process", () => {
+    const restartRequestedAt = Date.parse("2026-08-26T10:00:00.000Z");
+    const state = {
+      status: "running",
+      phase: "restarting",
+      updatedAt: new Date(restartRequestedAt).toISOString(),
+    };
+
+    const result = reconcileRestartedOperation(
+      state,
+      statePath,
+      restartRequestedAt + 1_000,
+      restartRequestedAt - 60_000,
+    );
+
+    expect(result).toBe(state);
+    expect(fs.existsSync(statePath)).toBe(false);
   });
 });
 

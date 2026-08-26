@@ -70,6 +70,31 @@ export function isGitUpdateRunning(state, now = Date.now()) {
   return Number.isFinite(startedAt) && now - startedAt < UPDATE_STALE_MS;
 }
 
+export function reconcileRestartedOperation(
+  state,
+  statePath = GIT_UPDATE_STATE_PATH,
+  now = Date.now(),
+  processStartedAt = now - process.uptime() * 1000,
+) {
+  if (state?.status !== "running" || state.phase !== "restarting") return state;
+
+  const restartRequestedAt = Date.parse(state.updatedAt || "");
+  if (!Number.isFinite(restartRequestedAt) || processStartedAt <= restartRequestedAt) return state;
+
+  const finishedAt = new Date(now).toISOString();
+  const completedState = {
+    ...state,
+    status: "success",
+    phase: "done",
+    message: "Update completed successfully.",
+    error: null,
+    updatedAt: finishedAt,
+    finishedAt,
+  };
+  writeGitUpdateState(completedState, statePath);
+  return completedState;
+}
+
 function publicOperationState(state) {
   if (!state) return null;
   const { operationId, status, phase, message, error, startedAt, updatedAt, finishedAt } = state;
@@ -83,7 +108,7 @@ export async function getGitUpdateStatus({
   statePath = GIT_UPDATE_STATE_PATH,
 } = {}) {
   const pm2Process = getPm2ProcessName();
-  const operationState = readGitUpdateState(statePath);
+  const operationState = reconcileRestartedOperation(readGitUpdateState(statePath), statePath);
   const updateInProgress = isGitUpdateRunning(operationState);
   const repoRoot = outputOf(await runCommand("git", ["rev-parse", "--show-toplevel"], { cwd }));
 
