@@ -92,6 +92,15 @@ const nextConfig = {
         destination: "/api/v1"
       }
     ];
+  },
+  async redirects() {
+    return [
+      {
+        source: "/dashboard/basic-chat",
+        destination: "/dashboard/playground",
+        permanent: false,
+      }
+    ];
   }
 };
 

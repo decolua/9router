@@ -155,6 +155,13 @@ const getPageInfo = (pathname) => {
       icon: "settings",
       breadcrumbs: [],
     };
+  if (pathname.includes("/playground"))
+    return {
+      title: "Testing Studio",
+      description: "Test and compare models",
+      icon: "science",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/translator"))
     return {
       title: "Translator",
