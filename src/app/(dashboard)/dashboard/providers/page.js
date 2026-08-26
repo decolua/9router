@@ -866,7 +866,16 @@ function ProviderCard({ providerId, provider, stats, freeEnabled = true, onEnabl
   const isDisabled = isNoAuth && !freeEnabled;
 
   return (
-    <Link href={`/dashboard/providers/${providerId}`} className="group min-w-0">
+    <Link
+      href={`/dashboard/providers/${providerId}`}
+      className="group min-w-0"
+      title={isDisabled ? "点击启用提供商" : undefined}
+      onClick={(event) => {
+        if (!isDisabled || !onEnable) return;
+        event.preventDefault();
+        onEnable();
+      }}
+    >
       <Card
         padding="xs"
         className={`h-full hover:bg-black/[0.01] dark:hover:bg-white/[0.01] transition-colors cursor-pointer ${allDisabled || isDisabled ? "opacity-50" : ""}`}
@@ -915,9 +924,7 @@ function ProviderCard({ providerId, provider, stats, freeEnabled = true, onEnabl
               </div>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {isDisabled && onEnable && <Button size="sm" onClick={(event) => { event.preventDefault(); event.stopPropagation(); onEnable(); }}>启用</Button>}
-          </div>
+          <div className="flex shrink-0 items-center gap-2" />
         </div>
       </Card>
     </Link>

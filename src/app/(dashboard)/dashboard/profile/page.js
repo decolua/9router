@@ -11,6 +11,7 @@ import { APP_CONFIG } from "@/shared/constants/config";
 import { LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
 import { LOCALE_FLAGS } from "@/shared/constants/locales";
 import { useNotificationStore } from "@/store/notificationStore";
+import { SETTINGS_TABS, useSettingsTabsStore } from "@/store/settingsTabsStore";
 
 const MODEL_MARKET_LOG_COLUMN_OPTIONS = [
   ["timestamp", "时间"], ["selectedModel", "用户选择模型"], ["actualModel", "实际请求模型"],
@@ -88,7 +89,8 @@ export default function ProfilePage() {
   const [proxyStatus, setProxyStatus] = useState({ type: "", message: "" });
   const [proxyLoading, setProxyLoading] = useState(false);
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
-  const [activeSettingsTab, setActiveSettingsTab] = useState("general");
+  const activeSettingsTab = useSettingsTabsStore((state) => state.activeTab);
+  const setActiveSettingsTab = useSettingsTabsStore((state) => state.setActiveTab);
   const [automationSaving, setAutomationSaving] = useState(false);
   const [automationStatus, setAutomationStatus] = useState("");
   const [navigationSaving, setNavigationSaving] = useState(false);
@@ -962,11 +964,9 @@ export default function ProfilePage() {
   return (
     <div className="w-full px-4 sm:px-8">
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
-        <div className="sticky top-0 z-30 -mx-4 flex justify-center border-b border-border bg-bg/95 px-4 py-2 backdrop-blur sm:-mx-8 sm:px-8">
+        <div className="sticky top-0 z-30 -mx-4 flex justify-center border-b border-border bg-bg/95 px-4 py-2 backdrop-blur sm:-mx-8 sm:px-8 xl:hidden">
           <div className="flex w-full max-w-3xl min-w-0 justify-center overflow-x-auto rounded-md border border-border bg-bg-subtle p-1">
-            {[
-              ["general", "常规"], ["security", "安全与登录"], ["routing", "路由与恢复"], ["navigation", "导航栏"], ["usage", "流量"], ["network", "网络"], ["observability", "可观测性"],
-            ].map(([value, label]) => <button key={value} type="button" onClick={() => setActiveSettingsTab(value)} className={cn("h-9 shrink-0 rounded px-4 text-sm font-medium", activeSettingsTab === value ? "bg-surface text-text-main shadow-sm" : "text-text-muted hover:text-text-main")}>{label}</button>)}
+            {SETTINGS_TABS.map(([value, label]) => <button key={value} type="button" onClick={() => setActiveSettingsTab(value)} className={cn("h-9 shrink-0 rounded px-4 text-sm font-medium", activeSettingsTab === value ? "bg-surface text-text-main shadow-sm" : "text-text-muted hover:text-text-main")}>{label}</button>)}
           </div>
         </div>
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">

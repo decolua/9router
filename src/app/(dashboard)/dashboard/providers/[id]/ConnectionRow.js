@@ -272,7 +272,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
           {isApiKeyConnection && (
             <button onClick={onConfigureExpiration} className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5" title="配置密钥过期日期">
               <span className="material-symbols-outlined text-[18px]">event</span>
-              <span className="text-[10px] leading-tight">Expiry</span>
+              <span className="text-[10px] leading-tight">过期</span>
             </button>
           )}
           <button onClick={onDelete} className="flex flex-col items-center rounded px-2 py-1 text-red-500 hover:bg-red-500/10">

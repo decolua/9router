@@ -98,4 +98,10 @@ describe("pricing provider catalog filtering", () => {
 
     expect(catalog).not.toContainEqual(expect.objectContaining({ provider: "opencode" }));
   });
+
+  it("excludes hidden free providers from the pricing catalog", async () => {
+    const catalog = await getProviderPricingCatalog();
+
+    expect(catalog).not.toContainEqual(expect.objectContaining({ provider: "mimo-free" }));
+  });
 });

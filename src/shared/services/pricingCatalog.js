@@ -62,7 +62,7 @@ export async function getProviderPricingCatalog() {
       .filter((provider) => !smartRoutingProviders.has(provider)),
   );
   for (const provider of Object.values(FREE_PROVIDERS)) {
-    if (provider.noAuth && isFreeProviderEnabled(settings, provider.id) && !smartRoutingProviders.has(provider.id)) availableProviders.add(provider.id);
+    if (!provider.hidden && provider.noAuth && isFreeProviderEnabled(settings, provider.id) && !smartRoutingProviders.has(provider.id)) availableProviders.add(provider.id);
   }
   const catalog = new Map();
   const add = (provider, model) => {

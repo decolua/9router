@@ -20,7 +20,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
     : undefined;
 
   return (
-    <div className={`flex min-h-24 min-w-0 items-center gap-3 rounded-md border p-3 ${borderColor} hover:bg-sidebar/50`}>
+    <div className={`group flex min-h-24 min-w-0 items-center gap-3 rounded-md border p-3 ${borderColor} hover:bg-sidebar/50`}>
       <span
         className="material-symbols-outlined text-base text-text-muted"
         style={iconColor ? { color: iconColor } : undefined}
@@ -33,7 +33,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
         {testStatus === "error" && testError && <p className="mt-1 truncate text-xs text-red-500" title={testError}>{testError}</p>}
         <div className="flex items-center gap-1 mt-1">
           <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
-          <div className="relative group/btn">
+          <div className="relative opacity-100 transition-opacity group/btn sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
             <button
               onClick={() => onCopy(fullModel, `model-${modelId}`)}
               className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
@@ -47,7 +47,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
             </span>
           </div>
           {onTest && (
-            <div className="relative group/btn">
+            <div className={`relative transition-opacity group/btn ${isTesting ? "opacity-100" : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"}`}>
               <button
                 onClick={onTest}
                 disabled={isTesting}
@@ -64,12 +64,12 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
           )}
         </div>
       </div>
-      <button onClick={onEditDescription} className="rounded p-1 text-text-muted hover:bg-sidebar hover:text-primary" title="配置模型说明">
+      <button onClick={onEditDescription} className="rounded p-1 text-text-muted opacity-100 transition-opacity hover:bg-sidebar hover:text-primary sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100" title="配置模型说明">
         <span className="material-symbols-outlined text-sm">edit_note</span>
       </button>
       <button
         onClick={onDeleteAlias}
-        className="p-1 hover:bg-red-50 rounded text-red-500"
+        className="rounded p-1 text-red-500 opacity-100 transition-opacity hover:bg-red-50 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
         title="Remove model"
       >
         <span className="material-symbols-outlined text-sm">delete</span>
@@ -78,9 +78,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
   );
 }
 
-export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel, connections, isAnthropic, onTestModel, modelTestResults, modelTestErrors = {}, testingModelIds, modelDescriptions, onEditModelDescription }) {
-  const [newModel, setNewModel] = useState("");
-  const [adding, setAdding] = useState(false);
+export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onDeleteCustomModel, connections, isAnthropic, onTestModel, modelTestResults, modelTestErrors = {}, testingModelIds, modelDescriptions, onEditModelDescription }) {
   const [importing, setImporting] = useState(false);
   const [deleteAllOpen, setDeleteAllOpen] = useState(false);
   const notify = useNotificationStore();
@@ -91,25 +89,6 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     providerAlias: providerStorageAlias,
     type: "llm",
   });
-
-  const handleAdd = async () => {
-    if (!newModel.trim() || adding) return;
-    const modelId = newModel.trim();
-    if (allModels.some((model) => model.id === modelId)) {
-      notify.warning("该提供商已存在此模型");
-      return;
-    }
-
-    setAdding(true);
-    try {
-      await onAddCustomModel(modelId);
-      setNewModel("");
-    } catch (error) {
-      console.log("Error adding model:", error);
-    } finally {
-      setAdding(false);
-    }
-  };
 
   const handleImport = async () => {
     if (importing) return;
@@ -158,21 +137,6 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
       </p>
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex min-w-[260px] flex-1 items-center gap-2">
-          <label htmlFor="new-compatible-model-input" className="shrink-0 text-xs font-medium text-text-muted">模型 ID</label>
-          <input
-            id="new-compatible-model-input"
-            type="text"
-            value={newModel}
-            onChange={(e) => setNewModel(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-            placeholder={isAnthropic ? "claude-3-opus-20240229" : "gpt-4o"}
-            className="h-9 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-sm focus:border-primary focus:outline-none"
-          />
-        </div>
-        <Button size="md" icon="add" onClick={handleAdd} disabled={!newModel.trim() || adding}>
-          {adding ? "Adding..." : "Add"}
-        </Button>
         <Button size="md" variant="secondary" icon="download" onClick={handleImport} disabled={!canImport || importing}>
           {importing ? "正在更新..." : "更新模型列表"}
         </Button>
@@ -218,7 +182,6 @@ CompatibleModelsSection.propTypes = {
   copied: PropTypes.string,
   onCopy: PropTypes.func.isRequired,
   onDeleteAlias: PropTypes.func.isRequired,
-  onAddCustomModel: PropTypes.func.isRequired,
   onDeleteCustomModel: PropTypes.func.isRequired,
   connections: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.string,

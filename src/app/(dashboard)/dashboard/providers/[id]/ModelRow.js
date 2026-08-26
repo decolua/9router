@@ -35,7 +35,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
           )}
         </div>
         {onEditDescription && (
-          <button onClick={onEditDescription} className="shrink-0 rounded p-0.5 text-text-muted hover:bg-sidebar hover:text-primary" title="配置模型说明">
+          <button onClick={onEditDescription} className="shrink-0 rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-sidebar hover:text-primary sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100" title="配置模型说明">
             <span className="material-symbols-outlined text-sm">edit_note</span>
           </button>
         )}
@@ -44,7 +44,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
             <button
               onClick={onTest}
               disabled={isTesting}
-              className={`rounded p-0.5 text-text-muted transition-opacity hover:bg-sidebar hover:text-primary ${isTesting ? "opacity-100" : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100"}`}
+              className={`rounded p-0.5 text-text-muted transition-opacity hover:bg-sidebar hover:text-primary ${isTesting ? "opacity-100" : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"}`}
             >
               <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
                 {isTesting ? "progress_activity" : "science"}
@@ -55,7 +55,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
             </span>
           </div>
         )}
-        <div className="relative shrink-0 group/btn">
+        <div className="relative shrink-0 opacity-100 transition-opacity group/btn sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
           <button
             onClick={() => onCopy(displayModel, `model-${model.id}`)}
             className="rounded p-0.5 text-text-muted hover:bg-sidebar hover:text-primary"
@@ -71,7 +71,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
         {onDeleteAlias ? (
           <button
             onClick={onDeleteAlias}
-            className="ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-red-500/10 hover:text-red-500 sm:opacity-0 sm:group-hover:opacity-100"
+            className="ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-red-500/10 hover:text-red-500 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
             title={isCustom ? "删除自定义模型" : "删除模型"}
           >
             <span className="material-symbols-outlined text-sm">close</span>
@@ -79,7 +79,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
         ) : onDisable ? (
           <button
             onClick={onDisable}
-            className="ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-red-500/10 hover:text-red-500 sm:opacity-0 sm:group-hover:opacity-100"
+            className="ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-red-500/10 hover:text-red-500 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
             title="Disable this model"
           >
             <span className="material-symbols-outlined text-sm">close</span>

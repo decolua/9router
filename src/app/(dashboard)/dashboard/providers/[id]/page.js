@@ -1433,7 +1433,6 @@ export default function ProviderDetailPage() {
           onCopy={copy}
           onSetAlias={handleSetAlias}
           onDeleteAlias={handleDeleteAlias}
-          onAddCustomModel={(modelId) => handleAddCustomModel(modelId, "llm", providerStorageAlias)}
           onDeleteCustomModel={(modelId) => handleDeleteCustomModel(modelId, "llm", providerStorageAlias)}
           connections={connections}
           isAnthropic={isAnthropicCompatible}
@@ -1523,15 +1522,6 @@ export default function ProviderDetailPage() {
             />
           );
         })}
-
-        {/* Add model button — inline, same style as model chips */}
-        <button
-          onClick={() => setShowAddCustomModel(true)}
-          className="flex min-h-16 w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-primary/40 px-3 py-2 text-xs text-primary transition-colors hover:border-primary hover:bg-primary/5"
-        >
-          <span className="material-symbols-outlined text-sm">add</span>
-          Add Model
-        </button>
 
         {/* Suggested models from provider API — show only models not yet added */}
         {suggestedModels.length > 0 && (() => {
@@ -2041,6 +2031,13 @@ export default function ProviderDetailPage() {
             </h2>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Button
+              size="md"
+              icon="add"
+              onClick={() => setShowAddCustomModel(true)}
+            >
+              添加模型
+            </Button>
             {getTestableModelIds().length > 0 && (connections.length > 0 || isFreeNoAuth) && (
               <Button
                 size="md"
@@ -2215,18 +2212,18 @@ export default function ProviderDetailPage() {
           isAnthropic={isAnthropicCompatible}
         />
       )}
-      {!isCompatible && (
-        <AddCustomModelModal
-          isOpen={showAddCustomModel}
-          providerAlias={providerStorageAlias}
-          providerDisplayAlias={providerDisplayAlias}
-          onSave={async (modelId) => {
+      <AddCustomModelModal
+        isOpen={showAddCustomModel}
+        providerAlias={providerStorageAlias}
+        providerDisplayAlias={providerDisplayAlias}
+        existingModelIds={getTestableModelIds()}
+        onSave={async (modelIds) => {
+          for (const modelId of modelIds) {
             await handleAddCustomModel(modelId, "llm", providerStorageAlias);
-            setShowAddCustomModel(false);
-          }}
-          onClose={() => setShowAddCustomModel(false)}
-        />
-      )}
+          }
+        }}
+        onClose={() => setShowAddCustomModel(false)}
+      />
 
       {providerId === "codex" && (
         <BulkImportCodexModal
