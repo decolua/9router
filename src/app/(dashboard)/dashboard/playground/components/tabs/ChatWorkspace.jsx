@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { buildPlaygroundRequest } from "../../lib/requestBuilder";
 import { createSseParser } from "../../lib/sseParser";
-import { computeMetrics } from "../../lib/metrics.js";
+import { createMetricAccumulator } from "../../lib/metrics.js";
 
 export default function ChatWorkspace({ configState, onMetricsUpdate }) {
   const [messages, setMessages] = useState([]);
@@ -9,27 +9,14 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState(null);
   const abortControllerRef = useRef(null);
-  
-  // Create a ref for stable metrics calculation state across stream events
-  const streamStateRef = useRef({
-    startedAt: null,
-    firstChunkAt: null,
-    tokensIn: 0,
-    tokensOut: 0,
-    pricing: null
-  });
 
-  const appendToLastMessage = useCallback((textDelta) => {
-    setMessages((prev) => {
-      const newMessages = [...prev];
-      if (newMessages.length === 0 || newMessages[newMessages.length - 1].role === "user") {
-        newMessages.push({ role: "assistant", content: textDelta, partial: true });
-      } else {
-        const lastMsg = newMessages[newMessages.length - 1];
-        lastMsg.content += textDelta;
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
       }
-      return newMessages;
-    });
+    };
   }, []);
 
   const handleStop = useCallback(() => {
@@ -38,25 +25,20 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
       abortControllerRef.current = null;
     }
     setIsStreaming(false);
-    setMessages((prev) => {
-       const newMessages = [...prev];
-       if (newMessages.length > 0) {
-           const lastMsg = newMessages[newMessages.length - 1];
-           if (lastMsg.role === "assistant") {
-               lastMsg.partial = false; // preserve as full message
-           }
-       }
-       return newMessages;
-    });
   }, []);
   
   const sendMessage = useCallback(async (forcedMessages = null) => {
     if (isStreaming) return;
     
+    if (!configState?.model?.id) {
+        setError("A selected model is required.");
+        return;
+    }
+
     let currentMessages = forcedMessages;
     if (!currentMessages) {
        if (!input.trim()) return;
-       const newMsg = { role: "user", content: input };
+       const newMsg = { role: "user", content: input, partial: false };
        currentMessages = [...messages, newMsg];
        setMessages(currentMessages);
        setInput("");
@@ -67,15 +49,7 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
     
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
-
-    // Reset stream metrics state
-    streamStateRef.current = {
-      startedAt: Date.now(),
-      firstChunkAt: null,
-      tokensIn: 0,
-      tokensOut: 0,
-      pricing: configState.model?.pricing || null
-    };
+    const accumulator = createMetricAccumulator(Date.now());
 
     try {
       const requestBody = buildPlaygroundRequest({
@@ -100,7 +74,6 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
       const parser = createSseParser();
       const reader = response.body.getReader();
       
-      // Initialize assistant message
       setMessages((prev) => [...prev, { role: "assistant", content: "", partial: true }]);
 
       while (true) {
@@ -116,79 +89,65 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
         }
         
         for (const event of events) {
+           accumulator.record(event, Date.now());
            if (event.type === "delta" && event.text) {
-               if (streamStateRef.current.firstChunkAt === null) {
-                   streamStateRef.current.firstChunkAt = Date.now();
-               }
-               appendToLastMessage(event.text);
-           } else if (event.type === "usage") {
-               streamStateRef.current.tokensIn = event.usage.inputTokens || 0;
-               streamStateRef.current.tokensOut = event.usage.outputTokens || 0;
+               setMessages((prev) => {
+                   if (prev.length === 0) return prev;
+                   const lastIndex = prev.length - 1;
+                   const lastMsg = prev[lastIndex];
+                   if (lastMsg.role !== "assistant") return prev;
+                   return [
+                       ...prev.slice(0, lastIndex),
+                       { ...lastMsg, content: lastMsg.content + event.text }
+                   ];
+               });
            } else if (event.type === "error") {
                throw new Error(event.message);
-           } else if (event.type === "incomplete" && !abortController.signal.aborted) {
-               setError("Stream ended unexpectedly.");
            }
         }
         
         if (done) break;
       }
-      
-      // Mark complete
-      setMessages((prev) => {
-         const newMessages = [...prev];
-         if (newMessages.length > 0) {
-             const lastMsg = newMessages[newMessages.length - 1];
-             if (lastMsg.role === "assistant") {
-                 lastMsg.partial = false;
-             }
-         }
-         return newMessages;
-      });
 
     } catch (err) {
       if (err.name === "AbortError") {
-        // preserve partial, handleStop already did partial=false
+        accumulator.abort(Date.now());
       } else {
+        accumulator.record({ type: "error", message: err.message }, Date.now());
         setError(err.message);
-        setMessages((prev) => {
-           const newMessages = [...prev];
-           if (newMessages.length > 0) {
-               const lastMsg = newMessages[newMessages.length - 1];
-               if (lastMsg.role === "assistant" && lastMsg.partial) {
-                   lastMsg.partial = false;
-               }
-           }
-           return newMessages;
-        });
       }
     } finally {
-      setIsStreaming(false);
-      abortControllerRef.current = null;
+      if (abortControllerRef.current === abortController) {
+          abortControllerRef.current = null;
+          setIsStreaming(false);
+      }
       
-      // Compute and report final metrics
-      if (onMetricsUpdate) {
-         const metrics = computeMetrics({
-            startedAt: streamStateRef.current.startedAt,
-            firstChunkAt: streamStateRef.current.firstChunkAt,
-            finishedAt: Date.now(),
-            tokensIn: streamStateRef.current.tokensIn,
-            tokensOut: streamStateRef.current.tokensOut,
-            pricing: streamStateRef.current.pricing ? {
-                inUsdPer1k: streamStateRef.current.pricing.prompt_usd_per_1k,
-                outUsdPer1k: streamStateRef.current.pricing.completion_usd_per_1k,
-                estimated: true
-            } : undefined
+      const snapshot = accumulator.snapshot();
+      
+      if (snapshot.terminalState === "complete") {
+         setMessages((prev) => {
+            if (prev.length === 0) return prev;
+            const lastIndex = prev.length - 1;
+            const lastMsg = prev[lastIndex];
+            if (lastMsg.role !== "assistant") return prev;
+            return [
+                ...prev.slice(0, lastIndex),
+                { ...lastMsg, partial: false }
+            ];
          });
-         onMetricsUpdate(metrics);
+      } else if (snapshot.terminalState === "incomplete") {
+         setError("Stream ended unexpectedly.");
+      }
+
+      if (onMetricsUpdate) {
+         onMetricsUpdate(snapshot);
       }
     }
-  }, [input, messages, isStreaming, configState, appendToLastMessage, onMetricsUpdate]);
+  }, [input, messages, isStreaming, configState, onMetricsUpdate]);
 
   const handleRegenerate = useCallback(() => {
     if (messages.length === 0 || isStreaming) return;
     
-    // Remove last assistant message
     const newMessages = [...messages];
     if (newMessages[newMessages.length - 1].role === "assistant") {
         newMessages.pop();
@@ -198,6 +157,11 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
   }, [messages, isStreaming, sendMessage]);
 
   const handleClear = useCallback(() => {
+    if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+    }
+    setIsStreaming(false);
     setMessages([]);
     setError(null);
   }, []);
@@ -207,7 +171,10 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((msg, i) => (
           <div key={i} className={`p-4 rounded-lg ${msg.role === 'user' ? 'bg-primary/10 ml-8' : 'bg-surface mr-8 border border-border'}`}>
-             <div className="font-semibold mb-1 text-sm text-text-muted">{msg.role === 'user' ? 'User' : 'Assistant'}</div>
+             <div className="flex justify-between items-center mb-1">
+                 <div className="font-semibold text-sm text-text-muted">{msg.role === 'user' ? 'User' : 'Assistant'}</div>
+                 {msg.partial && <span className="text-xs bg-warning/20 text-warning px-2 py-0.5 rounded" data-testid="partial-indicator">Partial</span>}
+             </div>
              <pre className="whitespace-pre-wrap font-sans text-sm">{msg.content}</pre>
           </div>
         ))}
@@ -255,6 +222,7 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
                  <button 
                     onClick={handleRegenerate}
                     className="text-text-muted hover:text-text-main text-xs text-center"
+                    data-testid="playground-regenerate"
                  >
                     Regenerate
                  </button>
@@ -263,6 +231,7 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
                  <button 
                     onClick={handleClear}
                     className="text-text-muted hover:text-text-main text-xs text-center"
+                    data-testid="playground-clear"
                  >
                     Clear
                  </button>

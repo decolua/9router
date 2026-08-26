@@ -19,7 +19,11 @@ vi.mock('@/app/(dashboard)/dashboard/playground/lib/sseParser', () => {
 });
 
 vi.mock('@/app/(dashboard)/dashboard/playground/lib/metrics', () => ({
-  computeMetrics: vi.fn(() => ({ mockMetrics: true }))
+  createMetricAccumulator: vi.fn((startedAt) => ({
+    record: vi.fn(),
+    abort: vi.fn(),
+    snapshot: vi.fn().mockReturnValue({ terminalState: 'complete' })
+  }))
 }));
 
 // Mock fetch
