@@ -50,9 +50,26 @@
 const ALPHA = 0.2;
 
 // Until a provider has been observed, fall back to the global blend, and until
-// THAT exists, to this. 1.6 = the old 4.0 constant divided by the 2.5 safety
-// factor it needed in practice — i.e. the stopgap this module replaces.
-const BOOTSTRAP_CHARS_PER_TOKEN = 1.6;
+// THAT exists, to this.
+//
+// This was 1.6, derived as "the old 4.0 constant divided by the 2.5 safety factor"
+// — an arithmetic leftover, never measured. It matters far more than it looks,
+// because the learned ratios live in memory and reset to this on every restart:
+// each deploy re-enters the pessimistic state for the first three requests per
+// provider, and those are exactly the requests that skip members and drain a
+// combo.
+//
+// Measured on real traffic 2026-08-26, the same body that had just been sized at
+// 253,280 tokens:
+//
+//     openrouter/poolside/laguna-s-2.1:free   392,446 chars -> 104,824 tokens
+//                                             = 3.74 chars/token
+//
+// 2.5 keeps the pessimistic bias the module argues for — it still over-counts
+// that body by 66% — while staying inside the band a tokenizer can actually
+// occupy. Dense JSON and tool schemas run about 2.0; this sits just above that
+// and well below the 3.74 observed, so it errs high without erring absurdly.
+const BOOTSTRAP_CHARS_PER_TOKEN = 2.5;
 
 // Guard rails. A ratio outside this band is not a tokenizer, it is a bug — a
 // truncated body, a cached-token accounting mismatch, a provider reporting zero.

@@ -9,7 +9,7 @@ describe("learned chars-per-token ratio", () => {
 
   it("starts uncalibrated on the bootstrap value", () => {
     expect(isCalibrated()).toBe(false);
-    expect(charsPerToken()).toBeCloseTo(1.6, 5);
+    expect(charsPerToken()).toBeCloseTo(2.5, 5);
   });
 
   // The incident this exists for: 602,528 chars measured by the provider at
