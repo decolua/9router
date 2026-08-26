@@ -102,7 +102,7 @@
     "tokenrouter/qwen/qwen3.8-max": {
       "family": "qwen3.8-max"
     },
-    "_note_ox_alpha": "The two ox-alpha ids were removed here on 2026-08-26, which is what actually drops them from every combo: band() resolves through this map, and an id with no entry bands null and is filtered out of the pool. Both were withdrawn by their providers the same day - see the _pins comment for the exact responses. The 'ox-alpha' family entry under models[] is deliberately left in place so restoring the pair is one line each here, whenever the model is unmasked under a real id."
+    "_note_ox_alpha": "The two ox-alpha ids were removed here on 2026-08-26, after both were withdrawn by their providers - see the _pins comment for the exact responses. Removing them here is NECESSARY BUT NOT SUFFICIENT, which cost a deploy to learn: identityOf() reads `declared.family ?? exact`, where `exact` matches the id's tail against models[]. oc/x-preview-f-free has no matching family and did drop out; openrouter/stealth/ox-alpha has the tail 'ox-alpha', so the family entry kept re-banding it fable and it sat at Yggdrasil #0 with its identity row already deleted. The family entry had to go too - see the note under models[]."
   },
   "_comboBand": {
     "Odin": "fable",
@@ -361,10 +361,7 @@
       "swe_pro": 60.6,
       "note": "TokenRouter qwen3.8 line; band mirrors qwen3.7-max (same class, one revision on)"
     },
-    "ox-alpha": {
-      "band": "fable",
-      "_note": "Stealth id on OpenRouter, free since 2026-08-22. Banded fable on the operator's call, not on a published benchmark - no score exists for a stealth model, and benchScore() returning 0 is read as 'unmeasured' by rankScore(), not as 'worst'. Replace with real numbers when the model is unmasked."
-    }
+    "_note_ox_alpha": "The 'ox-alpha' family entry was removed on 2026-08-26, when both ids serving it were withdrawn by their providers. It had to go from HERE, not just from _modelIdentity: identityOf() falls back to `bench.models[tail]`, and the tail of openrouter/stealth/ox-alpha is literally 'ox-alpha', so the family entry alone kept re-banding the id fable and holding it at Yggdrasil #0 after its identity row was already gone. Restoring the pair therefore needs both halves back - a family entry here with band 'fable' (assigned on the operator's call, not on a published benchmark: no score exists for a stealth model, and benchScore() returning 0 reads as 'unmeasured' to rankScore(), not as 'worst') and one _modelIdentity row per id."
   },
   "costClass": {
     "_comment": "0=free or free-with-quota, 2=subscription (finite paid allowance, must be preserved). Lower sorts first. Confirmed by the user 2026-08-01: the ONLY subscription providers are ag, cmc, cx, ocg. Rate-limited free tiers (gcli rolling 24h, ollama weekly, kr/gemini daily) need no separate class - their 429s drive health down and the scorer sinks them automatically.",

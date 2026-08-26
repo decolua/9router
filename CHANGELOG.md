@@ -12,9 +12,13 @@
   every pass. A pin forces position without checking that the entry can serve, so
   each of these was a guaranteed wasted round trip at the head of the cascade —
   and the reason the combos looked far deeper than they were. The two dead ox-alpha
-  ids are also removed from `_modelIdentity`, which is what actually drops them
-  from the pools; the `ox-alpha` family entry is kept so restoring the pair is one
-  line each when the model is unmasked. tokenrouter's identities are kept: a 404
+  ids also leave `_modelIdentity` **and** the `ox-alpha` family leaves `models[]` —
+  both halves are required, which cost a deploy to learn: `identityOf()` resolves
+  `declared.family ?? exact`, where `exact` matches the id's *tail* against
+  `models[]`. `oc/x-preview-f-free` has no matching family and dropped out on the
+  identity removal alone, but the tail of `openrouter/stealth/ox-alpha` is literally
+  `ox-alpha`, so the family entry kept re-banding it `fable` and it held Yggdrasil #0
+  with its identity row already deleted. tokenrouter's identities are kept: a 404
   earns the 30-minute operator cooldown and self-heals the moment a connection is
   added.
 - **Accounts**: a request-level `400` no longer locks the account that reported it.
