@@ -114,9 +114,16 @@ export function normalizeModelCatalog({ connections, staticModelsByProvider, liv
 
 export async function fetchModelCatalog() {
   const res = await fetch("/api/providers");
-  if (!res.ok) throw new Error(`Failed to fetch providers: ${res.status}`);
-  const providers = await res.json();
-  const connections = Array.isArray(providers) ? providers : providers.data || [];
+  if (!res.ok) throw new Error(`Failed to load connections (status: ${res.status})`);
+  
+  let providers;
+  try {
+    providers = await res.json();
+  } catch (err) {
+    throw new Error("Failed to parse connections payload");
+  }
+  
+  const connections = Array.isArray(providers?.connections) ? providers.connections : [];
   
   // Basic mock integration until Todo 3/4 completes live capability discovery
   const mockPayload = {
