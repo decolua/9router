@@ -6,8 +6,8 @@ import { Button, Card } from "@/shared/components";
 
 const PHASE_LABELS = {
   starting: "Starting update...",
-  pulling: "Running git pull...",
-  building: "Running npm run build...",
+  pulling: "Downloading update...",
+  building: "Preparing update...",
   done: "Update completed successfully.",
   error: "Update failed.",
 };
@@ -81,9 +81,8 @@ export default function GitUpdateCard() {
   }, [loadStatus, updateRunning]);
 
   const handleUpdate = async () => {
-    const pm2Process = status?.pm2Process || "9router";
     const confirmed = globalThis.confirm(
-      `Update 9Router now? This will run git pull, npm run build, and pm2 restart ${pm2Process}.`,
+      "Update 9Router now? The dashboard may be unavailable briefly while the update is installed.",
     );
     if (!confirmed) return;
 
@@ -108,9 +107,8 @@ export default function GitUpdateCard() {
   };
 
   const operation = status?.operation;
-  const pm2Process = status?.pm2Process || "9router";
   const phaseMessage = operation?.message
-    || (operation?.phase === "restarting" ? `Running pm2 restart ${pm2Process}...` : PHASE_LABELS[operation?.phase]);
+    || (operation?.phase === "restarting" ? "Restarting application..." : PHASE_LABELS[operation?.phase]);
   const feedbackClass = feedback.type === "error"
     ? "text-red-500 border-red-500/20 bg-red-500/10"
     : feedback.type === "warning"
@@ -125,7 +123,7 @@ export default function GitUpdateCard() {
         </div>
         <div>
           <h3 className="text-base sm:text-lg font-semibold">Application Update</h3>
-          <p className="text-xs sm:text-sm text-text-muted">Check the tracked Git branch and deploy updates with PM2.</p>
+          <p className="text-xs sm:text-sm text-text-muted">Check for new versions and keep 9Router up to date.</p>
         </div>
       </div>
 
@@ -133,22 +131,15 @@ export default function GitUpdateCard() {
         {status?.repositoryAvailable && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <div className="rounded-lg border border-border bg-bg p-3">
-              <p className="text-xs text-text-muted">Current</p>
+              <p className="text-xs text-text-muted">Current branch</p>
               <p className="text-sm font-medium mt-1">{status.branch}</p>
               <code className="text-xs text-text-muted">{shortCommit(status.currentCommit)}</code>
             </div>
             <div className="rounded-lg border border-border bg-bg p-3">
-              <p className="text-xs text-text-muted">Upstream</p>
+              <p className="text-xs text-text-muted">Remote branch</p>
               <p className="text-sm font-medium mt-1">{status.upstream}</p>
               <code className="text-xs text-text-muted">{shortCommit(status.remoteCommit)}</code>
             </div>
-          </div>
-        )}
-
-        {status?.updateAvailable && status.latestSubject && (
-          <div className="rounded-lg border border-border bg-bg p-3">
-            <p className="text-xs text-text-muted mb-1">Latest remote commit</p>
-            <p className="text-sm">{status.latestSubject}</p>
           </div>
         )}
 
@@ -193,9 +184,6 @@ export default function GitUpdateCard() {
           )}
         </div>
 
-        <p className="text-xs text-text-muted">
-          Automatic update runs <code>git pull --ff-only</code>, <code>npm run build</code>, then <code>pm2 restart {pm2Process}</code>.
-        </p>
       </div>
     </Card>
   );
