@@ -346,10 +346,19 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     if (result.success) return result.response;
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
+    const { shouldFallback, requestScoped } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
 
     if (shouldFallback) {
-      log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
+      // Two different facts wore the same word. "UNAVAILABLE" is what sent me
+      // hunting for exhausted quota on an account that was serving other sessions
+      // in the same minute — say which one it is, since only one of them means
+      // the account is out.
+      log.warn(
+        "FALLBACK",
+        requestScoped
+          ? `⇄ ACC:${credentials.connectionName} REJECTED THIS REQUEST (${result.status}, still available) → NEXT ACCOUNT`
+          : `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`
+      );
       excludeConnectionIds.add(credentials.connectionId);
       lastError = result.error;
       lastStatus = result.status;

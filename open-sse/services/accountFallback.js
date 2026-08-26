@@ -18,31 +18,38 @@ export function getQuotaCooldown(backoffLevel = 0) {
  * @param {number} status - HTTP status code
  * @param {string} errorText - Error message text
  * @param {number} backoffLevel - Current backoff level for exponential backoff
- * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number }}
+ * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number,
+ *            requestScoped?: boolean }}
+ *   `requestScoped` marks a failure that belongs to the request rather than to the
+ *   account: fall over to the next entry for THIS request, but write no lock, because
+ *   nothing about the account stops the next caller from succeeding. See errorConfig.
  */
 export function checkFallbackError(status, errorText, backoffLevel = 0) {
   const lowerError = errorText
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
 
+  // A rule fires the same way whether it matched on text or on status; only the
+  // predicate differs. Keeping one resolver means a new rule flag cannot be added
+  // to one arm and forgotten in the other — which is how `requestScoped` would
+  // most plausibly regress.
+  const resolve = (rule) => {
+    if (rule.requestScoped) {
+      return { shouldFallback: true, cooldownMs: 0, requestScoped: true };
+    }
+    if (rule.backoff) {
+      const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
+      return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
+    }
+    return { shouldFallback: true, cooldownMs: rule.cooldownMs };
+  };
+
   for (const rule of ERROR_RULES) {
     // Text-based rule: match substring in error message
-    if (rule.text && lowerError && lowerError.includes(rule.text)) {
-      if (rule.backoff) {
-        const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
-      }
-      return { shouldFallback: true, cooldownMs: rule.cooldownMs };
-    }
+    if (rule.text && lowerError && lowerError.includes(rule.text)) return resolve(rule);
 
     // Status-based rule: match HTTP status code
-    if (rule.status && rule.status === status) {
-      if (rule.backoff) {
-        const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
-      }
-      return { shouldFallback: true, cooldownMs: rule.cooldownMs };
-    }
+    if (rule.status && rule.status === status) return resolve(rule);
   }
 
   // Default: transient cooldown for any unmatched error

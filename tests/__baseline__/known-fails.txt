@@ -1,5 +1,6 @@
 tests/translator/bugs-toClaude-context.test.js :: OpenAI → Claude context mapping assistant reasoning_content becomes a thinking block
 tests/translator/golden-request.test.js :: GOLDEN request: OpenAI → Kiro full body (image base64 + tool_result)
+tests/unit/antigravity-quota-reset.test.js :: antigravity quota errors carry their reset time reads the absolute reset timestamp
 tests/unit/background-token-refresh.test.js :: runBackgroundTokenRefreshTick calls refresh only for due connections and swallows per-connection errors
 tests/unit/background-token-refresh.test.js :: runBackgroundTokenRefreshTick does not call refresh when nothing is due
 tests/unit/background-token-refresh.test.js :: runBackgroundTokenRefreshTick swallows top-level load errors
@@ -81,7 +82,12 @@ tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (c
 tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest accepts request with tools declared
 tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest rejects missing messages
 tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest rejects non-text (image) content
+tests/unit/cursor-models.test.js :: Cursor live model catalog fails open when the Cursor catalog request fails
 tests/unit/cursor-models.test.js :: Cursor live model catalog fetches the account-specific catalog and caches it
+tests/unit/custom-server-peer-headers.test.js :: custom-server peer header sanitizing replaces a client-supplied x-9r-real-ip with the socket address
+tests/unit/db-concurrent.test.js :: DB Concurrency — atomic safety 100 parallel saveRequestUsage → no count loss
+tests/unit/db-concurrent.test.js :: DB Concurrency — atomic safety daily summary aggregates correctly under parallel writes
+tests/unit/db-concurrent.test.js :: DB Concurrency — atomic safety mixed concurrent: usage + details + connections + aliases
 tests/unit/db-driver-chain.test.js :: Driver fallback chain default → picks better-sqlite3 when available
 tests/unit/db-driver-chain.test.js :: Driver fallback chain falls back to node:sqlite when better-sqlite3 unavailable
 tests/unit/db-driver-chain.test.js :: Driver fallback chain falls back to sql.js when both native drivers unavailable
@@ -99,6 +105,7 @@ tests/unit/kiro-external-idp.test.js :: Kiro external_idp (CLIProxyAPI) import a
 tests/unit/kiro-terminal-integrity.test.js :: Kiro terminal integrity recovery bounds the retry HTTP error body
 tests/unit/kiro-terminal-integrity.test.js :: Kiro terminal integrity recovery surfaces retry HTTP failures as SSE after heartbeat commits headers
 tests/unit/mimo-free.live.test.js :: MiMo Free anti-abuse gate (live) chat WITH Chrome User-Agent → 200
+tests/unit/mimo-free.live.test.js :: MiMo Free bootstrap (live) bootstrap returns 200 with JWT
 tests/unit/minimax-tts.test.js :: MiniMax TTS sends MiniMax T2A payload and converts hex audio to base64 JSON
 tests/unit/minimax-tts.test.js :: MiniMax TTS surfaces MiniMax base_resp errors
 tests/unit/minimax-tts.test.js :: MiniMax TTS uses the default MiniMax voice when no voice is provided
@@ -123,6 +130,8 @@ tests/unit/provider-display-split.test.js :: provider display split (E1) Cloudfl
 tests/unit/provider-display-split.test.js :: provider display split (E1) display fields source from providersDisplay.js
 tests/unit/provider-display-split.test.js :: provider display split (E1) helpers still work after split
 tests/unit/provider-test-models-routing.test.js :: provider test-models route kind routing routes huggingface image models to /api/v1/images/generations
+tests/unit/request-details-tab.test.js :: getDistinctProviders — providers route (no full-row parse) returns unique provider list without parsing data blobs
+tests/unit/request-details-tab.test.js :: request details — tab crash-risk cases oversized field → stored truncated + reparseable (no circular)
 tests/unit/token-refresh-generic.test.js :: refreshAccessToken — config-driven profiles claude: JSON body, client_id only (no client_secret)
 tests/unit/token-refresh-generic.test.js :: refreshAccessToken — config-driven profiles dedupes concurrent calls with same refresh token (same dedupKey)
 tests/unit/token-refresh-generic.test.js :: refreshAccessToken — config-driven profiles github: omits client_secret when config has none
@@ -136,6 +145,9 @@ tests/unit/translator-request-normalization.test.js :: request normalization fil
 tests/unit/translator-request-normalization.test.js :: request normalization parseSSELine supports provider raw NDJSON stream lines
 tests/unit/translator-request-normalization.test.js :: request normalization translateRequest keeps /v1/messages Claude->OpenAI text payloads string-safe
 tests/unit/tunnel-pid-ownership.test.js :: cloudflared PID ownership does not let an old child clear its successor PID
+tests/unit/windsurf-executor.test.js :: WindsurfExecutor class PROVIDERS.windsurf baseUrl is the chat endpoint (registry in sync)
+tests/unit/windsurf-executor.test.js :: WindsurfExecutor class buildUrl returns the GetChatMessage endpoint
+tests/unit/windsurf-executor.test.js :: WindsurfExecutor class constructor wires config from PROVIDERS.windsurf
 tests/unit/xai-oauth-service.test.js :: xai/oauth service builds authorize URLs with CLIProxyAPI query extras
 tests/unit/xai-oauth-service.test.js :: xai/oauth service discovers endpoints without custom user-agent headers
 tests/unit/xai-oauth-service.test.js :: xai/oauth service exchanges dashboard codes against the discovered xAI token endpoint

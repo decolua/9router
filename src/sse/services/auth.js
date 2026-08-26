@@ -263,7 +263,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const githubResetAtMs = githubMonthlyResetMs(status, errorText, provider);
 
   // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
-  let shouldFallback, cooldownMs, newBackoffLevel;
+  let shouldFallback, cooldownMs, newBackoffLevel, requestScoped;
   if (githubResetAtMs) {
     shouldFallback = true;
     cooldownMs = githubResetAtMs - Date.now();
@@ -276,9 +276,29 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     cooldownMs = Math.min(resetsAtMs - Date.now(), cap);
     newBackoffLevel = 0;
   } else {
-    ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));
+    ({ shouldFallback, cooldownMs, newBackoffLevel, requestScoped } =
+      checkFallbackError(status, errorText, backoffLevel));
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
+
+  // The failure belongs to the request, not to this account. Falling over is still
+  // right — this request has to go somewhere else — but writing a lock would answer
+  // a question nobody asked: `probeAccountCapacity` reads these locks on behalf of
+  // every concurrent caller, so a lock here withdraws a healthy model from sessions
+  // whose requests are fine. Leave the connection row untouched for the same reason;
+  // an account that served the previous request and will serve the next one is not
+  // "unavailable", and marking it so turns one client's bad payload into an operator
+  // alert. The upstream error is still logged in full by the caller.
+  if (requestScoped) {
+    const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
+    const scopedReason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
+    log.warn(
+      "AUTH",
+      `${connName} rejected this request for ${model || "the account"} [${status}] — ` +
+        `request-scoped, no lock written: ${scopedReason}`
+    );
+    return { shouldFallback: true, cooldownMs: 0, requestScoped: true };
+  }
 
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
   const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);

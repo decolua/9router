@@ -1,6 +1,29 @@
 # Unreleased
 
 ## Fixes
+- **Accounts**: a request-level `400` no longer locks the account that reported it.
+  `markAccountUnavailable` writes `modelLock_<model>` on the connection, and
+  `probeAccountCapacity` reads those locks on behalf of *every* concurrent caller —
+  so a 400 caused by one client's payload withdrew the model from every other
+  session. On 2026-08-26 a single session (558 messages, 119 tool definitions,
+  ~230K tokens) drew 33 opaque `400 "Provider returned error"` responses from
+  openrouter's Stealth upstream. Each one locked both OpenRouter accounts for two
+  minutes, so `openrouter/stealth/ox-alpha` — the head of Yggdrasil, healthy, and
+  answering other sessions in the same minute — was skipped as `no account has
+  capacity for it right now`, the cascade fell through to members that really were
+  out of quota, and the client was told its keys were exhausted by a 429 naming
+  `opencode-go`. 87 of the 154 account locks in a three-hour window were applied
+  for 400s, not 429s. The 2026-08-23 finding that a 400 is not congestion still
+  holds; only its *subject* was wrong. Error rules can now be marked
+  `requestScoped`, which keeps the fallback and drops the lock, and `{ status: 400 }`
+  is the first such rule. A 400 whose cause outlives the request is unaffected:
+  billing (`insufficient credits`), a malformed body the provider always rejects
+  (`improperly formed request`), and `Malformed model output` — the strike lock
+  `disciplineLock` synthesises, which is the one 400 that really is the account's
+  fault — all match text rules ahead of it and still lock. The `FALLBACK` log line
+  now distinguishes `REJECTED THIS REQUEST (still available)` from `UNAVAILABLE`,
+  because reading the second when the first was true is what sent this
+  investigation after exhausted quota on healthy accounts.
 - **Routing**: the context window is now learned for every provider we share with
   models.dev, not just OpenRouter. `openrouterModels.js` made the window dynamic
   for the one provider whose own `/models` publishes `context_length`; everybody

@@ -93,6 +93,15 @@ export const ERROR_RULES = [
   // spent to be told the account has no credits. Nothing about waiting changes
   // that; the account needs an operator, which is exactly COOLDOWN.forbidden.
   { text: "insufficient credits",     cooldownMs: COOLDOWN.forbidden },
+  // The one 400 that IS the account's fault, so it must be matched before the
+  // request-scoped status rule below. `disciplineLock` synthesises this status
+  // and message when a model crosses the malformed-output strike threshold: the
+  // request was fine and the OUTPUT was not, which is a property of the model and
+  // the account serving it. Locking is the whole point of that feature, and the
+  // status-400 rule would otherwise have silently disarmed it — the failure mode
+  // being: a feature keeps its call site, its tests keep passing, and it stops
+  // having any effect.
+  { text: "malformed model output",   cooldownMs: COOLDOWN.long },
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   { text: "improperly formed request", cooldownMs: COOLDOWN.long },
@@ -158,11 +167,30 @@ export const ERROR_RULES = [
   // any rate limit that mattered.
   //
   // A 400 is this request being wrong for this model — an unsupported field, a
-  // schema the provider rejects. Waiting does not fix it, and the file already
-  // takes that position: the "improperly formed request" text rule above is
-  // COOLDOWN.long. Same condition, same cooldown, reached by status instead of
-  // by message text.
-  { status: 400, cooldownMs: COOLDOWN.long },
+  // schema the provider rejects, a prompt past the real ceiling. Waiting does not
+  // fix it, and the file already takes that position: the "improperly formed
+  // request" text rule above is COOLDOWN.long.
+  //
+  // But the cooldown was written against the ACCOUNT, and that is the wrong
+  // subject. `markAccountUnavailable` writes `modelLock_<model>` on the
+  // connection, and `probeAccountCapacity` reads it for every caller — so one
+  // client's malformed request withdrew the model from EVERY concurrent session.
+  // Observed 2026-08-26: a single session (558 messages, 119 tool definitions,
+  // ~230K tokens) drew 33 opaque 400s from openrouter's Stealth upstream. Each
+  // one locked both OpenRouter accounts for two minutes, so `openrouter/stealth/
+  // ox-alpha` — the head of Yggdrasil, healthy, and answering other sessions
+  // that same minute — was skipped as "no account has capacity for it right now"
+  // and the cascade fell through to members that really were out of quota. The
+  // client saw a 429 naming opencode-go and concluded its keys were exhausted.
+  // 87 of the 154 account locks in a three-hour window were applied for 400s.
+  //
+  // `requestScoped` keeps the fallback (this request must still move on) and
+  // drops the lock (no other request is implicated). The cost is one wasted round
+  // trip per offending request instead of a two-minute blackout for every session
+  // sharing the account, and a request that is wrong for a reason that outlives
+  // it — no credits, wrong model id, revoked key — is not reached by this rule:
+  // those arrive as 402/403/404 or match a text rule above.
+  { status: 400, requestScoped: true },
   // 406 is model_not_supported (see ERROR_TYPES) and 410 is Gone — both say the
   // model is not served here at all, which is the same premise as a region
   // block. Putting them back in rotation only schedules an identical failure,
