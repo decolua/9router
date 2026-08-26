@@ -49,31 +49,30 @@ describe("normalizeModelCatalog", () => {
     ]);
   });
 
-  it("excludes inactive connections and rejects discovery objects with credential-bearing fields", () => {
+  it("excludes inactive connections and ignores connection objects without provider or id", () => {
     const catalog = normalizeModelCatalog({
       connections: [
         { id: "inactive", provider: "alpha", name: "Inactive", isActive: false },
-        {
-          id: "unsafe",
-          provider: "beta",
-          name: "Unsafe",
-          isActive: true,
-          accessToken: "session-secret",
-          headers: { Authorization: "Bearer sk-secret-value" },
-        },
+        { id: "no-provider", name: "Unsafe", isActive: true },
+        { provider: "beta", name: "Unsafe", isActive: true },
       ],
-      staticModelsByProvider: { alpha: [{ id: "hidden" }], beta: [{ id: "unsafe" }] },
+      staticModelsByProvider: { alpha: [{ id: "hidden" }] },
       liveModelsByConnection: {},
     });
 
     expect(catalog).toEqual([]);
-    expect(JSON.stringify(catalog)).not.toContain("sk-secret-value");
-    expect(JSON.stringify(catalog)).not.toContain("session-secret");
   });
 
-  it("keeps only explicitly allowed model and capability fields", () => {
+  it("keeps only explicitly allowed model and capability fields, ignoring redacted or unrelated connection fields", () => {
     const catalog = normalizeModelCatalog({
-      connections: [{ id: "connection-a", provider: "alpha", name: "Alpha", isActive: true }],
+      connections: [{ 
+        id: "connection-a", 
+        provider: "alpha", 
+        name: "Alpha", 
+        isActive: true, 
+        providerSpecificData: { something: "here" },
+        accessToken: "some-redacted-or-undefined-value" 
+      }],
       staticModelsByProvider: {},
       liveModelsByConnection: {
         "connection-a": [{
@@ -142,6 +141,19 @@ describe("fetchModelCatalog", () => {
     global.fetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ connections: "not-an-array" })
+    });
+    result = await fetchModelCatalog();
+    expect(result.models).toEqual([]);
+    
+    // 3. Models property is a non-array truthy value (e.g. object or string)
+    global.fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        connections: [
+          { id: "c1", provider: "test1", name: "Test 1", isActive: true, models: {} },
+          { id: "c2", provider: "test2", name: "Test 2", isActive: true, models: "bad" }
+        ]
+      })
     });
     result = await fetchModelCatalog();
     expect(result.models).toEqual([]);

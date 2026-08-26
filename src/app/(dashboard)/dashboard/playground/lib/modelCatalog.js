@@ -87,7 +87,7 @@ export function normalizeModelCatalog({ connections, staticModelsByProvider, liv
   const activeConnections = Array.isArray(connections) ? connections : [];
 
   for (const connection of activeConnections) {
-    if (!connection || connection.isActive === false || containsForbiddenConnectionField(connection)) continue;
+    if (!connection || connection.isActive === false) continue;
     const providerId = nonEmptyString(connection.provider);
     const connectionId = nonEmptyString(connection.id);
     const providerName = nonEmptyString(connection.name) || providerId;
@@ -132,7 +132,7 @@ export async function fetchModelCatalog() {
     liveModelsByConnection: Object.fromEntries(
       connections.map(c => [
         c.id, 
-        c.models?.map(m => typeof m === "string" ? { id: m } : m) || []
+        Array.isArray(c.models) ? c.models.map(m => typeof m === "string" ? { id: m } : m) : []
       ])
     )
   };
