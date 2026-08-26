@@ -1088,5 +1088,15 @@
         }
       }
     ]
+  },
+  "digital-ocean": {
+    "baseUrl": "https://inference.do-ai.run/v1/chat/completions",
+    "validateUrl": "https://inference.do-ai.run/v1/models",
+    "format": "openai"
+  },
+  "verboo-code": {
+    "baseUrl": "https://code.verboo.ai/router/v1/chat/completions",
+    "validateUrl": "https://code.verboo.ai/router/v1/models",
+    "format": "openai"
   }
 }
