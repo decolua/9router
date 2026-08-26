@@ -19,7 +19,7 @@ import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "o
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
-import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
+import { detectFormatByEndpoint, FORMATS } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
@@ -34,9 +34,16 @@ import { evaluateCircuit, recordCircuitOutcome } from "open-sse/services/circuit
  * Format detection and translation handled by translator
  */
 export const DASHBOARD_AUTHORIZED_CONTEXT = Symbol("dashboard-authorized-context");
+const dashboardAuthorizedRequests = new WeakSet();
+
+function sourceFormatForRequest(request, body) {
+  if (dashboardAuthorizedRequests.has(request)) return FORMATS.OPENAI;
+  return request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null;
+}
 
 export async function handleChat(request, clientRawRequest = null, requestContext = null) {
   const isDashboardAuthorized = requestContext === DASHBOARD_AUTHORIZED_CONTEXT;
+  if (isDashboardAuthorized) dashboardAuthorizedRequests.add(request);
   let body;
   try {
     body = await request.json();
@@ -373,7 +380,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       onPxpipeEvent: appendPxpipeEvent,
       providerThinking,
       // Detect source format by endpoint + body
-      sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+      sourceFormatOverride: sourceFormatForRequest(request, body),
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           ...newCreds,
@@ -451,7 +458,7 @@ async function dispatchChatAttempt({ body, provider, model, credentials, log, cl
     pxpipeEnabled: !!chatSettings.pxpipeEnabled, pxpipeMinChars: chatSettings.pxpipeMinChars, pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
     pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null, onPxpipeEvent: appendPxpipeEvent,
     providerThinking: (chatSettings.providerThinking || {})[provider] || null,
-    sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+    sourceFormatOverride: sourceFormatForRequest(request, body),
     onCredentialsRefreshed: async (newCreds) => updateProviderCredentials(credentials.connectionId, { ...newCreds, existingProviderSpecificData: credentials.providerSpecificData, testStatus: "active" }),
      onRequestSuccess: async () => clearAccountError(credentials.connectionId, credentials, model),
      onResilienceEvent,
