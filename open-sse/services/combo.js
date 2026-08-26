@@ -13,11 +13,11 @@ import { getCapabilitiesForModel } from "../providers/capabilities.js";
 // instrumentation, so importing it at boot is not enough. See modalityRegistry.js.
 import "./modalityRegistry.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
-import { estimateInputTokens, measureBody, measureFloor, IMAGE_TOKEN_ESTIMATE } from "../utils/usageTracking.js";
+import { measureBody, measureFloor, IMAGE_TOKEN_ESTIMATE } from "../utils/usageTracking.js";
 import { charsPerToken, sizingCharsPerToken, isSizingCalibrated } from "./tokenRatio.js";
 import { learnedContextWindow } from "./contextWindowRegistry.js";
 import { extractVisibleText, findDegeneracy, hasAssistantPrefill, GATE_WINDOW_CHARS, GATE_MIN_JUDGEABLE_CHARS, PREFLIGHT_MAX_READS, HOLD_BACK_MS } from "../utils/degeneracy.js";
-import { COMBO_RESPONSE_TIMEOUT_MS, COMBO_FIRST_EVENT_TIMEOUT_MS, COMPACT_HEADROOM_RATIO, CONTEXT_ESTIMATE_SAFETY } from "../config/errorConfig.js";
+import { COMBO_RESPONSE_TIMEOUT_MS, COMBO_FIRST_EVENT_TIMEOUT_MS, COMPACT_HEADROOM_RATIO } from "../config/errorConfig.js";
 import { isPaidModel } from "../config/costClasses.js";
 import { isEmptyTurnNotice } from "../translator/response/emptyTurn.js";
 
@@ -817,11 +817,6 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   // stays retryable. Starts true and is cleared by the first counter-example.
   let onlyTooLarge = true;
   let widestWindow = 0;
-  // The raw estimate assumes 4 chars/token, which under-counts an agent transcript
-  // by roughly 2.6x (see CONTEXT_ESTIMATE_SAFETY). Every size decision below uses the
-  // adjusted figure so a member is skipped rather than spending a round trip to be
-  // told the input is too long; the raw value is kept only to log the pair, so the
-  // safety factor can be replaced with a measured ratio later.
   // Size from a MEASURED chars-per-token ratio once one exists. The ratio is
   // learned from the provider's own input_tokens on every response (see
   // services/tokenRatio.js), so after the first real call this stops being an
@@ -844,10 +839,24 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   // for the log and the client-facing messages; every per-model decision below
   // asks with the model in hand.
   const ratio = sizingCharsPerToken();
+  // ONE divisor, calibrated or not. The uncalibrated arm used to ignore `r` and
+  // fall back to `estimateInputTokens(body) * CONTEXT_ESTIMATE_SAFETY`, which is
+  // chars/4 * 2.5 — a fixed chars/1.6 — while the log printed `r` beside it. So
+  // the logged ratio was a number the code had not used, and every constant in
+  // tokenRatio.js was inert until a provider had answered three times.
+  //
+  // Measured 2026-08-26: a 549,218-char body was sized at 347,263 tokens against
+  // a real count near 147,000. At that figure the cascade skipped kr/claude-
+  // sonnet-4.5 (200K), oc/mimo-v2.5-free (200K) and openrouter/poolside/
+  // laguna-s-2.1:free (262K) for window — the last of them being the free member
+  // that had just served the same conversation and reported 3.74 chars/token. The
+  // combo then reported exhaustion with three members it could have used.
+  //
+  // The bootstrap is now the uncalibrated answer, which is what it was written to
+  // be: "the stopgap this module replaces". Nothing else changes — sizing still
+  // errs high, still takes the pool's worst ratio, still adds the image estimate.
   const sizeOf = (measured, r) =>
-    calibrated
-      ? Math.ceil(measured.chars / r) + measured.images * IMAGE_TOKEN_ESTIMATE
-      : Math.ceil(estimateInputTokens(body) * CONTEXT_ESTIMATE_SAFETY);
+    Math.ceil(measured.chars / r) + measured.images * IMAGE_TOKEN_ESTIMATE;
   const sizeFor = (modelStr) =>
     sizeOf({ chars, images }, sizingCharsPerToken(splitModelStr(modelStr).provider));
   const inputTokens = sizeOf({ chars, images }, ratio);
