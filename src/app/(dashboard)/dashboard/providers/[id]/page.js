@@ -87,6 +87,9 @@ export default function ProviderDetailPage() {
   const [apiKeys, setApiKeys] = useState([]);
   const [systemModels, setSystemModels] = useState([]);
   const [smartRoutingSaving, setSmartRoutingSaving] = useState(false);
+  const [smartRoutingPickerModelId, setSmartRoutingPickerModelId] = useState(null);
+  const [smartRoutingPickerSelection, setSmartRoutingPickerSelection] = useState("");
+  const [smartRoutingPickerSearch, setSmartRoutingPickerSearch] = useState("");
   const { copied, copy } = useCopyToClipboard();
   const notify = useNotificationStore();
 
@@ -182,10 +185,15 @@ export default function ProviderDetailPage() {
     ...kiloFreeModels.filter((item) => !models.some((model) => model.id === item.id)),
     ...customModels.filter((item) => item.providerAlias === providerStorageAlias && (item.kind || item.type || "llm") === "llm"),
   ].filter((item) => { const kind = getModelKind(item); return !kind || kind === "llm"; }).map((item) => [item.id, item])).values()];
-  const smartRoutingModelOptions = [...new Map([
-    ...systemModels.map((item) => [item.routedModel || item.fullModel, { value: item.routedModel || item.fullModel, label: `${item.provider}/${item.model}` }]),
-    ...customModels.map((item) => [`${item.providerAlias}/${item.id}`, { value: `${item.providerAlias}/${item.id}`, label: `${item.providerAlias}/${item.id}` }]),
-  ]).values()].filter((item) => item.value && item.value.includes("/"));
+  const smartRoutingModelOptionMap = new Map(systemModels.map((item) => [item.value, item]));
+  const smartRoutingPickerQuery = smartRoutingPickerSearch.trim().toLowerCase();
+  const visibleSmartRoutingModelOptions = systemModels.filter((item) => (
+    !smartRoutingPickerQuery || `${item.provider} ${item.label} ${item.value}`.toLowerCase().includes(smartRoutingPickerQuery)
+  ));
+  const groupedSmartRoutingModelOptions = visibleSmartRoutingModelOptions.reduce((groups, item) => {
+    (groups[item.provider || "其他"] ||= []).push(item);
+    return groups;
+  }, {});
 
   const fetchDisabledModels = useCallback(async () => {
     try {
@@ -489,14 +497,109 @@ export default function ProviderDetailPage() {
   }, [fetchConnections, fetchAliases, fetchCustomModels, fetchDisabledModels]);
 
   useEffect(() => {
-    Promise.all([fetch("/api/keys", { cache: "no-store" }), fetch("/api/models", { cache: "no-store" })])
-      .then(async ([keysRes, modelsRes]) => {
-        const [keysData, modelsData] = await Promise.all([keysRes.ok ? keysRes.json() : {}, modelsRes.ok ? modelsRes.json() : {}]);
+    Promise.all([
+      fetch("/api/keys", { cache: "no-store" }),
+      fetch("/api/models", { cache: "no-store" }),
+      fetch("/api/v1/models", { cache: "no-store" }),
+      fetch("/api/providers", { cache: "no-store" }),
+      fetch("/api/models/custom", { cache: "no-store" }),
+    ])
+      .then(async ([keysRes, catalogRes, routedRes, providersRes, customRes]) => {
+        const [keysData, catalogData, routedData, providersData, customData] = await Promise.all([
+          keysRes.ok ? keysRes.json() : {},
+          catalogRes.ok ? catalogRes.json() : {},
+          routedRes.ok ? routedRes.json() : {},
+          providersRes.ok ? providersRes.json() : {},
+          customRes.ok ? customRes.json() : {},
+        ]);
         setApiKeys(keysData.keys || []);
-        setSystemModels(modelsData.models || []);
+
+        const providerNames = new Map();
+        for (const connection of (providersData.connections || []).filter((item) => (
+          item.isActive !== false || item.autoDisabled === true || item.autoDisabledReason
+        ))) {
+          const displayName = connection.providerName || connection.name || connection.provider;
+          const keys = [
+            connection.provider,
+            getProviderAlias(connection.provider) || connection.provider,
+            connection.providerSpecificData?.prefix,
+          ].filter(Boolean);
+          for (const key of keys) providerNames.set(key, displayName);
+        }
+
+        const resolveProviderName = (provider) => providerNames.get(provider)
+          || providerNames.get(getProviderAlias(provider) || provider)
+          || null;
+        const catalogModels = (catalogData.models || [])
+          .filter((model) => resolveProviderName(model.provider))
+          .map((model) => ({
+            value: model.routedModel || model.fullModel,
+            label: model.alias || model.model || model.routedModel || model.fullModel,
+            provider: resolveProviderName(model.provider),
+          }));
+        const routedModels = (routedData.data || [])
+          .filter((model) => model.owned_by !== "combo" && model.id)
+          .map((model) => {
+            const routeProvider = String(model.id).split("/")[0];
+            const displayName = resolveProviderName(routeProvider) || resolveProviderName(model.owned_by);
+            return displayName ? { value: model.id, label: model.id, provider: displayName } : null;
+          })
+          .filter(Boolean);
+        const registeredModels = (customData.models || [])
+          .filter((model) => (model.kind || model.type || "llm") === "llm")
+          .map((model) => {
+            const displayName = resolveProviderName(model.providerAlias);
+            return displayName ? {
+              value: `${model.providerAlias}/${model.id}`,
+              label: model.name || model.id,
+              provider: displayName,
+            } : null;
+          })
+          .filter(Boolean);
+        const dedupedModels = new Map();
+        for (const model of [...routedModels, ...catalogModels, ...registeredModels]) {
+          if (model.value?.includes("/")) dedupedModels.set(model.value, model);
+        }
+        setSystemModels([...dedupedModels.values()].sort((left, right) => (
+          `${left.provider}/${left.label}`.localeCompare(`${right.provider}/${right.label}`)
+        )));
       })
       .catch(() => {});
   }, []);
+
+  const openSmartRoutingModelPicker = (modelId) => {
+    setSmartRoutingPickerModelId(modelId);
+    setSmartRoutingPickerSelection(smartRoutingConfig.primaryModels?.[modelId] || "");
+    setSmartRoutingPickerSearch("");
+  };
+
+  const closeSmartRoutingModelPicker = () => {
+    setSmartRoutingPickerModelId(null);
+    setSmartRoutingPickerSelection("");
+    setSmartRoutingPickerSearch("");
+  };
+
+  const confirmSmartRoutingModel = () => {
+    if (!smartRoutingPickerModelId || !smartRoutingPickerSelection) return;
+    setSmartRoutingConfig((current) => ({
+      ...current,
+      primaryModels: {
+        ...(current.primaryModels || {}),
+        [smartRoutingPickerModelId]: smartRoutingPickerSelection,
+      },
+    }));
+    closeSmartRoutingModelPicker();
+  };
+
+  const clearSmartRoutingModel = () => {
+    if (!smartRoutingPickerModelId) return;
+    setSmartRoutingConfig((current) => {
+      const primaryModels = { ...(current.primaryModels || {}) };
+      delete primaryModels[smartRoutingPickerModelId];
+      return { ...current, primaryModels };
+    });
+    closeSmartRoutingModelPicker();
+  };
 
   const saveSmartRoutingConfig = async (nextConfig) => {
     setSmartRoutingSaving(true);
@@ -1890,7 +1993,11 @@ export default function ProviderDetailPage() {
           {smartRoutingConfig.enabled && <>
             <DropdownSelect label="智能路由供应商 API 密钥" value={smartRoutingConfig.apiKeyId || ""} onChange={(apiKeyId) => setSmartRoutingConfig((current) => ({ ...current, apiKeyId }))} searchable options={apiKeys.map((key) => ({ value: key.id, label: `${key.name} (${key.key.slice(0, 8)}...)` }))} placeholder="选择已有 API 密钥" />
             <div className="border-t border-border pt-4"><div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-semibold">可用模型的主力模型</h3><Button size="sm" onClick={() => saveSmartRoutingConfig(smartRoutingConfig)} loading={smartRoutingSaving} disabled={!smartRoutingConfig.apiKeyId}>保存配置</Button></div>
-              {smartRoutingModels.length === 0 ? <p className="text-sm text-text-muted">当前提供商没有可配置模型。</p> : <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">{smartRoutingModels.map((model) => <div key={model.id} className="flex min-w-0 items-center gap-3 rounded-md border border-border px-3 py-2"><code className="min-w-0 flex-1 truncate text-xs">{providerDisplayAlias}/{model.id}</code><DropdownSelect className="w-64 shrink-0" value={smartRoutingConfig.primaryModels?.[model.id] || ""} onChange={(value) => setSmartRoutingConfig((current) => ({ ...current, primaryModels: { ...(current.primaryModels || {}), [model.id]: value } }))} searchable options={smartRoutingModelOptions} placeholder="选择主力模型" /></div>)}</div>}
+              {smartRoutingModels.length === 0 ? <p className="text-sm text-text-muted">当前提供商没有可配置模型。</p> : <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">{smartRoutingModels.map((model) => {
+                const selectedValue = smartRoutingConfig.primaryModels?.[model.id] || "";
+                const selectedOption = smartRoutingModelOptionMap.get(selectedValue);
+                return <div key={model.id} className="flex min-w-0 items-center gap-3 rounded-md border border-border px-3 py-2"><code className="min-w-0 flex-1 truncate text-xs">{providerDisplayAlias}/{model.id}</code><button type="button" onClick={() => openSmartRoutingModelPicker(model.id)} className="flex w-64 shrink-0 items-center justify-between gap-2 rounded-md border border-border bg-surface px-3 py-2 text-left text-sm outline-none transition-colors hover:border-primary/50 focus:border-primary focus:ring-2 focus:ring-primary/15"><span className={`min-w-0 flex-1 truncate ${selectedValue ? "text-text-main" : "text-text-muted"}`} title={selectedValue}>{selectedOption ? `${selectedOption.provider} / ${selectedOption.label}` : (selectedValue || "选择主力模型")}</span><span className="material-symbols-outlined shrink-0 text-[18px] text-text-muted">expand_more</span></button></div>;
+              })}</div>}
             </div>
           </>}
         </div>
@@ -1973,6 +2080,21 @@ export default function ProviderDetailPage() {
           <label className="text-sm font-medium text-text-main" htmlFor="model-description-input">模型说明</label>
           <textarea id="model-description-input" rows={5} maxLength={500} value={modelDescriptionEditor?.value || ""} onChange={(event) => setModelDescriptionEditor((current) => ({ ...current, value: event.target.value }))} placeholder="说明模型用途、能力或适用场景" className="w-full resize-y rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-text-main outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" />
           <p className="text-right text-xs text-text-muted">{modelDescriptionEditor?.value?.length || 0}/500</p>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={!!smartRoutingPickerModelId}
+        onClose={closeSmartRoutingModelPicker}
+        title="选择主力模型"
+        size="lg"
+        footer={<><Button variant="ghost" onClick={closeSmartRoutingModelPicker}>取消</Button>{smartRoutingPickerModelId && smartRoutingConfig.primaryModels?.[smartRoutingPickerModelId] && <Button variant="secondary" onClick={clearSmartRoutingModel}>清除选择</Button>}<Button disabled={!smartRoutingPickerSelection} onClick={confirmSmartRoutingModel}>选择</Button></>}
+      >
+        <div className="flex flex-col gap-3">
+          <Input icon="search" placeholder="搜索提供商或模型" value={smartRoutingPickerSearch} onChange={(event) => setSmartRoutingPickerSearch(event.target.value)} />
+          <div className="max-h-[55vh] overflow-y-auto rounded-md border border-border p-2 custom-scrollbar">
+            {visibleSmartRoutingModelOptions.length ? Object.entries(groupedSmartRoutingModelOptions).map(([provider, providerModels]) => <div key={provider} className="mb-3 last:mb-0"><div className="px-2 py-1 text-xs font-semibold text-text-muted">{provider}</div>{providerModels.map((model) => <label key={model.value} className="flex cursor-pointer items-center gap-2 rounded px-2 py-2 text-sm hover:bg-bg-hover"><input type="radio" name="smart-routing-primary-model" checked={smartRoutingPickerSelection === model.value} onChange={() => setSmartRoutingPickerSelection(model.value)} /><span className="min-w-0 break-all font-mono text-xs">{model.label}</span></label>)}</div>) : <p className="p-8 text-center text-sm text-text-muted">没有可选择的模型</p>}
+          </div>
         </div>
       </Modal>
 
