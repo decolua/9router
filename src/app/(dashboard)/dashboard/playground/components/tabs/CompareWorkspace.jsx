@@ -48,7 +48,7 @@ export default function CompareWorkspace({ configState, availableModels = [] }) 
 
   useEffect(() => {
     return () => {
-      Object.keys(abortControllersRef.current).forEach(cleanupColumn);
+      Object.keys(abortControllersRef.current).forEach(colId => cleanupColumn(colId));
     };
   }, [cleanupColumn]);
 

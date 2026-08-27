@@ -215,6 +215,7 @@ describe("CompareWorkspace", () => {
       await Promise.resolve();
     });
     expect(screen.getByTestId("compare-col-col-default-b").textContent).toContain(bufferedBOutput);
+    expect(screen.getByTestId("compare-col-col-default-b").textContent).not.toContain("_LATE");
     expect(screen.getByTestId("state-col-default-b").textContent).toBe("ABORTED");
 
     // 4. column C -> error
