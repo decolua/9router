@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
 import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal, ConfirmModal } from "@/shared/components";
+import { getQuotaPauseInfo } from "@/shared/utils/quotaPause.js";
 
 // ── CooldownTimer ──────────────────────────────────────────────
 function CooldownTimer({ until }) {
@@ -87,6 +88,7 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
 
   const effectiveStatus = connection.testStatus === "unavailable" && !isCooldown ? "active" : connection.testStatus;
 
+  const quotaInfo = getQuotaPauseInfo(connection);
   const getStatusVariant = () => getConnectionStatusVariant(connection.isActive, effectiveStatus);
 
   const displayName = isOAuth
@@ -119,6 +121,11 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
             </Badge>
             {hasAnyProxy && <Badge variant={proxyBadgeVariant} size="sm">Proxy</Badge>}
             {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
+            {quotaInfo.paused && connection.isActive !== false && (
+              <Badge variant="warning" size="sm">
+                Paused (quota)
+              </Badge>
+            )}
             {connection.lastError && connection.isActive !== false && (
               <span className="text-xs text-red-500 truncate max-w-[300px]" title={connection.lastError}>{connection.lastError}</span>
             )}

@@ -8,6 +8,43 @@ import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
+import { getQuotaPauseInfo } from "@/shared/utils/quotaPause.js";
+
+// Per-account quota safety buffer control. When remaining % drops to/below the
+// threshold, routing auto-pauses this account (see src/sse/services/quotaGuard.js).
+function QuotaPauseField({ threshold, onChange, connection }) {
+  const info = getQuotaPauseInfo(connection);
+  return (
+    <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+      <h3 className="font-semibold mb-3 text-sm">Quota Safety Buffer</h3>
+      <div className="flex items-center gap-3">
+        <label className="text-sm text-text-muted whitespace-nowrap">Pause when remaining ≤</label>
+        <input
+          type="number"
+          min={0}
+          max={100}
+          value={threshold}
+          onChange={(e) => onChange(Number.parseInt(e.target.value, 10) || 0)}
+          className="w-20 px-2 py-1 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+        />
+        <span className="text-sm text-text-muted">%</span>
+      </div>
+      <p className="text-xs text-text-muted mt-2">
+        {info.eligible
+          ? (info.remainingPercentage != null
+              ? `Currently ${info.remainingPercentage}% remaining${info.paused ? " — paused for routing." : "."} Set to 0 to disable.`
+              : "Set a value (1–100) to pause this account before it hits 0%. The dashboard Quota Tracker keeps the remaining % up to date.")
+          : "Usage tracking isn't available for this account type, so the buffer can't be applied."}
+      </p>
+    </div>
+  );
+}
+
+QuotaPauseField.propTypes = {
+  threshold: PropTypes.number,
+  onChange: PropTypes.func.isRequired,
+  connection: PropTypes.object,
+};
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
@@ -15,6 +52,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     priority: 1,
     apiKey: "",
   });
+  const [quotaPauseThreshold, setQuotaPauseThreshold] = useState(0);
   const [azureData, setAzureData] = useState({
     azureEndpoint: "",
     apiVersion: "2024-10-01-preview",
@@ -56,6 +94,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       }
       setTestResult(null);
       setValidationResult(null);
+      setQuotaPauseThreshold(Number(connection.quotaPauseThreshold) || 0);
     }
   }, [connection]);
 
@@ -120,6 +159,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       const updates = {
         name: formData.name,
         priority: formData.priority,
+        quotaPauseThreshold: Number(quotaPauseThreshold) || 0,
       };
       if (!isOAuth && formData.apiKey) {
         updates.apiKey = formData.apiKey;
@@ -200,6 +240,12 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           type="number"
           value={formData.priority}
           onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value, 10) || 1 })}
+        />
+
+        <QuotaPauseField
+          threshold={quotaPauseThreshold}
+          onChange={setQuotaPauseThreshold}
+          connection={connection}
         />
 
         {!isOAuth && (
