@@ -302,14 +302,21 @@ export default function CompareWorkspace({ configState, availableModels = [] }) 
                         ${col.state === 'waiting' ? 'text-warning' : ''}
                         ${col.state === 'streaming' ? 'text-primary' : ''}
                         ${col.state === 'complete' ? 'text-success' : ''}
+                        ${col.state === 'incomplete' ? 'text-warning' : ''}
+                        ${col.state === 'aborted' ? 'text-text-muted' : ''}
+                        ${col.state === 'idle' ? 'text-text-muted' : ''}
                     `}>
                         {col.state.toUpperCase()}
                     </span>
                     
                     {col.metrics && (
-                        <div className="flex gap-2">
-                            {col.metrics.ttftMs && <span>{col.metrics.ttftMs}ms TTFT</span>}
-                            {col.metrics.usage?.totalTokens && <span>{col.metrics.usage.totalTokens} t</span>}
+                        <div className="flex gap-2 text-text-muted">
+                            {col.metrics.durationMs != null && <span>{col.metrics.durationMs}ms</span>}
+                            {col.metrics.ttftMs != null && <span>{col.metrics.ttftMs}ms TTFT</span>}
+                            {col.metrics.usage?.inputTokens != null && <span>In: {col.metrics.usage.inputTokens}</span>}
+                            {col.metrics.usage?.outputTokens != null && <span>Out: {col.metrics.usage.outputTokens}</span>}
+                            {col.metrics.usage?.totalTokens != null && <span>Total: {col.metrics.usage.totalTokens}</span>}
+                            {col.metrics.usage == null && <span>Usage: Unavailable</span>}
                         </div>
                     )}
                     

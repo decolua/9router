@@ -123,65 +123,125 @@ describe("CompareWorkspace", () => {
     expect(req2.model.id).toBe("anthropic/claude-3");
   });
   
-  it("isolates streams and states correctly", async () => {
-    // We mock read() to block until we want it to resolve
-    let resolveRead1, resolveRead2;
-    const p1 = new Promise(r => { resolveRead1 = r; });
-    const p2 = new Promise(r => { resolveRead2 = r; });
-    
-    const mockFetch = vi.fn()
-      .mockImplementationOnce(() => Promise.resolve({
-        ok: true,
-        body: { getReader: () => ({ read: () => p1 }) }
-      }))
-      .mockImplementationOnce(() => Promise.resolve({
-        ok: true,
-        body: { getReader: () => ({ read: () => p2 }) }
-      }));
-    global.fetch = mockFetch;
-    
-    const mockPush = vi.fn().mockReturnValue([{ type: "delta", text: "chunk " }]);
-    const mockClose = vi.fn().mockReturnValue(null);
-    createSseParser.mockReturnValue({ push: mockPush, close: mockClose });
+  it("proves real request-body equality, four-way stream isolation, and RAF cleanup on unmount", async () => {
+    const encoder = new TextEncoder();
+    const readers = [];
+    const pendingReads = [];
+    let fetchCallCount = 0;
 
-    render(<CompareWorkspace configState={mockConfigState} availableModels={availableModels} />);
-    
+    global.fetch = vi.fn().mockImplementation((url, opts) => {
+      const idx = fetchCallCount++;
+      const reader = {
+        read: vi.fn(() => new Promise((resolve) => { pendingReads[idx] = resolve; })),
+        cancel: vi.fn().mockResolvedValue(undefined),
+      };
+      readers[idx] = reader;
+      if (fetchCallCount <= 4) {
+        global.fetch.mock.calls[idx][1] = opts; // capture body for later parse
+      }
+      return Promise.resolve({ ok: true, body: { getReader: () => reader } });
+    });
+
+    const queuedRafs = new Map();
+    let rafId = 0;
+    global.requestAnimationFrame = vi.fn((cb) => { const id = ++rafId; queuedRafs.set(id, cb); return id; });
+    global.cancelAnimationFrame = vi.fn((id) => { queuedRafs.delete(id); });
+
+    const availableModels4 = [
+      ...availableModels,
+      { id: "test-provider/model-d", label: "Model D" },
+    ];
+
+    const { unmount } = render(<CompareWorkspace configState={mockConfigState} availableModels={availableModels4} />);
+    fireEvent.click(screen.getByTitle("Add model column")); // get to 3 columns
+    fireEvent.click(screen.getByTitle("Add model column")); // get to 4 columns
+
     const selects = screen.getAllByRole("combobox");
     fireEvent.change(selects[0], { target: { value: "openai/gpt-4o" } });
     fireEvent.change(selects[1], { target: { value: "anthropic/claude-3" } });
-    
-    fireEvent.change(screen.getByTestId("compare-input"), { target: { value: "Go" } });
+    fireEvent.change(selects[2], { target: { value: "google/gemini" } });
+    fireEvent.change(selects[3], { target: { value: "test-provider/model-d" } });
+
+    fireEvent.change(screen.getByTestId("compare-input"), { target: { value: "compare this" } });
     
     await act(async () => {
       fireEvent.click(screen.getByTestId("compare-send"));
     });
-    
-    // Yield to let the initial fetch resolve
+
+    // 1. real-body equality except model
+    const bodies = global.fetch.mock.calls.slice(0, 4).map((call) => JSON.parse(call[1].body));
+    const strippedBodies = bodies.map(({ model, ...rest }) => rest);
+    expect(strippedBodies[0]).toEqual(strippedBodies[1]);
+    expect(strippedBodies[0]).toEqual(strippedBodies[2]);
+    expect(strippedBodies[0]).toEqual(strippedBodies[3]);
+    expect(new Set(bodies.map((b) => b.model)).size).toBe(4);
+
+    // Provide initial promise tick for states to become STREAMING
     await act(async () => {
       await Promise.resolve();
     });
 
-    // Both should be in STREAMING state since the mock fetch resolves immediately
-    const states = screen.getAllByTestId(/state-col-/);
-    expect(states[0].textContent).toBe("STREAMING");
-    expect(states[1].textContent).toBe("STREAMING");
-    
-    // Stop column 2 specifically
-    const stopBtns = screen.getAllByText(/Stop/i);
-    // Column 1 is index 0, Column 2 is index 1
+    // 2. column A -> complete
     await act(async () => {
-      fireEvent.click(stopBtns[1]); // Stop col 2
+      pendingReads[0]({ done: false, value: encoder.encode('data: {"choices":[{"delta":{"content":"A"}}]}\n\ndata: [DONE]\n\n') });
+    });
+
+    // 3. column B -> streaming then cancelled by user
+    await act(async () => {
+      pendingReads[1]({ done: false, value: encoder.encode('data: {"choices":[{"delta":{"content":"B_PARTIAL"}}]}\n\n') });
     });
     
-    // Column 1 is STREAMING, Column 2 is ABORTED
-    const statesFinal = screen.getAllByTestId(/state-col-/);
-    expect(statesFinal[0].textContent).toBe("STREAMING");
+    await act(async () => {
+      const callbacks = Array.from(queuedRafs.values());
+      queuedRafs.clear();
+      callbacks.forEach(cb => cb());
+    });
+    
+    expect(screen.getByText(/B_PARTIAL/)).toBeTruthy();
+    const stopButtons = screen.getAllByTestId(/stop-col-/i);
+    await act(async () => {
+      fireEvent.click(stopButtons[1]); // stop column B specifically
+    });
+
+    // 4. column C -> error
+    await act(async () => {
+      pendingReads[2]({ done: false, value: encoder.encode('data: {"error":{"message":"Rate limited"}}\n\n') });
+    });
+
+    // 5. column D -> incomplete (EOF, no [DONE])
+    await act(async () => {
+      pendingReads[3]({ done: true });
+    });
+    
+    await act(async () => {
+      const callbacks = Array.from(queuedRafs.values());
+      queuedRafs.clear();
+      callbacks.forEach(cb => cb());
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(/A/)).toBeTruthy();
+    expect(screen.getByText(/B_PARTIAL/)).toBeTruthy(); // frozen partial preserved
+    expect(screen.getByText(/Rate limited/)).toBeTruthy();
+
+    const statesFinal = screen.getAllByTestId(/state-/);
+    expect(statesFinal[0].textContent).toBe("COMPLETE");
     expect(statesFinal[1].textContent).toBe("ABORTED");
-    
-    // Break the infinite loop of the active stream to finish test cleanly
-    await act(async () => {
-      resolveRead1({ done: true });
-      resolveRead2({ done: true });
-    });
+    expect(statesFinal[2].textContent).toBe("ERROR");
+    expect(statesFinal[3].textContent).toBe("INCOMPLETE");
+
+    // B stayed frozen — no further reads processed for it after abort
+    expect(pendingReads[1]).toBeDefined();
+
+    // 6. unmount with any remaining queued RAF, prove cleanup
+    const hadQueuedRaf = queuedRafs.size > 0;
+    unmount();
+    if (hadQueuedRaf) {
+      expect(global.cancelAnimationFrame).toHaveBeenCalled();
+    }
+    expect(queuedRafs.size).toBe(0);
   });
 });
