@@ -131,12 +131,31 @@ describe('PlaygroundStudio Shell', () => {
     localStorage.setItem(PLAYGROUND_PERSISTENCE_KEYS.draft, JSON.stringify({ version: 1, value: persisted.draft }));
     modelCatalog.fetchModelCatalog.mockResolvedValue({ models: [] });
 
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem');
     render(React.createElement(PlaygroundStudio));
 
     await waitFor(() => {
       expect(screen.getByLabelText('System Prompt').value).toBe('restored prompt');
       expect(screen.getByPlaceholderText('Send a message...').value).toBe('restored draft');
     });
+
+    // No write during mount/hydration may contain the pristine empty state.
+    // A save gated on a ref (rather than `hydrated`) fires on the first render
+    // with the initial empty closure and would be caught here even though a
+    // later write overwrites it with restored data.
+    const emptyEnvelopes = {
+      [PLAYGROUND_PERSISTENCE_KEYS.sessions]: { version: 1, value: [] },
+      [PLAYGROUND_PERSISTENCE_KEYS.presetsConfig]: { version: 1, value: { presets: [], config: { systemPrompt: '', temperature: 0.7, maxTokens: 2000, model: null } } },
+      [PLAYGROUND_PERSISTENCE_KEYS.selection]: { version: 1, value: {} },
+      [PLAYGROUND_PERSISTENCE_KEYS.draft]: { version: 1, value: '' },
+    };
+    for (const [key, emptyEnvelope] of Object.entries(emptyEnvelopes)) {
+      const writes = setItemSpy.mock.calls.filter(([callKey]) => callKey === key);
+      expect(writes.length).toBeGreaterThan(0);
+      for (const [, value] of writes) {
+        expect(JSON.parse(value)).not.toEqual(emptyEnvelope);
+      }
+    }
 
     expect(JSON.parse(localStorage.getItem(PLAYGROUND_PERSISTENCE_KEYS.sessions)).value[0].id).toBe('saved-session');
     expect(JSON.parse(localStorage.getItem(PLAYGROUND_PERSISTENCE_KEYS.presetsConfig)).value.presets[0].id).toBe('saved-preset');
