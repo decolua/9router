@@ -48,10 +48,13 @@ export default function CombosPage() {
   const [combos, setCombos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showCreateFreeModal, setShowCreateFreeModal] = useState(false);
   const [editingCombo, setEditingCombo] = useState(null);
   const [activeProviders, setActiveProviders] = useState([]);
   const [comboStrategies, setComboStrategies] = useState({});
   const [capacityAdapter, setCapacityAdapter] = useState(EMPTY_CAPACITY_ADAPTER);
+  const [freeSyncCfg, setFreeSyncCfg] = useState({ enabled: false, intervalHours: 4, autoComboIds: [] });
+  const [freeMemberIds, setFreeMemberIds] = useState([]);
   const { getCaps } = useModelCaps();
   const [confirmState, setConfirmState] = useState(null);
   const { copied, copy } = useCopyToClipboard();
@@ -62,21 +65,41 @@ export default function CombosPage() {
 
   const fetchData = async () => {
     try {
-      const [combosRes, providersRes, settingsRes] = await Promise.all([
+      const [combosRes, providersRes, settingsRes, freeSyncRes] = await Promise.all([
         fetch("/api/combos"),
         fetch("/api/providers"),
         fetch("/api/settings"),
+        fetch("/api/models/free-sync"),
       ]);
       const combosData = await combosRes.json();
       const providersData = await providersRes.json();
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-      
+      const freeSyncData = freeSyncRes.ok ? await freeSyncRes.json() : null;
+
       // Only LLM combos here - webSearch/webFetch combos belong to media-providers/web
       if (combosRes.ok) setCombos((combosData.combos || []).filter(c => !c.kind || c.kind === "llm"));
       if (providersRes.ok) {
         setActiveProviders(providersData.connections || []);
       }
       setComboStrategies(settingsData.comboStrategies || {});
+      if (settingsData.freeModelSync && typeof settingsData.freeModelSync === "object") {
+        setFreeSyncCfg({
+          enabled: false,
+          intervalHours: 4,
+          autoComboIds: [],
+          ...settingsData.freeModelSync,
+          autoComboIds: Array.isArray(settingsData.freeModelSync.autoComboIds) ? settingsData.freeModelSync.autoComboIds : [],
+        });
+      }
+      if (freeSyncData) {
+        // Same ordering the server-side sync uses: targets order x catalog order.
+        const byProvider = freeSyncData.providers || {};
+        const ordered = [];
+        for (const t of freeSyncData.targets || []) {
+          for (const id of byProvider[t.id]?.ids || []) ordered.push(`${t.alias}/${id}`);
+        }
+        setFreeMemberIds(ordered);
+      }
       const rawAdapter = settingsData.capacityAdapter || {};
       const normalized = {};
       for (const cap of CAPACITY_ADAPTER_CAPS) {
@@ -103,7 +126,28 @@ export default function CombosPage() {
     }
   };
 
-  const handleCreate = async (data) => {
+  // Attach/detach a combo from the free-model auto-sync membership list.
+  const syncAutoComboSetting = async (comboId, keepInSync) => {
+    const current = Array.isArray(freeSyncCfg.autoComboIds) ? freeSyncCfg.autoComboIds : [];
+    const exists = current.includes(comboId);
+    if (keepInSync === exists) return;
+    const next = {
+      ...freeSyncCfg,
+      autoComboIds: keepInSync ? [...current, comboId] : current.filter((id) => id !== comboId),
+    };
+    setFreeSyncCfg(next);
+    try {
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ freeModelSync: next }),
+      });
+    } catch (error) {
+      console.log("Error updating freeModelSync settings:", error);
+    }
+  };
+
+  const handleCreate = async (data, keepInSync = false) => {
     try {
       const res = await fetch("/api/combos", {
         method: "POST",
@@ -111,8 +155,11 @@ export default function CombosPage() {
         body: JSON.stringify(data),
       });
       if (res.ok) {
+        const created = await res.json().catch(() => null);
         await fetchData();
         setShowCreateModal(false);
+        setShowCreateFreeModal(false);
+        if (created?.id) await syncAutoComboSetting(created.id, keepInSync);
       } else {
         const err = await res.json();
         alert(err.error || "Failed to create combo");
@@ -122,7 +169,7 @@ export default function CombosPage() {
     }
   };
 
-  const handleUpdate = async (id, data) => {
+  const handleUpdate = async (id, data, keepInSync = false) => {
     try {
       const res = await fetch(`/api/combos/${id}`, {
         method: "PUT",
@@ -132,6 +179,7 @@ export default function CombosPage() {
       if (res.ok) {
         await fetchData();
         setEditingCombo(null);
+        await syncAutoComboSetting(id, keepInSync);
       } else {
         const err = await res.json();
         alert(err.error || "Failed to update combo");
@@ -207,9 +255,21 @@ export default function CombosPage() {
             <li><span className="font-medium text-text-main">Fusion</span> — queries all models in parallel, then a judge synthesizes one answer. Best quality, but costs the most: every request bills all panel models + the judge (N+1 calls)</li>
           </ul>
         </div>
-        <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto whitespace-nowrap">
-          Create Combo
-        </Button>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:shrink-0">
+          <Button
+            icon="auto_awesome"
+            variant="outline"
+            disabled={freeMemberIds.length === 0}
+            title={freeMemberIds.length === 0 ? "No free models discovered yet - enable auto-fetch on the Providers page first" : `Create a combo from ${freeMemberIds.length} discovered free models`}
+            onClick={() => setShowCreateFreeModal(true)}
+            className="w-full sm:w-auto whitespace-nowrap"
+          >
+            Free Combo
+          </Button>
+          <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto whitespace-nowrap">
+            Create Combo
+          </Button>
+        </div>
       </div>
 
       {/* Combos List */}
@@ -236,6 +296,7 @@ export default function CombosPage() {
               activeProviders={activeProviders}
               copied={copied}
               onCopy={copy}
+              isAutoManaged={(freeSyncCfg.autoComboIds || []).includes(combo.id)}
               onEdit={() => setEditingCombo(combo)}
               onDelete={() => handleDelete(combo.id)}
               strategy={comboStrategies[combo.name] || {}}
@@ -264,14 +325,29 @@ export default function CombosPage() {
         />
       )}
 
+      {/* Free Combo Modal - prefilled from the free-model sync catalogs */}
+      {showCreateFreeModal && (
+        <ComboFormModal
+          key="create-free"
+          isOpen={showCreateFreeModal}
+          combo={{ name: "Free-All", models: [...freeMemberIds] }}
+          onClose={() => setShowCreateFreeModal(false)}
+          onSave={handleCreate}
+          activeProviders={activeProviders}
+          showKeepInSync
+        />
+      )}
+
       {editingCombo && (
         <ComboFormModal
           key={editingCombo.id}
           isOpen={!!editingCombo}
           combo={editingCombo}
           onClose={() => setEditingCombo(null)}
-          onSave={(data) => handleUpdate(editingCombo.id, data)}
+          onSave={(data, keepInSync) => handleUpdate(editingCombo.id, data, keepInSync)}
           activeProviders={activeProviders}
+          showKeepInSync
+          initialKeepInSync={(freeSyncCfg.autoComboIds || []).includes(editingCombo.id)}
         />
       )}
 
@@ -294,7 +370,7 @@ const STRATEGY_OPTIONS = [
   { value: "fusion", label: "Fusion — panel + judge" },
 ];
 
-function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
+function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy, isAutoManaged = false }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
@@ -308,7 +384,18 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
             <span className="material-symbols-outlined text-primary text-[18px]">layers</span>
           </div>
           <div className="min-w-0 flex-1">
-            <code className="block truncate font-mono text-sm font-medium">{combo.name}</code>
+            <div className="flex items-center gap-1.5">
+              <code className="block truncate font-mono text-sm font-medium">{combo.name}</code>
+              {isAutoManaged && (
+                <span
+                  className="inline-flex shrink-0 items-center gap-0.5 rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary"
+                  title="Members are replaced automatically whenever the free-model sync runs"
+                >
+                  <span className="material-symbols-outlined text-[12px]">autorenew</span>
+                  auto-free
+                </span>
+              )}
+            </div>
             <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
               {combo.models.length === 0 ? (
                 <span className="text-xs text-text-muted italic">No models</span>
@@ -650,7 +737,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
   );
 }
 
-function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }) {
+function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null, showKeepInSync = false, initialKeepInSync = false }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
@@ -658,6 +745,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
+  const [keepInSync, setKeepInSync] = useState(initialKeepInSync);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -744,8 +832,11 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const handleSave = async () => {
     if (!validateName(name)) return;
     setSaving(true);
-    await onSave({ name: name.trim(), models });
-    setSaving(false);
+    try {
+      await onSave({ name: name.trim(), models }, keepInSync);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const isEdit = !!combo;
@@ -817,6 +908,19 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
               Add Model
             </button>
           </div>
+
+          {/* Keep in sync (free-model combos) */}
+          {showKeepInSync && (
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-black/10 px-3 py-2 dark:border-white/10">
+              <div className="min-w-0">
+                <p className="text-sm font-medium">Auto-update members</p>
+                <p className="text-xs text-text-muted">
+                  Replace this combo&apos;s models whenever the free-model sync runs
+                </p>
+              </div>
+              <Toggle checked={keepInSync} onChange={setKeepInSync} />
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex flex-col gap-2 pt-1 sm:flex-row">

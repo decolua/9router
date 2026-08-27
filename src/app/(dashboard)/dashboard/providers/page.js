@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import PropTypes from "prop-types";
 import {
   Card,
@@ -8,6 +8,7 @@ import {
   Badge,
   Button,
   Toggle,
+  Select,
 } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { getProviderIconSrc } from "@/shared/utils/providerIcon";
@@ -471,6 +472,9 @@ export default function ProvidersPage() {
       </div>
       )}
 
+      {/* Free-model auto-discovery */}
+      <FreeModelSyncCard />
+
       {/* Free Tier Providers */}
       {(freeEntries.length > 0 || freeTierEntries.length > 0) && (
       <div className="flex flex-col gap-4">
@@ -650,6 +654,121 @@ export default function ProvidersPage() {
         </div>
       )}
     </div>
+  );
+}
+
+const FREE_SYNC_INTERVAL_OPTIONS = [
+  { value: "4", label: "Every 4 hours" },
+  { value: "8", label: "Every 8 hours" },
+  { value: "12", label: "Every 12 hours" },
+  { value: "24", label: "Every 24 hours" },
+];
+
+function FreeModelSyncCard() {
+  const [status, setStatus] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
+  const notify = useNotificationStore();
+
+  const refreshStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/models/free-sync");
+      if (res.ok) setStatus(await res.json());
+    } catch (error) {
+      console.log("Error fetching free-sync status:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Deferred so the first paint isn't blocked; not polled afterwards.
+    const t = setTimeout(refreshStatus, 0);
+    return () => clearTimeout(t);
+  }, [refreshStatus]);
+
+  const patchConfig = async (patch) => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ freeModelSync: patch }),
+      });
+      if (res.ok) await refreshStatus();
+    } catch (error) {
+      console.log("Error updating free-model sync config:", error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleFetchNow = async () => {
+    if (running) return;
+    setRunning(true);
+    try {
+      const res = await fetch("/api/models/free-sync", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && !data.error && !data.skipped)
+        notify.success(`Free-model sync finished (+${data.added ?? 0} new, -${data.removed ?? 0} gone)`);
+      else if (data.skipped) notify.warning("A sync is already running");
+      else notify.error(data.error || "Free-model sync failed");
+      await refreshStatus();
+    } catch (error) {
+      notify.error("Free-model sync failed");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const cfg = status?.config || { enabled: false, intervalHours: 4 };
+  const providerEntries = Object.entries(status?.providers || {});
+  const totalModels = providerEntries.reduce((n, [, p]) => n + (p.count || 0), 0);
+
+  return (
+    <Card padding="sm">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="size-9 shrink-0 rounded-lg bg-primary/10 flex items-center justify-center">
+            <span className="material-symbols-outlined text-primary text-[20px]">auto_awesome</span>
+          </div>
+          <div className="min-w-0">
+            <h3 className="font-semibold leading-tight">Auto-fetch free models</h3>
+            <p className="text-xs text-text-muted mt-0.5">
+              Discover free models on every free-tier provider and add them to 9router.
+              {totalModels > 0 && (
+                <> Currently {totalModels} models across {providerEntries.length} providers.</>
+              )}
+              {status?.lastRunAt && <> Last run {getRelativeTime(status.lastRunAt)}.</>}
+              {status?.lastError && <> <span className="text-red-400">Last run failed.</span></>}
+            </p>
+          </div>
+        </div>
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:shrink-0">
+          <Select
+            options={FREE_SYNC_INTERVAL_OPTIONS}
+            value={String(cfg.intervalHours)}
+            onChange={(e) => patchConfig({ ...cfg, intervalHours: Number(e.target.value) })}
+            disabled={!cfg.enabled || saving}
+            selectClassName="py-1.5 text-xs"
+          />
+          <button
+            onClick={handleFetchNow}
+            disabled={running}
+            className={`flex w-full items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:w-auto sm:py-1.5 ${
+              running
+                ? "bg-primary/20 border-primary/40 text-primary animate-pulse"
+                : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
+            }`}
+            title="Run a free-model sync immediately"
+          >
+            <span className={`material-symbols-outlined text-[14px]${running ? " animate-spin" : ""}`}>
+              sync
+            </span>
+            {running ? "Fetching..." : "Fetch now"}
+          </button>
+          <Toggle checked={cfg.enabled} onChange={(v) => patchConfig({ ...cfg, enabled: v })} />
+        </div>
+      </div>
+    </Card>
   );
 }
 
