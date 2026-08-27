@@ -124,6 +124,11 @@ describe("CompareWorkspace", () => {
   });
   
   it("proves real request-body equality, four-way stream isolation, and RAF cleanup on unmount", async () => {
+    const { createSseParser: createActualSseParser } = await vi.importActual(
+      "../../../src/app/(dashboard)/dashboard/playground/lib/sseParser"
+    );
+    createSseParser.mockImplementation(createActualSseParser);
+
     const encoder = new TextEncoder();
     const readers = [];
     const pendingReads = [];
@@ -200,7 +205,7 @@ describe("CompareWorkspace", () => {
     expect(screen.getByText(/B_PARTIAL/)).toBeTruthy();
     const stopButtons = screen.getAllByTestId(/stop-col-/i);
     await act(async () => {
-      fireEvent.click(stopButtons[1]); // stop column B specifically
+      fireEvent.click(stopButtons[0]); // stop column B specifically
     });
 
     // 4. column C -> error
@@ -223,7 +228,7 @@ describe("CompareWorkspace", () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByText(/A/)).toBeTruthy();
+    expect(screen.getByText(/^A$/)).toBeTruthy();
     expect(screen.getByText(/B_PARTIAL/)).toBeTruthy(); // frozen partial preserved
     expect(screen.getByText(/Rate limited/)).toBeTruthy();
 

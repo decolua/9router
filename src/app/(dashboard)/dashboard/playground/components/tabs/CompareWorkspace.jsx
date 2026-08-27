@@ -120,13 +120,16 @@ export default function CompareWorkspace({ configState, availableModels = [] }) 
       // Fire and forget per column
       (async () => {
         try {
-          const requestBody = buildPlaygroundRequest({
-            model: col.model,
-            systemPrompt: configState.systemPrompt,
-            messages: currentMessages,
-            controls: configState.params,
-            images: []
-          });
+          const requestBody = {
+            ...buildPlaygroundRequest({
+              model: col.model,
+              systemPrompt: configState.systemPrompt,
+              messages: currentMessages,
+              controls: configState.params,
+              images: []
+            }),
+            model: col.model.id,
+          };
           
           const response = await fetch("/api/dashboard/chat/completions", {
             method: "POST",
