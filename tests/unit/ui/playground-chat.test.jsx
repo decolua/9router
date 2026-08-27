@@ -22,7 +22,8 @@ function createFakeStream(chunks) {
           return { done: false, value };
         }
         return { done: true, value: undefined };
-      })
+      }),
+      cancel: vi.fn().mockResolvedValue(undefined)
     })
   };
 }
@@ -81,6 +82,35 @@ describe('ChatWorkspace', () => {
     expect(mockOnMetricsUpdate).toHaveBeenCalled();
     const metricsSnapshot = mockOnMetricsUpdate.mock.calls[mockOnMetricsUpdate.mock.calls.length - 1][0];
     expect(metricsSnapshot.terminalState).toBe('complete');
+  });
+
+  it('cancels the reader immediately after [DONE] without waiting for transport EOF', async () => {
+    const encoder = new TextEncoder();
+    const pendingRead = new Promise(() => {});
+    const reader = {
+      read: vi.fn()
+        .mockResolvedValueOnce({ done: false, value: encoder.encode('data: [DONE]\n\n') })
+        .mockImplementation(() => pendingRead),
+      cancel: vi.fn().mockResolvedValue(undefined)
+    };
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      body: { getReader: () => reader }
+    });
+
+    render(<ChatWorkspace configState={mockConfig} onMetricsUpdate={mockOnMetricsUpdate} />);
+
+    fireEvent.change(screen.getByPlaceholderText('Send a message...'), { target: { value: 'Hi' } });
+    fireEvent.click(screen.getByTestId('playground-send'));
+
+    await waitFor(() => {
+      expect(reader.cancel).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('playground-send')).toBeTruthy();
+    });
+
+    expect(reader.read).toHaveBeenCalledTimes(1);
+    expect(mockOnMetricsUpdate).toHaveBeenCalledWith(expect.objectContaining({ terminalState: 'complete' }));
   });
 
   it('handles EOF without done -> incomplete (partial preserved)', async () => {
@@ -195,7 +225,8 @@ describe('ChatWorkspace', () => {
 
   it('handles user abort -> aborted (partial preserved)', async () => {
     let resolveRead;
-    const pendingRead = new Promise(resolve => { resolveRead = resolve; });
+    const pendingRead = new Promise((resolve, reject) => { resolveRead = reject; });
+    const mockCancel = vi.fn().mockResolvedValue(undefined);
     
     let chunkCount = 0;
     const encoder = new TextEncoder();
@@ -209,7 +240,8 @@ describe('ChatWorkspace', () => {
               return { done: false, value: encoder.encode('data: {"choices":[{"delta":{"content":"Slow "}}]}\n\n') };
             }
             return pendingRead;
-          })
+          }),
+          cancel: mockCancel
         })
       }
     });
@@ -228,16 +260,18 @@ describe('ChatWorkspace', () => {
     
     const abortErr = new Error("aborted");
     abortErr.name = "AbortError";
-    resolveRead(Promise.reject(abortErr));
+    resolveRead(abortErr);
     
     await waitFor(() => {
         expect(screen.getByTestId('playground-send')).toBeTruthy();
+        expect(screen.getByText('Slow')).toBeTruthy();
+        expect(screen.getByTestId('partial-indicator')).toBeTruthy();
     });
-
-    expect(screen.getByText('Slow')).toBeTruthy();
-    expect(screen.getByTestId('partial-indicator')).toBeTruthy();
     
-    expect(mockOnMetricsUpdate).toHaveBeenCalled();
+    await waitFor(() => {
+        expect(mockOnMetricsUpdate).toHaveBeenCalled();
+    });
+    
     const metricsSnapshot = mockOnMetricsUpdate.mock.calls[mockOnMetricsUpdate.mock.calls.length - 1][0];
     expect(metricsSnapshot.terminalState).toBe('aborted');
   });
@@ -270,6 +304,62 @@ describe('ChatWorkspace', () => {
     const { buildPlaygroundRequest } = await import('@/app/(dashboard)/dashboard/playground/lib/requestBuilder');
     const lastCallArgs = buildPlaygroundRequest.mock.calls[buildPlaygroundRequest.mock.calls.length - 1][0];
     expect(lastCallArgs.messages).toEqual([{ role: 'user', content: 'Hi', partial: false }]);
+  });
+
+  it('ignores late chunks from a stopped reader while a newer request is active', async () => {
+    const encoder = new TextEncoder();
+    let resolveReaderA;
+    let resolveReaderB;
+    const readerA = {
+      read: vi.fn().mockImplementation(() => new Promise((resolve) => { resolveReaderA = resolve; })),
+      cancel: vi.fn().mockResolvedValue(undefined)
+    };
+    const readerB = {
+      read: vi.fn().mockImplementation(() => new Promise((resolve) => { resolveReaderB = resolve; })),
+      cancel: vi.fn().mockResolvedValue(undefined)
+    };
+
+    mockFetch
+      .mockResolvedValueOnce({ ok: true, body: { getReader: () => readerA } })
+      .mockResolvedValueOnce({ ok: true, body: { getReader: () => readerB } });
+
+    render(<ChatWorkspace configState={mockConfig} onMetricsUpdate={mockOnMetricsUpdate} />);
+
+    const input = screen.getByPlaceholderText('Send a message...');
+    fireEvent.change(input, { target: { value: 'First request' } });
+    fireEvent.click(screen.getByTestId('playground-send'));
+
+    await waitFor(() => {
+      expect(readerA.read).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getByTestId('playground-stop'));
+    fireEvent.change(input, { target: { value: 'Second request' } });
+    fireEvent.click(screen.getByTestId('playground-send'));
+
+    await waitFor(() => {
+      expect(readerB.read).toHaveBeenCalledTimes(1);
+    });
+
+    resolveReaderA({
+      done: false,
+      value: encoder.encode('data: {"choices":[{"delta":{"content":"STALE_A_CONTENT"}}]}\n\n')
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(screen.queryByText('STALE_A_CONTENT')).toBeNull();
+
+    resolveReaderB({
+      done: false,
+      value: encoder.encode('data: {"choices":[{"delta":{"content":"FRESH_B_CONTENT"}}]}\n\ndata: [DONE]\n\n')
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('FRESH_B_CONTENT')).toBeTruthy();
+      expect(screen.queryByText('STALE_A_CONTENT')).toBeNull();
+      expect(screen.getByTestId('playground-send')).toBeTruthy();
+    });
   });
 
   it('handles unmount aborts in-flight request', async () => {

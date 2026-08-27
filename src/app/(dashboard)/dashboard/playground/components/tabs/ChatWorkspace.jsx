@@ -22,7 +22,6 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
   const handleStop = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-      abortControllerRef.current = null;
     }
     setIsStreaming(false);
   }, []);
@@ -50,6 +49,8 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
     const accumulator = createMetricAccumulator(Date.now());
+    
+    const isCurrent = () => abortControllerRef.current === abortController;
 
     try {
       const requestBody = buildPlaygroundRequest({
@@ -67,98 +68,114 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
         signal: abortController.signal
       });
       
+      if (!isCurrent()) return;
+
       if (!response.ok) {
         throw new Error(`HTTP error ${response.status}`);
       }
       
       const parser = createSseParser();
       const reader = response.body.getReader();
-      
       setMessages((prev) => [...prev, { role: "assistant", content: "", partial: true }]);
 
       while (true) {
         const { done, value } = await reader.read();
+        if (!isCurrent()) { reader.cancel().catch(() => {}); return; }
         
-        let events = [];
-        if (value) {
-            events = parser.push(value);
-        }
         if (done) {
-            const trailingEvent = parser.close();
-            if (trailingEvent) events.push(trailingEvent);
+            const closeEvent = parser.close();
+            if (closeEvent) accumulator.record(closeEvent, Date.now());
+            break;
         }
+
+        const events = parser.push(value);
         
         for (const event of events) {
-           if (abortControllerRef.current !== abortController) break;
-           
            accumulator.record(event, Date.now());
+           if (!isCurrent()) { reader.cancel().catch(() => {}); return; }
+           
            if (event.type === "delta" && event.text) {
-               setMessages((prev) => {
-                   if (prev.length === 0) return prev;
-                   const lastIndex = prev.length - 1;
-                   const lastMsg = prev[lastIndex];
-                   if (lastMsg.role !== "assistant") return prev;
-                   return [
-                       ...prev.slice(0, lastIndex),
-                       { ...lastMsg, content: lastMsg.content + event.text }
-                   ];
-               });
-           } else if (event.type === "error" || event.type === "malformed") {
-               if (event.type === "malformed") {
-                   const errorMsg = "Malformed stream frame received";
-                   accumulator.record({ type: "error", message: errorMsg }, Date.now());
-                   throw new Error(errorMsg);
+               if (isCurrent()) {
+                   setMessages((prev) => {
+                       if (prev.length === 0) return prev;
+                       const lastIndex = prev.length - 1;
+                       const lastMsg = prev[lastIndex];
+                       if (lastMsg.role !== "assistant") return prev;
+                       return [
+                           ...prev.slice(0, lastIndex),
+                           { ...lastMsg, content: lastMsg.content + event.text }
+                       ];
+                   });
                }
+           } else if (event.type === "malformed") {
+               accumulator.record({ type: "error", message: "Malformed stream frame received" }, Date.now());
+               reader.cancel().catch(() => {});
+               throw new Error("Malformed stream frame received");
+           } else if (event.type === "error") {
+               accumulator.record(event, Date.now());
+               reader.cancel().catch(() => {});
                throw new Error(event.message);
            }
-        }
-        
-        if (done) break;
-        if (accumulator.snapshot().terminalState !== null) {
-            reader.cancel();
-            break;
+
+           const snap = accumulator.snapshot();
+           if (snap.terminalState) {
+               reader.cancel().catch(() => {});
+               if (isCurrent()) {
+                   if (snap.terminalState === "complete") {
+                       setMessages((prev) => {
+                          if (prev.length === 0) return prev;
+                          const lastIndex = prev.length - 1;
+                          const lastMsg = prev[lastIndex];
+                          if (lastMsg.role !== "assistant") return prev;
+                          return [
+                              ...prev.slice(0, lastIndex),
+                              { ...lastMsg, partial: false }
+                          ];
+                       });
+                   } else if (snap.terminalState === "incomplete") {
+                       setError("Stream ended unexpectedly.");
+                   }
+               }
+               return;
+           }
         }
       }
 
-    } catch (err) {
-      if (abortControllerRef.current !== abortController) {
-          if (err.name === "AbortError") {
-            accumulator.abort(Date.now());
-          }
-          return;
+      if (!isCurrent()) return;
+      
+      const snapEOF = accumulator.snapshot();
+      if (snapEOF.terminalState === "incomplete") {
+          setError("Stream ended unexpectedly.");
+      } else if (snapEOF.terminalState === "complete") {
+          setMessages((prev) => {
+             if (prev.length === 0) return prev;
+             const lastIndex = prev.length - 1;
+             const lastMsg = prev[lastIndex];
+             if (lastMsg.role !== "assistant") return prev;
+             return [
+                 ...prev.slice(0, lastIndex),
+                 { ...lastMsg, partial: false }
+             ];
+          });
       }
+
+    } catch (err) {
+      if (!isCurrent()) return;
 
       if (err.name === "AbortError") {
         accumulator.abort(Date.now());
       } else {
-        accumulator.record({ type: "error", message: err.message }, Date.now());
+        accumulator?.record?.({ type: "error", message: err.message }, Date.now());
         setError(err.message);
       }
     } finally {
-      const snapshot = accumulator.snapshot();
-      
-      if (abortControllerRef.current === abortController) {
+      if (isCurrent()) {
           abortControllerRef.current = null;
           setIsStreaming(false);
-          
-          if (snapshot.terminalState === "complete") {
-             setMessages((prev) => {
-                if (prev.length === 0) return prev;
-                const lastIndex = prev.length - 1;
-                const lastMsg = prev[lastIndex];
-                if (lastMsg.role !== "assistant") return prev;
-                return [
-                    ...prev.slice(0, lastIndex),
-                    { ...lastMsg, partial: false }
-                ];
-             });
-          } else if (snapshot.terminalState === "incomplete") {
-             setError("Stream ended unexpectedly.");
+          const snap = accumulator.snapshot();
+          if (onMetricsUpdate && snap.terminalState !== null) {
+             onMetricsUpdate(snap);
           }
-      }
-      
-      if (onMetricsUpdate && snapshot.terminalState !== null) {
-         onMetricsUpdate(snapshot);
       }
     }
   }, [input, messages, isStreaming, configState, onMetricsUpdate]);
