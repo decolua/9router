@@ -1,164 +1,64 @@
 # Welcome to 9Router
 
-**Use Claude, Codex, Gemini for FREE • Ultra-cheap alternatives from $0.20/1M tokens**
+**Universal AI Router & Token Saver**
 
-9Router is an AI model router that maximizes your subscription value and minimizes costs through intelligent routing and automatic fallback.
-
----
-
-## What is 9Router?
-
-9Router is a smart proxy that sits between your coding tools (Cursor, Cline, Claude Desktop) and AI providers. It automatically routes requests to the best available model based on quota, cost, and availability.
-
-**Stop wasting money:**
-- ❌ Subscription quota expires unused every month
-- ❌ Rate limits stop you mid-coding
-- ❌ Expensive APIs ($20-50/month per provider)
-- ❌ Manual switching between providers
-
-**Start maximizing value:**
-- ✅ **Maximize Subscriptions** - Track and use every bit of Claude Code, Codex, Gemini quota
-- ✅ **FREE Available** - Access iFlow, Qwen, Kiro models via CLI
-- ✅ **Ultra-Cheap Backup** - GLM ($0.6/1M), MiniMax M2.1 ($0.20/1M)
-- ✅ **Smart Fallback** - Subscription → Cheap → Free, automatic switching
+9Router connects all your AI coding tools (Claude Code, Cursor, Codex, OpenClaw, Cline, Roo) to 40+ AI providers and 100+ models with smart fallback and token optimization.
 
 ---
 
-## Key Features
+## ⚡ What 9Router Does
 
-### 🔄 Smart 3-Tier Fallback
+1. **🗜️ RTK Token Compression**: Intercepts command results (`git diff`, `grep`, `ls`, test output) and reduces prompt tokens by 20–40%.
+2. **🔄 3-Tier Auto Fallback**: Routes requests from Subscription → Ultra-Cheap → Free tiers so you never hit rate limits.
+3. **📊 Live Quota Tracking**: Shows real-time token counts, rolling 5-hour quotas, and reset countdowns.
+4. **🔌 Unified API**: Exposes a standard OpenAI-compatible `/v1` endpoint for all upstream providers.
+
+---
+
+## 📐 Architecture
 
 ```
-Setup once, never stop coding:
-
-Tier 1 (SUBSCRIPTION): Claude Code → Codex → Gemini
-  ↓ quota exhausted
-Tier 2 (CHEAP): GLM-4.7 → MiniMax M2.1 → Kimi
-  ↓ budget limit
-Tier 3 (FREE): iFlow → Qwen → Kiro
-
-→ Automatic switching, zero downtime!
-```
-
-### 📊 Quota Tracking
-
-- Real-time token consumption per provider
-- Reset countdown (5-hour, daily, weekly, monthly)
-- Cost estimation for paid tiers
-- Monthly spending reports
-
-### 🎯 Universal CLI Support
-
-Works with any tool that supports custom OpenAI endpoints:
-
-✅ **Cursor** • **Cline** • **Claude Desktop** • **Codex** • **RooCode** • **Continue** • **Any OpenAI-compatible tool**
-
-### 💰 Cost Optimization
-
-**Real example (100M tokens/month):**
-```
-60M via Gemini CLI: $0 (free tier)
-30M via Claude Code: $0 (subscription you already have)
-8M via GLM: $4.80
-2M via MiniMax: $0.40
-Total: $5.20/month vs $2000 on ChatGPT API!
+┌─────────────────────────────────────────────────────────────┐
+│ Coding Tools (Claude Code, Cursor, Codex, OpenClaw, Cline)   │
+└──────────────────────────────┬──────────────────────────────┘
+                               │ http://localhost:20128/v1
+                               ▼
+┌─────────────────────────────────────────────────────────────┐
+│                           9Router                           │
+│  • RTK Token Compression  • Protocol Translation (OpenAI/Claude)
+│  • Quota Tracking         • Multi-Account Load Balancing    │
+└──────────────┬──────────────────────┬───────────────────────┘
+               │                      │
+       [ Tier 1: Subscriptions ]     [ Tier 2: Cheap ]       [ Tier 3: Free / Fallback ]
+       • Claude Code (Pro/Max)        • GLM ($0.6/1M)         • Kiro AI (Claude/GLM-5)
+       • OpenAI Codex (Plus/Pro)      • MiniMax ($0.2/1M)     • OpenCode Free (no auth)
+       • GitHub Copilot / Cursor      • Kimi ($9/mo)          • Vertex AI ($300 credits)
 ```
 
 ---
 
-## Why Choose 9Router?
+## 🚀 Quick Setup (3 Steps)
 
-### Maximize Subscriptions
-
-Already paying for Claude Code ($20-100/month) or Codex ($20-200/month)? Get full value:
-
-- Track quota usage in real-time
-- Auto-switch when quota resets (5-hour, weekly)
-- Use every token before it expires
-- Gemini CLI: 180K completions/month **FREE**
-
-### Ultra-Cheap Backup
-
-When subscription quota runs out, pay pennies:
-
-| Provider | Cost per 1M tokens | Reset |
-|----------|-------------------|-------|
-| **GLM-4.7** | $0.60 input / $2.20 output | Daily 10:00 AM |
-| **MiniMax M2.1** | $0.20 input / $1.00 output | 5-hour rolling |
-| **Kimi K2** | $9/month (10M tokens) | Monthly |
-
-**~90% cheaper than ChatGPT API ($20/1M)!**
-
-### Free Forever Fallback
-
-Emergency backup when everything else is quota-limited:
-
-- **iFlow**: 8 models (Kimi K2, Qwen3 Coder Plus, GLM 4.7, MiniMax M2)
-- **Qwen**: 3 models (Qwen3 Coder Plus/Flash, Vision)
-- **Kiro**: Claude Sonnet 4.5, Haiku 4.5 (AWS Builder ID)
+1. **Install and run:**
+   ```bash
+   npm install -g 9router
+   9router
+   ```
+2. **Connect a provider in the dashboard:**
+   Open `http://localhost:20128` and connect **Kiro AI** (free Claude credits) or your existing **Claude / Codex / Copilot** accounts.
+3. **Point your tool:**
+   Set endpoint `http://localhost:20128/v1` in your CLI or editor.
 
 ---
 
-## Quick Start
+## 📖 Navigation
 
-Get started in 2 minutes:
-
-```bash
-# Install globally
-npm install -g 9router
-
-# Start (dashboard opens automatically)
-9router
-```
-
-🎉 **Dashboard opens** → Connect providers → Start coding!
-
-**Use in your CLI tool:**
-
-```
-Endpoint: http://localhost:20128/v1
-API Key: [from dashboard]
-Model: cc/claude-opus-4-5-20251101
-```
-
-[→ Full Getting Started Guide](getting-started.md)
-
----
-
-## Use Cases
-
-### For Individual Developers
-
-- Maximize your Claude Code/Codex subscription
-- Use Gemini CLI free tier (180K/month)
-- Fallback to ultra-cheap models ($0.20/1M)
-- Code 24/7 without rate limits
-
-### For Teams
-
-- Deploy on VPS/Cloud for shared access
-- Track team spending in real-time
-- Set budget limits per tier
-- Centralized provider management
-
-### For Mobile/Remote Coding
-
-- Use cloud deployment (https://9router.com)
-- Access from iPad, phone, anywhere
-- No localhost limitations
-- Cloudflare edge network (300+ locations)
-
----
-
-## What's Next?
-
-- [Getting Started](getting-started.md) - Install and configure in 5 minutes
-- [Installation Guide](getting-started/installation.md) - Detailed setup instructions
-- [Features](features/) - Explore all capabilities
-- [FAQ](faq.md) - Common questions
-
----
-
-<div align="center">
-  <sub>Built with ❤️ for developers maximizing AI value</sub>
-</div>
+- **[Quick Start](getting-started/quick-start.md)** — Step-by-step setup in under 2 minutes.
+- **[Installation](getting-started/installation.md)** — npm, Docker, and source instructions.
+- **[Subscription Providers](providers/subscription.md)** — Maximize Claude Code, Codex, Copilot, Cursor.
+- **[Cheap Providers](providers/cheap.md)** — GLM, MiniMax, Kimi setup and pricing.
+- **[Free Providers](providers/free.md)** — Kiro AI, OpenCode Free, Vertex AI.
+- **[Smart Routing & Combos](features/combos.md)** — Create custom fallback sequences.
+- **[Tool Integrations](integration/claude-code.md)** — Guides for Claude Code, Cursor, Codex, Cline, and more.
+- **[Troubleshooting](troubleshooting.md)** — Fix common issues fast.
+- **[FAQ](faq.md)** — Frequent questions and billing explanation.
