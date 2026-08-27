@@ -9,6 +9,7 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState(null);
   const abortControllerRef = useRef(null);
+  const abortMetricsRef = useRef(null);
 
   useEffect(() => {
     return () => {
@@ -20,11 +21,22 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
   }, []);
 
   const handleStop = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
+    const abortController = abortControllerRef.current;
+    if (abortController) {
+      abortController.abort();
+      const accumulator = abortMetricsRef.current;
+      if (accumulator) {
+        accumulator.abort(Date.now());
+        const snap = accumulator.snapshot();
+        if (onMetricsUpdate && snap.terminalState !== null) {
+          onMetricsUpdate(snap);
+        }
+      }
+      abortControllerRef.current = null;
+      abortMetricsRef.current = null;
     }
     setIsStreaming(false);
-  }, []);
+  }, [onMetricsUpdate]);
   
   const sendMessage = useCallback(async (forcedMessages = null) => {
     if (isStreaming) return;
@@ -49,6 +61,7 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
     const accumulator = createMetricAccumulator(Date.now());
+    abortMetricsRef.current = accumulator;
     
     const isCurrent = () => abortControllerRef.current === abortController;
 
@@ -170,8 +183,10 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
       }
     } finally {
       if (isCurrent()) {
-          abortControllerRef.current = null;
-          setIsStreaming(false);
+        abortControllerRef.current = null;
+        abortMetricsRef.current = null;
+        setIsStreaming(false);
+
           const snap = accumulator.snapshot();
           if (onMetricsUpdate && snap.terminalState !== null) {
              onMetricsUpdate(snap);

@@ -276,6 +276,42 @@ describe('ChatWorkspace', () => {
     expect(metricsSnapshot.terminalState).toBe('aborted');
   });
   
+  it('ignores a late fetch resolution after stop without a replacement request', async () => {
+    let resolveFetch;
+    const pendingFetch = new Promise((resolve) => { resolveFetch = resolve; });
+    mockFetch.mockReturnValueOnce(pendingFetch);
+
+    render(<ChatWorkspace configState={mockConfig} onMetricsUpdate={mockOnMetricsUpdate} />);
+
+    fireEvent.change(screen.getByPlaceholderText('Send a message...'), { target: { value: 'Stop this' } });
+    fireEvent.click(screen.getByTestId('playground-send'));
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('playground-stop')).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId('playground-stop'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('playground-send')).toBeTruthy();
+      expect(mockOnMetricsUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    resolveFetch({
+      ok: true,
+      body: createFakeStream(['data: {"choices":[{"delta":{"content":"LATE_CONTENT"}}]}\n\n', 'data: [DONE]\n\n'])
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(screen.queryByText('LATE_CONTENT')).toBeNull();
+    expect(screen.queryByTestId('partial-indicator')).toBeNull();
+    expect(screen.queryByTestId('chat-error')).toBeNull();
+    expect(mockOnMetricsUpdate).toHaveBeenCalledTimes(1);
+    expect(mockOnMetricsUpdate).toHaveBeenCalledWith(expect.objectContaining({ terminalState: 'aborted' }));
+  });
+
   it('handles regenerate (exact second request body retaining prior context)', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
