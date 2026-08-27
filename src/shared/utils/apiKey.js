@@ -1,6 +1,7 @@
 import crypto from "crypto";
 
-const API_KEY_SECRET = process.env.API_KEY_SECRET || "endpoint-proxy-api-key-secret";
+const API_KEY_SECRET =
+  process.env.API_KEY_SECRET || crypto.randomBytes(32).toString("hex");
 
 /**
  * Generate 6-char random keyId

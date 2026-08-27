@@ -38,6 +38,13 @@ export class CodeBuddyExecutor extends DefaultExecutor {
         if (!message || message.role !== "system") return message;
         const text = flatten(message.content);
         if (!text) return message;
+        // Whitelist well-known agent frameworks whose (long, legitimate) system
+        // prompts must NOT be replaced. Hermes Agent (hermes-agent.nousresearch.com)
+        // ships a ~25K system prompt that trips the length catch-all below; without
+        // this bypass every session starts amnesiac.
+        if (/Hermes Agent|Nous Research|You run on Hermes|hermes-agent\.nousresearch/i.test(text)) {
+          return message;
+        }
         if (text.length > 2000 || AGENT_PATTERN.test(text)) {
           return typeof message.content === "string"
             ? { ...message, content: NEUTRAL_PROMPT }
