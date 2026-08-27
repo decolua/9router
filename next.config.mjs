@@ -35,6 +35,41 @@ const nextConfig = {
   env: {
     NEXT_PUBLIC_BUILD_TIME: buildTime,
   },
+  async headers() {
+    // Fixed-name favicon/PWA icons are referenced with a per-build `?v=` query
+    // (see src/lib/appAssets.js), so the browser treats each deploy's URL as new.
+    // Long-cache the versioned URL; revalidate the bare paths + manifest so an
+    // unversioned request picks up the current HTML/manifest. Exact sources only —
+    // /_next/static is content-hashed and keeps its own immutable caching untouched.
+    const iconCacheControl = "public, max-age=31536000, immutable";
+    const bareCacheControl = "public, no-cache, must-revalidate";
+    return [
+      {
+        source: "/favicon.svg",
+        headers: [{ key: "Cache-Control", value: bareCacheControl }],
+      },
+      {
+        source: "/manifest.webmanifest",
+        headers: [{ key: "Cache-Control", value: bareCacheControl }],
+      },
+      ...["/icons/icon-192.svg", "/icons/icon-512.svg"].map((source) => ({
+        source,
+        headers: [{ key: "Cache-Control", value: bareCacheControl }],
+      })),
+      // Versioned variants (?v=...) of those same files cache for good — the
+      // version changes on every deploy so they can never go stale.
+      {
+        source: "/favicon.svg",
+        has: [{ type: "query", key: "v" }],
+        headers: [{ key: "Cache-Control", value: iconCacheControl }],
+      },
+      ...["/icons/icon-192.svg", "/icons/icon-512.svg"].map((source) => ({
+        source,
+        has: [{ type: "query", key: "v" }],
+        headers: [{ key: "Cache-Control", value: iconCacheControl }],
+      })),
+    ];
+  },
   experimental: {
     // Keep production builds within CI memory limits despite the custom webpack hook below.
     webpackBuildWorker: true,
