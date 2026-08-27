@@ -9,6 +9,7 @@ vi.mock("@/lib/usageDb.js", () => ({
 const { FORMATS } = await import("../../open-sse/translator/formats.js");
 const { translateNonStreamingResponse } = await import("../../open-sse/handlers/chatCore/nonStreamingHandler.js");
 const { handleForcedSSEToJson } = await import("../../open-sse/handlers/chatCore/sseToJsonHandler.js");
+const { createSSETransformStreamWithLogger } = await import("../../open-sse/utils/stream.js");
 
 // A chat.completion body as returned by a chat-native upstream (e.g. op-ericding)
 const CHAT_TOOL_BODY = {
@@ -78,10 +79,76 @@ describe("non-stream Chat upstream for a Responses-API client (op-ericding bug)"
     expect(msg.content[0].text).toBe("hello");
   });
 
+  it("chains Antigravity response conversion into Responses output", () => {
+    const body = {
+      response: {
+        responseId: "ag-resp-1",
+        modelVersion: "gemini-3.7-flash-low",
+        candidates: [{
+          content: { parts: [{ text: "hello from antigravity" }] },
+          finishReason: "STOP",
+        }],
+      },
+    };
+    const out = translateNonStreamingResponse(body, FORMATS.ANTIGRAVITY, FORMATS.OPENAI_RESPONSES);
+
+    expect(out.object).toBe("response");
+    expect(out).not.toHaveProperty("choices");
+    const msg = (out.output || []).find((item) => item.type === "message");
+    expect(msg?.content?.[0]).toMatchObject({
+      type: "output_text",
+      text: "hello from antigravity",
+    });
+  });
+
   it("leaves chat->chat untouched", () => {
     const out = translateNonStreamingResponse(CHAT_TOOL_BODY, FORMATS.OPENAI, FORMATS.OPENAI);
     expect(out.object).toBe("chat.completion");
     expect(out.choices[0].message.tool_calls[0].function.name).toBe("shell");
+  });
+});
+
+describe("Antigravity streaming tool calls for a Responses-API client", () => {
+  it("emits a Responses function_call instead of an empty stream", async () => {
+    const encoder = new TextEncoder();
+    const raw = [
+      'data: {"response":{"responseId":"ag-tool","modelVersion":"gemini-3.7-flash-low","candidates":[{"content":{"parts":[{"functionCall":{"name":"read_file","args":{"path":"README.md"},"thoughtSignature":"sig"}}]}}]}}',
+      'data: {"response":{"responseId":"ag-tool","modelVersion":"gemini-3.7-flash-low","candidates":[{"content":{"parts":[]},"finishReason":"STOP"}]}}',
+      "data: [DONE]",
+      ""
+    ].join("\n\n");
+    const input = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(raw));
+        controller.close();
+      }
+    });
+    const output = input.pipeThrough(createSSETransformStreamWithLogger(
+      FORMATS.ANTIGRAVITY,
+      FORMATS.OPENAI_RESPONSES,
+      "antigravity",
+      { appendProviderChunk() {}, appendConvertedChunk() {} },
+      null,
+      "gemini-3.7-flash-low",
+      "test-connection",
+      { messages: [] },
+      null,
+      "test-key",
+    ));
+    const text = await new Response(output).text();
+    expect(text).toContain('"type":"response.output_item.added"');
+    expect(text).toContain('"type":"function_call"');
+    expect(text).toContain('"name":"read_file"');
+    expect(text).toContain('"type":"response.completed"');
+    const completedLine = text.split("\n").find((line) => line.startsWith("data: {") && line.includes('"type":"response.completed"'));
+    const completed = JSON.parse(completedLine.slice(6));
+    expect(completed.response.output).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "function_call",
+        name: "read_file",
+        arguments: '{"path":"README.md"}',
+      }),
+    ]));
   });
 });
 
@@ -144,5 +211,45 @@ describe("forced-SSE JSON path for a Responses-API client behind a chat upstream
     const json = await result.response.json();
     expect(json.object).toBe("chat.completion");
     expect(json.choices[0].message.tool_calls[0].function.name).toBe("shell");
+  });
+
+  it("converts forced Antigravity SSE into Responses JSON", async () => {
+    const encoder = new TextEncoder();
+    const raw = [
+      'data: {"response":{"responseId":"ag-sse","modelVersion":"gemini-3.7-flash-low","candidates":[{"content":{"parts":[{"text":"hello from stream"}]}}]}}',
+      'data: {"response":{"responseId":"ag-sse","modelVersion":"gemini-3.7-flash-low","candidates":[{"content":{"parts":[]},"finishReason":"STOP"}]}}',
+      "data: [DONE]",
+      ""
+    ].join("\n\n");
+    const result = await handleForcedSSEToJson({
+      providerResponse: new Response(new ReadableStream({
+        start(controller) { controller.enqueue(encoder.encode(raw)); controller.close(); }
+      }), { headers: { "content-type": "text/event-stream" } }),
+      sourceFormat: FORMATS.OPENAI_RESPONSES,
+      targetFormat: FORMATS.ANTIGRAVITY,
+      provider: "antigravity",
+      model: "gemini-3.7-flash-low",
+      body: { model: "combo-ui", input: "hello" },
+      stream: false,
+      translatedBody: null,
+      finalBody: null,
+      requestStartTime: Date.now(),
+      connectionId: "test-connection",
+      apiKey: "test-key",
+      clientRawRequest: { endpoint: "/v1/responses" },
+      onRequestSuccess: vi.fn(),
+      customToolNames: null,
+      trackDone: vi.fn(),
+      appendLog: vi.fn(),
+      reqTag: "test",
+      log: null,
+    });
+    expect(result.success).toBe(true);
+    const json = await result.response.json();
+    expect(json.object).toBe("response");
+    expect(json.output?.[0]?.content?.[0]).toMatchObject({
+      type: "output_text",
+      text: "hello from stream",
+    });
   });
 });

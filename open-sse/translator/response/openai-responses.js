@@ -26,6 +26,7 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   
   const emit = (eventType, data) => {
     data.sequence_number = nextSeq();
+    recordOutputItem(state, eventType, data);
     events.push({ event: eventType, data });
   };
 
@@ -376,10 +377,19 @@ function sendCompleted(state, emit) {
         created_at: state.created,
         status: "completed",
         background: false,
-        error: null
+        error: null,
+        output: (state.responseOutput || []).filter(Boolean)
       }
     });
   }
+}
+
+function recordOutputItem(state, eventType, data) {
+  if (eventType !== "response.output_item.added" && eventType !== "response.output_item.done") return;
+  const index = Number(data.output_index);
+  if (!Number.isInteger(index) || !data.item) return;
+  if (!state.responseOutput) state.responseOutput = [];
+  state.responseOutput[index] = data.item;
 }
 
 function flushEvents(state) {
@@ -389,6 +399,7 @@ function flushEvents(state) {
   const nextSeq = () => ++state.seq;
   const emit = (eventType, data) => {
     data.sequence_number = nextSeq();
+    recordOutputItem(state, eventType, data);
     events.push({ event: eventType, data });
   };
 
