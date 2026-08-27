@@ -171,6 +171,20 @@ export async function GET(request, { params }) {
     // Fetch usage from provider API
     let usage = await getUsageForProvider(connection, proxyOptions, { force });
 
+    // Best-effort: persist a quota snapshot so routing can skip this account
+    // when its remaining % drops to/below the per-account pause threshold
+    // (see src/sse/services/quotaGuard.js). Fail-open — never block the response.
+    if (usage && typeof usage.remainingPercentage === "number") {
+      updateProviderConnection(connection.id, {
+        lastQuotaSnapshot: {
+          remainingPercentage: usage.remainingPercentage,
+          resetAt: usage.resetAt || null,
+          unlimited: usage.unlimited === true,
+          fetchedAt: new Date().toISOString(),
+        },
+      }).catch(() => {});
+    }
+
     // If provider returned an auth-expired message instead of throwing,
     // force-refresh token and retry once (OAuth only)
     if (isOAuth && isAuthExpiredMessage(usage) && connection.refreshToken) {
