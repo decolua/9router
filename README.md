@@ -215,8 +215,20 @@ Default URLs:
       <b>🇻🇳 Tiếng Việt</b><br/>
       <sub>Hướng Dẫn Setup OpenClaw + 9Router: Tạo Bot Zalo AI Tự Động Từ A-Z<br/>by <a href="https://github.com/tuanminhhole">tuanminhhole</a></sub>
     </td>
-    <td align="center" width="320"></td>
-    <td align="center" width="320"></td>
+    <td align="center" width="320">
+      <a href="https://www.youtube.com/watch?v=WbOEk_pY84M">
+        <img src="https://img.youtube.com/vi/WbOEk_pY84M/maxresdefault.jpg" alt="Dùng GLM + 9Router như Claude Code" width="300"/>
+      </a><br/>
+      <b>🇻🇳 Tiếng Việt</b><br/>
+      <sub>Dùng GLM + 9Router như Claude Code<br/>by <a href="https://github.com/ptit9x">ptit9x</a></sub>
+    </td>
+    <td align="center" width="320">
+      <a href="https://www.youtube.com/watch?v=CfD6OZiPslU">
+        <img src="https://img.youtube.com/vi/CfD6OZiPslU/maxresdefault.jpg" alt="Cài đặt 9Router trên MacBook và cách dùng cơ bản" width="300"/>
+      </a><br/>
+      <b>🇻🇳 Tiếng Việt</b><br/>
+      <sub>Cài đặt 9Router trên MacBook và cách dùng cơ bản<br/>by <a href="https://github.com/ptit9x">ptit9x</a></sub>
+    </td>
     <td align="center" width="320"></td>
   </tr>
 </table>
