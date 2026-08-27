@@ -91,7 +91,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       availableConnections.map(async (c) => {
         const q = await evaluateQuota(c);
         if (q.paused) {
-          log.info("AUTH", `${provider} | ${c.id?.slice(0, 8)} skipped: quota remaining ${q.snapshot?.remainingPercentage ?? "?"}% <= threshold ${c.quotaPauseThreshold}%`);
+          log.info("AUTH", `${provider} | ${c.id?.slice(0, 8)} skipped: quota paused (window below per-window threshold)`);
           return null;
         }
         return c;

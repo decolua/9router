@@ -3,7 +3,8 @@
  * per-account threshold so it keeps a safety buffer instead of hitting 0%.
  *
  * Design (see plan):
- *  - Per-account threshold is `connection.quotaPauseThreshold` (0/undefined = off).
+ *  - Per-account thresholds are `connection.quotaPauseThresholds` (a map of
+ *    windowKey -> %, e.g. { "session (5h)": 15, "weekly (7d)": 30 }). 0/undefined = off.
  *  - The "remaining %" is known from a quota snapshot. Primary source is a
  *    snapshot persisted onto the connection (`lastQuotaSnapshot`) whenever the
  *    dashboard Quota Tracker / auto-ping fetches usage. On a cache miss we do a
@@ -17,7 +18,7 @@
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { updateProviderConnection } from "@/lib/localDb";
-import { normalizeThreshold, isQuotaEligible, isQuotaPaused, deriveQuotaSnapshot } from "@/shared/utils/quotaPause.js";
+import { getWindowThresholds, isQuotaEligible, isQuotaPaused, deriveQuotaSnapshot } from "@/shared/utils/quotaPause.js";
 
 // How long a snapshot (memory or persisted) stays fresh before a live refresh.
 const CACHE_TTL_MS = 2 * 60 * 1000;
@@ -28,8 +29,8 @@ const LIVE_FETCH_TIMEOUT_MS = 3000;
 // key: connectionId -> { snapshot, fetchedAt }
 const memoryCache = new Map();
 
-function thresholdOf(connection) {
-  return normalizeThreshold(connection);
+function hasWindowThresholds(connection) {
+  return Object.values(getWindowThresholds(connection)).some((v) => Number(v) > 0 && Number(v) <= 100);
 }
 
 function freshSnapshot(snapshot, fetchedAt) {
@@ -92,8 +93,7 @@ function storeSnapshot(connectionId, snapshot) {
  * @returns {Promise<{paused:boolean, reason:string, snapshot:Object|null}>}
  */
 export async function evaluateQuota(connection) {
-  const threshold = thresholdOf(connection);
-  if (!threshold) return { paused: false, reason: "disabled", snapshot: null };
+  if (!hasWindowThresholds(connection)) return { paused: false, reason: "disabled", snapshot: null };
   if (!isQuotaEligible(connection)) return { paused: false, reason: "ineligible", snapshot: null };
 
   let snapshot = readSnapshot(connection);
@@ -106,7 +106,7 @@ export async function evaluateQuota(connection) {
     if (snapshot) storeSnapshot(connection.id, snapshot);
   }
 
-  const paused = isQuotaPaused({ ...connection, _snapshot: snapshot, lastQuotaSnapshot: snapshot });
+  const paused = isQuotaPaused({ ...connection, lastQuotaSnapshot: snapshot });
   return {
     paused,
     reason: paused ? "below-threshold" : snapshot ? "ok" : "no-data",
