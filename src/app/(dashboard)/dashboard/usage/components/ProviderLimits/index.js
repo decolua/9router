@@ -450,6 +450,37 @@ export default function ProviderLimits() {
     [selectedConnection, fetchConnections, fetchQuota],
   );
 
+  // Update a single per-window quota pause threshold and reflect it locally.
+  const handleUpdateQuotaThreshold = useCallback(
+    async (connId, key, value) => {
+      const conn = connections.find((c) => c.id === connId);
+      if (!conn) return;
+      const prev =
+        conn.quotaPauseThresholds && typeof conn.quotaPauseThresholds === "object"
+          ? conn.quotaPauseThresholds
+          : {};
+      const next = { ...prev };
+      const v = Number(value);
+      if (Number.isFinite(v) && v > 0 && v <= 100) next[key] = v;
+      else delete next[key];
+      try {
+        const res = await fetch(`/api/providers/${connId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ quotaPauseThresholds: next }),
+        });
+        if (res.ok) {
+          setConnections((prevConns) =>
+            prevConns.map((c) => (c.id === connId ? { ...c, quotaPauseThresholds: next } : c)),
+          );
+        }
+      } catch (error) {
+        console.error("Error updating quota threshold:", error);
+      }
+    },
+    [connections],
+  );
+
   useEffect(() => {
     let cancelled = false;
     fetch("/api/proxy-pools?isActive=true", { cache: "no-store" })
@@ -1080,8 +1111,8 @@ export default function ProviderLimits() {
                             size="sm"
                           >
                             {quotaPauseInfo.paused
-                              ? `Paused (quota ${quotaPauseInfo.remainingPercentage ?? "?"}%)`
-                              : `Buffer ≤ ${quotaPauseInfo.threshold}%`}
+                              ? `Paused (quota${quotaPauseInfo.triggered ? `: ${quotaPauseInfo.triggered.key}` : ""})`
+                              : "Buffers set"}
                           </Badge>
                         </p>
                       )}
@@ -1279,6 +1310,50 @@ export default function ProviderLimits() {
                     }
                     onHideQuota={(quotaRow) => handleHideQuota(conn.provider, quotaRow)}
                   />
+                  {conn.lastQuotaSnapshot?.windows?.length > 0 && (
+                    <div className="mt-2 border-t border-black/5 pt-2 dark:border-white/5">
+                      <p className="mb-1 text-[10px] text-text-muted">
+                        Pause buffer — pause this account when a window&apos;s remaining % ≤
+                      </p>
+                      <div className="flex flex-col gap-1">
+                        {conn.lastQuotaSnapshot.windows.map((w) => {
+                          const t = Number(conn.quotaPauseThresholds?.[w.key]) || 0;
+                          return (
+                            <div key={w.key} className="flex items-center gap-2">
+                              <span
+                                className="min-w-0 flex-1 truncate text-[11px] text-text-muted"
+                                title={w.key}
+                              >
+                                {w.key}
+                              </span>
+                              <span className="w-10 text-right text-[10px] tabular-nums text-text-muted">
+                                {typeof w.remainingPercentage === "number"
+                                  ? `${w.remainingPercentage}%`
+                                  : "—"}
+                              </span>
+                              <span className="text-[10px] text-text-muted">≤</span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={100}
+                                value={t}
+                                onChange={(e) =>
+                                  handleUpdateQuotaThreshold(
+                                    conn.id,
+                                    w.key,
+                                    Number.parseInt(e.target.value, 10) || 0,
+                                  )
+                                }
+                                className="w-14 rounded border border-border bg-background px-1 py-0.5 text-[11px] focus:border-primary focus:outline-none"
+                                aria-label={`Pause buffer for ${w.key}`}
+                              />
+                              <span className="text-[10px] text-text-muted">%</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 )}
                 {hiddenQuotaRows.length > 0 && (
                   <div className="mt-2 flex min-w-0 items-center gap-1 border-t border-black/5 pt-2 text-[10px] text-text-muted dark:border-white/5">

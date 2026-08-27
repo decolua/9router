@@ -10,40 +10,62 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS
 import Select from "@/shared/components/Select";
 import { getQuotaPauseInfo } from "@/shared/utils/quotaPause.js";
 
-// Per-account quota safety buffer control. When remaining % drops to/below the
-// threshold, routing auto-pauses this account (see src/sse/services/quotaGuard.js).
-function QuotaPauseField({ threshold, onChange, connection }) {
+// Per-window quota safety buffer. Pause routing for this account when a specific
+// quota window's remaining % drops to/below its configured threshold. Window keys
+// come from the provider's usage (e.g. "session (5h)", "weekly (7d)").
+function QuotaPauseField({ connection, thresholds, onChange }) {
   const info = getQuotaPauseInfo(connection);
+  const windows = connection?.lastQuotaSnapshot?.windows || [];
+
   return (
     <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
-      <h3 className="font-semibold mb-3 text-sm">Quota Safety Buffer</h3>
-      <div className="flex items-center gap-3">
-        <label className="text-sm text-text-muted whitespace-nowrap">Pause when remaining ≤</label>
-        <input
-          type="number"
-          min={0}
-          max={100}
-          value={threshold}
-          onChange={(e) => onChange(Number.parseInt(e.target.value, 10) || 0)}
-          className="w-20 px-2 py-1 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
-        />
-        <span className="text-sm text-text-muted">%</span>
-      </div>
-      <p className="text-xs text-text-muted mt-2">
-        {info.eligible
-          ? (info.remainingPercentage != null
-              ? `Currently ${info.remainingPercentage}% remaining${info.paused ? " — paused for routing." : "."} Set to 0 to disable.`
-              : "Set a value (1–100) to pause this account before it hits 0%. The dashboard Quota Tracker keeps the remaining % up to date.")
-          : "Usage tracking isn't available for this account type, so the buffer can't be applied."}
+      <h3 className="font-semibold mb-1 text-sm">Quota Safety Buffer</h3>
+      <p className="text-xs text-text-muted mb-3">
+        Pause this account when a quota window&apos;s remaining % drops to/below its value.
+        Set a window to 0 to disable it.
       </p>
+      {!info.eligible ? (
+        <p className="text-xs text-text-muted">
+          Usage tracking isn&apos;t available for this account type, so the buffer can&apos;t be applied.
+        </p>
+      ) : windows.length === 0 ? (
+        <p className="text-xs text-text-muted">
+          No quota windows known yet. Open the Quota Tracker to fetch usage first, then set
+          per-window buffers here.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {windows.map((w) => {
+            const value = Number(thresholds[w.key]) || 0;
+            return (
+              <div key={w.key} className="flex items-center gap-2">
+                <span className="flex-1 min-w-0 truncate text-sm" title={w.key}>{w.key}</span>
+                <span className="text-xs text-text-muted tabular-nums w-14 text-right">
+                  {typeof w.remainingPercentage === "number" ? `${w.remainingPercentage}%` : "—"}
+                </span>
+                <span className="text-xs text-text-muted">≤</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={value}
+                  onChange={(e) => onChange(w.key, Number.parseInt(e.target.value, 10) || 0)}
+                  className="w-16 px-2 py-1 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+                />
+                <span className="text-xs text-text-muted">%</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
 
 QuotaPauseField.propTypes = {
-  threshold: PropTypes.number,
-  onChange: PropTypes.func.isRequired,
   connection: PropTypes.object,
+  thresholds: PropTypes.object.isRequired,
+  onChange: PropTypes.func.isRequired,
 };
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
@@ -52,7 +74,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     priority: 1,
     apiKey: "",
   });
-  const [quotaPauseThreshold, setQuotaPauseThreshold] = useState(0);
+  const [quotaPauseThresholds, setQuotaPauseThresholds] = useState({});
   const [azureData, setAzureData] = useState({
     azureEndpoint: "",
     apiVersion: "2024-10-01-preview",
@@ -94,7 +116,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       }
       setTestResult(null);
       setValidationResult(null);
-      setQuotaPauseThreshold(Number(connection.quotaPauseThreshold) || 0);
+      setQuotaPauseThresholds(connection.quotaPauseThresholds && typeof connection.quotaPauseThresholds === "object" ? { ...connection.quotaPauseThresholds } : {});
     }
   }, [connection]);
 
@@ -159,7 +181,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       const updates = {
         name: formData.name,
         priority: formData.priority,
-        quotaPauseThreshold: Number(quotaPauseThreshold) || 0,
+        quotaPauseThresholds: { ...quotaPauseThresholds },
       };
       if (!isOAuth && formData.apiKey) {
         updates.apiKey = formData.apiKey;
@@ -243,8 +265,8 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         />
 
         <QuotaPauseField
-          threshold={quotaPauseThreshold}
-          onChange={setQuotaPauseThreshold}
+          thresholds={quotaPauseThresholds}
+          onChange={(key, val) => setQuotaPauseThresholds((prev) => ({ ...prev, [key]: val }))}
           connection={connection}
         />
 
