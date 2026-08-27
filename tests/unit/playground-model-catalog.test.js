@@ -204,18 +204,28 @@ describe("fetchModelCatalog", () => {
     result = await fetchModelCatalog();
     expect(result.models).toEqual([]);
     
-    // 3. Models property is a non-array truthy value (e.g. object or string)
-    global.fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        connections: [
-          { id: "c1", provider: "test1", name: "Test 1", isActive: true, models: {} },
-          { id: "c2", provider: "test2", name: "Test 2", isActive: true, models: "bad" }
-        ]
+    global.fetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          connections: [
+            { id: "c1", provider: "test1", name: "Test 1", isActive: true },
+            { id: "c2", provider: "test2", name: "Test 2", isActive: true },
+          ],
+        }),
       })
-    });
-    result = await fetchModelCatalog();
-    expect(result.models).toEqual([]);
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ models: {} }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ models: "bad" }),
+      });
+    await expect(fetchModelCatalog()).resolves.toEqual({ models: [] });
+    expect(global.fetch).toHaveBeenNthCalledWith(3, "/api/providers", { cache: "no-store" });
+    expect(global.fetch).toHaveBeenNthCalledWith(4, "/api/providers/c1/models", { cache: "no-store" });
+    expect(global.fetch).toHaveBeenNthCalledWith(5, "/api/providers/c2/models", { cache: "no-store" });
   });
 
   it("handles fetch failure gracefully", async () => {
