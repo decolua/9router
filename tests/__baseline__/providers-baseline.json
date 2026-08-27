@@ -746,7 +746,8 @@
       "x-opencode-client": "desktop"
     },
     "noAuth": true,
-    "format": "openai"
+    "format": "openai-responses",
+    "forceStream": true
   },
   "openrouter": {
     "baseUrl": "https://openrouter.ai/api/v1/chat/completions",

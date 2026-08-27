@@ -9,6 +9,8 @@ import { DEFAULT_MAX_TOKENS, DEFAULT_MIN_TOKENS } from "../../open-sse/config/ru
 import mimoFree from "../../open-sse/providers/registry/mimo-free.js";
 import opencode from "../../open-sse/providers/registry/opencode.js";
 import antigravity from "../../open-sse/providers/registry/antigravity.js";
+import { OpenCodeExecutor } from "../../open-sse/executors/opencode.js";
+import { PROVIDERS } from "../../open-sse/config/providers.js";
 
 describe("compat base URLs / version", () => {
   it("OPENAI_COMPAT_BASE", () => {
@@ -44,5 +46,24 @@ describe("antigravity retry (intentional change: 429=6, 503=3)", () => {
   });
   it("503 attempts = 3", () => {
     expect(antigravity.transport.retry["503"].attempts).toBe(3);
+  });
+});
+
+describe("OpenCode Free endpoint", () => {
+  it("uses Responses format and forces streaming", () => {
+    expect(PROVIDERS.opencode.format).toBe("openai-responses");
+    expect(PROVIDERS.opencode.forceStream).toBe(true);
+  });
+
+  it("uses the Responses API endpoint for every model", () => {
+    const executor = new OpenCodeExecutor();
+    expect(executor.buildUrl("any-model")).toBe("https://opencode.ai/zen/v1/responses");
+  });
+
+  it("forces streaming for Responses requests", () => {
+    const executor = new OpenCodeExecutor();
+    const body = { input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] }] };
+    executor.transformRequest("any-model", body, false, {});
+    expect(body.stream).toBe(true);
   });
 });

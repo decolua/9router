@@ -5,7 +5,6 @@ import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
 const OPENCODE_UA = "opencode";
-const MESSAGES_MODELS = new Set();
 
 function generateRequestId() {
   return `msg_${crypto.randomUUID().replace(/-/g, "")}`;
@@ -38,14 +37,19 @@ export class OpenCodeExecutor extends BaseExecutor {
 
   transformRequest(model, body, stream, credentials) {
     this._currentSessionId = resolveOpencodeSession(body, credentials);
+    body.stream = true;
+    if (body.max_output_tokens === undefined) {
+      if (body.max_completion_tokens !== undefined) body.max_output_tokens = body.max_completion_tokens;
+      else if (body.max_tokens !== undefined) body.max_output_tokens = body.max_tokens;
+    }
+    delete body.max_tokens;
+    delete body.max_completion_tokens;
     return injectReasoningContent({ provider: this.provider, model, body });
   }
 
-  buildUrl(model) {
+  buildUrl() {
     const base = this.config.baseUrl;
-    return MESSAGES_MODELS.has(model)
-      ? `${base}/zen/v1/messages`
-      : `${base}/zen/v1/chat/completions`;
+    return `${base}/zen/v1/responses`;
   }
 
   buildHeaders(credentials, stream = true) {

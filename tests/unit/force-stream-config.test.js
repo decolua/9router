@@ -102,7 +102,7 @@ vi.mock("@/lib/usageDb.js", () => ({
   saveRequestDetail: vi.fn(() => Promise.resolve()),
 }));
 
-const FORCED = ["openai", "codex", "commandcode"];
+const FORCED = ["openai", "codex", "commandcode", "opencode"];
 
 function makeOptions(bodyStream) {
   const body = {
@@ -131,7 +131,7 @@ describe("forceStream provider config", () => {
     executeMock.mockRejectedValue(new Error("boom"));
   });
 
-  it("only openai/codex/commandcode force streaming", async () => {
+  it("only configured providers force streaming", async () => {
     const { PROVIDERS } = await import("../../open-sse/config/providers.js");
     for (const id of FORCED) {
       expect(PROVIDERS[id]?.forceStream, `${id} forced`).toBe(true);
