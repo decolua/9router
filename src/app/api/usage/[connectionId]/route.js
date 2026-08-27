@@ -6,6 +6,7 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import { deriveQuotaSnapshot } from "@/shared/utils/quotaPause.js";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -173,16 +174,11 @@ export async function GET(request, { params }) {
 
     // Best-effort: persist a quota snapshot so routing can skip this account
     // when its remaining % drops to/below the per-account pause threshold
-    // (see src/sse/services/quotaGuard.js). Fail-open — never block the response.
-    if (usage && typeof usage.remainingPercentage === "number") {
-      updateProviderConnection(connection.id, {
-        lastQuotaSnapshot: {
-          remainingPercentage: usage.remainingPercentage,
-          resetAt: usage.resetAt || null,
-          unlimited: usage.unlimited === true,
-          fetchedAt: new Date().toISOString(),
-        },
-      }).catch(() => {});
+    // (see src/sse/services/quotaGuard.js). The remaining % is nested inside
+    // usage.quotas, so derive it first. Fail-open — never block the response.
+    const snapshot = deriveQuotaSnapshot(connection.provider, usage);
+    if (snapshot) {
+      updateProviderConnection(connection.id, { lastQuotaSnapshot: snapshot }).catch(() => {});
     }
 
     // If provider returned an auth-expired message instead of throwing,

@@ -6,6 +6,7 @@ import {
   isQuotaEligible,
   isQuotaPaused,
   getQuotaPauseInfo,
+  deriveQuotaSnapshot,
 } from "@/shared/utils/quotaPause.js";
 
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
@@ -108,6 +109,51 @@ describe("getQuotaPauseInfo", () => {
   });
 });
 
+describe("deriveQuotaSnapshot (raw usage → gating snapshot)", () => {
+  it("returns null when there is no usable quota data", () => {
+    expect(deriveQuotaSnapshot("claude", null)).toBeNull();
+    expect(deriveQuotaSnapshot("claude", { message: "auth expired" })).toBeNull();
+    expect(deriveQuotaSnapshot("claude", {})).toBeNull();
+    expect(deriveQuotaSnapshot("claude", { quotas: {} })).toBeNull();
+  });
+
+  it("takes the most-depleted window (min remaining) across quotas", () => {
+    const snap = deriveQuotaSnapshot("claude", {
+      quotas: {
+        "session (5h)": { used: 90, total: 100, remainingPercentage: 10 },
+        "weekly (7d)": { used: 50, total: 100, remainingPercentage: 50 },
+      },
+    });
+    expect(snap.remainingPercentage).toBe(10);
+    expect(snap.unlimited).toBe(false);
+  });
+
+  it("falls back to used/total when remainingPercentage is absent", () => {
+    const snap = deriveQuotaSnapshot("codex", {
+      quotas: { "5h": { used: 95, total: 100 } },
+    });
+    expect(snap.remainingPercentage).toBe(5);
+  });
+
+  it("treats all-unlimited windows as unlimited (never pause)", () => {
+    const snap = deriveQuotaSnapshot("glm", {
+      quotas: { a: { unlimited: true }, b: { unlimited: true } },
+    });
+    expect(snap.unlimited).toBe(true);
+    expect(snap.remainingPercentage).toBe(100);
+  });
+
+  it("captures the earliest reset time across windows", () => {
+    const snap = deriveQuotaSnapshot("claude", {
+      quotas: {
+        "session (5h)": { used: 90, total: 100, remainingPercentage: 10, resetAt: "2026-08-27T12:00:00Z" },
+        "weekly (7d)": { used: 50, total: 100, remainingPercentage: 50, resetAt: "2026-09-01T00:00:00Z" },
+      },
+    });
+    expect(snap.resetAt).toBe("2026-08-27T12:00:00.000Z");
+  });
+});
+
 describe("evaluateQuota (routing engine)", () => {
   it("returns disabled when threshold unset", async () => {
     const r = await evaluateQuota({ id: "x", authType: "oauth", provider: "claude" });
@@ -123,7 +169,9 @@ describe("evaluateQuota (routing engine)", () => {
   });
 
   it("live-fetches on a cache miss, then pauses and persists the snapshot", async () => {
-    vi.mocked(getUsageForProvider).mockResolvedValue({ remainingPercentage: 10, resetAt: null, unlimited: false });
+    vi.mocked(getUsageForProvider).mockResolvedValue({
+      quotas: { "session (5h)": { used: 90, total: 100, remainingPercentage: 10 } },
+    });
     const conn = okConn(); // no snapshot
     const r = await evaluateQuota(conn);
     expect(r.paused).toBe(true);
@@ -139,7 +187,9 @@ describe("evaluateQuota (routing engine)", () => {
   });
 
   it("uses the in-memory cache on a subsequent call (no second fetch)", async () => {
-    vi.mocked(getUsageForProvider).mockResolvedValue({ remainingPercentage: 12, unlimited: false });
+    vi.mocked(getUsageForProvider).mockResolvedValue({
+      quotas: { "session (5h)": { used: 88, total: 100, remainingPercentage: 12 } },
+    });
     await evaluateQuota(okConn());
     await evaluateQuota(okConn());
     expect(getUsageForProvider).toHaveBeenCalledTimes(1);

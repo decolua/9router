@@ -17,7 +17,7 @@
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { updateProviderConnection } from "@/lib/localDb";
-import { normalizeThreshold, isQuotaEligible, isQuotaPaused } from "@/shared/utils/quotaPause.js";
+import { normalizeThreshold, isQuotaEligible, isQuotaPaused, deriveQuotaSnapshot } from "@/shared/utils/quotaPause.js";
 
 // How long a snapshot (memory or persisted) stays fresh before a live refresh.
 const CACHE_TTL_MS = 2 * 60 * 1000;
@@ -73,14 +73,11 @@ async function fetchLiveSnapshot(connection) {
     setTimeout(() => reject(new Error("quota fetch timeout")), LIVE_FETCH_TIMEOUT_MS)
   );
   const usage = await Promise.race([usagePromise, timeout]);
-  if (!usage || usage.message || usage.error) return null;
-  if (typeof usage.remainingPercentage !== "number") return null;
-  return {
-    remainingPercentage: usage.remainingPercentage,
-    resetAt: usage.resetAt || null,
-    unlimited: usage.unlimited === true,
-    fetchedAt: new Date().toISOString(),
-  };
+  // getUsageForProvider nests remaining % inside `usage.quotas`; derive the
+  // single gating snapshot (most-depleted window) from it. null → fail-open.
+  const snapshot = deriveQuotaSnapshot(connection.provider, usage);
+  if (!snapshot) return null;
+  return snapshot;
 }
 
 function storeSnapshot(connectionId, snapshot) {
