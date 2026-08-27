@@ -6,6 +6,16 @@
 //   3. PATTERN_CAPABILITIES                     — glob match, ordered specific -> generic
 //   4. DEFAULT_CAPABILITIES                     — safe floor (always returned)
 //
+// Two extra layers then refine the result, and neither can override the hand
+// written tables above (steps 1-2 short-circuit before they are consulted):
+//   • the synced catalog — modalities keyed by model, limits keyed by provider
+//     + model, refreshed from models.dev in the background. It reads a file, so
+//     the server installs it via setCatalogSource(); this module stays free of
+//     node:fs because the dashboard bundles it into the browser too.
+//   • visionPatterns.js — name-based vision detection, last resort so a model
+//     nobody has catalogued yet still accepts images.
+// Both only ever turn a capability ON.
+//
 // ── HOW TO ADD / UPDATE A MODEL ──────────────────────────────────────
 // Authoritative data source: https://models.dev/api.json (145 providers, 4000+
 // models, MIT). Each model exposes the exact fields we map below:
@@ -23,6 +33,7 @@
 // 2.0+, Grok, Perplexity). Verify with: curl -s https://models.dev/api.json
 
 import { matchPattern } from "./pricing.js";
+import { looksLikeVisionModel } from "./visionPatterns.js";
 
 /**
  * Safe floor — every resolved result is merged over this so consumers
@@ -94,8 +105,8 @@ export const MODEL_CAPABILITIES = {
   // Gemini image-gen / OpenAI image / xai image variants
   "gpt-image-1":       { imageOutput: true, tools: false },
 
-  // GLM vision variants (text GLM has no vision) — 5.3-Flash is natively
-  // multimodal per z.ai and carries the full 1M window.
+  // GLM vision variants (text GLM has no vision) — 5.3-Flash and 5V-Turbo are
+  // natively multimodal per z.ai, and 5.3-Flash carries the full 1M window.
   "glm-5.3-flash":     { vision: true, videoInput: true, pdf: true, reasoning: true, thinkingFormat: "zai", contextWindow: 1000000, maxOutput: 131072 },
   "glm-4.6v":          { vision: true, videoInput: true, reasoning: true, thinkingFormat: "zai", contextWindow: 128000, maxOutput: 32768 },
   "glm-4.5v":          { vision: true, videoInput: true, reasoning: true, thinkingFormat: "zai", contextWindow: 64000, maxOutput: 16384 },
@@ -333,6 +344,46 @@ export const PATTERN_CAPABILITIES = [
  * @param {string} model
  * @returns {object} full capabilities object
  */
+const MODALITY_KEYS = ["vision", "pdf", "audioInput", "videoInput"];
+
+// Catalog lookups, installed by the server at startup. Left as no-ops in the
+// browser bundle, where there is no file to read.
+let catalogSource = null;
+
+/**
+ * Install the synced catalog reader (server only).
+ * @param {{ getModalities: Function, getLimits: Function } | null} source
+ */
+export function setCatalogSource(source) {
+  catalogSource = source;
+}
+
+// Apply the synced catalog + name heuristic on top of a table-resolved result.
+// Strictly additive: a capability already true stays true, and a false one only
+// flips when an outside source positively declares support.
+function refine(base, provider, model) {
+  const result = { ...DEFAULT_CAPABILITIES, ...base };
+
+  if (catalogSource) {
+    const modalities = catalogSource.getModalities(model);
+    if (modalities) {
+      for (const key of MODALITY_KEYS) {
+        if (modalities[key] === true) result[key] = true;
+      }
+    }
+
+    const limits = catalogSource.getLimits(provider, model);
+    if (limits) {
+      if (limits.contextWindow > 0) result.contextWindow = limits.contextWindow;
+      if (limits.maxOutput > 0) result.maxOutput = limits.maxOutput;
+    }
+  }
+
+  if (!result.vision && looksLikeVisionModel(model)) result.vision = true;
+
+  return result;
+}
+
 export function getCapabilitiesForModel(provider, model) {
   if (!model) return { ...DEFAULT_CAPABILITIES };
 
@@ -350,13 +401,13 @@ export function getCapabilitiesForModel(provider, model) {
   if (MODEL_CAPABILITIES[baseModel]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[baseModel] };
   if (MODEL_CAPABILITIES[model]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[model] };
 
-  // 3. Pattern match (first match wins)
+  // 3. Pattern match (first match wins), refined by catalog + name heuristic
   for (const { pattern, caps } of PATTERN_CAPABILITIES) {
     if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
-      return { ...DEFAULT_CAPABILITIES, ...caps };
+      return refine(caps, provider, model);
     }
   }
 
   // 4. Floor
-  return { ...DEFAULT_CAPABILITIES };
+  return refine(null, provider, model);
 }
