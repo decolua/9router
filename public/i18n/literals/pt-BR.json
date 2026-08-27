@@ -1060,5 +1060,13 @@
   "Published": "Publicado",
   "Chat completion model": "Modelo de conclusão de bate-papo",
   "Test": "Teste",
-  "View more details": "Ver mais detalhes"
+  "View more details": "Ver mais detalhes",
+  "Discover Models": "Descobrir modelos",
+  "Discovering...": "Descobrindo...",
+  "Please add an active connection first": "Adicione primeiro uma conexão ativa",
+  "No models returned": "Nenhum modelo foi retornado",
+  "All models already exist, no new models added": "Todos os modelos já existem; nenhum novo modelo foi adicionado",
+  "Failed to add discovered models": "Não foi possível adicionar os modelos descobertos",
+  "Successfully added": "Adicionados com sucesso",
+  "Error fetching models": "Erro ao buscar modelos"
 }

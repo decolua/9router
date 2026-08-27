@@ -78,7 +78,7 @@ export default function ProviderDetailPage() {
   const [oneByOneResults, setOneByOneResults] = useState({});
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
-  const [importingQoderModels, setImportingQoderModels] = useState(false);
+  const [discoveringModels, setDiscoveringModels] = useState(false);
   const { copied, copy } = useCopyToClipboard();
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
@@ -557,16 +557,15 @@ export default function ProviderDetailPage() {
     }
   };
 
-  // Fetch Qoder model list and automatically add to available models
-  const handleImportQoderModels = async () => {
-    if (importingQoderModels) return;
+  const handleDiscoverModels = async () => {
+    if (discoveringModels) return;
     const activeConnection = connections.find((conn) => conn.isActive !== false);
     if (!activeConnection) {
-      alert(translate("Please add an active Qoder connection first"));
+      alert(translate("Please add an active connection first"));
       return;
     }
 
-    setImportingQoderModels(true);
+    setDiscoveringModels(true);
     try {
       const res = await fetch(`/api/providers/${activeConnection.id}/models`);
       const data = await res.json();
@@ -574,40 +573,68 @@ export default function ProviderDetailPage() {
         alert(data.error || translate("Failed to fetch models"));
         return;
       }
-      const models = data.models || [];
-      if (models.length === 0) {
+      const discoveredModels = Array.isArray(data.models) ? data.models : [];
+      if (discoveredModels.length === 0) {
         alert(translate("No models returned"));
         return;
       }
 
+      const existingModelIds = new Set(models.map((model) => model.id));
+      for (const entry of customModels) {
+        if (entry.providerAlias !== providerStorageAlias) continue;
+        if ((entry.kind || entry.type || "llm") !== "llm") continue;
+        existingModelIds.add(entry.id);
+      }
+      for (const target of Object.values(modelAliases)) {
+        if (typeof target !== "string") continue;
+        for (const prefix of [`${providerStorageAlias}/`, `${providerId}/`]) {
+          if (target.startsWith(prefix)) existingModelIds.add(target.slice(prefix.length));
+        }
+      }
+
       let importedCount = 0;
-      for (const model of models) {
-        const modelId = model.id || model.name;
-        if (!modelId) continue;
-        
-        // Qoder model ID format may be "qoder/auto" or "auto", need to remove prefix
-        const cleanModelId = modelId.replace(/^qoder\//, "");
-        const alreadyExists = customModels.some(
-          (entry) => entry.providerAlias === providerStorageAlias && entry.id === cleanModelId && (entry.kind || entry.type || "llm") === "llm"
-        ) || Object.values(modelAliases).includes(`${providerStorageAlias}/${cleanModelId}`);
-        if (alreadyExists) {
+      let failedCount = 0;
+      for (const model of discoveredModels) {
+        const rawModelId = model?.id || model?.name || model?.model;
+        if (typeof rawModelId !== "string" || !rawModelId.trim()) continue;
+
+        let modelId = rawModelId.trim();
+        for (const prefix of [`${providerStorageAlias}/`, `${providerId}/`]) {
+          if (modelId.startsWith(prefix)) {
+            modelId = modelId.slice(prefix.length);
+            break;
+          }
+        }
+        if (!modelId || existingModelIds.has(modelId)) continue;
+
+        const addResponse = await fetch("/api/models/custom", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ providerAlias: providerStorageAlias, id: modelId, type: "llm" }),
+        });
+        if (!addResponse.ok) {
+          failedCount += 1;
           continue;
         }
 
-        await handleAddCustomModel(cleanModelId, "llm", providerStorageAlias);
+        existingModelIds.add(modelId);
         importedCount += 1;
       }
-      
-      if (importedCount === 0) {
+
+      if (importedCount === 0 && failedCount > 0) {
+        alert(translate("Failed to add discovered models"));
+      } else if (importedCount === 0) {
         alert(translate("All models already exist, no new models added"));
       } else {
+        await fetchCustomModels();
+        if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("customModelChanged"));
         alert(translate("Successfully added") + ` ${importedCount} ` + translate("models"));
       }
     } catch (error) {
-      console.log("Error importing Qoder models:", error);
+      console.log("Error discovering provider models:", error);
       alert(translate("Error fetching models") + ": " + error.message);
     } finally {
-      setImportingQoderModels(false);
+      setDiscoveringModels(false);
     }
   };
 
@@ -1171,17 +1198,16 @@ export default function ProviderDetailPage() {
           Add Model
         </button>
 
-        {/* Import Qoder models button — only show for qoder provider */}
-        {providerId === "qoder" && connections.some((conn) => conn.isActive !== false) && (
+        {(providerInfo?.canDiscoverModels || providerId === "qoder") && connections.some((conn) => conn.isActive !== false) && (
           <button
-            onClick={handleImportQoderModels}
-            disabled={importingQoderModels}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-500/40 px-3 py-2 text-xs text-blue-600 dark:text-blue-400 transition-colors hover:border-blue-500 hover:bg-blue-500/5 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+            onClick={handleDiscoverModels}
+            disabled={discoveringModels}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-500/40 px-3 py-2 text-xs text-blue-600 transition-colors hover:border-blue-500 hover:bg-blue-500/5 disabled:cursor-not-allowed disabled:opacity-50 dark:text-blue-400"
           >
-            <span className="material-symbols-outlined text-sm" style={importingQoderModels ? { animation: "spin 1s linear infinite" } : undefined}>
-              {importingQoderModels ? "progress_activity" : "download"}
+            <span className="material-symbols-outlined text-sm" style={discoveringModels ? { animation: "spin 1s linear infinite" } : undefined}>
+              {discoveringModels ? "progress_activity" : "travel_explore"}
             </span>
-            {importingQoderModels ? translate("Fetching...") : translate("Fetch Qoder Models")}
+            {discoveringModels ? translate("Discovering...") : translate("Discover Models")}
           </button>
         )}
 

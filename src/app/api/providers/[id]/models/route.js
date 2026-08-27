@@ -3,7 +3,7 @@ import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, refreshCodexToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
-import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
+import { PROVIDERS, resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -78,6 +78,26 @@ const createOpenAIModelsConfig = (url) => ({
   authPrefix: "Bearer ",
   parseResponse: parseOpenAIStyleModels
 });
+
+export const createRegistryModelsConfig = (providerId) => {
+  const provider = PROVIDERS[providerId];
+  const url = provider?.validateUrl;
+  if (typeof url !== "string" || !/\/models\/?(?:\?|$)/i.test(url)) return null;
+
+  const configuredAuth = provider.auth?.apiKey || provider.auth;
+  const authHeader = configuredAuth?.header || "Authorization";
+  const scheme = configuredAuth?.scheme?.toLowerCase();
+
+  return {
+    ...createOpenAIModelsConfig(url),
+    headers: {
+      "Content-Type": "application/json",
+      ...(provider.headers || {}),
+    },
+    authHeader,
+    authPrefix: scheme === "raw" ? "" : "Bearer ",
+  };
+};
 
 const getStaticProviderModels = (providerId) =>
   getModelsByProviderId(providerId).map((model) => ({
@@ -524,7 +544,7 @@ export async function GET(request, { params }) {
       });
     }
 
-    const config = PROVIDER_MODELS_CONFIG[connection.provider];
+    const config = PROVIDER_MODELS_CONFIG[connection.provider] || createRegistryModelsConfig(connection.provider);
     if (!config) {
       return NextResponse.json(
         { error: `Provider ${connection.provider} does not support models listing` },

@@ -272,5 +272,13 @@
   "Action": "Acción",
   "Chat completion model": "Modelo de finalización de chat",
   "Test": "Prueba",
-  "View more details": "Ver más detalles"
+  "View more details": "Ver más detalles",
+  "Discover Models": "Descubrir modelos",
+  "Discovering...": "Descubriendo...",
+  "Please add an active connection first": "Agregue primero una conexión activa",
+  "No models returned": "No se devolvieron modelos",
+  "All models already exist, no new models added": "Todos los modelos ya existen; no se agregaron modelos nuevos",
+  "Failed to add discovered models": "No se pudieron agregar los modelos descubiertos",
+  "Successfully added": "Agregados correctamente",
+  "Error fetching models": "Error al obtener los modelos"
 }

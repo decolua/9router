@@ -17,6 +17,10 @@ function buildProviderEntry(r) {
     if (r[k] !== undefined) mediaFields[k] = r[k];
   }
   const display = { ...(r.display || {}) };
+  const canDiscoverModels =
+    typeof r.transport?.validateUrl === "string" &&
+    /\/models\/?(?:\?|$)/i.test(r.transport.validateUrl) &&
+    (r.category === "apikey" || r.authType === "apikey" || r.authModes?.includes("apikey"));
   if (display.deprecationNotice === "RISK_NOTICE") display.deprecationNotice = RISK_NOTICE;
   return {
     ...display,
@@ -35,6 +39,7 @@ function buildProviderEntry(r) {
     ...(r.authModes ? { authModes: r.authModes } : {}),
     ...(r.authType ? { authType: r.authType } : {}),
     ...(r.authHint ? { authHint: r.authHint } : {}),
+    ...(canDiscoverModels ? { canDiscoverModels: true } : {}),
   };
 }
 
