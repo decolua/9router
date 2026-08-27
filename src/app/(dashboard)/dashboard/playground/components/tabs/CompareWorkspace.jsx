@@ -3,12 +3,23 @@ import { buildPlaygroundRequest } from "../../lib/requestBuilder";
 import { createSseParser } from "../../lib/sseParser";
 import { createMetricAccumulator } from "../../lib/metrics";
 
+const DEFAULT_COLUMN_IDS = ["col-default-a", "col-default-b"]; // fixed, deterministic, no randomness at initial render
+
+function generateColumnId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  // fallback for environments without crypto.randomUUID — monotonic, collision-safe within this session
+  generateColumnId._counter = (generateColumnId._counter || 0) + 1;
+  return `col-fallback-${generateColumnId._counter}`;
+}
+
 export default function CompareWorkspace({ configState, availableModels = [] }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [columns, setColumns] = useState([
-    { id: "col-1", model: null, output: "", state: "idle", metrics: null, error: null },
-    { id: "col-2", model: null, output: "", state: "idle", metrics: null, error: null }
+    { id: DEFAULT_COLUMN_IDS[0], model: null, output: "", state: "idle", metrics: null, error: null },
+    { id: DEFAULT_COLUMN_IDS[1], model: null, output: "", state: "idle", metrics: null, error: null }
   ]);
   
   const abortControllersRef = useRef({});
@@ -42,7 +53,7 @@ export default function CompareWorkspace({ configState, availableModels = [] }) 
   const addColumn = () => {
     if (columns.length >= 4) return;
     setColumns(prev => [...prev, { 
-      id: `col-${Date.now()}`, 
+      id: generateColumnId(), 
       model: null, 
       output: "", 
       state: "idle", 
@@ -160,20 +171,34 @@ export default function CompareWorkspace({ configState, availableModels = [] }) 
                 if (trailingEvent) events.push(trailingEvent);
             }
             
+            let isTerminal = false;
             for (const event of events) {
                accumulator.record(event, Date.now());
                
+               if (event.type === "done" || event.type === "error" || event.type === "incomplete") {
+                   isTerminal = true;
+               }
+
                if (event.type === "delta" && event.text) {
                    outputBuffersRef.current[col.id] += event.text;
                    scheduleUpdate();
                } else if (event.type === "error") {
                    throw new Error(event.message);
                } else if (event.type === "incomplete" && !abortController.signal.aborted) {
-                   throw new Error("Stream ended unexpectedly.");
+                   reader.cancel().catch(() => {});
+                   updateColumnState(col.id, {
+                     state: "incomplete",
+                     metrics: accumulator.snapshot(),
+                     output: outputBuffersRef.current[col.id],
+                   });
+                   return;
                }
             }
             
-            if (done) break;
+            if (done || isTerminal) {
+               reader.cancel().catch(() => {});
+               break;
+            }
           }
           
           if (abortController.signal.aborted) {
@@ -197,6 +222,7 @@ export default function CompareWorkspace({ configState, availableModels = [] }) 
              accumulator.abort(Date.now());
              updateColumnState(col.id, { state: "aborted", metrics: accumulator.snapshot() });
           } else {
+             accumulator.record({ type: "error", message: err.message }, Date.now());
              updateColumnState(col.id, { 
                 state: "error", 
                 error: err.message,
