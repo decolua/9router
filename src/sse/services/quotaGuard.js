@@ -17,7 +17,7 @@
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { updateProviderConnection } from "@/lib/localDb";
-import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import { normalizeThreshold, isQuotaEligible, isQuotaPaused } from "@/shared/utils/quotaPause.js";
 
 // How long a snapshot (memory or persisted) stays fresh before a live refresh.
 const CACHE_TTL_MS = 2 * 60 * 1000;
@@ -28,20 +28,8 @@ const LIVE_FETCH_TIMEOUT_MS = 3000;
 // key: connectionId -> { snapshot, fetchedAt }
 const memoryCache = new Map();
 
-function isEligible(connection) {
-  if (!connection) return false;
-  const isOAuth = connection.authType === "oauth";
-  const isApikeyAuth =
-    connection.authType === "apikey" || connection.authType === "api_key";
-  const isApikeyEligible =
-    isApikeyAuth && USAGE_APIKEY_PROVIDERS.includes(connection.provider);
-  return isOAuth || isApikeyEligible;
-}
-
 function thresholdOf(connection) {
-  const t = Number(connection?.quotaPauseThreshold);
-  if (!Number.isFinite(t) || t <= 0 || t > 100) return 0;
-  return t;
+  return normalizeThreshold(connection);
 }
 
 function freshSnapshot(snapshot, fetchedAt) {
@@ -64,14 +52,6 @@ function readSnapshot(connection) {
     if (s) return s;
   }
   return null;
-}
-
-function decidePaused(snapshot, threshold) {
-  if (!snapshot) return false;
-  if (snapshot.unlimited) return false;
-  const remaining = Number(snapshot.remainingPercentage);
-  if (!Number.isFinite(remaining)) return false;
-  return remaining <= threshold;
 }
 
 function buildProxyOptions(connection) {
@@ -117,7 +97,7 @@ function storeSnapshot(connectionId, snapshot) {
 export async function evaluateQuota(connection) {
   const threshold = thresholdOf(connection);
   if (!threshold) return { paused: false, reason: "disabled", snapshot: null };
-  if (!isEligible(connection)) return { paused: false, reason: "ineligible", snapshot: null };
+  if (!isQuotaEligible(connection)) return { paused: false, reason: "ineligible", snapshot: null };
 
   let snapshot = readSnapshot(connection);
   if (!snapshot) {
@@ -129,7 +109,7 @@ export async function evaluateQuota(connection) {
     if (snapshot) storeSnapshot(connection.id, snapshot);
   }
 
-  const paused = decidePaused(snapshot, threshold);
+  const paused = isQuotaPaused({ ...connection, _snapshot: snapshot, lastQuotaSnapshot: snapshot });
   return {
     paused,
     reason: paused ? "below-threshold" : snapshot ? "ok" : "no-data",
@@ -139,27 +119,10 @@ export async function evaluateQuota(connection) {
 
 /**
  * Synchronous info for the dashboard UI (badge + threshold control).
+ * Re-exported from the shared pure helper so callers only import one place.
  * Reads the persisted snapshot as-is (the Quota Tracker keeps it fresh).
- * @param {Object} connection
- * @returns {{enabled:boolean, paused:boolean, threshold:number, remainingPercentage:?number, resetAt:?string, unlimited:boolean}}
  */
-export function getQuotaPauseInfo(connection) {
-  const threshold = thresholdOf(connection);
-  if (!threshold) {
-    return { enabled: false, paused: false, threshold: 0, remainingPercentage: null, resetAt: null, unlimited: false };
-  }
-  const snapshot = connection.lastQuotaSnapshot || null;
-  const remainingPercentage = snapshot ? Number(snapshot.remainingPercentage) : null;
-  const paused = decidePaused(snapshot, threshold);
-  return {
-    enabled: true,
-    paused,
-    threshold,
-    remainingPercentage: Number.isFinite(remainingPercentage) ? remainingPercentage : null,
-    resetAt: snapshot?.resetAt || null,
-    unlimited: Boolean(snapshot?.unlimited),
-  };
-}
+export { getQuotaPauseInfo } from "@/shared/utils/quotaPause.js";
 
 // Exposed for tests / cache invalidation.
 export function _clearQuotaCache(connectionId) {
