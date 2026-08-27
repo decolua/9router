@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Card from "@/shared/components/Card";
 import { getCurrentLocale, onLocaleChange, translate } from "@/i18n/runtime";
-import UsageChart from "./usage/components/UsageChart";
+import dynamic from "next/dynamic";
+const UsageChart = dynamic(() => import("./usage/components/UsageChart"), { ssr: false, loading: () => null });
 
 const quickLinks = [
   { href: "/dashboard/endpoint", label: "Configure endpoint", icon: "key" },
@@ -58,6 +59,7 @@ export default function InicioPageClient() {
   const [models, setModels] = useState(null);
   const [failedSources, setFailedSources] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [modelsLoading, setModelsLoading] = useState(true);
   const [locale, setLocale] = useState(() => getCurrentLocale());
 
   useEffect(() => onLocaleChange(() => setLocale(getCurrentLocale())), []);
@@ -74,37 +76,56 @@ export default function InicioPageClient() {
   useEffect(() => {
     let cancelled = false;
 
-    const loadOverview = async () => {
+    const fetchWithTimeout = async (url, timeoutMs) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok) throw new Error(String(response.status));
+        return response.json();
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
+    const loadEssential = async () => {
       const sources = [
-        ["usage statistics", "/api/usage/stats?period=today"],
-        ["providers", "/api/providers"],
-        ["models", "/api/models/catalog"],
+        ["usage statistics", "/api/usage/stats?period=today", 4000],
+        ["providers", "/api/providers", 4000],
       ];
       const results = await Promise.allSettled(
-        sources.map(async ([, url]) => {
-          const response = await fetch(url);
-          if (!response.ok) throw new Error(String(response.status));
-          return response.json();
-        }),
+        sources.map(async ([label, url, timeout]) => fetchWithTimeout(url, timeout)),
       );
 
       if (cancelled) return;
 
       const failures = [];
-      results.forEach((result, index) => {
-        if (result.status === "rejected") failures.push(sources[index][0]);
-      });
-
       if (results[0].status === "fulfilled") setUsage(results[0].value);
+      else failures.push(sources[0][0]);
       if (results[1].status === "fulfilled") setConnections(results[1].value.connections || []);
-      if (results[2].status === "fulfilled") {
-        setModels((results[2].value.data || []).filter((model) => !model.disabled));
-      }
-      setFailedSources(failures);
+      else failures.push(sources[1][0]);
+
+      if (failures.length) setFailedSources((prev) => [...prev, ...failures]);
       setLoading(false);
     };
 
-    loadOverview();
+    const loadModels = async () => {
+      try {
+        const data = await fetchWithTimeout("/api/models/catalog", 5000);
+        if (cancelled) return;
+        setModels((data.data || []).filter((model) => !model.disabled));
+      } catch {
+        if (cancelled) return;
+        setModels([]);
+        setFailedSources((prev) => (prev.includes("models") ? prev : [...prev, "models"]));
+      } finally {
+        if (!cancelled) setModelsLoading(false);
+      }
+    };
+
+    loadEssential();
+    loadModels();
+
     return () => {
       cancelled = true;
     };
@@ -182,7 +203,7 @@ export default function InicioPageClient() {
 
       <section aria-label={translate("Gateway overview")} className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
         <MetricCard label={translate("Providers")} value={providerStats.providers} detail={translate("configured")} icon="dns" loading={loading && connections === null} />
-        <MetricCard label={translate("Models")} value={numberFormatter.format(models?.length || 0)} detail={translate("Visible in /v1/models")} icon="deployed_code" loading={loading && models === null} />
+        <MetricCard label={translate("Models")} value={numberFormatter.format(models?.length || 0)} detail={translate("Visible in /v1/models")} icon="deployed_code" loading={modelsLoading && models === null} />
         <MetricCard label={translate("Requests")} value={numberFormatter.format(usage?.totalRequests || 0)} detail={translate("Today")} icon="send" tone="text-primary" loading={loading && usage === null} />
         <MetricCard label={translate("Tokens")} value={numberFormatter.format(tokensToday)} detail={translate("Input + output today")} icon="token" tone="text-info" loading={loading && usage === null} />
         <MetricCard label={translate("In progress")} value={numberFormatter.format(activeRequests)} detail={translate("Active requests")} icon="progress_activity" tone="text-success" loading={loading && usage === null} />
