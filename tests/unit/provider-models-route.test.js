@@ -26,10 +26,11 @@ describe("provider models route", () => {
     vi.clearAllMocks();
   });
 
-  it("returns the registered static catalog for an active GLM connection without credentials", async () => {
+  it.each(["glm", "minimax"])("returns the registered static catalog for an active %s connection without credentials", async (provider) => {
+    const connectionId = `${provider}-connection`;
     mocks.getProviderConnectionById.mockResolvedValue({
-      id: "glm-connection",
-      provider: "glm",
+      id: connectionId,
+      provider,
       apiKey: "test-api-key",
       accessToken: "test-access-token",
       refreshToken: "test-refresh-token",
@@ -37,15 +38,15 @@ describe("provider models route", () => {
     });
 
     const response = await GET(
-      new Request("http://localhost/api/providers/glm-connection/models"),
-      { params: Promise.resolve({ id: "glm-connection" }) }
+      new Request(`http://localhost/api/providers/${connectionId}/models`),
+      { params: Promise.resolve({ id: connectionId }) }
     );
     const body = await response.json();
 
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
-      provider: "glm",
-      connectionId: "glm-connection",
+      provider,
+      connectionId,
       source: "local_catalog",
     });
     expect(body.models.length).toBeGreaterThan(0);
@@ -53,6 +54,29 @@ describe("provider models route", () => {
       expect.objectContaining({ id: expect.any(String), name: expect.any(String) }),
     ]));
     expect(JSON.stringify(body)).not.toMatch(/apiKey|accessToken|refreshToken|providerSpecificData|baseUrl|headers|test-api-key|test-access-token|test-refresh-token/i);
+  });
+
+  it("keeps configured providers on their live discovery path", async () => {
+    mocks.getProviderConnectionById.mockResolvedValue({
+      id: "claude-connection",
+      provider: "claude",
+      apiKey: "live-discovery-key",
+    });
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ data: [{ id: "live-model" }] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await GET(
+      new Request("http://localhost/api/providers/claude-connection/models"),
+      { params: Promise.resolve({ id: "claude-connection" }) }
+    );
+
+    await expect(response.json()).resolves.toMatchObject({
+      provider: "claude",
+      connectionId: "claude-connection",
+      models: [{ id: "live-model" }],
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    vi.unstubAllGlobals();
   });
 
   it("keeps unsupported providers on the existing models-listing error", async () => {

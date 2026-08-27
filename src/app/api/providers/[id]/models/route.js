@@ -522,17 +522,17 @@ export async function GET(request, { params }) {
       });
     }
 
-    if (connection.provider === "glm") {
-      return NextResponse.json({
-        provider: connection.provider,
-        connectionId: connection.id,
-        models: getStaticProviderModels("glm"),
-        source: "local_catalog",
-      });
-    }
-
     const config = PROVIDER_MODELS_CONFIG[connection.provider];
     if (!config) {
+      const models = getStaticProviderModels(connection.provider);
+      if (models.length > 0) {
+        return NextResponse.json({
+          provider: connection.provider,
+          connectionId: connection.id,
+          models,
+          source: "local_catalog",
+        });
+      }
       return NextResponse.json(
         { error: `Provider ${connection.provider} does not support models listing` },
         { status: 400 }
