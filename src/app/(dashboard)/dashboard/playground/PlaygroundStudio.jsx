@@ -7,6 +7,7 @@ import ChatWorkspace from "./components/tabs/ChatWorkspace";
 import CompareWorkspace from "./components/tabs/CompareWorkspace";
 import { createPlaygroundPersistence } from "./lib/persistence";
 import { sanitizePlaygroundData } from "./lib/sanitize";
+import { fetchModelCatalog } from "./lib/modelCatalog";
 
 const initialConfig = {
   systemPrompt: "",
@@ -24,6 +25,9 @@ export default function PlaygroundStudio() {
   const [selection, setSelection] = useState({});
   const [inspectorData, setInspectorData] = useState(null);
   const [storageWarning, setStorageWarning] = useState(null);
+  const [models, setModels] = useState([]);
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [modelsError, setModelsError] = useState(null);
   const [hydrated, setHydrated] = useState(false);
   const persistence = useMemo(() => createPlaygroundPersistence(), []);
 
@@ -41,6 +45,22 @@ export default function PlaygroundStudio() {
     setSelection(restored.selection);
     setHydrated(true);
   }, [persistence]);
+
+  useEffect(() => {
+    async function loadModels() {
+      setModelsLoading(true);
+      setModelsError(null);
+      try {
+        const catalog = await fetchModelCatalog();
+        setModels(catalog.models || []);
+      } catch (err) {
+        setModelsError(err.message || "Failed to load models");
+      } finally {
+        setModelsLoading(false);
+      }
+    }
+    loadModels();
+  }, []);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -93,12 +113,12 @@ export default function PlaygroundStudio() {
             <ChatWorkspace configState={{ ...config, params: config }} onResult={handleClientResult} draft={draft} onDraftChange={setDraft} />
           </div>
           <div role="tabpanel" id="panel-compare" aria-labelledby="tab-compare" hidden={activeTab !== "compare"} className="absolute inset-0 p-6 overflow-y-auto">
-            <CompareWorkspace configState={{ ...config, params: config }} availableModels={config.model ? [config.model] : []} onResult={handleClientResult} draft={draft} onDraftChange={setDraft} />
+            <CompareWorkspace configState={{ ...config, params: config }} availableModels={models} onResult={handleClientResult} draft={draft} onDraftChange={setDraft} />
           </div>
         </div>
       </div>
       <PlaygroundInspector data={inspectorData} />
-      <StudioConfigPane config={config} onChange={setConfig} />
+      <StudioConfigPane config={config} onChange={setConfig} models={models} loading={modelsLoading} error={modelsError} />
     </div>
   );
 }

@@ -1,29 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { fetchModelCatalog } from "@/app/(dashboard)/dashboard/playground/lib/modelCatalog";
-
-export default function StudioConfigPane({ config, onChange }) {
-  const [models, setModels] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const catalog = await fetchModelCatalog();
-        setModels(catalog.models || []);
-      } catch (err) {
-        setError(err.message || "Failed to load models");
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, []);
-
+export default function StudioConfigPane({ config, onChange, models, loading, error }) {
   const handleChange = (key, value) => {
     onChange({ ...config, [key]: value });
   };

@@ -205,6 +205,48 @@ describe('PlaygroundStudio Shell', () => {
     expect(storage).not.toContain('sk-secret-value');
   });
 
+  test('exposes the connected catalog to separate Compare selectors before a global model is selected', async () => {
+    const connectedModels = [
+      {
+        id: 'alpha/first',
+        label: 'First',
+        provider: { id: 'alpha', name: 'Alpha', connectionId: 'connection-a' },
+        available: true,
+        capabilities: {},
+      },
+      {
+        id: 'beta/second',
+        label: 'Second',
+        provider: { id: 'beta', name: 'Beta', connectionId: 'connection-b' },
+        available: true,
+        capabilities: {},
+      },
+    ];
+    modelCatalog.fetchModelCatalog.mockResolvedValue({ models: connectedModels });
+
+    render(React.createElement(PlaygroundStudio));
+    fireEvent.click(screen.getByTestId('playground-compare-tab'));
+
+    await waitFor(() => {
+      const selectors = screen.getAllByRole('combobox');
+      expect(selectors).toHaveLength(3);
+      for (const selector of selectors.slice(1)) {
+        expect(Array.from(selector.options, (option) => option.value)).toEqual([
+          '',
+          'alpha/first',
+          'beta/second',
+        ]);
+      }
+    });
+
+    const [, firstColumn, secondColumn] = screen.getAllByRole('combobox');
+    fireEvent.change(firstColumn, { target: { value: 'alpha/first' } });
+    fireEvent.change(secondColumn, { target: { value: 'beta/second' } });
+
+    expect(firstColumn.value).toBe('alpha/first');
+    expect(secondColumn.value).toBe('beta/second');
+  });
+
   test('preserves configuration across tab switches', async () => {
     modelCatalog.fetchModelCatalog.mockResolvedValue({
       models: [{
