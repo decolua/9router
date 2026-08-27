@@ -111,6 +111,13 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
     const normalized = normalizeSearchResponse(provider.id, data, params.query, params.searchType);
     const results = normalized.results.slice(0, params.maxResults);
     const duration = Date.now() - startTime;
+    const usage = {
+      queries_used: 1,
+      search_cost_usd: providerConfig.costPerQuery ?? null,
+    };
+    if (Number.isFinite(providerConfig.creditsPerResult)) {
+      usage.provider_credits_used = results.length * providerConfig.creditsPerResult;
+    }
 
     return {
       success: true,
@@ -119,7 +126,8 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
         query: params.query,
         results,
         answer: null,
-        usage: { queries_used: 1, search_cost_usd: providerConfig.costPerQuery || 0 },
+        usage,
+        ...(normalized.pagination ? { pagination: normalized.pagination } : {}),
         metrics: { response_time_ms: duration, upstream_latency_ms: duration, total_results_available: normalized.totalResults },
         errors: []
       }

@@ -199,6 +199,47 @@ function normalizeSearxng(data, _query, _searchType) {
   return { results, totalResults: results.length };
 }
 
+function normalizeXquik(data, _query, _searchType) {
+  const now = new Date().toISOString();
+  const items = Array.isArray(data.tweets) ? data.tweets : [];
+  const results = items.map((item, idx) => {
+    const username = typeof item?.author?.username === "string" ? item.author.username : "";
+    const authorName = typeof item?.author?.name === "string" ? item.author.name : "";
+    const tweetId = typeof item?.id === "string" ? item.id : String(item?.id || "");
+    const url = username && tweetId
+      ? `https://x.com/${encodeURIComponent(username)}/status/${encodeURIComponent(tweetId)}`
+      : tweetId
+        ? `https://x.com/i/web/status/${encodeURIComponent(tweetId)}`
+        : "";
+    const author = username ? `@${username}` : authorName || null;
+    const title = author ? `${author} on X` : "X post";
+    const imageUrl = Array.isArray(item?.media)
+      ? item.media.find((media) => typeof media?.mediaUrl === "string")?.mediaUrl
+      : null;
+
+    return makeResult("xquik", {
+      title,
+      url,
+      snippet: typeof item?.text === "string" ? item.text : "",
+      published_at: typeof item?.createdAt === "string" ? item.createdAt : null,
+      author,
+      image_url: imageUrl || null,
+      source_type: "x_post",
+      full_text: typeof item?.text === "string" ? item.text : undefined,
+      text_format: "text",
+    }, idx, now);
+  });
+  const nextCursor = typeof data.next_cursor === "string" && data.next_cursor ? data.next_cursor : null;
+  return {
+    results,
+    totalResults: null,
+    pagination: {
+      has_more: data.has_next_page === true,
+      next_cursor: nextCursor,
+    },
+  };
+}
+
 const NORMALIZERS = {
   "serper": normalizeSerper,
   "brave-search": normalizeBrave,
@@ -210,11 +251,12 @@ const NORMALIZERS = {
   "searchapi": normalizeSearchApi,
   "youcom": normalizeYouCom,
   "searxng": normalizeSearxng,
+  "xquik": normalizeXquik,
 };
 
 /**
  * Dispatch to the appropriate normalizer based on providerId.
- * @returns {{results: Array, totalResults: number|null}}
+ * @returns {{results: Array, totalResults: number|null, pagination?: object}}
  */
 export function normalizeSearchResponse(providerId, data, query, searchType) {
   const fn = NORMALIZERS[providerId];

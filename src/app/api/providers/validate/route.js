@@ -20,7 +20,7 @@ async function probeWebProvider(provider, apiKey) {
   if (!cfg) return null;
   if (cfg.authType === "none") return true; // no-auth (e.g. searxng)
 
-  let url = cfg.baseUrl;
+  let url = cfg.validateUrl || cfg.baseUrl;
   const headers = { "Content-Type": "application/json" };
   let body;
 
