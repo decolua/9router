@@ -1,7 +1,7 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { createRegistryModelsConfig } from "../../src/app/api/providers/[id]/models/route.js";
-import { AI_PROVIDERS } from "../../src/shared/constants/providers.js";
 
 describe("provider model discovery", () => {
   it("builds an authenticated /models request from the provider registry", () => {
@@ -18,10 +18,30 @@ describe("provider model discovery", () => {
     });
   });
 
-  it("only exposes discovery for API-key providers with a /models endpoint", () => {
-    expect(AI_PROVIDERS["verboo-code"].canDiscoverModels).toBe(true);
-    expect(AI_PROVIDERS["digital-ocean"].canDiscoverModels).toBe(true);
-    expect(AI_PROVIDERS.assemblyai.canDiscoverModels).toBeUndefined();
-    expect(createRegistryModelsConfig("assemblyai")).toBeNull();
+  it("derives /v1/models for providers without an explicit models endpoint", () => {
+    expect(createRegistryModelsConfig("agentrouter")).toMatchObject({
+      url: "https://agentrouter.org/v1/models",
+      authHeader: "x-api-key",
+      authPrefix: "",
+    });
+  });
+
+  it("returns null only when the provider does not exist", () => {
+    expect(createRegistryModelsConfig("missing-provider")).toBeNull();
+  });
+
+  it("renders discovery for every built-in and compatible provider", () => {
+    const providerPage = readFileSync(
+      new URL("../../src/app/(dashboard)/dashboard/providers/[id]/page.js", import.meta.url),
+      "utf8"
+    );
+    const compatibleSection = readFileSync(
+      new URL("../../src/app/(dashboard)/dashboard/providers/[id]/CompatibleModelsSection.js", import.meta.url),
+      "utf8"
+    );
+
+    expect(providerPage).toContain('translate("Discover Models")');
+    expect(providerPage).not.toContain("providerInfo?.canDiscoverModels");
+    expect(compatibleSection).toContain('"Discover Models"');
   });
 });

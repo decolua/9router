@@ -1198,18 +1198,16 @@ export default function ProviderDetailPage() {
           Add Model
         </button>
 
-        {(providerInfo?.canDiscoverModels || providerId === "qoder") && connections.some((conn) => conn.isActive !== false) && (
-          <button
-            onClick={handleDiscoverModels}
-            disabled={discoveringModels}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-500/40 px-3 py-2 text-xs text-blue-600 transition-colors hover:border-blue-500 hover:bg-blue-500/5 disabled:cursor-not-allowed disabled:opacity-50 dark:text-blue-400"
-          >
-            <span className="material-symbols-outlined text-sm" style={discoveringModels ? { animation: "spin 1s linear infinite" } : undefined}>
-              {discoveringModels ? "progress_activity" : "travel_explore"}
-            </span>
-            {discoveringModels ? translate("Discovering...") : translate("Discover Models")}
-          </button>
-        )}
+        <button
+          onClick={handleDiscoverModels}
+          disabled={discoveringModels || !connections.some((conn) => conn.isActive !== false)}
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-500/40 px-3 py-2 text-xs text-blue-600 transition-colors hover:border-blue-500 hover:bg-blue-500/5 disabled:cursor-not-allowed disabled:opacity-50 dark:text-blue-400"
+        >
+          <span className="material-symbols-outlined text-sm" style={discoveringModels ? { animation: "spin 1s linear infinite" } : undefined}>
+            {discoveringModels ? "progress_activity" : "travel_explore"}
+          </span>
+          {discoveringModels ? translate("Discovering...") : translate("Discover Models")}
+        </button>
 
         {/* Suggested models from provider API — show only models not yet added */}
         {suggestedModels.length > 0 && (() => {

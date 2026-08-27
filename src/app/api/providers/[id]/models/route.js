@@ -81,8 +81,43 @@ const createOpenAIModelsConfig = (url) => ({
 
 export const createRegistryModelsConfig = (providerId) => {
   const provider = PROVIDERS[providerId];
-  const url = provider?.validateUrl;
-  if (typeof url !== "string" || !/\/models\/?(?:\?|$)/i.test(url)) return null;
+  if (!provider) return null;
+
+  let url = provider.validateUrl;
+  if (typeof url !== "string" || !/\/models\/?(?:\?|$)/i.test(url)) {
+    if (typeof provider.baseUrl !== "string" || !provider.baseUrl) return null;
+    try {
+      const derivedUrl = new URL(provider.baseUrl);
+      derivedUrl.search = "";
+      derivedUrl.hash = "";
+
+      const currentPath = derivedUrl.pathname.replace(/\/+$/, "");
+      const standardModelsPath = currentPath.replace(
+        /\/(?:chat\/completions|responses|messages|completions)$/i,
+        "/models"
+      );
+
+      if (standardModelsPath !== currentPath) {
+        derivedUrl.pathname = standardModelsPath;
+      } else {
+        const segments = currentPath.split("/").filter(Boolean);
+        let versionIndex = -1;
+        for (let index = segments.length - 1; index >= 0; index -= 1) {
+          if (/^v\d+(?:beta\d*)?$/i.test(segments[index])) {
+            versionIndex = index;
+            break;
+          }
+        }
+        derivedUrl.pathname = versionIndex >= 0
+          ? `/${[...segments.slice(0, versionIndex + 1), "models"].join("/")}`
+          : "/v1/models";
+      }
+
+      url = derivedUrl.toString();
+    } catch {
+      return null;
+    }
+  }
 
   const configuredAuth = provider.auth?.apiKey || provider.auth;
   const authHeader = configuredAuth?.header || "Authorization";

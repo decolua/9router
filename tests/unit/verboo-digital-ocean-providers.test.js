@@ -42,7 +42,6 @@ describe.each(EXPECTED_PROVIDERS)("$name provider", (expected) => {
       name: expected.name,
       alias: expected.alias,
       passthroughModels: true,
-      canDiscoverModels: true,
     });
   });
 
