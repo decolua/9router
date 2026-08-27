@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
+import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
@@ -29,6 +30,29 @@ function resolveOpencodeSession(body, credentials) {
   }));
 }
 
+function normalizeOpencodeReasoning(model, body) {
+  const current = body.reasoning;
+  const currentReasoning = current && typeof current === "object" && !Array.isArray(current)
+    ? current
+    : null;
+  const requestedEffort = typeof body.reasoning_effort === "string"
+    ? body.reasoning_effort
+    : currentReasoning?.effort;
+  if (typeof requestedEffort !== "string") return;
+
+  const cleanModel = String(model || body.model || "").replace(/\([^()]+\)\s*$/, "").trim();
+  const supportedLevels = getThinkingLevels("opencode", cleanModel);
+  let effort = requestedEffort.toLowerCase().trim();
+  if ((effort === "max" || effort === "ultra") && supportedLevels?.length && !supportedLevels.includes(effort)) {
+    if (effort === "ultra" && supportedLevels.includes("max")) effort = "max";
+    else if (supportedLevels.includes("xhigh")) effort = "xhigh";
+  }
+
+  body.reasoning = { ...currentReasoning, effort };
+  if (!body.reasoning.summary) body.reasoning.summary = "auto";
+  delete body.reasoning_effort;
+}
+
 export class OpenCodeExecutor extends BaseExecutor {
   constructor() {
     super("opencode", PROVIDERS.opencode);
@@ -44,6 +68,9 @@ export class OpenCodeExecutor extends BaseExecutor {
     }
     delete body.max_tokens;
     delete body.max_completion_tokens;
+    // OpenAI Responses uses reasoning:{effort,summary}; normalize the shared
+    // reasoning_effort field at the provider-specific boundary.
+    normalizeOpencodeReasoning(model, body);
     return injectReasoningContent({ provider: this.provider, model, body });
   }
 

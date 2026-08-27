@@ -21,7 +21,9 @@ export default {
     },
     noAuth: true,
   },
-  models: [],
+  models: [
+    { id: "muse-spark-1.2-contributor-free", name: "Muse Spark 1.2 Contributor Free" },
+  ],
   modelsFetcher: { url: "https://opencode.ai/zen/v1/models", type: "opencode-free" },
   passthroughModels: true,
 };
