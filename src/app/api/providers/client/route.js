@@ -9,9 +9,10 @@ const SAFE_FIELDS = [
   "testStatus", "lastError", "lastErrorAt", "errorCode",
   "expiresAt", "lastUsedAt", "consecutiveUseCount",
   "createdAt", "updatedAt",
-  // Per-account quota safety buffer (non-sensitive): threshold + last snapshot,
-  // so the Quota Tracker edit modal can show/remember the configured value.
-  "quotaPauseThreshold", "lastQuotaSnapshot",
+  // Per-account quota safety buffer (non-sensitive): per-window thresholds map
+  // + last per-window snapshot, so the Quota Tracker edit modal can show/remember
+  // the configured values.
+  "quotaPauseThresholds", "lastQuotaSnapshot",
 ];
 
 const SAFE_PSD_FIELDS = [
