@@ -6,6 +6,7 @@ import { test, expect, describe, vi, afterEach, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import PlaygroundStudio from '../../../src/app/(dashboard)/dashboard/playground/PlaygroundStudio.jsx';
 import * as modelCatalog from '../../../src/app/(dashboard)/dashboard/playground/lib/modelCatalog.js';
+import { PLAYGROUND_PERSISTENCE_KEYS } from '../../../src/app/(dashboard)/dashboard/playground/lib/persistence.js';
 
 vi.mock('../../../src/app/(dashboard)/dashboard/playground/lib/modelCatalog.js', () => ({
   fetchModelCatalog: vi.fn(),
@@ -15,6 +16,7 @@ vi.mock('../../../src/app/(dashboard)/dashboard/playground/lib/modelCatalog.js',
 describe('PlaygroundStudio Shell', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
   });
 
   afterEach(() => {
@@ -113,6 +115,75 @@ describe('PlaygroundStudio Shell', () => {
       expect(screen.getByRole('alert')).toBeDefined();
     });
     expect(screen.getByText('Network error')).toBeDefined();
+  });
+
+  test('hydrates persisted namespaces before saving and keeps restored values intact', async () => {
+    const persisted = {
+      sessions: [{ id: 'saved-session', updatedAt: '2026-08-27T00:00:00.000Z', messages: [{ role: 'user', content: 'saved history' }] }],
+      presets: [{ id: 'saved-preset', config: { stop: ['END'] } }],
+      config: { systemPrompt: 'restored prompt', temperature: 0.2, maxTokens: 400, model: { id: 'safe/model', label: 'Safe model' } },
+      selection: { activeSessionId: 'saved-session' },
+      draft: 'restored draft',
+    };
+    localStorage.setItem(PLAYGROUND_PERSISTENCE_KEYS.sessions, JSON.stringify({ version: 1, value: persisted.sessions }));
+    localStorage.setItem(PLAYGROUND_PERSISTENCE_KEYS.presetsConfig, JSON.stringify({ version: 1, value: { presets: persisted.presets, config: persisted.config } }));
+    localStorage.setItem(PLAYGROUND_PERSISTENCE_KEYS.selection, JSON.stringify({ version: 1, value: persisted.selection }));
+    localStorage.setItem(PLAYGROUND_PERSISTENCE_KEYS.draft, JSON.stringify({ version: 1, value: persisted.draft }));
+    modelCatalog.fetchModelCatalog.mockResolvedValue({ models: [] });
+
+    render(React.createElement(PlaygroundStudio));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('System Prompt').value).toBe('restored prompt');
+      expect(screen.getByPlaceholderText('Send a message...').value).toBe('restored draft');
+    });
+
+    expect(JSON.parse(localStorage.getItem(PLAYGROUND_PERSISTENCE_KEYS.sessions)).value[0].id).toBe('saved-session');
+    expect(JSON.parse(localStorage.getItem(PLAYGROUND_PERSISTENCE_KEYS.presetsConfig)).value.presets[0].id).toBe('saved-preset');
+    expect(JSON.parse(localStorage.getItem(PLAYGROUND_PERSISTENCE_KEYS.selection)).value.activeSessionId).toBe('saved-session');
+    expect(JSON.parse(localStorage.getItem(PLAYGROUND_PERSISTENCE_KEYS.draft)).value).toBe('restored draft');
+  });
+
+  test('streams Chat through Studio into the sanitized Inspector and persisted session', async () => {
+    const unsafeModel = {
+      id: 'safe/model',
+      label: 'Safe model',
+      provider: { id: 'safe', name: 'Safe' },
+      capabilities: {},
+      authorization: 'Bearer sk-secret-value',
+    };
+    modelCatalog.fetchModelCatalog.mockResolvedValue({ models: [unsafeModel] });
+    const encoder = new TextEncoder();
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: {
+        getReader: () => ({
+          read: vi.fn()
+            .mockResolvedValueOnce({ done: false, value: encoder.encode('data: {"choices":[{"delta":{"content":"Studio output"}}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}\n\ndata: [DONE]\n\n') }),
+          cancel: vi.fn().mockResolvedValue(undefined),
+        }),
+      },
+    });
+
+    render(React.createElement(PlaygroundStudio));
+    await waitFor(() => expect(screen.getByLabelText('Select Model')).toBeDefined());
+    fireEvent.change(screen.getByLabelText('Select Model'), { target: { value: 'safe/model' } });
+    fireEvent.change(screen.getByPlaceholderText('Send a message...'), { target: { value: 'Inspect this' } });
+    fireEvent.click(screen.getByTestId('playground-send'));
+
+    await waitFor(() => {
+      const inspector = screen.getByTestId('playground-inspector').textContent;
+      expect(inspector).toContain('safe/model');
+      expect(inspector).toContain('HTTP 200');
+      expect(inspector).toContain('Studio output');
+      expect(inspector).toContain('complete');
+      expect(inspector).toContain('5');
+    });
+
+    const storage = Object.values(PLAYGROUND_PERSISTENCE_KEYS).map((key) => localStorage.getItem(key)).join('');
+    expect(screen.getByTestId('playground-inspector').textContent).not.toContain('sk-secret-value');
+    expect(storage).not.toContain('sk-secret-value');
   });
 
   test('preserves configuration across tab switches', async () => {

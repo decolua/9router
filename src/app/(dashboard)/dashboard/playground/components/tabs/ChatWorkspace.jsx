@@ -14,6 +14,10 @@ export default function ChatWorkspace({ configState, onMetricsUpdate, onResult, 
   const outputRef = useRef("");
 
   useEffect(() => {
+    setInput(draft || "");
+  }, [draft]);
+
+  useEffect(() => {
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();

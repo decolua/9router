@@ -26,10 +26,16 @@ export default function CompareWorkspace({ configState, availableModels = [], on
   const abortControllersRef = useRef({});
   const rafRefs = useRef({});
   const outputBuffersRef = useRef({});
+  const terminalOutputsRef = useRef({});
+
+  useEffect(() => {
+    setInput(draft || "");
+  }, [draft]);
 
   const cleanupColumn = useCallback((colId, terminalState = null) => {
     const bufferedOutput = outputBuffersRef.current[colId];
     if (terminalState) {
+      terminalOutputsRef.current[colId] = bufferedOutput ?? "";
       setColumns(prev => prev.map(col =>
         col.id === colId
           ? { ...col, output: bufferedOutput ?? col.output, state: terminalState }
@@ -126,8 +132,20 @@ export default function CompareWorkspace({ configState, availableModels = [], on
       
       // Fire and forget per column
       (async () => {
+        let requestBody = null;
+        let responseStatus = null;
+        let resultPublished = false;
+        const publishResult = () => {
+          if (resultPublished || !requestBody) return;
+          resultPublished = true;
+          onResult?.(sanitizePlaygroundData({
+            request: requestBody,
+            response: { status: responseStatus, output: outputBuffersRef.current[col.id] ?? terminalOutputsRef.current[col.id] ?? "" },
+            metrics: accumulator.snapshot(),
+          }));
+        };
         try {
-          let requestBody = {
+          requestBody = {
             ...buildPlaygroundRequest({
               model: col.model,
               systemPrompt: configState.systemPrompt,
@@ -145,15 +163,16 @@ export default function CompareWorkspace({ configState, availableModels = [], on
             signal: abortController.signal
           });
           
-          const responseStatus = response.status ?? null;
+          responseStatus = response.status ?? null;
           if (!response.ok) {
              throw new Error(`HTTP error ${response.status}`);
           }
           
           if (abortController.signal.aborted) {
-              accumulator.abort(Date.now());
-              updateColumnState(col.id, { state: "aborted", metrics: accumulator.snapshot() });
-              return;
+               accumulator.abort(Date.now());
+               updateColumnState(col.id, { state: "aborted", metrics: accumulator.snapshot() });
+               publishResult();
+               return;
           }
 
           updateColumnState(col.id, { state: "streaming" });
@@ -172,10 +191,11 @@ export default function CompareWorkspace({ configState, availableModels = [], on
 
           while (true) {
             const { done, value } = await reader.read();
-            if (abortController.signal.aborted) {
-              accumulator.abort(Date.now());
-              return;
-            }
+             if (abortController.signal.aborted) {
+               accumulator.abort(Date.now());
+               publishResult();
+               return;
+             }
             
             let events = [];
             if (value) {
@@ -201,12 +221,13 @@ export default function CompareWorkspace({ configState, availableModels = [], on
                    throw new Error(event.message);
                } else if (event.type === "incomplete" && !abortController.signal.aborted) {
                    reader.cancel().catch(() => {});
-                   updateColumnState(col.id, {
-                     state: "incomplete",
-                     metrics: accumulator.snapshot(),
-                     output: outputBuffersRef.current[col.id],
-                   });
-                   return;
+                    updateColumnState(col.id, {
+                      state: "incomplete",
+                      metrics: accumulator.snapshot(),
+                      output: outputBuffersRef.current[col.id],
+                    });
+                    publishResult();
+                    return;
                }
             }
             
@@ -216,10 +237,11 @@ export default function CompareWorkspace({ configState, availableModels = [], on
             }
           }
           
-          if (abortController.signal.aborted) {
-             accumulator.abort(Date.now());
-             updateColumnState(col.id, { state: "aborted", metrics: accumulator.snapshot() });
-          } else {
+           if (abortController.signal.aborted) {
+              accumulator.abort(Date.now());
+              updateColumnState(col.id, { state: "aborted", metrics: accumulator.snapshot() });
+              publishResult();
+           } else {
              // Force final flush
              if (rafRefs.current[col.id]) {
                 cancelAnimationFrame(rafRefs.current[col.id]);
@@ -232,25 +254,23 @@ export default function CompareWorkspace({ configState, availableModels = [], on
                 output,
                 metrics
              });
-             onResult?.(sanitizePlaygroundData({
-               request: requestBody,
-               response: { status: responseStatus, output },
-               metrics,
-             }));
+              publishResult();
           }
 
         } catch (err) {
-          if (err.name === "AbortError") {
-             accumulator.abort(Date.now());
-             updateColumnState(col.id, { state: "aborted", metrics: accumulator.snapshot() });
-          } else {
-             accumulator.record({ type: "error", message: err.message }, Date.now());
-             updateColumnState(col.id, { 
+           if (err.name === "AbortError") {
+              accumulator.abort(Date.now());
+              updateColumnState(col.id, { state: "aborted", metrics: accumulator.snapshot() });
+              publishResult();
+           } else {
+              accumulator.record({ type: "error", message: err.message }, Date.now());
+              updateColumnState(col.id, { 
                 state: "error", 
-                error: err.message,
+                error: sanitizePlaygroundData(err.message),
                 metrics: accumulator.snapshot()
-             });
-          }
+              });
+              publishResult();
+           }
         } finally {
           delete abortControllersRef.current[col.id];
           if (rafRefs.current[col.id]) {

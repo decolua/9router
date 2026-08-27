@@ -123,6 +123,36 @@ describe("CompareWorkspace", () => {
     expect(req2.model.id).toBe("anthropic/claude-3");
   });
   
+  it("reports sanitized incomplete and error terminal results through onResult", async () => {
+    const { createSseParser: createActualSseParser } = await vi.importActual(
+      "../../../src/app/(dashboard)/dashboard/playground/lib/sseParser"
+    );
+    createSseParser.mockImplementation(createActualSseParser);
+    const encoder = new TextEncoder();
+    global.fetch = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, body: { getReader: () => ({ read: vi.fn().mockResolvedValue({ done: true }), cancel: vi.fn().mockResolvedValue(undefined) }) } })
+      .mockResolvedValueOnce({ ok: true, status: 200, body: { getReader: () => ({ read: vi.fn().mockResolvedValue({ done: false, value: encoder.encode('data: {"error":{"message":"Bearer sk-secret-value"}}\n\n') }), cancel: vi.fn().mockResolvedValue(undefined) }) } });
+    const onResult = vi.fn();
+
+    render(<CompareWorkspace configState={mockConfigState} availableModels={availableModels} onResult={onResult} />);
+    const selects = screen.getAllByRole("combobox");
+    fireEvent.change(selects[0], { target: { value: "openai/gpt-4o" } });
+    fireEvent.change(selects[1], { target: { value: "anthropic/claude-3" } });
+    fireEvent.change(screen.getByTestId("compare-input"), { target: { value: "Inspect terminal states" } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("compare-send"));
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onResult).toHaveBeenCalledTimes(2);
+    expect(onResult.mock.calls.map(([result]) => result.metrics.terminalState)).toEqual(expect.arrayContaining(["incomplete", "error"]));
+    expect(JSON.stringify(onResult.mock.calls)).not.toContain("sk-secret-value");
+  });
+
   it("proves real request-body equality, four-way stream isolation, and RAF cleanup on unmount", async () => {
     const { createSseParser: createActualSseParser } = await vi.importActual(
       "../../../src/app/(dashboard)/dashboard/playground/lib/sseParser"

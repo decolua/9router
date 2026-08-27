@@ -24,8 +24,8 @@ export default function PlaygroundStudio() {
   const [selection, setSelection] = useState({});
   const [inspectorData, setInspectorData] = useState(null);
   const [storageWarning, setStorageWarning] = useState(null);
+  const [hydrated, setHydrated] = useState(false);
   const persistence = useMemo(() => createPlaygroundPersistence(), []);
-  const hydratedRef = useRef(false);
 
   const tabRefs = {
     chat: useRef(null),
@@ -39,17 +39,17 @@ export default function PlaygroundStudio() {
     setSessions(restored.sessions);
     setPresets(restored.presets);
     setSelection(restored.selection);
-    hydratedRef.current = true;
+    setHydrated(true);
   }, [persistence]);
 
   useEffect(() => {
-    if (!hydratedRef.current) return;
+    if (!hydrated) return;
     const result = persistence.save(sanitizePlaygroundData({ sessions, presets, config, selection, draft }));
     setStorageWarning(result.warning);
     if (result.evictedSessionIds.length > 0) {
       setSessions((current) => current.filter((session) => !result.evictedSessionIds.includes(session.id)));
     }
-  }, [config, draft, persistence, presets, selection, sessions]);
+  }, [config, draft, hydrated, persistence, presets, selection, sessions]);
 
   const handleClientResult = (result) => {
     const safe = sanitizePlaygroundData(result);
