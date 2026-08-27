@@ -26,7 +26,15 @@ export default function CompareWorkspace({ configState, availableModels = [] }) 
   const rafRefs = useRef({});
   const outputBuffersRef = useRef({});
 
-  const cleanupColumn = useCallback((colId) => {
+  const cleanupColumn = useCallback((colId, terminalState = null) => {
+    const bufferedOutput = outputBuffersRef.current[colId];
+    if (terminalState) {
+      setColumns(prev => prev.map(col =>
+        col.id === colId
+          ? { ...col, output: bufferedOutput ?? col.output, state: terminalState }
+          : col
+      ));
+    }
     if (abortControllersRef.current[colId]) {
       abortControllersRef.current[colId].abort();
       delete abortControllersRef.current[colId];
@@ -76,15 +84,13 @@ export default function CompareWorkspace({ configState, availableModels = [] }) 
   const handleStopAll = useCallback(() => {
     columns.forEach(col => {
       if (col.state === "waiting" || col.state === "streaming") {
-        cleanupColumn(col.id);
-        updateColumnState(col.id, { state: "aborted" });
+        cleanupColumn(col.id, "aborted");
       }
     });
   }, [columns, cleanupColumn]);
 
   const handleStopColumn = useCallback((colId) => {
-    cleanupColumn(colId);
-    updateColumnState(colId, { state: "aborted" });
+    cleanupColumn(colId, "aborted");
   }, [cleanupColumn]);
 
   const sendMessage = useCallback(async (forcedMessages = null) => {
@@ -164,6 +170,10 @@ export default function CompareWorkspace({ configState, availableModels = [] }) 
 
           while (true) {
             const { done, value } = await reader.read();
+            if (abortController.signal.aborted) {
+              accumulator.abort(Date.now());
+              return;
+            }
             
             let events = [];
             if (value) {

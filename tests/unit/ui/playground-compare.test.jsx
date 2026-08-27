@@ -191,22 +191,31 @@ describe("CompareWorkspace", () => {
       pendingReads[0]({ done: false, value: encoder.encode('data: {"choices":[{"delta":{"content":"A"}}]}\n\ndata: [DONE]\n\n') });
     });
 
-    // 3. column B -> streaming then cancelled by user
+    // 3. column B -> stop while its partial output is still buffered in a queued RAF
     await act(async () => {
       pendingReads[1]({ done: false, value: encoder.encode('data: {"choices":[{"delta":{"content":"B_PARTIAL"}}]}\n\n') });
+      await Promise.resolve();
     });
-    
+
+    const bufferedBOutput = "B_PARTIAL";
+    const queuedBHandle = Array.from(queuedRafs.keys()).at(-1);
+    expect(queuedBHandle).toBeDefined();
+    const bSignal = global.fetch.mock.calls[1][1].signal;
     await act(async () => {
-      const callbacks = Array.from(queuedRafs.values());
-      queuedRafs.clear();
-      callbacks.forEach(cb => cb());
+      fireEvent.click(screen.getByTestId("stop-col-col-default-b"));
     });
-    
-    expect(screen.getByText(/B_PARTIAL/)).toBeTruthy();
-    const stopButtons = screen.getAllByTestId(/stop-col-/i);
+
+    expect(bSignal.aborted).toBe(true);
+    expect(global.cancelAnimationFrame).toHaveBeenCalledWith(queuedBHandle);
+    expect(screen.getByTestId("compare-col-col-default-b").textContent).toContain(bufferedBOutput);
+    expect(screen.getByTestId("state-col-default-b").textContent).toBe("ABORTED");
+
     await act(async () => {
-      fireEvent.click(stopButtons[0]); // stop column B specifically
+      pendingReads[1]({ done: false, value: encoder.encode('data: {"choices":[{"delta":{"content":"_LATE"}}]}\n\n') });
+      await Promise.resolve();
     });
+    expect(screen.getByTestId("compare-col-col-default-b").textContent).toContain(bufferedBOutput);
+    expect(screen.getByTestId("state-col-default-b").textContent).toBe("ABORTED");
 
     // 4. column C -> error
     await act(async () => {
@@ -238,15 +247,19 @@ describe("CompareWorkspace", () => {
     expect(statesFinal[2].textContent).toBe("ERROR");
     expect(statesFinal[3].textContent).toBe("INCOMPLETE");
 
-    // B stayed frozen — no further reads processed for it after abort
-    expect(pendingReads[1]).toBeDefined();
-
-    // 6. unmount with any remaining queued RAF, prove cleanup
-    const hadQueuedRaf = queuedRafs.size > 0;
+    fireEvent.change(screen.getByTestId("compare-input"), { target: { value: "queue cleanup" } });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("compare-send"));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      pendingReads[4]({ done: false, value: encoder.encode('data: {"choices":[{"delta":{"content":"QUEUED"}}]}\n\n') });
+      await Promise.resolve();
+    });
+    const queuedUnmountHandle = Array.from(queuedRafs.keys()).at(-1);
+    expect(queuedUnmountHandle).toBeDefined();
     unmount();
-    if (hadQueuedRaf) {
-      expect(global.cancelAnimationFrame).toHaveBeenCalled();
-    }
+    expect(global.cancelAnimationFrame).toHaveBeenCalledWith(queuedUnmountHandle);
     expect(queuedRafs.size).toBe(0);
   });
 });
