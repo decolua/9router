@@ -1,4 +1,4 @@
-import { detectFormat, getTargetFormat, resolveTransport } from "../services/provider.js";
+import { detectFormat, getTargetFormat, resolveTransport, hasThinkingConfig } from "../services/provider.js";
 import { translateRequest } from "../translator/index.js";
 import { applyThinking, extractThinking, stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
@@ -95,17 +95,22 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const stripList = getModelStrip(alias, model);
   const upstreamModel = getModelUpstreamId(alias, model);
 
-  // Inject provider-level thinking config override (only if client hasn't set)
-  // on/off → extended type (body.thinking), none/low/medium/high → effort type (body.reasoning_effort)
+  // Inject provider-level thinking config only when the client did not provide
+  // an explicit setting. Codex uses the nested Responses shape.
   if (providerThinking?.mode && providerThinking.mode !== "auto") {
     const mode = providerThinking.mode;
-    if (mode === "on" && !body.thinking) {
+    const clientHasThinkingConfig = hasThinkingConfig(body);
+    if (mode === "on" && !clientHasThinkingConfig) {
       console.log("Injecting provider-level thinking config override: on");
       body = { ...body, thinking: { type: "enabled", budget_tokens: 10000 } };
-    } else if (mode === "off" && !body.thinking) {
+    } else if (mode === "off" && !clientHasThinkingConfig) {
       body = { ...body, thinking: { type: "disabled" } };
-    } else if (!body.reasoning_effort) {
-      body = { ...body, reasoning_effort: mode };
+    } else if (!clientHasThinkingConfig) {
+      if (body.reasoning && typeof body.reasoning === "object" && !Array.isArray(body.reasoning)) {
+        body = { ...body, reasoning: { ...body.reasoning, effort: mode } };
+      } else {
+        body = { ...body, reasoning_effort: mode };
+      }
     }
   }
 

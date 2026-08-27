@@ -13,6 +13,8 @@ const execAsync = promisify(exec);
 const getCodexDir = () => path.join(os.homedir(), ".codex");
 const getCodexConfigPath = () => path.join(getCodexDir(), "config.toml");
 const getCodexAuthPath = () => path.join(getCodexDir(), "auth.json");
+const CODEX_REASONING_EFFORTS = new Set(["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
+const CODEX_SERVICE_TIERS = new Set(["priority"]);
 
 // Flatten confbox-parsed TOML into a writable object, preserving nested tables
 const parsedToWritable = (obj) => obj ?? {};
@@ -109,7 +111,7 @@ export async function GET() {
 // POST - Update 9Router settings (merge with existing config)
 export async function POST(request) {
   try {
-    const { baseUrl, apiKey, model, subagentModel } = await request.json();
+    const { baseUrl, apiKey, model, subagentModel, reasoningEffort, serviceTier } = await request.json();
     
     if (!baseUrl || !apiKey || !model) {
       return NextResponse.json({ error: "baseUrl, apiKey and model are required" }, { status: 400 });
@@ -132,10 +134,35 @@ export async function POST(request) {
     parsed.model = model;
     parsed.model_provider = "9router";
 
+    if (reasoningEffort !== undefined) {
+      if (reasoningEffort === "auto" || reasoningEffort === null || reasoningEffort === "") {
+        delete parsed.model_reasoning_effort;
+      } else if (!CODEX_REASONING_EFFORTS.has(reasoningEffort)) {
+        return NextResponse.json({ error: "Invalid Codex reasoning effort" }, { status: 400 });
+      } else {
+        parsed.model_reasoning_effort = reasoningEffort;
+      }
+    }
+
+    if (serviceTier !== undefined) {
+      if (serviceTier === "auto" || serviceTier === null || serviceTier === "") {
+        delete parsed.service_tier;
+      } else if (!CODEX_SERVICE_TIERS.has(serviceTier)) {
+        return NextResponse.json({ error: "Invalid Codex service tier" }, { status: 400 });
+      } else {
+        parsed.service_tier = serviceTier;
+      }
+    }
+
     // Update or create 9router provider section (no api_key - Codex reads from auth.json)
     // Ensure /v1 suffix is added only once
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
+    const existingProvider = parsed.model_providers?.["9router"];
+    const providerConfig = existingProvider && typeof existingProvider === "object" && !Array.isArray(existingProvider)
+      ? existingProvider
+      : {};
     setNestedSection(parsed, "model_providers.9router", {
+      ...providerConfig,
       name: "9Router",
       base_url: normalizedBaseUrl,
       wire_api: "responses",
@@ -144,6 +171,7 @@ export async function POST(request) {
     // Add subagent configuration
     const effectiveSubagentModel = subagentModel || model;
     setNestedSection(parsed, "agents.subagent", {
+      description: "Runs focused tasks delegated by Codex.",
       model: effectiveSubagentModel,
     });
 

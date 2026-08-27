@@ -35,7 +35,7 @@ vi.mock("../../open-sse/handlers/chatCore/sseToJsonHandler.js", () => ({
 
 const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
 
-async function runNativeCodexRequest(model, reasoning) {
+async function runNativeCodexRequest(model, reasoning, providerThinking) {
   const body = {
     model,
     input: "hello",
@@ -55,6 +55,7 @@ async function runNativeCodexRequest(model, reasoning) {
     ponytailEnabled: false,
     pxpipeEnabled: false,
     sourceFormatOverride: "openai-responses",
+    providerThinking,
     clientRawRequest: {
       endpoint: "/v1/responses",
       body,
@@ -107,5 +108,15 @@ describe("native Codex passthrough thinking suffixes", () => {
 
     expect(body.model).toBe("gpt-5.6-terra");
     expect(body.reasoning).toEqual({ effort: "ultra" });
+  });
+
+  it("does not override native Responses reasoning with provider default", async () => {
+    const body = await runNativeCodexRequest(
+      "gpt-5.6-luna",
+      { effort: "low" },
+      { mode: "high" },
+    );
+
+    expect(body.reasoning).toEqual({ effort: "low" });
   });
 });

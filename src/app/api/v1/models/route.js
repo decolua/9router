@@ -18,6 +18,7 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -127,6 +128,76 @@ const LIVE_MODEL_RESOLVERS = {
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
   return data?.data || data?.models || data?.results || [];
+};
+
+const CODEX_REASONING_DESCRIPTIONS = {
+  minimal: "Fast responses with minimal reasoning",
+  low: "Fast responses with lighter reasoning",
+  medium: "Balances speed and reasoning depth for everyday tasks",
+  high: "Greater reasoning depth for complex problems",
+  xhigh: "Extra high reasoning depth for complex problems",
+  max: "Maximum reasoning depth for the hardest problems",
+  ultra: "Maximum reasoning with automatic task delegation",
+};
+
+const PROVIDER_ALIAS_TO_ID = Object.fromEntries(
+  Object.entries(PROVIDER_ID_TO_ALIAS).map(([providerId, alias]) => [alias, providerId]),
+);
+
+// Codex expects its richer model catalog under `models`; keep `data` as the
+// standard OpenAI-compatible catalog for every other client.
+const toCodexModel = (model) => {
+  const [alias, ...modelParts] = String(model?.id || "").split("/");
+  const modelId = modelParts.join("/") || alias;
+  const providerId = PROVIDER_ALIAS_TO_ID[alias] || alias;
+  const levels = model?.capabilities?.reasoning
+    ? (getThinkingLevels(providerId, modelId) || [])
+    : [];
+  const supportedReasoningLevels = levels
+    .filter((level) => level !== "none")
+    .map((effort) => ({ effort, description: CODEX_REASONING_DESCRIPTIONS[effort] || `${effort} reasoning` }));
+  const defaultReasoningLevel = levels.includes("medium")
+    ? "medium"
+    : (supportedReasoningLevels[0]?.effort || "none");
+
+  return {
+    slug: model.id,
+    display_name: model.id,
+    description: `${model.id} via 9Router`,
+    default_reasoning_level: defaultReasoningLevel,
+    supported_reasoning_levels: supportedReasoningLevels,
+    shell_type: "shell_command",
+    visibility: "list",
+    supported_in_api: true,
+    priority: 0,
+    additional_speed_tiers: [],
+    service_tiers: [],
+    availability_nux: null,
+    upgrade: null,
+    base_instructions: "You are Codex, an AI coding assistant.",
+    model_messages: {},
+    include_skills_usage_instructions: false,
+    include_plugin_usage_instructions: true,
+    include_apps_usage_instructions: true,
+    default_reasoning_summary: "none",
+    support_verbosity: false,
+    default_verbosity: "low",
+    apply_patch_tool_type: "freeform",
+    web_search_tool_type: "text",
+    truncation_policy: { mode: "tokens", limit: 10000 },
+    supports_image_detail_original: model.capabilities?.vision === true,
+    context_window: model.context_length,
+    max_context_window: model.context_length,
+    effective_context_window_percent: 95,
+    experimental_supported_tools: [],
+    input_modalities: model.capabilities?.vision === true ? ["text", "image"] : ["text"],
+    supports_search_tool: model.capabilities?.search === true,
+    use_responses_lite: false,
+    node_repl_auto_review_required: false,
+    node_repl_disabled: false,
+    tool_mode: "code_mode_only",
+    multi_agent_version: "v2",
+  };
 };
 
 // Header sent by fetchCompatibleModelIds to detect cross-instance /models fetches
@@ -563,7 +634,7 @@ export async function GET(request) {
     // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
     const data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
-    return Response.json({ object: "list", data }, {
+    return Response.json({ object: "list", data, models: data.map(toCodexModel) }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
   } catch (error) {

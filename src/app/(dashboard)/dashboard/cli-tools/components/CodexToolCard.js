@@ -7,6 +7,9 @@ import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 
+const CODEX_REASONING_EFFORTS = ["auto", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
+const CODEX_SERVICE_TIERS = ["auto", "priority"];
+
 export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
   const [codexStatus, setCodexStatus] = useState(initialStatus || null);
   const [checkingCodex, setCheckingCodex] = useState(false);
@@ -17,6 +20,8 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   const [selectedApiKey, setSelectedApiKey] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
   const [subagentModel, setSubagentModel] = useState("");
+  const [reasoningEffort, setReasoningEffort] = useState("auto");
+  const [serviceTier, setServiceTier] = useState("auto");
   const [modalOpen, setModalOpen] = useState(false);
   const [subagentModalOpen, setSubagentModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
@@ -57,8 +62,14 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
       if (modelMatch) setSelectedModel(modelMatch[1]);
 
       // Parse subagent settings
-      const subagentModelMatch = codexStatus.config.match(/\[agents\.subagent\]\s*\n\s*model\s*=\s*"([^"]+)"/m);
+      const subagentModelMatch = codexStatus.config.match(/\[agents\.subagent\][^\[]*?^\s*model\s*=\s*"([^"]+)"/m);
       if (subagentModelMatch) setSubagentModel(subagentModelMatch[1]);
+
+      const reasoningEffortMatch = codexStatus.config.match(/^model_reasoning_effort\s*=\s*"([^"]+)"/m);
+      setReasoningEffort(reasoningEffortMatch ? reasoningEffortMatch[1] : "auto");
+
+      const serviceTierMatch = codexStatus.config.match(/^service_tier\s*=\s*"([^"]+)"/m);
+      setServiceTier(serviceTierMatch ? serviceTierMatch[1] : "auto");
     }
   }, [codexStatus]);
 
@@ -109,7 +120,9 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
           baseUrl: getEffectiveBaseUrl(),
           apiKey: keyToUse,
           model: selectedModel,
-          subagentModel: subagentModel || selectedModel
+          subagentModel: subagentModel || selectedModel,
+          reasoningEffort,
+          serviceTier,
         }),
       });
       const data = await res.json();
@@ -162,10 +175,16 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
       : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
 
     const effectiveSubagentModel = subagentModel || selectedModel;
+    const reasoningConfig = reasoningEffort !== "auto"
+      ? `model_reasoning_effort = "${reasoningEffort}"\n`
+      : "";
+    const serviceTierConfig = serviceTier !== "auto"
+      ? `service_tier = "${serviceTier}"\n`
+      : "";
 
     const configContent = `# 9Router Configuration for Codex CLI
 model = "${selectedModel}"
-model_provider = "9router"
+${reasoningConfig}${serviceTierConfig}model_provider = "9router"
 
 [model_providers.9router]
 name = "9Router"
@@ -173,6 +192,7 @@ base_url = "${getEffectiveBaseUrl()}"
 wire_api = "responses"
 
 [agents.subagent]
+description = "Runs focused tasks delegated by Codex."
 model = "${effectiveSubagentModel}"
 `;
 
@@ -313,6 +333,37 @@ model = "${effectiveSubagentModel}"
                     {selectedModel && <button onClick={() => setSelectedModel("")} className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
                   </div>
                   <button onClick={() => setModalOpen(true)} disabled={!activeProviders?.length} className={`w-full sm:w-auto rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 whitespace-nowrap sm:shrink-0 ${activeProviders?.length ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select Model</button>
+                </div>
+
+                {/* Codex native reasoning control */}
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
+                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Reasoning</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                  <select
+                    value={reasoningEffort}
+                    onChange={(e) => setReasoningEffort(e.target.value)}
+                    title="Codex reasoning effort"
+                    className="w-full rounded border border-border bg-surface px-2 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
+                  >
+                    {CODEX_REASONING_EFFORTS.map((effort) => (
+                      <option key={effort} value={effort}>{`Thinking: ${effort.charAt(0).toUpperCase() + effort.slice(1)}`}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Codex service tier controls request routing speed */}
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
+                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Speed Tier</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                  <select
+                    value={serviceTier}
+                    onChange={(e) => setServiceTier(e.target.value)}
+                    title="Codex service tier"
+                    className="w-full rounded border border-border bg-surface px-2 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
+                  >
+                    <option value="auto">Speed: Auto</option>
+                    <option value="priority">Speed: Priority</option>
+                  </select>
                 </div>
 
                 {/* Subagent Model */}
