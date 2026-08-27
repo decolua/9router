@@ -113,29 +113,36 @@ export function normalizeModelCatalog({ connections, staticModelsByProvider, liv
 }
 
 export async function fetchModelCatalog() {
-  const res = await fetch("/api/providers");
+  const res = await fetch("/api/providers", { cache: "no-store" });
   if (!res.ok) throw new Error(`Failed to load connections (status: ${res.status})`);
-  
+
   let providers;
   try {
     providers = await res.json();
-  } catch (err) {
+  } catch {
     throw new Error("Failed to parse connections payload");
   }
-  
+
   const connections = Array.isArray(providers?.connections) ? providers.connections : [];
-  
-  // Basic mock integration until Todo 3/4 completes live capability discovery
-  const mockPayload = {
-    connections,
-    staticModelsByProvider: {},
-    liveModelsByConnection: Object.fromEntries(
-      connections.map(c => [
-        c.id, 
-        Array.isArray(c.models) ? c.models.map(m => typeof m === "string" ? { id: m } : m) : []
-      ])
-    )
+  const activeConnections = connections.filter((connection) => (
+    connection?.isActive !== false && nonEmptyString(connection?.id)
+  ));
+  const liveResults = await Promise.all(activeConnections.map(async (connection) => {
+    try {
+      const response = await fetch(`/api/providers/${connection.id}/models`, { cache: "no-store" });
+      if (!response.ok) return [connection.id, []];
+      const payload = await response.json();
+      return [connection.id, Array.isArray(payload?.models) ? payload.models : []];
+    } catch {
+      return [connection.id, []];
+    }
+  }));
+
+  return {
+    models: normalizeModelCatalog({
+      connections,
+      staticModelsByProvider: {},
+      liveModelsByConnection: Object.fromEntries(liveResults),
+    }),
   };
-  
-  return { models: normalizeModelCatalog(mockPayload) };
 }

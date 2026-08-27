@@ -111,21 +111,80 @@ describe("fetchModelCatalog", () => {
     vi.resetAllMocks();
   });
 
-  it("extracts connections safely and normalizes models correctly", async () => {
-    global.fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        connections: [
-          { id: "c1", provider: "test1", name: "Test 1", isActive: true, models: ["m1", { id: "m2", name: "Model 2" }] }
-        ]
+  it("loads live models only from active connection endpoints when provider payloads omit models", async () => {
+    global.fetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          connections: [
+            { id: "c1", provider: "test1", name: "Test 1", isActive: true },
+            { id: "c2", provider: "test2", name: "Test 2", isActive: false },
+          ],
+        }),
       })
-    });
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          models: [
+            { id: "m1", capabilities: { reasoning: true, unsafe: true } },
+            { id: "m2", name: "Model 2" },
+          ],
+        }),
+      });
 
     const result = await fetchModelCatalog();
-    expect(result.models.length).toBe(2);
-    expect(result.models[0].id).toBe("test1/m1");
-    expect(result.models[1].id).toBe("test1/m2");
-    expect(result.models[1].label).toBe("Model 2");
+
+    expect(global.fetch).toHaveBeenNthCalledWith(1, "/api/providers", { cache: "no-store" });
+    expect(global.fetch).toHaveBeenNthCalledWith(2, "/api/providers/c1/models", { cache: "no-store" });
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(result.models).toEqual([
+      {
+        id: "test1/m1",
+        label: "m1",
+        provider: { id: "test1", name: "Test 1", connectionId: "c1" },
+        available: true,
+        capabilities: { reasoning: true },
+      },
+      {
+        id: "test1/m2",
+        label: "Model 2",
+        provider: { id: "test1", name: "Test 1", connectionId: "c1" },
+        available: true,
+        capabilities: {},
+      },
+    ]);
+  });
+
+  it("keeps models from successful connections when another connection model request fails", async () => {
+    global.fetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          connections: [
+            { id: "c1", provider: "test1", name: "Test 1", isActive: true },
+            { id: "c2", provider: "test2", name: "Test 2", isActive: true },
+          ],
+        }),
+      })
+      .mockRejectedValueOnce(new Error("connection unavailable"))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ models: [{ id: "m2" }] }),
+      });
+
+    const result = await fetchModelCatalog();
+
+    expect(global.fetch).toHaveBeenNthCalledWith(2, "/api/providers/c1/models", { cache: "no-store" });
+    expect(global.fetch).toHaveBeenNthCalledWith(3, "/api/providers/c2/models", { cache: "no-store" });
+    expect(result.models).toEqual([
+      {
+        id: "test2/m2",
+        label: "m2",
+        provider: { id: "test2", name: "Test 2", connectionId: "c2" },
+        available: true,
+        capabilities: {},
+      },
+    ]);
   });
 
   it("handles malformed response shapes by returning empty models without crashing", async () => {
