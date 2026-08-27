@@ -85,9 +85,14 @@ function build(catalog, entries) {
   const tally = {};
   for (const [providerId, provider] of Object.entries(catalog)) {
     const models = {};
+    const counted = new Set();
     for (const [modelId, model] of Object.entries(provider?.models || {})) {
       const id = baseId(modelId);
       models[id] = model;
+      // One vote per provider: several ids can normalize to the same model
+      // (claude-opus-4-thinking:1024, :8192, :32768 …) and must not stack.
+      if (counted.has(id)) continue;
+      counted.add(id);
       const counts = tally[id] || (tally[id] = { total: 0 });
       counts.total++;
       for (const input of model?.modalities?.input || []) {
@@ -134,14 +139,18 @@ function build(catalog, entries) {
   return { models, providers };
 }
 
-// Snapshot every registered model with its currently resolved capabilities, so
-// build() can tell which upstream values are actually a change.
+// Snapshot every registered model with the capabilities the hand-written tables
+// resolve on their own, so build() can tell which upstream values are a change.
+//
+// The previous catalog MUST be detached first. Leaving it installed makes each
+// delta relative to the last one, so a value that still agrees with upstream
+// looks like "no change" and is dropped — the file erases itself over two runs.
 async function collectEntries() {
-  const [{ default: registry }, { getCapabilitiesForModel }] = await Promise.all([
+  const [{ default: registry }, { getCapabilitiesForModel, setCatalogSource }] = await Promise.all([
     import("open-sse/providers/registry/index.js"),
     import("open-sse/providers/capabilities.js"),
   ]);
-  await installCatalogSource();
+  setCatalogSource(null);
 
   const entries = [];
   for (const provider of registry) {
@@ -176,7 +185,8 @@ export async function syncModelCatalog() {
       // point — not worth a worker thread.
       const catalog = await response.json();
       const etag = response.headers.get("etag") || null;
-      const { models, providers } = build(catalog, await collectEntries());
+      const entries = await collectEntries();
+      const { models, providers } = build(catalog, entries);
       const serialized = JSON.stringify({ v: 1, etag, syncedAt: Date.now(), models, providers });
 
       writeAtomic(CATALOG_FILE, serialized);
@@ -203,7 +213,20 @@ export async function syncModelCatalog() {
     console.log(`[modelCatalog] sync failed: ${state.lastError}`);
     return null;
   } finally {
+    // collectEntries() detaches the reader; put it back whatever happened.
+    await installCatalogSource().catch(() => {});
     state.running = false;
+  }
+}
+
+// The etag lives in the file we wrote, so a restart can resume from it instead
+// of re-downloading 4.3MB to be told nothing changed.
+function restoreEtag() {
+  try {
+    state.etag = JSON.parse(fs.readFileSync(CATALOG_FILE, "utf8")).etag || null;
+    state.lastSync = fs.statSync(CATALOG_FILE).mtimeMs;
+  } catch {
+    state.etag = null;
   }
 }
 
@@ -211,6 +234,7 @@ export async function syncModelCatalog() {
 export function startModelCatalogSync() {
   if (timer) return;
   if (String(process.env.MODEL_CATALOG_SYNC || "").toLowerCase() === "off") return;
+  restoreEtag();
 
   const schedule = (delay) => {
     timer = setTimeout(async () => {
