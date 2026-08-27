@@ -5,6 +5,7 @@ import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/comp
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
+import { rememberEndpoint } from "./cliEndpointPresets";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 
@@ -96,6 +97,7 @@ export default function GrokBuildToolCard({
   const hasFetchedStatus = useRef(Boolean(initialStatus));
 
   const configuredModel = grokStatus?.settings?.model;
+  const currentBaseUrl = configuredModel?.base_url || "";
   const configStatus = !grokStatus?.installed
     ? null
     : !configuredModel?.base_url
@@ -184,6 +186,8 @@ export default function GrokBuildToolCard({
       });
       const data = await res.json();
       if (res.ok) {
+        // Remember the endpoint so it stays selectable next time
+        rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
         setMessage({ type: "success", text: "Main and subagent models applied successfully!" });
         checkStatus();
       } else {
@@ -310,7 +314,7 @@ export default function GrokBuildToolCard({
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Select Endpoint</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <BaseUrlSelect value={customBaseUrl || getEffectiveBaseUrl()} onChange={setCustomBaseUrl} requiresExternalUrl={tool.requiresExternalUrl} tunnelEnabled={tunnelEnabled} tunnelPublicUrl={tunnelPublicUrl} tailscaleEnabled={tailscaleEnabled} tailscaleUrl={tailscaleUrl} />
+                  <BaseUrlSelect value={customBaseUrl || getEffectiveBaseUrl()} onChange={setCustomBaseUrl} requiresExternalUrl={tool.requiresExternalUrl} tunnelEnabled={tunnelEnabled} tunnelPublicUrl={tunnelPublicUrl} tailscaleEnabled={tailscaleEnabled} tailscaleUrl={tailscaleUrl} currentUrl={currentBaseUrl} />
                 </div>
 
                 {configuredModel?.base_url && (

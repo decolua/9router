@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Card, Button, ManualConfigModal, ComboFormModal, McpMarketplaceModal, ModelSelectModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
+import { rememberEndpoint } from "./cliEndpointPresets";
 import ApiKeySelect from "./ApiKeySelect";
 
 const ENDPOINT = "/api/cli-tools/cowork-settings";
@@ -110,6 +111,8 @@ export default function CoworkToolCard({
 
   const getEffectiveBaseUrl = () => ensureV1(customBaseUrl);
 
+  const currentBaseUrl = status?.cowork?.baseUrl || "";
+
   const getConfigStatus = () => {
     if (!status?.installed) return null;
     const url = status?.cowork?.baseUrl;
@@ -148,6 +151,8 @@ export default function CoworkToolCard({
       });
       const data = await res.json();
       if (res.ok) {
+        // Remember the endpoint so it stays selectable next time
+        rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
         setMessage({ type: "success", text: "Settings applied. Quit & reopen Claude Desktop to load." });
         checkStatus();
       } else {
@@ -306,6 +311,7 @@ export default function CoworkToolCard({
                     tailscaleUrl={tailscaleUrl}
                     cloudEnabled={cloudEnabled}
                     cloudUrl={cloudUrl}
+                    currentUrl={currentBaseUrl}
                   />
                 </div>
 

@@ -6,6 +6,7 @@ import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
+import { rememberEndpoint } from "./cliEndpointPresets";
 
 export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
   const [codexStatus, setCodexStatus] = useState(initialStatus || null);
@@ -62,12 +63,17 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
     }
   }, [codexStatus]);
 
+  const getCurrentBaseUrl = () => {
+    const parsed = codexStatus?.config?.match(/base_url\s*=\s*"([^"]+)"/);
+    return parsed ? parsed[1] : "";
+  };
+
+  const currentBaseUrl = getCurrentBaseUrl();
+
   const getConfigStatus = () => {
     if (!codexStatus?.installed) return null;
     if (!codexStatus.config) return "not_configured";
-    const parsed = codexStatus.config.match(/base_url\s*=\s*"([^"]+)"/);
-    const currentUrl = parsed ? parsed[1] : "";
-    return matchKnownEndpoint(currentUrl, { tunnelPublicUrl, tailscaleUrl }) ? "configured" : "other";
+    return matchKnownEndpoint(currentBaseUrl, { tunnelPublicUrl, tailscaleUrl }) ? "configured" : "other";
   };
 
   const configStatus = getConfigStatus();
@@ -114,6 +120,8 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
       });
       const data = await res.json();
       if (res.ok) {
+        // Remember the endpoint so it stays selectable next time
+        rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
         setMessage({ type: "success", text: "Settings applied successfully!" });
         checkCodexStatus();
       } else {
@@ -273,13 +281,12 @@ default_subagent_model = "${effectiveSubagentModel}"
                     tunnelPublicUrl={tunnelPublicUrl}
                     tailscaleEnabled={tailscaleEnabled}
                     tailscaleUrl={tailscaleUrl}
+                    currentUrl={currentBaseUrl}
                   />
                 </div>
 
                 {/* Current configured */}
                 {codexStatus?.config && (() => {
-                  const parsed = codexStatus.config.match(/base_url\s*=\s*"([^"]+)"/);
-                  const currentBaseUrl = parsed ? parsed[1] : null;
                   return currentBaseUrl ? (
                     <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
                       <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Current</span>
