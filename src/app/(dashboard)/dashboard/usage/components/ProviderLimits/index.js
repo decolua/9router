@@ -39,9 +39,11 @@ import {
   QUOTA_SORT_OPTIONS,
 } from "./utils";
 import Card from "@/shared/components/Card";
+import { Badge } from "@/shared/components";
 import { ConfirmModal, EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { getQuotaPauseInfo } from "@/shared/utils/quotaPause.js";
 
 // Maps the stored providerSpecificData.authMethod to a human label for Kiro.
 // Values come from the Kiro connect flows: builder-id/idc (device code),
@@ -1035,6 +1037,7 @@ export default function ProviderLimits() {
           const rawQuotas = quota?.quotas || [];
           const visibleQuotas = filterQuotasByVisibility(conn.provider, rawQuotas, quotaVisibility);
           const hiddenQuotaRows = getHiddenQuotaRows(conn.provider, rawQuotas, quotaVisibility);
+          const quotaPauseInfo = getQuotaPauseInfo(conn);
 
           return (
             <Card
@@ -1070,6 +1073,18 @@ export default function ProviderLimits() {
                           {getConnectionSecondaryLabel(conn)}
                         </p>
                       ) : null}
+                      {quotaPauseInfo.enabled && (
+                        <p className="mt-0.5">
+                          <Badge
+                            variant={quotaPauseInfo.paused ? "warning" : "default"}
+                            size="sm"
+                          >
+                            {quotaPauseInfo.paused
+                              ? `Paused (quota ${quotaPauseInfo.remainingPercentage ?? "?"}%)`
+                              : `Buffer ≤ ${quotaPauseInfo.threshold}%`}
+                          </Badge>
+                        </p>
+                      )}
                       {conn.provider === "kiro" && (
                         <div className="mt-1 flex flex-wrap items-center gap-1">
                           <span className="rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-semibold text-brand-600 dark:text-brand-300">
