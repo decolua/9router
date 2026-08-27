@@ -43,17 +43,17 @@ describe('PlaygroundStudio Shell', () => {
     expect(compareTabBtn.getAttribute('aria-selected')).toBe('false');
 
     expect(chatTabBtn.className).toContain('text-primary');
-    expect(screen.getByText('Chat tab placeholder')).toBeDefined();
-    expect(screen.getByText('Chat tab placeholder').parentElement.getAttribute('hidden')).toBeNull();
-    expect(screen.getByText('Compare tab placeholder').parentElement.getAttribute('hidden')).toBe('');
+    expect(screen.getByTestId('playground-chat-workspace')).toBeDefined();
+    expect(screen.getByTestId('playground-chat-workspace').parentElement.getAttribute('hidden')).toBeNull();
+    expect(screen.getByTestId('playground-compare-workspace').parentElement.getAttribute('hidden')).toBe('');
 
     fireEvent.click(compareTabBtn);
 
     expect(compareTabBtn.className).toContain('text-primary');
     expect(chatTabBtn.getAttribute('aria-selected')).toBe('false');
     expect(compareTabBtn.getAttribute('aria-selected')).toBe('true');
-    expect(screen.getByText('Compare tab placeholder').parentElement.getAttribute('hidden')).toBeNull();
-    expect(screen.getByText('Chat tab placeholder').parentElement.getAttribute('hidden')).toBe('');
+    expect(screen.getByTestId('playground-compare-workspace').parentElement.getAttribute('hidden')).toBeNull();
+    expect(screen.getByTestId('playground-chat-workspace').parentElement.getAttribute('hidden')).toBe('');
   });
 
   test('handles keyboard navigation between tabs', async () => {

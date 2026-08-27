@@ -1,3 +1,5 @@
+import { sanitizePlaygroundData } from "./sanitize";
+
 const VERSION = 1;
 
 export const PLAYGROUND_PERSISTENCE_LIMITS = Object.freeze({
@@ -31,11 +33,12 @@ function byteLength(value) {
 }
 
 function sanitize(value) {
-  if (Array.isArray(value)) return value.map(sanitize);
-  if (typeof value === "string") return forbiddenValuePattern.test(value) ? "[redacted]" : value;
-  if (!isRecord(value)) return value;
+  const sanitized = sanitizePlaygroundData(value);
+  if (Array.isArray(sanitized)) return sanitized.map(sanitize);
+  if (typeof sanitized === "string") return forbiddenValuePattern.test(sanitized) ? "[redacted]" : sanitized;
+  if (!isRecord(sanitized)) return sanitized;
 
-  return Object.fromEntries(Object.entries(value)
+  return Object.fromEntries(Object.entries(sanitized)
     .filter(([key]) => !forbiddenFieldPattern.test(key))
     .map(([key, entry]) => [key, sanitize(entry)]));
 }

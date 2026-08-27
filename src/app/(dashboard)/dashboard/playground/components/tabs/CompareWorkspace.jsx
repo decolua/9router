@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { buildPlaygroundRequest } from "../../lib/requestBuilder";
 import { createSseParser } from "../../lib/sseParser";
 import { createMetricAccumulator } from "../../lib/metrics";
+import { sanitizePlaygroundData } from "../../lib/sanitize";
 
 const DEFAULT_COLUMN_IDS = ["col-default-a", "col-default-b"]; // fixed, deterministic, no randomness at initial render
 
@@ -14,9 +15,9 @@ function generateColumnId() {
   return `col-fallback-${generateColumnId._counter}`;
 }
 
-export default function CompareWorkspace({ configState, availableModels = [] }) {
+export default function CompareWorkspace({ configState, availableModels = [], onResult, draft, onDraftChange }) {
   const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(draft || "");
   const [columns, setColumns] = useState([
     { id: DEFAULT_COLUMN_IDS[0], model: null, output: "", state: "idle", metrics: null, error: null },
     { id: DEFAULT_COLUMN_IDS[1], model: null, output: "", state: "idle", metrics: null, error: null }
@@ -126,7 +127,7 @@ export default function CompareWorkspace({ configState, availableModels = [] }) 
       // Fire and forget per column
       (async () => {
         try {
-          const requestBody = {
+          let requestBody = {
             ...buildPlaygroundRequest({
               model: col.model,
               systemPrompt: configState.systemPrompt,
@@ -144,6 +145,7 @@ export default function CompareWorkspace({ configState, availableModels = [] }) 
             signal: abortController.signal
           });
           
+          const responseStatus = response.status ?? null;
           if (!response.ok) {
              throw new Error(`HTTP error ${response.status}`);
           }
@@ -223,11 +225,18 @@ export default function CompareWorkspace({ configState, availableModels = [] }) 
                 cancelAnimationFrame(rafRefs.current[col.id]);
                 rafRefs.current[col.id] = null;
              }
+             const metrics = accumulator.snapshot();
+             const output = outputBuffersRef.current[col.id];
              updateColumnState(col.id, { 
-                state: accumulator.snapshot().terminalState || "complete", 
-                output: outputBuffersRef.current[col.id],
-                metrics: accumulator.snapshot()
+                state: metrics.terminalState || "complete", 
+                output,
+                metrics
              });
+             onResult?.(sanitizePlaygroundData({
+               request: requestBody,
+               response: { status: responseStatus, output },
+               metrics,
+             }));
           }
 
         } catch (err) {

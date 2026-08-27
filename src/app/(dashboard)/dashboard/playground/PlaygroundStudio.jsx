@@ -1,117 +1,103 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import StudioConfigPane from "./components/StudioConfigPane";
+import PlaygroundInspector from "./components/PlaygroundInspector";
+import ChatWorkspace from "./components/tabs/ChatWorkspace";
+import CompareWorkspace from "./components/tabs/CompareWorkspace";
+import { createPlaygroundPersistence } from "./lib/persistence";
+import { sanitizePlaygroundData } from "./lib/sanitize";
+
+const initialConfig = {
+  systemPrompt: "",
+  temperature: 0.7,
+  maxTokens: 2000,
+  model: null,
+};
 
 export default function PlaygroundStudio() {
   const [activeTab, setActiveTab] = useState("chat");
-  const [config, setConfig] = useState({
-    systemPrompt: "",
-    temperature: 0.7,
-    maxTokens: 2000,
-    model: null // Selected model object from catalog
-  });
+  const [config, setConfig] = useState(initialConfig);
+  const [draft, setDraft] = useState("");
+  const [sessions, setSessions] = useState([]);
+  const [presets, setPresets] = useState([]);
+  const [selection, setSelection] = useState({});
+  const [inspectorData, setInspectorData] = useState(null);
+  const [storageWarning, setStorageWarning] = useState(null);
+  const persistence = useMemo(() => createPlaygroundPersistence(), []);
+  const hydratedRef = useRef(false);
 
   const tabRefs = {
     chat: useRef(null),
-    compare: useRef(null)
+    compare: useRef(null),
   };
 
-  const handleKeyDown = (e, tabs) => {
+  useEffect(() => {
+    const restored = persistence.load();
+    setConfig((current) => ({ ...current, ...restored.config }));
+    setDraft(restored.draft);
+    setSessions(restored.sessions);
+    setPresets(restored.presets);
+    setSelection(restored.selection);
+    hydratedRef.current = true;
+  }, [persistence]);
+
+  useEffect(() => {
+    if (!hydratedRef.current) return;
+    const result = persistence.save(sanitizePlaygroundData({ sessions, presets, config, selection, draft }));
+    setStorageWarning(result.warning);
+    if (result.evictedSessionIds.length > 0) {
+      setSessions((current) => current.filter((session) => !result.evictedSessionIds.includes(session.id)));
+    }
+  }, [config, draft, persistence, presets, selection, sessions]);
+
+  const handleClientResult = (result) => {
+    const safe = sanitizePlaygroundData(result);
+    setInspectorData(safe);
+    setSessions((current) => [{
+      id: `${Date.now()}`,
+      updatedAt: new Date().toISOString(),
+      messages: safe.request?.messages || [],
+      inspector: safe,
+    }, ...current]);
+  };
+
+  const handleKeyDown = (event, tabs) => {
     const index = tabs.indexOf(activeTab);
     let nextIndex = index;
-    if (e.key === "ArrowRight") {
-      nextIndex = (index + 1) % tabs.length;
-    } else if (e.key === "ArrowLeft") {
-      nextIndex = (index - 1 + tabs.length) % tabs.length;
-    } else if (e.key === "Home") {
-      nextIndex = 0;
-    } else if (e.key === "End") {
-      nextIndex = tabs.length - 1;
-    }
-    
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % tabs.length;
+    else if (event.key === "ArrowLeft") nextIndex = (index - 1 + tabs.length) % tabs.length;
+    else if (event.key === "Home") nextIndex = 0;
+    else if (event.key === "End") nextIndex = tabs.length - 1;
     if (nextIndex !== index) {
       const nextTab = tabs[nextIndex];
       setActiveTab(nextTab);
       tabRefs[nextTab].current?.focus();
-      e.preventDefault();
+      event.preventDefault();
     }
   };
 
   return (
     <div className="flex h-full w-full overflow-hidden" data-testid="playground-studio">
-      {/* Main Content Area (Tabs) */}
       <div className="flex-1 flex flex-col min-w-0 border-r border-border-subtle bg-bg">
-        {/* Tab Navigation */}
-        <div 
-          className="flex items-center gap-6 px-6 pt-4 pb-0 border-b border-border-subtle shrink-0 overflow-x-auto hide-scrollbar"
-          role="tablist"
-          aria-label="Testing Studio Tabs"
-        >
-          <button
-            type="button"
-            ref={tabRefs.chat}
-            role="tab"
-            id="tab-chat"
-            aria-selected={activeTab === "chat"}
-            aria-controls="panel-chat"
-            data-testid="playground-chat-tab"
-            onClick={() => setActiveTab("chat")}
-            onKeyDown={(e) => handleKeyDown(e, ["chat", "compare"])}
-            tabIndex={activeTab === "chat" ? 0 : -1}
-            className={`pb-3 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${
-              activeTab === "chat"
-                ? "border-primary text-primary"
-                : "border-transparent text-text-muted hover:text-text-main"
-            }`}
-          >
-            Chat
-          </button>
-          <button
-            type="button"
-            ref={tabRefs.compare}
-            role="tab"
-            id="tab-compare"
-            aria-selected={activeTab === "compare"}
-            aria-controls="panel-compare"
-            data-testid="playground-compare-tab"
-            onClick={() => setActiveTab("compare")}
-            onKeyDown={(e) => handleKeyDown(e, ["chat", "compare"])}
-            tabIndex={activeTab === "compare" ? 0 : -1}
-            className={`pb-3 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${
-              activeTab === "compare"
-                ? "border-primary text-primary"
-                : "border-transparent text-text-muted hover:text-text-main"
-            }`}
-          >
-            Compare
-          </button>
+        <div className="flex items-center gap-6 px-6 pt-4 pb-0 border-b border-border-subtle shrink-0 overflow-x-auto hide-scrollbar" role="tablist" aria-label="Testing Studio Tabs">
+          {[["chat", "Chat"], ["compare", "Compare"]].map(([tab, label]) => (
+            <button key={tab} type="button" ref={tabRefs[tab]} role="tab" id={`tab-${tab}`} aria-selected={activeTab === tab} aria-controls={`panel-${tab}`} data-testid={`playground-${tab}-tab`} onClick={() => setActiveTab(tab)} onKeyDown={(event) => handleKeyDown(event, ["chat", "compare"])} tabIndex={activeTab === tab ? 0 : -1} className={`pb-3 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === tab ? "border-primary text-primary" : "border-transparent text-text-muted hover:text-text-main"}`}>
+              {label}
+            </button>
+          ))}
         </div>
-
-        {/* Tab Content */}
+        {storageWarning && <div className="px-6 py-2 text-xs text-warning" role="status">{sanitizePlaygroundData(storageWarning)}</div>}
         <div className="flex-1 min-h-0 relative">
-          <div 
-            role="tabpanel" 
-            id="panel-chat" 
-            aria-labelledby="tab-chat"
-            hidden={activeTab !== "chat"}
-            className="absolute inset-0 p-6 overflow-y-auto"
-          >
-            <p className="text-text-muted text-sm">Chat tab placeholder</p>
+          <div role="tabpanel" id="panel-chat" aria-labelledby="tab-chat" hidden={activeTab !== "chat"} className="absolute inset-0 p-6 overflow-y-auto">
+            <ChatWorkspace configState={{ ...config, params: config }} onResult={handleClientResult} draft={draft} onDraftChange={setDraft} />
           </div>
-          <div 
-            role="tabpanel" 
-            id="panel-compare" 
-            aria-labelledby="tab-compare"
-            hidden={activeTab !== "compare"}
-            className="absolute inset-0 p-6 overflow-y-auto"
-          >
-            <p className="text-text-muted text-sm">Compare tab placeholder</p>
+          <div role="tabpanel" id="panel-compare" aria-labelledby="tab-compare" hidden={activeTab !== "compare"} className="absolute inset-0 p-6 overflow-y-auto">
+            <CompareWorkspace configState={{ ...config, params: config }} availableModels={config.model ? [config.model] : []} onResult={handleClientResult} draft={draft} onDraftChange={setDraft} />
           </div>
         </div>
       </div>
-
-      {/* Right Sidebar: Config Pane */}
+      <PlaygroundInspector data={inspectorData} />
       <StudioConfigPane config={config} onChange={setConfig} />
     </div>
   );

@@ -2,14 +2,16 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { buildPlaygroundRequest } from "../../lib/requestBuilder";
 import { createSseParser } from "../../lib/sseParser";
 import { createMetricAccumulator } from "../../lib/metrics.js";
+import { sanitizePlaygroundData } from "../../lib/sanitize";
 
-export default function ChatWorkspace({ configState, onMetricsUpdate }) {
+export default function ChatWorkspace({ configState, onMetricsUpdate, onResult, draft, onDraftChange }) {
   const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(draft || "");
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState(null);
   const abortControllerRef = useRef(null);
   const abortMetricsRef = useRef(null);
+  const outputRef = useRef("");
 
   useEffect(() => {
     return () => {
@@ -57,6 +59,7 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
     
     setError(null);
     setIsStreaming(true);
+    outputRef.current = "";
     
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -64,9 +67,11 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
     abortMetricsRef.current = accumulator;
     
     const isCurrent = () => abortControllerRef.current === abortController;
+    let requestBody = null;
+    let responseStatus = null;
 
     try {
-      const requestBody = buildPlaygroundRequest({
+      requestBody = buildPlaygroundRequest({
         model: configState.model,
         systemPrompt: configState.systemPrompt,
         messages: currentMessages,
@@ -83,6 +88,7 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
       
       if (!isCurrent()) return;
 
+      responseStatus = response.status ?? null;
       if (!response.ok) {
         throw new Error(`HTTP error ${response.status}`);
       }
@@ -107,8 +113,9 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
            accumulator.record(event, Date.now());
            if (!isCurrent()) { reader.cancel().catch(() => {}); return; }
            
-           if (event.type === "delta" && event.text) {
-               if (isCurrent()) {
+            if (event.type === "delta" && event.text) {
+                outputRef.current += event.text;
+                if (isCurrent()) {
                    setMessages((prev) => {
                        if (prev.length === 0) return prev;
                        const lastIndex = prev.length - 1;
@@ -179,7 +186,7 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
         accumulator.abort(Date.now());
       } else {
         accumulator?.record?.({ type: "error", message: err.message }, Date.now());
-        setError(err.message);
+        setError(sanitizePlaygroundData(err.message));
       }
     } finally {
       if (isCurrent()) {
@@ -191,9 +198,16 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
           if (onMetricsUpdate && snap.terminalState !== null) {
              onMetricsUpdate(snap);
           }
+          if (onResult && requestBody) {
+             onResult(sanitizePlaygroundData({
+               request: requestBody,
+               response: { status: responseStatus, output: outputRef.current },
+               metrics: snap,
+             }));
+          }
       }
     }
-  }, [input, messages, isStreaming, configState, onMetricsUpdate]);
+  }, [input, messages, isStreaming, configState, onMetricsUpdate, onResult]);
 
   const handleRegenerate = useCallback(() => {
     if (messages.length === 0 || isStreaming) return;
@@ -238,7 +252,10 @@ export default function ChatWorkspace({ configState, onMetricsUpdate }) {
       <div className="p-4 border-t border-border bg-bg-alt flex gap-2 items-end">
          <textarea 
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+                setInput(e.target.value);
+                onDraftChange?.(e.target.value);
+            }}
             onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
