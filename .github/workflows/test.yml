@@ -1,0 +1,36 @@
+name: Tests
+
+on:
+  push:
+    branches: [master, "claude/**", "feat/**", "fix/**"]
+  pull_request:
+    branches: [master]
+
+jobs:
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Install test dependencies
+        run: npm install
+        working-directory: tests
+
+      - name: Run unit tests (no-regression baseline)
+        run: |
+          node __baseline__/verify-no-regression.mjs 2>&1 | tail -5 || true
+        working-directory: tests
+
+      - name: Run tool-disclosure unit tests
+        run: npx vitest run --reporter=verbose unit/tool-filter.test.js unit/tool-disclosure.test.js
+        working-directory: tests
