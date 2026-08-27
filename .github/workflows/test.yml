@@ -18,6 +18,17 @@ jobs:
         with:
           node-version: "22"
 
+      # Cache node_modules by package.json hash — repo intentionally omits lockfiles
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            node_modules
+            tests/node_modules
+          key: ${{ runner.os }}-npm-${{ hashFiles('package.json', 'tests/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
       - name: Install root dependencies
         run: npm install
 
