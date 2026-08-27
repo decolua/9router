@@ -1301,22 +1301,23 @@ export default function ProviderLimits() {
                     <p className="text-xs text-text-muted">{quota.message}</p>
                   </div>
                 ) : (
-                  <QuotaTable
-                    quotas={visibleQuotas}
-                    compact
-                    sortMode="default"
-                    showSortLabel={
-                      conn.provider === "codex" && quotaSortMode !== "default"
-                    }
-                    onHideQuota={(quotaRow) => handleHideQuota(conn.provider, quotaRow)}
-                  />
-                  {conn.lastQuotaSnapshot?.windows?.length > 0 && (
-                    <div className="mt-2 border-t border-black/5 pt-2 dark:border-white/5">
-                      <p className="mb-1 text-[10px] text-text-muted">
-                        Pause buffer — pause this account when a window&apos;s remaining % ≤
-                      </p>
-                      <div className="flex flex-col gap-1">
-                        {conn.lastQuotaSnapshot.windows.map((w) => {
+                  <>
+                    <QuotaTable
+                      quotas={visibleQuotas}
+                      compact
+                      sortMode="default"
+                      showSortLabel={
+                        conn.provider === "codex" && quotaSortMode !== "default"
+                      }
+                      onHideQuota={(quotaRow) => handleHideQuota(conn.provider, quotaRow)}
+                    />
+                    {conn.lastQuotaSnapshot?.windows?.length > 0 && (
+                      <div className="mt-2 border-t border-black/5 pt-2 dark:border-white/5">
+                        <p className="mb-1 text-[10px] text-text-muted">
+                          Pause buffer — pause this account when a window&apos;s remaining % ≤
+                        </p>
+                        <div className="flex flex-col gap-1">
+                          {conn.lastQuotaSnapshot.windows.map((w) => {
                           const t = Number(conn.quotaPauseThresholds?.[w.key]) || 0;
                           return (
                             <div key={w.key} className="flex items-center gap-2">
@@ -1354,6 +1355,7 @@ export default function ProviderLimits() {
                       </div>
                     </div>
                   )}
+                </>
                 )}
                 {hiddenQuotaRows.length > 0 && (
                   <div className="mt-2 flex min-w-0 items-center gap-1 border-t border-black/5 pt-2 text-[10px] text-text-muted dark:border-white/5">
