@@ -522,6 +522,15 @@ export async function GET(request, { params }) {
       });
     }
 
+    if (connection.provider === "glm") {
+      return NextResponse.json({
+        provider: connection.provider,
+        connectionId: connection.id,
+        models: getStaticProviderModels("glm"),
+        source: "local_catalog",
+      });
+    }
+
     const config = PROVIDER_MODELS_CONFIG[connection.provider];
     if (!config) {
       return NextResponse.json(
