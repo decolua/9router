@@ -2,8 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Pure shared helpers — no server imports, safe to unit test directly.
 import {
-  normalizeThreshold,
   isQuotaEligible,
+  getWindowThresholds,
+  getPausedWindow,
   isQuotaPaused,
   getQuotaPauseInfo,
   deriveQuotaSnapshot,
@@ -30,28 +31,13 @@ const okConn = (over = {}) => ({
   id: "c1",
   provider: "claude",
   authType: "oauth",
-  quotaPauseThreshold: 15,
+  quotaPauseThresholds: {},
   ...over,
 });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // quotaGuard keeps an in-memory cache; clear it between cases.
   _clearQuotaCache();
-});
-
-describe("normalizeThreshold", () => {
-  it("returns 0 when disabled / invalid", () => {
-    expect(normalizeThreshold({})).toBe(0);
-    expect(normalizeThreshold({ quotaPauseThreshold: 0 })).toBe(0);
-    expect(normalizeThreshold({ quotaPauseThreshold: -5 })).toBe(0);
-    expect(normalizeThreshold({ quotaPauseThreshold: 150 })).toBe(0);
-    expect(normalizeThreshold({ quotaPauseThreshold: "abc" })).toBe(0);
-  });
-  it("clamps to 1..100", () => {
-    expect(normalizeThreshold({ quotaPauseThreshold: 15 })).toBe(15);
-    expect(normalizeThreshold({ quotaPauseThreshold: 100 })).toBe(100);
-  });
 });
 
 describe("isQuotaEligible", () => {
@@ -68,48 +54,62 @@ describe("isQuotaEligible", () => {
   });
 });
 
-describe("isQuotaPaused", () => {
-  it("disabled when no threshold", () => {
-    expect(isQuotaPaused({ quotaPauseThreshold: 0, lastQuotaSnapshot: { remainingPercentage: 2 } })).toBe(false);
+describe("isQuotaPaused / getPausedWindow (per-window)", () => {
+  const windows = [
+    { key: "session (5h)", remainingPercentage: 10, resetAt: null, unlimited: false },
+    { key: "weekly (7d)", remainingPercentage: 50, resetAt: null, unlimited: false },
+  ];
+
+  it("disabled when no thresholds set", () => {
+    expect(isQuotaPaused(okConn({ lastQuotaSnapshot: { windows } }))).toBe(false);
   });
-  it("pauses when remaining <= threshold (boundary inclusive)", () => {
-    expect(isQuotaPaused(okConn({ lastQuotaSnapshot: { remainingPercentage: 10 } }))).toBe(true);
-    expect(isQuotaPaused(okConn({ lastQuotaSnapshot: { remainingPercentage: 15 } }))).toBe(true);
-    expect(isQuotaPaused(okConn({ lastQuotaSnapshot: { remainingPercentage: 16 } }))).toBe(false);
+  it("pauses when a configured window is below its threshold (boundary inclusive)", () => {
+    expect(isQuotaPaused(okConn({ quotaPauseThresholds: { "session (5h)": 15 }, lastQuotaSnapshot: { windows } }))).toBe(true);
+    expect(isQuotaPaused(okConn({ quotaPauseThresholds: { "session (5h)": 10 }, lastQuotaSnapshot: { windows } }))).toBe(true);
+    expect(isQuotaPaused(okConn({ quotaPauseThresholds: { "session (5h)": 15 }, lastQuotaSnapshot: { windows: [{ key: "session (5h)", remainingPercentage: 16, resetAt: null, unlimited: false }] } }))).toBe(false);
   });
-  it("never pauses when unlimited", () => {
-    expect(isQuotaPaused(okConn({ lastQuotaSnapshot: { remainingPercentage: 0, unlimited: true } }))).toBe(false);
+  it("does not pause for a window with no threshold even if low", () => {
+    expect(isQuotaPaused(okConn({ quotaPauseThresholds: { "weekly (7d)": 15 }, lastQuotaSnapshot: { windows } }))).toBe(false);
   });
-  it("never pauses without a snapshot", () => {
-    expect(isQuotaPaused(okConn({}))).toBe(false);
+  it("never pauses an unlimited window even if threshold set", () => {
+    const w = [{ key: "session (5h)", remainingPercentage: 0, resetAt: null, unlimited: true }];
+    expect(isQuotaPaused(okConn({ quotaPauseThresholds: { "session (5h)": 15 }, lastQuotaSnapshot: { windows: w } }))).toBe(false);
   });
   it("never pauses ineligible providers (fail-open)", () => {
-    expect(isQuotaPaused({ authType: "cookie", provider: "claude", quotaPauseThreshold: 15, lastQuotaSnapshot: { remainingPercentage: 1 } })).toBe(false);
+    expect(isQuotaPaused({ authType: "cookie", provider: "claude", quotaPauseThresholds: { "session (5h)": 15 }, lastQuotaSnapshot: { windows } })).toBe(false);
   });
-  it("auto-recovers once remaining climbs above threshold (post reset)", () => {
-    const paused = okConn({ lastQuotaSnapshot: { remainingPercentage: 5 } });
+  it("auto-recovers once the offending window rebounds", () => {
+    const paused = okConn({ quotaPauseThresholds: { "session (5h)": 15 }, lastQuotaSnapshot: { windows } });
     expect(isQuotaPaused(paused)).toBe(true);
-    const recovered = { ...paused, lastQuotaSnapshot: { remainingPercentage: 40 } };
+    const recovered = { ...paused, lastQuotaSnapshot: { windows: [{ key: "session (5h)", remainingPercentage: 40, resetAt: null, unlimited: false }, windows[1]] } };
     expect(isQuotaPaused(recovered)).toBe(false);
+  });
+  it("getPausedWindow returns the triggering window key", () => {
+    const triggered = getPausedWindow(okConn({ quotaPauseThresholds: { "session (5h)": 15 }, lastQuotaSnapshot: { windows } }));
+    expect(triggered?.key).toBe("session (5h)");
   });
 });
 
 describe("getQuotaPauseInfo", () => {
   it("reports disabled state", () => {
-    const info = getQuotaPauseInfo({ quotaPauseThreshold: 0 });
+    const info = getQuotaPauseInfo(okConn());
     expect(info.enabled).toBe(false);
     expect(info.paused).toBe(false);
+    expect(info.windows).toEqual([]);
   });
-  it("reports paused + remaining + threshold", () => {
-    const info = getQuotaPauseInfo(okConn({ lastQuotaSnapshot: { remainingPercentage: 8 } }));
+  it("reports per-window config + paused state", () => {
+    const info = getQuotaPauseInfo(okConn({
+      quotaPauseThresholds: { "session (5h)": 15 },
+      lastQuotaSnapshot: { windows: [{ key: "session (5h)", remainingPercentage: 8, resetAt: null, unlimited: false }] },
+    }));
     expect(info.enabled).toBe(true);
     expect(info.paused).toBe(true);
-    expect(info.threshold).toBe(15);
-    expect(info.remainingPercentage).toBe(8);
+    expect(info.triggered?.key).toBe("session (5h)");
+    expect(info.windows[0]).toMatchObject({ key: "session (5h)", threshold: 15, paused: true, remainingPercentage: 8 });
   });
 });
 
-describe("deriveQuotaSnapshot (raw usage → gating snapshot)", () => {
+describe("deriveQuotaSnapshot (raw usage → per-window snapshot)", () => {
   it("returns null when there is no usable quota data", () => {
     expect(deriveQuotaSnapshot("claude", null)).toBeNull();
     expect(deriveQuotaSnapshot("claude", { message: "auth expired" })).toBeNull();
@@ -117,71 +117,82 @@ describe("deriveQuotaSnapshot (raw usage → gating snapshot)", () => {
     expect(deriveQuotaSnapshot("claude", { quotas: {} })).toBeNull();
   });
 
-  it("takes the most-depleted window (min remaining) across quotas", () => {
+  it("captures each window key with its remaining % (min not collapsed)", () => {
     const snap = deriveQuotaSnapshot("claude", {
       quotas: {
         "session (5h)": { used: 90, total: 100, remainingPercentage: 10 },
         "weekly (7d)": { used: 50, total: 100, remainingPercentage: 50 },
       },
     });
-    expect(snap.remainingPercentage).toBe(10);
-    expect(snap.unlimited).toBe(false);
+    expect(snap.windows).toHaveLength(2);
+    const byKey = Object.fromEntries(snap.windows.map((w) => [w.key, w.remainingPercentage]));
+    expect(byKey["session (5h)"]).toBe(10);
+    expect(byKey["weekly (7d)"]).toBe(50);
   });
 
-  it("falls back to used/total when remainingPercentage is absent", () => {
+  it("falls back to used/total when remainingPercentage is absent (codex)", () => {
     const snap = deriveQuotaSnapshot("codex", {
-      quotas: { "5h": { used: 95, total: 100 } },
+      quotas: { session: { used: 95, total: 100, remaining: 5, resetAt: null } },
     });
-    expect(snap.remainingPercentage).toBe(5);
+    expect(snap.windows[0].remainingPercentage).toBe(5);
   });
 
-  it("treats all-unlimited windows as unlimited (never pause)", () => {
+  it("marks unlimited windows", () => {
     const snap = deriveQuotaSnapshot("glm", {
-      quotas: { a: { unlimited: true }, b: { unlimited: true } },
+      quotas: { a: { unlimited: true, remainingPercentage: 100 } },
     });
-    expect(snap.unlimited).toBe(true);
-    expect(snap.remainingPercentage).toBe(100);
+    expect(snap.windows[0].unlimited).toBe(true);
   });
 
-  it("captures the earliest reset time across windows", () => {
+  it("captures per-window resetAt", () => {
     const snap = deriveQuotaSnapshot("claude", {
-      quotas: {
-        "session (5h)": { used: 90, total: 100, remainingPercentage: 10, resetAt: "2026-08-27T12:00:00Z" },
-        "weekly (7d)": { used: 50, total: 100, remainingPercentage: 50, resetAt: "2026-09-01T00:00:00Z" },
-      },
+      quotas: { "session (5h)": { used: 90, total: 100, remainingPercentage: 10, resetAt: "2026-08-27T12:00:00Z" } },
     });
-    expect(snap.resetAt).toBe("2026-08-27T12:00:00.000Z");
+    expect(snap.windows[0].resetAt).toBe("2026-08-27T12:00:00.000Z");
   });
 });
 
 describe("evaluateQuota (routing engine)", () => {
-  it("returns disabled when threshold unset", async () => {
-    const r = await evaluateQuota({ id: "x", authType: "oauth", provider: "claude" });
+  it("returns disabled when no window thresholds set", async () => {
+    const r = await evaluateQuota(okConn({ lastQuotaSnapshot: { windows: [{ key: "session (5h)", remainingPercentage: 2 }] } }));
     expect(r.paused).toBe(false);
     expect(r.reason).toBe("disabled");
   });
 
   it("uses a fresh persisted snapshot without a live fetch", async () => {
-    const conn = okConn({ lastQuotaSnapshot: { remainingPercentage: 5, fetchedAt: new Date().toISOString() } });
+    const conn = okConn({
+      quotaPauseThresholds: { "session (5h)": 15 },
+      lastQuotaSnapshot: { windows: [{ key: "session (5h)", remainingPercentage: 5, resetAt: null, unlimited: false }], fetchedAt: new Date().toISOString() },
+    });
     const r = await evaluateQuota(conn);
     expect(r.paused).toBe(true);
     expect(getUsageForProvider).not.toHaveBeenCalled();
   });
 
-  it("live-fetches on a cache miss, then pauses and persists the snapshot", async () => {
+  it("live-fetches on a cache miss, then pauses and persists the per-window snapshot", async () => {
     vi.mocked(getUsageForProvider).mockResolvedValue({
       quotas: { "session (5h)": { used: 90, total: 100, remainingPercentage: 10 } },
     });
-    const conn = okConn(); // no snapshot
+    const conn = okConn({ quotaPauseThresholds: { "session (5h)": 15 } });
     const r = await evaluateQuota(conn);
     expect(r.paused).toBe(true);
     expect(getUsageForProvider).toHaveBeenCalledTimes(1);
-    expect(updateProviderConnection).toHaveBeenCalledWith("c1", expect.objectContaining({ lastQuotaSnapshot: expect.objectContaining({ remainingPercentage: 10 }) }));
+    expect(updateProviderConnection).toHaveBeenCalledWith("c1", expect.objectContaining({
+      lastQuotaSnapshot: expect.objectContaining({ windows: expect.arrayContaining([expect.objectContaining({ key: "session (5h)", remainingPercentage: 10 })]) }),
+    }));
+  });
+
+  it("does not pause when only an unconfigured window is low", async () => {
+    vi.mocked(getUsageForProvider).mockResolvedValue({
+      quotas: { "session (5h)": { used: 95, total: 100, remainingPercentage: 5 } },
+    });
+    const r = await evaluateQuota(okConn({ quotaPauseThresholds: { "weekly (7d)": 15 } }));
+    expect(r.paused).toBe(false);
   });
 
   it("fail-open: live fetch error never pauses", async () => {
     vi.mocked(getUsageForProvider).mockRejectedValue(new Error("network down"));
-    const r = await evaluateQuota(okConn());
+    const r = await evaluateQuota(okConn({ quotaPauseThresholds: { "session (5h)": 15 } }));
     expect(r.paused).toBe(false);
     expect(r.reason).toBe("no-data");
   });
@@ -190,8 +201,8 @@ describe("evaluateQuota (routing engine)", () => {
     vi.mocked(getUsageForProvider).mockResolvedValue({
       quotas: { "session (5h)": { used: 88, total: 100, remainingPercentage: 12 } },
     });
-    await evaluateQuota(okConn());
-    await evaluateQuota(okConn());
+    await evaluateQuota(okConn({ quotaPauseThresholds: { "session (5h)": 15 } }));
+    await evaluateQuota(okConn({ quotaPauseThresholds: { "session (5h)": 15 } }));
     expect(getUsageForProvider).toHaveBeenCalledTimes(1);
   });
 });
