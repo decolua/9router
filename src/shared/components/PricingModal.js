@@ -1,12 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useNotificationStore } from "@/store/notificationStore";
+import { ConfirmModal } from "@/shared/components";
 import { getDefaultPricing, formatCost } from "open-sse/providers/pricing.js";
 
 export default function PricingModal({ isOpen, onClose, onSave }) {
   const [pricingData, setPricingData] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -62,18 +65,18 @@ export default function PricingModal({ isOpen, onClose, onSave }) {
         onClose();
       } else {
         const error = await response.json();
-        alert(`Failed to save pricing: ${error.error}`);
+        useNotificationStore.getState().error(`Failed to save pricing: ${error.error}`);
       }
     } catch (error) {
       console.error("Failed to save pricing:", error);
-      alert("Failed to save pricing");
+      useNotificationStore.getState().error("Failed to save pricing");
     } finally {
       setSaving(false);
     }
   };
 
   const handleReset = async () => {
-    if (!confirm("Reset all pricing to defaults? This cannot be undone.")) return;
+    setShowResetConfirm(true); return;
 
     try {
       const response = await fetch("/api/pricing", { method: "DELETE" });
@@ -83,7 +86,7 @@ export default function PricingModal({ isOpen, onClose, onSave }) {
       }
     } catch (error) {
       console.error("Failed to reset pricing:", error);
-      alert("Failed to reset pricing");
+      useNotificationStore.getState().error("Failed to reset pricing");
     }
   };
 
@@ -94,7 +97,8 @@ export default function PricingModal({ isOpen, onClose, onSave }) {
   const pricingFields = ["input", "output", "cached", "reasoning", "cache_creation"];
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+    <>
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-bg-base border border-border rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="p-4 border-b border-border flex items-center justify-between">
@@ -203,6 +207,28 @@ export default function PricingModal({ isOpen, onClose, onSave }) {
           </div>
         </div>
       </div>
-    </div>
+      </div>
+      <ConfirmModal
+      isOpen={showResetConfirm}
+      onClose={() => setShowResetConfirm(false)}
+      onConfirm={async () => {
+        setShowResetConfirm(false);
+        try {
+          const response = await fetch("/api/pricing", { method: "DELETE" });
+          if (response.ok) {
+            const defaults = getDefaultPricing();
+            setPricingData(defaults);
+            useNotificationStore.getState().success("Pricing reset to defaults");
+          }
+        } catch (error) {
+          useNotificationStore.getState().error("Failed to reset pricing");
+        }
+      }}
+      title="Reset pricing"
+      message="Reset all pricing to defaults? This cannot be undone."
+      confirmText="Reset"
+      variant="danger"
+      />
+    </>
   );
 }

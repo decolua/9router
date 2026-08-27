@@ -47,6 +47,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const [authMode, setAuthMode] = useState("browser"); // "browser" | "paste-token"
   const [pasteToken, setPasteToken] = useState("");
   const [ideStatus, setIdeStatus] = useState(null);
+  const [inlineAuthOpen, setInlineAuthOpen] = useState(false);
+  const [inlineUrl, setInlineUrl] = useState(null);
   const popupRef = useRef(null);
   const pollingAbortRef = useRef(false);
   const openedRef = useRef(false);
@@ -152,7 +154,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const data = await res.json();
 
         if (data.success) {
-          pollingAbortRef.current = true; // Stop polling immediately
+        setInlineAuthOpen(false);
+      setInlineUrl(null);
+        pollingAbortRef.current = true; // Stop polling immediately
           setStep("success");
           setPolling(false);
           onSuccess?.();
@@ -206,7 +210,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     // 4. Open popup; proxy auto-exchanges on callback, modal polls poll-status.
     setAuthData({ ...authData, proxyProvider: providerId });
     setStep("waiting");
-    popupRef.current = window.open(authData.authUrl, "oauth_popup", "width=600,height=700");
+    setInlineUrl(authData.authUrl); setInlineAuthOpen(true); popupRef.current = { closed: false, close: () => setInlineAuthOpen(false) };
     if (!popupRef.current) setStep("input"); // popup blocked → fall back to manual paste
   }, []);
 
@@ -255,7 +259,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
         // Auto-open verification URL in new tab
         const verifyUrl = data.verification_uri_complete || data.verification_uri;
-        if (verifyUrl) window.open(verifyUrl, "_blank", "noopener,noreferrer");
+        if (verifyUrl) { setInlineUrl(verifyUrl); setInlineAuthOpen(true); }
 
         // Pass extraData for Kiro (contains _clientId, _clientSecret) and
         // Qoder (contains _qoderMachineId / _qoderNonce — needed so mapTokens
@@ -383,7 +387,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       } else if (!isLocalhost || provider === "codex" || provider === "xai") {
         // Non-localhost or proxy failed: manual input mode
         setStep("input");
-        window.open(data.authUrl, "_blank");
+        setInlineUrl(data.authUrl); setInlineAuthOpen(true);
       } else {
         // Localhost (non-Codex/xAI): Open popup and wait for message
         setStep("waiting");
@@ -397,6 +401,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setStep("error");
     }
   }, [provider, isLocalhost, startPolling, oauthMeta, idcConfig, authMode, startProxyFlow]);
+
+  useEffect(() => {
+    if (step === "success" || step === "error") setInlineAuthOpen(false);
+  }, [step]);
 
   // Reset state and start OAuth when modal opens
   useEffect(() => {
@@ -680,7 +688,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       : placeholderUrl;
 
   return (
-    <Modal isOpen={isOpen} title={modalTitle} onClose={handleClose} size="lg">
+    <>
+      <Modal isOpen={isOpen} title={modalTitle} onClose={handleClose} size="lg">
       <div className="flex flex-col gap-4">
         {/* Trae/Windsurf: browser OAuth (proxy) + paste-token fallback */}
         {PROXY_OAUTH_PROVIDERS.has(provider) && (step === "waiting" || step === "input" || step === "error") && (
@@ -843,7 +852,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                     size="sm"
                     variant="ghost"
                     icon="open_in_new"
-                    onClick={() => window.open(deviceLoginUrl, "_blank", "noopener,noreferrer")}
+                    onClick={() => { setInlineUrl(deviceLoginUrl); setInlineAuthOpen(true); }}
                     disabled={!deviceLoginUrl}
                   >
                     Open
@@ -908,6 +917,44 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         )}
       </div>
     </Modal>
+      <Modal
+        isOpen={inlineAuthOpen}
+        onClose={() => setInlineAuthOpen(false)}
+        title={`Authorize ${providerInfo?.name || provider}`}
+        size="xl"
+      >
+        <div className="flex flex-col gap-3">
+          <p className="text-xs text-text-muted">
+            Authorization opened as a site popup. If the content does not load (provider blocks iframe), use the button below to open in a new tab.
+          </p>
+          <div className="overflow-hidden rounded-xl border border-border bg-bg">
+            {(inlineUrl || authData?.authUrl) ? (
+              <iframe
+                src={inlineUrl || authData?.authUrl}
+                className="h-[68vh] w-full border-0"
+                title="OAuth Authorization"
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+              />
+            ) : (
+              <div className="flex h-[68vh] items-center justify-center p-6 text-sm text-text-muted">No authorization URL</div>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              icon="open_in_new"
+              onClick={() => window.open(inlineUrl || authData?.authUrl, "_blank", "noopener,noreferrer")}
+              fullWidth
+            >
+              Open in new tab
+            </Button>
+            <Button variant="ghost" onClick={() => setInlineAuthOpen(false)} fullWidth>
+              Close
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </>
   );
 }
 

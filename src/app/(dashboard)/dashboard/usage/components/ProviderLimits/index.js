@@ -138,6 +138,7 @@ export default function ProviderLimits() {
   const [countdown, setCountdown] = useState(60);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
   const [resettingLimitId, setResettingLimitId] = useState(null);
   const [resetConfirmState, setResetConfirmState] = useState(null);
@@ -350,8 +351,16 @@ export default function ProviderLimits() {
 
   const handleDeleteConnection = useCallback(
     async (id) => {
-      if (!confirm("Delete this connection?")) return;
-      setDeletingId(id);
+      setDeleteConfirmId(id);
+    },
+    [],
+  );
+
+  const confirmDeleteConnection = useCallback(async () => {
+    const id = deleteConfirmId;
+    if (!id) return;
+    setDeleteConfirmId(null);
+    setDeletingId(id);
       try {
         const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
         if (res.ok) {
@@ -1429,6 +1438,16 @@ export default function ProviderLimits() {
         title="Reset Codex limit?"
         message={`Use 1 Codex reset credit for ${getConnectionLabel(resetConfirmState?.connection || {}) || "this account"}. This cannot be undone. Remaining credits: ${resetConfirmState?.resetCreditCount ?? 0}.`}
         confirmText="Reset limit"
+      />
+      <ConfirmModal
+        isOpen={Boolean(deleteConfirmId)}
+        onClose={() => setDeleteConfirmId(null)}
+        onConfirm={confirmDeleteConnection}
+        title="Delete connection"
+        message="Delete this connection? This cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
         cancelText="Cancel"
         variant="danger"
         loading={Boolean(resettingLimitId)}

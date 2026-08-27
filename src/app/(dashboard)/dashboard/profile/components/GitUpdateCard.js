@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Button, Card } from "@/shared/components";
+import { Button, Card, ConfirmModal } from "@/shared/components";
 
 const PHASE_LABELS = {
   starting: "Starting update...",
@@ -27,6 +27,7 @@ export default function GitUpdateCard() {
   const [checking, setChecking] = useState(false);
   const [starting, setStarting] = useState(false);
   const [feedback, setFeedback] = useState({ type: "", message: "" });
+  const [showConfirm, setShowConfirm] = useState(false);
   const startedHereRef = useRef(false);
   const reloadScheduledRef = useRef(false);
 
@@ -80,12 +81,12 @@ export default function GitUpdateCard() {
     return () => clearInterval(timer);
   }, [loadStatus, updateRunning]);
 
-  const handleUpdate = async () => {
-    const confirmed = globalThis.confirm(
-      "Update 9Router now? The dashboard may be unavailable briefly while the update is installed.",
-    );
-    if (!confirmed) return;
+  const handleUpdate = () => {
+    setShowConfirm(true);
+  };
 
+  const confirmUpdate = async () => {
+    setShowConfirm(false);
     setStarting(true);
     setFeedback({ type: "", message: "" });
     startedHereRef.current = true;
@@ -185,6 +186,16 @@ export default function GitUpdateCard() {
         </div>
 
       </div>
+      <ConfirmModal
+        isOpen={showConfirm}
+        onClose={() => setShowConfirm(false)}
+        onConfirm={confirmUpdate}
+        title="Update 9Router"
+        message="Update 9Router now? The dashboard may be unavailable briefly while the update is installed."
+        confirmText="Update now"
+        cancelText="Cancel"
+        variant="primary"
+      />
     </Card>
   );
 }

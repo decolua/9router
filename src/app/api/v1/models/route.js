@@ -279,6 +279,7 @@ function comboMatchesKinds(combo, kindFilter) {
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
  */
 export async function buildModelsList(kindFilter, options = {}) {
+  const fastMode = options.fast === true;
   // When this header is present, the /v1/models request came from another
   // 9router instance's fetchCompatibleModelIds — skip dynamic fetch to break
   // cross-instance recursive loops.
@@ -372,8 +373,8 @@ export async function buildModelsList(kindFilter, options = {}) {
     models.push(entry);
   }
 
-  for (const [providerId, conn] of activeConnectionByProvider.entries()) {
-      if (!providerMatchesKinds(providerId, kindFilter)) continue;
+  await Promise.all(Array.from(activeConnectionByProvider.entries()).map(async ([providerId, conn]) => {
+      if (!providerMatchesKinds(providerId, kindFilter)) return;
 
       const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
       const outputAlias = (
@@ -405,12 +406,12 @@ export async function buildModelsList(kindFilter, options = {}) {
           )
         : providerModels.map((model) => model.id);
 
-      if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
+      if (!fastMode && isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
         rawModelIds = await fetchCompatibleModelIds(conn);
       }
 
       const providerInfo = AI_PROVIDERS[providerId];
-      if (providerInfo?.noAuth && providerInfo.modelsFetcher && !hasExplicitEnabledModels && !skipDynamicFetch) {
+      if (!fastMode && providerInfo?.noAuth && providerInfo.modelsFetcher && !hasExplicitEnabledModels && !skipDynamicFetch) {
         const registeredModelIds = await fetchRegisteredModelIds(providerInfo);
         if (registeredModelIds.length > 0) rawModelIds = registeredModelIds;
       }
@@ -562,7 +563,7 @@ export async function buildModelsList(kindFilter, options = {}) {
           owned_by: outputAlias,
         });
       }
-  }
+  }));
 
   const dedupedModels = [];
   const seenModelIds = new Set();

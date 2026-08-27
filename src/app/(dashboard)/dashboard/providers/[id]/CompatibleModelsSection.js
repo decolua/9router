@@ -107,7 +107,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     if (!newModel.trim() || adding) return;
     const modelId = newModel.trim();
     if (allModels.some((model) => model.id === modelId)) {
-      alert("Model already exists for this provider.");
+      useNotificationStore.getState().error("Model already exists for this provider.");
       return;
     }
 
@@ -132,12 +132,12 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
       const res = await fetch(`/api/providers/${activeConnection.id}/models`);
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || "Failed to import models");
+        useNotificationStore.getState().error(data.error || "Failed to import models");
         return;
       }
       const models = data.models || [];
       if (models.length === 0) {
-        alert("No models returned from /models.");
+        useNotificationStore.getState().error("No models returned from /models.");
         return;
       }
       let importedCount = 0;
@@ -149,7 +149,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         importedCount += 1;
       }
       if (importedCount === 0) {
-        alert("No new models were added.");
+        useNotificationStore.getState().error("No new models were added.");
       }
     } catch (error) {
       console.log("Error importing models:", error);

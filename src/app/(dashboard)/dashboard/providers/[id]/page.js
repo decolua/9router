@@ -11,6 +11,7 @@ import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
+import { useNotificationStore } from "@/store/notificationStore";
 import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
@@ -505,7 +506,7 @@ export default function ProviderDetailPage() {
         await fetchAliases();
       } else {
         const data = await res.json();
-        alert(data.error || "Failed to set alias");
+        useNotificationStore.getState().error(data.error || "Failed to set alias");
       }
     } catch (error) {
       console.log("Error setting alias:", error);
@@ -537,7 +538,7 @@ export default function ProviderDetailPage() {
         if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("customModelChanged"));
       } else {
         const data = await res.json();
-        alert(data.error || "Failed to add custom model");
+        useNotificationStore.getState().error(data.error || "Failed to add custom model");
       }
     } catch (error) {
       console.log("Error adding custom model:", error);
@@ -561,7 +562,7 @@ export default function ProviderDetailPage() {
     if (discoveringModels) return;
     const activeConnection = connections.find((conn) => conn.isActive !== false);
     if (!activeConnection) {
-      alert(translate("Please add an active connection first"));
+      useNotificationStore.getState().error(translate("Please add an active connection first"));
       return;
     }
 
@@ -570,12 +571,12 @@ export default function ProviderDetailPage() {
       const res = await fetch(`/api/providers/${activeConnection.id}/models`);
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || translate("Failed to fetch models"));
+        useNotificationStore.getState().error(data.error || translate("Failed to fetch models"));
         return;
       }
       const discoveredModels = Array.isArray(data.models) ? data.models : [];
       if (discoveredModels.length === 0) {
-        alert(translate("No models returned"));
+        useNotificationStore.getState().error(translate("No models returned"));
         return;
       }
 
@@ -622,17 +623,17 @@ export default function ProviderDetailPage() {
       }
 
       if (importedCount === 0 && failedCount > 0) {
-        alert(translate("Failed to add discovered models"));
+        useNotificationStore.getState().error(translate("Failed to add discovered models"));
       } else if (importedCount === 0) {
-        alert(translate("All models already exist, no new models added"));
+        useNotificationStore.getState().error(translate("All models already exist, no new models added"));
       } else {
         await fetchCustomModels();
         if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("customModelChanged"));
-        alert(translate("Successfully added") + ` ${importedCount} ` + translate("models"));
+        useNotificationStore.getState().success(translate("Successfully added") + ` ${importedCount} ` + translate("models"));
       }
     } catch (error) {
       console.log("Error discovering provider models:", error);
-      alert(translate("Error fetching models") + ": " + error.message);
+      useNotificationStore.getState().error(translate("Error fetching models") + ": " + error.message);
     } finally {
       setDiscoveringModels(false);
     }
@@ -769,7 +770,7 @@ export default function ProviderDetailPage() {
         }
         setConnections(prev => prev.filter(c => !idsToDelete.includes(c.id)));
         setSelectedConnectionIds([]);
-        if (failed > 0) alert(`Deleted ${idsToDelete.length - failed} connection(s), ${failed} failed.`);
+        if (failed > 0) useNotificationStore.getState().error(`Deleted ${idsToDelete.length - failed} connection(s), ${failed} failed.`); else if (idsToDelete.length > 0) useNotificationStore.getState().success(`Deleted ${idsToDelete.length} connection(s).`);
       }
     });
   };
@@ -938,7 +939,7 @@ export default function ProviderDetailPage() {
           failed += 1;
         }
       }
-      if (failed > 0) alert(`Updated with ${failed} failed request(s).`);
+      if (failed > 0) useNotificationStore.getState().error(`Updated with ${failed} failed request(s).`);
       await fetchConnections();
       setShowBulkProxyModal(false);
     } finally {
@@ -954,7 +955,7 @@ export default function ProviderDetailPage() {
   const handleApplyOneToOne = () => {
     const activePools = proxyPools.filter((p) => p.isActive === true);
     if (activePools.length === 0) {
-      alert("No active proxy pools available.");
+      useNotificationStore.getState().error("No active proxy pools available.");
       return;
     }
     const targets = connections.map((c, i) => ({

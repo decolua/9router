@@ -184,7 +184,7 @@ export default function WebProvidersPage() {
       router.push(`/dashboard/media-providers/combo/${created.id}`);
     } else {
       const err = await res.json();
-      alert(err.error || "Failed to create combo");
+      useNotificationStore.getState().error(err.error || "Failed to create combo");
     }
   };
 

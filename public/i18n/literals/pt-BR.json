@@ -999,7 +999,6 @@
   "Provider health": "Status dos provedores",
   "Enabled account status": "Status das contas habilitadas",
   "enabled accounts healthy": "contas habilitadas saudáveis",
-  "Healthy": "Saudável",
   "Attention": "Requer atenção",
   "View all providers": "Ver todos os provedores",
   "Recent requests": "Requisições recentes",
@@ -1020,8 +1019,6 @@
   "usage statistics": "estatísticas de uso",
   "providers": "provedores",
   "models": "modelos",
-  "Requests": "Requisições",
-  "Tokens": "Tokens",
   "Router": "Roteador",
   "Test and manage the models published by /v1/models": "Teste e gerencie os modelos publicados por /v1/models",
   "Not tested": "Não testado",
@@ -1068,5 +1065,8 @@
   "All models already exist, no new models added": "Todos os modelos já existem; nenhum novo modelo foi adicionado",
   "Failed to add discovered models": "Não foi possível adicionar os modelos descobertos",
   "Successfully added": "Adicionados com sucesso",
-  "Error fetching models": "Erro ao buscar modelos"
+  "Error fetching models": "Erro ao buscar modelos",
+  "Agent Skills": "Habilidades do Agente",
+  "Browse models": "Explorar modelos",
+  "Used today": "Usados hoje"
 }

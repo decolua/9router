@@ -103,7 +103,7 @@ export default function PassthroughModelsSection({ providerAlias, modelAliases, 
     const modelId = newModel.trim();
 
     if (allModels.some((model) => model.id === modelId)) {
-      alert("Model already exists for this provider.");
+      useNotificationStore.getState().error("Model already exists for this provider.");
       return;
     }
 

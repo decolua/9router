@@ -3,7 +3,8 @@
 import { useParams, notFound, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Card, Button, Input, Toggle, ModelSelectModal } from "@/shared/components";
+import { useNotificationStore } from "@/store/notificationStore";
+import { Card, Button, Input, Toggle, ModelSelectModal, ConfirmModal } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { AI_PROVIDERS, MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 
@@ -61,6 +62,7 @@ export default function ComboDetailPage() {
   const [apiKey, setApiKey] = useState("");
   const [connections, setConnections] = useState([]);
   const [modelAliases, setModelAliases] = useState({});
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const fetchAll = async () => {
     try {
@@ -107,7 +109,7 @@ export default function ComboDetailPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     });
-    if (!res.ok) { const err = await res.json(); alert(err.error || "Failed to save"); return false; }
+    if (!res.ok) { const err = await res.json(); useNotificationStore.getState().error(err.error || "Failed to save"); return false; }
     return true;
   };
 
@@ -164,7 +166,6 @@ export default function ComboDetailPage() {
   };
 
   const handleDelete = async () => {
-    if (!confirm(`Delete combo "${combo.name}"?`)) return;
     const res = await fetch(`/api/combos/${id}`, { method: "DELETE" });
     if (res.ok) router.push(getListingHref(combo.kind));
   };
@@ -255,7 +256,7 @@ export default function ComboDetailPage() {
             <code className="text-lg font-semibold font-mono">{combo.name}</code>
           </div>
         </div>
-        <Button variant="outline" icon="delete" onClick={handleDelete} className="text-red-500 border-red-200 hover:bg-red-50">
+        <Button variant="outline" icon="delete" onClick={() => setShowDeleteConfirm(true)} className="text-red-500 border-red-200 hover:bg-red-50">
           Delete
         </Button>
       </div>
@@ -393,6 +394,9 @@ export default function ComboDetailPage() {
         )}
       </Card>
 
+      {showDeleteConfirm && (
+        <ConfirmModal isOpen={showDeleteConfirm} onClose={() => setShowDeleteConfirm(false)} onConfirm={async () => { setShowDeleteConfirm(false); const res = await fetch(`/api/combos/${id}`, { method: "DELETE" }); if (res.ok) router.push(getListingHref(combo.kind)); else { const err = await res.json().catch(()=>({})); useNotificationStore.getState().error(err.error || "Failed to delete"); } }} title={`Delete combo "${combo?.name}"?`} message="This action cannot be undone." confirmText="Delete" variant="danger" />
+      )}
       {showPicker && (
         <ModelSelectModal
           isOpen={showPicker}

@@ -280,5 +280,10 @@
   "All models already exist, no new models added": "Todos los modelos ya existen; no se agregaron modelos nuevos",
   "Failed to add discovered models": "No se pudieron agregar los modelos descubiertos",
   "Successfully added": "Agregados correctamente",
-  "Error fetching models": "Error al obtener los modelos"
+  "Error fetching models": "Error al obtener los modelos",
+  "Token Saver": "Ahorrador de tokens",
+  "Proxy Pools": "Pools de Proxy",
+  "Agent Skills": "Habilidades del agente",
+  "Browse models": "Explorar modelos",
+  "Used today": "Usados hoy"
 }

@@ -6,6 +6,7 @@ import { Badge, Button, Card, CardSkeleton, Modal, Toggle } from "@/shared/compo
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { getProviderByAlias } from "@/shared/constants/providers";
 import { translate } from "@/i18n/runtime";
+import Pagination from "@/shared/components/Pagination";
 import { useHeaderSearchStore } from "@/store/headerSearchStore";
 import { useNotificationStore } from "@/store/notificationStore";
 
@@ -70,6 +71,8 @@ export default function ModelsPage() {
   const [testProgress, setTestProgress] = useState({ completed: 0, total: 0 });
   const [updatingModels, setUpdatingModels] = useState(() => new Set());
   const [failureDetails, setFailureDetails] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const searchQuery = useHeaderSearchStore((state) => state.query);
   const registerSearch = useHeaderSearchStore((state) => state.register);
   const unregisterSearch = useHeaderSearchStore((state) => state.unregister);
@@ -94,6 +97,10 @@ export default function ModelsPage() {
     registerSearch("Search models or providers...");
     return () => unregisterSearch();
   }, [registerSearch, unregisterSearch]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [providerFilter, visibilityFilter, searchQuery, pageSize]);
 
   useEffect(() => {
     const timer = globalThis.setTimeout(loadModels, 0);
@@ -128,6 +135,11 @@ export default function ModelsPage() {
         || model.providerAlias.toLowerCase().includes(query);
     });
   }, [enrichedModels, providerFilter, searchQuery, testResults, visibilityFilter]);
+
+  const paginatedModels = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredModels.slice(start, start + pageSize);
+  }, [filteredModels, currentPage, pageSize]);
 
   const stats = useMemo(() => {
     const hidden = enrichedModels.filter((model) => model.disabled).length;
@@ -362,6 +374,7 @@ export default function ModelsPage() {
           <p className="mt-1 text-sm text-text-muted">Change the provider, status, or search query.</p>
         </Card>
       ) : (
+        <>
         <Card padding="none" className="overflow-hidden">
           <div className="hidden grid-cols-[minmax(0,1.5fr)_minmax(140px,.65fr)_minmax(190px,.8fr)_150px_110px] gap-4 border-b border-border-subtle bg-surface-2/60 px-5 py-3 text-[11px] font-semibold uppercase tracking-wider text-text-muted lg:grid">
             <span>Model</span>
@@ -371,7 +384,7 @@ export default function ModelsPage() {
             <span className="text-right">Action</span>
           </div>
           <div className="divide-y divide-border-subtle">
-            {filteredModels.map((model) => {
+            {paginatedModels.map((model) => {
               const result = testResults[model.id];
               const updating = updatingModels.has(model.id);
               return (
@@ -438,6 +451,14 @@ export default function ModelsPage() {
             })}
           </div>
         </Card>
+        <Pagination
+          currentPage={currentPage}
+          pageSize={pageSize}
+          totalItems={filteredModels.length}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={(size) => { setPageSize(size); setCurrentPage(1); }}
+        />
+        </>
       )}
 
       <Modal

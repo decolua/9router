@@ -57,10 +57,10 @@ export default function HeaderMenu({ onLogout }) {
       <div className="relative" ref={menuRef}>
         <button
           onClick={() => setIsOpen((v) => !v)}
-          className="flex items-center justify-center p-2 rounded-lg text-text-muted hover:text-text-main hover:bg-black/5 dark:hover:bg-white/5 transition-all"
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-bg text-text-muted hover:border-primary/40 hover:text-text-main hover:bg-bg-hover transition-all"
           title="Menu"
         >
-          <span className="material-symbols-outlined">person</span>
+          <span className="material-symbols-outlined text-[20px] leading-none">person</span>
         </button>
 
         {isOpen && (

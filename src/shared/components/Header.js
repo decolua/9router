@@ -310,7 +310,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
       <div className="flex items-center gap-1 shrink-0">
         {displayName && (loginMethod === "OIDC" || loginMethod === "SAML") && (
           <div
-            className="hidden sm:flex items-center max-w-[220px] px-3 py-1.5 rounded-full border border-border bg-surface/70 text-xs text-text-muted truncate"
+            className="hidden sm:flex h-9 items-center gap-1.5 max-w-[220px] shrink-0 rounded-xl border border-border bg-bg px-3 text-xs text-text-muted truncate"
             title={displayName}
           >
             <span className="material-symbols-outlined text-[14px] mr-1.5 text-primary">person</span>
@@ -336,26 +336,30 @@ function HeaderSearch() {
   if (!visible) return null;
 
   return (
-    <div className="relative w-[160px] sm:w-[220px]">
-      <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-text-muted text-[16px] pointer-events-none">
-        search
-      </span>
+    <div className="group relative w-[180px] sm:w-[240px] lg:w-[280px] shrink-0">
+      <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5">
+        <span className="material-symbols-outlined text-[17px] leading-none text-text-muted/50 transition-colors group-focus-within:text-text-muted">
+          search
+        </span>
+      </div>
       <input
         type="text"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder={translate(placeholder)}
-        className="w-full h-8 pl-7 pr-7 rounded-lg border border-border bg-surface/60 text-sm focus:outline-none focus:border-primary/50 transition-colors"
+        placeholder=""
+        className="w-full h-9 pl-10 pr-9 rounded-xl border border-border/60 bg-bg-subtle/50 text-[13.5px] font-normal leading-none tracking-tight placeholder:font-normal placeholder:text-text-muted/40 shadow-[0_1px_2px_rgba(0,0,0,0.04)] focus:bg-bg focus:border-primary/30 focus:outline-none focus:ring-4 focus:ring-primary/10 focus:shadow-sm transition-all"
       />
       {query && (
-        <button
-          type="button"
-          onClick={() => setQuery("")}
-          className="absolute right-1 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main p-0.5 rounded"
-          aria-label="Clear search"
-        >
-          <span className="material-symbols-outlined text-[16px]">close</span>
-        </button>
+        <div className="absolute inset-y-0 right-0 flex items-center pr-1.5">
+          <button
+            type="button"
+            onClick={() => setQuery("")}
+            className="flex h-5 w-5 items-center justify-center rounded-lg bg-transparent text-text-muted/60 hover:bg-bg-subtle hover:text-text-main transition-colors"
+            aria-label="Clear search"
+          >
+            <span className="material-symbols-outlined text-[14px] leading-none">close</span>
+          </button>
+        </div>
       )}
     </div>
   );
