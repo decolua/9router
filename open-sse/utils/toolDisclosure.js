@@ -219,11 +219,30 @@ export function disclosureTools(tools, body, connectionId, config = {}) {
   }
 
   const selected = [...pinnedTools.map((x) => x.tool), ...topK];
-  return {
-    tools: selected,
-    stats: { before: tools.length, after: selected.length, stripped: tools.length - selected.length },
+  const strippedSet = new Set(selected.map(getToolName));
+  const stats = {
+    before: tools.length,
+    after: selected.length,
+    stripped: tools.length - selected.length,
+    keptNames: selected.map(getToolName),
+    strippedNames: tools.filter((t) => !strippedSet.has(getToolName(t))).map(getToolName),
   };
+  _recordStats({ connectionId, ...stats });
+  return { tools: selected, stats };
+}
+
+// --- Recent stats ring buffer (last 50 turns) ---
+const _recentStats = [];
+const STATS_MAX = 50;
+
+function _recordStats(entry) {
+  _recentStats.unshift({ ts: Date.now(), ...entry });
+  if (_recentStats.length > STATS_MAX) _recentStats.length = STATS_MAX;
+}
+
+export function getRecentStats() {
+  return _recentStats.slice();
 }
 
 // Exported for tests only
-export { buildIndex, bm25Scores, tokenize, extractPinnedNames, extractLastUserMessage, _cache };
+export { buildIndex, bm25Scores, tokenize, extractPinnedNames, extractLastUserMessage, _cache, _recentStats };

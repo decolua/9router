@@ -42,5 +42,5 @@ jobs:
         working-directory: tests
 
       - name: Run tool-disclosure unit tests
-        run: npx vitest run --reporter=verbose unit/tool-filter.test.js unit/tool-disclosure.test.js
+        run: npx vitest run --reporter=verbose unit/tool-filter.test.js unit/tool-disclosure.test.js unit/tool-disclosure-e2e.test.js
         working-directory: tests
