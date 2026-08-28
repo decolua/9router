@@ -103,6 +103,7 @@ function createNoOpLogger() {
     appendOpenAIChunk() {},
     logConvertedResponse() {},
     appendConvertedChunk() {},
+    logToolArgumentAudit() {},
     logError() {}
   };
 }
@@ -215,7 +216,20 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         // Ignore append errors
       }
     },
-    
+
+    logToolArgumentAudit(audit) {
+      if (!fs || !sessionPath) return;
+      try {
+        const filePath = path.join(sessionPath, "8_tool_argument_audit.jsonl");
+        fs.appendFileSync(filePath, `${JSON.stringify({
+          timestamp: new Date().toISOString(),
+          ...audit,
+        })}\n`);
+      } catch (err) {
+        // Ignore append errors
+      }
+    },
+
     // 6. Log error
     logError(error, requestBody = null) {
       writeJsonFile(sessionPath, "6_error.json", {

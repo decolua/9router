@@ -10,22 +10,72 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { collectToolSchemas, summarizeToolArgumentFragment, validateToolArguments } from "../../translator/concerns/toolArguments.js";
 
-function parseToolArguments(value) {
-  if (!value) return {};
-  if (typeof value === "object") return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return {};
+class ToolArgumentsProtocolError extends Error {
+  constructor(toolName, value, finishReason, reason, model) {
+    super(`Upstream returned invalid arguments for tool ${toolName}: ${reason}`);
+    this.audit = {
+      event: "tool_argument_validation_failed",
+      model: model || "unknown",
+      tool: toolName,
+      argumentsLength: typeof value === "string" ? value.length : JSON.stringify(value || {}).length,
+      fragments: [summarizeToolArgumentFragment(
+        typeof value === "string" ? value : JSON.stringify(value || {}),
+      )],
+      finishReason,
+      retryResult: "not_attempted_explicit_protocol_error",
+      reason,
+    };
   }
 }
 
-function openAICompletionToClaudeMessage(responseBody) {
+function parseToolArguments(toolName, value, schemas, finishReason, model) {
+  if (["length", "max_tokens"].includes(finishReason)) {
+    throw new ToolArgumentsProtocolError(
+      toolName,
+      value,
+      finishReason,
+      `tool call ended with finish_reason=${finishReason}`,
+      model,
+    );
+  }
+  if (!value) value = "{}";
+  let parsed;
+  if (typeof value === "object") parsed = value;
+  try {
+    if (parsed === undefined) parsed = JSON.parse(value);
+  } catch (error) {
+    throw new ToolArgumentsProtocolError(
+      toolName,
+      value,
+      finishReason,
+      error?.message || "invalid JSON",
+      model,
+    );
+  }
+  const validation = validateToolArguments(toolName, parsed, schemas);
+  if (!validation.valid) {
+    throw new ToolArgumentsProtocolError(
+      toolName,
+      value,
+      finishReason,
+      validation.error,
+      model,
+    );
+  }
+  return parsed;
+}
+
+function openAICompletionToClaudeMessage(responseBody, toolSchemas) {
   if (!responseBody?.choices?.[0]) return responseBody;
   const choice = responseBody.choices[0];
   const message = choice.message || {};
   const content = [];
+  const finishReason = Array.isArray(message.tool_calls) && message.tool_calls.length > 0
+    && choice.finish_reason === "stop"
+    ? "tool_calls"
+    : choice.finish_reason;
 
   const reasoning = message.reasoning_content || message.provider_specific_fields?.reasoning_content || "";
   if (reasoning) {
@@ -40,7 +90,13 @@ function openAICompletionToClaudeMessage(responseBody) {
       type: "tool_use",
       id: toolCall.id || `toolu_${Date.now()}_${content.length}`,
       name: fn.name || toolCall.name || "",
-      input: parseToolArguments(fn.arguments || toolCall.arguments),
+      input: parseToolArguments(
+        fn.name || toolCall.name || "",
+        fn.arguments || toolCall.arguments,
+        toolSchemas,
+        finishReason,
+        responseBody.model,
+      ),
     });
   }
   if (content.length === 0) content.push({ type: "text", text: "" });
@@ -52,7 +108,7 @@ function openAICompletionToClaudeMessage(responseBody) {
     role: "assistant",
     model: responseBody.model || "unknown",
     content,
-    stop_reason: fromOpenAIFinish(choice.finish_reason, FORMATS.CLAUDE),
+    stop_reason: fromOpenAIFinish(finishReason, FORMATS.CLAUDE),
     stop_sequence: null,
     usage: {
       input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
@@ -141,7 +197,7 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
  */
-export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
+export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null, toolSchemas = null) {
   if (targetFormat === sourceFormat) return responseBody;
   // Provider responded in OpenAI Chat Completions shape but the client speaks
   // Responses API — convert so tool_calls/text surface as Responses `output`.
@@ -149,7 +205,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     return openAICompletionToResponses(responseBody, customToolNames);
   }
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
-    return openAICompletionToClaudeMessage(responseBody);
+    return openAICompletionToClaudeMessage(responseBody, toolSchemas);
   }
   if (targetFormat === FORMATS.OPENAI) return responseBody;
 
@@ -305,6 +361,31 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }
 
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
+
+  // Decloak tool_use names once on raw Claude body, before any translation (INPUT side)
+  responseBody = decloakToolNames(responseBody, toolNameMap);
+
+  const usage = extractUsageFromResponse(responseBody);
+  const totalLatency = Date.now() - requestStartTime;
+
+  let translatedResponse;
+  try {
+    translatedResponse = needsTranslation(targetFormat, sourceFormat)
+      ? translateNonStreamingResponse(
+        responseBody,
+        targetFormat,
+        sourceFormat,
+        customToolNames,
+        collectToolSchemas(body?.tools),
+      )
+      : responseBody;
+  } catch (error) {
+    if (!(error instanceof ToolArgumentsProtocolError)) throw error;
+    console.warn(`[ToolGuard] ${JSON.stringify(error.audit)}`);
+    reqLogger?.logToolArgumentAudit?.(error.audit);
+    appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, error.message);
+  }
   if (onRequestSuccess) {
     Promise.resolve()
       .then(onRequestSuccess)
@@ -312,19 +393,9 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
         console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
       });
   }
-
-  // Decloak tool_use names once on raw Claude body, before any translation (INPUT side)
-  responseBody = decloakToolNames(responseBody, toolNameMap);
-
-  const usage = extractUsageFromResponse(responseBody);
-  const totalLatency = Date.now() - requestStartTime;
   appendLog({ tokens: usage, status: "200 OK" });
   saveUsageStats({ provider, model, requestedModel, actualModel, routerSelectedModel, routerSelectedProvider, requestDetailId, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, latency: { ttft: totalLatency, total: totalLatency }, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: totalLatency } }));
-
-  const translatedResponse = needsTranslation(targetFormat, sourceFormat)
-    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
-    : responseBody;
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
   // Responses-format translation produces a `object:"response"` body with no
   // `choices`; skip the Chat-Completions-specific post-processing below for it.

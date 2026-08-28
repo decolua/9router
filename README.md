@@ -507,6 +507,21 @@ without a `baseUrl` is reported as a configuration error rather than quietly
 falling back to `api.openai.com`, which would send your input text and API key to
 a third party under a provider named "Self-hosted".
 
+For a trusted OpenAI-compatible routing backend that supports session affinity,
+set `providerSpecificData.sessionHeader` on that connection to the backend's
+header name, for example `x-llmrouter-session-id`. 9Router then forwards the
+captured client session ID through that header. Forwarding is disabled unless
+the connection explicitly opts in, and invalid header names are ignored.
+
+When an OpenAI-compatible upstream returns tool calls for a Claude client,
+9Router buffers every argument fragment until completion, parses the full JSON,
+and validates it against the original tool schema before emitting `tool_use`.
+Invalid or length-truncated arguments produce an explicit protocol error. The
+failure audit records the selected model, finish reason, retry result, argument
+length, and redacted fragment fingerprints without logging argument values. If
+request logging is enabled, the audit is persisted as
+`8_tool_argument_audit.jsonl` in the request log session.
+
 ---
 
 ## 💡 Key Features

@@ -5,6 +5,7 @@ import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBu
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
+import { collectToolSchemas } from "../translator/concerns/toolArguments.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
 
@@ -59,7 +60,7 @@ export function createSSEStream(options = {}) {
   const decoder = new TextDecoder("utf-8", { fatal: false });
 
   const state = mode === STREAM_MODE.TRANSLATE
-    ? { ...initState(sourceFormat), provider, toolNameMap, customToolNames: new Set(customToolNames || []), model }
+    ? { ...initState(sourceFormat), provider, toolNameMap, customToolNames: new Set(customToolNames || []), model, toolSchemas: collectToolSchemas(body?.tools) }
     : null;
 
   let totalContentLength = 0;
@@ -299,6 +300,10 @@ export function createSSEStream(options = {}) {
 
         // Translate: targetFormat -> openai -> sourceFormat
         const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
+        if (state.toolArgumentError && !state.toolArgumentAuditLogged) {
+          reqLogger?.logToolArgumentAudit?.(state.toolArgumentError);
+          state.toolArgumentAuditLogged = true;
+        }
 
         // Log OpenAI intermediate chunks (if available)
         if (translated?._openaiIntermediate) {
@@ -390,6 +395,10 @@ export function createSSEStream(options = {}) {
           const parsed = parseSSELine(buffer.trim());
           if (parsed && !parsed.done) {
             const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
+            if (state.toolArgumentError && !state.toolArgumentAuditLogged) {
+              reqLogger?.logToolArgumentAudit?.(state.toolArgumentError);
+              state.toolArgumentAuditLogged = true;
+            }
 
             if (translated?._openaiIntermediate) {
               for (const item of translated._openaiIntermediate) {
@@ -410,6 +419,10 @@ export function createSSEStream(options = {}) {
         }
 
         const flushed = translateResponse(targetFormat, sourceFormat, null, state);
+        if (state.toolArgumentError && !state.toolArgumentAuditLogged) {
+          reqLogger?.logToolArgumentAudit?.(state.toolArgumentError);
+          state.toolArgumentAuditLogged = true;
+        }
 
         if (flushed?._openaiIntermediate) {
           for (const item of flushed._openaiIntermediate) {

@@ -4,10 +4,12 @@ on:
   push:
     branches:
       - main
+      - 'codex/**'
+  pull_request:
   workflow_dispatch:
 
 concurrency:
-  group: 9router-main-image
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -49,6 +51,8 @@ jobs:
           unit/opencode-go-models.test.js
           unit/proxy-fallback-timeout.test.js
           unit/dashboard-guard.test.js
+          unit/claude-header-forwarding.test.js
+          translator/tool-argument-guard.test.js
           --reporter=verbose
 
       - name: Build production application
@@ -58,6 +62,7 @@ jobs:
 
   build-and-push:
     name: Build and publish image
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: test
     runs-on: ubuntu-latest
     permissions:

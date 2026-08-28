@@ -154,6 +154,15 @@ export class DefaultExecutor extends BaseExecutor {
     for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);
     applyAuth(headers, desc, credentials);
 
+    const sessionHeader = rt?.sessionHeader || credentials?.providerSpecificData?.sessionHeader;
+    if (
+      sessionHeader &&
+      /^[A-Za-z0-9-]+$/.test(sessionHeader) &&
+      credentials?._clientSessionId
+    ) {
+      headers[sessionHeader] = String(credentials._clientSessionId).slice(0, 256);
+    }
+
     if (this.provider === "claude" && model) {
       headers["Anthropic-Beta"] = selectAnthropicBeta(model);
     }

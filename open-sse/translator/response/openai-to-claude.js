@@ -3,6 +3,7 @@ import { FORMATS } from "../formats.js";
 import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK } from "../schema/index.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
+import { summarizeToolArgumentFragment, validateToolArguments } from "../concerns/toolArguments.js";
 
 // Legacy "proxy_" prefix used by older request translators. Response strips it
 // defensively so tool names from such turns resolve back (e.g. proxy_Read → Read
@@ -11,16 +12,16 @@ import { extractReasoningText } from "../concerns/reasoning.js";
 const CLAUDE_OAUTH_TOOL_PREFIX = "proxy_";
 
 // Sanitize tool call arguments to fix bad params from non-Anthropic models
-function sanitizeToolArgs(toolName, argsJson) {
+function parseAndSanitizeToolArgs(toolName, argsJson) {
   try {
     const args = JSON.parse(argsJson);
     const name = toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)
       ? toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length)
       : toolName;
     if (name === "Read") sanitizeReadArgs(args);
-    return JSON.stringify(args);
-  } catch {
-    return argsJson;
+    return { ok: true, args, json: JSON.stringify(args), error: null };
+  } catch (error) {
+    return { ok: false, args: null, json: null, error: error?.message || "invalid JSON" };
   }
 }
 
@@ -184,30 +185,16 @@ export function openaiToClaudeResponse(chunk, state) {
     for (const tc of delta.tool_calls) {
       const idx = tc.index ?? 0;
 
-      // GLM/fireworks repeats id+null-name on every arg chunk; open block once per idx
+      // GLM/fireworks repeats id+null-name on every arg chunk; retain metadata once per idx.
+      // The Claude tool block is delayed until arguments pass validation.
       if (tc.id && !state.toolCalls.has(idx)) {
         stopThinkingBlock(state, results);
         stopTextBlock(state, results);
-
-        const toolBlockIndex = state.nextBlockIndex++;
-        state.toolCalls.set(idx, { id: tc.id, name: tc.function?.name || "", blockIndex: toolBlockIndex });
-
-        // Strip prefix from tool name for response
         let toolName = tc.function?.name || "";
         if (toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
           toolName = toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
         }
-
-        results.push({
-          type: "content_block_start",
-          index: toolBlockIndex,
-          content_block: {
-            type: CLAUDE_BLOCK.TOOL_USE,
-            id: tc.id,
-            name: toolName,
-            input: {}
-          }
-        });
+        state.toolCalls.set(idx, { id: tc.id, name: toolName });
       }
 
       if (tc.function?.arguments) {
@@ -215,7 +202,11 @@ export function openaiToClaudeResponse(chunk, state) {
         if (toolInfo) {
           // Buffer args instead of streaming — sanitize at finish to fix bad params
           if (!state.toolArgBuffers) state.toolArgBuffers = new Map();
+          if (!state.toolArgFragments) state.toolArgFragments = new Map();
           state.toolArgBuffers.set(idx, (state.toolArgBuffers.get(idx) || "") + tc.function.arguments);
+          const fragments = state.toolArgFragments.get(idx) || [];
+          fragments.push(summarizeToolArgumentFragment(tc.function.arguments));
+          state.toolArgFragments.set(idx, fragments);
         }
       }
     }
@@ -225,32 +216,78 @@ export function openaiToClaudeResponse(chunk, state) {
   if (choice.finish_reason) {
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
+    const effectiveFinishReason = state.toolCalls.size > 0 && choice.finish_reason === "stop"
+      ? "tool_calls"
+      : choice.finish_reason;
 
+    const validatedTools = [];
     for (const [idx, toolInfo] of state.toolCalls) {
-      // Emit buffered + sanitized args as single delta before stop
-      const buffered = state.toolArgBuffers?.get(idx);
-      if (buffered) {
-        const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
+      const buffered = state.toolArgBuffers?.get(idx) || "{}";
+      const parsed = parseAndSanitizeToolArgs(toolInfo.name, buffered);
+      const schemaResult = parsed.ok
+        ? validateToolArguments(toolInfo.name, parsed.args, state.toolSchemas)
+        : { valid: false, error: parsed.error };
+      const finishValid = !["length", "max_tokens"].includes(effectiveFinishReason);
+      if (!parsed.ok || !schemaResult.valid || !finishValid) {
+        const reason = !finishValid
+          ? `tool call ended with finish_reason=${effectiveFinishReason}`
+          : schemaResult.error;
+        const audit = {
+          event: "tool_argument_validation_failed",
+          model: state.model || chunk.model || "unknown",
+          tool: toolInfo.name,
+          argumentsLength: buffered.length,
+          fragments: state.toolArgFragments?.get(idx) || [],
+          finishReason: effectiveFinishReason,
+          retryResult: "not_attempted_explicit_protocol_error",
+          reason,
+        };
+        state.toolArgumentError = audit;
+        console.warn(`[ToolGuard] ${JSON.stringify(audit)}`);
         results.push({
-          type: "content_block_delta",
-          index: toolInfo.blockIndex,
-          delta: { type: "input_json_delta", partial_json: sanitized }
+          type: "error",
+          error: {
+            type: "invalid_tool_arguments",
+            message: `Upstream returned invalid arguments for tool ${toolInfo.name}: ${reason}`,
+          },
         });
+        state.finishReason = "error";
+        return results;
       }
+      validatedTools.push({ toolInfo, json: parsed.json });
+    }
+
+    for (const { toolInfo, json } of validatedTools) {
+      const blockIndex = state.nextBlockIndex++;
+      results.push({
+        type: "content_block_start",
+        index: blockIndex,
+        content_block: {
+          type: CLAUDE_BLOCK.TOOL_USE,
+          id: toolInfo.id,
+          name: toolInfo.name,
+          input: {},
+        },
+      });
+      results.push({
+        type: "content_block_delta",
+        index: blockIndex,
+        delta: { type: "input_json_delta", partial_json: json },
+      });
       results.push({
         type: "content_block_stop",
-        index: toolInfo.blockIndex
+        index: blockIndex
       });
     }
 
     // Mark finish for later usage injection in stream.js
-    state.finishReason = choice.finish_reason;
+    state.finishReason = effectiveFinishReason;
 
     // Use tracked usage (will be estimated in stream.js if not valid)
     const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
     results.push({
       type: "message_delta",
-      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
+      delta: { stop_reason: convertFinishReason(effectiveFinishReason) },
       usage: finalUsage
     });
     results.push({ type: "message_stop" });
