@@ -7,7 +7,7 @@
  *
  * Config shape:
  *   maxTools   number  – top-K tools to keep after scoring (default 20)
- *   minScore   number  – BM25 score floor; 0.0 keeps any matching token (default)
+ *   minScore   number  – BM25 score floor (strict >); 0.0 requires at least one matching token (default)
  *   alwaysInclude string[] – tool names never filtered (merged with pinned set)
  */
 
@@ -145,10 +145,15 @@ function pruneCache() {
   for (const [k, v] of _cache) {
     if (v.lastSeen < cutoff) _cache.delete(k);
   }
-  // If still too large, evict oldest half
+  // If still too large, evict oldest half. Map iterates in insertion order
+  // so the first entries are the oldest — no sort needed.
   if (_cache.size >= MAX_CACHE_SIZE) {
-    const sorted = [..._cache.entries()].sort((a, b) => a[1].lastSeen - b[1].lastSeen);
-    for (let i = 0; i < sorted.length / 2; i++) _cache.delete(sorted[i][0]);
+    const evictCount = Math.floor(_cache.size / 2);
+    let n = 0;
+    for (const k of _cache.keys()) {
+      if (n++ >= evictCount) break;
+      _cache.delete(k);
+    }
   }
 }
 
@@ -186,7 +191,9 @@ export function disclosureTools(tools, body, connectionId, config = {}) {
     const pinnedTools = tools.filter((t) => pinned.has(getToolName(t)));
     const rest = tools.filter((t) => !pinned.has(getToolName(t)));
     const selected = [...pinnedTools, ...rest].slice(0, maxTools);
-    return { tools: selected, stats: { before: tools.length, after: selected.length, stripped: tools.length - selected.length } };
+    const stats = { before: tools.length, after: selected.length, stripped: tools.length - selected.length };
+    _recordStats({ connectionId: "no-session", ...stats });
+    return { tools: selected, stats };
   }
 
   const { index } = getOrBuildEntry(connectionId, tools);
@@ -215,7 +222,7 @@ export function disclosureTools(tools, body, connectionId, config = {}) {
     const scores = bm25Scores(index, queryTokens);
     candidates.sort((a, b) => (scores[b.i] || 0) - (scores[a.i] || 0));
     topK = candidates
-      .filter((c) => (scores[c.i] || 0) >= minScore)
+      .filter((c) => (scores[c.i] || 0) > minScore)
       .slice(0, budget)
       .map((c) => c.tool);
   }

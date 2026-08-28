@@ -206,11 +206,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
   }
 
+  // Per-request opt-out: computed early so token savers (including disclosure) can respect it.
+  const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
+
   // Progressive tool disclosure: static filter (Phase 1) + BM25 selection (Phase 2).
-  // Phase 0 measurement log always fires when tools are present.
-  if (Array.isArray(translatedBody.tools) && translatedBody.tools.length > 0) {
+  if (tokenSaverEnabled && Array.isArray(translatedBody.tools) && translatedBody.tools.length > 0) {
     const beforeN = translatedBody.tools.length;
-    const beforeBytes = JSON.stringify(translatedBody.tools).length;
+    const beforeBytes = log?.debug ? JSON.stringify(translatedBody.tools).length : 0;
 
     if (toolDisclosure?.filterEnabled) {
       const filtered = toolFilter(translatedBody.tools, toolDisclosure);
@@ -238,8 +240,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
 
     const afterN = translatedBody.tools.length;
-    const afterBytes = JSON.stringify(translatedBody.tools).length;
-    log?.debug?.("TOOLDISCLOSE", `measure: ${beforeN}tools ${beforeBytes}B → ${afterN}tools ${afterBytes}B`);
+    if (log?.debug) {
+      const afterBytes = JSON.stringify(translatedBody.tools).length;
+      log.debug("TOOLDISCLOSE", `measure: ${beforeN}tools ${beforeBytes}B → ${afterN}tools ${afterBytes}B`);
+    }
   }
 
   // Token savers: applied at the final body just before dispatch
@@ -272,9 +276,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     translatedBody.messages = translatedBody.messages.filter(msg => msg.role !== "tool");
     delete translatedBody.tools;
   }
-
-  // Per-request opt-out: client can bypass all token savers via header
-  const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
 
   // RTK: compress tool_result content
   const rtkStats = compressMessages(translatedBody, tokenSaverEnabled && rtkEnabled);
