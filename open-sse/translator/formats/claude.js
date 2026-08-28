@@ -417,13 +417,9 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
         });
     }
 
-    body.tools = body.tools.map((tool, i) => {
-      const { cache_control, ...rest } = tool;
-      if (i === body.tools.length - 1) {
-        return { ...rest, cache_control: { type: "ephemeral", ttl: "1h" } };
-      }
-      return rest;
-    });
+    // Strip any client-supplied cache_control from tools; chatCore stamps the
+    // actual last tool after disclosure filtering (single source of truth).
+    body.tools = body.tools.map(({ cache_control, ...rest }) => rest);
 
     // Remove tools array and tool_choice if empty after filtering
     if (body.tools.length === 0) {

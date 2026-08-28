@@ -12,9 +12,7 @@
  *   includeOnlyDescriptionPattern string – regex: exclude tools NOT matching description
  */
 
-function getToolName(t) {
-  return t?.name || t?.function?.name || "";
-}
+import { getToolName } from "./toolDeduper.js";
 
 function getToolDesc(t) {
   return t?.description || t?.function?.description || "";

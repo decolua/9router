@@ -210,33 +210,38 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
 
   // Progressive tool disclosure: static filter (Phase 1) + BM25 selection (Phase 2).
-  if (tokenSaverEnabled && Array.isArray(translatedBody.tools) && translatedBody.tools.length > 0) {
+  // Outer gate has no tokenSaverEnabled guard — the cache_control stamp inside
+  // must run even when the bypass header is set (translators no longer stamp).
+  if (Array.isArray(translatedBody.tools) && translatedBody.tools.length > 0) {
     const beforeN = translatedBody.tools.length;
     const beforeBytes = log?.debug ? JSON.stringify(translatedBody.tools).length : 0;
 
-    if (toolDisclosure?.filterEnabled) {
-      const filtered = toolFilter(translatedBody.tools, toolDisclosure);
-      if (filtered.length < translatedBody.tools.length) {
-        log?.debug?.("TOOLDISCLOSE", `filter: ${translatedBody.tools.length}→${filtered.length} tools`);
-        translatedBody.tools = filtered;
+    if (tokenSaverEnabled) {
+      if (toolDisclosure?.filterEnabled) {
+        const filtered = toolFilter(translatedBody.tools, toolDisclosure);
+        if (filtered.length < translatedBody.tools.length) {
+          log?.debug?.("TOOLDISCLOSE", `filter: ${translatedBody.tools.length}→${filtered.length} tools`);
+          translatedBody.tools = filtered;
+        }
+      }
+
+      if (toolDisclosure?.disclosureEnabled) {
+        const { tools: disclosed, stats } = disclosureTools(translatedBody.tools, body, connectionId, toolDisclosure);
+        if (stats) {
+          log?.debug?.("TOOLDISCLOSE", `bm25: ${stats.before}→${stats.after} tools (-${stats.stripped})`);
+          translatedBody.tools = disclosed;
+        }
       }
     }
 
-    if (toolDisclosure?.disclosureEnabled) {
-      const { tools: disclosed, stats } = disclosureTools(translatedBody.tools, body, connectionId, toolDisclosure);
-      if (stats) {
-        log?.debug?.("TOOLDISCLOSE", `bm25: ${stats.before}→${stats.after} tools (-${stats.stripped})`);
-        translatedBody.tools = disclosed;
-      }
-    }
-
-    // Re-anchor cache_control to the actual last tool after any filtering.
-    // The translator stamps it during translateRequest(); disclosure may have
-    // reordered or removed that tool, so we move the annotation here.
-    if (translatedBody.tools.length > 0 && (beforeN !== translatedBody.tools.length)) {
+    // Stamp cache_control on the actual last tool — single source of truth.
+    // Translators strip incoming annotations but no longer stamp; this block
+    // runs after all disclosure passes so the annotation always lands correctly.
+    // Passthrough: skip when no filtering occurred (client's annotation was
+    // already on the correct last tool).
+    if (translatedBody.tools.length > 0 && (!passthrough || translatedBody.tools.length !== beforeN)) {
       for (const t of translatedBody.tools) delete t.cache_control;
-      const last = translatedBody.tools[translatedBody.tools.length - 1];
-      last.cache_control = { type: "ephemeral", ttl: "1h" };
+      translatedBody.tools[translatedBody.tools.length - 1].cache_control = { type: "ephemeral", ttl: "1h" };
     }
 
     const afterN = translatedBody.tools.length;

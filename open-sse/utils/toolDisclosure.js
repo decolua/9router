@@ -11,6 +11,8 @@
  *   alwaysInclude string[] – tool names never filtered (merged with pinned set)
  */
 
+import { getToolName } from "./toolDeduper.js";
+
 // BM25 tuning constants (Okapi BM25 standard defaults)
 const K1 = 1.5;
 const B = 0.75;
@@ -29,10 +31,6 @@ function tokenize(text) {
     .replace(/[^a-z0-9\s_]/g, " ")
     .split(/\s+/)
     .filter((t) => t.length > 1 && !STOP_WORDS.has(t));
-}
-
-function getToolName(t) {
-  return t?.name || t?.function?.name || "";
 }
 
 function getDocText(tool) {
