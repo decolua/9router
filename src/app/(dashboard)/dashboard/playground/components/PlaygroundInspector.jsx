@@ -28,11 +28,19 @@ function visibleInspectorData(data) {
 }
 
 export default function PlaygroundInspector({ data }) {
+  if (!data) {
+    return (
+      <div className="w-full lg:w-80 h-auto lg:h-full min-h-[100px] border-b lg:border-b-0 lg:border-r border-border-subtle bg-bg-alt flex items-center justify-center text-text-muted text-sm shrink-0" data-testid="playground-inspector">
+        No request data
+      </div>
+    );
+  }
+
   const safe = visibleInspectorData(data);
   const usage = safe.metrics?.usage;
 
   return (
-    <aside className="w-full md:w-80 shrink-0 border-r md:border-l border-b md:border-b-0 border-border bg-bg-alt overflow-y-auto p-4 space-y-4" data-testid="playground-inspector">
+    <aside className="w-full lg:w-80 shrink-0 border-b lg:border-b-0 lg:border-r border-border bg-bg-alt overflow-y-auto p-4 space-y-4" data-testid="playground-inspector">
       <h2 className="text-sm font-semibold text-text-main">Inspector</h2>
       <dl className="space-y-2 text-xs text-text-muted">
         <div><dt className="font-medium text-text-main">Model</dt><dd>{safe.model || "Unavailable"}</dd></div>

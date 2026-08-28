@@ -113,7 +113,8 @@ export default function CompareWorkspace({ configState, availableModels = [], on
        const newMsg = { role: "user", content: input };
        currentMessages = [...messages, newMsg];
        setMessages(currentMessages);
-       setInput("");
+                setInput("");
+                onDraftChange?.("");
     }
     
     activeColumns.forEach(col => {

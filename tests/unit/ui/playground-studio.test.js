@@ -247,6 +247,26 @@ describe('PlaygroundStudio Shell', () => {
     expect(secondColumn.value).toBe('beta/second');
   });
 
+  test('desktop and mobile structural responsive classes', async () => {
+    modelCatalog.fetchModelCatalog.mockResolvedValue({ models: [] });
+    render(React.createElement(PlaygroundStudio));
+
+    const rootContainer = screen.getByTestId('playground-studio');
+    // Ensure 1440px desktop gets row layout via lg:flex-row
+    expect(rootContainer.className).toContain('lg:flex-row');
+    // Ensure mobile uses col layout natively
+    expect(rootContainer.className).toContain('flex-col');
+    
+    const panesContainer = screen.getByTestId('playground-inspector').parentElement;
+    // Mobile secondary container (Inspector + ConfigPane) stacked under workspace
+    expect(panesContainer.className).toContain('w-full');
+    expect(panesContainer.className).toContain('flex-col');
+    // lg desktop uses row layout for Inspector + ConfigPane next to workspace
+    expect(panesContainer.className).toContain('lg:flex-row');
+    expect(panesContainer.className).toContain('lg:h-full');
+    expect(panesContainer.className).toContain('lg:overflow-hidden');
+  });
+
   test('preserves configuration across tab switches', async () => {
     modelCatalog.fetchModelCatalog.mockResolvedValue({
       models: [{
