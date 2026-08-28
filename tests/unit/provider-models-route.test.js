@@ -79,6 +79,100 @@ describe("provider models route", () => {
     vi.unstubAllGlobals();
   });
 
+  it("returns live Antigravity models from the production discovery contract", async () => {
+    mocks.getProviderConnectionById.mockResolvedValue({
+      id: "antigravity-connection",
+      provider: "antigravity",
+      accessToken: "test-access-token",
+      projectId: "test-project",
+    });
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({
+      models: { "live-model": { displayName: "Live Model" } },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await GET(
+      new Request("http://localhost/api/providers/antigravity-connection/models"),
+      { params: Promise.resolve({ id: "antigravity-connection" }) }
+    );
+
+    await expect(response.json()).resolves.toMatchObject({
+      provider: "antigravity",
+      connectionId: "antigravity-connection",
+      models: [{ id: "live-model", name: "Live Model" }],
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer test-access-token",
+          "X-Client-Name": "antigravity",
+        }),
+        body: JSON.stringify({ project: "test-project" }),
+      })
+    );
+    vi.unstubAllGlobals();
+  });
+
+  it("returns the static Antigravity catalog when live discovery responds with 404", async () => {
+    mocks.getProviderConnectionById.mockResolvedValue({
+      id: "antigravity-connection",
+      provider: "antigravity",
+      accessToken: "test-access-token",
+      projectId: "test-project",
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("obsolete endpoint", { status: 404 })));
+
+    const response = await GET(
+      new Request("http://localhost/api/providers/antigravity-connection/models"),
+      { params: Promise.resolve({ id: "antigravity-connection" }) }
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      provider: "antigravity",
+      connectionId: "antigravity-connection",
+      warning: expect.any(String),
+    });
+    expect(body.models.length).toBeGreaterThan(0);
+    expect(JSON.stringify(body)).not.toMatch(/test-access-token|obsolete endpoint|https?:\/\//i);
+    vi.unstubAllGlobals();
+  });
+
+  it("returns the static Antigravity catalog when live discovery is empty", async () => {
+    mocks.getProviderConnectionById.mockResolvedValue({
+      id: "antigravity-empty-connection",
+      provider: "antigravity",
+      accessToken: "test-access-token",
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ models: {} })));
+
+    const response = await GET(
+      new Request("http://localhost/api/providers/antigravity-empty-connection/models"),
+      { params: Promise.resolve({ id: "antigravity-empty-connection" }) }
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.models.length).toBeGreaterThan(0);
+    expect(body.warning).toBe("Antigravity live model discovery is unavailable; using the static catalog.");
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps a missing connection as a local 404", async () => {
+    mocks.getProviderConnectionById.mockResolvedValue(null);
+
+    const response = await GET(
+      new Request("http://localhost/api/providers/missing-antigravity/models"),
+      { params: Promise.resolve({ id: "missing-antigravity" }) }
+    );
+
+    await expect(response.json()).resolves.toEqual({ error: "Connection not found" });
+    expect(response.status).toBe(404);
+  });
+
   it("keeps unsupported providers on the existing models-listing error", async () => {
     mocks.getProviderConnectionById.mockResolvedValue({
       id: "unsupported-connection",
