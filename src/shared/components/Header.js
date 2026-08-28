@@ -241,6 +241,9 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
           <button
             onClick={onMenuClick}
             className="text-text-main hover:text-primary transition-colors"
+            aria-label="Open menu"
+            aria-expanded={false}
+            aria-controls="mobile-sidebar"
           >
             <span className="material-symbols-outlined">menu</span>
           </button>

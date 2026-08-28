@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useNotificationStore } from "@/store/notificationStore";
 import Sidebar from "../Sidebar";
@@ -42,7 +42,21 @@ export default function DashboardLayout({ children }) {
       <div className="fixed top-4 right-4 z-[80] flex w-[min(92vw,380px)] flex-col gap-2">
         {notifications.map((n) => {
           const style = getToastStyle(n.type);
-          return (
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === "Escape" && sidebarOpen) {
+        setSidebarOpen(false);
+        setTimeout(() => {
+          const menuTrigger = document.querySelector('[aria-controls="mobile-sidebar"]');
+          if (menuTrigger) menuTrigger.focus();
+        }, 0);
+      }
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [sidebarOpen]);
+
+  return (
             <div
               key={n.id}
               className={`rounded-lg border px-3 py-2 shadow-lg backdrop-blur-sm ${style.wrapper}`}
@@ -86,6 +100,7 @@ export default function DashboardLayout({ children }) {
         className={`fixed inset-y-0 left-0 z-50 lg:hidden transition-transform duration-300 ease-in-out ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
+        inert={sidebarOpen ? undefined : ""}
       >
         <Sidebar onClose={() => setSidebarOpen(false)} />
       </div>
