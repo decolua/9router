@@ -194,16 +194,18 @@ export function disclosureTools(tools, body, connectionId, config = {}) {
   const query = extractLastUserMessage(body);
   const queryTokens = tokenize(query);
 
-  const pinnedTools = [];
+  const allPinnedTools = [];
   const candidates = [];
   for (let i = 0; i < tools.length; i++) {
     if (pinned.has(getToolName(tools[i]))) {
-      pinnedTools.push({ tool: tools[i], score: Infinity });
+      allPinnedTools.push({ tool: tools[i], score: Infinity });
     } else {
       candidates.push({ tool: tools[i], i });
     }
   }
 
+  // Cap pinned set so long agentic sessions can't exhaust the entire budget.
+  const pinnedTools = allPinnedTools.slice(0, maxTools);
   const budget = Math.max(0, maxTools - pinnedTools.length);
 
   let topK;

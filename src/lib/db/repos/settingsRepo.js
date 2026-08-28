@@ -64,6 +64,8 @@ const DEFAULT_SETTINGS = {
   toolDisclosureEnabled: false,
   toolDisclosureFilterEnabled: false,
   toolDisclosureMaxTools: 20,
+  toolDisclosureExcludeServers: [],
+  toolDisclosureExcludeTools: [],
 };
 
 async function readRaw() {

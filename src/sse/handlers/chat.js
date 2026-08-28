@@ -288,6 +288,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         disclosureEnabled: !!chatSettings.toolDisclosureEnabled,
         filterEnabled: !!chatSettings.toolDisclosureFilterEnabled,
         maxTools: chatSettings.toolDisclosureMaxTools ?? 20,
+        excludeServers: chatSettings.toolDisclosureExcludeServers || [],
+        excludeTools: chatSettings.toolDisclosureExcludeTools || [],
       } : null,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
