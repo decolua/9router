@@ -51,7 +51,7 @@ jobs:
           unit/opencode-go-models.test.js
           unit/proxy-fallback-timeout.test.js
           unit/dashboard-guard.test.js
-          unit/claude-header-forwarding.test.js
+          unit/session-header-forwarding.test.js
           translator/tool-argument-guard.test.js
           --reporter=verbose
 
