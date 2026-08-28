@@ -38,8 +38,11 @@ export const BACKOFF_CONFIG = {
 // Default cooldown for transient/unknown errors
 export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
 
-// Hard cap for provider-reported rate limit cooldown (e.g. codex resets_at can be 5-6h)
-export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
+// Hard cap for provider-reported rate limit cooldown. Real quota windows reach
+// days (Claude weekly, Kiro credit ~3d, codex resets_at 5-6h) and the declared
+// reset must be honored so accounts stop being retried against a dead window;
+// the cap only bounds damage from a garbage reset timestamp.
+export const MAX_RATE_LIMIT_COOLDOWN_MS = 8 * 24 * 60 * 60 * 1000;
 
 // Cooldown durations (ms)
 const COOLDOWN = {

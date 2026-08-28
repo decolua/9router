@@ -50,6 +50,36 @@ export async function writeStreamError(writer, statusCode, message) {
 }
 
 /**
+ * Extract the provider-declared quota/rate-limit reset time from response headers.
+ * Anthropic sends `anthropic-ratelimit-unified-reset` (epoch seconds) on OAuth 429s;
+ * `retry-after` (delta seconds or HTTP-date) is the standard cross-provider signal.
+ * @returns {number|undefined} epoch ms strictly in the future, or undefined
+ */
+export function resetsAtFromHeaders(response) {
+  try {
+    const h = response?.headers;
+    if (typeof h?.get !== "function") return undefined;
+    const now = Date.now();
+
+    const unified = h.get("anthropic-ratelimit-unified-reset");
+    if (unified) {
+      const n = Number(unified);
+      const ms = Number.isFinite(n) ? (n > 1e12 ? n : n * 1000) : Date.parse(unified);
+      if (Number.isFinite(ms) && ms > now) return ms;
+    }
+
+    const retryAfter = h.get("retry-after");
+    if (retryAfter) {
+      const secs = Number(retryAfter);
+      if (Number.isFinite(secs) && secs > 0) return now + secs * 1000;
+      const ms = Date.parse(retryAfter);
+      if (Number.isFinite(ms) && ms > now) return ms;
+    }
+  } catch { /* headers unavailable → no reset info */ }
+  return undefined;
+}
+
+/**
  * Parse upstream provider error response
  * @param {Response} response - Fetch response from provider
  * @param {object} [executor] - Optional executor with parseError() override for provider-specific parsing
@@ -63,13 +93,16 @@ export async function parseUpstreamError(response, executor = null) {
     bodyText = "";
   }
 
+  // Provider-declared reset from standard headers; body-specific parsers may refine it.
+  const headerResetsAtMs = resetsAtFromHeaders(response);
+
   // Let executor-specific parser extract provider-specific fields (e.g. codex resetsAtMs)
   if (executor && typeof executor.parseError === "function") {
     try {
       const parsed = executor.parseError(response, bodyText);
       if (parsed && typeof parsed === "object") {
         const msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
-        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs };
+        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs ?? headerResetsAtMs };
       }
     } catch { /* fall through to default parsing */ }
   }
@@ -85,7 +118,7 @@ export async function parseUpstreamError(response, executor = null) {
   const messageStr = typeof message === "string" ? message : JSON.stringify(message);
   const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
 
-  return { statusCode: response.status, message: finalMessage };
+  return { statusCode: response.status, message: finalMessage, resetsAtMs: headerResetsAtMs };
 }
 
 /**
