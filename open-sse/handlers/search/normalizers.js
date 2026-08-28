@@ -257,7 +257,7 @@ function normalizeOllamaSearch(data, _query, _searchType) {
   return { results, totalResults: results.length };
 }
 
-function normalizeZaiSearch(data, _query, _searchType) {
+function normalizeGlmSearch(data, _query, _searchType) {
   const now = new Date().toISOString();
   // MCP envelope: { result: { content: [{ type: "text", text: "<json>" }] } }
   let payload = data;
@@ -270,7 +270,7 @@ function normalizeZaiSearch(data, _query, _searchType) {
     : Array.isArray(payload) ? payload
     : [];
   const results = items.map((item, idx) =>
-    makeResult("zai-search", {
+    makeResult("glm", {
       title: item.title,
       url: item.link || item.url,
       snippet: item.content || "",
@@ -295,7 +295,7 @@ const NORMALIZERS = {
   "searxng": normalizeSearxng,
   "xquik": normalizeXquik,
   "ollama-search": normalizeOllamaSearch,
-  "zai-search": normalizeZaiSearch,
+  "glm": normalizeGlmSearch,
 };
 
 /**

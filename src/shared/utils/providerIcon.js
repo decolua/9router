@@ -8,9 +8,6 @@ const ICON_ALIASES = {
   "ollama-search": "ollama",
 };
 
-// Providers that ship an .svg logo instead of .png.
-const SVG_PROVIDER_IDS = new Set(["zai-search"]);
-
 // Runtime only — first 404 remembers id for the whole session
 const failedIds = new Set();
 
@@ -29,13 +26,10 @@ export function resolveProviderIconId(providerId) {
   return aliased;
 }
 
-/** `/providers/{id}.{png|svg}` or null when previously failed. */
+/** `/providers/{id}.png` or null when previously failed. */
 export function getProviderIconSrc(providerId) {
   const id = resolveProviderIconId(providerId);
-  if (!id) return null;
-  // svg for vector logos, png for everything else
-  const ext = SVG_PROVIDER_IDS.has(id) ? "svg" : "png";
-  return `/providers/${id}.${ext}`;
+  return id ? `/providers/${id}.png` : null;
 }
 
 /** Call from img onError so later mounts skip the request. */

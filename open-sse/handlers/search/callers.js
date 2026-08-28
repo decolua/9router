@@ -394,12 +394,12 @@ function buildOllamaSearchRequest(config, params) {
   };
 }
 
-// ── Z.AI Coding plan MCP web_search_prime ─────────────────────────────────
+// ── GLM Coding plan MCP web_search_prime ──────────────────────────────────
 // POST https://api.z.ai/api/mcp/web_search_prime/mcp
 // JSON-RPC envelope: { jsonrpc, id, method: "tools/call",
 //   params: { name: "web_search_prime", arguments: { search_query, count } } }
 // Response: { result: { content: [{ type: "text", text: "<json>" }] } }
-function buildZaiSearchRequest(config, params) {
+function buildGlmSearchRequest(config, params) {
   const body = {
     jsonrpc: "2.0",
     id: `9r-${Date.now()}`,
@@ -437,7 +437,7 @@ const BUILDERS = {
   "searxng": buildSearxngRequest,
   "xquik": buildXquikRequest,
   "ollama-search": buildOllamaSearchRequest,
-  "zai-search": buildZaiSearchRequest,
+  "glm": buildGlmSearchRequest,
 };
 
 /**

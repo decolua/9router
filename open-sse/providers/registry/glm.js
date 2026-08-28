@@ -53,6 +53,20 @@ export default {
     { id: "glm-4.7", name: "GLM 4.7" },
     { id: "glm-4.6v", name: "GLM 4.6V (Vision)" },
   ],
+  serviceKinds: ["llm", "webSearch"],
+  // Coding plan bundles web search on the same API key as chat.
+  searchConfig: {
+    baseUrl: "https://api.z.ai/api/mcp/web_search_prime/mcp",
+    method: "POST",
+    authType: "apikey",
+    authHeader: "bearer",
+    costPerQuery: 0,
+    searchTypes: ["web"],
+    defaultMaxResults: 5,
+    maxMaxResults: 50,
+    timeoutMs: 10000,
+    cacheTTLMs: 300000,
+  },
   features: {
     usage: true,
     usageApikey: true,
