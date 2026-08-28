@@ -321,6 +321,8 @@ export default function CompareWorkspace({ configState, availableModels = [], on
                     <select 
                        className="bg-surface border border-border rounded p-1 text-sm flex-1 mr-2"
                        value={col.model?.id || ""}
+                       aria-label={`Select model for column ${columns.indexOf(col) + 1}`}
+                       title={col.model?.label || "Select a model..."}
                        onChange={(e) => {
                            const model = availableModels.find(m => m.id === e.target.value);
                            setColumnModel(col.id, model || null);
@@ -393,7 +395,10 @@ export default function CompareWorkspace({ configState, availableModels = [], on
       <div className="p-4 border-t border-border bg-bg-alt flex gap-2 items-end">
          <textarea 
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+                setInput(e.target.value);
+                onDraftChange?.(e.target.value);
+            }}
             onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
@@ -401,6 +406,7 @@ export default function CompareWorkspace({ configState, availableModels = [], on
                 }
             }}
             placeholder="Send a message to all selected models..."
+            aria-label="Send a message to all selected models..."
             className="flex-1 bg-surface border border-border rounded-lg p-3 text-sm focus:outline-none focus:border-primary resize-none min-h-[60px] max-h-[200px]"
             disabled={isAnyStreaming}
             data-testid="compare-input"

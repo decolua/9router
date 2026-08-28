@@ -98,8 +98,8 @@ export default function PlaygroundStudio() {
   };
 
   return (
-    <div className="flex h-full w-full overflow-hidden" data-testid="playground-studio">
-      <div className="flex-1 flex flex-col min-w-0 border-r border-border-subtle bg-bg">
+    <div className="flex flex-col md:flex-row h-full w-full overflow-hidden" data-testid="playground-studio">
+      <div className="flex-1 flex flex-col min-w-0 border-b md:border-b-0 md:border-r border-border-subtle bg-bg">
         <div className="flex items-center gap-6 px-6 pt-4 pb-0 border-b border-border-subtle shrink-0 overflow-x-auto hide-scrollbar" role="tablist" aria-label="Testing Studio Tabs">
           {[["chat", "Chat"], ["compare", "Compare"]].map(([tab, label]) => (
             <button key={tab} type="button" ref={tabRefs[tab]} role="tab" id={`tab-${tab}`} aria-selected={activeTab === tab} aria-controls={`panel-${tab}`} data-testid={`playground-${tab}-tab`} onClick={() => setActiveTab(tab)} onKeyDown={(event) => handleKeyDown(event, ["chat", "compare"])} tabIndex={activeTab === tab ? 0 : -1} className={`pb-3 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === tab ? "border-primary text-primary" : "border-transparent text-text-muted hover:text-text-main"}`}>
@@ -117,8 +117,11 @@ export default function PlaygroundStudio() {
           </div>
         </div>
       </div>
-      <PlaygroundInspector data={inspectorData} />
-      <StudioConfigPane config={config} onChange={setConfig} models={models} loading={modelsLoading} error={modelsError} />
+      
+      <div className="flex flex-row md:flex-row h-[45%] md:h-full md:w-auto overflow-hidden shrink-0 border-t md:border-t-0 border-border-subtle">
+        <PlaygroundInspector data={inspectorData} />
+        <StudioConfigPane config={config} onChange={setConfig} models={models} loading={modelsLoading} error={modelsError} />
+      </div>
     </div>
   );
 }

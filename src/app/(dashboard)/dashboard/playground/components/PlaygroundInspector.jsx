@@ -32,7 +32,7 @@ export default function PlaygroundInspector({ data }) {
   const usage = safe.metrics?.usage;
 
   return (
-    <aside className="w-80 shrink-0 border-l border-border bg-bg-alt overflow-y-auto p-4 space-y-4" data-testid="playground-inspector">
+    <aside className="w-full md:w-80 shrink-0 border-r md:border-l border-b md:border-b-0 border-border bg-bg-alt overflow-y-auto p-4 space-y-4" data-testid="playground-inspector">
       <h2 className="text-sm font-semibold text-text-main">Inspector</h2>
       <dl className="space-y-2 text-xs text-text-muted">
         <div><dt className="font-medium text-text-main">Model</dt><dd>{safe.model || "Unavailable"}</dd></div>

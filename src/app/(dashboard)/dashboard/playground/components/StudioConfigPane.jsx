@@ -6,7 +6,7 @@ export default function StudioConfigPane({ config, onChange, models, loading, er
   };
 
   return (
-    <div className="w-80 flex flex-col h-full bg-surface/30 shrink-0">
+    <div className="w-full md:w-80 flex flex-col h-full bg-surface/30 shrink-0">
       <div className="p-4 border-b border-border-subtle shrink-0">
         <h2 className="text-sm font-semibold tracking-tight text-text-main">Configuration</h2>
       </div>

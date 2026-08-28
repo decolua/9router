@@ -28,6 +28,65 @@ describe("CompareWorkspace", () => {
     { id: "google/gemini", label: "Gemini" }
   ];
 
+  describe("Draft persistence and accessibility", () => {
+    it("calls onDraftChange when compare input changes", () => {
+      const onDraftChange = vi.fn();
+      render(
+        <CompareWorkspace
+          configState={{ systemPrompt: "", params: {} }}
+          availableModels={[]}
+          onResult={() => {}}
+          draft="Initial draft"
+          onDraftChange={onDraftChange}
+        />
+      );
+
+      const textarea = screen.getByTestId("compare-input");
+      expect(textarea.value).toBe("Initial draft");
+
+      fireEvent.change(textarea, { target: { value: "New draft content" } });
+      expect(onDraftChange).toHaveBeenCalledWith("New draft content");
+    });
+
+    it("has accessible names for model selects and composer", () => {
+      render(
+        <CompareWorkspace
+          configState={{ systemPrompt: "", params: {} }}
+          availableModels={[{ id: "model-a", label: "Model A" }]}
+          onResult={() => {}}
+          draft=""
+          onDraftChange={() => {}}
+        />
+      );
+
+      const selects = screen.getAllByRole("combobox");
+      expect(selects.length).toBe(2);
+      expect(selects[0].getAttribute("aria-label")).toBe("Select model for column 1");
+      expect(selects[1].getAttribute("aria-label")).toBe("Select model for column 2");
+
+      const composer = screen.getByRole("textbox", { name: /Send a message to all selected models/i });
+      expect(composer).not.toBeNull();
+    });
+
+    it("exposes full model label via title attribute on select", () => {
+      const longLabel = "A Very Long Model Label That Might Be Truncated In Narrow Columns";
+      render(
+        <CompareWorkspace
+          configState={{ systemPrompt: "", params: {} }}
+          availableModels={[{ id: "model-a", label: longLabel }]}
+          onResult={() => {}}
+          draft=""
+          onDraftChange={() => {}}
+        />
+      );
+
+      const select = screen.getAllByRole("combobox")[0];
+      fireEvent.change(select, { target: { value: "model-a" } });
+      
+      expect(select.getAttribute("title")).toBe(longLabel);
+    });
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     buildPlaygroundRequest.mockReturnValue({
