@@ -66,6 +66,7 @@ import p63 from "./nebius.js";
 import p64 from "./nvidia.js";
 import p65 from "./ollama-local.js";
 import p66 from "./ollama.js";
+import p123 from "./ollama-search.js";
 import p67 from "./openai.js";
 import p68 from "./opencode-go.js";
 import p69 from "./opencode.js";
@@ -97,6 +98,7 @@ import p95 from "./xai.js";
 import p96 from "./xiaomi-mimo.js";
 import p97 from "./xiaomi-tokenplan.js";
 import p98 from "./youcom.js";
+import p124 from "./zai-search.js";
 import p99 from "./alims-intl.js";
 import p100 from "./codebuddy-intl.js";
 // Temporarily hidden — no tool calling support (trae SOLO agent / windsurf gRPC skip ToolCallChunk).
@@ -191,6 +193,7 @@ export default [
   p64,
   p65,
   p66,
+  p123,
   p67,
   p68,
   p69,
@@ -222,6 +225,7 @@ export default [
   p96,
   p97,
   p98,
+  p124,
   p99,
   p100,
   // p102, // trae — hidden, no tool calling
