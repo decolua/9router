@@ -1165,7 +1165,7 @@ export default function APIPageClient({ machineId }) {
                 </div>
 
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4 mt-3 sm:mt-0 w-full sm:w-auto">
-                  <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end">
+                  <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-start sm:justify-end">
                     <Button
                       size="sm"
                       variant="ghost"

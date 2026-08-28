@@ -4,7 +4,6 @@ import path from "path";
 
 const endpointPagePath = path.join(
   process.cwd(),
-  "..",
   "src/app/(dashboard)/dashboard/endpoint/EndpointPageClient.js"
 );
 
@@ -16,6 +15,6 @@ test("EndpointPageClient keeps API key metadata and actions mobile-safe", () => 
   );
   expect(content).toContain('className="flex-1 min-w-0 w-full sm:w-auto"');
   expect(content).toContain(
-    'className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-end"'
+    'className="flex flex-wrap items-center gap-2 w-full sm:w-auto justify-start sm:justify-end"'
   );
 });
