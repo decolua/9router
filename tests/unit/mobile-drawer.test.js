@@ -9,9 +9,13 @@ describe("Mobile Drawer Accessibility Contract", () => {
   it("verifies inert logic is applied in DashboardLayout", () => {
     const layoutPath = resolve(__dirname, "../../src/shared/components/layouts/DashboardLayout.js");
     const source = readFileSync(layoutPath, "utf-8");
+    expect(source).toContain('id="mobile-sidebar"');
     expect(source).toContain('inert={sidebarOpen ? undefined : "true"}');
     expect(source).toContain('if (e.key === "Escape" && sidebarOpen)');
+    expect(source).toContain('closeMobileSidebar()');
     expect(source).toContain('menuTrigger.focus()');
+    expect(source).toContain('onClick={closeMobileSidebar}');
+    expect(source).toContain('onClose={closeMobileSidebar}');
   });
 
   it("verifies Header controls mobile-sidebar", () => {
@@ -25,6 +29,6 @@ describe("Mobile Drawer Accessibility Contract", () => {
   it("verifies Sidebar has matching id", () => {
     const sidebarPath = resolve(__dirname, "../../src/shared/components/Sidebar.js");
     const source = readFileSync(sidebarPath, "utf-8");
-    expect(source).toContain('id="mobile-sidebar"');
+    expect(source).toContain('id={id}');
   });
 });

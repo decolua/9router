@@ -40,7 +40,7 @@ const systemItems = [
   { href: "/dashboard/skills", label: "Skills", icon: "extension" },
 ];
 
-export default function Sidebar({ onClose }) {
+export default function Sidebar({ onClose, id }) {
   const pathname = usePathname();
   const [mediaOpen, setMediaOpen] = useState(false);
   const [showRemoteModal, setShowRemoteModal] = useState(false);
@@ -111,7 +111,7 @@ export default function Sidebar({ onClose }) {
   return (
     <>
       <aside
-        id="mobile-sidebar"
+        id={id}
         className="flex w-72 flex-col border-r border-border-subtle bg-vibrancy backdrop-blur-xl transition-colors duration-300 min-h-full"
       >
         {/* Traffic lights */}
@@ -400,6 +400,7 @@ export default function Sidebar({ onClose }) {
 
 Sidebar.propTypes = {
   onClose: PropTypes.func,
+  id: PropTypes.string,
 };
 
 function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdown, onCancel, countdown, isDisconnected }) {

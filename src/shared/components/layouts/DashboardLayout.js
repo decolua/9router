@@ -37,14 +37,36 @@ export default function DashboardLayout({ children }) {
   const notifications = useNotificationStore((state) => state.notifications);
   const removeNotification = useNotificationStore((state) => state.removeNotification);
 
+  const closeMobileSidebar = () => {
+    setSidebarOpen(false);
+    setTimeout(() => {
+      const menuTrigger = document.querySelector('[aria-controls="mobile-sidebar"]');
+      if (menuTrigger) menuTrigger.focus();
+    }, 0);
+  };
+
+  useEffect(() => {
+    if (sidebarOpen) {
+      setTimeout(() => {
+        const mobileDrawer = document.getElementById("mobile-sidebar");
+        if (mobileDrawer) {
+          const firstFocusable = mobileDrawer.querySelector(
+            'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          );
+          if (firstFocusable) {
+            firstFocusable.focus();
+          } else {
+            mobileDrawer.focus();
+          }
+        }
+      }, 300);
+    }
+  }, [sidebarOpen]);
+
   useEffect(() => {
     const handleEscape = (e) => {
       if (e.key === "Escape" && sidebarOpen) {
-        setSidebarOpen(false);
-        setTimeout(() => {
-          const menuTrigger = document.querySelector('[aria-controls="mobile-sidebar"]');
-          if (menuTrigger) menuTrigger.focus();
-        }, 0);
+        closeMobileSidebar();
       }
     };
     document.addEventListener("keydown", handleEscape);
@@ -86,7 +108,7 @@ export default function DashboardLayout({ children }) {
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/20 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
+          onClick={closeMobileSidebar}
         />
       )}
 
@@ -97,12 +119,14 @@ export default function DashboardLayout({ children }) {
 
       {/* Sidebar - Mobile */}
       <div
-        className={`fixed inset-y-0 left-0 z-50 lg:hidden transition-transform duration-300 ease-in-out ${
+        id="mobile-sidebar"
+        tabIndex="-1"
+        className={`fixed inset-y-0 left-0 z-50 lg:hidden transition-transform duration-300 ease-in-out outline-none ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
         inert={sidebarOpen ? undefined : "true"}
       >
-        <Sidebar onClose={() => setSidebarOpen(false)} />
+        <Sidebar onClose={closeMobileSidebar} />
       </div>
 
       {/* Main content */}
