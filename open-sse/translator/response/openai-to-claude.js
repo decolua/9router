@@ -221,8 +221,12 @@ export function openaiToClaudeResponse(chunk, state) {
     }
   }
 
-  // Finish
-  if (choice.finish_reason) {
+  // Finish — emitted once. Aggregators (e.g. OpenRouter's terminal usage chunk)
+  // repeat finish_reason; a second pass would re-emit every tool block's
+  // input_json_delta + content_block_stop, which clients accumulate as
+  // duplicated tool_use blocks with concatenated (invalid) JSON args.
+  if (choice.finish_reason && !state.finishReasonSent) {
+    state.finishReasonSent = true;
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
 
