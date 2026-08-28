@@ -61,6 +61,26 @@ const DEFAULT_SETTINGS = {
   pxpipeAutoInstall: true,
   pxpipeMinChars: 25000,
   pxpipeTimeoutMs: 15000,
+  // Claude compat layer (see src/lib/claudeCompat.js): suffixMode controls
+  // when [1m] is appended to rewritten /v1/models ids.
+  claudeCompat: {
+    enabled: true,
+    suffixMode: "auto",
+    keywords: [],
+  },
+  // Default-model mapping written to ~/.claude/settings.json env by the
+  // endpoint page's one-click button (see /api/claude-compat/write-claude-settings).
+  claudeDefaultModels: {
+    sonnet: { model: "", name: "", oneM: false },
+    opus: { model: "", name: "", oneM: false },
+    fable: { model: "", name: "", oneM: false },
+    haiku: { model: "", name: "", oneM: false },
+    subagent: { model: "", oneM: false },
+  },
+  // User contextWindow overrides, keyed by model id or glob pattern (e.g.
+  // "glm-5.3" or "glm-5*"). Consumed by open-sse/providers/capabilities.js
+  // via setContextWindowOverrides(); managed on /dashboard/model-context.
+  contextWindowOverrides: {},
 };
 
 async function readRaw() {
@@ -100,7 +120,26 @@ export async function updateSettings(updates) {
   db.transaction(function () {
     const row = db.get(`SELECT data FROM settings WHERE id = 1`);
     const current = row ? parseJson(row.data, {}) : {};
-    next = { ...current, ...updates };
+    // Nested config objects arrive as partial PATCHes from the dashboard;
+    // shallow top-level spread would replace them wholesale and drop
+    // sibling keys (e.g. { claudeCompat: { keywords } } losing enabled).
+    // Seed from defaults first so even the FIRST patch merges correctly
+    // (raw current may not have the key yet).
+    const seeded = mergeWithDefaults(current);
+    const mergedCurrent = { ...current };
+    // claudeCompat arrives as a partial PATCH (e.g. only { keywords }) and
+    // needs merging to keep sibling keys like enabled. contextWindowOverrides
+    // is deliberately excluded: the model-context API sends the WHOLE map
+    // (delete removes a key), and merging would resurrect deleted keys.
+    for (const key of ["claudeCompat"]) {
+      if (
+        updates[key] && typeof updates[key] === "object" &&
+        seeded[key] && typeof seeded[key] === "object"
+      ) {
+        updates = { ...updates, [key]: { ...seeded[key], ...updates[key] } };
+      }
+    }
+    next = { ...mergedCurrent, ...updates };
     db.run(
       `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
       [stringifyJson(next)],

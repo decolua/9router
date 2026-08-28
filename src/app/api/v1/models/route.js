@@ -18,6 +18,8 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { getSettings } from "@/lib/localDb";
+import { readClaudeCompat, rewriteModelsListForClaude } from "@/lib/claudeCompat";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -460,7 +462,16 @@ export async function buildModelsList(kindFilter, options = {}) {
         })
         .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
 
-      const mergedModelIds = Array.from(new Set([...modelIds, ...customModelIds, ...aliasModelIds]));
+      // Compatible providers fall back to a live full /models fetch when no
+      // explicit model list is set. If the user has whitelisted specific models
+      // via customModels, treat that whitelist as authoritative instead of
+      // surfacing every upstream model (a passthrough all-models dump).
+      const hasModelWhitelist = customModelIds.length > 0;
+      const mergedModelIds = Array.from(new Set([
+        ...(isCompatibleProvider && hasModelWhitelist && !hasExplicitEnabledModels ? [] : modelIds),
+        ...customModelIds,
+        ...aliasModelIds,
+      ]));
 
       for (const modelId of mergedModelIds) {
         // Resolve kind: prefer custom/live metadata, then static, then ID heuristics.
@@ -563,7 +574,26 @@ export async function GET(request) {
     // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
     const data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
-    return Response.json({ object: "list", data }, {
+
+    // Anthropic-protocol clients (Claude Code) filter model ids by
+    // /(claude|anthropic)/i and would see nothing — rewrite ids with the
+    // claude- prefix. OpenAI clients never send the header and get the
+    // untouched list.
+    let out = data;
+    if (
+      request?.headers?.get("anthropic-version") &&
+      process.env.DISABLE_CLAUDE_COMPAT !== "true"
+    ) {
+      const compat = readClaudeCompat(await getSettings());
+      if (compat.enabled) {
+        out = rewriteModelsListForClaude(data, compat);
+      }
+    }
+
+    // Deterministic alphabetical order by the final (possibly rewritten) id.
+    out = [...out].sort((a, b) => (a.id || "").localeCompare(b.id || ""));
+
+    return Response.json({ object: "list", data: out }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
   } catch (error) {

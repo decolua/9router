@@ -105,6 +105,34 @@ export default function ProvidersPage() {
     useState(false);
   const [testingMode, setTestingMode] = useState(null);
   const [testResults, setTestResults] = useState(null);
+  // Grid filters: hide disabled providers / hide providers with no connections.
+  // Persisted locally so the choice survives page reloads.
+  const [hideDisabled, setHideDisabled] = useState(false);
+  const [hideUnconfigured, setHideUnconfigured] = useState(false);
+
+  useEffect(() => {
+    // Deferred one tick: keeps SSR markup (all visible) consistent and avoids
+    // the sync-setState-in-effect cascade the react-hooks rule flags.
+    const t = setTimeout(() => {
+      try {
+        const saved = JSON.parse(localStorage.getItem("providers.gridFilters") || "{}");
+        if (saved.hideDisabled) setHideDisabled(true);
+        if (saved.hideUnconfigured) setHideUnconfigured(true);
+      } catch {}
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+
+  const updateGridFilter = (key, value) => {
+    (key === "hideDisabled" ? setHideDisabled : setHideUnconfigured)(value);
+    try {
+      const saved = JSON.parse(localStorage.getItem("providers.gridFilters") || "{}");
+      localStorage.setItem(
+        "providers.gridFilters",
+        JSON.stringify({ ...saved, [key]: value }),
+      );
+    } catch {}
+  };
   const notify = useNotificationStore();
   const searchQuery = useHeaderSearchStore((s) => s.query);
   const registerSearch = useHeaderSearchStore((s) => s.register);
@@ -118,6 +146,15 @@ export default function ProvidersPage() {
   const matchSearch = (name) =>
     !searchQuery.trim() ||
     name.toLowerCase().includes(searchQuery.trim().toLowerCase());
+
+  // Grid-level filter applied to every card entry list. "Disabled" = all
+  // connections toggled off (allDisabled); "unconfigured" = zero connections.
+  const matchGridFilter = (key, authType) => {
+    const s = getProviderStats(key, authType);
+    if (hideUnconfigured && s.total === 0) return false;
+    if (hideDisabled && s.total > 0 && s.allDisabled) return false;
+    return true;
+  };
 
   const sortByPriority = (entries, authType) =>
     [...entries].sort(([ka, a], [kb, b]) => {
@@ -265,7 +302,11 @@ export default function ProvidersPage() {
       textIcon: "OC",
       apiType: node.apiType,
     }))
-    .filter((p) => matchSearch(p.name));
+    .filter(
+      (p) =>
+        matchSearch(p.name) &&
+        matchGridFilter(p.id, ["apikey", "api_key"]),
+    );
 
   const anthropicCompatibleProviders = providerNodes
     .filter((node) => node.type === "anthropic-compatible")
@@ -275,7 +316,11 @@ export default function ProvidersPage() {
       color: "#D97757",
       textIcon: "AC",
     }))
-    .filter((p) => matchSearch(p.name));
+    .filter(
+      (p) =>
+        matchSearch(p.name) &&
+        matchGridFilter(p.id, ["apikey", "api_key"]),
+    );
 
   // Dual-auth providers (oauth + apikey) store API keys as authType "apikey"
   // (and sometimes "api_key"). Card stats must count both so totals match detail.
@@ -296,21 +341,30 @@ export default function ProvidersPage() {
   };
 
   const oauthEntries = sortByPriority(
-    Object.entries(OAUTH_PROVIDERS).filter(([, info]) => !info.hidden && matchSearch(info.name)),
+    Object.entries(OAUTH_PROVIDERS).filter(
+      ([key, info]) =>
+        !info.hidden && matchSearch(info.name) && matchGridFilter(key, dualAuthTypes(info, key)),
+    ),
     "oauth",
   );
   const freeEntries = Object.entries(FREE_PROVIDERS)
-    .filter(([, info]) => !info.hidden && matchSearch(info.name))
+    .filter(
+      ([key, info]) =>
+        !info.hidden &&
+        matchSearch(info.name) &&
+        matchGridFilter(key, dualAuthTypes(info, key)),
+    )
     .sort(([, a], [, b]) => (b.noAuth ? 1 : 0) - (a.noAuth ? 1 : 0));
   // Free Tier cards may be oauth-only (e.g. kimchi) or dual-auth, so count via
   // dualAuthTypes per provider instead of a fixed "apikey" — otherwise oauth
   // connections are invisible here (mismatch with the detail page).
   const freeTierEntries = Object.entries(FREE_TIER_PROVIDERS)
     .filter(
-      ([, info]) =>
+      ([key, info]) =>
         !info.hidden &&
         matchSearch(info.name) &&
-        (info.serviceKinds ?? ["llm"]).includes("llm"),
+        (info.serviceKinds ?? ["llm"]).includes("llm") &&
+        matchGridFilter(key, dualAuthTypes(info, key)),
     )
     .sort(([ka, a], [kb, b]) => {
       const pa = a.priority ?? 999;
@@ -326,10 +380,11 @@ export default function ProvidersPage() {
   // API Key: connected providers first, then alphabetical by name
   const apikeyEntries = Object.entries(APIKEY_PROVIDERS)
     .filter(
-      ([, info]) =>
+      ([key, info]) =>
         !info.hidden &&
         (info.serviceKinds ?? ["llm"]).includes("llm") &&
-        matchSearch(info.name),
+        matchSearch(info.name) &&
+        matchGridFilter(key, "apikey"),
     )
     .sort(([ka, a], [kb, b]) => {
       const ca = getProviderStats(ka, "apikey").total > 0 ? 0 : 1;
@@ -361,8 +416,39 @@ export default function ProvidersPage() {
     compatibleProviders.length > 0 ||
     anthropicCompatibleProviders.length > 0;
 
+  const filterBtnCls = (active) =>
+    `flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition-colors sm:py-1.5 ${
+      active
+        ? "bg-primary/10 border-primary/40 text-primary"
+        : "bg-bg border-border text-text-muted hover:text-text-main hover:border-primary/40"
+    }`;
+
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
+      {/* Grid filters — top-right of the page */}
+      <div className="flex justify-end gap-2">
+        <button
+          onClick={() => updateGridFilter("hideDisabled", !hideDisabled)}
+          className={filterBtnCls(hideDisabled)}
+          title={hideDisabled ? "Show disabled providers" : "Hide providers with all connections disabled"}
+        >
+          <span className="material-symbols-outlined text-[14px]">
+            {hideDisabled ? "visibility_off" : "visibility"}
+          </span>
+          {hideDisabled ? "Showing enabled only" : "Hide disabled"}
+        </button>
+        <button
+          onClick={() => updateGridFilter("hideUnconfigured", !hideUnconfigured)}
+          className={filterBtnCls(hideUnconfigured)}
+          title={hideUnconfigured ? "Show unconfigured providers" : "Hide providers with no connections"}
+        >
+          <span className="material-symbols-outlined text-[14px]">
+            {hideUnconfigured ? "visibility_off" : "visibility"}
+          </span>
+          {hideUnconfigured ? "Showing configured only" : "Hide unconfigured"}
+        </button>
+      </div>
+
       {!hasAnyResult && (
         <div className="text-center py-8 border border-dashed border-border rounded-xl">
           <span className="material-symbols-outlined text-[32px] text-text-muted mb-2">

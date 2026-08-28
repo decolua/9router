@@ -86,3 +86,6 @@ graphify-out/*
 .codegraph/
 .PR/
 .next-analyze/*
+
+# oh-my-claudecode local state
+.omc/

@@ -45,5 +45,12 @@ export default {
     { id: "qwen3.7-max", name: "Qwen 3.7 Max", supportedFormats: ["openai", "claude"] },
     { id: "qwen3.7-plus", name: "Qwen 3.7 Plus", supportedFormats: ["openai", "claude"] },
     { id: "qwen3.6-plus", name: "Qwen 3.6 Plus", supportedFormats: ["openai", "claude"] },
+    // Free-tier models — upstream /v1/messages returns 500 for these, only
+    // /v1/chat/completions works. Restrict to openai so claude-format clients
+    // (Claude Code via the compat layer) get translated to openai instead of
+    // passthrough to the broken claude endpoint.
+    { id: "ox-alpha-free", name: "OX Alpha Free", supportedFormats: ["openai"] },
+    { id: "glm-5.3", name: "GLM 5.3", supportedFormats: ["openai"] },
+    { id: "deepseek-v4-flash-free", name: "DeepSeek V4 Flash Free", supportedFormats: ["openai"] },
   ],
 };

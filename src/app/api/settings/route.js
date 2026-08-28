@@ -78,6 +78,18 @@ export async function PATCH(request) {
 
     const settings = await updateSettings(body);
 
+    // Refresh the in-memory contextWindow override map so dashboard edits apply
+    // immediately (no restart). Import here — open-sse capabilities is a cold
+    // path most requests never touch, and we only need it on override edits.
+    if (Object.prototype.hasOwnProperty.call(body, "contextWindowOverrides")) {
+      try {
+        const { setContextWindowOverrides } = await import("open-sse/providers/capabilities.js");
+        setContextWindowOverrides(settings.contextWindowOverrides || {});
+      } catch (e) {
+        console.warn("[context-overrides] refresh failed:", e?.message);
+      }
+    }
+
     // Apply outbound proxy settings immediately (no restart required)
     if (
       Object.prototype.hasOwnProperty.call(body, "outboundProxyEnabled") ||
