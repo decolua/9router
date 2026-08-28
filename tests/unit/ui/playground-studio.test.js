@@ -252,19 +252,21 @@ describe('PlaygroundStudio Shell', () => {
     render(React.createElement(PlaygroundStudio));
 
     const rootContainer = screen.getByTestId('playground-studio');
-    // Ensure 1440px desktop gets row layout via lg:flex-row
-    expect(rootContainer.className).toContain('lg:flex-row');
-    // Ensure mobile uses col layout natively
-    expect(rootContainer.className).toContain('flex-col');
-    
+    // lg:overflow-hidden must exclusively contain desktop boundaries. Native mobile scrollability shouldn't block content.
+    expect(rootContainer.className).toContain('lg:overflow-hidden');
+    expect(rootContainer.className).toContain('overflow-y-auto');
+
     const panesContainer = screen.getByTestId('playground-inspector').parentElement;
-    // Mobile secondary container (Inspector + ConfigPane) stacked under workspace
     expect(panesContainer.className).toContain('w-full');
     expect(panesContainer.className).toContain('flex-col');
-    // lg desktop uses row layout for Inspector + ConfigPane next to workspace
     expect(panesContainer.className).toContain('lg:flex-row');
     expect(panesContainer.className).toContain('lg:h-full');
     expect(panesContainer.className).toContain('lg:overflow-hidden');
+    
+    const workspaceContainer = screen.getByRole('tablist').parentElement;
+    // Primary mobile bounds shrink-wrap scroll behavior to internal panel views safely
+    expect(workspaceContainer.className).toContain('min-h-[500px]');
+    expect(workspaceContainer.className).toContain('lg:min-h-0');
   });
 
   test('preserves configuration across tab switches', async () => {
