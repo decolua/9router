@@ -87,6 +87,25 @@ describe("openaiToClaudeResponse tool argument sanitization", () => {
     expect(events.filter((e) => e.type === "message_stop")).toHaveLength(1);
   });
 
+  it("still emits finish when a pivot's first hop already set finishReasonSent (codex chain)", () => {
+    // openai-responses→openai (codex) sets state.finishReasonSent=true when it
+    // emits its finish chunk into this translator via the shared pivot state.
+    const state = { ...createState(), finishReasonSent: true };
+    const events = [];
+    const collect = (chunk) => {
+      const out = openaiToClaudeResponse(chunk, state);
+      if (out) events.push(...out);
+    };
+
+    collect({ id: "resp-1", model: "gpt-5.6-sol", choices: [{ delta: { content: "oi" } }] });
+    collect({ id: "resp-1", model: "gpt-5.6-sol", choices: [{ delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 5, completion_tokens: 2 } });
+    // aggregator repeat must still be deduped
+    collect({ id: "resp-1", model: "gpt-5.6-sol", choices: [{ delta: {}, finish_reason: "stop" }] });
+
+    expect(events.filter((e) => e.type === "message_delta")).toHaveLength(1);
+    expect(events.filter((e) => e.type === "message_stop")).toHaveLength(1);
+  });
+
   it("emits message_stop once when finish_reason repeats without tool calls", () => {
     const state = createState();
     const events = [];
