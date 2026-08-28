@@ -445,6 +445,12 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
 }
 
 async function fetchWithConnectionProxy(url, options = {}, effectiveProxy = null) {
+  // Add a 15-second timeout to prevent connection testing from hanging indefinitely
+  // and exhausting the browser/Node.js connection pools.
+  if (!options.signal) {
+    options.signal = AbortSignal.timeout(15000);
+  }
+
   // Vercel relay: forward via relay URL
   if (effectiveProxy?.vercelRelayUrl) {
     const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
