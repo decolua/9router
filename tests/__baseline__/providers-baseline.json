@@ -755,7 +755,23 @@
       "HTTP-Referer": "https://endpoint-proxy.local",
       "X-Title": "Endpoint Proxy"
     },
-    "format": "openai"
+    "format": "openai",
+    "transports": [
+      {
+        "format": "claude",
+        "baseUrl": "https://openrouter.ai/api/v1/messages",
+        "thinkingFormat": "claude-budget",
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer"
+        },
+        "headers": {
+          "HTTP-Referer": "https://endpoint-proxy.local",
+          "X-Title": "Endpoint Proxy"
+        }
+      }
+    ]
   },
   "perplexity-web": {
     "baseUrl": "https://www.perplexity.ai/rest/sse/perplexity_ask",

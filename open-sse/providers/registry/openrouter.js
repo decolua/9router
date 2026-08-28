@@ -25,6 +25,23 @@ export default {
       "X-Title": "Endpoint Proxy",
     },
   },
+  // Multi-endpoint: OpenRouter's Anthropic-compatible /v1/messages accepts any
+  // catalog model, so claude-format clients route there with zero translation
+  // (sourceFormat-matched transport, see chatCore). thinkingFormat is per-wire:
+  // the default transport keeps OpenAI reasoning_effort; this one speaks native
+  // Anthropic thinking. Auth stays Bearer (OpenRouter's skin, not x-api-key).
+  transports: [
+    {
+      format: "claude",
+      baseUrl: "https://openrouter.ai/api/v1/messages",
+      thinkingFormat: "claude-budget",
+      auth: { combined: true, header: "Authorization", scheme: "bearer" },
+      headers: {
+        "HTTP-Referer": "https://endpoint-proxy.local",
+        "X-Title": "Endpoint Proxy",
+      },
+    },
+  ],
   models: [
     { id: "openai/text-embedding-3-large", name: "OpenAI Text Embedding 3 Large", kind: "embedding" },
     { id: "openai/text-embedding-3-small", name: "OpenAI Text Embedding 3 Small", kind: "embedding" },

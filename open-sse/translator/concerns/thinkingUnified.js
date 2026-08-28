@@ -105,8 +105,13 @@ export function extractThinking(body) {
 // at the call-site where intent is snapshotted before format translation.
 export const captureThinking = extractThinking;
 
-// Resolve thinking format: provider override > capability > derive(targetFormat).
-function resolveFormat(targetFormat, model, provider) {
+// Resolve thinking format: transport override > provider override > capability > derive(targetFormat).
+// A provider-level thinkingFormat describes its DEFAULT endpoint's wire; when a
+// sourceFormat-matched transport routed the request to another endpoint, that
+// transport's own thinkingFormat must win (e.g. openrouter: openai wire uses
+// reasoning_effort, its /v1/messages wire speaks native Anthropic thinking).
+function resolveFormat(targetFormat, model, provider, transportFmt = null) {
+  if (transportFmt) return transportFmt;
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   if (providerFmt) return providerFmt;
   const caps = getCapabilitiesForModel(provider, model);
@@ -331,7 +336,7 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
 // Mutates and returns body. No-op when model has no reasoning capability.
 // `intent` is a pre-captured config (from captureThinking on the original body);
 // falls back to extracting from the current body when omitted.
-export function applyThinking(targetFormat, model, body, provider = null, intent = undefined) {
+export function applyThinking(targetFormat, model, body, provider = null, intent = undefined, transportThinkingFormat = null) {
   if (!body || typeof body !== "object") return body;
 
   const { cleanModel, override } = parseSuffix(model);
@@ -345,7 +350,7 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   }
   if (!cfg) return body;
 
-  const fmt = resolveFormat(targetFormat, cleanModel, provider);
+  const fmt = resolveFormat(targetFormat, cleanModel, provider, transportThinkingFormat);
   const supportedLevels = getThinkingLevels(provider, cleanModel);
   stripAll(body);
   applyFormat(fmt, body, cfg, caps, supportedLevels);
