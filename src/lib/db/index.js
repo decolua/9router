@@ -67,6 +67,12 @@ export {
   saveRequestDetail, getRequestDetails, getRequestDetailById, getDistinctProviders,
 } from "./repos/requestDetailsRepo.js";
 
+// Seen models (New Models discovery)
+export {
+  getSeenModels, reconcileSeenModels, acknowledgeModels, countUnseenModels,
+  seedSeenModels,
+} from "./repos/seenModelsRepo.js";
+
 // Export/import full DB
 export async function exportDb() {
   const db = await getAdapter();

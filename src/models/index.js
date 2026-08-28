@@ -36,3 +36,12 @@ export {
   validateApiKey,
   isCloudEnabled,
 } from "@/lib/localDb";
+
+// Seen models (New Models discovery)
+export {
+  getSeenModels,
+  reconcileSeenModels,
+  acknowledgeModels,
+  countUnseenModels,
+  seedSeenModels,
+} from "@/lib/db/repos/seenModelsRepo.js";
