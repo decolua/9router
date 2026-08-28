@@ -15,6 +15,94 @@ const GLM_QUOTA_URLS = {
 // Returns { balance: "95.50", total_used: "4.50" } (USD as decimal strings).
 const VERCEL_AI_GATEWAY_CREDITS_URL = U("vercel-ai-gateway").url;
 
+// OpenRouter key metadata endpoint — url from registry transport.usage
+const OPENROUTER_KEY_URL = U("openrouter").url;
+
+// Next reset for OpenRouter's limit_reset interval ("daily"/"monthly"; UTC).
+// ponytail: "weekly" has no documented anchor day, so it maps to null (no countdown).
+function openRouterNextReset(interval) {
+  const now = new Date();
+  if (interval === "daily") {
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)).toISOString();
+  }
+  if (interval === "monthly") {
+    return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString();
+  }
+  return null;
+}
+
+/**
+ * Parse OpenRouter GET /api/v1/key payload ({data:{...}}) into quota shape.
+ * `limit` is the key's credit cap in USD; null means uncapped — then only the
+ * monthly spend is shown as an unlimited counter.
+ */
+export function parseOpenRouterKeyData(data) {
+  const plan = data.is_free_tier ? "Free tier" : "Pay-as-you-go";
+  const quotas = {};
+
+  const limit = typeof data.limit === "number" ? data.limit : null;
+  if (limit !== null) {
+    const remaining = typeof data.limit_remaining === "number" ? data.limit_remaining : limit;
+    quotas["Credit (USD)"] = {
+      used: limit - remaining,
+      total: limit,
+      remaining,
+      remainingPercentage: limit > 0 ? (remaining / limit) * 100 : 0,
+      resetAt: openRouterNextReset(data.limit_reset),
+      unlimited: false,
+    };
+  } else {
+    quotas["Used this month (USD)"] = {
+      used: Number(data.usage_monthly) || 0,
+      total: 0,
+      remaining: 0,
+      remainingPercentage: 100,
+      resetAt: openRouterNextReset("monthly"),
+      unlimited: true,
+    };
+  }
+
+  return { plan, quotas };
+}
+
+/**
+ * OpenRouter usage — key-level credit limit/spend from GET /api/v1/key.
+ */
+export async function getOpenRouterUsage(apiKey, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "OpenRouter API key not available." };
+  }
+
+  try {
+    const response = await proxyAwareFetch(OPENROUTER_KEY_URL, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+    }, proxyOptions);
+
+    if (response.status === 401 || response.status === 403) {
+      return { message: "OpenRouter API key invalid or expired." };
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      const trimmed = errorText ? `: ${errorText.slice(0, 200)}` : "";
+      return { message: `OpenRouter key API error (${response.status})${trimmed}` };
+    }
+
+    const payload = await response.json();
+    if (!payload?.data) {
+      return { message: "OpenRouter key API returned no data." };
+    }
+
+    return parseOpenRouterKeyData(payload.data);
+  } catch (error) {
+    return { message: `OpenRouter usage fetch failed: ${error.message}` };
+  }
+}
+
 /**
  * iFlow Usage
  */

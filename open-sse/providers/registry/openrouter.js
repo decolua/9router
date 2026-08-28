@@ -20,6 +20,11 @@ export default {
   transport: {
     baseUrl: "https://openrouter.ai/api/v1/chat/completions",
     thinkingFormat: "openai",
+    // Key metadata endpoint: credit limit/remaining for the API key
+    // ({limit, limit_remaining, limit_reset, usage_*} — limit null = uncapped).
+    usage: {
+      url: "https://openrouter.ai/api/v1/key",
+    },
     // Chat traffic is attributed to the real calling client (X-Title + forwarded
     // User-Agent) by the openrouterAttribution header hook, not a hardcoded brand.
     auth: { combined: true, header: "Authorization", scheme: "bearer", hooks: ["openrouterAttribution"] },
@@ -71,4 +76,8 @@ export default {
   },
   modelsFetcher: { url: "https://openrouter.ai/api/v1/models", type: "openrouter-free" },
   passthroughModels: true,
+  features: {
+    usage: true,
+    usageApikey: true,
+  },
 };

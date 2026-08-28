@@ -751,6 +751,9 @@
   "openrouter": {
     "baseUrl": "https://openrouter.ai/api/v1/chat/completions",
     "thinkingFormat": "openai",
+    "usage": {
+      "url": "https://openrouter.ai/api/v1/key"
+    },
     "auth": {
       "combined": true,
       "header": "Authorization",
