@@ -2,16 +2,13 @@ import { NextResponse } from "next/server";
 import { buildModelsList } from "@/app/api/v1/models/route.js";
 import {
   reconcileSeenModels,
+  getUnseenModels,
   countUnseenModels,
 } from "@/models";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
+import { getCachedResult, setCachedResult } from "@/lib/newModelsCache";
 
 export const dynamic = "force-dynamic";
-
-// In-memory result cache. Live model discovery hits many upstream providers,
-// so we cache the computed result to avoid re-scanning on every modal open.
-const CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
-let cache = { at: 0, data: null };
 
 function isProviderFree(alias) {
   const provider = AI_PROVIDERS[alias];
@@ -52,15 +49,28 @@ async function discoverNewModels() {
 
   const result = await reconcileSeenModels(observed);
 
+  // Merged list = models newly detected in this scan, plus any previously
+  // seen-but-unacknowledged rows still in the DB.
+  const merged = [
+    ...result.new.map((m) => ({ ...m, isNew: true })),
+    ...result.unseen.map((m) => ({ ...m, isNew: false })),
+  ];
+
   if (result.seeded) {
     const totalUnseen = await countUnseenModels();
     return { groups: [], total: 0, totalUnseen, seeded: true };
   }
 
-  const merged = [
-    ...result.new.map((m) => ({ ...m, isNew: true })),
-    ...result.unseen.map((m) => ({ ...m, isNew: false })),
-  ];
+  // Fetch ALL unacknowledged rows so a model that was inserted manually
+  // (or detected earlier) but not in this scan's "new" list still appears.
+  const dbUnseen = await getUnseenModels();
+  const dbSet = new Set(dbUnseen.map((m) => `${m.providerAlias}::${m.modelId}`));
+  for (const m of dbUnseen) {
+    if (!merged.find((x) => x.providerAlias === m.providerAlias && x.modelId === m.modelId)) {
+      merged.push({ ...m, isNew: !dbSet.has(`${m.providerAlias}::${m.modelId}`) });
+    }
+  }
+
   merged.sort((a, b) => new Date(b.firstSeenAt) - new Date(a.firstSeenAt));
 
   const byProvider = {};
@@ -90,13 +100,13 @@ async function discoverNewModels() {
 // GET /api/models/new
 export async function GET() {
   try {
-    const now = Date.now();
-    if (cache.data && now - cache.at < CACHE_TTL_MS) {
-      return NextResponse.json(cache.data);
+    const cached = getCachedResult();
+    if (cached) {
+      return NextResponse.json(cached);
     }
 
     const data = await discoverNewModels();
-    cache = { at: Date.now(), data };
+    setCachedResult(data);
     return NextResponse.json(data);
   } catch (error) {
     console.error("Error discovering new models:", error);

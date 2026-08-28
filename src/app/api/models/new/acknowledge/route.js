@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { acknowledgeModels } from "@/models";
+import { clearCache } from "@/lib/newModelsCache";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ export async function POST(request) {
     }
 
     await acknowledgeModels(items);
+    clearCache(); // force next GET to re-scan
 
     return NextResponse.json({ ok: true });
   } catch (error) {

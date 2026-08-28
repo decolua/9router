@@ -44,4 +44,5 @@ export {
   acknowledgeModels,
   countUnseenModels,
   seedSeenModels,
+  getUnseenModels,
 } from "@/lib/db/repos/seenModelsRepo.js";

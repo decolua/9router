@@ -109,6 +109,23 @@ export async function countUnseenModels() {
   return row ? row.c : 0;
 }
 
+// All currently-unseen (unacknowledged) models, regardless of whether they
+// appear in the live scan right now. Used to power the "New Models" modal.
+export async function getUnseenModels() {
+  const db = await getAdapter();
+  const rows = db.all(
+    `SELECT id, providerAlias, modelId, isFree, firstSeenAt, acknowledged
+     FROM seenModels WHERE acknowledged = 0`
+  );
+  return rows.map((r) => ({
+    providerAlias: r.providerAlias,
+    modelId: r.modelId,
+    isFree: !!r.isFree,
+    firstSeenAt: r.firstSeenAt,
+    acknowledged: false,
+  }));
+}
+
 // Seed the table with the current model set as already-seen (acknowledged=1).
 // Used as a first-run baseline so a fresh table doesn't report every existing
 // model as "new". Only models appearing AFTER seeding show as genuinely new.
