@@ -39,6 +39,13 @@ const PATTERN_THINKING = [
   { provider: "codex", pattern: "*gpt-5.6-terra*", levels: [...CODEX_GPT_5_6_LEVELS, "ultra"] },
   { provider: "codex", pattern: "*gpt-5.6-luna*", levels: CODEX_GPT_5_6_LEVELS },
   { pattern: "*codex*", levels: ["low", "medium", "high", "xhigh"] }, // codex cannot disable thinking
+  // CodeBuddy's OpenAI-compatible gateway accepts "max" for every live model
+  // (verified upstream 2026-08-28: glm-5.2/5.1/5.0-turbo/5v-turbo, minimax-m3/m2.7,
+  // kimi-k2.7/2.6/2.5, hy3-preview, deepseek-v4-pro/flash, deepseek-v3-2-volc,
+  // glm-5.3-flash all return 200 with reasoning_effort=max; glm-5.0/glm-4.7 are
+  // delisted upstream). The default openai set caps at "xhigh", so the (max)
+  // suffix was being downgraded — allow max across the whole provider.
+  { provider: "codebuddy-cn", pattern: "*", levels: ["none", "minimal", "low", "medium", "high", "xhigh", "max"] },
 ];
 
 // Returns valid thinking levels for a model, or null when the model has no reasoning.
