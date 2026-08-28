@@ -317,15 +317,42 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*ling-*",         caps: { reasoning: true, contextWindow: 128000 } },
 ];
 
+// Runtime user overrides — contextWindow per model id / glob pattern, injected
+// by the app layer (src/lib) via setContextWindowOverrides(). Engine stays
+// provider-agnostic: this map lives here, the dashboard owns the persistence.
+// Stored on globalThis because Next.js loads instrumentation.js in a separate
+// webpack module graph from API routes — a module-level map set at boot would
+// never be visible to /v1/models etc., so boot-loaded overrides silently no-op.
+const CONTEXT_OVERRIDES_KEY = "__9ROUTER_CTX_WINDOW_OVERRIDES__";
+
+function getContextOverridesMap() {
+  const existing = globalThis[CONTEXT_OVERRIDES_KEY];
+  if (existing instanceof Map) return existing;
+  const fresh = new Map();
+  globalThis[CONTEXT_OVERRIDES_KEY] = fresh;
+  return fresh;
+}
+
+// Replace the whole override map (called at boot and after every dashboard edit).
+export function setContextWindowOverrides(map) {
+  globalThis[CONTEXT_OVERRIDES_KEY] =
+    map instanceof Map ? map : new Map(Object.entries(map || {}));
+}
+
+export function getContextWindowOverrides() {
+  return Object.fromEntries(getContextOverridesMap());
+}
+
 /**
  * Resolve capabilities for a model using the 4-step fallback chain,
  * merged over DEFAULT_CAPABILITIES so the result is always complete.
+ * WITHOUT user context-window overrides — the "registered default" view.
  *
  * @param {string} provider
  * @param {string} model
  * @returns {object} full capabilities object
  */
-export function getCapabilitiesForModel(provider, model) {
+export function getStaticCapabilitiesForModel(provider, model) {
   if (!model) return { ...DEFAULT_CAPABILITIES };
 
   // Canonical exact lookup strips vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7".
@@ -351,4 +378,46 @@ export function getCapabilitiesForModel(provider, model) {
 
   // 4. Floor
   return { ...DEFAULT_CAPABILITIES };
+}
+
+function applyContextOverrides(caps, model, provider) {
+  const contextOverrides = getContextOverridesMap();
+  if (contextOverrides.size === 0) return caps;
+  const baseModel = typeof model === "string" && model.includes("/") ? model.split("/").pop() : model;
+  const fullKey = provider && baseModel ? `${provider}/${baseModel}` : null;
+
+  // Most specific first: a key prefixed with the provider (e.g. "glm/glm-5.3")
+  // only affects that provider; a bare key (e.g. "glm-5.3") affects every
+  // provider that serves it, preserving the original global semantics.
+  if (fullKey && contextOverrides.has(fullKey)) {
+    return { ...caps, contextWindow: contextOverrides.get(fullKey) };
+  }
+  if (contextOverrides.has(baseModel)) {
+    return { ...caps, contextWindow: contextOverrides.get(baseModel) };
+  }
+  if (typeof model === "string" && contextOverrides.has(model)) {
+    return { ...caps, contextWindow: contextOverrides.get(model) };
+  }
+  for (const [pattern, window] of contextOverrides) {
+    if (pattern.includes("*") && (
+      (fullKey && matchPattern(pattern, fullKey)) ||
+      matchPattern(pattern, baseModel) ||
+      (typeof model === "string" && matchPattern(pattern, model))
+    )) {
+      return { ...caps, contextWindow: window };
+    }
+  }
+  return caps;
+}
+
+/**
+ * Resolve capabilities for a model using the 4-step fallback chain,
+ * then layer user contextWindow overrides on top.
+ *
+ * @param {string} provider
+ * @param {string} model
+ * @returns {object} full capabilities object
+ */
+export function getCapabilitiesForModel(provider, model) {
+  return applyContextOverrides(getStaticCapabilitiesForModel(provider, model), model, provider);
 }

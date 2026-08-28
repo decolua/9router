@@ -6,6 +6,7 @@ import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 // Module cache: one /api/models fetch shared by every useModelCaps instance.
 let cache = null; // { byFull, byId } | null
 let inflight = null;
+let gen = 0; // bumped on invalidate so a late in-flight response can't repopulate stale cache
 
 function buildMaps(models) {
   const byFull = {};
@@ -22,12 +23,14 @@ function buildMaps(models) {
 function loadModelCaps() {
   if (cache) return Promise.resolve(cache);
   if (inflight) return inflight;
+  const myGen = gen;
   inflight = fetch("/api/models")
     .then(async (res) => {
       if (!res.ok) throw new Error(`models ${res.status}`);
       const data = await res.json();
-      cache = buildMaps(data.models);
-      return cache;
+      const maps = buildMaps(data.models);
+      if (myGen === gen) cache = maps;
+      return maps;
     })
     .catch(() => {
       // Keep null so a later mount can retry
@@ -35,6 +38,13 @@ function loadModelCaps() {
     })
     .finally(() => { inflight = null; });
   return inflight;
+}
+
+// Drop the shared cache (e.g. after a context-window override changes
+// server-side caps). The next useModelCaps mount refetches /api/models.
+export function invalidateModelCaps() {
+  cache = null;
+  gen++;
 }
 
 // Resolve caps from a "provider/model" string or a bare model id.
@@ -59,14 +69,16 @@ export function useModelCaps() {
   const [byId, setById] = useState(() => cache?.byId || {});
 
   useEffect(() => {
+    const apply = (maps) => { setByFull(maps.byFull); setById(maps.byId); };
     if (cache) {
-      setByFull(cache.byFull);
-      setById(cache.byId);
-      return;
+      // Deferred one tick: keeps the setState out of the effect's synchronous
+      // body (react-hooks/set-state-in-effect) — same pattern as providers page.
+      const t = setTimeout(() => apply(cache), 0);
+      return () => clearTimeout(t);
     }
     let alive = true;
     loadModelCaps().then((maps) => {
-      if (alive) { setByFull(maps.byFull); setById(maps.byId); }
+      if (alive) apply(maps);
     });
     return () => { alive = false; };
   }, []);

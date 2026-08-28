@@ -76,9 +76,14 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    // Filter out model-locked and excluded connections
+    // Filter out model-locked and excluded connections.
+    // ignoreModelLockConnId: a same-account retry must still reach the just-
+    // failed connection (its transient model-lock would otherwise force a
+    // switch), so skip the lock check for that one connection only.
+    const ignoreLockConn = options?.ignoreModelLockConnId || null;
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
+      if (c.id === ignoreLockConn) return true;
       if (isModelLockActive(c, model)) return false;
       return true;
     });

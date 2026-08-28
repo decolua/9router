@@ -22,6 +22,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { looksLikeClaudeWrappedModel, normalizeClaudeModelName, buildClaudeRoutingIndex, readClaudeCompat } from "@/lib/claudeCompat";
 
 /**
  * Handle chat completion request
@@ -46,7 +47,7 @@ export async function handleChat(request, clientRawRequest = null) {
       headers: Object.fromEntries(request.headers.entries())
     };
   }
-  const modelStr = body.model;
+  let modelStr = body.model;
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
 
@@ -77,6 +78,25 @@ export async function handleChat(request, clientRawRequest = null) {
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+  }
+
+  // Claude compat layer: Anthropic clients echo back ids like
+  // "claude-bai/deepseek-v4-flash[1m]" from our rewritten /v1/models. Strip
+  // the markers back to the routable name before combo/account selection so
+  // the whole pipeline (and usage records) sees the real model.
+  if (
+    looksLikeClaudeWrappedModel(modelStr) &&
+    process.env.DISABLE_CLAUDE_COMPAT !== "true"
+  ) {
+    const compat = readClaudeCompat(settings);
+    if (compat.enabled) {
+      const normalized = normalizeClaudeModelName(modelStr, await buildClaudeRoutingIndex());
+      if (normalized !== modelStr) {
+        log.info("CHAT", `Claude compat: "${modelStr}" -> "${normalized}"`);
+        body.model = normalized;
+        modelStr = normalized;
+      }
+    }
   }
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
@@ -221,11 +241,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   // Try with available accounts (fallback on errors)
   const excludeConnectionIds = new Set();
+  // Per-connection consecutive-failure counter: the SAME account is retried
+  // up to ACCOUNT_RETRY_LIMIT times before the loop excludes it and switches.
+  const ACCOUNT_RETRY_LIMIT = 3;
+  const failCountByConn = new Map();
   let lastError = null;
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const lastFailedConn = failCountByConn.size ? [...failCountByConn.entries()].find(([id, c]) => c >= 1 && c < ACCOUNT_RETRY_LIMIT)?.[0] : null;
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, lastFailedConn ? { ignoreModelLockConnId: lastFailedConn } : {});
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -304,10 +329,18 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
 
     if (shouldFallback) {
-      log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
-      excludeConnectionIds.add(credentials.connectionId);
       lastError = result.error;
       lastStatus = result.status;
+      const fails = (failCountByConn.get(credentials.connectionId) || 0) + 1;
+      failCountByConn.set(credentials.connectionId, fails);
+      if (fails < ACCOUNT_RETRY_LIMIT) {
+        // Same account, immediate retry — cooldown was skipped for transient
+        // errors, so this is a fast re-dispatch rather than a wait.
+        log.warn("RETRY", `⇄ ACC:${credentials.connectionName} failed (${result.status}) attempt ${fails}/${ACCOUNT_RETRY_LIMIT} → RETRY SAME`);
+        continue;
+      }
+      log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE after ${ACCOUNT_RETRY_LIMIT} tries (${result.status}) → NEXT ACCOUNT`);
+      excludeConnectionIds.add(credentials.connectionId);
       continue;
     }
 

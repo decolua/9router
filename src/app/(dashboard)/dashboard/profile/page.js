@@ -9,6 +9,7 @@ import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
 import { LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
 import { LOCALE_FLAGS } from "@/shared/constants/locales";
+import { HIDEABLE_NAV_ITEMS } from "@/shared/components/Sidebar";
 
 function getLocaleFromCookie() {
   if (typeof document === "undefined") return "en";
@@ -81,6 +82,9 @@ export default function ProfilePage() {
   const [proxyLoading, setProxyLoading] = useState(false);
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
 
+  // Claude Code minimal mode — hidden sidebar entries (settings.hiddenNavItems)
+  const [hiddenNavItems, setHiddenNavItems] = useState([]);
+
   useEffect(() => {
     fetch("/api/settings")
       .then((res) => res.json())
@@ -116,6 +120,7 @@ export default function ProfilePage() {
           outboundProxyUrl: data?.outboundProxyUrl || "",
           outboundNoProxy: data?.outboundNoProxy || "",
         });
+        if (Array.isArray(data?.hiddenNavItems)) setHiddenNavItems(data.hiddenNavItems);
         setLoading(false);
       })
       .catch((err) => {
@@ -734,6 +739,30 @@ export default function ProfilePage() {
   };
 
   const observabilityEnabled = settings.enableObservability === true;
+
+  const saveHiddenNavItems = async (next) => {
+    setHiddenNavItems(next); // optimistic
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hiddenNavItems: next }),
+      });
+      if (res.ok) {
+        setSettings((prev) => ({ ...prev, hiddenNavItems: next }));
+        window.dispatchEvent(new Event("hidden-nav-changed"));
+      }
+    } catch (err) {
+      console.error("Failed to update hidden nav items:", err);
+    }
+  };
+
+  const toggleNavItem = (id) => {
+    const next = hiddenNavItems.includes(id)
+      ? hiddenNavItems.filter((x) => x !== id)
+      : [...hiddenNavItems, id];
+    saveHiddenNavItems(next);
+  };
 
   const handleShutdown = async () => {
     setIsShuttingDown(true);
@@ -1612,6 +1641,62 @@ export default function ProfilePage() {
               onChange={updateObservabilityEnabled}
               disabled={loading}
             />
+          </div>
+        </Card>
+
+        {/* Claude Code Minimal Mode — hide sidebar entries */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-teal-500/10 text-teal-500 shrink-0">
+              <span className="material-symbols-outlined text-[20px]">visibility_off</span>
+            </div>
+            <h3 className="text-base sm:text-lg font-semibold">Claude Code Minimal Mode</h3>
+          </div>
+          <p className="text-xs sm:text-sm text-text-muted mb-3">
+            Toggle which sidebar menu entries are hidden. Hidden entries can be restored here at any time.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {HIDEABLE_NAV_ITEMS.map((item) => {
+              const hidden = hiddenNavItems.includes(item.id);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => toggleNavItem(item.id)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors cursor-pointer",
+                    hidden
+                      ? "border-border bg-bg text-text-muted line-through opacity-70"
+                      : "border-primary/40 bg-primary/5 text-text-main hover:border-primary"
+                  )}
+                >
+                  <span className="material-symbols-outlined text-[14px]">
+                    {hidden ? "visibility_off" : "visibility"}
+                  </span>
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2 mt-4 pt-4 border-t border-border/50">
+            <Button
+              variant="outline"
+              size="sm"
+              icon="hide_source"
+              onClick={() => saveHiddenNavItems(HIDEABLE_NAV_ITEMS.map((i) => i.id))}
+              disabled={hiddenNavItems.length === HIDEABLE_NAV_ITEMS.length}
+            >
+              Hide All
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon="visibility"
+              onClick={() => saveHiddenNavItems([])}
+              disabled={hiddenNavItems.length === 0}
+            >
+              Show All
+            </Button>
           </div>
         </Card>
 

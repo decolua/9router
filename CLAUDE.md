@@ -31,6 +31,23 @@ npm run cli:pack       # build + npm pack from root
 cd cli && npm run dev  # nodemon watch
 ```
 
+> **生产部署/重启 —— 必须用脚本，不要手动 kill**：改完代码要发布到运行中的 9router 服务时，调用
+> ```bash
+> /tmp/9router-deploy.sh   # build → cli:pack → kill → npm i -g tgz → nohup 重启 → health 检查
+> ```
+> 它会 build、pack、kill 旧进程、全局安装新 tarball、`nohup` 分离式重启并返回新 PID + health。
+> **不要手动 `kill` 9router 进程再自行启动**——9router 是 Claude Code 会话的 API 上游，手动 kill 会切断当前会话的连接，导致后续无法执行启动命令。脚本用 `nohup ... & disown` 脱离会话，重启可独立完成。
+> 服务跑在 `~/.9router/db/data.sqlite`（SQLite WAL）。**清空统计表时也不要直写运行中的 DB**（会损坏文件）——正确顺序：停服务 → 用 sqlite3 操作 → 重启（同样走脚本）。
+
+> **发布前先在测试实例验证（推荐流程）**：生产 20128 是当前 Claude Code 会话的上游，改坏即断线。改完源码先起隔离的测试实例验证，通过后再 deploy：
+> ```bash
+> scripts/dev-test-server.sh up        # 源码 build → standalone 起 :20129，DATA_DIR=/tmp/9router-test-data（与生产 DB/端口完全隔离）
+> node scripts/smoke-test.mjs          # 冒烟：dashboard 页面 / 登录 / statistics API 结构 / 网关存活
+> scripts/dev-test-server.sh down      # 验证完停掉（或留着继续手测 UI）
+> /tmp/9router-deploy.sh               # 冒烟通过后才发布生产 20128
+> ```
+> 测试实例 DB 是全新的（默认密码 123456），不会碰生产凭据；`SKIP_BUILD=1 scripts/dev-test-server.sh up` 可复用已构建的 `.next`。
+
 Tests (vitest, in `tests/`, an **independent** ESM package — not wired into root `npm test`):
 ```bash
 npm install                             # ROOT deps first — tests import from src/ which needs `open`, `undici`, etc.
