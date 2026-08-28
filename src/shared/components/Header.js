@@ -186,7 +186,7 @@ const getPageInfo = (pathname) => {
   return { title: "", description: "", breadcrumbs: [] };
 };
 
-export default function Header({ onMenuClick, showMenuButton = true }) {
+export default function Header({ onMenuClick, showMenuButton = true, sidebarOpen = false }) {
   const pathname = usePathname();
   const [displayName, setDisplayName] = useState("");
   const [loginMethod, setLoginMethod] = useState("");
@@ -242,7 +242,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
             onClick={onMenuClick}
             className="text-text-main hover:text-primary transition-colors"
             aria-label="Open menu"
-            aria-expanded={false}
+            aria-expanded={sidebarOpen}
             aria-controls="mobile-sidebar"
           >
             <span className="material-symbols-outlined">menu</span>
@@ -380,4 +380,5 @@ function HeaderSearch() {
 Header.propTypes = {
   onMenuClick: PropTypes.func,
   showMenuButton: PropTypes.bool,
+  sidebarOpen: PropTypes.bool,
 };

@@ -9,7 +9,7 @@ describe("Mobile Drawer Accessibility Contract", () => {
   it("verifies inert logic is applied in DashboardLayout", () => {
     const layoutPath = resolve(__dirname, "../../src/shared/components/layouts/DashboardLayout.js");
     const source = readFileSync(layoutPath, "utf-8");
-    expect(source).toContain('inert={sidebarOpen ? undefined : ""}');
+    expect(source).toContain('inert={sidebarOpen ? undefined : "true"}');
     expect(source).toContain('if (e.key === "Escape" && sidebarOpen)');
     expect(source).toContain('menuTrigger.focus()');
   });
@@ -18,7 +18,7 @@ describe("Mobile Drawer Accessibility Contract", () => {
     const headerPath = resolve(__dirname, "../../src/shared/components/Header.js");
     const source = readFileSync(headerPath, "utf-8");
     expect(source).toContain('aria-controls="mobile-sidebar"');
-    expect(source).toContain('aria-expanded={false}');
+    expect(source).toContain('aria-expanded={sidebarOpen}');
     expect(source).toContain('aria-label="Open menu"');
   });
 

@@ -37,11 +37,6 @@ export default function DashboardLayout({ children }) {
   const notifications = useNotificationStore((state) => state.notifications);
   const removeNotification = useNotificationStore((state) => state.removeNotification);
 
-  return (
-    <div className="flex h-screen w-full overflow-hidden bg-bg">
-      <div className="fixed top-4 right-4 z-[80] flex w-[min(92vw,380px)] flex-col gap-2">
-        {notifications.map((n) => {
-          const style = getToastStyle(n.type);
   useEffect(() => {
     const handleEscape = (e) => {
       if (e.key === "Escape" && sidebarOpen) {
@@ -57,6 +52,11 @@ export default function DashboardLayout({ children }) {
   }, [sidebarOpen]);
 
   return (
+    <div className="flex h-screen w-full overflow-hidden bg-bg">
+      <div className="fixed top-4 right-4 z-[80] flex w-[min(92vw,380px)] flex-col gap-2">
+        {notifications.map((n) => {
+          const style = getToastStyle(n.type);
+          return (
             <div
               key={n.id}
               className={`rounded-lg border px-3 py-2 shadow-lg backdrop-blur-sm ${style.wrapper}`}
@@ -100,7 +100,7 @@ export default function DashboardLayout({ children }) {
         className={`fixed inset-y-0 left-0 z-50 lg:hidden transition-transform duration-300 ease-in-out ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
-        inert={sidebarOpen ? undefined : ""}
+        inert={sidebarOpen ? undefined : "true"}
       >
         <Sidebar onClose={() => setSidebarOpen(false)} />
       </div>
@@ -109,7 +109,7 @@ export default function DashboardLayout({ children }) {
       <main className="flex flex-col flex-1 h-full min-w-0 relative transition-colors duration-300 isolate">
         {/* Faint grid background */}
         <div className="landing-grid absolute inset-0 pointer-events-none -z-10" aria-hidden="true" />
-        <Header key={pathname} onMenuClick={() => setSidebarOpen(true)} />
+        <Header key={pathname} onMenuClick={() => setSidebarOpen(true)} sidebarOpen={sidebarOpen} />
         <div className={`flex-1 overflow-y-auto custom-scrollbar ${pathname === "/dashboard/playground" ? "" : "p-6 lg:p-10"} ${pathname === "/dashboard/playground" ? "flex flex-col overflow-hidden" : ""}`}>
           <div className={`${pathname === "/dashboard/playground" ? "flex-1 w-full h-full flex flex-col" : "max-w-7xl mx-auto"}`}>{children}</div>
         </div>
