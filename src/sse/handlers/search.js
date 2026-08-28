@@ -154,14 +154,24 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
   // fall back to the linked provider's credentials.
   const fallbackProviderId = resolvedProvider.credentialFallback;
 
+  // Lock scope for this handler. Without it markAccountUnavailable would write
+  // an account-wide `__all` lock, which on the credentialFallback path takes
+  // the shared chat key (e.g. glm) offline for chat as well. Must be passed to
+  // getProviderCredentials too, so the lock is read back under the same key.
+  const searchLockKey = `websearch:${providerId}`;
+
   while (true) {
-    let credentials = await getProviderCredentials(providerId, excludeConnectionIds);
+    // Provider that actually owns the connection in use — differs from
+    // providerId once we fall back, and error locks must be attributed to it.
+    let credentialProviderId = providerId;
+    let credentials = await getProviderCredentials(providerId, excludeConnectionIds, searchLockKey);
 
     // Fall back to the related chat provider's credentials when this search
     // provider has none of its own (one key, chat + search).
     if (!credentials && fallbackProviderId) {
-      credentials = await getProviderCredentials(fallbackProviderId, excludeConnectionIds);
+      credentials = await getProviderCredentials(fallbackProviderId, excludeConnectionIds, searchLockKey);
       if (credentials) {
+        credentialProviderId = fallbackProviderId;
         log.info("AUTH", `\x1b[32m${providerId} reusing ${fallbackProviderId} credentials\x1b[0m`);
       }
     }
@@ -206,7 +216,7 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
 
     if (result.success) return result.response;
 
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, providerId);
+    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, credentialProviderId, searchLockKey);
 
     if (shouldFallback) {
       log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);
