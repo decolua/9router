@@ -20,10 +20,9 @@ export default {
   transport: {
     baseUrl: "https://openrouter.ai/api/v1/chat/completions",
     thinkingFormat: "openai",
-    headers: {
-      "HTTP-Referer": "https://endpoint-proxy.local",
-      "X-Title": "Endpoint Proxy",
-    },
+    // Chat traffic is attributed to the real calling client (X-Title + forwarded
+    // User-Agent) by the openrouterAttribution header hook, not a hardcoded brand.
+    auth: { combined: true, header: "Authorization", scheme: "bearer", hooks: ["openrouterAttribution"] },
   },
   // Multi-endpoint: OpenRouter's Anthropic-compatible /v1/messages accepts any
   // catalog model, so claude-format clients route there with zero translation
@@ -35,11 +34,7 @@ export default {
       format: "claude",
       baseUrl: "https://openrouter.ai/api/v1/messages",
       thinkingFormat: "claude-budget",
-      auth: { combined: true, header: "Authorization", scheme: "bearer" },
-      headers: {
-        "HTTP-Referer": "https://endpoint-proxy.local",
-        "X-Title": "Endpoint Proxy",
-      },
+      auth: { combined: true, header: "Authorization", scheme: "bearer", hooks: ["openrouterAttribution"] },
     },
   ],
   models: [

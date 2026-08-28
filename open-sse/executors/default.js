@@ -7,6 +7,7 @@ import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../shared/clineAuth.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
+import { detectClientTool } from "../utils/clientDetector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 
 // Auth header descriptors — derived from registry transport.auth, fallback to hardcoded defaults.
@@ -90,10 +91,29 @@ function normalizeLunaFunctionToolReasoning(model, body, sourceFormat) {
   body.reasoning_effort = "none";
 }
 
+// OpenRouter app-attribution titles by detected client tool (X-Title is the
+// display name OpenRouter shows in its activity/app rankings).
+const OPENROUTER_CLIENT_TITLES = {
+  "claude": "Claude Code",
+  "codex": "Codex",
+  "gemini-cli": "Gemini CLI",
+  "github-copilot": "GitHub Copilot",
+  "deepseek-tui": "DeepSeek TUI",
+};
+
 // Provider-specific header quirks kept as small hooks (not pure auth).
 const HEADER_HOOKS = {
   // Stable device_id from OAuth connection (CLIProxyAPI KimiTokenStorage.DeviceID)
   kimiHeaders: (h, c) => Object.assign(h, buildKimiHeaders(c?.providerSpecificData?.deviceId)),
+  // Label OpenRouter traffic by the real calling client: forward its User-Agent
+  // and set X-Title from the detected tool. No client UA → no attribution headers.
+  openrouterAttribution: (h, c) => {
+    const raw = c?.rawHeaders || {};
+    const ua = raw["user-agent"] || raw["User-Agent"];
+    if (!ua) return;
+    h["User-Agent"] = ua;
+    h["X-Title"] = OPENROUTER_CLIENT_TITLES[detectClientTool(raw)] || ua.split("/")[0];
+  },
   clineHeaders: (h, c) => Object.assign(h, buildClineHeaders(c.apiKey || c.accessToken)),
   kilocodeOrg: (h, c) => { if (c.providerSpecificData?.orgId) h["X-Kilocode-OrganizationID"] = c.providerSpecificData.orgId; },
 };

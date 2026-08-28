@@ -45,7 +45,7 @@ describe("openrouter claude transport (/v1/messages)", () => {
     expect(body.reasoning_effort).toBeDefined();
   });
 
-  it("executor routes url/headers through the transport (bearer auth + referer kept)", () => {
+  it("executor routes url/headers through the transport (bearer auth, no hardcoded brand)", () => {
     const credentials = { apiKey: "sk-or-test", runtimeTransport: resolveTransport("openrouter", "claude") };
     const executor = new DefaultExecutor("openrouter");
 
@@ -53,6 +53,35 @@ describe("openrouter claude transport (/v1/messages)", () => {
     const headers = executor.buildHeaders(credentials, true, "https://openrouter.ai/api/v1/messages", MODEL);
     expect(headers["Authorization"]).toBe("Bearer sk-or-test");
     expect(headers["x-api-key"]).toBeUndefined();
-    expect(headers["HTTP-Referer"]).toBe("https://endpoint-proxy.local");
+    // no client UA → no attribution headers at all
+    expect(headers["HTTP-Referer"]).toBeUndefined();
+    expect(headers["X-Title"]).toBeUndefined();
+    expect(headers["User-Agent"]).toBeUndefined();
+  });
+
+  it("attributes traffic to the calling client via X-Title + forwarded User-Agent", () => {
+    const executor = new DefaultExecutor("openrouter");
+    const ua = "claude-cli/2.1.250 (external, cli)";
+
+    // claude transport (/v1/messages)
+    const claudeCreds = {
+      apiKey: "sk-or-test",
+      runtimeTransport: resolveTransport("openrouter", "claude"),
+      rawHeaders: { "user-agent": ua },
+    };
+    const claudeHeaders = executor.buildHeaders(claudeCreds, true, "https://openrouter.ai/api/v1/messages", MODEL);
+    expect(claudeHeaders["X-Title"]).toBe("Claude Code");
+    expect(claudeHeaders["User-Agent"]).toBe(ua);
+
+    // default transport (/chat/completions) uses the same hook
+    const openaiCreds = { apiKey: "sk-or-test", rawHeaders: { "user-agent": "codex-tui/0.44.0" } };
+    const openaiHeaders = executor.buildHeaders(openaiCreds, true, "https://openrouter.ai/api/v1/chat/completions", MODEL);
+    expect(openaiHeaders["X-Title"]).toBe("Codex");
+    expect(openaiHeaders["User-Agent"]).toBe("codex-tui/0.44.0");
+
+    // unknown client falls back to the UA product token
+    const otherCreds = { apiKey: "sk-or-test", rawHeaders: { "user-agent": "meu-agente/1.0" } };
+    const otherHeaders = executor.buildHeaders(otherCreds, true, "https://openrouter.ai/api/v1/chat/completions", MODEL);
+    expect(otherHeaders["X-Title"]).toBe("meu-agente");
   });
 });
