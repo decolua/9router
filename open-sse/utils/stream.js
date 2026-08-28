@@ -153,7 +153,7 @@ export function createSSEStream(options = {}) {
 
               const delta = parsed.choices?.[0]?.delta;
               const content = delta?.content;
-              const reasoning = delta?.reasoning_content;
+              const reasoning = delta?.reasoning_content || delta?.reasoning;
               if (content && typeof content === "string") {
                 totalContentLength += content.length;
                 accumulatedContent += content;
@@ -264,6 +264,9 @@ export function createSSEStream(options = {}) {
         if (parsed.choices?.[0]?.delta?.reasoning_content) {
           totalContentLength += parsed.choices[0].delta.reasoning_content.length;
           accumulatedThinking += parsed.choices[0].delta.reasoning_content;
+        } else if (parsed.choices?.[0]?.delta?.reasoning) {
+          totalContentLength += parsed.choices[0].delta.reasoning.length;
+          accumulatedThinking += parsed.choices[0].delta.reasoning;
         }
         
         // Gemini format
