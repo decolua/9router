@@ -305,6 +305,19 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }
 
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
+
+  // Detect upstream gateway errors masked as HTTP 200 (e.g. OpenRouter
+  // sending choices[0].native_finish_reason:"network_error" with empty content).
+  const rawChoice = responseBody?.choices?.[0];
+  const nativeReason = rawChoice?.native_finish_reason;
+  const rawMsg = rawChoice?.message || {};
+  const hasContent = (typeof rawMsg.content === "string" && rawMsg.content.length > 0)
+    || (Array.isArray(rawMsg.tool_calls) && rawMsg.tool_calls.length > 0);
+  if (nativeReason && ["network_error", "error", "server_error", "timeout"].includes(nativeReason) && !hasContent) {
+    appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Upstream provider error: ${nativeReason}`);
+  }
+
   if (onRequestSuccess) {
     Promise.resolve()
       .then(onRequestSuccess)

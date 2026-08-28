@@ -164,6 +164,15 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
     message.tool_calls = [...toolCallMap.entries()].sort((a, b) => a[0] - b[0]).map(([, tc]) => tc);
   }
 
+  // Detect upstream gateway errors masked as HTTP 200 (e.g. OpenRouter
+  // sending finish_reason:"stop" with native_finish_reason:"network_error"
+  // and zero content). Treat as stream failure so callers get an error.
+  const lastChoice = chunks[chunks.length - 1]?.choices?.[0];
+  const nativeReason = lastChoice?.native_finish_reason;
+  if (nativeReason && ["network_error", "error", "server_error", "timeout"].includes(nativeReason) && contentParts.length === 0 && toolCallMap.size === 0) {
+    return { error: { message: `Upstream stream failed: ${nativeReason}`, code: nativeReason } };
+  }
+
   const result = {
     id: first.id || `chatcmpl-${Date.now()}`,
     object: "chat.completion",

@@ -111,7 +111,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
   const providerRequiresStreaming = PROVIDERS[provider]?.forceStream === true;
-  let stream = providerRequiresStreaming ? true : (body.stream !== false);
+  // OpenAI contract: absent `stream` means NON-streaming. Defaulting missing
+  // `stream` to true made clients that omit the field (pi, plain curl) receive
+  // SSE while waiting for JSON — appearing as an empty/stalled answer.
+  let stream = providerRequiresStreaming ? true : (body.stream === true);
 
   // Image generation models require non-streaming (Google v1internal:generateContent)
   const modelType = getModelType(alias, model);
