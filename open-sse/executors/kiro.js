@@ -130,9 +130,12 @@ async function readResponsePrefix(response, signal, maxBytes, timeoutMs) {
 function appendRepairInstruction(body, kind) {
   const repaired = structuredClone(body || {});
   const instruction = REPAIR_INSTRUCTIONS[kind] || "Retry the previous incomplete Kiro response.";
-  repaired.systemPrompt = repaired.systemPrompt
-    ? `${repaired.systemPrompt}\n\n${instruction}`
-    : instruction;
+  // KAS rejects top-level `systemPrompt` (400 REQUEST_BODY_INVALID since ~2026-08),
+  // so the repair instruction is prefixed onto the current message content instead.
+  const uim = repaired.conversationState?.currentMessage?.userInputMessage;
+  if (uim) {
+    uim.content = uim.content ? `${instruction}\n\n${uim.content}` : instruction;
+  }
   return repaired;
 }
 

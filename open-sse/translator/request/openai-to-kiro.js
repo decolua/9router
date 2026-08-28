@@ -420,7 +420,8 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
   if (profileArn) {
     payload.profileArn = profileArn;
   }
-  if (systemPrompt) payload.systemPrompt = systemPrompt;
+  // KAS rejects top-level `systemPrompt` (400 REQUEST_BODY_INVALID since ~2026-08);
+  // the system prompt travels inlined via contentPrefix instead — see claude-to-kiro.
   if (additionalModelRequestFields) {
     payload.additionalModelRequestFields = additionalModelRequestFields;
   }
