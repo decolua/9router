@@ -59,6 +59,7 @@ export default function ChatWorkspace({ configState, onMetricsUpdate, onResult, 
        currentMessages = [...messages, newMsg];
        setMessages(currentMessages);
        setInput("");
+       onDraftChange?.("");
     }
     
     setError(null);
@@ -211,7 +212,7 @@ export default function ChatWorkspace({ configState, onMetricsUpdate, onResult, 
           }
       }
     }
-  }, [input, messages, isStreaming, configState, onMetricsUpdate, onResult]);
+  }, [input, messages, isStreaming, configState, onMetricsUpdate, onResult, onDraftChange]);
 
   const handleRegenerate = useCallback(() => {
     if (messages.length === 0 || isStreaming) return;

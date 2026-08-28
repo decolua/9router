@@ -51,6 +51,55 @@ describe('ChatWorkspace', () => {
     expect(screen.getByTestId('playground-send')).toBeTruthy();
   });
 
+  it('clears the parent draft after accepting a user message', async () => {
+    const onDraftChange = vi.fn();
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      body: createFakeStream(['data: [DONE]\n\n'])
+    });
+
+    render(
+      <ChatWorkspace
+        configState={mockConfig}
+        onDraftChange={onDraftChange}
+      />
+    );
+
+    fireEvent.change(screen.getByPlaceholderText('Send a message...'), { target: { value: 'Persisted prompt' } });
+    fireEvent.click(screen.getByTestId('playground-send'));
+
+    expect(screen.getByText('Persisted prompt')).toBeTruthy();
+    expect(onDraftChange).toHaveBeenLastCalledWith('');
+  });
+
+  it('keeps the parent draft for blank and model-less send attempts', () => {
+    const blankDraftChange = vi.fn();
+    const { unmount } = render(
+      <ChatWorkspace
+        configState={mockConfig}
+        draft=" "
+        onDraftChange={blankDraftChange}
+      />
+    );
+
+    fireEvent.keyDown(screen.getByPlaceholderText('Send a message...'), { key: 'Enter' });
+    expect(blankDraftChange).not.toHaveBeenCalled();
+    unmount();
+
+    const invalidDraftChange = vi.fn();
+    render(
+      <ChatWorkspace
+        configState={{ ...mockConfig, model: null }}
+        draft="Saved draft"
+        onDraftChange={invalidDraftChange}
+      />
+    );
+
+    fireEvent.click(screen.getByTestId('playground-send'));
+    expect(invalidDraftChange).not.toHaveBeenCalled();
+    expect(screen.getByPlaceholderText('Send a message...').value).toBe('Saved draft');
+  });
+
   it('handles sending a message and streaming response with real parser (explicit done -> complete)', async () => {
     const sseChunks = [
       'data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n',
