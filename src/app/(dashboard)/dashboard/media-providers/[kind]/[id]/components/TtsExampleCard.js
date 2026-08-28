@@ -274,7 +274,7 @@ export function TtsExampleCard({ providerId }) {
           <Row label="API Key">
             <span className="px-3 py-1.5 text-sm font-mono text-text-main bg-sidebar rounded-lg truncate block">
               {apiKey
-                ? `${apiKey.slice(0, 8)}${"•".repeat(Math.min(20, apiKey.length - 8))}`
+                ? `${apiKey.slice(0, 8)}${"•".repeat(Math.min(20, Math.max(0, apiKey.length - 8)))}`
                 : connectionCount > 0
                   ? <span className="text-text-muted italic">Using stored key(s) · {connectionCount} connection{connectionCount > 1 ? "s" : ""}</span>
                   : <span className="text-text-muted italic">No key configured</span>}
