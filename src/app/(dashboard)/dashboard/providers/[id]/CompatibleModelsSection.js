@@ -78,7 +78,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
   );
 }
 
-export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onDeleteCustomModel, connections, isAnthropic, onTestModel, modelTestResults, modelTestErrors = {}, testingModelIds, modelDescriptions, onEditModelDescription }) {
+export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onDeleteCustomModel, onAddCustomModel, connections, isAnthropic, onTestModel, modelTestResults, modelTestErrors = {}, testingModelIds, modelDescriptions, onEditModelDescription }) {
   const [importing, setImporting] = useState(false);
   const [deleteAllOpen, setDeleteAllOpen] = useState(false);
   const notify = useNotificationStore();
@@ -110,14 +110,19 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
       }
       const existingRows = allModels;
       await Promise.all(existingRows.map((entry) => (entry.source === "custom" ? onDeleteCustomModel(entry.id) : onDeleteAlias(entry.alias))));
-      const normalizedModels = models.map((model) => model.id || model.name || model.model).filter(Boolean);
+      const normalizedModels = [...new Set(models.map((model) => (
+        typeof model === "string" ? model : (model?.id || model?.name || model?.model)
+      )).filter(Boolean))];
       await Promise.all(normalizedModels.map((modelId) => onAddCustomModel(modelId)));
       const importedCount = normalizedModels.length;
       if (importedCount === 0) {
         notify.info("没有新增模型");
+      } else {
+        notify.success(`已更新 ${importedCount} 个模型`);
       }
     } catch (error) {
       console.log("Error importing models:", error);
+      notify.error(`更新模型列表失败：${error.message || "未知错误"}`);
     } finally {
       setImporting(false);
     }
@@ -183,6 +188,7 @@ CompatibleModelsSection.propTypes = {
   onCopy: PropTypes.func.isRequired,
   onDeleteAlias: PropTypes.func.isRequired,
   onDeleteCustomModel: PropTypes.func.isRequired,
+  onAddCustomModel: PropTypes.func.isRequired,
   connections: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.string,
     isActive: PropTypes.bool,
