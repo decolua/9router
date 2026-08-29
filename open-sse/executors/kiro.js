@@ -7,6 +7,7 @@ import {
 } from "../config/kiroConstants.js";
 import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
+import { shrinkKiroPayload } from "../utils/kiroPayloadShrink.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
@@ -322,7 +323,9 @@ export class KiroExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
-    return body;
+    // Kiro rejects payloads above ~900 KiB; degrade oversized ones instead of
+    // failing the turn. Returns the input untouched when within budget.
+    return shrinkKiroPayload(body);
   }
 
   /**
