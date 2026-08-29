@@ -140,7 +140,7 @@ function extractClientSessionId(headers, body, scope = "") {
     // survives translation to formats that drop metadata (e.g. Responses API).
     const claude = extractClaudeCodeSession(body?.metadata?.user_id)
         || headerValue(headers, CLAUDE_CODE_SESSION_HEADER);
-    if (claude) return `claude:${claude}`;
+    if (claude) return scope === "claude" ? claude : `claude:${claude}`;
     const antigravity = extractAntigravitySession(body);
     if (antigravity) return `antigravity:${antigravity}`;
     for (const key of SESSION_HEADER_KEYS) {
