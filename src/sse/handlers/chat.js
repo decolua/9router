@@ -23,6 +23,12 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import {
+  createCacheAffinityScope,
+  getCacheAffinityPreference,
+  rememberCacheAffinity,
+} from "../services/cacheAffinity.js";
+import { extractClientSessionId } from "open-sse/utils/sessionManager.js";
 
 /**
  * Handle chat completion request
@@ -214,6 +220,24 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   }
 
   const { provider, model } = modelInfo;
+  const chatSettings = await getSettings();
+  const providerStrategy = (chatSettings.providerStrategies || {})[provider] || {};
+  const requestHeaders = clientRawRequest?.headers || (request ? Object.fromEntries(request.headers.entries()) : {});
+  const affinityScope = providerStrategy.cacheAffinityEnabled === true
+    ? createCacheAffinityScope({
+        provider,
+        model,
+        apiKey,
+        fingerprint: request?.headers?.get("x-9router-client-id"),
+        sessionId: extractClientSessionId(
+          requestHeaders,
+          body,
+          provider,
+          { includeRequestId: false },
+        ),
+      })
+    : null;
+  const preferredConnectionId = getCacheAffinityPreference(affinityScope);
 
   // Routing shown in the unified "▶" line (client model → provider/model)
 
@@ -226,7 +250,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = preferredConnectionId
+      ? await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId })
+      : await getProviderCredentials(provider, excludeConnectionIds, model);
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -258,7 +284,6 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     }
 
     // Use shared chatCore
-    const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
@@ -296,6 +321,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         });
       },
       onRequestSuccess: async () => {
+        if (affinityScope) {
+          const outcome = !preferredConnectionId
+            ? "miss"
+            : preferredConnectionId === credentials.connectionId ? "hit" : "repin";
+          rememberCacheAffinity(affinityScope, credentials.connectionId);
+          log.debug("CACHE_AFFINITY", `${provider}/${model} | ${affinityScope.level} | ${outcome}`);
+        }
         await clearAccountError(credentials.connectionId, credentials, model);
       }
     });

@@ -66,6 +66,8 @@ export default function ProviderDetailPage() {
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
+  const [providerCacheAffinity, setProviderCacheAffinity] = useState(false);
+  const [providerStrategyError, setProviderStrategyError] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const [suggestedModels, setSuggestedModels] = useState([]);
@@ -80,6 +82,8 @@ export default function ProviderDetailPage() {
   const [oneByOneResults, setOneByOneResults] = useState({});
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
+  const providerStrategySaveQueueRef = useRef(Promise.resolve());
+  const providerStrategySaveVersionRef = useRef(0);
   const [importingQoderModels, setImportingQoderModels] = useState(false);
   const { copied, copy } = useCopyToClipboard();
 
@@ -315,6 +319,7 @@ export default function ProviderDetailPage() {
       const override = (settingsData.providerStrategies || {})[providerId] || {};
       setProviderStrategy(override.fallbackStrategy || null);
       setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
+      setProviderCacheAffinity(override.cacheAffinityEnabled === true);
       // Load per-provider thinking config
       const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
       setThinkingMode(thinkingCfg.mode || "auto");
@@ -364,47 +369,50 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const saveProviderStrategy = async (strategy, stickyLimit) => {
-    try {
-      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
-      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-      const current = settingsData.providerStrategies || {};
-
-      // Build override: null strategy means remove override, use global
-      const override = {};
-      if (strategy) override.fallbackStrategy = strategy;
-      if (strategy === "round-robin" && stickyLimit !== "") {
-        override.stickyRoundRobinLimit = Number(stickyLimit) || 3;
-      }
-
-      const updated = { ...current };
-      if (Object.keys(override).length === 0) {
-        delete updated[providerId];
-      } else {
-        updated[providerId] = override;
-      }
-
-      await fetch("/api/settings", {
+  const saveProviderStrategy = (strategy, stickyLimit, cacheAffinityEnabled = providerCacheAffinity) => {
+    const version = ++providerStrategySaveVersionRef.current;
+    setProviderStrategyError("");
+    const operation = providerStrategySaveQueueRef.current.then(async () => {
+      const saveRes = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerStrategies: updated }),
+        body: JSON.stringify({
+          providerStrategyPatch: { providerId, strategy, stickyLimit, cacheAffinityEnabled },
+        }),
       });
-    } catch (error) {
-      console.log("Error saving provider strategy:", error);
-    }
+      if (!saveRes.ok) throw new Error("Failed to save provider settings");
+    });
+    providerStrategySaveQueueRef.current = operation.catch(() => {});
+    return operation.then(
+      () => ({ saved: true, isLatest: version === providerStrategySaveVersionRef.current }),
+      (error) => {
+        console.log("Error saving provider strategy:", error);
+        const isLatest = version === providerStrategySaveVersionRef.current;
+        if (isLatest) setProviderStrategyError(error.message || "Failed to save provider settings");
+        return { saved: false, isLatest };
+      },
+    );
   };
 
-  const handleRoundRobinToggle = (enabled) => {
+  const handleRoundRobinToggle = async (enabled) => {
     const strategy = enabled ? "round-robin" : null;
     const sticky = enabled ? (providerStickyLimit || "1") : providerStickyLimit;
     if (enabled && !providerStickyLimit) setProviderStickyLimit("1");
     setProviderStrategy(strategy);
-    saveProviderStrategy(strategy, sticky);
+    const { saved, isLatest } = await saveProviderStrategy(strategy, sticky);
+    if (!saved && isLatest) await fetchConnections();
   };
 
-  const handleStickyLimitChange = (value) => {
+  const handleStickyLimitChange = async (value) => {
     setProviderStickyLimit(value);
-    saveProviderStrategy("round-robin", value);
+    const { saved, isLatest } = await saveProviderStrategy("round-robin", value);
+    if (!saved && isLatest) await fetchConnections();
+  };
+
+  const handleCacheAffinityToggle = async (enabled) => {
+    setProviderCacheAffinity(enabled);
+    const { saved, isLatest } = await saveProviderStrategy(providerStrategy, providerStickyLimit, enabled);
+    if (!saved && isLatest) await fetchConnections();
   };
 
   const saveThinkingConfig = async (mode) => {
@@ -1474,6 +1482,7 @@ export default function ProviderDetailPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-text-muted font-medium">Round Robin</span>
                 <Toggle
+                  aria-label="Round Robin"
                   checked={providerStrategy === "round-robin"}
                   onChange={handleRoundRobinToggle}
                 />
@@ -1491,6 +1500,17 @@ export default function ProviderDetailPage() {
                   </div>
                 )}
               </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-text-muted font-medium">Cache affinity</span>
+                <Toggle
+                  aria-label="Cache affinity"
+                  checked={providerCacheAffinity}
+                  onChange={handleCacheAffinityToggle}
+                />
+              </div>
+              {!!providerStrategyError && (
+                <span role="alert" className="text-xs text-red-500">{providerStrategyError}</span>
+              )}
             </div>
           </div>
 

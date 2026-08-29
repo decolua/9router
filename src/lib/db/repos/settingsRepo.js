@@ -1,5 +1,6 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { updateProviderStrategy } from "@/shared/utils/providerStrategies.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787";
@@ -101,7 +102,45 @@ export async function updateSettings(updates) {
   db.transaction(function () {
     const row = db.get(`SELECT data FROM settings WHERE id = 1`);
     const current = row ? parseJson(row.data, {}) : {};
-    next = { ...current, ...updates };
+    const { providerStrategyPatch, ...plainUpdates } = updates || {};
+    next = { ...current, ...plainUpdates };
+    if (providerStrategyPatch !== undefined) {
+      if (!providerStrategyPatch || typeof providerStrategyPatch !== "object" || Array.isArray(providerStrategyPatch)) {
+        throw new TypeError("providerStrategyPatch must be an object");
+      }
+      const providerId = typeof providerStrategyPatch.providerId === "string"
+        ? providerStrategyPatch.providerId.trim()
+        : "";
+      if (!providerId) throw new TypeError("providerStrategyPatch.providerId is required");
+
+      const options = {};
+      if (Object.prototype.hasOwnProperty.call(providerStrategyPatch, "strategy")) {
+        const strategy = providerStrategyPatch.strategy;
+        if (strategy !== null && typeof strategy !== "string") {
+          throw new TypeError("providerStrategyPatch.strategy must be a string or null");
+        }
+        options.strategy = strategy;
+      }
+      if (Object.prototype.hasOwnProperty.call(providerStrategyPatch, "stickyLimit")) {
+        const stickyLimit = providerStrategyPatch.stickyLimit;
+        if (typeof stickyLimit !== "string" && typeof stickyLimit !== "number") {
+          throw new TypeError("providerStrategyPatch.stickyLimit must be a string or number");
+        }
+        options.stickyLimit = stickyLimit;
+      }
+      if (Object.prototype.hasOwnProperty.call(providerStrategyPatch, "cacheAffinityEnabled")) {
+        if (typeof providerStrategyPatch.cacheAffinityEnabled !== "boolean") {
+          throw new TypeError("providerStrategyPatch.cacheAffinityEnabled must be boolean");
+        }
+        options.cacheAffinityEnabled = providerStrategyPatch.cacheAffinityEnabled;
+      }
+
+      next.providerStrategies = updateProviderStrategy(
+        current.providerStrategies || {},
+        providerId,
+        options,
+      );
+    }
     db.run(
       `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
       [stringifyJson(next)],
