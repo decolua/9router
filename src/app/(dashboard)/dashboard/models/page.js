@@ -240,6 +240,12 @@ export default function ModelControlCenterPage() {
   const [search, setSearch] = useState("");
   const [providerFilter, setProviderFilter] = useState("all");
   const [healthFilter, setHealthFilter] = useState("all");
+  const [policyFilter, setPolicyFilter] = useState("all");
+
+  // PRE_B4_TABS_PAGINATION_V1
+  const [activeTab, setActiveTab] = useState("overview");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -575,6 +581,68 @@ export default function ModelControlCenterPage() {
     effectiveState,
   ]);
 
+  const policyRows = useMemo(
+    () => {
+      if (policyFilter === "all") {
+        return rows;
+      }
+
+      return rows.filter(
+        ({ effective }) => {
+          const policyState =
+            effective?.operatorPolicy?.state
+            || (
+              effective?.operatorDisabled
+                ? "disable"
+                : "default"
+            );
+
+          return (
+            policyState
+            === policyFilter
+          );
+        },
+      );
+    },
+    [
+      rows,
+      policyFilter,
+    ],
+  );
+
+  const totalPages =
+    Math.max(
+      1,
+      Math.ceil(
+        policyRows.length
+        / pageSize,
+      ),
+    );
+
+  const currentPage =
+    Math.min(
+      page,
+      totalPages,
+    );
+
+  const pageStart =
+    (currentPage - 1)
+    * pageSize;
+
+  const pagedRows =
+    useMemo(
+      () =>
+        policyRows.slice(
+          pageStart,
+          pageStart + pageSize,
+        ),
+      [
+        policyRows,
+        pageStart,
+        pageSize,
+      ],
+    );
+
   const dryRunDirectByFullModel =
     useMemo(
       () =>
@@ -652,6 +720,184 @@ export default function ModelControlCenterPage() {
         </div>
       )}
 
+      <div className="rounded-xl border border-border bg-background p-1">
+        <div
+          className="flex gap-1 overflow-x-auto"
+          role="tablist"
+          aria-label="Model Control Center"
+        >
+          {[
+            {
+              id: "overview",
+              label: "Overview",
+            },
+            {
+              id: "models",
+              label: "Models & Policy",
+            },
+            {
+              id: "discovery",
+              label: "Discovery",
+            },
+            {
+              id: "dry-run",
+              label: "Dry-run",
+            },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={
+                activeTab === tab.id
+              }
+              onClick={() =>
+                setActiveTab(tab.id)
+              }
+              className={`whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                activeTab === tab.id
+                  ? "bg-primary text-white"
+                  : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {activeTab === "discovery" && (
+        <div className="rounded-xl border border-border bg-background">
+          <div className="p-4 border-b border-border">
+            <div className="font-medium text-text-main">
+              Provider Discovery
+            </div>
+
+            <div className="text-xs text-text-muted mt-1">
+              Read-only provider catalog inventory. Discovery authority and custom-provider guards are unchanged in Pre-B.4.1.
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 p-4">
+            {providerList.map((provider) => {
+              const providerModels =
+                Object.values(
+                  provider.models || {},
+                );
+
+              const configured =
+                providerModels.filter(
+                  (model) =>
+                    model.configured === true,
+                ).length;
+
+              const discovered =
+                providerModels.filter(
+                  (model) =>
+                    model.discovered === true,
+                ).length;
+
+              const custom =
+                providerModels.filter(
+                  (model) =>
+                    model.custom === true,
+                ).length;
+
+              const compatible =
+                provider.providerId
+                  ?.startsWith(
+                    "openai-compatible-",
+                  )
+                || provider.providerId
+                  ?.startsWith(
+                    "anthropic-compatible-",
+                  );
+
+              return (
+                <div
+                  key={provider.providerId}
+                  className="rounded-xl border border-border bg-surface-1 p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium text-text-main truncate">
+                        {provider.name}
+                      </div>
+
+                      <div className="text-[11px] text-text-muted mt-1 truncate">
+                        {provider.alias
+                          || provider.providerId}
+                      </div>
+                    </div>
+
+                    <span
+                      className={`inline-flex shrink-0 rounded px-2 py-1 text-[10px] font-semibold ${
+                        compatible
+                          ? "bg-amber-500/10 text-amber-600"
+                          : "bg-green-500/10 text-green-600"
+                      }`}
+                    >
+                      {compatible
+                        ? "CUSTOM / COMPATIBLE"
+                        : "BUILT-IN"}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 mt-4">
+                    <SummaryCard
+                      label="Connections"
+                      value={
+                        provider.connectionCount
+                        ?? 0
+                      }
+                    />
+
+                    <SummaryCard
+                      label="Catalog"
+                      value={
+                        providerModels.length
+                      }
+                    />
+
+                    <SummaryCard
+                      label="Configured"
+                      value={configured}
+                    />
+
+                    <SummaryCard
+                      label="Discovered"
+                      value={discovered}
+                    />
+                  </div>
+
+                  {custom > 0 && (
+                    <div className="mt-3 text-xs text-text-muted">
+                      Custom catalog entries: {custom}
+                    </div>
+                  )}
+
+                  {compatible && (
+                    <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-600">
+                      Guard target: detected models require explicit operator opt-in before future automatic probing or routing.
+                    </div>
+                  )}
+
+                  {provider.warning && (
+                    <div
+                      className="mt-3 text-[11px] text-amber-600 truncate"
+                      title={provider.warning}
+                    >
+                      {provider.warning}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {activeTab === "overview" && (
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-10 gap-3">
         <SummaryCard label="Providers" value={summary.providers} />
         <SummaryCard label="Connections" value={summary.connections} />
@@ -664,7 +910,10 @@ export default function ModelControlCenterPage() {
         <SummaryCard label="Changed" value={summary.changed} />
         <SummaryCard label="Stale" value={summary.stale} />
       </div>
+      )}
 
+
+      {activeTab === "overview" && (
       <div className="rounded-xl border border-border bg-background">
         <div className="p-4 border-b border-border flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -738,7 +987,10 @@ export default function ModelControlCenterPage() {
           />
         </div>
       </div>
+      )}
 
+
+      {activeTab === "dry-run" && (
       <div className="rounded-xl border border-border bg-background">
         <div className="p-4 border-b border-border flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -796,18 +1048,27 @@ export default function ModelControlCenterPage() {
           Round-robin rank is intentionally not predicted.
         </div>
       </div>
+      )}
 
+
+      {activeTab === "models" && (
       <div className="rounded-xl border border-border bg-background">
         <div className="p-4 border-b border-border flex flex-col lg:flex-row gap-3">
           <input
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+                setSearch(event.target.value);
+                setPage(1);
+              }}
             placeholder="Search provider or model..."
             className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-border bg-background text-sm text-text-main outline-none focus:border-primary"
           />
           <select
             value={providerFilter}
-            onChange={(event) => setProviderFilter(event.target.value)}
+            onChange={(event) => {
+                setProviderFilter(event.target.value);
+                setPage(1);
+              }}
             className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-text-main"
           >
             <option value="all">All providers</option>
@@ -819,7 +1080,10 @@ export default function ModelControlCenterPage() {
           </select>
           <select
             value={healthFilter}
-            onChange={(event) => setHealthFilter(event.target.value)}
+            onChange={(event) => {
+                setHealthFilter(event.target.value);
+                setPage(1);
+              }}
             className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-text-main"
           >
             <option value="all">All health</option>
@@ -834,6 +1098,41 @@ export default function ModelControlCenterPage() {
             <option value="pending">Pending</option>
             <option value="stale">Stale</option>
             <option value="unsupported">N/A</option>
+          </select>
+
+          <select
+            value={policyFilter}
+            onChange={(event) => {
+              setPolicyFilter(
+                event.target.value,
+              );
+              setPage(1);
+            }}
+            className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-text-main"
+          >
+            <option value="all">
+              All policies
+            </option>
+
+            <option value="default">
+              Default
+            </option>
+
+            <option value="allow">
+              Allow
+            </option>
+
+            <option value="deprioritize">
+              Deprioritize
+            </option>
+
+            <option value="quarantine">
+              Quarantine
+            </option>
+
+            <option value="disable">
+              Disable
+            </option>
           </select>
         </div>
 
@@ -855,7 +1154,7 @@ export default function ModelControlCenterPage() {
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ provider, model, badge, effective }) => (
+              {pagedRows.map(({ provider, model, badge, effective }) => (
                 <tr key={`${provider.providerId}:${model.id}`} className="border-b border-border/70 last:border-0">
                   <td className="px-4 py-3">
                     <div className="font-medium text-text-main">{provider.name}</div>
@@ -1013,7 +1312,7 @@ export default function ModelControlCenterPage() {
                   </td>
                 </tr>
               ))}
-              {rows.length === 0 && (
+              {policyRows.length === 0 && (
                 <tr>
                   <td colSpan={11} className="px-4 py-12 text-center text-text-muted">
                     No models match the current filters.
@@ -1023,8 +1322,99 @@ export default function ModelControlCenterPage() {
             </tbody>
           </table>
         </div>
-      </div>
 
+        <div className="border-t border-border px-4 py-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="text-xs text-text-muted">
+            Showing{" "}
+            {policyRows.length === 0
+              ? 0
+              : pageStart + 1}
+            {"–"}
+            {Math.min(
+              pageStart + pageSize,
+              policyRows.length,
+            )}
+            {" of "}
+            {policyRows.length}
+            {" model(s)"}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-text-muted">
+              Rows
+            </span>
+
+            <select
+              value={pageSize}
+              onChange={(event) => {
+                setPageSize(
+                  Number(
+                    event.target.value,
+                  ),
+                );
+                setPage(1);
+              }}
+              className="px-2 py-1.5 rounded-lg border border-border bg-background text-xs text-text-main"
+            >
+              <option value={25}>
+                25
+              </option>
+
+              <option value={50}>
+                50
+              </option>
+
+              <option value={100}>
+                100
+              </option>
+            </select>
+
+            <button
+              type="button"
+              onClick={() =>
+                setPage(
+                  Math.max(
+                    1,
+                    currentPage - 1,
+                  ),
+                )
+              }
+              disabled={
+                currentPage <= 1
+              }
+              className="px-3 py-1.5 rounded-lg border border-border bg-background text-xs text-text-main disabled:opacity-40"
+            >
+              Previous
+            </button>
+
+            <span className="text-xs text-text-muted min-w-[90px] text-center">
+              Page {currentPage} of {totalPages}
+            </span>
+
+            <button
+              type="button"
+              onClick={() =>
+                setPage(
+                  Math.min(
+                    totalPages,
+                    currentPage + 1,
+                  ),
+                )
+              }
+              disabled={
+                currentPage >= totalPages
+              }
+              className="px-3 py-1.5 rounded-lg border border-border bg-background text-xs text-text-main disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      </div>
+      )}
+
+
+      {activeTab === "dry-run" && (
       <div className="rounded-xl border border-border bg-background">
         <div className="p-4 border-b border-border flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -1133,6 +1523,8 @@ export default function ModelControlCenterPage() {
           </div>
         )}
       </div>
+      )}
+
     </div>
   );
 }
