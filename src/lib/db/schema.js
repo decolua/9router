@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -150,6 +150,23 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_provider ON requestDetails(provider)",
       "CREATE INDEX IF NOT EXISTS idx_rd_model ON requestDetails(model)",
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
+    ],
+  },
+  // Tracks which provider/models the user has already "seen". Used by the
+  // New Models discovery feature to surface newly-added models (free or paid)
+  // across every connected provider, including self-added compatible nodes.
+  seenModels: {
+    columns: {
+      id: "TEXT PRIMARY KEY", // `${providerAlias}::${modelId}`
+      providerAlias: "TEXT NOT NULL",
+      modelId: "TEXT NOT NULL",
+      isFree: "INTEGER DEFAULT 0",
+      firstSeenAt: "TEXT NOT NULL",
+      acknowledged: "INTEGER DEFAULT 0",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_sm_provider ON seenModels(providerAlias)",
+      "CREATE INDEX IF NOT EXISTS idx_sm_unseen ON seenModels(acknowledged)",
     ],
   },
 };

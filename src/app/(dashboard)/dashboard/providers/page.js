@@ -25,6 +25,7 @@ import { useNotificationStore } from "@/store/notificationStore";
 import { useHeaderSearchStore } from "@/store/headerSearchStore";
 import ModelAvailabilityBadge from "./components/ModelAvailabilityBadge";
 import AddCompatibleModal from "./components/AddCompatibleModal";
+import NewModelsButton from "./components/NewModelsButton";
 
 function getStatusDisplay(connected, error, errorCode) {
   const parts = [];
@@ -373,6 +374,19 @@ export default function ProvidersPage() {
           <p className="text-text-muted text-sm">No providers match your search</p>
         </div>
       )}
+
+      {/* New Models discovery */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col">
+          <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
+            Model Discovery
+          </h2>
+          <p className="text-xs text-text-muted">
+            Track new models added by any provider, including free ones
+          </p>
+        </div>
+        <NewModelsButton />
+      </div>
 
       {/* Custom Providers (OpenAI/Anthropic Compatible) — dynamic */}
       <div className="flex flex-col gap-4">
