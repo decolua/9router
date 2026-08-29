@@ -172,7 +172,7 @@ export async function pollForToken(providerName, deviceCode, codeVerifier, extra
       const tokens = provider.mapTokens(result.data, extra);
       // Kiro IDC/Builder-ID tokens lack profileArn; resolve it to avoid 403
       if (providerName === "kiro" && !tokens.providerSpecificData?.profileArn) {
-        const profileArn = await fetchKiroProfileArn(tokens.accessToken);
+        const profileArn = await fetchKiroProfileArn(tokens.accessToken, proxyOptions);
         if (profileArn) tokens.providerSpecificData.profileArn = profileArn;
       }
       return { success: true, tokens };

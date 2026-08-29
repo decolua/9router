@@ -22,8 +22,8 @@ const codex = {
       .join("&");
     return `${config.authorizeUrl}?${queryString}`;
   },
-  exchangeToken: async (config, code, redirectUri, codeVerifier) => {
-    const response = await fetch(config.tokenUrl, {
+  exchangeToken: async (config, code, redirectUri, codeVerifier, _state, _meta, proxyOptions) => {
+    const buildRequest = (nextProxyOptions) => ({
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -36,10 +36,21 @@ const codex = {
         redirect_uri: redirectUri,
         code_verifier: codeVerifier,
       }),
+      proxyOptions: nextProxyOptions,
     });
 
+    let response = await fetch(config.tokenUrl, buildRequest(proxyOptions));
     if (!response.ok) {
       const error = await response.text();
+      const explicitProxySelected = proxyOptions?.connectionProxyEnabled === true ||
+        proxyOptions?.enabled === true || !!proxyOptions?.vercelRelayUrl;
+      if (isCloudflareHtmlBadRequest(response.status, error) &&
+        !explicitProxySelected && proxyOptions?.disableEnvProxy !== true) {
+        response = await fetch(config.tokenUrl, buildRequest({ disableEnvProxy: true }));
+        if (response.ok) return await response.json();
+        const directError = await response.text();
+        throw new Error(`Token exchange failed: ${directError}`);
+      }
       throw new Error(`Token exchange failed: ${error}`);
     }
 
@@ -65,5 +76,9 @@ const codex = {
     return mapped;
   },
 };
+
+function isCloudflareHtmlBadRequest(status, body) {
+  return status === 400 && /<html/i.test(body || "") && /cloudflare/i.test(body || "");
+}
 
 export default codex;
