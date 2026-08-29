@@ -384,6 +384,18 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
     toolSpecs,
     nameMap,
   });
+  // canonicalizeKiroConversation() already ran its second-chance repair (flatten
+  // every structured tool turn to text, then re-validate). A body that is STILL
+  // invalid here cannot be made shippable, and Kiro answers it with
+  // 400 {"message":"Improperly formed request.","reason":"REQUEST_BODY_INVALID"}.
+  // Fail locally instead: chatCore turns a falsy return into a 400 without
+  // spending an upstream call or a per-account cooldown. The taxonomy
+  // (role:N | pair:N | id:N | spec:N | orphan:0 | current) names the offending
+  // turn so the shape can be diagnosed from the log alone.
+  if (!canonical.valid) {
+    console.error(`[Kiro] refusing invalid conversation (openai → kiro): ${(canonical.errors || []).join(", ") || "unknown"} | turns=${(canonical.history || []).length + 1}`);
+    return null;
+  }
   const replayCurrent = canonical.currentMessage.userInputMessage;
 
   const payload = {
