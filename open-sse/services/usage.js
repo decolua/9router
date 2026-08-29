@@ -14,11 +14,12 @@ import { getCodeBuddyCnUsage, getCodeBuddyIntlUsage } from "./usage/codebuddy-cn
 import { getGrokCliUsage } from "./usage/grok-cli.js";
 import { getKimiUsage } from "./usage/kimi.js";
 import { getDeepseekUsage } from "./usage/deepseek.js";
+import { getZedUsage } from "./usage/zed.js";
 import { resolveQoderCredentials } from "./qoderModels.js";
+import { getGlmUsage } from "./usage/glm.js";
 import {
   getIflowUsage,
   getOllamaUsage,
-  getGlmUsage,
   getVercelAiGatewayUsage,
   getQoderUsage,
 } from "./usage/misc.js";
@@ -33,7 +34,7 @@ const USAGE_HANDLERS = {
   github: (c) => getGitHubUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   "gemini-cli": (c) => getGeminiUsage(c.accessToken, c.providerDataWithProjectId, c.proxyOptions),
   antigravity: (c) => getAntigravityUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
-  claude: (c) => getClaudeUsage(c.accessToken, c.proxyOptions),
+  claude: (c) => getClaudeUsage(c.accessToken, c.proxyOptions, { force: c.force }),
   codex: (c) => getCodexUsage(c.accessToken, c.proxyOptions),
   kiro: (c) => getKiroUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   qoder: async (c) => {
@@ -54,9 +55,10 @@ const USAGE_HANDLERS = {
   "grok-cli": (c) => getGrokCliUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   kimi: (c) => getKimiUsage(c.accessToken, c.apiKey, c.proxyOptions, c.providerSpecificData),
   deepseek: (c) => getDeepseekUsage(c.apiKey, c.proxyOptions),
+  zed: (c) => getZedUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
 };
 
-export async function getUsageForProvider(connection, proxyOptions = null) {
+export async function getUsageForProvider(connection, proxyOptions = null, options = {}) {
   const { provider, accessToken, apiKey, providerSpecificData, projectId } = connection;
   const providerDataWithProjectId = {
     ...(providerSpecificData || {}),
@@ -65,5 +67,13 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
 
   const handler = USAGE_HANDLERS[provider];
   if (!handler) return { message: `Usage API not implemented for ${provider}` };
-  return await handler({ provider, accessToken, apiKey, providerSpecificData, providerDataWithProjectId, proxyOptions });
+  return await handler({
+    provider,
+    accessToken,
+    apiKey,
+    providerSpecificData,
+    providerDataWithProjectId,
+    proxyOptions,
+    force: options.force === true,
+  });
 }
