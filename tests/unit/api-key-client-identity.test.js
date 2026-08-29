@@ -138,6 +138,6 @@ describe("API key client identity", () => {
     }));
 
     expect(identity.clientFamily).toBe("codex");
-    expect(detectClientTool(headers, {})).toBeNull();
+    expect(detectClientTool(headers, {})).toBe("codex");
   });
 });
