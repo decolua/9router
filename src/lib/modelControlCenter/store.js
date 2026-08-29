@@ -15,6 +15,7 @@ const EMPTY = {
     models: 0,
     healthy: 0,
     failed: 0,
+    unsupported: 0,
     pending: 0,
     changed: 0,
     stale: 0,
@@ -26,6 +27,7 @@ export function summarizeProviders(providers = {}) {
   let models = 0;
   let healthy = 0;
   let failed = 0;
+  let unsupported = 0;
   let pending = 0;
   let changed = 0;
   let stale = 0;
@@ -38,6 +40,7 @@ export function summarizeProviders(providers = {}) {
       if (model.changed) changed += 1;
       if (model.health?.status === "ok") healthy += 1;
       else if (model.health?.status === "error") failed += 1;
+      else if (model.health?.status === "unsupported") unsupported += 1;
       else pending += 1;
     }
   }
@@ -48,6 +51,7 @@ export function summarizeProviders(providers = {}) {
     models,
     healthy,
     failed,
+    unsupported,
     pending,
     changed,
     stale,
