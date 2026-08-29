@@ -549,6 +549,25 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "glm":
+      case "glm-cn":
+        // Z.AI Coding Plan: per-model token buckets from billing/balance.
+        // Do not forward `remaining` — it's an absolute token count, not a percentage.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              modelKey: name.toLowerCase().replace(/\s+/g, "-"),
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+              unit: quota.unit || "token",
+            });
+          });
+        }
+        break;
+
       default:
         // Generic fallback for unknown providers
         if (data.quotas) {

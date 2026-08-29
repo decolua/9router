@@ -317,7 +317,50 @@ function isTokenExpired(connection) {
   return shouldRefreshCredentials(connection.provider, connection);
 }
 
+async function testGlmOAuthConnection(connection, effectiveProxy = null) {
+  const psd = connection.providerSpecificData || {};
+  const useCodingPlan = psd.useCodingPlan && (psd.zcodeJwtToken || connection.accessToken);
+
+  if (useCodingPlan) {
+    const jwt = psd.zcodeJwtToken || connection.accessToken;
+    try {
+      const res = await fetchWithConnectionProxy(
+        "https://zcode.z.ai/api/v1/zcode-plan/billing/current",
+        {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${jwt}`,
+            Accept: "application/json",
+          },
+        },
+        effectiveProxy
+      );
+      if (res.ok) return { valid: true, error: null, refreshed: false, newTokens: null };
+      if (res.status === 401) {
+        return { valid: false, error: "Coding Plan token invalid or expired", refreshed: false };
+      }
+      return { valid: false, error: `Coding Plan API returned ${res.status}`, refreshed: false };
+    } catch (err) {
+      return { valid: false, error: err.message, refreshed: false };
+    }
+  }
+
+  if (connection.apiKey) {
+    const apiKeyResult = await testApiKeyConnection(
+      { ...connection, authType: "apikey" },
+      effectiveProxy
+    );
+    return { ...apiKeyResult, refreshed: false, newTokens: null };
+  }
+
+  return { valid: false, error: "No GLM credentials available", refreshed: false };
+}
+
 async function testOAuthConnection(connection, effectiveProxy = null) {
+  if (connection.provider === "glm") {
+    return testGlmOAuthConnection(connection, effectiveProxy);
+  }
+
   const config = OAUTH_TEST_CONFIG[connection.provider];
   if (!config) return { valid: false, error: "Provider test not supported", refreshed: false };
   if (!connection.accessToken) return { valid: false, error: "No access token", refreshed: false };

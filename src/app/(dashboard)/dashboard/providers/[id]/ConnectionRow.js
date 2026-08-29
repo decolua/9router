@@ -74,10 +74,32 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   const isCookieConnection = rowAuthType === "cookie";
   const authIcon = isCookieConnection ? "cookie" : isOAuthConnection ? "lock" : "key";
   const authLabel = isOAuthConnection ? "OAuth" : isCookieConnection ? "Cookie" : "API Key";
-  const displayName = connection.name?.trim()
-    || connection.email?.trim()
-    || connection.displayName?.trim()
-    || (isOAuthConnection ? "OAuth Account" : isCookieConnection ? "Cookie Account" : "API Key");
+  const isEmail = (v) => typeof v === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+  const isUuid = (v) =>
+    typeof v === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim());
+  const defaultOAuthLabel = isEmail(connection.email)
+    ? connection.email
+    : isEmail(connection.name)
+      ? connection.name
+      : (connection.name || connection.email || connection.displayName || "OAuth Account");
+  const glmOAuthLabel = (() => {
+    for (const value of [connection.email, connection.name, connection.displayName]) {
+      if (isEmail(value)) return value;
+    }
+    for (const value of [connection.email, connection.name, connection.displayName]) {
+      if (typeof value === "string" && value.trim() && !isUuid(value)) return value.trim();
+    }
+    return "OAuth Account";
+  })();
+  const displayName = isOAuthConnection
+    ? (connection.provider === "glm"
+      ? glmOAuthLabel
+      : defaultOAuthLabel)
+    : (connection.name?.trim()
+      || connection.email?.trim()
+      || connection.displayName?.trim()
+      || (isCookieConnection ? "Cookie Account" : "API Key"));
   const secondaryDisplayName = connection.name?.trim() && connection.email?.trim() && connection.name.trim() !== connection.email.trim()
     ? connection.email.trim()
     : connection.name?.trim() && connection.displayName?.trim() && connection.name.trim() !== connection.displayName.trim()
