@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { classifyHealth } from "@/lib/modelControlCenter/health.js";
 
 async function mapLimit(items, limit, fn) {
   const queue = [...items];
@@ -16,11 +17,65 @@ async function mapLimit(items, limit, fn) {
 }
 
 function healthBadge(model) {
-  if (model.stale) return { label: "STALE", cls: "text-amber-600 bg-amber-500/10" };
-  if (model.health?.status === "ok") return { label: "OK", cls: "text-green-600 bg-green-500/10" };
-  if (model.health?.status === "error") return { label: "FAILED", cls: "text-red-500 bg-red-500/10" };
-  if (model.health?.status === "unsupported") return { label: "N/A", cls: "text-text-muted bg-surface-2" };
-  return { label: "PENDING", cls: "text-text-muted bg-surface-2" };
+  if (model.stale) {
+    return {
+      key: "stale",
+      label: "STALE",
+      cls: "text-amber-600 bg-amber-500/10",
+    };
+  }
+
+  const category = classifyHealth(model.health);
+
+  const badges = {
+    ok: {
+      key: "ok",
+      label: "OK",
+      cls: "text-green-600 bg-green-500/10",
+    },
+    timeout: {
+      key: "timeout",
+      label: "TIMEOUT",
+      cls: "text-amber-600 bg-amber-500/10",
+    },
+    unavailable: {
+      key: "unavailable",
+      label: "UNAVAILABLE",
+      cls: "text-text-muted bg-surface-2",
+    },
+    restricted: {
+      key: "restricted",
+      label: "RESTRICTED",
+      cls: "text-amber-600 bg-amber-500/10",
+    },
+    rate_limited: {
+      key: "rate_limited",
+      label: "RATE LIMITED",
+      cls: "text-amber-600 bg-amber-500/10",
+    },
+    upstream_error: {
+      key: "upstream_error",
+      label: "UPSTREAM",
+      cls: "text-red-500 bg-red-500/10",
+    },
+    failed: {
+      key: "failed",
+      label: "FAILED",
+      cls: "text-red-500 bg-red-500/10",
+    },
+    unsupported: {
+      key: "unsupported",
+      label: "N/A",
+      cls: "text-text-muted bg-surface-2",
+    },
+    pending: {
+      key: "pending",
+      label: "PENDING",
+      cls: "text-text-muted bg-surface-2",
+    },
+  };
+
+  return badges[category] || badges.pending;
 }
 
 function SummaryCard({ label, value }) {
@@ -132,16 +187,16 @@ export default function ModelControlCenterPage() {
     setBusy(
       scope === "changed"
         ? "test-changed"
-        : scope === "failed"
-          ? "test-failed"
+        : scope === "transient"
+          ? "test-transient"
           : "test-all",
     );
 
     setMessage(
       scope === "changed"
         ? "Testing changed models..."
-        : scope === "failed"
-          ? "Retrying failed models..."
+        : scope === "transient"
+          ? "Retrying transient failures..."
           : "Testing all testable models...",
     );
     try {
@@ -172,8 +227,11 @@ export default function ModelControlCenterPage() {
         data.remainingPending != null
           ? `${data.remainingPending} pending`
           : null,
-        data.remainingFailed != null
-          ? `${data.remainingFailed} failed remaining`
+        data.remainingRetryable != null
+          ? `${data.remainingRetryable} retryable remaining`
+          : null,
+        data.skippedCooldown
+          ? `${data.skippedCooldown} cooling down`
           : null,
         data.skippedExpensive
           ? `${data.skippedExpensive} image probe(s) skipped`
@@ -201,7 +259,7 @@ export default function ModelControlCenterPage() {
       if (providerFilter !== "all" && provider.providerId !== providerFilter) continue;
       for (const model of Object.values(provider.models || {})) {
         const badge = healthBadge(model);
-        if (healthFilter !== "all" && badge.label.toLowerCase() !== healthFilter) continue;
+        if (healthFilter !== "all" && badge.key !== healthFilter) continue;
         if (query) {
           const haystack = `${provider.name} ${provider.providerId} ${model.id} ${model.name} ${model.fullModel}`.toLowerCase();
           if (!haystack.includes(query)) continue;
@@ -246,11 +304,11 @@ export default function ModelControlCenterPage() {
             {busy === "test-changed" ? "Testing..." : "Test Changed"}
           </button>
           <button
-            onClick={() => testModels("failed")}
-            disabled={!!busy || (state?.summary?.failed || 0) === 0}
+            onClick={() => testModels("transient")}
+            disabled={!!busy || (state?.summary?.retryable || 0) === 0}
             className="px-3 py-2 rounded-lg border border-border bg-background text-text-main text-sm font-medium disabled:opacity-50"
           >
-            {busy === "test-failed" ? "Testing..." : "Retry Failed"}
+            {busy === "test-transient" ? "Testing..." : "Retry Transient"}
           </button>
           <button
             onClick={() => testModels("all")}
@@ -268,12 +326,13 @@ export default function ModelControlCenterPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-9 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-10 gap-3">
         <SummaryCard label="Providers" value={summary.providers} />
         <SummaryCard label="Connections" value={summary.connections} />
         <SummaryCard label="Models" value={summary.models} />
         <SummaryCard label="Healthy" value={summary.healthy} />
-        <SummaryCard label="Failed" value={summary.failed} />
+        <SummaryCard label="Failures" value={summary.failed} />
+        <SummaryCard label="Retryable" value={summary.retryable} />
         <SummaryCard label="N/A" value={summary.unsupported} />
         <SummaryCard label="Pending" value={summary.pending} />
         <SummaryCard label="Changed" value={summary.changed} />
@@ -307,10 +366,15 @@ export default function ModelControlCenterPage() {
           >
             <option value="all">All health</option>
             <option value="ok">OK</option>
+            <option value="timeout">Timeout</option>
+            <option value="unavailable">Unavailable</option>
+            <option value="restricted">Restricted</option>
+            <option value="rate_limited">Rate Limited</option>
+            <option value="upstream_error">Upstream Error</option>
             <option value="failed">Failed</option>
             <option value="pending">Pending</option>
             <option value="stale">Stale</option>
-            <option value="n/a">N/A</option>
+            <option value="unsupported">N/A</option>
           </select>
         </div>
 

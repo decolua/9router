@@ -4,6 +4,10 @@ import {
   readControlCenter,
   writeControlCenter,
 } from "@/lib/modelControlCenter/store.js";
+import {
+  classifyHealth,
+  isRetryableHealth,
+} from "@/lib/modelControlCenter/health.js";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +15,7 @@ const TESTABLE_KINDS = new Set(["llm", "embedding", "image", "stt"]);
 const EXPENSIVE_KINDS = new Set(["image"]);
 const CONCURRENCY = 3;
 const MAX_TESTS = 18;
+const RETRY_COOLDOWN_MS = 120_000;
 
 function testedAtValue(value) {
   const parsed = Date.parse(value || "");
@@ -20,6 +25,8 @@ function testedAtValue(value) {
 function pickTargets(state, body = {}) {
   const targets = [];
   let skippedExpensive = 0;
+  let skippedCooldown = 0;
+  const now = Date.now();
 
   for (const provider of Object.values(state.providers || {})) {
     if (body.provider && body.provider !== provider.providerId) continue;
@@ -39,9 +46,23 @@ function pickTargets(state, body = {}) {
 
       if (
         body.scope === "failed"
-        && model.health?.status !== "error"
+        || body.scope === "transient"
       ) {
-        continue;
+        if (!isRetryableHealth(model.health)) {
+          continue;
+        }
+
+        const lastTestedAt = testedAtValue(
+          model.health?.testedAt,
+        );
+
+        if (
+          lastTestedAt
+          && now - lastTestedAt < RETRY_COOLDOWN_MS
+        ) {
+          skippedCooldown += 1;
+          continue;
+        }
       }
 
       const kind = model.kind || "llm";
@@ -77,6 +98,7 @@ function pickTargets(state, body = {}) {
   return {
     targets: targets.slice(0, MAX_TESTS),
     skippedExpensive,
+    skippedCooldown,
   };
 }
 
@@ -105,6 +127,7 @@ export async function POST(request) {
     const {
       targets,
       skippedExpensive,
+      skippedCooldown,
     } = pickTargets(state, body);
 
     if (targets.length === 0) {
@@ -112,9 +135,11 @@ export async function POST(request) {
         success: true,
         tested: 0,
         skippedExpensive,
+        skippedCooldown,
         remainingChanged: state.summary?.changed || 0,
         remainingPending: state.summary?.pending || 0,
         remainingFailed: state.summary?.failed || 0,
+        remainingRetryable: state.summary?.retryable || 0,
         batchLimit: MAX_TESTS,
         state,
       });
@@ -143,6 +168,7 @@ export async function POST(request) {
           if (!TESTABLE_KINDS.has(target.kind)) {
             model.health = {
               status: "unsupported",
+              category: "unsupported",
               latencyMs: null,
               testedAt: new Date().toISOString(),
               statusCode: null,
@@ -169,7 +195,7 @@ export async function POST(request) {
               target.kind,
             );
 
-            model.health = {
+            const health = {
               status: result.ok ? "ok" : "error",
               latencyMs: result.latencyMs ?? null,
               testedAt: new Date().toISOString(),
@@ -177,9 +203,15 @@ export async function POST(request) {
               error: result.error || null,
               note: result.note || null,
             };
+
+            health.category = classifyHealth(health);
+            model.health = health;
           } catch (error) {
             model.health =
               healthErrorFromException(error, startedAt);
+
+            model.health.category =
+              classifyHealth(model.health);
           }
 
           // The model has now received a real probe attempt,
@@ -204,9 +236,11 @@ export async function POST(request) {
       success: true,
       tested: results.length,
       skippedExpensive,
+      skippedCooldown,
       remainingChanged: saved.summary.changed,
       remainingPending: saved.summary.pending,
       remainingFailed: saved.summary.failed,
+      remainingRetryable: saved.summary.retryable,
       batchLimit: MAX_TESTS,
       results,
       state: saved,
