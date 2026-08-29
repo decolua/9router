@@ -112,13 +112,22 @@ export async function rebuildControlCenter(discovery = []) {
       addModel(modelMap, model, { custom: true, source: "custom" });
     }
 
+    const successfulDiscovery = providerDiscovery.filter(
+      (item) => !item.warning,
+    );
+
     for (const item of providerDiscovery) {
+      const isLiveDiscovery = !item.warning;
+
       for (const model of item.models || []) {
         addModel(
           modelMap,
           model,
-          { discovered: true, source: "resolved" },
-          item.connectionId,
+          {
+            discovered: isLiveDiscovery,
+            source: isLiveDiscovery ? "resolved" : "fallback",
+          },
+          isLiveDiscovery ? item.connectionId : null,
         );
       }
     }
@@ -142,12 +151,18 @@ export async function rebuildControlCenter(discovery = []) {
         connectionsAvailable: connectionSet.size,
         connectionsQueried: providerDiscovery.length,
         connectionCount: providerConnections.length,
-        availabilityKnown: providerDiscovery.length > 0,
+        availabilityKnown: successfulDiscovery.length > 0,
       };
 
       const old = previousProvider?.models?.[model.id];
       model.health = old?.health || null;
-      model.changed = !old || modelSignature(old) !== modelSignature(model);
+
+      // A never-tested model must remain "changed" so Test Changed
+      // can perform its first real health probe.
+      model.changed =
+        !old
+        || !old.health
+        || modelSignature(old) !== modelSignature(model);
       currentModels[model.id] = model;
     }
 
@@ -175,10 +190,11 @@ export async function rebuildControlCenter(discovery = []) {
         authType: connection.authType,
         priority: connection.priority,
       })),
-      warning: providerDiscovery
-        .map((item) => item.warning)
-        .filter(Boolean)
-        .join(" | ") || null,
+      warning: [...new Set(
+        providerDiscovery
+          .map((item) => item.warning)
+          .filter(Boolean),
+      )].join(" | ") || null,
       models: currentModels,
     };
   }

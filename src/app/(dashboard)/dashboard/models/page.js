@@ -123,12 +123,24 @@ export default function ModelControlCenterPage() {
       const res = await fetch("/api/models/control-center/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scope }),
+        body: JSON.stringify({
+          scope,
+          ...(providerFilter !== "all"
+            ? { provider: providerFilter }
+            : {}),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Model test failed");
       setState(data.state);
-      setMessage(`Model test complete: ${data.tested} models tested.`);
+      const providerLabel =
+        providerFilter !== "all"
+          ? ` for ${providerFilter}`
+          : "";
+
+      setMessage(
+        `Model test complete: ${data.tested} models tested${providerLabel}.`,
+      );
     } catch (error) {
       setMessage(`Model test failed: ${error.message}`);
     } finally {

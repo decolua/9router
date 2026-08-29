@@ -63,6 +63,7 @@ export async function POST(request) {
               testedAt: new Date().toISOString(),
               error: `No global ping implementation for kind=${target.kind}`,
             };
+            model.changed = false;
             results.push({ ...target, ...model.health });
             continue;
           }
