@@ -1,14 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { supportsThinkingLevel } from "../../open-sse/providers/capabilities.js";
 import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
 
 describe("getThinkingLevels", () => {
-  it.each(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"])("adds max for %s on codex", (model) => {
-    const levels = getThinkingLevels("codex", model);
-    expect(levels).toContain("max");
-    expect(levels).toContain("xhigh");
-    expect(levels).not.toContain("ultra");
-    expect(supportsThinkingLevel("codex", model, "max")).toBe(true);
+  it.each([
+    ["gpt-5.6-sol", ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]],
+    ["gpt-5.6-terra", ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]],
+    ["gpt-5.6-luna", ["none", "minimal", "low", "medium", "high", "xhigh", "max"]],
+    ["gpt-5.6-sol-review", ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]],
+    ["gpt-5.6-terra-review", ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]],
+    ["gpt-5.6-luna-review", ["none", "minimal", "low", "medium", "high", "xhigh", "max"]],
+  ])("returns Codex levels for %s", (model, expected) => {
+    expect(getThinkingLevels("codex", model)).toEqual(expected);
+  });
+
+  it("does not expose Codex-only GPT-5.6 overrides on Kiro", () => {
+    expect(getThinkingLevels("kiro", "gpt-5.6-sol")).toEqual([
+      "none", "minimal", "low", "medium", "high", "xhigh",
+    ]);
   });
 
   it("does not add max for other codex models", () => {
@@ -16,7 +24,8 @@ describe("getThinkingLevels", () => {
     expect(levels).toEqual(["low", "medium", "high", "xhigh"]);
   });
 
-  it.each(["openai", "kiro"])("does not add codex-only max for %s", (provider) => {
-    expect(supportsThinkingLevel(provider, "gpt-5.6-sol", "max")).toBe(false);
+  it("does not add max for other Codex models", () => {
+    const levels = getThinkingLevels("codex", "gpt-5.5");
+    expect(levels || []).not.toContain("max");
   });
 });

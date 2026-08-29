@@ -31,8 +31,13 @@ const FORMAT_LEVELS = {
   step: L.base,
 };
 
+const CODEX_GPT_5_6_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+
 // Model-name pattern overrides (glob, first match wins) — more precise than format default.
 const PATTERN_THINKING = [
+  { provider: "codex", pattern: "*gpt-5.6-sol*", levels: [...CODEX_GPT_5_6_LEVELS, "ultra"] },
+  { provider: "codex", pattern: "*gpt-5.6-terra*", levels: [...CODEX_GPT_5_6_LEVELS, "ultra"] },
+  { provider: "codex", pattern: "*gpt-5.6-luna*", levels: CODEX_GPT_5_6_LEVELS },
   { pattern: "*codex*", levels: ["low", "medium", "high", "xhigh"] }, // codex cannot disable thinking
 ];
 
@@ -41,8 +46,10 @@ export function getThinkingLevels(provider, model) {
   if (provider === "kiro" && resolveKiroEffortPath(model) === null) return null;
   const caps = getCapabilitiesForModel(provider, model);
   if (!caps.reasoning) return null;
-  const hit = PATTERN_THINKING.find((p) => matchPattern(p.pattern, model));
-  let levels = caps.thinkingLevels || hit?.levels || FORMAT_LEVELS[caps.thinkingFormat] || L.base;
+  const hit = PATTERN_THINKING.find((entry) =>
+    (!entry.provider || entry.provider === provider) && matchPattern(entry.pattern, model)
+  );
+  let levels = hit?.levels || FORMAT_LEVELS[caps.thinkingFormat] || L.base;
   if (caps.thinkingCanDisable === false) levels = levels.filter((l) => l !== "none");
   return levels;
 }

@@ -38,3 +38,11 @@ export function modelStrip(model) {
 export function modelTargetFormat(model) {
   return model?.targetFormat || MODEL_DEFAULTS.targetFormat;
 }
+
+// Per-model declared upstream formats (e.g. ["openai", "claude"]). Guards the
+// sourceFormat-matched transport for multi-endpoint providers whose models differ
+// in endpoint support (opencode-go: kimi/glm only do /chat/completions, minimax/qwen
+// also do /messages, deepseek also does /responses).
+export function modelSupportedFormats(model) {
+  return model?.supportedFormats || null;
+}
