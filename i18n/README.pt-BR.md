@@ -558,7 +558,7 @@ Cliente → 9Router → Headroom /v1/compress → 9Router → provedor
 Configuração local:
 
 ```bash
-pip install "headroom-ai[proxy]>=0.5.21"
+pip install "headroom-ai[proxy]"
 headroom proxy --port 8787
 ```
 
