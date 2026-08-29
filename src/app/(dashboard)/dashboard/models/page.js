@@ -129,8 +129,21 @@ export default function ModelControlCenterPage() {
         "This test batch can consume provider quota and may generate images. Continue?",
       )
     ) return;
-    setBusy(scope === "changed" ? "test-changed" : "test-all");
-    setMessage(scope === "changed" ? "Testing changed models..." : "Testing all testable models...");
+    setBusy(
+      scope === "changed"
+        ? "test-changed"
+        : scope === "failed"
+          ? "test-failed"
+          : "test-all",
+    );
+
+    setMessage(
+      scope === "changed"
+        ? "Testing changed models..."
+        : scope === "failed"
+          ? "Retrying failed models..."
+          : "Testing all testable models...",
+    );
     try {
       const res = await fetch("/api/models/control-center/test", {
         method: "POST",
@@ -158,6 +171,9 @@ export default function ModelControlCenterPage() {
           : null,
         data.remainingPending != null
           ? `${data.remainingPending} pending`
+          : null,
+        data.remainingFailed != null
+          ? `${data.remainingFailed} failed remaining`
           : null,
         data.skippedExpensive
           ? `${data.skippedExpensive} image probe(s) skipped`
@@ -228,6 +244,13 @@ export default function ModelControlCenterPage() {
             className="px-3 py-2 rounded-lg border border-border bg-background text-text-main text-sm font-medium disabled:opacity-50"
           >
             {busy === "test-changed" ? "Testing..." : "Test Changed"}
+          </button>
+          <button
+            onClick={() => testModels("failed")}
+            disabled={!!busy || (state?.summary?.failed || 0) === 0}
+            className="px-3 py-2 rounded-lg border border-border bg-background text-text-main text-sm font-medium disabled:opacity-50"
+          >
+            {busy === "test-failed" ? "Testing..." : "Retry Failed"}
           </button>
           <button
             onClick={() => testModels("all")}

@@ -37,6 +37,13 @@ function pickTargets(state, body = {}) {
 
       if (body.scope === "changed" && !model.changed) continue;
 
+      if (
+        body.scope === "failed"
+        && model.health?.status !== "error"
+      ) {
+        continue;
+      }
+
       const kind = model.kind || "llm";
 
       if (
@@ -107,6 +114,7 @@ export async function POST(request) {
         skippedExpensive,
         remainingChanged: state.summary?.changed || 0,
         remainingPending: state.summary?.pending || 0,
+        remainingFailed: state.summary?.failed || 0,
         batchLimit: MAX_TESTS,
         state,
       });
@@ -198,6 +206,7 @@ export async function POST(request) {
       skippedExpensive,
       remainingChanged: saved.summary.changed,
       remainingPending: saved.summary.pending,
+      remainingFailed: saved.summary.failed,
       batchLimit: MAX_TESTS,
       results,
       state: saved,
