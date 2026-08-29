@@ -31,68 +31,7 @@ export function injectSystemPrompt(body, format, prompt) {
       // Antigravity wraps Gemini shape in body.request → injectGeminiSystem handles it
       injectGeminiSystem(body, prompt);
       return;
-    default:
-      // OpenAI and OpenAI-shaped formats (responses/codex/cursor/kiro/ollama)
-      injectMessagesSystem(body, prompt);
-  }
-}
-
-// OpenAI-shaped: messages[] (chat) or input[] (responses) or instructions (responses string)
-function injectMessagesSystem(body, prompt) {
-  // OpenAI Responses API: top-level string field
-  if (typeof body.instructions === "string") {
-    body.instructions = body.instructions
-      ? `${body.instructions}${SEP}${prompt}`
-      : prompt;
-    return;
-  }
-
-  const arr = Array.isArray(body.messages) ? body.messages
-    : Array.isArray(body.input) ? body.input
-    : null;
-  if (!arr) return;
-
-  const isResponses = arr === body.input;
-  const idx = arr.findIndex(m =>
-    m && (!m.type || m.type === "message") && (m.role === "system" || m.role === "developer")
-  );
-  if (idx >= 0) {
-    appendToOpenAIMessage(arr[idx], prompt);
-  } else if (isResponses) {
-    const insertAt = arr.findIndex(m => m?.type !== "additional_tools");
-    arr.splice(insertAt < 0 ? arr.length : insertAt, 0, {
-      type: "message",
-      role: "developer",
-      content: [{ type: "input_text", text: prompt }],
-    });
-  } else {
-    arr.unshift({ role: "system", content: prompt });
-  }
-}
-
-function appendToOpenAIMessage(msg, prompt) {
-  if (typeof msg.content === "string") {
-    msg.content = `${msg.content}${SEP}${prompt}`;
-  } else if (Array.isArray(msg.content)) {
-    // Responses-style array of parts {type:"input_text"|"text", text}
-    msg.content.push({ type: "input_text", text: prompt });
-  } else {
-    msg.content = prompt;
-  }
-}
-
-// Claude shape: body.system as string | array of {type:"text", text}
-// Insert before the last cache_control block to keep injection inside the cached prefix.
-function injectClaudeSystem(body, prompt) {
-  if (typeof body.system === "string" && body.system.length > 0) {
-    body.system = `${body.system}${SEP}${prompt}`;
-    return;
-  }
-  if (Array.isArray(body.system)) {
-    const block = { type: "text", text: prompt };
-    let lastCacheIdx = -1;
-    for (let i = body.system.length - 1; i >= 0; i--) {
-      if (body.system[i]?.cache_control) { lastCacheIdx = i; break; }    }
+    }
 
     // Dispatch by actual wire shape for OpenAI-shaped formats.
     // instructions string takes precedence; messages[] means Chat; input[] means Responses.
@@ -220,13 +159,27 @@ function injectResponsesInputSystem(body, prompt) {
     // find system/developer message items only (type === message)
     let idx = -1;
     try {
-      idx = arr.findIndex(m => m && m.type === RESPONSES_ITEM.MESSAGE && (m.role === ROLE.SYSTEM || m.role === ROLE.DEVELOPER));
+      idx = arr.findIndex(m => m && (!m.type || m.type === RESPONSES_ITEM.MESSAGE || m.type === "message") && (m.role === ROLE.SYSTEM || m.role === ROLE.DEVELOPER));
     } catch (_) { return; }
     if (idx >= 0) {
       appendToResponsesMessage(arr[idx], prompt);
     } else {
-      const msg = { type: RESPONSES_ITEM.MESSAGE, role: ROLE.SYSTEM, content: [{ type: RESPONSES_ITEM.INPUT_TEXT, text: prompt }] };
-      try { arr.unshift(msg); } catch (_) {}
+      try {
+        const insertAt = arr.findIndex(m => m?.type !== "additional_tools");
+        if (insertAt > 0) {
+          arr.splice(insertAt, 0, {
+            type: RESPONSES_ITEM.MESSAGE,
+            role: ROLE.DEVELOPER,
+            content: [{ type: RESPONSES_ITEM.INPUT_TEXT, text: prompt }],
+          });
+        } else {
+          arr.unshift({
+            type: RESPONSES_ITEM.MESSAGE,
+            role: ROLE.SYSTEM,
+            content: [{ type: RESPONSES_ITEM.INPUT_TEXT, text: prompt }],
+          });
+        }
+      } catch (_) {}
     }
   } catch (_) {}
 }
