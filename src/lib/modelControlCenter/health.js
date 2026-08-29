@@ -21,12 +21,11 @@ export const RETRYABLE_HEALTH_CATEGORIES = new Set([
 export function classifyHealth(health = null) {
   if (!health) return "pending";
 
-  if (
+  const storedCategory =
     health.category
     && KNOWN_HEALTH_CATEGORIES.has(health.category)
-  ) {
-    return health.category;
-  }
+      ? health.category
+      : null;
 
   if (health.status === "ok") {
     return "ok";
@@ -37,7 +36,7 @@ export function classifyHealth(health = null) {
   }
 
   if (health.status !== "error") {
-    return "pending";
+    return storedCategory || "pending";
   }
 
   const rawStatusCode = health.statusCode;
@@ -108,7 +107,14 @@ export function classifyHealth(health = null) {
     return "upstream_error";
   }
 
-  return "failed";
+  return (
+    storedCategory
+    && !["ok", "unsupported", "pending"].includes(
+      storedCategory,
+    )
+  )
+    ? storedCategory
+    : "failed";
 }
 
 export function isRetryableHealth(health = null) {
