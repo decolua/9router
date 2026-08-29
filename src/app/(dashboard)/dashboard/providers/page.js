@@ -115,9 +115,11 @@ export default function ProvidersPage() {
     return () => unregisterSearch();
   }, [registerSearch, unregisterSearch]);
 
-  const matchSearch = (name) =>
-    !searchQuery.trim() ||
-    name.toLowerCase().includes(searchQuery.trim().toLowerCase());
+  const matchSearch = (name) => {
+    if (!searchQuery.trim()) return true;
+    if (!name) return false;
+    return name.toLowerCase().includes(searchQuery.trim().toLowerCase());
+  };
 
   const sortByPriority = (entries, authType) =>
     [...entries].sort(([ka, a], [kb, b]) => {
@@ -283,7 +285,15 @@ export default function ProvidersPage() {
   const dualAuthTypes = (info, key) => {
     if (key === "kiro") return ["oauth", "apikey", "api_key"];
     const modes = info?.authModes;
-    if (!Array.isArray(modes) || !modes.includes("apikey")) return "oauth";
+    // Free-tier and API-key providers default to supporting apikey even when the
+    // registry entry omits authModes (e.g. cloudflare-ai, byteplus, ollama,
+    // vertex) — otherwise their apikey connections are invisible on the grid card.
+    if (!Array.isArray(modes)) {
+      return key in FREE_TIER_PROVIDERS || key in APIKEY_PROVIDERS
+        ? ["oauth", "apikey", "api_key"]
+        : "oauth";
+    }
+    if (!modes.includes("apikey")) return "oauth";
     return ["oauth", "apikey", "api_key"];
   };
 
