@@ -24,12 +24,32 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 
+// Simple in-memory sliding-window rate limiter to stop abuse of the expensive AI calls below
+const RATE_LIMIT_WINDOW_MS = 60 * 1000;
+const RATE_LIMIT_MAX_REQUESTS = 60;
+const rateLimitHits = new Map();
+
+function isRateLimited(key) {
+  const now = Date.now();
+  const timestamps = (rateLimitHits.get(key) || []).filter((t) => now - t < RATE_LIMIT_WINDOW_MS);
+  if (timestamps.length >= RATE_LIMIT_MAX_REQUESTS) return true;
+  timestamps.push(now);
+  rateLimitHits.set(key, timestamps);
+  return false;
+}
+
 /**
  * Handle chat completion request
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
  * Format detection and translation handled by translator
  */
 export async function handleChat(request, clientRawRequest = null) {
+  const rateLimitKey = extractApiKey(request) || request.headers.get("x-forwarded-for") || "anonymous";
+  if (isRateLimited(rateLimitKey)) {
+    log.warn("CHAT", "Rate limit exceeded");
+    return errorResponse(HTTP_STATUS.RATE_LIMITED, "Too many requests, please slow down");
+  }
+
   let body;
   try {
     body = await request.json();
