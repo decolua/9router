@@ -5,9 +5,20 @@ import {
 } from "../db/repos/disabledModelsRepo.js";
 
 import {
+  getAdapter,
+} from "../db/driver.js";
+
+import {
+  parseJson,
+  stringifyJson,
+} from "../db/helpers/jsonCol.js";
+
+import {
+  STORED_MODEL_POLICY_STATES,
   deleteModelPolicy,
   getModelPolicies,
   getModelPolicy,
+  modelPolicyKey,
   setModelPolicy,
 } from "../db/repos/modelPoliciesRepo.js";
 
@@ -250,4 +261,347 @@ export async function setOperatorPolicy({
     target.providerAlias,
     target.modelId,
   );
+}
+
+const BULK_POLICY_LIMIT = 500;
+
+function normalizeBulkTargets(targets) {
+  if (
+    !Array.isArray(targets)
+    || targets.length === 0
+  ) {
+    throw new Error(
+      "Bulk policy requires at least one target",
+    );
+  }
+
+  if (targets.length > BULK_POLICY_LIMIT) {
+    throw new Error(
+      `Bulk policy supports at most ${BULK_POLICY_LIMIT} targets`,
+    );
+  }
+
+  const deduped = new Map();
+
+  for (const raw of targets) {
+    const target =
+      normalizeTarget(
+        raw?.providerAlias,
+        raw?.modelId,
+      );
+
+    deduped.set(
+      `${target.providerAlias}\0${target.modelId}`,
+      target,
+    );
+  }
+
+  return [...deduped.values()];
+}
+
+function storedPolicyFromValue(value) {
+  const parsed =
+    parseJson(value, null);
+
+  if (
+    !parsed
+    || typeof parsed !== "object"
+    || Array.isArray(parsed)
+  ) {
+    return null;
+  }
+
+  const providerAlias =
+    String(parsed.providerAlias || "").trim();
+
+  const modelId =
+    String(parsed.modelId || "").trim();
+
+  const state =
+    String(parsed.state || "").trim();
+
+  if (
+    !providerAlias
+    || !modelId
+    || !STORED_MODEL_POLICY_STATES.has(state)
+  ) {
+    return null;
+  }
+
+  return {
+    providerAlias,
+    modelId,
+    state,
+    updatedAt:
+      parsed.updatedAt || null,
+  };
+}
+
+export async function setOperatorPoliciesBulk({
+  targets,
+  state,
+}) {
+  const normalizedTargets =
+    normalizeBulkTargets(targets);
+
+  const normalizedState =
+    String(state || "")
+      .trim()
+      .toLowerCase();
+
+  if (
+    !VALID_STATES.has(
+      normalizedState,
+    )
+  ) {
+    throw new Error(
+      `Invalid operator policy state: ${normalizedState}`,
+    );
+  }
+
+  const db =
+    await getAdapter();
+
+  let result = null;
+
+  db.transaction(() => {
+    const disabledRows =
+      db.all(
+        `SELECT key, value
+           FROM kv
+          WHERE scope = 'disabledModels'`,
+      );
+
+    const disabledByProvider =
+      new Map();
+
+    for (const row of disabledRows) {
+      const ids =
+        parseJson(row.value, []);
+
+      disabledByProvider.set(
+        row.key,
+        new Set(
+          Array.isArray(ids)
+            ? ids
+            : [],
+        ),
+      );
+    }
+
+    const policyRows =
+      db.all(
+        `SELECT key, value
+           FROM kv
+          WHERE scope = 'modelPolicies'`,
+      );
+
+    const storedByKey =
+      new Map();
+
+    for (const row of policyRows) {
+      const policy =
+        storedPolicyFromValue(
+          row.value,
+        );
+
+      if (policy) {
+        storedByKey.set(
+          modelPolicyKey(
+            policy.providerAlias,
+            policy.modelId,
+          ),
+          policy,
+        );
+      }
+    }
+
+    const transitions = [];
+    const updatedAt =
+      new Date().toISOString();
+
+    for (const target of normalizedTargets) {
+      const disabled =
+        disabledByProvider
+          .get(target.providerAlias);
+
+      const key =
+        modelPolicyKey(
+          target.providerAlias,
+          target.modelId,
+        );
+
+      const stored =
+        storedByKey.get(key);
+
+      const previousState =
+        disabled?.has(target.modelId)
+          ? "disable"
+          : (
+              stored?.state
+              || "default"
+            );
+
+      transitions.push({
+        ...target,
+        from: previousState,
+        to: normalizedState,
+      });
+
+      /*
+       * First prepare modelPolicies intent.
+       *
+       * For ALLOW / DEPRIORITIZE / QUARANTINE,
+       * write the new intent before clearing
+       * disabledModels.
+       *
+       * Everything is inside one DB transaction,
+       * so no partial state becomes externally
+       * visible.
+       */
+      if (
+        STORED_MODEL_POLICY_STATES.has(
+          normalizedState,
+        )
+      ) {
+        const policy = {
+          ...target,
+          state: normalizedState,
+          updatedAt,
+        };
+
+        db.run(
+          `INSERT INTO kv(
+             scope,
+             key,
+             value
+           )
+           VALUES(
+             'modelPolicies',
+             ?,
+             ?
+           )
+           ON CONFLICT(scope, key)
+           DO UPDATE SET
+             value = excluded.value`,
+          [
+            key,
+            stringifyJson(policy),
+          ],
+        );
+
+        storedByKey.set(
+          key,
+          policy,
+        );
+      } else {
+        db.run(
+          `DELETE FROM kv
+            WHERE scope = 'modelPolicies'
+              AND key = ?`,
+          [key],
+        );
+
+        storedByKey.delete(key);
+      }
+
+      /*
+       * Update the in-transaction disabledModels
+       * projection. Actual provider rows are
+       * written once per provider below.
+       */
+      let providerDisabled =
+        disabledByProvider.get(
+          target.providerAlias,
+        );
+
+      if (!providerDisabled) {
+        providerDisabled = new Set();
+
+        disabledByProvider.set(
+          target.providerAlias,
+          providerDisabled,
+        );
+      }
+
+      if (normalizedState === "disable") {
+        providerDisabled.add(
+          target.modelId,
+        );
+      } else {
+        providerDisabled.delete(
+          target.modelId,
+        );
+      }
+    }
+
+    const touchedProviders =
+      new Set(
+        normalizedTargets.map(
+          (target) =>
+            target.providerAlias,
+        ),
+      );
+
+    for (const providerAlias of touchedProviders) {
+      const ids =
+        [
+          ...(
+            disabledByProvider.get(
+              providerAlias,
+            )
+            || []
+          ),
+        ];
+
+      if (ids.length === 0) {
+        db.run(
+          `DELETE FROM kv
+            WHERE scope = 'disabledModels'
+              AND key = ?`,
+          [providerAlias],
+        );
+      } else {
+        db.run(
+          `INSERT INTO kv(
+             scope,
+             key,
+             value
+           )
+           VALUES(
+             'disabledModels',
+             ?,
+             ?
+           )
+           ON CONFLICT(scope, key)
+           DO UPDATE SET
+             value = excluded.value`,
+          [
+            providerAlias,
+            stringifyJson(ids),
+          ],
+        );
+      }
+    }
+
+    const changed =
+      transitions.filter(
+        (item) =>
+          item.from !== item.to,
+      ).length;
+
+    result = {
+      state: normalizedState,
+      requested: targets.length,
+      applied: normalizedTargets.length,
+      changed,
+      unchanged:
+        normalizedTargets.length
+        - changed,
+      transitions,
+      updatedAt,
+    };
+  });
+
+  return result;
 }

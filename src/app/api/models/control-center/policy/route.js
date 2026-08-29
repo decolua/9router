@@ -4,6 +4,7 @@ import {
   OPERATOR_POLICY_STATES,
   getOperatorPolicy,
   listOperatorPolicies,
+  setOperatorPoliciesBulk,
   setOperatorPolicy,
 } from "@/lib/modelControlCenter/operatorPolicy.js";
 
@@ -105,6 +106,42 @@ export async function PUT(request) {
         error:
           error?.message
           || "Failed to update operator policy",
+      },
+      {
+        status: 400,
+      },
+    );
+  }
+}
+
+export async function POST(request) {
+  try {
+    const body =
+      await request.json();
+
+    const result =
+      await setOperatorPoliciesBulk({
+        targets:
+          body?.targets,
+        state:
+          body?.state,
+      });
+
+    return NextResponse.json({
+      success: true,
+      bulk: result,
+    });
+  } catch (error) {
+    console.log(
+      "[modelControlCenter] bulk policy update failed:",
+      error,
+    );
+
+    return NextResponse.json(
+      {
+        error:
+          error?.message
+          || "Failed to bulk update operator policy",
       },
       {
         status: 400,

@@ -247,6 +247,13 @@ export default function ModelControlCenterPage() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
+  // BULK_POLICY_UI_V1
+  const [selectedModels, setSelectedModels] =
+    useState(() => new Set());
+
+  const [bulkState, setBulkState] =
+    useState("");
+
   useEffect(() => {
     const controller = new AbortController();
 
@@ -642,6 +649,236 @@ export default function ModelControlCenterPage() {
         pageSize,
       ],
     );
+
+  const selectionKey = (
+    provider,
+    model,
+  ) =>
+    `${provider.providerId}\0${model.id}`;
+
+  const pageSelectionKeys =
+    pagedRows.map(
+      ({ provider, model }) =>
+        selectionKey(provider, model),
+    );
+
+  const selectedCount =
+    selectedModels.size;
+
+  const allPageSelected =
+    pageSelectionKeys.length > 0
+    && pageSelectionKeys.every(
+      (key) => selectedModels.has(key),
+    );
+
+  const toggleModelSelection = (
+    provider,
+    model,
+  ) => {
+    const key =
+      selectionKey(provider, model);
+
+    setSelectedModels((current) => {
+      const next = new Set(current);
+
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+
+      return next;
+    });
+  };
+
+  const togglePageSelection = () => {
+    setSelectedModels((current) => {
+      const next = new Set(current);
+
+      for (const key of pageSelectionKeys) {
+        if (allPageSelected) {
+          next.delete(key);
+        } else {
+          next.add(key);
+        }
+      }
+
+      return next;
+    });
+  };
+
+  const selectAllFiltered = () => {
+    if (policyRows.length > 500) {
+      setMessage(
+        "Bulk policy maximum is 500 models.",
+      );
+      return;
+    }
+
+    setSelectedModels(
+      new Set(
+        policyRows.map(
+          ({ provider, model }) =>
+            selectionKey(provider, model),
+        ),
+      ),
+    );
+  };
+
+  const clearBulkSelection = () => {
+    setSelectedModels(new Set());
+  };
+
+  const applyBulkPolicy = async () => {
+    if (
+      policyBusy
+      || !bulkState
+      || selectedCount === 0
+    ) {
+      return;
+    }
+
+    const selectedRows =
+      rows.filter(
+        ({ provider, model }) =>
+          selectedModels.has(
+            selectionKey(provider, model),
+          ),
+      );
+
+    if (
+      selectedRows.length
+      !== selectedCount
+    ) {
+      setMessage(
+        "Some selected models are outside the current result set. Clear and select again.",
+      );
+      return;
+    }
+
+    if (selectedRows.length > 500) {
+      setMessage(
+        "Bulk policy maximum is 500 models.",
+      );
+      return;
+    }
+
+    const transitions = {};
+
+    for (const { effective } of selectedRows) {
+      const from =
+        effective?.operatorPolicy?.state
+        || (
+          effective?.operatorDisabled
+            ? "disable"
+            : "default"
+        );
+
+      const key =
+        `${from} → ${bulkState}`;
+
+      transitions[key] =
+        (transitions[key] || 0) + 1;
+    }
+
+    const transitionText =
+      Object.entries(transitions)
+        .map(
+          ([name, count]) =>
+            `${name}: ${count}`,
+        )
+        .join("\n");
+
+    const warning =
+      bulkState === "disable"
+        ? "\n\nDISABLE uses existing disabledModels authority and can affect current combo membership."
+        : "";
+
+    if (
+      !window.confirm(
+        `Apply ${bulkState.toUpperCase()} to ${selectedCount} model(s)?\n\n${transitionText}${warning}`,
+      )
+    ) {
+      return;
+    }
+
+    setPolicyBusy("bulk");
+
+    try {
+      const response =
+        await fetch(
+          "/api/models/control-center/policy",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              state: bulkState,
+              targets:
+                selectedRows.map(
+                  ({
+                    provider,
+                    model,
+                    effective,
+                  }) => ({
+                    providerAlias:
+                      effective
+                        ?.operatorPolicy
+                        ?.providerAlias
+                      || provider.alias
+                      || provider.providerId,
+
+                    modelId:
+                      effective
+                        ?.operatorPolicy
+                        ?.modelId
+                      || model.id,
+                  }),
+                ),
+            }),
+          },
+        );
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error
+          || "Bulk policy update failed",
+        );
+      }
+
+      const [
+        nextEffective,
+        nextDryRun,
+      ] = await Promise.all([
+        loadEffectivePreview(),
+        loadPolicyDryRun(),
+      ]);
+
+      setEffectiveState(nextEffective);
+      setDryRunState(nextDryRun);
+
+      clearBulkSelection();
+      setBulkState("");
+
+      setMessage(
+        `Bulk ${data.bulk?.state?.toUpperCase()}: `
+        + `${data.bulk?.changed ?? 0} changed · `
+        + `${data.bulk?.unchanged ?? 0} unchanged · `
+        + `${data.bulk?.applied ?? selectedCount} applied.`,
+      );
+    } catch (error) {
+      setMessage(
+        `Bulk policy failed: ${error.message}`,
+      );
+    } finally {
+      setPolicyBusy("");
+    }
+  };
 
   const dryRunDirectByFullModel =
     useMemo(
@@ -1136,11 +1373,97 @@ export default function ModelControlCenterPage() {
           </select>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="border-t border-border px-4 py-3 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium text-text-main">
+                {selectedCount} selected
+              </span>
+
+              <button
+                type="button"
+                onClick={togglePageSelection}
+                disabled={!!policyBusy || pagedRows.length === 0}
+                className="px-3 py-1.5 rounded-lg border border-border bg-background text-xs text-text-main disabled:opacity-40"
+              >
+                {allPageSelected
+                  ? "Unselect Page"
+                  : `Select Page (${pagedRows.length})`}
+              </button>
+
+              <button
+                type="button"
+                onClick={selectAllFiltered}
+                disabled={
+                  !!policyBusy
+                  || policyRows.length === 0
+                  || policyRows.length > 500
+                }
+                className="px-3 py-1.5 rounded-lg border border-border bg-background text-xs text-text-main disabled:opacity-40"
+              >
+                Select All Filtered ({policyRows.length})
+              </button>
+
+              <button
+                type="button"
+                onClick={clearBulkSelection}
+                disabled={!!policyBusy || selectedCount === 0}
+                className="px-3 py-1.5 rounded-lg border border-border bg-background text-xs text-text-main disabled:opacity-40"
+              >
+                Clear
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={bulkState}
+                onChange={(event) =>
+                  setBulkState(event.target.value)
+                }
+                disabled={!!policyBusy}
+                className="min-w-[170px] px-3 py-1.5 rounded-lg border border-border bg-background text-xs text-text-main"
+              >
+                <option value="">Bulk policy...</option>
+                <option value="default">DEFAULT</option>
+                <option value="allow">ALLOW</option>
+                <option value="deprioritize">DEPRIORITIZE</option>
+                <option value="quarantine">QUARANTINE</option>
+                <option value="disable">DISABLE</option>
+              </select>
+
+              <button
+                type="button"
+                onClick={applyBulkPolicy}
+                disabled={
+                  !!policyBusy
+                  || !bulkState
+                  || selectedCount === 0
+                }
+                className="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium disabled:opacity-40"
+              >
+                {policyBusy === "bulk"
+                  ? "Applying..."
+                  : "Apply Bulk"}
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-text-muted border-b border-border">
-                <th className="px-4 py-3 font-medium">Provider</th>
+                <th className="px-4 py-3 font-medium w-10">
+                    <input
+                      type="checkbox"
+                      checked={allPageSelected}
+                      onChange={togglePageSelection}
+                      disabled={
+                        !!policyBusy
+                        || pagedRows.length === 0
+                      }
+                      aria-label="Select current page"
+                    />
+                  </th>
+                  <th className="px-4 py-3 font-medium">Provider</th>
                 <th className="px-4 py-3 font-medium">Model</th>
                 <th className="px-4 py-3 font-medium">Kind</th>
                 <th className="px-4 py-3 font-medium">Source</th>
@@ -1156,6 +1479,27 @@ export default function ModelControlCenterPage() {
             <tbody>
               {pagedRows.map(({ provider, model, badge, effective }) => (
                 <tr key={`${provider.providerId}:${model.id}`} className="border-b border-border/70 last:border-0">
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={
+                          selectedModels.has(
+                            selectionKey(
+                              provider,
+                              model,
+                            ),
+                          )
+                        }
+                        onChange={() =>
+                          toggleModelSelection(
+                            provider,
+                            model,
+                          )
+                        }
+                        disabled={!!policyBusy}
+                        aria-label={`Select ${model.fullModel}`}
+                      />
+                    </td>
                   <td className="px-4 py-3">
                     <div className="font-medium text-text-main">{provider.name}</div>
                     <div className="text-[11px] text-text-muted">{provider.connectionCount} connection(s)</div>
@@ -1314,7 +1658,7 @@ export default function ModelControlCenterPage() {
               ))}
               {policyRows.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="px-4 py-12 text-center text-text-muted">
+                  <td colSpan={12} className="px-4 py-12 text-center text-text-muted">
                     No models match the current filters.
                   </td>
                 </tr>
