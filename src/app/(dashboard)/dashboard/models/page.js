@@ -83,6 +83,84 @@ function healthBadge(model) {
   return badges[category] || badges.pending;
 }
 
+async function loadEffectivePreview(signal) {
+  const res = await fetch(
+    "/api/models/control-center/effective",
+    {
+      cache: "no-store",
+      ...(signal ? { signal } : {}),
+    },
+  );
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new Error(
+      data.error
+      || "Failed to load effective model preview",
+    );
+  }
+
+  return data;
+}
+
+function effectiveBadge(effective) {
+  if (!effective) {
+    return {
+      label: "UNKNOWN",
+      cls: "text-text-muted bg-surface-2",
+    };
+  }
+
+  if (effective.effectivePreview) {
+    return {
+      label: "EFFECTIVE",
+      cls: "text-green-600 bg-green-500/10",
+    };
+  }
+
+  if (effective.operatorDisabled) {
+    return {
+      label: "OPERATOR DISABLED",
+      cls: "text-red-500 bg-red-500/10",
+    };
+  }
+
+  if (
+    effective.reasons?.includes(
+      "all_connections_model_locked",
+    )
+  ) {
+    return {
+      label: "MODEL LOCKED",
+      cls: "text-amber-600 bg-amber-500/10",
+    };
+  }
+
+  if (
+    effective.reasons?.includes(
+      "no_active_connection",
+    )
+  ) {
+    return {
+      label: "NO CONNECTION",
+      cls: "text-text-muted bg-surface-2",
+    };
+  }
+
+  if (effective.reasons?.includes("stale")) {
+    return {
+      label: "STALE",
+      cls: "text-amber-600 bg-amber-500/10",
+    };
+  }
+
+  return {
+    label: "BLOCKED",
+    cls: "text-red-500 bg-red-500/10",
+  };
+}
+
 function SummaryCard({ label, value }) {
   return (
     <div className="rounded-xl border border-border bg-background px-4 py-3">
@@ -94,6 +172,7 @@ function SummaryCard({ label, value }) {
 
 export default function ModelControlCenterPage() {
   const [state, setState] = useState(null);
+  const [effectiveState, setEffectiveState] = useState(null);
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
@@ -123,8 +202,28 @@ export default function ModelControlCenterPage() {
         }
       });
 
+    loadEffectivePreview(controller.signal)
+      .then((data) => {
+        setEffectiveState(data);
+      })
+      .catch((error) => {
+        if (error.name !== "AbortError") {
+          setMessage(
+            `Effective preview unavailable: ${error.message}`,
+          );
+        }
+      });
+
     return () => controller.abort();
   }, []);
+
+  const refreshEffectivePreview = () => {
+    loadEffectivePreview()
+      .then((data) => {
+        setEffectiveState(data);
+      })
+      .catch(() => undefined);
+  };
 
   const refreshModels = async () => {
     if (busy) return;
@@ -173,6 +272,7 @@ export default function ModelControlCenterPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Refresh failed");
       setState(data.state);
+      refreshEffectivePreview();
       setMessage(`Refresh complete: ${data.state.summary.models} models across ${data.state.summary.providers} providers.`);
     } catch (error) {
       setMessage(`Refresh failed: ${error.message}`);
@@ -219,6 +319,7 @@ export default function ModelControlCenterPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Model test failed");
       setState(data.state);
+      refreshEffectivePreview();
       const providerLabel =
         providerFilter !== "all"
           ? ` for ${providerFilter}`
@@ -269,14 +370,35 @@ export default function ModelControlCenterPage() {
           const haystack = `${provider.name} ${provider.providerId} ${model.id} ${model.name} ${model.fullModel}`.toLowerCase();
           if (!haystack.includes(query)) continue;
         }
-        result.push({ provider, model, badge });
+        const effective =
+          effectiveState
+            ?.providers
+            ?.[provider.providerId]
+            ?.models
+            ?.[model.id]
+          || null;
+
+        result.push({
+          provider,
+          model,
+          badge,
+          effective,
+        });
       }
     }
 
     return result;
-  }, [providerList, providerFilter, healthFilter, search]);
+  }, [
+    providerList,
+    providerFilter,
+    healthFilter,
+    search,
+    effectiveState,
+  ]);
 
   const summary = state?.summary || {};
+  const effectiveSummary =
+    effectiveState?.summary || {};
 
   return (
     <div className="p-6 space-y-6">
@@ -345,6 +467,48 @@ export default function ModelControlCenterPage() {
       </div>
 
       <div className="rounded-xl border border-border bg-background">
+        <div className="p-4 border-b border-border flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="font-medium text-text-main">
+              Effective Preview
+            </div>
+            <div className="text-xs text-text-muted mt-1">
+              Read-only routing projection. Health remains a signal and does not change routing.
+            </div>
+          </div>
+
+          <div className="text-[11px] text-text-muted">
+            {effectiveState?.generatedAt
+              ? `Generated ${new Date(effectiveState.generatedAt).toLocaleString()}`
+              : "Loading preview..."}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 p-4">
+          <SummaryCard
+            label="Eligible"
+            value={effectiveSummary.previewEligible}
+          />
+          <SummaryCard
+            label="Blocked"
+            value={effectiveSummary.previewBlocked}
+          />
+          <SummaryCard
+            label="Operator Disabled"
+            value={effectiveSummary.operatorDisabled}
+          />
+          <SummaryCard
+            label="Model Locked"
+            value={effectiveSummary.allConnectionsLocked}
+          />
+          <SummaryCard
+            label="Combo Quarantine"
+            value={effectiveSummary.comboQuarantined}
+          />
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-border bg-background">
         <div className="p-4 border-b border-border flex flex-col lg:flex-row gap-3">
           <input
             value={search}
@@ -394,12 +558,13 @@ export default function ModelControlCenterPage() {
                 <th className="px-4 py-3 font-medium">Source</th>
                 <th className="px-4 py-3 font-medium">Availability</th>
                 <th className="px-4 py-3 font-medium">Health</th>
+                <th className="px-4 py-3 font-medium">Effective</th>
                 <th className="px-4 py-3 font-medium">Latency</th>
                 <th className="px-4 py-3 font-medium">Changed</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ provider, model, badge }) => (
+              {rows.map(({ provider, model, badge, effective }) => (
                 <tr key={`${provider.providerId}:${model.id}`} className="border-b border-border/70 last:border-0">
                   <td className="px-4 py-3">
                     <div className="font-medium text-text-main">{provider.name}</div>
@@ -428,6 +593,37 @@ export default function ModelControlCenterPage() {
                       </div>
                     )}
                   </td>
+                  <td className="px-4 py-3">
+                    {(() => {
+                      const effectiveStatus =
+                        effectiveBadge(effective);
+
+                      return (
+                        <>
+                          <span
+                            className={`inline-flex px-2 py-1 rounded text-[11px] font-semibold ${effectiveStatus.cls}`}
+                            title={
+                              effective?.reasons?.length
+                                ? effective.reasons.join(", ")
+                                : undefined
+                            }
+                          >
+                            {effectiveStatus.label}
+                          </span>
+
+                          {effective?.signals?.length > 0 && (
+                            <div
+                              className="max-w-[260px] truncate text-[10px] text-text-muted mt-1"
+                              title={effective.signals.join(", ")}
+                            >
+                              {effective.signals.join(" · ")}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </td>
+
                   <td className="px-4 py-3 text-text-muted">
                     {model.health?.latencyMs != null ? `${model.health.latencyMs} ms` : "—"}
                   </td>
@@ -442,7 +638,7 @@ export default function ModelControlCenterPage() {
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-text-muted">
+                  <td colSpan={9} className="px-4 py-12 text-center text-text-muted">
                     No models match the current filters.
                   </td>
                 </tr>
