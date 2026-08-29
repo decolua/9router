@@ -339,6 +339,9 @@ export async function buildEffectiveModelSet() {
     const alias =
       provider.alias || providerId;
 
+    const connectionless =
+      provider.connectionless === true;
+
     const providerConnections =
       connectionsByProvider.get(
         providerId,
@@ -474,19 +477,21 @@ export async function buildEffectiveModelSet() {
         );
       }
 
-      if (
-        connection.activeConnections === 0
-      ) {
-        reasons.push(
-          "no_active_connection",
-        );
-      } else if (
-        connection.unlockedConnections
-        === 0
-      ) {
-        reasons.push(
-          "all_connections_model_locked",
-        );
+      if (!connectionless) {
+        if (
+          connection.activeConnections === 0
+        ) {
+          reasons.push(
+            "no_active_connection",
+          );
+        } else if (
+          connection.unlockedConnections
+          === 0
+        ) {
+          reasons.push(
+            "all_connections_model_locked",
+          );
+        }
       }
 
       const effectivePreview =
@@ -496,6 +501,12 @@ export async function buildEffectiveModelSet() {
         classifyHealth(model.health);
 
       const signals = [];
+
+      if (connectionless) {
+        signals.push(
+          "provider:connectionless_no_auth",
+        );
+      }
 
       if (healthCategory !== "ok") {
         signals.push(
@@ -618,6 +629,8 @@ export async function buildEffectiveModelSet() {
         },
 
         routingSnapshot: {
+          connectionless,
+
           activeConnections:
             connection.activeConnections,
 
@@ -642,6 +655,8 @@ export async function buildEffectiveModelSet() {
       alias,
       name:
         provider.name || providerId,
+
+      connectionless,
 
       activeConnections:
         providerConnections.length,

@@ -76,6 +76,13 @@ function sourceLabel(sources) {
   return values[0] || "static";
 }
 
+function isConnectionlessRegistryProvider(entry) {
+  return (
+    entry?.noAuth === true
+    || entry?.transport?.noAuth === true
+  );
+}
+
 export async function rebuildControlCenter(discovery = []) {
   const previous = readControlCenter();
   const connections = await getProviderConnections({ isActive: true });
@@ -86,6 +93,34 @@ export async function rebuildControlCenter(discovery = []) {
     const list = byProvider.get(connection.provider) || [];
     list.push(connection);
     byProvider.set(connection.provider, list);
+  }
+
+  // Built-in no-auth providers are operational without a
+  // providerConnections row. Include them in Control Center when
+  // they expose at least one registry model.
+  for (const registryEntry of REGISTRY) {
+    if (
+      !isConnectionlessRegistryProvider(
+        registryEntry,
+      )
+    ) {
+      continue;
+    }
+
+    if (
+      getModelsByProviderId(
+        registryEntry.id,
+      ).length === 0
+    ) {
+      continue;
+    }
+
+    if (!byProvider.has(registryEntry.id)) {
+      byProvider.set(
+        registryEntry.id,
+        [],
+      );
+    }
   }
 
   const discoveryByProvider = new Map();
@@ -102,6 +137,10 @@ export async function rebuildControlCenter(discovery = []) {
   for (const [providerId, providerConnections] of byProvider.entries()) {
     const alias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
     const registryEntry = registryMap.get(providerId);
+    const connectionless =
+      isConnectionlessRegistryProvider(
+        registryEntry,
+      );
     const providerDiscovery = discoveryByProvider.get(providerId) || [];
     const modelMap = {};
     const detectedMap = {};
@@ -282,6 +321,7 @@ export async function rebuildControlCenter(discovery = []) {
       providerId,
       alias,
       name: registryEntry?.display?.name || providerId,
+      connectionless,
       connectionCount: providerConnections.length,
       connectionsQueried: providerDiscovery.length,
       connections: providerConnections.map((connection) => ({

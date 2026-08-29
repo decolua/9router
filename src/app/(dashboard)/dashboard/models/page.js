@@ -1712,7 +1712,9 @@ export default function ModelControlCenterPage() {
                         </div>
 
                         <div className="text-[11px] text-text-muted mt-1">
-                          {provider.connectionCount ?? 0} active connection(s)
+                          {provider.connectionless
+                            ? "No auth required"
+                            : `${provider.connectionCount ?? 0} active connection(s)`}
                         </div>
                       </div>
 
@@ -2433,7 +2435,9 @@ export default function ModelControlCenterPage() {
                     </td>
                   <td className="px-4 py-3">
                     <div className="font-medium text-text-main">{provider.name}</div>
-                    <div className="text-[11px] text-text-muted">{provider.connectionCount} connection(s)</div>
+                    <div className="text-[11px] text-text-muted">{provider.connectionless
+                          ? "No auth required"
+                          : `${provider.connectionCount} connection(s)`}</div>
                   </td>
                   <td className="px-4 py-3">
                     <code className="text-xs text-text-main">{model.fullModel}</code>
