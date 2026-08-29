@@ -14,9 +14,6 @@ const STRIP_RULES = [
   { provider: "github", match: (m) => /claude/i.test(m) && !/claude.*(opus|sonnet).*4\.6/i.test(m), drop: ["thinking", "reasoning_effort"] },
   // Cloudflare Workers AI: content must be plain string, rejects OpenAI content-part array (#1926)
   { provider: "cloudflare-ai", flattenContent: true },
-  // OpenCode Muse models: upstream rejects /chat/completions (500) and max_tokens (400),
-  // requires Responses API endpoint and no max_tokens / max_completion_tokens.
-  { provider: "opencode", match: /muse/i, drop: ["max_tokens", "max_completion_tokens"] },
   { provider: "volcengine-ark", match: /glm-5/i, clampToModelMaxOutput: true },
   // VolcEngine Ark caps the Kimi family at max_tokens <= 32768, but the model's
   // advertised ceiling is far higher (Kimi-K2.7-Code resolves to maxOutput 262144),
