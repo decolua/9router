@@ -23,6 +23,7 @@ describe("Grok Build routing", () => {
 
   it("exposes Grok Build in the xAI model catalog", () => {
     expect(PROVIDER_MODELS.xai.map((model) => model.id)).toEqual(expect.arrayContaining([
+      "grok-4.6",
       "grok-4.5",
       "grok-build-0.1",
       "grok-4.3",
@@ -34,6 +35,13 @@ describe("Grok Build routing", () => {
       "grok-imagine-video",
       "grok-imagine-video-1.5",
     ]));
+  });
+
+  it("honors grok-cli alias over grok prefix for bare grok-4.6", async () => {
+    await expect(getModelInfoCore("grok-4.6", { "grok-4.6": "grok-cli/grok-4.6" })).resolves.toEqual({
+      provider: "grok-cli",
+      model: "grok-4.6",
+    });
   });
 
   it("routes bare current Grok model names to xAI", async () => {

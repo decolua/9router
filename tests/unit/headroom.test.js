@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { compressWithHeadroom, formatHeadroomLog } from "../../open-sse/rtk/headroom.js";
+import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog } from "../../open-sse/rtk/headroom.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -202,11 +202,113 @@ describe("compressWithHeadroom", () => {
     expect(stats).toBeNull();
     expect(global.fetch).not.toHaveBeenCalled();
   });
+
+  describe("timeout normalization", () => {
+    const mockResponse = JSON.stringify({
+      messages: [{ role: "user", content: "short" }],
+      tokens_before: 100,
+      tokens_after: 20,
+      tokens_saved: 80,
+    });
+
+    function makeSuccessfulFetch() {
+      global.fetch = vi.fn(async () =>
+        new Response(mockResponse, { status: 200 })
+      );
+    }
+
+    function captureTimeoutCalls() {
+      const calls = [];
+      vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+        calls.push(ms);
+        const controller = new AbortController();
+        return controller.signal;
+      });
+      return calls;
+    }
+
+    it("passes a valid positive timeout to AbortSignal.timeout", async () => {
+      makeSuccessfulFetch();
+      const calls = captureTimeoutCalls();
+      const body = { messages: [{ role: "user", content: "hello" }] };
+
+      await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787", timeoutMs: 5000 });
+
+      expect(calls).toContain(5000);
+    });
+
+    it("falls back to the default timeout when timeoutMs is null", async () => {
+      makeSuccessfulFetch();
+      const calls = captureTimeoutCalls();
+      const body = { messages: [{ role: "user", content: "hello" }] };
+
+      await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787", timeoutMs: null });
+
+      expect(calls).toContain(3000);
+    });
+
+    it("falls back to the default timeout when timeoutMs is 0", async () => {
+      makeSuccessfulFetch();
+      const calls = captureTimeoutCalls();
+      const body = { messages: [{ role: "user", content: "hello" }] };
+
+      await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787", timeoutMs: 0 });
+
+      expect(calls).toContain(3000);
+    });
+
+    it("falls back to the default timeout when timeoutMs is negative", async () => {
+      makeSuccessfulFetch();
+      const calls = captureTimeoutCalls();
+      const body = { messages: [{ role: "user", content: "hello" }] };
+
+      await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787", timeoutMs: -100 });
+
+      expect(calls).toContain(3000);
+    });
+
+    it("falls back to the default timeout when timeoutMs is NaN", async () => {
+      makeSuccessfulFetch();
+      const calls = captureTimeoutCalls();
+      const body = { messages: [{ role: "user", content: "hello" }] };
+
+      await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787", timeoutMs: NaN });
+
+      expect(calls).toContain(3000);
+    });
+
+    it("falls back to the default timeout when timeoutMs is Infinity", async () => {
+      makeSuccessfulFetch();
+      const calls = captureTimeoutCalls();
+      const body = { messages: [{ role: "user", content: "hello" }] };
+
+      await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787", timeoutMs: Infinity });
+
+      expect(calls).toContain(3000);
+    });
+
+    it("falls back to the default timeout when timeoutMs is a string", async () => {
+      makeSuccessfulFetch();
+      const calls = captureTimeoutCalls();
+      const body = { messages: [{ role: "user", content: "hello" }] };
+
+      await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787", timeoutMs: "5000" });
+
+      expect(calls).toContain(3000);
+    });
+  });
 });
 
 describe("formatHeadroomLog", () => {
   it("formats reported token deltas without implying provider billing savings", () => {
     expect(formatHeadroomLog({ tokens_before: 100, tokens_after: 25, tokens_saved: 75 }))
       .toBe("reported token delta=75 before=100 after=25 (75.0%)");
+  });
+
+  it("reports effective payload, tool-schema, and tool-history sizes", () => {
+    expect(formatHeadroomSizeLog({
+      before: { bodyBytes: 1000, messageBytes: 800, toolSchemaBytes: 100, toolHistoryBytes: 500 },
+      after: { bodyBytes: 900, messageBytes: 700, toolSchemaBytes: 100, toolHistoryBytes: 400 },
+    })).toContain("tools=100B→100B toolHistory=500B→400B effective=10.0%");
   });
 });

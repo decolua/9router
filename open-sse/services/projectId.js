@@ -7,7 +7,7 @@
  * This significantly reduces the risk of being flagged by Google's anti-abuse systems.
  */
 
-import { CLOUD_CODE_API, LOAD_CODE_ASSIST_HEADERS, LOAD_CODE_ASSIST_METADATA } from "../config/appConstants.js";
+import { CLOUD_CODE_API, LOAD_CODE_ASSIST_HEADERS, ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS, LOAD_CODE_ASSIST_METADATA } from "../config/appConstants.js";
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
 // connectionId -> { projectId: string, fetchedAt: number }
@@ -157,9 +157,10 @@ export function removeConnection(connectionId) {
  */
 async function fetchProjectId(accessToken, signal, provider) {
     const endpoints = CLOUD_CODE_API[provider] || CLOUD_CODE_API["gemini-cli"];
+    const headers = provider === "antigravity" ? ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS : LOAD_CODE_ASSIST_HEADERS;
     const response = await fetch(endpoints.loadCodeAssist, {
         method: "POST",
-        headers: { ...LOAD_CODE_ASSIST_HEADERS, "Authorization": `Bearer ${accessToken}` },
+        headers: { ...headers, "Authorization": `Bearer ${accessToken}` },
         body: JSON.stringify({ metadata: LOAD_CODE_ASSIST_METADATA }),
         signal
     });
@@ -186,7 +187,7 @@ async function fetchProjectId(accessToken, signal, provider) {
         }
     }
 
-    return onboardUser(accessToken, tierID, signal, endpoints);
+    return onboardUser(accessToken, tierID, signal, endpoints, provider);
 }
 
 /**
@@ -197,10 +198,11 @@ async function fetchProjectId(accessToken, signal, provider) {
  * @param {AbortSignal} externalSignal  – propagated from the connection's AbortController
  * @returns {Promise<string|null>}
  */
-async function onboardUser(accessToken, tierID, externalSignal, endpoints) {
+async function onboardUser(accessToken, tierID, externalSignal, endpoints, provider) {
     console.log(`[ProjectId] Onboarding user with tier: ${tierID}`);
 
     const reqBody = { tierId: tierID, metadata: LOAD_CODE_ASSIST_METADATA };
+    const headers = provider === "antigravity" ? ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS : LOAD_CODE_ASSIST_HEADERS;
     const MAX_ATTEMPTS = 5;
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
@@ -216,7 +218,7 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints) {
         try {
             const response = await fetch(endpoints.onboardUser, {
                 method: "POST",
-                headers: { ...LOAD_CODE_ASSIST_HEADERS, "Authorization": `Bearer ${accessToken}` },
+                headers: { ...headers, "Authorization": `Bearer ${accessToken}` },
                 body: JSON.stringify(reqBody),
                 signal: localCtrl.signal
             });
