@@ -1,6 +1,7 @@
 # v0.5.55 (2026-08-14)
 
 ## Features
+- **Testing Studio**: add the protected `/dashboard/playground` workspace for streaming chats and up to four parallel model comparisons; `/dashboard/basic-chat` redirects there
 - **Auth**: native SAML 2.0 SSO alongside OIDC — AuthnRequest generation, ACS
   assertion handling, SP metadata export, admin config test, replay-protected
   via a `saml_state` cookie matched against `InResponseTo`

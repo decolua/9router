@@ -59,6 +59,15 @@ Fork-specific additions:
 - Combo-level access checks for restricted API keys.
 - Per-model account binding in combos through `connectionId`.
 - Repeatable fork sync and release naming conventions.
+- Testing Studio at `/dashboard/playground` for authenticated streaming chats and side-by-side model comparisons.
+
+## Testing Studio
+
+Open `/dashboard/playground` from the dashboard sidebar. It replaces the legacy Basic Chat route, which redirects to the studio.
+
+Testing Studio uses the authenticated dashboard chat endpoint and the models already available through your connected providers. It does not expose provider credentials to the browser.
+
+The studio keeps its draft, selected models, presets, and recent sessions in versioned browser localStorage keys. Before display or storage, client-visible data is sanitized: credential-shaped fields and values are redacted, and large or deeply nested values are bounded. Provider connection details, raw stream events, and attachments remain transient. Browser storage can be unavailable or full; in that case, the current session remains usable but later changes stay in memory only.
 
 ## Architecture at a Glance
 
