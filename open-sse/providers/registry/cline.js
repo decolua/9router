@@ -40,6 +40,7 @@ export default {
     { id: "google/gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview" },
     { id: "google/gemini-3.1-flash-lite-preview", name: "Gemini 3.1 Flash Lite Preview" },
     { id: "kwaipilot/kat-coder-pro", name: "KAT Coder Pro" },
+    { id: "z-ai/glm-5.3-flash", name: "GLM 5.3 Flash (Free)" },
   ],
   oauth: {
     appBaseUrl: "https://app.cline.bot",
