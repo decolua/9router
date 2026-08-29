@@ -279,22 +279,22 @@ export default function ProvidersPage() {
     }))
     .filter((p) => matchSearch(p.name));
 
-  // Dual-auth providers (oauth + apikey) store API keys as authType "apikey"
-  // (and sometimes "api_key"). Card stats must count both so totals match detail.
-  // kiro has no authModes in registry but accepts both (headless uses "api_key").
+  // Token-backed connections may be persisted as either "oauth" or
+  // "access_token" (for example imported CodeBuddy Keycloak JWTs).
+  // Dual-auth providers can additionally persist "apikey" / "api_key".
   const dualAuthTypes = (info, key) => {
-    if (key === "kiro") return ["oauth", "apikey", "api_key"];
+    if (key === "kiro") return ["oauth", "access_token", "apikey", "api_key"];
     const modes = info?.authModes;
     // Free-tier and API-key providers default to supporting apikey even when the
     // registry entry omits authModes (e.g. cloudflare-ai, byteplus, ollama,
     // vertex) — otherwise their apikey connections are invisible on the grid card.
     if (!Array.isArray(modes)) {
       return key in FREE_TIER_PROVIDERS || key in APIKEY_PROVIDERS
-        ? ["oauth", "apikey", "api_key"]
-        : "oauth";
+        ? ["oauth", "access_token", "apikey", "api_key"]
+        : ["oauth", "access_token"];
     }
-    if (!modes.includes("apikey")) return "oauth";
-    return ["oauth", "apikey", "api_key"];
+    if (!modes.includes("apikey")) return ["oauth", "access_token"];
+    return ["oauth", "access_token", "apikey", "api_key"];
   };
 
   const oauthEntries = sortByPriority(

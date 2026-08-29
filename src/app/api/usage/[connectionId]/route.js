@@ -135,7 +135,7 @@ export async function GET(request, { params }) {
     // Allow OAuth connections, plus whitelisted apikey providers (glm/minimax/kiro/...)
     // Kiro's headless api-key flow persists authType "api_key" (underscore) while
     // generic apikey providers persist "apikey" — accept both spellings here.
-    const isOAuth = connection.authType === "oauth";
+    const isOAuth = connection.authType === "oauth" || connection.authType === "access_token";
     const isApikeyAuth =
       connection.authType === "apikey" || connection.authType === "api_key";
     const isApikeyEligible =
