@@ -226,6 +226,11 @@ function binaryResponse(buffer, status = 200) {
   });
 }
 
+function accessTokenWithTier(tier) {
+  const payload = Buffer.from(JSON.stringify({ tier })).toString("base64url");
+  return `header.${payload}.signature`;
+}
+
 const EMPTY_GRPC_WEB_FRAME = Buffer.from([0, 0, 0, 0, 0]);
 const GRPC_CREDITS_URL =
   "https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokCreditsConfig";
@@ -311,6 +316,7 @@ describe("getUsageForProvider(grok-cli)", () => {
   });
 
   it("falls back to GetGrokCreditsConfig gRPC when paid sub has no REST numeric quota", async () => {
+    const accessToken = accessTokenWithTier(5);
     const resetSeconds = 1784825940;
     const resetNanos = 867850000;
     const resetAt = new Date(
@@ -329,11 +335,11 @@ describe("getUsageForProvider(grok-cli)", () => {
 
     const usage = await getUsageForProvider({
       provider: "grok-cli",
-      accessToken: "test-token",
+      accessToken,
     });
 
     expect(usage.message).toBeUndefined();
-    expect(usage.plan).toBe("XPremiumPlus");
+    expect(usage.plan).toBe("SuperGrok Heavy");
     expect(usage.quotas["Weekly SuperGrok"]).toMatchObject({
       used: 35,
       total: 100,
@@ -345,7 +351,7 @@ describe("getUsageForProvider(grok-cli)", () => {
     const grpcCall = proxyAwareFetch.mock.calls[2];
     expect(grpcCall[0]).toBe(GRPC_CREDITS_URL);
     expect(grpcCall[1].method).toBe("POST");
-    expect(grpcCall[1].headers.Authorization).toBe("Bearer test-token");
+    expect(grpcCall[1].headers.Authorization).toBe(`Bearer ${accessToken}`);
     expect(grpcCall[1].headers["Content-Type"]).toBe("application/grpc-web+proto");
     expect(grpcCall[1].headers["X-Grpc-Web"]).toBe("1");
     // Empty gRPC-web request frame is required (flag 0 + length 0)

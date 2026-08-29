@@ -11,7 +11,6 @@ import {
   refreshAccessToken as _refreshAccessToken,
   refreshClaudeOAuthToken as _refreshClaudeOAuthToken,
   refreshGoogleToken as _refreshGoogleToken,
-  refreshQwenToken as _refreshQwenToken,
   refreshCodexToken as _refreshCodexToken,
   refreshIflowToken as _refreshIflowToken,
   refreshGitHubToken as _refreshGitHubToken,
@@ -40,9 +39,6 @@ export const refreshClaudeOAuthToken = (refreshToken) =>
 
 export const refreshGoogleToken = (refreshToken, clientId, clientSecret) =>
   _refreshGoogleToken(refreshToken, clientId, clientSecret, log);
-
-export const refreshQwenToken = (refreshToken) =>
-  _refreshQwenToken(refreshToken, log);
 
 export const refreshCodexToken = (refreshToken) =>
   _refreshCodexToken(refreshToken, log);
@@ -216,16 +212,20 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
  *
  * @param {string} provider
  * @param {object} credentials
+ * @param {{ force?: boolean }} [options]  force=true skips the on-request lead check
+ *   (used by background scheduler which applies a larger lead). Request path omits this.
  * @returns {Promise<object>} updated credentials object
  */
-export async function checkAndRefreshToken(provider, credentials) {
+export async function checkAndRefreshToken(provider, credentials, options = {}) {
   let creds = { ...credentials };
   if (!creds.connectionId && creds.id) {
     creds.connectionId = creds.id;
   }
 
+  const force = options?.force === true;
+
   // ── 1. Regular access-token expiry ────────────────────────────────────────
-  if (_shouldRefreshCredentials(provider, creds)) {
+  if (force || _shouldRefreshCredentials(provider, creds)) {
     const expiresAt = creds.expiresAt ? new Date(creds.expiresAt).getTime() : null;
     const remaining = expiresAt ? expiresAt - Date.now() : null;
     const refreshLead = _getRefreshLeadMs(provider);
