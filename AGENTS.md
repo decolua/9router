@@ -33,16 +33,11 @@ npm run cli:pack       # build + npm pack from root
 cd cli && npm run dev  # nodemon watch
 ```
 
-Tests (from `tests/`, needs root deps installed first):
-```bash
-npm install              # root deps first — tests import from src/ which needs `open`, `undici`, etc.
-cd tests && npm install  # then tests' own deps → tests/node_modules
-npx vitest run                              # all tests
-npx vitest run unit/capabilities.test.js    # single file (path relative to tests/)
-```
-The committed `tests/package.json` `test` script hardcodes Unix paths (`NODE_PATH=/tmp/node_modules …`) — ignore it, use the `npx vitest` form above.
+Tests (Homelab only):
+Never run tests on Windows. All testing (targeted files, unit, UI and jsdom suites, integration, baseline scripts, and browser testing tools) must execute on the homelab.
+See `docs/ops/NINEROUTER_HOMELAB_BUILD_TEST.md` and `docs/ops/NINEROUTER_DEV_DEPLOYMENT.md` for the authoritative test and build procedures.
 
-**The suite is NOT expected to be all-green on a plain checkout.** ~938 pass, ~64 fail. Judge regressions with `tests/__baseline__/verify-no-regression.mjs`, not a raw run. Known-red is catalogued in `tests/__baseline__/known-fails.txt` plus a few environment-dependent files (`unit/embeddings.cloud.test.js` needs the out-of-repo `cloud/` worker, `unit/xai-oauth-service.test.js` needs live network, `real/*.real.test.js` need live provider credentials).
+The suite is not expected to be all-green on a plain checkout (~938 pass, ~64 fail). Judge regressions with `tests/__baseline__/verify-no-regression.mjs` on the homelab, not a raw run. Known failures live in `tests/__baseline__/known-fails.txt` plus environment-dependent files (`unit/embeddings.cloud.test.js` needs the out-of-repo `cloud/` worker, `unit/xai-oauth-service.test.js` needs live network, `real/*.real.test.js` need live provider credentials).
 
 ## Architecture
 
@@ -68,9 +63,9 @@ The committed `tests/package.json` `test` script hardcodes Unix paths (`NODE_PAT
 
 ## Gotchas
 
-- **Do NOT run `npm run build` (or trust a Windows test run as the final gate) on this Windows workstation.** Next.js production builds reliably fail/OOM here even with an increased Node heap — this is a known, unfixable environment limitation, not a code bug. It has manifested as both V8 heap OOM and an unrelated `EPERM: operation not permitted, readlink` on an unrelated UV Python cache wheel during file tracing.
-  - **The homelab is the only authoritative build gate.** Full procedure: `docs/ops/NINEROUTER_HOMELAB_BUILD_TEST.md` (Docker build at `/home/itsnulla/9router-build` via `ssh homelab`) and `docs/ops/NINEROUTER_DEV_DEPLOYMENT.md` (safe deploy + verification to the `ninerouter-dev` dev container).
-  - On Windows, only run **targeted** Vitest files/dirs (`cd tests && npx vitest run <path>`) for fast local iteration — never treat a Windows vitest run as proof the full baseline is green, and never claim "build passes" from Windows.
+- **Do NOT run `npm run build` or any test commands on this Windows workstation.** Next.js production builds reliably fail/OOM here even with an increased Node heap, and test suites must run exclusively in the authoritative homelab environment.
+  - **The homelab is the only authoritative build and test gate.** Full procedures: `docs/ops/NINEROUTER_HOMELAB_BUILD_TEST.md` (Docker build and test execution at `/home/itsnulla/9router-build` via `ssh homelab`) and `docs/ops/NINEROUTER_DEV_DEPLOYMENT.md` (safe deploy and verification to the `ninerouter-dev` dev container).
+  - **Windows test execution is strictly prohibited.** Never run `npx vitest`, targeted test files, UI or jsdom suites, baseline verification scripts, or browser testing tools on Windows, and never make any claim of test pass or build status based on Windows test output.
 - `tests/__baseline__/verify-no-regression.mjs` splits report paths on `"/app/"`, which is Docker-container-path-shaped and breaks on native Windows paths — run baseline comparisons on Linux/homelab, not Windows.
 - `better-sqlite3` is an optional native dependency by design (see `src/lib/db/driver.js` fallback chain) so `npm install` never hard-fails without build tools — don't "fix" a missing native binding by making it a hard dependency.
 - Homelab dev container (`ninerouter-dev`) mounts a persistent volume `9router-dev-data` at `/app/data` — never run `docker compose down -v`, `docker volume rm 9router-dev-data`, or otherwise touch that mount when deploying/rolling back.
