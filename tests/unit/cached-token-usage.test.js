@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { canonicalizeUsage, extractUsage, mergeUsage } from "../../open-sse/utils/usageTracking.js";
 import { calculateCostFromTokens } from "../../open-sse/providers/pricing.js";
-import { toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
+import { buildUsage, toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
 import { extractUsageFromResponse } from "../../open-sse/handlers/chatCore/requestDetail.js";
 
 // Canonical convention (single source of truth for storage + cost):
@@ -48,6 +48,18 @@ describe("canonicalizeUsage", () => {
     expect(out.prompt_tokens).toBe(500);
     expect(out.cached_tokens).toBe(120);
     expect(out.reasoning_tokens).toBe(40);
+  });
+
+  it("reads cached_tokens from the nested buildUsage() shape", () => {
+    // buildUsage() only emits cache reads under prompt_tokens_details. The
+    // Responses translator overwrites state.usage with that shape on
+    // response.completed, so a top-level-only read silently drops the cache
+    // count for every Responses provider (codex, grok-cli, ...).
+    const out = canonicalizeUsage(
+      buildUsage({ promptTokens: 330, completionTokens: 50, totalTokens: 380, cachedTokens: 200 })
+    );
+    expect(out.prompt_tokens).toBe(330);
+    expect(out.cached_tokens).toBe(200);
   });
 
   it("handles no-cache usage", () => {
