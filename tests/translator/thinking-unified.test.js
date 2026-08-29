@@ -46,6 +46,12 @@ describe("extractThinking", () => {
   it("openai reasoning_effort", () => {
     expect(extractThinking({ reasoning_effort: "high" })).toEqual({ mode: "level", level: "high" });
   });
+  it("wrapper variant option overrides top-level default", () => {
+    expect(extractThinking({
+      options: { reasoningEffort: "xhigh" },
+      reasoning_effort: "medium",
+    })).toEqual({ mode: "level", level: "xhigh" });
+  });
   it("responses reasoning.effort none", () => {
     expect(extractThinking({ reasoning: { effort: "none" } })).toEqual({ mode: "none" });
   });
@@ -195,6 +201,30 @@ describe("applyThinking per provider format", () => {
   it("openai keeps xhigh for reasoning models", () => {
     const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "xhigh" }, "codex");
     expect(out.reasoning_effort).toBe("xhigh");
+  });
+  it.each(["low", "medium", "high", "xhigh", "max"])(
+    "openai-compatible promotes wrapper %s to reasoning_effort",
+    (level) => {
+      const out = apply("openai", "gpt-5.6-luna", {
+        options: { reasoningEffort: level },
+        reasoning_effort: "medium",
+      }, "openai-compatible-chat-test");
+      expect(out.options).toBeUndefined();
+      expect(out.reasoning_effort).toBe(level);
+    },
+  );
+  it("openai-compatible promotes wrapper ultra to nested reasoning effort", () => {
+    const out = apply("openai", "gpt-5.6-terra", {
+      options: { reasoningEffort: "ultra" },
+      reasoning_effort: "medium",
+    }, "openai-compatible-chat-test");
+    expect(out.options).toBeUndefined();
+    expect(out.reasoning_effort).toBeUndefined();
+    expect(out.reasoning).toEqual({ effort: "ultra" });
+  });
+  it("openai-compatible keeps a top-level effort when no wrapper option exists", () => {
+    const out = apply("openai", "gpt-5.6-terra", { reasoning_effort: "ultra" }, "openai-compatible-chat-test");
+    expect(out.reasoning_effort).toBe("ultra");
   });
   it.each([
     ["gpt-5.6-sol", "max", "max"],

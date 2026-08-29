@@ -96,28 +96,29 @@ export function getToolCallIds(msg) {
   return ids;
 }
 
-// Check if user message has tool_result for given ids (OpenAI format: role=tool, Claude format: tool_result in content)
+function orphanToolResult(msg) {
+  const content = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content ?? "");
+  return {
+    role: "user",
+    content: `[Orphaned tool result${msg.tool_call_id ? ` ${msg.tool_call_id}` : ""}]\n${content}`,
+  };
+}
+
+// Check if a following message contains at least one result for the calls.
+// Kept exported for translators and tests that use the legacy helper.
 export function hasToolResults(msg, toolCallIds) {
   if (!msg || !toolCallIds.length) return false;
-
-  // OpenAI format: role = "tool" with tool_call_id
   if (msg.role === "tool" && msg.tool_call_id) {
     return toolCallIds.includes(msg.tool_call_id);
   }
-
-  // Claude format: tool_result blocks in user message content
   if (msg.role === "user" && Array.isArray(msg.content)) {
-    for (const block of msg.content) {
-      if (block.type === "tool_result" && toolCallIds.includes(block.tool_use_id)) {
-        return true;
-      }
-    }
+    return msg.content.some((block) => block.type === "tool_result" && toolCallIds.includes(block.tool_use_id));
   }
-
   return false;
 }
 
-// Fix missing tool responses - insert empty tool_result if assistant has tool_use but next message has no tool_result
+// Reconcile OpenAI tool-call batches. Every call must have exactly one adjacent
+// result; compatible gateways reject partial parallel batches and orphan results.
 export function fixMissingToolResponses(body) {
   if (!body.messages || !Array.isArray(body.messages)) return body;
 
@@ -125,26 +126,68 @@ export function fixMissingToolResponses(body) {
 
   for (let i = 0; i < body.messages.length; i++) {
     const msg = body.messages[i];
-    const nextMsg = body.messages[i + 1];
+    const toolCallIds = getToolCallIds(msg);
+    if (toolCallIds.length > 0 && Array.isArray(msg.tool_calls)) {
+      newMessages.push(msg);
+
+      const expected = new Set(toolCallIds);
+      const responded = new Set();
+      const validResults = [];
+      const orphanResults = [];
+      let j = i + 1;
+
+      while (j < body.messages.length && body.messages[j]?.role === "tool") {
+        const result = body.messages[j];
+        if (expected.has(result.tool_call_id) && !responded.has(result.tool_call_id)) {
+          validResults.push(result);
+          responded.add(result.tool_call_id);
+        } else {
+          orphanResults.push(orphanToolResult(result));
+        }
+        j++;
+      }
+
+      newMessages.push(...validResults);
+      for (const id of toolCallIds) {
+        if (!responded.has(id)) {
+          newMessages.push({ role: "tool", tool_call_id: id, content: "[No response received]" });
+        }
+      }
+      newMessages.push(...orphanResults);
+      i = j - 1;
+      continue;
+    }
+
+    // Preserve Claude-format tool_use/tool_result handling. Its results live
+    // inside the next user content array rather than role:"tool" messages.
+    if (toolCallIds.length > 0) {
+      newMessages.push(msg);
+      const nextMsg = body.messages[i + 1];
+      if (nextMsg?.role === "user" && Array.isArray(nextMsg.content)) {
+        const responded = new Set(
+          nextMsg.content
+            .filter((block) => block.type === "tool_result" && block.tool_use_id)
+            .map((block) => block.tool_use_id),
+        );
+        for (const id of toolCallIds) {
+          if (!responded.has(id)) {
+            nextMsg.content.push({ type: "tool_result", tool_use_id: id, content: "[No response received]" });
+          }
+        }
+      } else {
+        for (const id of toolCallIds) {
+          newMessages.push({ role: "tool", tool_call_id: id, content: "[No response received]" });
+        }
+      }
+      continue;
+    }
+
+    if (msg.role === "tool") {
+      newMessages.push(orphanToolResult(msg));
+      continue;
+    }
 
     newMessages.push(msg);
-
-    // Check if this is assistant with tool_calls/tool_use
-    const toolCallIds = getToolCallIds(msg);
-    if (toolCallIds.length === 0) continue;
-
-    // Check if next message has tool_result
-    if (nextMsg && !hasToolResults(nextMsg, toolCallIds)) {
-      // Insert tool responses for each tool_call
-      for (const id of toolCallIds) {
-        // OpenAI format: role = "tool"
-        newMessages.push({
-          role: "tool",
-          tool_call_id: id,
-          content: ""
-        });
-      }
-    }
   }
 
   body.messages = newMessages;
