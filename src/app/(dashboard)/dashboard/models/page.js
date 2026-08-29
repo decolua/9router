@@ -245,6 +245,7 @@ export default function ModelControlCenterPage() {
 
   // PRE_B4_TABS_PAGINATION_V1
   const [activeTab, setActiveTab] = useState("overview");
+  const [discoverySearch, setDiscoverySearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
@@ -480,6 +481,358 @@ export default function ModelControlCenterPage() {
     }
   };
 
+  const manualDiscoverProvider = async (provider) => {
+    if (busy) return;
+
+    if (!isGuardedCustomProvider(provider.providerId)) {
+      setMessage(
+        `${provider.name} is a built-in provider. Manual custom discovery is not required.`,
+      );
+      return;
+    }
+
+    setBusy(`discover:${provider.providerId}`);
+    setMessage(
+      `Manual discovery for ${provider.name}. Reading /models only; no inference probe will be sent.`,
+    );
+
+    try {
+      const providersRes =
+        await fetch(
+          "/api/providers",
+          { cache: "no-store" },
+        );
+
+      const providersData =
+        await providersRes.json();
+
+      if (!providersRes.ok) {
+        throw new Error(
+          providersData.error
+          || "Failed to load provider connections",
+        );
+      }
+
+      const connections =
+        (providersData.connections || [])
+          .filter(
+            (connection) =>
+              connection.isActive !== false
+              && connection.provider
+                === provider.providerId,
+          );
+
+      if (connections.length === 0) {
+        throw new Error(
+          "No active connection is available for this provider.",
+        );
+      }
+
+      const attempted =
+        await mapLimit(
+          connections,
+          4,
+          async (connection) => {
+            try {
+              const response =
+                await fetch(
+                  `/api/providers/${encodeURIComponent(connection.id)}/models`,
+                  {
+                    cache: "no-store",
+                    signal:
+                      AbortSignal.timeout(
+                        20000,
+                      ),
+                  },
+                );
+
+              const data =
+                await response
+                  .json()
+                  .catch(() => ({}));
+
+              return {
+                connectionId:
+                  connection.id,
+                provider:
+                  connection.provider,
+                models:
+                  response.ok
+                    ? (data.models || [])
+                    : [],
+                warning:
+                  response.ok
+                    ? (data.warning || null)
+                    : (
+                        data.error
+                        || `HTTP ${response.status}`
+                      ),
+              };
+            } catch (error) {
+              const timedOut =
+                error?.name
+                  === "TimeoutError"
+                || error?.name
+                  === "AbortError";
+
+              return {
+                connectionId:
+                  connection.id,
+                provider:
+                  connection.provider,
+                models: [],
+                warning:
+                  timedOut
+                    ? "Model discovery timed out after 20s"
+                    : (
+                        error?.message
+                        || "Model discovery failed"
+                      ),
+              };
+            }
+          },
+        );
+
+      // A failed /models request must never destroy a previously
+      // observed snapshot. Only successful connections participate
+      // in the explicit observe-only refresh.
+      const discovery =
+        attempted.filter(
+          (item) => !item.warning,
+        );
+
+      if (discovery.length === 0) {
+        const detail =
+          attempted
+            .map((item) => item.warning)
+            .filter(Boolean)
+            .slice(0, 2)
+            .join(" · ");
+
+        throw new Error(
+          detail
+          || "No connection returned a model list.",
+        );
+      }
+
+      const response =
+        await fetch(
+          "/api/models/control-center/refresh",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              discovery,
+              customDiscoveryAllowlist:
+                discovery.map(
+                  (item) =>
+                    item.connectionId,
+                ),
+              syncCapabilities: false,
+            }),
+          },
+        );
+
+      const data =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error
+          || "Manual discovery refresh failed",
+        );
+      }
+
+      setState(data.state);
+
+      const nextProvider =
+        data.state
+          ?.providers
+          ?.[provider.providerId];
+
+      const detected =
+        nextProvider?.detectedCount
+        ?? Object.keys(
+          nextProvider?.detectedModels
+          || {},
+        ).length;
+
+      const failed =
+        attempted.length
+        - discovery.length;
+
+      setMessage(
+        `Manual discovery ${provider.name}: `
+        + `${detected} detected · `
+        + `${discovery.length}/${attempted.length} connection(s) succeeded`
+        + (
+          failed > 0
+            ? ` · ${failed} failed`
+            : ""
+        )
+        + ". Observe-only: no catalog, probe, or routing authority granted.",
+      );
+    } catch (error) {
+      setMessage(
+        `Manual discovery failed for ${provider.name}: ${error.message}`,
+      );
+    } finally {
+      setBusy("");
+    }
+  };
+
+
+  const catalogDetectedModel = async (
+    provider,
+    model,
+  ) => {
+    if (busy) return;
+
+    if (
+      !isGuardedCustomProvider(
+        provider.providerId,
+      )
+    ) {
+      setMessage(
+        "Explicit catalog action is reserved for custom/compatible providers.",
+      );
+      return;
+    }
+
+    if (model.cataloged === true) {
+      setMessage(
+        `${model.fullModel} is already cataloged.`,
+      );
+      return;
+    }
+
+    const providerAlias =
+      provider.alias
+      || provider.providerId;
+
+    const fullModel =
+      model.fullModel
+      || `${providerAlias}/${model.id}`;
+
+    if (
+      !window.confirm(
+        `Catalog ${fullModel}?\n\n`
+        + "This stores only this selected model in the explicit custom catalog. "
+        + "It does NOT probe the model and does NOT make it routable.",
+      )
+    ) {
+      return;
+    }
+
+    setBusy(
+      `catalog:${provider.providerId}:${model.id}`,
+    );
+
+    setMessage(
+      `Cataloging ${fullModel} explicitly...`,
+    );
+
+    try {
+      const catalogRes =
+        await fetch(
+          "/api/models/custom",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              providerAlias,
+              id: model.id,
+              type:
+                model.kind
+                || "llm",
+            }),
+          },
+        );
+
+      const catalogData =
+        await catalogRes
+          .json()
+          .catch(() => ({}));
+
+      if (!catalogRes.ok) {
+        throw new Error(
+          catalogData.error
+          || "Failed to add explicit catalog model",
+        );
+      }
+
+      // Rebuild locally from persisted customModels.
+      // No upstream discovery and no capability sync.
+      const rebuildRes =
+        await fetch(
+          "/api/models/control-center/refresh",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              discovery: [],
+              syncCapabilities: false,
+            }),
+          },
+        );
+
+      const rebuildData =
+        await rebuildRes.json();
+
+      if (!rebuildRes.ok) {
+        throw new Error(
+          rebuildData.error
+          || "Control Center rebuild failed",
+        );
+      }
+
+      setState(rebuildData.state);
+
+      const [
+        nextEffective,
+        nextDryRun,
+      ] = await Promise.all([
+        loadEffectivePreview(),
+        loadPolicyDryRun(),
+      ]);
+
+      setEffectiveState(
+        nextEffective,
+      );
+
+      setDryRunState(
+        nextDryRun,
+      );
+
+      window.dispatchEvent(
+        new CustomEvent(
+          "customModelChanged",
+        ),
+      );
+
+      setMessage(
+        `Cataloged ${fullModel} explicitly. `
+        + "Probe remains explicit-only and routing remains disabled by the custom-provider guard.",
+      );
+    } catch (error) {
+      setMessage(
+        `Catalog failed for ${fullModel}: ${error.message}`,
+      );
+    } finally {
+      setBusy("");
+    }
+  };
+
+
   const testModels = async (scope) => {
     if (busy) return;
     if (
@@ -554,6 +907,76 @@ export default function ModelControlCenterPage() {
   const providerList = useMemo(
     () => Object.values(state?.providers || {}).sort((a, b) => a.name.localeCompare(b.name)),
     [state],
+  );
+
+  const discoveryRows = useMemo(
+    () => {
+      const query =
+        discoverySearch
+          .trim()
+          .toLowerCase();
+
+      const result = [];
+
+      for (const provider of providerList) {
+        if (
+          !isGuardedCustomProvider(
+            provider.providerId,
+          )
+        ) {
+          continue;
+        }
+
+        for (
+          const model
+          of Object.values(
+            provider.detectedModels
+            || {},
+          )
+        ) {
+          if (query) {
+            const haystack =
+              `${provider.name || ""} `
+              + `${provider.providerId} `
+              + `${model.id || ""} `
+              + `${model.name || ""} `
+              + `${model.fullModel || ""}`;
+
+            if (
+              !haystack
+                .toLowerCase()
+                .includes(query)
+            ) {
+              continue;
+            }
+          }
+
+          result.push({
+            provider,
+            model,
+          });
+        }
+      }
+
+      return result.sort(
+        (a, b) =>
+          (
+            a.provider.name
+            || a.provider.providerId
+          ).localeCompare(
+            b.provider.name
+            || b.provider.providerId,
+          )
+          || String(a.model.id)
+            .localeCompare(
+              String(b.model.id),
+            ),
+      );
+    },
+    [
+      providerList,
+      discoverySearch,
+    ],
   );
 
   const rows = useMemo(() => {
@@ -1011,132 +1434,398 @@ export default function ModelControlCenterPage() {
       </div>
 
       {activeTab === "discovery" && (
-        <div className="rounded-xl border border-border bg-background">
-          <div className="p-4 border-b border-border">
-            <div className="font-medium text-text-main">
-              Provider Discovery
+        <div className="space-y-4">
+          <div className="rounded-xl border border-border bg-background">
+            <div className="p-4 border-b border-border">
+              <div className="font-medium text-text-main">
+                Provider Discovery
+              </div>
+
+              <div className="text-xs text-text-muted mt-1">
+                Built-in discovery follows provider capability. Custom/compatible providers are explicit-only and default to observe-only.
+              </div>
             </div>
 
-            <div className="text-xs text-text-muted mt-1">
-              Read-only provider catalog inventory. Discovery authority and custom-provider guards are unchanged in Pre-B.4.1.
+            <div className="p-4">
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                <div className="text-xs font-semibold text-amber-600">
+                  CUSTOM / COMPATIBLE GUARD
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3">
+                  {[
+                    ["Auto Discovery", "OFF"],
+                    ["Auto Catalog", "OFF"],
+                    ["Auto Probe", "OFF"],
+                    ["Auto Route", "OFF"],
+                  ].map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="rounded-lg border border-border bg-background px-3 py-2"
+                    >
+                      <div className="text-[10px] uppercase tracking-wide text-text-muted">
+                        {label}
+                      </div>
+                      <div className="text-xs font-semibold text-amber-600 mt-1">
+                        {value}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="text-[11px] text-text-muted mt-3">
+                  Manual Discover only reads the provider model-list endpoint. Detected models remain observe-only until an operator explicitly catalogs a selected model.
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3 px-4 pb-4">
+              {providerList.map((provider) => {
+                const providerModels =
+                  Object.values(
+                    provider.models || {},
+                  );
+
+                const detectedModels =
+                  Object.values(
+                    provider.detectedModels
+                    || {},
+                  );
+
+                const guarded =
+                  provider.discoveryGuard
+                    ?.customProvider === true
+                  || isGuardedCustomProvider(
+                    provider.providerId,
+                  );
+
+                const detected =
+                  guarded
+                    ? detectedModels.length
+                    : providerModels.filter(
+                        (model) =>
+                          model.discovered
+                            === true,
+                      ).length;
+
+                const cataloged =
+                  providerModels.filter(
+                    (model) =>
+                      model.cataloged
+                        !== false,
+                  ).length;
+
+                const testable =
+                  providerModels.filter(
+                    (model) =>
+                      model.testable
+                        === true,
+                  ).length;
+
+                const routable =
+                  providerModels.filter(
+                    (model) =>
+                      model.routable
+                        === true,
+                  ).length;
+
+                const discoverBusy =
+                  busy
+                  === `discover:${provider.providerId}`;
+
+                return (
+                  <div
+                    key={provider.providerId}
+                    className="rounded-xl border border-border bg-surface-1 p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-medium text-text-main truncate">
+                          {provider.name}
+                        </div>
+
+                        <div className="text-[11px] text-text-muted mt-1 truncate">
+                          {provider.alias
+                            || provider.providerId}
+                        </div>
+
+                        <div className="text-[11px] text-text-muted mt-1">
+                          {provider.connectionCount ?? 0} active connection(s)
+                        </div>
+                      </div>
+
+                      <span
+                        className={`inline-flex shrink-0 rounded px-2 py-1 text-[10px] font-semibold ${
+                          guarded
+                            ? "bg-amber-500/10 text-amber-600"
+                            : "bg-green-500/10 text-green-600"
+                        }`}
+                      >
+                        {guarded
+                          ? "CUSTOM / COMPATIBLE"
+                          : "BUILT-IN"}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
+                      {[
+                        ["Detected", detected],
+                        ["Cataloged", cataloged],
+                        [
+                          "Testable",
+                          guarded
+                            ? testable
+                            : "—",
+                        ],
+                        [
+                          "Routable",
+                          guarded
+                            ? routable
+                            : "—",
+                        ],
+                      ].map(([label, value]) => (
+                        <div
+                          key={label}
+                          className="rounded-lg border border-border bg-background px-3 py-2"
+                        >
+                          <div className="text-[10px] uppercase tracking-wide text-text-muted">
+                            {label}
+                          </div>
+                          <div className="text-sm font-semibold text-text-main mt-1">
+                            {value}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {guarded ? (
+                      <>
+                        <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-600">
+                          Default authority: Detected only. Catalog, probe, and routing require explicit operator action.
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            manualDiscoverProvider(
+                              provider,
+                            )
+                          }
+                          disabled={!!busy}
+                          className="mt-3 w-full rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-text-main hover:border-primary/40 hover:text-primary disabled:opacity-50"
+                        >
+                          {discoverBusy
+                            ? "Discovering..."
+                            : "Manual Discover"}
+                        </button>
+                      </>
+                    ) : (
+                      <div className="mt-3 text-[11px] text-text-muted">
+                        Automatic discovery may run according to this built-in provider&apos;s capability.
+                      </div>
+                    )}
+
+                    {provider.warning && (
+                      <div
+                        className="mt-3 text-[11px] text-amber-600 truncate"
+                        title={provider.warning}
+                      >
+                        {provider.warning}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 p-4">
-            {providerList.map((provider) => {
-              const providerModels =
-                Object.values(
-                  provider.models || {},
-                );
 
-              const configured =
-                providerModels.filter(
-                  (model) =>
-                    model.configured === true,
-                ).length;
-
-              const discovered =
-                providerModels.filter(
-                  (model) =>
-                    model.discovered === true,
-                ).length;
-
-              const custom =
-                providerModels.filter(
-                  (model) =>
-                    model.custom === true,
-                ).length;
-
-              const compatible =
-                provider.providerId
-                  ?.startsWith(
-                    "openai-compatible-",
-                  )
-                || provider.providerId
-                  ?.startsWith(
-                    "anthropic-compatible-",
-                  );
-
-              return (
-                <div
-                  key={provider.providerId}
-                  className="rounded-xl border border-border bg-surface-1 p-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="font-medium text-text-main truncate">
-                        {provider.name}
-                      </div>
-
-                      <div className="text-[11px] text-text-muted mt-1 truncate">
-                        {provider.alias
-                          || provider.providerId}
-                      </div>
-                    </div>
-
-                    <span
-                      className={`inline-flex shrink-0 rounded px-2 py-1 text-[10px] font-semibold ${
-                        compatible
-                          ? "bg-amber-500/10 text-amber-600"
-                          : "bg-green-500/10 text-green-600"
-                      }`}
-                    >
-                      {compatible
-                        ? "CUSTOM / COMPATIBLE"
-                        : "BUILT-IN"}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 mt-4">
-                    <SummaryCard
-                      label="Connections"
-                      value={
-                        provider.connectionCount
-                        ?? 0
-                      }
-                    />
-
-                    <SummaryCard
-                      label="Catalog"
-                      value={
-                        providerModels.length
-                      }
-                    />
-
-                    <SummaryCard
-                      label="Configured"
-                      value={configured}
-                    />
-
-                    <SummaryCard
-                      label="Discovered"
-                      value={discovered}
-                    />
-                  </div>
-
-                  {custom > 0 && (
-                    <div className="mt-3 text-xs text-text-muted">
-                      Custom catalog entries: {custom}
-                    </div>
-                  )}
-
-                  {compatible && (
-                    <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-600">
-                      Guard target: detected models require explicit operator opt-in before future automatic probing or routing.
-                    </div>
-                  )}
-
-                  {provider.warning && (
-                    <div
-                      className="mt-3 text-[11px] text-amber-600 truncate"
-                      title={provider.warning}
-                    >
-                      {provider.warning}
-                    </div>
-                  )}
+          <div className="rounded-xl border border-border bg-background">
+            <div className="p-4 border-b border-border flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="font-medium text-text-main">
+                  Detected Custom Models
                 </div>
-              );
-            })}
+
+                <div className="text-xs text-text-muted mt-1">
+                  Observe-only inventory. Cataloging a model persists only that selected model; it does not probe it or grant routing authority.
+                </div>
+              </div>
+
+              <input
+                value={discoverySearch}
+                onChange={(event) =>
+                  setDiscoverySearch(
+                    event.target.value,
+                  )
+                }
+                placeholder="Search detected models..."
+                className="w-full md:w-72 px-3 py-2 rounded-lg border border-border bg-background text-sm text-text-main outline-none focus:border-primary"
+              />
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border text-left text-xs text-text-muted">
+                    <th className="px-4 py-3 font-medium">
+                      Provider
+                    </th>
+                    <th className="px-4 py-3 font-medium">
+                      Model
+                    </th>
+                    <th className="px-4 py-3 font-medium">
+                      Detected
+                    </th>
+                    <th className="px-4 py-3 font-medium">
+                      Cataloged
+                    </th>
+                    <th className="px-4 py-3 font-medium">
+                      Testable
+                    </th>
+                    <th className="px-4 py-3 font-medium">
+                      Routable
+                    </th>
+                    <th className="px-4 py-3 font-medium text-right">
+                      Action
+                    </th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {discoveryRows.map(
+                    ({ provider, model }) => {
+                      const catalogBusy =
+                        busy
+                        === `catalog:${provider.providerId}:${model.id}`;
+
+                      return (
+                        <tr
+                          key={`${provider.providerId}\0${model.id}`}
+                          className="border-b border-border last:border-b-0"
+                        >
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-text-main">
+                              {provider.name}
+                            </div>
+                            <div className="text-[11px] text-text-muted mt-1">
+                              CUSTOM / COMPATIBLE
+                            </div>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <div className="font-medium text-text-main">
+                              {model.name
+                                || model.id}
+                            </div>
+                            <div className="text-[11px] text-text-muted mt-1 font-mono">
+                              {model.fullModel
+                                || `${provider.alias || provider.providerId}/${model.id}`}
+                            </div>
+                            {model.stale && (
+                              <div className="text-[10px] text-amber-600 mt-1">
+                                Last detected snapshot is stale
+                              </div>
+                            )}
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <span className="rounded px-2 py-1 text-[10px] font-semibold bg-blue-500/10 text-blue-600">
+                              YES
+                            </span>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <span
+                              className={`rounded px-2 py-1 text-[10px] font-semibold ${
+                                model.cataloged
+                                  ? "bg-green-500/10 text-green-600"
+                                  : "bg-surface-2 text-text-muted"
+                              }`}
+                            >
+                              {model.cataloged
+                                ? "YES"
+                                : "NO"}
+                            </span>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <span
+                              className={`rounded px-2 py-1 text-[10px] font-semibold ${
+                                model.testable
+                                  ? "bg-green-500/10 text-green-600"
+                                  : "bg-surface-2 text-text-muted"
+                              }`}
+                            >
+                              {model.testable
+                                ? "YES"
+                                : "NO"}
+                            </span>
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <span
+                              className={`rounded px-2 py-1 text-[10px] font-semibold ${
+                                model.routable
+                                  ? "bg-green-500/10 text-green-600"
+                                  : "bg-surface-2 text-text-muted"
+                              }`}
+                            >
+                              {model.routable
+                                ? "YES"
+                                : "NO"}
+                            </span>
+                          </td>
+
+                          <td className="px-4 py-3 text-right">
+                            {model.cataloged ? (
+                              <span className="text-xs font-medium text-green-600">
+                                Cataloged
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  catalogDetectedModel(
+                                    provider,
+                                    model,
+                                  )
+                                }
+                                disabled={!!busy}
+                                className="rounded-lg border border-border bg-background px-3 py-2 text-xs font-medium text-text-main hover:border-primary/40 hover:text-primary disabled:opacity-50"
+                              >
+                                {catalogBusy
+                                  ? "Cataloging..."
+                                  : "Catalog Model"}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    },
+                  )}
+
+                  {discoveryRows.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={7}
+                        className="px-4 py-10 text-center text-sm text-text-muted"
+                      >
+                        No detected custom/compatible models match this view. Use Manual Discover on a custom provider to create an observe-only snapshot.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="border-t border-border px-4 py-3 text-[11px] text-text-muted">
+              {discoveryRows.length} detected custom/compatible model(s) shown.
+              {" · "}
+              Catalog action persists one selected model only.
+              {" · "}
+              Probe and routing authority remain unchanged.
+            </div>
           </div>
         </div>
       )}
