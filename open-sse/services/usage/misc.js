@@ -3,7 +3,7 @@
  */
 
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
-import { U } from "./shared.js";
+import { U, parseResetTime } from "./shared.js";
 
 // GLM quota endpoints (region-aware) — url from registry transport.usage
 const GLM_QUOTA_URLS = {
@@ -112,10 +112,90 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
   }
 }
 
+async function getGlmCodingPlanUsage(jwtToken, proxyOptions = null) {
+  const headers = {
+    Authorization: `Bearer ${jwtToken}`,
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  };
+
+  try {
+    const [billingRes, balanceRes] = await Promise.all([
+      proxyAwareFetch("https://zcode.z.ai/api/v1/zcode-plan/billing/current", { headers }, proxyOptions),
+      proxyAwareFetch("https://zcode.z.ai/api/v1/zcode-plan/billing/balance", { headers }, proxyOptions).catch(() => null),
+    ]);
+
+    if (!billingRes.ok) {
+      if (billingRes.status === 401) {
+        return { message: "Z.AI Coding Plan token invalid or expired." };
+      }
+      return { message: `Coding Plan billing API error (${billingRes.status}).` };
+    }
+
+    const billingJson = await billingRes.json();
+    const billingData = billingJson?.data || billingJson;
+    const balanceJson = balanceRes?.ok ? await balanceRes.json() : null;
+    const balanceData = balanceJson?.data || balanceJson;
+
+    const plans = Array.isArray(billingData?.plans) ? billingData.plans : [];
+    const planName = plans[0]?.name || billingData?.planName || "Coding Plan";
+
+    const quotas = {};
+    const balances = Array.isArray(balanceData?.balances) ? balanceData.balances : [];
+
+    for (const bal of balances) {
+      if (!bal?.show_name) continue;
+
+      const total = Number(bal.total_units) || 0;
+      const used = Number(bal.used_units) || 0;
+      const remainingUnits = Number(bal.remaining_units);
+      const remaining = Number.isFinite(remainingUnits)
+        ? Math.max(0, remainingUnits)
+        : Math.max(0, total - used);
+
+      quotas[bal.show_name] = {
+        used,
+        total,
+        remainingPercentage: total > 0 ? Math.round((remaining / total) * 100) : 0,
+        resetAt: parseResetTime(bal.expires_at),
+        unlimited: false,
+        unit: "token",
+      };
+    }
+
+    if (Object.keys(quotas).length === 0) {
+      return {
+        plan: planName,
+        message: "Coding Plan connected. No per-model balance data available.",
+        quotas: {},
+      };
+    }
+
+    return {
+      plan: planName,
+      quotas,
+    };
+  } catch (error) {
+    return { message: `GLM Coding Plan error: ${error.message}` };
+  }
+}
+
 /**
- * GLM Coding Plan usage (international + China regions)
+ * GLM usage — OAuth Coding Plan JWT or API key quota APIs
  */
-export async function getGlmUsage(apiKey, provider, proxyOptions = null) {
+export async function getGlmUsage(connection, proxyOptions = null) {
+  const provider = connection?.provider || "glm";
+  const apiKey = connection?.apiKey;
+  const providerSpecificData = connection?.providerSpecificData || {};
+  const useCodingPlan =
+    providerSpecificData.useCodingPlan &&
+    (providerSpecificData.zcodeJwtToken || connection?.accessToken);
+
+  if (useCodingPlan) {
+    const zcodeJwt = providerSpecificData.zcodeJwtToken || connection.accessToken;
+    return getGlmCodingPlanUsage(zcodeJwt, proxyOptions);
+  }
+
   if (!apiKey) {
     return { message: "GLM API key not available." };
   }

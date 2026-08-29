@@ -2,6 +2,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, REFRESH_LEAD_MS } from "../config/appConstants.js";
 import {
   refreshXaiToken,
+  refreshGlmToken,
   refreshAccessToken,
   refreshKimiToken,
   refreshClaudeOAuthToken,
@@ -150,6 +151,7 @@ const REFRESH_HANDLERS = {
   // Kimi Code OAuth (merged into id `kimi`); legacy id still routes here
   kimi: (c, log) => refreshKimiToken(c.refreshToken, c, log),
   "kimi-coding": (c, log) => refreshKimiToken(c.refreshToken, c, log),
+  glm: (c, log) => refreshGlmToken(c.refreshToken, c, log),
   vertex: vertexRefreshHandler,
   "vertex-partner": vertexRefreshHandler
 };

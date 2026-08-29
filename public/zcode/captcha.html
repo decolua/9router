@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZCode Verification Center</title>
+  <!-- Outfit and Inter fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --bg-gradient: linear-gradient(135deg, #09090b 0%, #111115 50%, #1e1b4b 100%);
+      --accent-color: #6366f1;
+      --accent-glow: rgba(99, 102, 241, 0.5);
+      --success-color: #10b981;
+      --success-glow: rgba(16, 185, 129, 0.5);
+      --card-bg: rgba(255, 255, 255, 0.03);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --text-main: #f4f4f5;
+      --text-muted: #a1a1aa;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg-gradient);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: var(--text-main);
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Background glow animation */
+    body::before {
+      content: '';
+      position: absolute;
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+      top: -10%;
+      left: -10%;
+      z-index: 0;
+      opacity: 0.6;
+      animation: pulseOrbit 12s infinite alternate ease-in-out;
+    }
+
+    body::after {
+      content: '';
+      position: absolute;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(147, 51, 234, 0.3) 0%, transparent 70%);
+      bottom: -15%;
+      right: -10%;
+      z-index: 0;
+      opacity: 0.5;
+      animation: pulseOrbit 16s infinite alternate-reverse ease-in-out;
+    }
+
+    @keyframes pulseOrbit {
+      0% { transform: translate(0, 0) scale(1); }
+      100% { transform: translate(50px, 80px) scale(1.1); }
+    }
+
+    .container {
+      position: relative;
+      z-index: 10;
+      width: 100%;
+      max-width: 460px;
+      padding: 24px;
+    }
+
+    /* Frosted glass card */
+    .card {
+      background: var(--card-bg);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid var(--card-border);
+      border-radius: 24px;
+      padding: 40px 32px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      text-align: center;
+      transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Top accent bar */
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, #6366f1, #a855f7, #6366f1);
+      background-size: 200% 100%;
+      animation: flowStream 4s linear infinite;
+    }
+
+    @keyframes flowStream {
+      0% { background-position: 0% 50%; }
+      100% { background-position: 200% 50%; }
+    }
+
+    .card.success-state {
+      border-color: rgba(16, 185, 129, 0.3);
+      box-shadow: 0 0 40px rgba(16, 185, 129, 0.15);
+    }
+
+    .card.success-state::before {
+      background: var(--success-color);
+    }
+
+    h1 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      margin-bottom: 8px;
+      background: linear-gradient(120deg, #ffffff 40%, #c7d2fe 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .subtitle {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-bottom: 32px;
+      line-height: 1.5;
+    }
+
+    /* Captcha widget area */
+    #captcha-container {
+      min-height: 100px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 24px;
+      position: relative;
+    }
+
+    /* Hidden helper button for Alibaba captcha element/button binding */
+    #captcha-trigger-btn {
+      display: none;
+    }
+
+    /* Loading indicator */
+    .loader {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      transition: opacity 0.3s ease;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(255, 255, 255, 0.05);
+      border-top-color: var(--accent-color);
+      border-radius: 50%;
+      animation: spin 1s infinite linear;
+      box-shadow: 0 0 15px var(--accent-glow);
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Success animation */
+    .success-icon-wrapper {
+      display: none;
+      justify-content: center;
+      align-items: center;
+      margin: 20px auto 30px;
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      background: rgba(16, 185, 129, 0.1);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+      box-shadow: 0 0 20px rgba(16, 185, 129, 0.1);
+      animation: scaleUp 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+    }
+
+    @keyframes scaleUp {
+      0% { transform: scale(0.6); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    .success-svg {
+      width: 36px;
+      height: 36px;
+      stroke: var(--success-color);
+      stroke-width: 3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
+      stroke-dasharray: 100;
+      stroke-dashoffset: 100;
+      animation: drawCheck 0.8s 0.2s ease-in-out forwards;
+    }
+
+    @keyframes drawCheck {
+      to { stroke-dashoffset: 0; }
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .fade-out {
+      opacity: 0;
+      pointer-events: none;
+    }
+  </style>
+  <script src="https://o.alicdn.com/captcha-frontend/aliyunCaptcha/AliyunCaptcha.js"></script>
+</head>
+<body>
+
+  <div class="container">
+    <div class="card" id="card">
+      <div id="verify-section">
+        <h1 id="title-text">Security Verification</h1>
+        <p class="subtitle" id="subtitle-text">Complete captcha verification to continue with chat requests</p>
+
+        <div id="captcha-container">
+          <!-- Default loading state -->
+          <div class="loader" id="loader">
+            <div class="spinner"></div>
+            <p style="font-size: 13px; color: var(--text-muted)">Initializing traceless security verification...</p>
+          </div>
+          <!-- Alibaba captcha mount point -->
+          <div id="captcha-div"></div>
+        </div>
+
+        <!-- Hidden trigger button for Alibaba captcha element/button binding -->
+        <button id="captcha-trigger-btn"></button>
+      </div>
+
+      <!-- Success state -->
+      <div class="success-icon-wrapper" id="success-wrapper">
+        <svg class="success-svg" viewBox="0 0 24 24">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function isInteractiveMode() {
+      return new URLSearchParams(window.location.search).get('mode') === 'interactive';
+    }
+
+    async function requestHeadedFallback(reason) {
+      if (isInteractiveMode()) return;
+      try {
+        await fetch('/api/zcode/captcha/needs-interactive', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason: reason || 'traceless_failed' }),
+        });
+      } catch (err) {
+        console.error('[Captcha] Failed to request headed fallback:', err);
+      }
+    }
+
+    // Fetch config from backend and initialize captcha
+    async function initVerification() {
+      const card = document.getElementById('card');
+      const loader = document.getElementById('loader');
+      const verifySection = document.getElementById('verify-section');
+      const successWrapper = document.getElementById('success-wrapper');
+      const titleText = document.getElementById('title-text');
+      const subtitleText = document.getElementById('subtitle-text');
+      const interactive = isInteractiveMode();
+
+      // Reset UI state
+      verifySection.classList.remove('hidden');
+      successWrapper.style.display = 'none';
+      card.classList.remove('success-state');
+      // Remove previously added success text
+      card.querySelectorAll('.dynamic-success').forEach(el => el.remove());
+
+      if (interactive) {
+        titleText.innerText = 'Manual Security Verification';
+        subtitleText.innerText = 'Complete the captcha puzzle in this window to continue chat requests.';
+      } else {
+        titleText.innerText = 'Security Verification';
+        subtitleText.innerText = 'Complete captcha verification to continue with chat requests';
+      }
+
+      try {
+        // 1. Fetch captcha config from backend
+        const res = await fetch('/api/zcode/captcha/config');
+        if (!res.ok) throw new Error('Failed to fetch captcha config');
+        const config = await res.json();
+
+        if (!config.enabled) {
+          loader.innerHTML = '<p style="color: var(--success-color)">Security verification is disabled. Returning automatically.</p>';
+          return;
+        }
+
+        // 2. Initialize Alibaba Captcha SDK
+        if (typeof window.initAliyunCaptcha !== 'function') {
+          throw new Error('Alibaba captcha SDK failed to load. Check your network connection.');
+        }
+
+        window.initAliyunCaptcha({
+          SceneId: config.sceneId,
+          mode: 'popup',
+          region: config.region,
+          prefix: config.prefix,
+          element: '#captcha-div',
+          button: '#captcha-trigger-btn',
+          captchaLogoImg: '',
+          showErrorTip: false,
+          getInstance: (instance) => {
+            console.log('[Captcha] Alibaba SDK initialized');
+            window.__captchaInstance = instance;
+            loader.classList.add('hidden');
+
+            // Interactive fallback: show puzzle UI. Default: try traceless first.
+            if (interactive) {
+              console.log('[Captcha] Interactive mode — showing captcha puzzle');
+              if (typeof instance.show === 'function') {
+                instance.show();
+              } else {
+                document.getElementById('captcha-trigger-btn').click();
+              }
+            } else if (typeof instance.startTracelessVerification === 'function') {
+              console.log('[Captcha] Running traceless silent verification...');
+              instance.startTracelessVerification();
+            } else if (typeof instance.show === 'function') {
+              instance.show();
+            } else {
+              document.getElementById('captcha-trigger-btn').click();
+            }
+          },
+          success: async (verifyParam) => {
+            console.log('[Captcha] Verification parameter obtained, length:', verifyParam.length);
+
+            // Hide verification section, show success state
+            verifySection.classList.add('hidden');
+            successWrapper.style.display = 'flex';
+            card.classList.add('success-state');
+
+            const successTitle = document.createElement('h1');
+            successTitle.className = 'dynamic-success';
+            successTitle.innerText = 'Verification Successful';
+            successTitle.style.marginTop = '16px';
+
+            const successSub = document.createElement('p');
+            successSub.className = 'subtitle dynamic-success';
+            successSub.innerText = 'Token sent to backend. Waiting for next verification...';
+            successSub.style.marginBottom = '0';
+
+            card.appendChild(successTitle);
+            card.appendChild(successSub);
+
+            // Post back to backend
+            try {
+              const res = await fetch('/api/zcode/captcha/submit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ verifyParam })
+              });
+              if (!res.ok) {
+                const errText = await res.text().catch(() => '');
+                throw new Error(errText || `HTTP ${res.status}`);
+              }
+              console.log('[Captcha] Posted to backend successfully');
+            } catch (err) {
+              console.error('[Captcha] Failed to post to backend:', err);
+              successTitle.innerText = 'Backend submit failed';
+              successSub.innerText = err?.message || 'Could not send token to 9router';
+              successSub.className = 'subtitle dynamic-error';
+            }
+            // Keep page open for reuse via __resetCaptcha
+          },
+          fail: async (err) => {
+            console.error('[Captcha] Verification failed:', err);
+            if (!interactive) {
+              loader.innerHTML = '<p style="font-size: 13px; color: var(--text-muted)">Opening visible browser for manual verification...</p>';
+              loader.classList.remove('hidden');
+              await requestHeadedFallback('verification_failed');
+              return;
+            }
+            loader.innerHTML = '<p style="color: #ef4444; font-size: 13px;">Verification failed. Complete the puzzle above and try again.</p>';
+            loader.classList.remove('hidden');
+          },
+          onError: async (err) => {
+            console.error('[Captcha] Captcha error:', err);
+            if (!interactive) {
+              loader.innerHTML = '<p style="font-size: 13px; color: var(--text-muted)">Opening visible browser for manual verification...</p>';
+              loader.classList.remove('hidden');
+              await requestHeadedFallback('captcha_error');
+              return;
+            }
+            loader.innerHTML = '<p style="color: #ef4444; font-size: 13px;">Load error. Refresh or retry the request.</p>';
+            loader.classList.remove('hidden');
+          }
+        });
+
+      } catch (error) {
+        console.error('[Captcha] Initialization error:', error);
+        if (!interactive) {
+          loader.innerHTML = '<p style="font-size: 13px; color: var(--text-muted)">Opening visible browser for manual verification...</p>';
+          await requestHeadedFallback('init_error');
+          return;
+        }
+        loader.innerHTML = `<p style="color: #ef4444; font-size: 13px;">${error.message}</p>`;
+      }
+    }
+
+    /**
+     * Reset verification — called by Playwright page.evaluate()
+     * Destroys the current SDK instance and re-initializes
+     */
+    window.__resetCaptcha = async function() {
+      console.log('[Captcha] Reset requested');
+      try {
+        if (window.__captchaInstance && typeof window.__captchaInstance.destroy === 'function') {
+          window.__captchaInstance.destroy();
+        }
+      } catch (e) {
+        console.warn('[Captcha] destroy failed:', e);
+      }
+      window.__captchaInstance = null;
+      document.getElementById('captcha-div').innerHTML = '';
+      await initVerification();
+    };
+
+    window.addEventListener('DOMContentLoaded', initVerification);
+  </script>
+</body>
+</html>

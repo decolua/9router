@@ -418,6 +418,36 @@ export async function refreshGitHubToken(refreshToken, log) {
   return refreshAccessToken("github", refreshToken, {}, log);
 }
 
+export async function refreshGlmToken(refreshToken, credentials, log) {
+  if (!refreshToken) return null;
+  return dedupRefresh("glm", refreshToken, async () => {
+    try {
+      const mod = await import("../../../src/lib/zcode/oauth.js");
+      const refreshed = await mod.refreshGlmOAuthCredentials({
+        ...credentials,
+        refreshToken,
+      });
+      if (!refreshed) {
+        log?.warn?.("TOKEN_REFRESH", "glm refresh skipped (no client secret or refresh token)");
+        return null;
+      }
+      log?.info?.("TOKEN_REFRESH", "Successfully refreshed GLM OAuth credentials", {
+        hasNewAccessToken: !!refreshed.accessToken,
+        hasNewApiKey: !!refreshed.apiKey,
+        expiresIn: refreshed.expiresIn,
+      });
+      return refreshed;
+    } catch (e) {
+      log?.warn?.("TOKEN_REFRESH", `glm refresh failed: ${e?.message || e}`);
+      const msg = String(e?.message || "");
+      if (msg.includes("invalid_grant") || msg.includes("invalid_request")) {
+        return { error: "invalid_grant" };
+      }
+      return null;
+    }
+  }, log);
+}
+
 export async function refreshCopilotToken(githubAccessToken, log) {
   if (!githubAccessToken) return null;
   return dedupRefresh("copilot", githubAccessToken, async () => {
