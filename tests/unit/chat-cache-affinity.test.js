@@ -6,7 +6,7 @@ const authMocks = vi.hoisted(() => ({
   isValidApiKey: vi.fn(),
   markAccountUnavailable: vi.fn(),
 }));
-const comboMocks = vi.hoisted(() => ({ handleComboChat: vi.fn(), handleFusionChat: vi.fn() }));
+const comboMocks = vi.hoisted(() => ({ handleComboChat: vi.fn(), handleFusionChat: vi.fn(), detectRequiredCapabilities: vi.fn(() => new Set()) }));
 const dispatchMocks = vi.hoisted(() => ({ handleChatCore: vi.fn() }));
 const modelMocks = vi.hoisted(() => ({ getComboModels: vi.fn(), getModelInfo: vi.fn() }));
 const settingsMocks = vi.hoisted(() => ({ getSettings: vi.fn() }));
@@ -29,6 +29,11 @@ vi.mock("@/sse/services/auth.js", () => ({
   markAccountUnavailable: authMocks.markAccountUnavailable,
 }));
 vi.mock("open-sse/services/combo.js", () => comboMocks);
+vi.mock("open-sse/services/capacityAdapter.js", () => ({
+  augmentModelsWithCapacityAdapter: (models) => models,
+  withCapacityAdapterStripping: (fn) => fn,
+  getActiveAdapterStrategy: () => "fallback",
+}));
 vi.mock("open-sse/handlers/chatCore.js", () => dispatchMocks);
 vi.mock("@/sse/services/model.js", () => modelMocks);
 vi.mock("@/lib/localDb", () => settingsMocks);
