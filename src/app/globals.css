@@ -4,8 +4,8 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* Hide icon ligature text until font is ready */
-.material-symbols-outlined { visibility: hidden; }
-.fonts-loaded .material-symbols-outlined { visibility: visible; }
+.material-symbols-outlined { opacity: 0; }
+.fonts-loaded .material-symbols-outlined { opacity: 1; transition: opacity .12s ease-out; }
 
 /* ============================================================
    9Router palette — adopted from 9remote_private/web
@@ -254,6 +254,37 @@ input, textarea {
 }
 .dark .scroll-thin-x::-webkit-scrollbar-thumb {
   background: rgba(229, 106, 74, 0.55);
+}
+
+/* Global thin mac-like scrollbars (overrides clunky Windows/Linux default) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(120, 120, 120, 0.35) transparent;
+}
+.dark * {
+  scrollbar-color: rgba(180, 180, 180, 0.3) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: rgba(120, 120, 120, 0.35);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(120, 120, 120, 0.55);
+}
+.dark *::-webkit-scrollbar-thumb {
+  background-color: rgba(180, 180, 180, 0.3);
+}
+.dark *::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(180, 180, 180, 0.5);
 }
 
 /* Reusable elevated card */
