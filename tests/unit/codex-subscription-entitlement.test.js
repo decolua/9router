@@ -18,6 +18,14 @@ function isoNowPlus(days) {
   return new Date(Date.now() + days * 86400000).toISOString();
 }
 
+function getHeader(headers, name) {
+  if (!headers) return undefined;
+  if (typeof headers.get === "function") return headers.get(name) ?? headers.get(name.toLowerCase());
+  const target = name.toLowerCase();
+  const key = Object.keys(headers).find((candidate) => candidate.toLowerCase() === target);
+  return key ? headers[key] : undefined;
+}
+
 describe("getCodexSubscriptionEntitlement", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -302,24 +310,23 @@ describe("getCodexSubscriptionEntitlement", () => {
     expect(mocks.proxyAwareFetch).not.toHaveBeenCalled();
   });
 
-  it("prefers organizationId over accountId and distinguishes personal Free vs paid org", async () => {
+  it("prefers providerSpecificData organization over stale idToken when accessToken has no hint", async () => {
     const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
     const accounts = [
       { id: "personal_free", organization_id: "org_personal", plan_type: "free", entitlement: { subscription_plan: "free", expires_at: isoNowPlus(1) } },
       { id: "org_paid", organization_id: "org_999", plan_type: "pro", entitlement: { subscription_plan: "pro", expires_at: isoNowPlus(20) } },
     ];
-    // JWT has nested organization_id pointing to paid org, even if providerSpecificData accountId points to free
-    const jwt = makeJwt({ "https://api.openai.com/auth": { organization_id: "org_999", chatgpt_account_id: "personal_free" } });
+    const staleIdToken = makeJwt({ "https://api.openai.com/auth": { organization_id: "org_999", chatgpt_account_id: "org_paid" } });
     mocks.proxyAwareFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ accounts }) });
     const res = await getCodexSubscriptionEntitlement({
       accessToken: "at",
-      idToken: jwt,
+      idToken: staleIdToken,
       providerSpecificData: { chatgptAccountId: "personal_free", organizationId: "org_personal" },
       proxyOptions: null,
       now: Date.now(),
     });
-    expect(res.subscriptionPlan).toBe("pro");
-    expect(res.subscriptionActiveUntil).toBe(new Date(accounts[1].entitlement.expires_at).toISOString());
+    expect(res.subscriptionPlan).toBe("free");
+    expect(res.subscriptionActiveUntil).toBe(new Date(accounts[0].entitlement.expires_at).toISOString());
     expect(res.subscriptionSource).toBe("accounts");
   });
 
@@ -677,5 +684,221 @@ describe("getCodexSubscriptionEntitlement", () => {
     const res = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: null, providerSpecificData: {}, proxyOptions: null, now: Date.now() });
     expect(res.subscriptionPlan).toBe("plus");
     expect(res.subscriptionActiveUntil).toBeTruthy();
+    });
+
+  // Cockpit protocol regressions
+  it("accounts/check requires Cockpit web headers Referer User-Agent x-openai-target", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const future = isoNowPlus(10);
+    mocks.proxyAwareFetch.mockImplementation(async (url, options) => {
+      const headers = options?.headers || {};
+      const targetPath = new URL(String(url)).pathname;
+      const hasRequiredHeaders =
+        getHeader(headers, "Authorization") === "Bearer at" &&
+        /application\/json/i.test(String(getHeader(headers, "Accept"))) &&
+        getHeader(headers, "Referer") === "https://chatgpt.com/" &&
+        /Mozilla/i.test(String(getHeader(headers, "User-Agent"))) &&
+        getHeader(headers, "x-openai-target-path") === targetPath &&
+        getHeader(headers, "x-openai-target-route") === targetPath;
+      if (!hasRequiredHeaders) {
+        return { ok: false, status: 403, json: async () => ({ error: "forbidden" }) };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          accounts: [{ id: "acc_paid", organization_id: "org_paid", entitlement: { subscription_plan: "pro", expires_at: future } }],
+        }),
+      };
+    });
+    const result = await getCodexSubscriptionEntitlement({
+      accessToken: "at",
+      idToken: null,
+      providerSpecificData: {},
+      proxyOptions: null,
+      now: Date.now(),
+    });
+    expect(result.subscriptionActiveUntil).toBe(new Date(future).toISOString());
+  });
+  it("accessToken hint beats stale idToken and PSD", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const futurePaid = isoNowPlus(20);
+    const futureFree = isoNowPlus(1);
+    const accessToken = makeJwt({ "https://api.openai.com/auth": { poid: "org_paid", chatgpt_account_id: "acc_paid" } });
+    const idToken = makeJwt({ "https://api.openai.com/auth": { organization_id: "org_free", chatgpt_account_id: "acc_free" } });
+    const accounts = [
+      { id: "acc_free", organization_id: "org_free", entitlement: { subscription_plan: "free", expires_at: futureFree } },
+      { id: "acc_paid", organization_id: "org_paid", entitlement: { subscription_plan: "pro", expires_at: futurePaid } },
+    ];
+    mocks.proxyAwareFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ accounts }) });
+    const result = await getCodexSubscriptionEntitlement({
+      accessToken,
+      idToken,
+      providerSpecificData: { organizationId: "org_free", chatgptAccountId: "acc_free" },
+      proxyOptions: null,
+      now: Date.now(),
+    });
+    expect(getHeader(mocks.proxyAwareFetch.mock.calls[0][1].headers, "ChatGPT-Account-Id")).toBe("acc_paid");
+    expect(result.subscriptionPlan).toBe("pro");
+    expect(result.subscriptionActiveUntil).toBe(new Date(futurePaid).toISOString());
+  });
+
+  it("nested object map preserves outer org key and account_ordering", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const futureOther = isoNowPlus(2);
+    const futureTarget = isoNowPlus(15);
+    const accounts = {
+      org_other: {
+        account: { id: "inner_other", plan_type: "plus" },
+        entitlement: { subscription_plan: "plus", expires_at: futureOther },
+      },
+      org_target: {
+        account: { id: "inner_target", plan_type: "pro" },
+        entitlement: { subscription_plan: "pro", expires_at: futureTarget },
+      },
+    };
+    const data = { accounts, account_ordering: ["org_target", "org_other"] };
+    mocks.proxyAwareFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => data });
+    const ordered = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: null, providerSpecificData: {}, proxyOptions: null, now: Date.now() });
+    expect(ordered.subscriptionPlan).toBe("pro");
+    expect(ordered.subscriptionActiveUntil).toBe(new Date(futureTarget).toISOString());
+
+    mocks.proxyAwareFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => data });
+    const hinted = await getCodexSubscriptionEntitlement({
+      accessToken: makeJwt({ "https://api.openai.com/auth": { organization_id: "org_other" } }),
+      idToken: null,
+      providerSpecificData: {},
+      proxyOptions: null,
+      now: Date.now(),
+    });
+    expect(hinted.subscriptionPlan).toBe("plus");
+    expect(hinted.subscriptionActiveUntil).toBe(new Date(futureOther).toISOString());
+
+    for (const wrapped of [{ data: { accounts } }, { result: { accounts } }]) {
+      mocks.proxyAwareFetch.mockResolvedValueOnce({ ok: true, status: 200, json: async () => wrapped });
+      const parsed = await getCodexSubscriptionEntitlement({
+        accessToken: makeJwt({ "https://api.openai.com/auth": { organization_id: "org_target" } }),
+        idToken: null,
+        providerSpecificData: {},
+        proxyOptions: null,
+        now: Date.now(),
+      });
+      expect(parsed.subscriptionPlan).toBe("pro");
+    }
+  });
+
+  it("subscriptions fallback uses web headers encoded id ChatGPT-Account-Id", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const past = isoNowPlus(-5);
+    const future = isoNowPlus(10);
+    const accountId = "acc 1/special";
+    mocks.proxyAwareFetch.mockImplementation(async (url, options) => {
+      const isSubscription = String(url).includes("/backend-api/subscriptions");
+      if (!isSubscription) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ accounts: [{ id: accountId, entitlement: { subscription_plan: null, expires_at: past } }] }),
+        };
+      }
+      const headers = options.headers || {};
+      const targetPath = new URL(String(url)).pathname;
+      expect(String(url)).toContain(`account_id=${encodeURIComponent(accountId)}`);
+      expect(getHeader(headers, "Authorization")).toBe("Bearer at");
+      expect(String(getHeader(headers, "Accept"))).toMatch(/application\/json/i);
+      expect(getHeader(headers, "Referer")).toBe("https://chatgpt.com/");
+      expect(String(getHeader(headers, "User-Agent"))).toMatch(/Mozilla/i);
+      expect(getHeader(headers, "x-openai-target-path")).toBe(targetPath);
+      expect(getHeader(headers, "x-openai-target-route")).toBe(targetPath);
+      expect(getHeader(headers, "ChatGPT-Account-Id")).toBe(accountId);
+      return { ok: true, status: 200, json: async () => ({ subscription_plan: "pro", active_until: future }) };
+    });
+    const result = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: null, providerSpecificData: {}, proxyOptions: null, now: Date.now() });
+    expect(mocks.proxyAwareFetch).toHaveBeenCalledTimes(2);
+    expect(result.subscriptionActiveUntil).toBe(new Date(future).toISOString());
+  });
+
+  it("CRLF in account id is stripped from ChatGPT-Account-Id header", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const future = isoNowPlus(10);
+    const injectedAccountId = "acc\r\nInjected: yes";
+    const accessToken = makeJwt({ "https://api.openai.com/auth": { chatgpt_account_id: injectedAccountId } });
+    let capturedHeader = null;
+    mocks.proxyAwareFetch.mockImplementation(async (url, options) => {
+      const headers = options?.headers || {};
+      capturedHeader = getHeader(headers, "ChatGPT-Account-Id");
+      // request must remain functional — return valid account with sanitized id
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ accounts: [{ id: "acc_clean", organization_id: "org_clean", entitlement: { subscription_plan: "pro", expires_at: future } }] }),
+      };
+    });
+    const result = await getCodexSubscriptionEntitlement({ accessToken, idToken: null, providerSpecificData: {}, proxyOptions: null, now: Date.now() });
+    expect(capturedHeader).not.toBeNull();
+    expect(String(capturedHeader)).not.toMatch(/[\r\n]/);
+    expect(String(capturedHeader)).toBe("accInjected: yes");
+    expect(result.subscriptionActiveUntil).toBe(new Date(future).toISOString());
+  });
+
+  it("nested object-map with no inner id falls back to outer key for subscriptions", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const past = isoNowPlus(-5);
+    const future = isoNowPlus(10);
+    const outerKey = "org/fallback id";
+    const accounts = {
+      [outerKey]: {
+        // no id / account_id / chatgpt_account_id / accountId inside
+        entitlement: { subscription_plan: null, expires_at: past },
+      },
+    };
+    mocks.proxyAwareFetch.mockImplementation(async (url, options) => {
+      const isSubscription = String(url).includes("/backend-api/subscriptions");
+      if (!isSubscription) {
+        return { ok: true, status: 200, json: async () => ({ accounts }) };
+      }
+      const headers = options.headers || {};
+      const targetPath = new URL(String(url)).pathname;
+      expect(String(url)).toContain(`account_id=${encodeURIComponent(outerKey)}`);
+      expect(getHeader(headers, "ChatGPT-Account-Id")).toBe(outerKey);
+      expect(getHeader(headers, "Authorization")).toBe("Bearer at");
+      expect(String(getHeader(headers, "Accept"))).toMatch(/application\/json/i);
+      expect(getHeader(headers, "Referer")).toBe("https://chatgpt.com/");
+      expect(String(getHeader(headers, "User-Agent"))).toMatch(/Mozilla/i);
+      expect(getHeader(headers, "x-openai-target-path")).toBe(targetPath);
+      expect(getHeader(headers, "x-openai-target-route")).toBe(targetPath);
+      return { ok: true, status: 200, json: async () => ({ subscription_plan: "pro", active_until: future }) };
+    });
+    const result = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: null, providerSpecificData: {}, proxyOptions: null, now: Date.now() });
+    expect(mocks.proxyAwareFetch).toHaveBeenCalledTimes(2);
+    expect(result.subscriptionActiveUntil).toBe(new Date(future).toISOString());
+    expect(result.subscriptionPlan).toBe("pro");
+    expect(result.subscriptionSource).toMatch(/subscriptions/i);
+  });
+
+  it("malformed JWT remains fail-open and exposes only safe cache fields", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const future = isoNowPlus(10);
+    const token = "sk-secret-token-xyz";
+    mocks.proxyAwareFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ accounts: [{ id: "a", entitlement: { subscription_plan: "plus", expires_at: future } }] }),
+    });
+    const result = await getCodexSubscriptionEntitlement({
+      accessToken: token,
+      idToken: "not.a.valid.jwt",
+      providerSpecificData: {},
+      proxyOptions: null,
+      now: Date.now(),
+    });
+    expect(result.subscriptionActiveUntil).toBe(new Date(future).toISOString());
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain(token);
+    for (const forbidden of ["accountId", "organizationId", "organization_id", "raw", "accessToken", "idToken"]) {
+      expect(serialized).not.toContain(forbidden);
+    }
+    const allowedPatchKeys = new Set(["codexSubscriptionActiveUntil", "codexSubscriptionPlan", "codexSubscriptionSource", "codexSubscriptionFetchedAt", "codexSubscriptionAttemptAt"]);
+    for (const key of Object.keys(result.patch || {})) expect(allowedPatchKeys.has(key)).toBe(true);
   });
 });

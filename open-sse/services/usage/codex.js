@@ -63,6 +63,92 @@ function decodeJwtPayload(jwt) {
   }
 }
 
+function normalizeSubscriptionId(value) {
+  if (value == null) return null;
+  const normalized = String(value).replace(/[\r\n]+/g, "").trim();
+  return normalized || null;
+}
+
+function getCodexSubscriptionHints(payload) {
+  if (!payload || typeof payload !== "object") return { organizationId: null, accountId: null };
+  const nested = payload["https://api.openai.com/auth"];
+  const auth = nested && typeof nested === "object" ? nested : {};
+  return {
+    organizationId: normalizeSubscriptionId(
+      auth.organization_id || auth.poid || auth.org_id || auth.chatgpt_organization_id ||
+      payload.organization_id || payload.poid || payload.org_id || payload.chatgpt_organization_id,
+    ),
+    accountId: normalizeSubscriptionId(
+      auth.chatgpt_account_id || payload.chatgpt_account_id || payload.account_id,
+    ),
+  };
+}
+
+function buildCodexSubscriptionHeaders(accessToken, targetUrl, accountId = null) {
+  const targetPath = new URL(targetUrl).pathname;
+  const headers = {
+    "Authorization": `Bearer ${accessToken}`,
+    "Accept": "application/json",
+    "Referer": "https://chatgpt.com/",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "x-openai-target-path": targetPath,
+    "x-openai-target-route": targetPath,
+  };
+  const normalizedAccountId = normalizeSubscriptionId(accountId);
+  if (normalizedAccountId) headers["ChatGPT-Account-Id"] = normalizedAccountId;
+  return headers;
+}
+
+function collectCodexSubscriptionAccounts(data) {
+  if (!data || typeof data !== "object") return [];
+  const ordering = data.account_ordering || data.accountOrdering ||
+    data.data?.account_ordering || data.data?.accountOrdering ||
+    data.result?.account_ordering || data.result?.accountOrdering || [];
+  const source = Array.isArray(data)
+    ? data
+    : data.accounts ?? data.data?.accounts ?? data.result?.accounts ??
+      (Array.isArray(data.data) ? data.data : []);
+  const entries = Array.isArray(source)
+    ? source.map((value, index) => [null, value, index])
+    : source && typeof source === "object"
+      ? Object.entries(source).map(([key, value], index) => [key, value, index])
+      : [];
+
+  const records = entries.map(([mapKey, value, index]) => {
+    const wrapper = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+    const account = wrapper.account && typeof wrapper.account === "object" && !Array.isArray(wrapper.account)
+      ? wrapper.account
+      : wrapper;
+    return {
+      ...wrapper,
+      ...account,
+      entitlement: wrapper.entitlement || account.entitlement || null,
+      _accountMapKey: normalizeSubscriptionId(mapKey),
+      _accountOrderIndex: index,
+    };
+  });
+
+  if (!Array.isArray(ordering) || ordering.length === 0) return records;
+  const orderIndex = new Map(ordering.map((value, index) => [String(value), index]));
+  const orderedIndex = (record) => {
+    const keys = [
+      record._accountMapKey,
+      record.organization_id,
+      record.org_id,
+      record.workspace_id,
+      record.id,
+      record.account_id,
+      record.chatgpt_account_id,
+      record.accountId,
+    ].map(normalizeSubscriptionId).filter(Boolean);
+    for (const key of keys) {
+      if (orderIndex.has(key)) return orderIndex.get(key);
+    }
+    return Number.POSITIVE_INFINITY;
+  };
+  return records.sort((a, b) => orderedIndex(a) - orderedIndex(b) || a._accountOrderIndex - b._accountOrderIndex);
+}
+
 function getJwtSubscriptionClaimFromPayload(payload) {
   if (!payload || typeof payload !== "object") return null;
   const nested = payload["https://api.openai.com/auth"];
@@ -280,6 +366,9 @@ export async function getCodexSubscriptionEntitlement({ accessToken, idToken, pr
   let nowIso;
   try { nowIso = new Date(nowMs).toISOString(); } catch { nowIso = new Date().toISOString(); }
   const jwtPayload = decodeJwtPayload(idToken);
+  const accessTokenPayload = decodeJwtPayload(accessToken);
+  const accessTokenHints = getCodexSubscriptionHints(accessTokenPayload);
+  const idTokenHints = getCodexSubscriptionHints(jwtPayload);
 
   try {
     const rawClaim = getJwtSubscriptionClaimFromPayload(jwtPayload);
@@ -409,64 +498,39 @@ export async function getCodexSubscriptionEntitlement({ accessToken, idToken, pr
     const accountsCheckUrl = cfg.accountsCheckUrl;
     const subscriptionsUrl = cfg.subscriptionsUrl;
     if (!accountsCheckUrl) throw new Error("missing accountsCheckUrl");
+    const psdOrgId = normalizeSubscriptionId(psd.organizationId || psd.chatgptOrganizationId || psd.orgId);
+    const psdId = normalizeSubscriptionId(psd.chatgptAccountId || psd.workspaceId || psd.accountId);
+    const requestAccountId = accessTokenHints.accountId || psdId || idTokenHints.accountId;
     const offsetMin = -new Date().getTimezoneOffset();
     const url = `${accountsCheckUrl}?timezone_offset_min=${encodeURIComponent(String(offsetMin))}`;
     const resp = await proxyAwareFetch(url, {
       method: "GET",
-      headers: {
-        "Authorization": `Bearer ${accessToken}`,
-        "Accept": "application/json",
-      },
+      headers: buildCodexSubscriptionHeaders(accessToken, url, requestAccountId),
     }, proxyOptions);
     if (!resp.ok) throw new Error(`accounts check ${resp.status}`);
     let data;
     try { data = await resp.json(); } catch { throw new Error("malformed accounts json"); }
 
-    let accounts = [];
-    if (Array.isArray(data.accounts)) accounts = data.accounts;
-    else if (data.accounts && typeof data.accounts === "object" && !Array.isArray(data.accounts)) accounts = Object.values(data.accounts);
-    else if (Array.isArray(data)) accounts = data;
-    else if (data.data && Array.isArray(data.data)) accounts = data.data;
-    else accounts = [];
-
-    let explicitOrgId = null;
-    let explicitId = null;
-    try {
-      const payload = jwtPayload;
-      if (payload) {
-        const nested = payload["https://api.openai.com/auth"];
-        if (nested && typeof nested === "object") {
-          explicitOrgId = nested.organization_id || nested.org_id || nested.chatgpt_organization_id || null;
-          if (explicitOrgId != null) explicitOrgId = String(explicitOrgId).trim() || null;
-          if (!explicitOrgId && nested.chatgpt_account_id) explicitId = String(nested.chatgpt_account_id).trim() || null;
-        }
-        if (!explicitId && payload.organization_id) explicitId = explicitId || String(payload.organization_id).trim() || null;
-        if (!explicitId && payload.org_id) explicitId = explicitId || String(payload.org_id).trim() || null;
-        if (!explicitId && payload.chatgpt_account_id) explicitId = String(payload.chatgpt_account_id).trim() || null;
-        if (!explicitId && payload.account_id) explicitId = String(payload.account_id).trim() || null;
-        // if org id was stored as account id alias, keep it
-        if (!explicitOrgId && explicitId) {
-          // try to detect org-looking id later via matching
-        }
-      }
-    } catch {}
-    let psdOrgId = psd.organizationId || psd.chatgptOrganizationId || psd.orgId || null;
-    if (psdOrgId) psdOrgId = String(psdOrgId).trim() || null;
-    let psdId = psd.chatgptAccountId || psd.workspaceId || psd.accountId || null;
-    if (psdId) psdId = String(psdId).trim() || null;
+    const accounts = collectCodexSubscriptionAccounts(data);
+    const accessOrgId = accessTokenHints.organizationId;
+    const accessId = accessTokenHints.accountId;
+    const idTokenOrgId = idTokenHints.organizationId;
+    const idTokenId = idTokenHints.accountId;
 
     let selected = null;
-    const accountKeys = (a) => [a.id, a.account_id, a.chatgpt_account_id, a.accountId, a.organization_id, a.org_id, a.workspace_id].map((v) => String(v ?? "").trim()).filter(Boolean);
+    const accountKeys = (a) => [a._accountMapKey, a.id, a.account_id, a.chatgpt_account_id, a.accountId, a.organization_id, a.org_id, a.workspace_id].map(normalizeSubscriptionId).filter(Boolean);
     const byId = (id) => accounts.find((a) => accountKeys(a).includes(String(id).trim()));
     const byOrgMatch = (orgId) => accounts.find((a) => {
-      const keys = [a.organization_id, a.org_id, a.workspace_id, a.chatgpt_account_id, a.id, a.account_id, a.accountId].map((v) => String(v ?? "").trim()).filter(Boolean);
-      return keys.includes(String(orgId).trim());
+      const keys = [a._accountMapKey, a.organization_id, a.org_id, a.workspace_id, a.chatgpt_account_id, a.id, a.account_id, a.accountId].map(normalizeSubscriptionId).filter(Boolean);
+      return keys.includes(normalizeSubscriptionId(orgId));
     });
     const planForSelection = (a) => a.subscription_plan ?? a.plan_type ?? a.planType ?? a.plan ?? a.entitlement?.subscription_plan ?? a.entitlement?.plan_type ?? a.entitlement?.plan ?? null;
-    if (explicitOrgId) selected = byOrgMatch(explicitOrgId) || byId(explicitOrgId) || null;
+    if (accessOrgId) selected = byOrgMatch(accessOrgId) || byId(accessOrgId) || null;
     if (!selected && psdOrgId) selected = byOrgMatch(psdOrgId) || byId(psdOrgId) || null;
-    if (!selected && explicitId) selected = byId(explicitId) || null;
+    if (!selected && idTokenOrgId) selected = byOrgMatch(idTokenOrgId) || byId(idTokenOrgId) || null;
+    if (!selected && accessId) selected = byId(accessId) || null;
     if (!selected && psdId) selected = byId(psdId) || null;
+    if (!selected && idTokenId) selected = byId(idTokenId) || null;
     if (!selected) {
       const nonFree = accounts.filter((a) => {
         const plan = String(planForSelection(a) ?? "").trim().toLowerCase();
@@ -498,16 +562,16 @@ export async function getCodexSubscriptionEntitlement({ accessToken, idToken, pr
     const accountsExpiryMsSnapshot = expiryMs;
 
     if ((!plan || isExpired) && subscriptionsUrl) {
-      const accountIdForSub = String(selected.id || selected.account_id || selected.chatgpt_account_id || psdId || explicitId || "").trim();
+      const accountIdForSub = normalizeSubscriptionId(
+        selected.id || selected.account_id || selected.chatgpt_account_id || selected.accountId ||
+        selected._accountMapKey || accessId || psdId || idTokenId,
+      );
       if (accountIdForSub) {
         try {
           const subUrl = `${subscriptionsUrl}?account_id=${encodeURIComponent(accountIdForSub)}`;
           const subResp = await proxyAwareFetch(subUrl, {
             method: "GET",
-            headers: {
-              "Authorization": `Bearer ${accessToken}`,
-              "Accept": "application/json",
-            },
+            headers: buildCodexSubscriptionHeaders(accessToken, subUrl, accountIdForSub),
           }, proxyOptions);
           if (subResp.ok) {
             let subData;
