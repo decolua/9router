@@ -9,6 +9,7 @@
     "test:watch": "vitest --reporter=verbose"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.3",
     "jsdom": "^27.4.0",
     "vitest": "^4.0.0"
   },
