@@ -24,6 +24,7 @@ vi.mock("@/sse/services/auth.js", () => ({
 }));
 vi.mock("open-sse/handlers/chatCore.js", () => dispatchMocks);
 vi.mock("open-sse/services/combo.js", () => ({
+  detectRequiredCapabilities: vi.fn(() => []),
   handleComboChat: vi.fn(),
   handleFusionChat: vi.fn(),
 }));
