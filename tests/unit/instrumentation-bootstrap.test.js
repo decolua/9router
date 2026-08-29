@@ -14,6 +14,14 @@ vi.mock("@/shared/services/bootstrap", () => {
   return {};
 });
 
+vi.mock("open-sse/providers/catalogOverride.js", () => ({
+  installCatalogSource: vi.fn(async () => {}),
+}));
+
+vi.mock("@/lib/modelCatalog/sync.js", () => ({
+  startModelCatalogSync: vi.fn(),
+}));
+
 describe("server instrumentation", () => {
   const originalRuntime = process.env.NEXT_RUNTIME;
 
