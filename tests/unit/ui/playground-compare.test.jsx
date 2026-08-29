@@ -220,7 +220,7 @@ describe("CompareWorkspace", () => {
     let resolveOldFetch;
     const oldFetch = new Promise((resolve) => { resolveOldFetch = resolve; });
     const freshReader = {
-      read: vi.fn().mockResolvedValue({ done: false, value: new TextEncoder().encode('data: [DONE]\\n\\n') }),
+      read: vi.fn().mockResolvedValue({ done: false, value: new TextEncoder().encode('data: [DONE]\n\n') }),
       cancel: vi.fn().mockResolvedValue(undefined),
     };
     global.fetch = vi.fn()
@@ -254,7 +254,7 @@ describe("CompareWorkspace", () => {
     const reader = {
       read: vi.fn().mockResolvedValue({
         done: false,
-        value: new TextEncoder().encode('data: {BAD_JSON\\n\\ndata: [DONE]\\n\\n'),
+        value: new TextEncoder().encode('data: {BAD_JSON\n\ndata: [DONE]\n\n'),
       }),
       cancel: vi.fn().mockResolvedValue(undefined),
     };
