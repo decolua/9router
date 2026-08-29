@@ -130,7 +130,9 @@ export function openaiToClaudeResponse(chunk, state) {
         content: [],
         stop_reason: null,
         stop_sequence: null,
-        usage: { input_tokens: 0, output_tokens: 0 }
+        // Real usage only arrives in the final OpenAI chunk; seed with the
+        // request-size estimate (set by stream.js) so clients can track context.
+        usage: { input_tokens: state.inputTokenEstimate || 0, output_tokens: 0 }
       }
     });
   }
@@ -222,7 +224,8 @@ export function openaiToClaudeResponse(chunk, state) {
   }
 
   // Finish
-  if (choice.finish_reason) {
+  if (choice.finish_reason && !state.finishSent) {
+    state.finishSent = true;
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
 

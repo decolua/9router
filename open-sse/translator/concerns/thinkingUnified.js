@@ -137,10 +137,23 @@ function toLevel(cfg) {
 }
 
 function normalizeOpenAILevel(level, supportedLevels) {
-  if (level !== "max" && level !== "ultra") return level;
   if (supportedLevels?.includes(level)) return level;
-  if (level === "ultra" && supportedLevels?.includes("max")) return "max";
-  return "xhigh";
+  if (level === "ultra") level = supportedLevels?.includes("max") ? "max" : "xhigh";
+  if (!Array.isArray(supportedLevels) || supportedLevels.length === 0) return level;
+  if (supportedLevels.includes(level)) return level;
+  // Level not accepted by this model → clamp to the nearest supported level
+  // (ordinal distance over the shared effort scale; ties round up).
+  const order = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+  const idx = order.indexOf(level);
+  if (idx === -1) return level;
+  let best = null;
+  for (const candidate of supportedLevels) {
+    const i = order.indexOf(candidate);
+    if (i <= 0) continue;
+    const d = Math.abs(i - idx);
+    if (!best || d < best.d || (d === best.d && i > best.i)) best = { level: candidate, d, i };
+  }
+  return best ? best.level : level;
 }
 
 function toGeminiThinkingLevel(cfg) {
