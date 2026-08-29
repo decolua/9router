@@ -12,7 +12,10 @@ const execAsync = promisify(exec);
 const PROVIDER_NAME = "9router";
 const API_KEY_ENV = "OPENAI_API_KEY";
 
-const getHermesDir = () => path.join(os.homedir(), ".hermes");
+const HERMES_HOME = process.env.HERMES_HOME || "/home/ubuntu/.hermes";
+const HERMES_BIN = process.env.HERMES_BIN || "/home/ubuntu/.local/bin/hermes";
+
+const getHermesDir = () => HERMES_HOME;
 const getHermesConfigPath = () => path.join(getHermesDir(), "config.yaml");
 const getHermesEnvPath = () => path.join(getHermesDir(), ".env");
 
@@ -61,9 +64,11 @@ const removeEnvVar = (envText, key) => {
 
 const checkHermesInstalled = async () => {
   try {
-    const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where hermes" : "which hermes";
-    await execAsync(command, { windowsHide: true });
+    if (os.platform() !== "win32") {
+      await fs.access(HERMES_BIN);
+      return true;
+    }
+    await execAsync("where hermes", { windowsHide: true });
     return true;
   } catch {
     try {
@@ -96,7 +101,8 @@ const readEnvFile = async () => {
 // Detect 9router by base_url containing localhost/127.0.0.1 or matching tunnel URL
 const has9RouterConfig = (modelCfg) => {
   if (!modelCfg?.base_url) return false;
-  return modelCfg.provider === "custom" && /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(modelCfg.base_url);
+  return modelCfg.provider === "custom" &&
+    /localhost|127\.0\.0\.1|0\.0\.0\.0|10\.0\.1\.1(?::20128)?/.test(modelCfg.base_url);
 };
 
 export async function GET() {

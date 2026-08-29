@@ -5,7 +5,7 @@ import {
   openaiToOpenAIResponsesRequest,
 } from "../translator/request/openai-responses.js";
 
-const DEFAULT_TIMEOUT_MS = 3000;
+const DEFAULT_TIMEOUT_MS = 15000;
 
 function normalizeTimeout(value) {
   return typeof value === "number" && Number.isFinite(value) && value > 0

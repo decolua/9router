@@ -1,5 +1,7 @@
 // Re-export from open-sse with localDb integration
 import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
+import { getDisabledModels } from "@/lib/disabledModelsDb";
+import fs from "node:fs";
 import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
 
@@ -8,6 +10,28 @@ const LOCAL_PROVIDER_ALIASES = {
   xmtp: "xiaomi-tokenplan",
   "xiaomi-tokenplan": "xiaomi-tokenplan",
 };
+
+const SELECTOR_QUARANTINE_FILE = "/opt/openclaw-hermes-os/runtime/model-selector/quarantine.json";
+
+function getSelectorQuarantinedModels() {
+  try {
+    const raw = fs.readFileSync(SELECTOR_QUARANTINE_FILE, "utf8");
+    const entries = JSON.parse(raw);
+    const now = Date.now();
+    const active = new Set();
+
+    for (const [modelId, until] of Object.entries(entries || {})) {
+      const expiresAt = Date.parse(until);
+      if (Number.isFinite(expiresAt) && expiresAt > now) {
+        active.add(modelId);
+      }
+    }
+
+    return active;
+  } catch {
+    return new Set();
+  }
+}
 
 const RESERVED_PROVIDER_PREFIXES = new Set(Object.keys(LOCAL_PROVIDER_ALIASES));
 for (const entry of REGISTRY) {
@@ -87,8 +111,49 @@ export async function getComboModels(modelStr) {
   if (modelStr.includes("/")) return null;
 
   const combo = await getComboByName(modelStr);
-  if (combo && combo.models && combo.models.length > 0) {
-    return combo.models;
+  if (!combo || !combo.models || combo.models.length === 0) {
+    return null;
   }
-  return null;
+
+  // Respect 9Router's persistent disabled-model registry so models disabled
+  // from the dashboard or shared selector are also excluded from combos.
+  const disabled = await getDisabledModels();
+  const quarantined = getSelectorQuarantinedModels();
+
+  const activeModels = combo.models.filter((member) => {
+    if (quarantined.has(member)) {
+      return false;
+    }
+    if (typeof member !== "string" || !member.includes("/")) {
+      return true;
+    }
+
+    const parsed = parseModel(member);
+    const slash = member.indexOf("/");
+    const rawAlias = member.slice(0, slash);
+    const rawModel = member.slice(slash + 1);
+
+    const aliases = new Set([
+      rawAlias,
+      parsed?.providerAlias,
+      parsed?.provider,
+    ].filter(Boolean));
+
+    for (const alias of aliases) {
+      const ids = disabled?.[alias];
+      if (!Array.isArray(ids)) continue;
+
+      if (
+        ids.includes(rawModel) ||
+        ids.includes(member) ||
+        (parsed?.model && ids.includes(parsed.model))
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  return activeModels.length > 0 ? activeModels : null;
 }
