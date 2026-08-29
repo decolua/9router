@@ -123,11 +123,26 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       return { ok: false, latencyMs, error: `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 240)}` : ""}`, status: res.status };
     }
 
-    const text = typeof parsed?.text === "string" ? parsed.text : "";
-    if (!text.trim()) {
-      return { ok: false, latencyMs, status: res.status, error: "Provider returned no transcription text for this model" };
+    if (typeof parsed?.text !== "string") {
+      return {
+        ok: false,
+        latencyMs,
+        status: res.status,
+        error: "Provider returned no transcription text field",
+      };
     }
-    return { ok: true, latencyMs, error: null, status: res.status };
+
+    const text = parsed.text;
+
+    return {
+      ok: true,
+      latencyMs,
+      error: null,
+      status: res.status,
+      note: text.trim()
+        ? null
+        : "empty transcription from silence probe",
+    };
   }
 
   const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {

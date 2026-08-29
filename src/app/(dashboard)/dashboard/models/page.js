@@ -123,7 +123,12 @@ export default function ModelControlCenterPage() {
 
   const testModels = async (scope) => {
     if (busy) return;
-    if (scope === "all" && !window.confirm("Test all models can consume provider quota. Continue?")) return;
+    if (
+      scope === "all"
+      && !window.confirm(
+        "This test batch can consume provider quota and may generate images. Continue?",
+      )
+    ) return;
     setBusy(scope === "changed" ? "test-changed" : "test-all");
     setMessage(scope === "changed" ? "Testing changed models..." : "Testing all testable models...");
     try {
@@ -132,6 +137,7 @@ export default function ModelControlCenterPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           scope,
+          includeExpensive: scope === "all",
           ...(providerFilter !== "all"
             ? { provider: providerFilter }
             : {}),
@@ -145,9 +151,20 @@ export default function ModelControlCenterPage() {
           ? ` for ${providerFilter}`
           : "";
 
-      setMessage(
-        `Model test complete: ${data.tested} models tested${providerLabel}.`,
-      );
+      const details = [
+        `${data.tested} models tested${providerLabel}`,
+        data.remainingChanged != null
+          ? `${data.remainingChanged} changed remaining`
+          : null,
+        data.remainingPending != null
+          ? `${data.remainingPending} pending`
+          : null,
+        data.skippedExpensive
+          ? `${data.skippedExpensive} image probe(s) skipped`
+          : null,
+      ].filter(Boolean).join(" · ");
+
+      setMessage(`Model test complete: ${details}.`);
     } catch (error) {
       setMessage(`Model test failed: ${error.message}`);
     } finally {
@@ -217,7 +234,7 @@ export default function ModelControlCenterPage() {
             disabled={!!busy}
             className="px-3 py-2 rounded-lg border border-border bg-background text-text-main text-sm font-medium disabled:opacity-50"
           >
-            {busy === "test-all" ? "Testing..." : "Test All Models"}
+            {busy === "test-all" ? "Testing..." : "Test Next Batch"}
           </button>
         </div>
       </div>
@@ -228,12 +245,13 @@ export default function ModelControlCenterPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-9 gap-3">
         <SummaryCard label="Providers" value={summary.providers} />
         <SummaryCard label="Connections" value={summary.connections} />
         <SummaryCard label="Models" value={summary.models} />
         <SummaryCard label="Healthy" value={summary.healthy} />
         <SummaryCard label="Failed" value={summary.failed} />
+        <SummaryCard label="N/A" value={summary.unsupported} />
         <SummaryCard label="Pending" value={summary.pending} />
         <SummaryCard label="Changed" value={summary.changed} />
         <SummaryCard label="Stale" value={summary.stale} />
