@@ -156,9 +156,9 @@ Usage DB:
 
 ### Testing Studio
 
-`/dashboard/playground` is a dashboard-authenticated workspace for streaming chat and up to four parallel model comparisons. It calls the server-owned `/api/dashboard/chat/completions` adapter, which uses the existing routing path without asking the browser for an API key. The public `/v1/*` API contract and its API-key policy remain separate.
+`/dashboard/playground` is a dashboard-authenticated workspace for text-only streaming chat and up to four parallel model comparisons. It calls the server-owned `/api/dashboard/chat/completions` adapter, which uses the existing routing path without asking the browser for an API key. The studio does not attach or upload images. The public `/v1/*` API contract and its API-key policy remain separate.
 
-The browser stores only bounded, sanitized studio state under versioned `9router:playground:v1:*` localStorage keys. The sanitizer redacts credential-bearing fields and values, removes control characters, and limits collection size, nesting, and string length before state is rendered or persisted. Raw stream events, provider connection details, and attachments are not retained as persisted studio state. If localStorage is unavailable or full, the studio warns and keeps subsequent changes in memory for that browser session.
+The browser stores only bounded, sanitized studio state under versioned `9router:playground:v1:*` localStorage keys. The sanitizer redacts credential-bearing fields and values, removes control characters, and limits collection size, nesting, and string length before state is rendered or persisted. Raw stream events and provider connection details are not retained as persisted studio state. If localStorage is unavailable or full, the studio warns and keeps subsequent changes in memory for that browser session.
 
 ## 5) Cloud Sync
 

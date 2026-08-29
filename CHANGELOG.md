@@ -24,6 +24,8 @@
   tabs tripping 429; manual refresh (↻) sends `force=1` to bypass the cache
 
 ## Fixes
+- **Testing Studio**: Chat currently accepts text prompts only and does not attach or upload images
+
 - **Docker**: ship `sql.js` in the image so the pure-JS DB fallback can start —
   file tracing carried the package's JS without `dist/sql-wasm.wasm`, so a
   container with no native driver aborted with ENOENT and never got a database
