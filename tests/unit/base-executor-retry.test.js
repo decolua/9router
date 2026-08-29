@@ -76,7 +76,7 @@ describe("BaseExecutor.execute — request preparation", () => {
       requestId: "019f7fa1-0d8d-7000-8000-000000000001",
     });
 
-    expect(ex.buildHeaders).toHaveBeenCalledWith(creds, false, "https://x/responses");
+    expect(ex.buildHeaders).toHaveBeenCalledWith(creds, false, "https://x/responses", "m");
     expect(fetchMock.mock.calls[0][1].headers["x-request-id"])
       .toBe("019f7fa1-0d8d-7000-8000-000000000001");
   });

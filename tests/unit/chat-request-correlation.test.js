@@ -35,6 +35,12 @@ vi.mock("open-sse/utils/error.js", () => ({
 vi.mock("open-sse/services/combo.js", () => ({
   handleComboChat: vi.fn(),
   handleFusionChat: vi.fn(),
+  detectRequiredCapabilities: vi.fn(() => new Set()),
+}));
+vi.mock("open-sse/services/capacityAdapter.js", () => ({
+  augmentModelsWithCapacityAdapter: (models) => models,
+  withCapacityAdapterStripping: (fn) => fn,
+  getActiveAdapterStrategy: () => "fallback",
 }));
 vi.mock("open-sse/utils/bypassHandler.js", () => ({ handleBypassRequest: vi.fn(() => null) }));
 vi.mock("open-sse/translator/formats.js", async (importOriginal) => ({
