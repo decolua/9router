@@ -212,6 +212,65 @@ describe("CompareWorkspace", () => {
     expect(JSON.stringify(onResult.mock.calls)).not.toContain("sk-secret-value");
   });
 
+  it("keeps a replacement run authoritative when an old aborted fetch resolves late", async () => {
+    const { createSseParser: createActualSseParser } = await vi.importActual(
+      "../../../src/app/(dashboard)/dashboard/playground/lib/sseParser"
+    );
+    createSseParser.mockImplementation(createActualSseParser);
+    let resolveOldFetch;
+    const oldFetch = new Promise((resolve) => { resolveOldFetch = resolve; });
+    const freshReader = {
+      read: vi.fn().mockResolvedValue({ done: false, value: new TextEncoder().encode('data: [DONE]\\n\\n') }),
+      cancel: vi.fn().mockResolvedValue(undefined),
+    };
+    global.fetch = vi.fn()
+      .mockReturnValueOnce(oldFetch)
+      .mockResolvedValueOnce({ ok: true, status: 200, body: { getReader: () => freshReader } });
+
+    render(<CompareWorkspace configState={mockConfigState} availableModels={availableModels} />);
+    fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "openai/gpt-4o" } });
+    fireEvent.change(screen.getByTestId("compare-input"), { target: { value: "old run" } });
+    fireEvent.click(screen.getByTestId("compare-send"));
+    await act(async () => { await Promise.resolve(); });
+    const oldSignal = global.fetch.mock.calls[0][1].signal;
+
+    fireEvent.click(screen.getByTestId("stop-col-col-default-a"));
+    fireEvent.change(screen.getByTestId("compare-input"), { target: { value: "replacement run" } });
+    fireEvent.click(screen.getByTestId("compare-send"));
+    await act(async () => { await Promise.resolve(); });
+
+    resolveOldFetch({ ok: true, status: 200, body: { getReader: () => freshReader } });
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    expect(oldSignal.aborted).toBe(true);
+    expect(screen.getByTestId("state-col-default-a").textContent).toBe("COMPLETE");
+  });
+
+  it("treats a malformed frame as terminal error even when followed by done", async () => {
+    const { createSseParser: createActualSseParser } = await vi.importActual(
+      "../../../src/app/(dashboard)/dashboard/playground/lib/sseParser"
+    );
+    createSseParser.mockImplementation(createActualSseParser);
+    const reader = {
+      read: vi.fn().mockResolvedValue({
+        done: false,
+        value: new TextEncoder().encode('data: {BAD_JSON\\n\\ndata: [DONE]\\n\\n'),
+      }),
+      cancel: vi.fn().mockResolvedValue(undefined),
+    };
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, body: { getReader: () => reader } });
+
+    render(<CompareWorkspace configState={mockConfigState} availableModels={availableModels} />);
+    fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "openai/gpt-4o" } });
+    fireEvent.change(screen.getByTestId("compare-input"), { target: { value: "malformed run" } });
+    fireEvent.click(screen.getByTestId("compare-send"));
+
+    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+
+    expect(reader.cancel).toHaveBeenCalled();
+    expect(screen.getByTestId("state-col-default-a").textContent).toBe("ERROR");
+  });
+
   it("proves real request-body equality, four-way stream isolation, and RAF cleanup on unmount", async () => {
     const { createSseParser: createActualSseParser } = await vi.importActual(
       "../../../src/app/(dashboard)/dashboard/playground/lib/sseParser"

@@ -32,7 +32,10 @@ export default function CompareWorkspace({ configState, availableModels = [], on
     setInput(draft || "");
   }, [draft]);
 
-  const cleanupColumn = useCallback((colId, terminalState = null) => {
+  const cleanupColumn = useCallback((colId, terminalState = null, expectedController = null) => {
+    const controller = abortControllersRef.current[colId];
+    if (expectedController && controller !== expectedController) return;
+
     const bufferedOutput = outputBuffersRef.current[colId];
     if (terminalState) {
       terminalOutputsRef.current[colId] = bufferedOutput ?? "";
@@ -42,8 +45,8 @@ export default function CompareWorkspace({ configState, availableModels = [], on
           : col
       ));
     }
-    if (abortControllersRef.current[colId]) {
-      abortControllersRef.current[colId].abort();
+    if (controller) {
+      controller.abort();
       delete abortControllersRef.current[colId];
     }
     if (rafRefs.current[colId]) {
@@ -136,11 +139,18 @@ export default function CompareWorkspace({ configState, availableModels = [], on
         let requestBody = null;
         let responseStatus = null;
         let resultPublished = false;
+        const isCurrent = () => abortControllersRef.current[col.id] === abortController;
+        const updateCurrentColumn = (updates) => {
+          if (!isCurrent()) return false;
+          updateColumnState(col.id, updates);
+          return true;
+        };
         const publishResult = () => {
-          if (resultPublished || !requestBody) return;
+          if (!isCurrent() || resultPublished || !requestBody) return;
           resultPublished = true;
+          const { images: _images, ...safeRequest } = requestBody;
           onResult?.(sanitizePlaygroundData({
-            request: requestBody,
+            request: safeRequest,
             response: { status: responseStatus, output: outputBuffersRef.current[col.id] ?? terminalOutputsRef.current[col.id] ?? "" },
             metrics: accumulator.snapshot(),
           }));
@@ -164,39 +174,45 @@ export default function CompareWorkspace({ configState, availableModels = [], on
             signal: abortController.signal
           });
           
+          if (!isCurrent()) return;
           responseStatus = response.status ?? null;
           if (!response.ok) {
              throw new Error(`HTTP error ${response.status}`);
           }
           
+          if (!isCurrent()) return;
           if (abortController.signal.aborted) {
                accumulator.abort(Date.now());
-               updateColumnState(col.id, { state: "aborted", metrics: accumulator.snapshot() });
+               updateCurrentColumn({ state: "aborted", metrics: accumulator.snapshot() });
                publishResult();
                return;
           }
 
-          updateColumnState(col.id, { state: "streaming" });
+          updateCurrentColumn({ state: "streaming" });
           
           const parser = createSseParser();
           const reader = response.body.getReader();
           
           const scheduleUpdate = () => {
-            if (!rafRefs.current[col.id]) {
-              rafRefs.current[col.id] = requestAnimationFrame(() => {
-                rafRefs.current[col.id] = null;
-                updateColumnState(col.id, { output: outputBuffersRef.current[col.id] });
-              });
-            }
+            if (!isCurrent() || rafRefs.current[col.id]) return;
+            rafRefs.current[col.id] = requestAnimationFrame(() => {
+              if (!isCurrent()) return;
+              rafRefs.current[col.id] = null;
+              updateCurrentColumn({ output: outputBuffersRef.current[col.id] });
+            });
           };
 
           while (true) {
             const { done, value } = await reader.read();
-             if (abortController.signal.aborted) {
-               accumulator.abort(Date.now());
-               publishResult();
-               return;
-             }
+            if (!isCurrent()) {
+              reader.cancel().catch(() => {});
+              return;
+            }
+            if (abortController.signal.aborted) {
+              accumulator.abort(Date.now());
+              publishResult();
+              return;
+            }
             
             let events = [];
             if (value) {
@@ -209,26 +225,43 @@ export default function CompareWorkspace({ configState, availableModels = [], on
             
             let isTerminal = false;
             for (const event of events) {
+               if (!isCurrent()) {
+                 reader.cancel().catch(() => {});
+                 return;
+               }
                accumulator.record(event, Date.now());
                
-               if (event.type === "done" || event.type === "error" || event.type === "incomplete") {
+               if (event.type === "done" || event.type === "error" || event.type === "incomplete" || event.type === "malformed") {
                    isTerminal = true;
                }
 
                if (event.type === "delta" && event.text) {
                    outputBuffersRef.current[col.id] += event.text;
                    scheduleUpdate();
+               } else if (event.type === "malformed") {
+                   accumulator.record({ type: "error", message: "Malformed stream frame received" }, Date.now());
+                   reader.cancel().catch(() => {});
+              updateCurrentColumn({
+
+                     state: "error",
+                     error: "Malformed stream frame received",
+                     metrics: accumulator.snapshot(),
+                     output: outputBuffersRef.current[col.id],
+                   });
+                   publishResult();
+                   return;
                } else if (event.type === "error") {
                    throw new Error(event.message);
                } else if (event.type === "incomplete" && !abortController.signal.aborted) {
                    reader.cancel().catch(() => {});
-                    updateColumnState(col.id, {
-                      state: "incomplete",
-                      metrics: accumulator.snapshot(),
-                      output: outputBuffersRef.current[col.id],
-                    });
-                    publishResult();
-                    return;
+              updateCurrentColumn({
+
+                     state: "incomplete",
+                     metrics: accumulator.snapshot(),
+                     output: outputBuffersRef.current[col.id],
+                   });
+                   publishResult();
+                   return;
                }
             }
             
@@ -238,9 +271,10 @@ export default function CompareWorkspace({ configState, availableModels = [], on
             }
           }
           
-           if (abortController.signal.aborted) {
+          if (!isCurrent()) return;
+          if (abortController.signal.aborted) {
               accumulator.abort(Date.now());
-              updateColumnState(col.id, { state: "aborted", metrics: accumulator.snapshot() });
+              updateCurrentColumn({ state: "aborted", metrics: accumulator.snapshot() });
               publishResult();
            } else {
              // Force final flush
@@ -250,7 +284,7 @@ export default function CompareWorkspace({ configState, availableModels = [], on
              }
              const metrics = accumulator.snapshot();
              const output = outputBuffersRef.current[col.id];
-             updateColumnState(col.id, { 
+             updateCurrentColumn({
                 state: metrics.terminalState || "complete", 
                 output,
                 metrics
@@ -259,13 +293,14 @@ export default function CompareWorkspace({ configState, availableModels = [], on
           }
 
         } catch (err) {
+           if (!isCurrent()) return;
            if (err.name === "AbortError") {
               accumulator.abort(Date.now());
-              updateColumnState(col.id, { state: "aborted", metrics: accumulator.snapshot() });
+              updateCurrentColumn({ state: "aborted", metrics: accumulator.snapshot() });
               publishResult();
            } else {
               accumulator.record({ type: "error", message: err.message }, Date.now());
-              updateColumnState(col.id, { 
+              updateCurrentColumn({
                 state: "error", 
                 error: sanitizePlaygroundData(err.message),
                 metrics: accumulator.snapshot()
@@ -273,6 +308,7 @@ export default function CompareWorkspace({ configState, availableModels = [], on
               publishResult();
            }
         } finally {
+          if (!isCurrent()) return;
           delete abortControllersRef.current[col.id];
           if (rafRefs.current[col.id]) {
              cancelAnimationFrame(rafRefs.current[col.id]);
