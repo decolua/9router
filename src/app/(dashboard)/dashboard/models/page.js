@@ -58,6 +58,11 @@ function healthBadge(model) {
       label: "UPSTREAM",
       cls: "text-red-500 bg-red-500/10",
     },
+    probe_incompatible: {
+      key: "probe_incompatible",
+      label: "PROBE INCOMPATIBLE",
+      cls: "text-text-muted bg-surface-2",
+    },
     failed: {
       key: "failed",
       label: "FAILED",
@@ -371,6 +376,7 @@ export default function ModelControlCenterPage() {
             <option value="restricted">Restricted</option>
             <option value="rate_limited">Rate Limited</option>
             <option value="upstream_error">Upstream Error</option>
+            <option value="probe_incompatible">Probe Incompatible</option>
             <option value="failed">Failed</option>
             <option value="pending">Pending</option>
             <option value="stale">Stale</option>

@@ -5,6 +5,7 @@ const KNOWN_HEALTH_CATEGORIES = new Set([
   "restricted",
   "rate_limited",
   "upstream_error",
+  "probe_incompatible",
   "failed",
   "unsupported",
   "pending",
@@ -74,6 +75,17 @@ export function classifyHealth(health = null) {
     )
   ) {
     return "unavailable";
+  }
+
+  if (
+    statusCode === 400
+    && (
+      error.includes("request_body_invalid")
+      || error.includes("request body invalid")
+      || error.includes("improperly formed request")
+    )
+  ) {
+    return "probe_incompatible";
   }
 
   if (

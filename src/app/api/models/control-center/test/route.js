@@ -85,18 +85,56 @@ function pickTargets(state, body = {}) {
     }
   }
 
-  // Untested models first. Afterwards, oldest health result first.
-  targets.sort((a, b) => {
-    const timeDiff =
-      testedAtValue(a.testedAt) - testedAtValue(b.testedAt);
+  // Oldest/untested first inside each provider, then select
+  // providers in round-robin order so one provider cannot dominate
+  // a global health batch.
+  const byProvider = new Map();
 
-    if (timeDiff !== 0) return timeDiff;
+  for (const target of targets) {
+    if (!byProvider.has(target.providerId)) {
+      byProvider.set(target.providerId, []);
+    }
 
-    return a.fullModel.localeCompare(b.fullModel);
-  });
+    byProvider.get(target.providerId).push(target);
+  }
+
+  for (const providerTargets of byProvider.values()) {
+    providerTargets.sort((a, b) => {
+      const timeDiff =
+        testedAtValue(a.testedAt) - testedAtValue(b.testedAt);
+
+      if (timeDiff !== 0) return timeDiff;
+
+      return a.fullModel.localeCompare(b.fullModel);
+    });
+  }
+
+  const providerIds = [...byProvider.keys()].sort();
+  const selected = [];
+
+  while (
+    selected.length < MAX_TESTS
+    && providerIds.length > 0
+  ) {
+    let progressed = false;
+
+    for (const providerId of providerIds) {
+      if (selected.length >= MAX_TESTS) break;
+
+      const queue = byProvider.get(providerId);
+      const target = queue?.shift();
+
+      if (!target) continue;
+
+      selected.push(target);
+      progressed = true;
+    }
+
+    if (!progressed) break;
+  }
 
   return {
-    targets: targets.slice(0, MAX_TESTS),
+    targets: selected,
     skippedExpensive,
     skippedCooldown,
   };

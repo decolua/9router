@@ -25,6 +25,7 @@ const EMPTY = {
     restricted: 0,
     rateLimited: 0,
     upstreamError: 0,
+    probeIncompatible: 0,
     unsupported: 0,
     pending: 0,
     changed: 0,
@@ -43,6 +44,7 @@ export function summarizeProviders(providers = {}) {
   let restricted = 0;
   let rateLimited = 0;
   let upstreamError = 0;
+  let probeIncompatible = 0;
   let unsupported = 0;
   let pending = 0;
   let changed = 0;
@@ -74,6 +76,7 @@ export function summarizeProviders(providers = {}) {
         if (category === "restricted") restricted += 1;
         if (category === "rate_limited") rateLimited += 1;
         if (category === "upstream_error") upstreamError += 1;
+        if (category === "probe_incompatible") probeIncompatible += 1;
       }
     }
   }
@@ -90,6 +93,7 @@ export function summarizeProviders(providers = {}) {
     restricted,
     rateLimited,
     upstreamError,
+    probeIncompatible,
     unsupported,
     pending,
     changed,
