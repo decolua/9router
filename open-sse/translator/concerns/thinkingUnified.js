@@ -108,10 +108,11 @@ export const captureThinking = extractThinking;
 // Resolve thinking format: provider override > capability > derive(targetFormat).
 function resolveFormat(targetFormat, model, provider) {
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
-  if (providerFmt) return providerFmt;
   const caps = getCapabilitiesForModel(provider, model);
-  if (caps.thinkingFormat) return caps.thinkingFormat;
-  return FORMAT_TO_NATIVE[targetFormat] || "openai";
+  const fmt = providerFmt || caps.thinkingFormat || FORMAT_TO_NATIVE[targetFormat] || "openai";
+  // Responses endpoints require the OpenAI reasoning object, not the Chat
+  // Completions-only top-level reasoning_effort field.
+  return targetFormat === "openai-responses" && fmt === "openai" ? "openai-responses" : fmt;
 }
 
 // Convert unified config to a budget number (for budget-based formats).
@@ -233,6 +234,11 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
       const level = toLevel(eff);
       if (level) body.reasoning_effort = normalizeOpenAILevel(level, supportedLevels);
+      break;
+    }
+    case "openai-responses": {
+      const level = none && canDisable ? "none" : toLevel(eff);
+      if (level) body.reasoning = { ...body.reasoning, effort: normalizeOpenAILevel(level, supportedLevels) };
       break;
     }
     case "claude-adaptive": {
@@ -359,7 +365,13 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
 
   const fmt = resolveFormat(targetFormat, cleanModel, provider);
   const supportedLevels = getThinkingLevels(provider, cleanModel);
+  // Preserve Responses-only reasoning options such as summary and mode while
+  // normalizing the effort field to the endpoint's nested wire shape.
+  const responsesReasoning = fmt === "openai-responses" && body.reasoning && typeof body.reasoning === "object"
+    ? body.reasoning
+    : null;
   stripAll(body);
+  if (responsesReasoning) body.reasoning = responsesReasoning;
   applyFormat(fmt, body, cfg, caps, supportedLevels);
   return body;
 }

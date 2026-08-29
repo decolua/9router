@@ -137,6 +137,65 @@ describe("openai ↔ responses multi-turn reasoning", () => {
   });
 });
 
+describe("OpenAI Chat → Responses reasoning", () => {
+  it("uses reasoning.effort instead of Chat Completions reasoning_effort", () => {
+    const out = translateRequest(
+      "openai",
+      "openai-responses",
+      "gpt-5.6-luna",
+      {
+        model: "gpt-5.6-luna",
+        messages: [{ role: "user", content: "hi" }],
+        reasoning_effort: "high",
+      },
+      true,
+      null,
+      "openai-compatible-responses-test"
+    );
+
+    expect(out.reasoning).toEqual({ effort: "high", summary: "auto" });
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+
+  it("preserves Responses-only reasoning mode", () => {
+    const out = translateRequest(
+      "openai",
+      "openai-responses",
+      "gpt-5.6-luna",
+      {
+        model: "gpt-5.6-luna",
+        messages: [{ role: "user", content: "hi" }],
+        reasoning: { effort: "high", mode: "pro" },
+      },
+      true,
+      null,
+      "openai-compatible-responses-test"
+    );
+
+    expect(out.reasoning).toEqual({ effort: "high", mode: "pro" });
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+
+  it("keeps the nested shape for native Responses requests", () => {
+    const out = translateRequest(
+      "openai-responses",
+      "openai-responses",
+      "gpt-5.6-luna",
+      {
+        model: "gpt-5.6-luna",
+        input: "hi",
+        reasoning: { effort: "high", mode: "pro" },
+      },
+      true,
+      null,
+      "openai-compatible-responses-test"
+    );
+
+    expect(out.reasoning).toEqual({ effort: "high", mode: "pro" });
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+});
+
 describe("GrokCliExecutor multi-turn input", () => {
   it("keeps native Grok reasoning and item ids", () => {
     _resetGrokCliTurnStore();
