@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getProviderConnectionById } from "@/lib/localDb";
 import { getProviderModels, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { isCustomEmbeddingProvider } from "@/shared/constants/providers";
+import { isGuardedCustomProvider } from "@/shared/utils/modelDiscoveryGuard.js";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 import { pingModelByKind } from "@/app/api/models/test/ping";
 
@@ -13,28 +14,82 @@ import { pingModelByKind } from "@/app/api/models/test/ping";
 export async function POST(request, { params }) {
   try {
     const { id } = await params;
+    const body = await request.json().catch(() => ({}));
     const connection = await getProviderConnectionById(id);
     if (!connection) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
     const providerId = connection.provider;
-    const isCompatible = isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
+    const guardedCustom = isGuardedCustomProvider(providerId);
     const alias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
 
     let models = getProviderModels(alias);
 
     const baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`;
 
-    // Compatible providers: fetch live model list
-    if (isCompatible && models.length === 0) {
-      try {
-        const modelsRes = await fetch(`${baseUrl}/api/providers/${id}/models`);
-        if (modelsRes.ok) {
-          const data = await modelsRes.json();
-          models = (data.models || []).map((m) => ({ id: m.id || m.name, name: m.name || m.id }));
+    if (guardedCustom) {
+      const explicitIds = [
+        ...(typeof body.model === "string"
+          ? [body.model]
+          : []),
+        ...(Array.isArray(body.modelAllowlist)
+          ? body.modelAllowlist
+          : []),
+      ]
+        .filter((value) => typeof value === "string")
+        .map((value) => value.trim())
+        .filter(Boolean);
+
+      const normalizeExplicitModelId = (value) => {
+        let modelId = value;
+
+        for (const prefix of [
+          `${providerId}/`,
+          `${alias}/`,
+        ]) {
+          if (modelId.startsWith(prefix)) {
+            modelId = modelId.slice(prefix.length);
+            break;
+          }
         }
-      } catch { /* fallback to empty */ }
+
+        return modelId.trim();
+      };
+
+      const uniqueIds = [
+        ...new Set(
+          explicitIds
+            .map(normalizeExplicitModelId)
+            .filter(Boolean),
+        ),
+      ];
+
+      if (uniqueIds.length === 0) {
+        return NextResponse.json(
+          {
+            error:
+              "Custom/compatible provider bulk probing is disabled by default. "
+              + "Specify body.model or body.modelAllowlist explicitly.",
+            guard: {
+              customProvider: true,
+              autoProbe: false,
+            },
+          },
+          { status: 403 },
+        );
+      }
+
+      const explicitKind =
+        isCustomEmbeddingProvider(providerId)
+          ? "embedding"
+          : "llm";
+
+      models = uniqueIds.map((modelId) => ({
+        id: modelId,
+        name: modelId,
+        kind: explicitKind,
+      }));
     }
 
     if (models.length === 0) {

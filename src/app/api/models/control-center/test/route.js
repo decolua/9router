@@ -8,6 +8,7 @@ import {
   classifyHealth,
   isRetryableHealth,
 } from "@/lib/modelControlCenter/health.js";
+import { isGuardedCustomProvider } from "@/shared/utils/modelDiscoveryGuard.js";
 
 export const dynamic = "force-dynamic";
 
@@ -26,10 +27,22 @@ function pickTargets(state, body = {}) {
   const targets = [];
   let skippedExpensive = 0;
   let skippedCooldown = 0;
+  let skippedGuardedCustom = 0;
   const now = Date.now();
+
+  const customProbeAllowlist = new Set(
+    Array.isArray(body.customProbeAllowlist)
+      ? body.customProbeAllowlist.filter(
+          (value) => typeof value === "string",
+        )
+      : [],
+  );
 
   for (const provider of Object.values(state.providers || {})) {
     if (body.provider && body.provider !== provider.providerId) continue;
+
+    const guardedCustom =
+      isGuardedCustomProvider(provider.providerId);
 
     for (const model of Object.values(provider.models || {})) {
       if (model.stale) continue;
@@ -39,6 +52,40 @@ function pickTargets(state, body = {}) {
         && body.model !== model.fullModel
         && body.model !== model.id
       ) {
+        continue;
+      }
+
+      const requestedModel =
+        typeof body.model === "string"
+          ? body.model.trim()
+          : "";
+
+      const providerExplicitlyScoped =
+        body.provider === provider.providerId;
+
+      const explicitSingleModel =
+        requestedModel === model.fullModel
+        || (
+          providerExplicitlyScoped
+          && requestedModel === model.id
+        );
+
+      const explicitlyAllowlisted =
+        customProbeAllowlist.has(model.fullModel)
+        || (
+          providerExplicitlyScoped
+          && customProbeAllowlist.has(model.id)
+        );
+
+      // Custom/compatible providers are never part of automatic/global
+      // health batches. They require a single explicit model target or
+      // an explicit per-request model allowlist.
+      if (
+        guardedCustom
+        && !explicitSingleModel
+        && !explicitlyAllowlisted
+      ) {
+        skippedGuardedCustom += 1;
         continue;
       }
 
@@ -137,6 +184,7 @@ function pickTargets(state, body = {}) {
     targets: selected,
     skippedExpensive,
     skippedCooldown,
+    skippedGuardedCustom,
   };
 }
 
@@ -166,6 +214,7 @@ export async function POST(request) {
       targets,
       skippedExpensive,
       skippedCooldown,
+      skippedGuardedCustom,
     } = pickTargets(state, body);
 
     if (targets.length === 0) {
@@ -174,6 +223,7 @@ export async function POST(request) {
         tested: 0,
         skippedExpensive,
         skippedCooldown,
+        skippedGuardedCustom,
         remainingChanged: state.summary?.changed || 0,
         remainingPending: state.summary?.pending || 0,
         remainingFailed: state.summary?.failed || 0,
@@ -275,6 +325,7 @@ export async function POST(request) {
       tested: results.length,
       skippedExpensive,
       skippedCooldown,
+      skippedGuardedCustom,
       remainingChanged: saved.summary.changed,
       remainingPending: saved.summary.pending,
       remainingFailed: saved.summary.failed,
