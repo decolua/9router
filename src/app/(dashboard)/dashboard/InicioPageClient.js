@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Card from "@/shared/components/Card";
+import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/models";
 import { getCurrentLocale, onLocaleChange, translate } from "@/i18n/runtime";
 import dynamic from "next/dynamic";
 const UsageChart = dynamic(() => import("./usage/components/UsageChart"), { ssr: false, loading: () => null });
@@ -60,6 +61,7 @@ export default function InicioPageClient() {
   const [connections, setConnections] = useState(null);
   const [models, setModels] = useState(null);
   const [failedSources, setFailedSources] = useState([]);
+  const [cachedModelsCount, setCachedModelsCount] = useState(null);
   const [loading, setLoading] = useState(true);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [locale, setLocale] = useState(() => getCurrentLocale());
@@ -118,12 +120,14 @@ export default function InicioPageClient() {
         if (cancelled) return;
         const filtered = (data.data || []).filter((model) => !model.disabled);
         setModels(filtered);
+        setCachedModelsCount(filtered.length);
+        try { window.localStorage.setItem("homeModelsCount", String(filtered.length)); } catch {}
         setModelsLoading(false);
         // Background refresh with full catalog (live resolvers) without blocking UI
         fetchWithTimeout("/api/models/catalog", 5000).then((full) => {
           if (cancelled) return;
           const fullFiltered = (full.data || []).filter((m) => !m.disabled);
-          if (fullFiltered.length !== filtered.length) setModels(fullFiltered);
+          if (fullFiltered.length !== filtered.length) { setModels(fullFiltered); setCachedModelsCount(fullFiltered.length); try { window.localStorage.setItem("homeModelsCount", String(fullFiltered.length)); } catch {} }
         }).catch(() => {});
         return;
       } catch {}
@@ -131,7 +135,10 @@ export default function InicioPageClient() {
       try {
         const data = await fetchWithTimeout("/api/models/catalog", 5000);
         if (cancelled) return;
-        setModels((data.data || []).filter((model) => !model.disabled));
+        const _m = (data.data || []).filter((model) => !model.disabled);
+        setModels(_m);
+        setCachedModelsCount(_m.length);
+        try { window.localStorage.setItem("homeModelsCount", String(_m.length)); } catch {}
       } catch {
         if (cancelled) return;
         setModels([]);
@@ -147,6 +154,16 @@ export default function InicioPageClient() {
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    try {
+      const v = window.localStorage.getItem("homeModelsCount");
+      if (v) {
+        const n = parseInt(v, 10);
+        if (Number.isFinite(n) && n >= 0) setCachedModelsCount(n);
+      }
+    } catch {}
   }, []);
 
   useEffect(() => {
@@ -201,6 +218,25 @@ export default function InicioPageClient() {
     };
   }, [connections]);
 
+  const estimatedModelsCount = useMemo(() => {
+    if (models !== null) return null;
+    if (cachedModelsCount !== null && !connections) return cachedModelsCount;
+    if (!connections) return cachedModelsCount ?? 0;
+    let count = 0;
+    for (const conn of connections.filter((c) => c.isActive !== false)) {
+      const pid = conn.provider;
+      const staticModels = PROVIDER_MODELS[pid] || PROVIDER_MODELS[PROVIDER_ID_TO_ALIAS[pid]] || [];
+      const enabled = conn.providerSpecificData?.enabledModels;
+      if (Array.isArray(enabled) && enabled.length > 0) count += enabled.filter((id) => typeof id === "string" && id.trim() !== "").length;
+      else count += staticModels.length;
+    }
+    if (cachedModelsCount !== null && count === 0) return cachedModelsCount;
+    return count;
+  }, [connections, models, cachedModelsCount]);
+
+  const displayModelsCount = models !== null ? models.length : (estimatedModelsCount ?? cachedModelsCount ?? 0);
+  const displayModelsLoading = false;
+
   const activeRequests = (usage?.activeRequests || []).reduce(
     (total, request) => total + Number(request.count || 0),
     0,
@@ -221,7 +257,7 @@ export default function InicioPageClient() {
 
       <section aria-label={translate("Gateway overview")} className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
         <MetricCard label={translate("Providers")} value={providerStats.providers} detail={translate("Connected")} icon="dns" loading={loading && connections === null} />
-        <MetricCard label={translate("Models")} value={numberFormatter.format(models?.length || 0)} detail={translate("Available")} icon="deployed_code" loading={modelsLoading && models === null} />
+        <MetricCard label={translate("Models")} value={numberFormatter.format(displayModelsCount)} detail={translate("Available")} icon="deployed_code" loading={displayModelsLoading} />
         <MetricCard label={translate("Requests")} value={numberFormatter.format(usage?.totalRequests || 0)} detail={translate("Today")} icon="send" tone="text-primary" loading={loading && usage === null} />
         <MetricCard label={translate("Tokens")} value={numberFormatter.format(tokensToday)} detail={translate("Used today")} icon="token" tone="text-info" loading={loading && usage === null} />
         <MetricCard label={translate("In progress")} value={numberFormatter.format(activeRequests)} detail={translate("Active requests")} icon="progress_activity" tone="text-success" loading={loading && usage === null} />
@@ -330,3 +366,5 @@ export default function InicioPageClient() {
     </div>
   );
 }
+
+
