@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { canonicalizeUsage, extractUsage, mergeUsage } from "../../open-sse/utils/usageTracking.js";
 import { calculateCostFromTokens } from "../../open-sse/providers/pricing.js";
-import { toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
+import { buildUsage, toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
 
 // Canonical convention (single source of truth for storage + cost):
 //   prompt_tokens             = total input INCLUDING cache read + cache creation
@@ -59,6 +59,14 @@ describe("canonicalizeUsage", () => {
     expect(out.completion_tokens).toBe(50);
     expect(out.total_tokens).toBe(150);
     expect(out.reasoning_tokens).toBe(10);
+  });
+
+  it("reads cached_tokens from the nested buildUsage() shape", () => {
+    const out = canonicalizeUsage(
+      buildUsage({ promptTokens: 330, completionTokens: 50, totalTokens: 380, cachedTokens: 200 })
+    );
+    expect(out.prompt_tokens).toBe(330);
+    expect(out.cached_tokens).toBe(200);
   });
 
   it("handles no-cache usage", () => {

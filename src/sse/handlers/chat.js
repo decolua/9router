@@ -7,8 +7,8 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { cacheClaudeHeaders } from "open-sse/utils/claudeHeaderCache.js";
-import { getSettings, releaseApiKeyUsageReservation, reserveApiKeyUsage } from "@/lib/db/index.js";
+import { handleAntigravityQuotaError } from "../services/antigravityQuota.js";
+import { getSettings, releaseApiKeyUsageReservation, reserveApiKeyUsage } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { estimateChatUsageReservation } from "../services/usageReservation.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
@@ -16,7 +16,8 @@ import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
-import { handleComboChat, handleFusionChat } from "open-sse/services/combo.js";
+import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "open-sse/services/combo.js";
+import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
@@ -50,8 +51,6 @@ export async function handleChat(request, clientRawRequest = null) {
       headers: Object.fromEntries(request.headers.entries())
     };
   }
-  cacheClaudeHeaders(clientRawRequest.headers);
-
   const modelStr = body.model;
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
@@ -90,6 +89,8 @@ export async function handleChat(request, clientRawRequest = null) {
   const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
   if (bypassResponse) return bypassResponse.response || bypassResponse;
 
+  const requiredCapabilities = detectRequiredCapabilities(body);
+
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
@@ -97,6 +98,8 @@ export async function handleChat(request, clientRawRequest = null) {
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
     const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
+    const augmentedModels = augmentModelsWithCapacityAdapter(comboModels, requiredCapabilities, settings);
+    const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m));
 
     if (comboStrategy === "fusion") {
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
@@ -119,11 +122,14 @@ export async function handleChat(request, clientRawRequest = null) {
     }
 
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+    log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
-      models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+      models: augmentedModels,
+      handleSingleModel: withCapacityAdapterStripping(
+        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        adapterAdded
+      ),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -131,7 +137,25 @@ export async function handleChat(request, clientRawRequest = null) {
     });
   }
 
-  // Single model request
+  // Single model request — may still switch to a capacity-adapter model if the
+  // target lacks a capability the request needs (e.g. no vision, request has an image).
+  const soloAugmented = augmentModelsWithCapacityAdapter([modelStr], requiredCapabilities, settings);
+  if (soloAugmented.length > 1) {
+    const adapterAdded = soloAugmented.filter((m) => m !== modelStr);
+    log.info("CHAT", `Capacity adapter for [${[...requiredCapabilities].join(",")}] on "${modelStr}" → trying ${soloAugmented.join(", ")}`);
+    return handleComboChat({
+      body,
+      models: soloAugmented,
+      handleSingleModel: withCapacityAdapterStripping(
+        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        adapterAdded
+      ),
+      log,
+      comboName: modelStr,
+      comboStrategy: getActiveAdapterStrategy(requiredCapabilities, settings)
+    });
+  }
+
   return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
 }
 
@@ -150,6 +174,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       const comboStrategies = chatSettings.comboStrategies || {};
       const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
       const comboStrategy = comboSpecificStrategy || chatSettings.comboStrategy || "fallback";
+      const requiredCapabilities = detectRequiredCapabilities(body);
+      const augmentedModels = augmentModelsWithCapacityAdapter(comboModels, requiredCapabilities, chatSettings);
+      const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m));
 
       if (comboStrategy === "fusion") {
         log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
@@ -172,11 +199,14 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
 
       const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
-      log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+      log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
       return handleComboChat({
         body,
-        models: comboModels,
-        handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        models: augmentedModels,
+        handleSingleModel: withCapacityAdapterStripping(
+          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+          adapterAdded
+        ),
         log,
         comboName: modelStr,
         comboStrategy,
@@ -236,98 +266,113 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   let preserveUsageReservation = false;
   try {
-    while (true) {
-      const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+  while (true) {
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
 
-      // All accounts unavailable
-      if (!credentials || credentials.allRateLimited) {
-        if (credentials?.allRateLimited) {
-          const errorMsg = lastError || credentials.lastError || "Unavailable";
-          const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
-          log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
-          return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
-        }
-        if (excludeConnectionIds.size === 0) {
-          log.warn("AUTH", `No active credentials for provider: ${provider}`);
-          return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
-        }
-        log.warn("CHAT", "No more accounts available", { provider });
-        return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+    // All accounts unavailable
+    if (!credentials || credentials.allRateLimited) {
+      if (credentials?.allRateLimited) {
+        const errorMsg = lastError || credentials.lastError || "Unavailable";
+        const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
+        log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
+        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
-
-      // Account selection shown in the unified "▶" line (acc:...)
-      const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
-
-      // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
-      if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
-        const pid = await getProjectIdForConnection(credentials.connectionId, refreshedCredentials.accessToken);
-        if (pid) {
-          refreshedCredentials.projectId = pid;
-          // Persist to DB in background so subsequent requests have it immediately
-          updateProviderCredentials(credentials.connectionId, { projectId: pid }).catch(() => { });
-        }
+      if (excludeConnectionIds.size === 0) {
+        log.warn("AUTH", `No active credentials for provider: ${provider}`);
+        return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
       }
+      log.warn("CHAT", "No more accounts available", { provider });
+      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+    }
 
-      // Use shared chatCore
-      const result = await handleChatCore({
-        body: preparedBody,
-        modelInfo: { provider, model },
-        credentials: refreshedCredentials,
-        log,
-        clientRawRequest,
-        connectionId: credentials.connectionId,
-        userAgent,
-        apiKey,
-        usageReservationId,
-        ccFilterNaming: !!chatSettings.ccFilterNaming,
-        rtkEnabled: !!chatSettings.rtkEnabled,
-        headroomEnabled: !!chatSettings.headroomEnabled,
-        headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
-        headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
-        cavemanEnabled: !!chatSettings.cavemanEnabled,
-        cavemanLevel,
-        ponytailEnabled: !!chatSettings.ponytailEnabled,
-        ponytailLevel,
-        pxpipeEnabled: !!chatSettings.pxpipeEnabled,
-        pxpipeMinChars: chatSettings.pxpipeMinChars,
-        pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
-        // Lazily warms the in-process module on first use; null when not installed (fail-open)
-        pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
-        onPxpipeEvent: appendPxpipeEvent,
-        providerThinking,
-        serverMutationsApplied: true,
-        // Detect source format by endpoint + body
-        sourceFormatOverride,
-        onCredentialsRefreshed: async (newCreds) => {
-          await updateProviderCredentials(credentials.connectionId, {
-            ...newCreds,
-            existingProviderSpecificData: credentials.providerSpecificData,
-            testStatus: "active"
-          });
-        },
-        onRequestSuccess: async () => {
-          await clearAccountError(credentials.connectionId, credentials, model);
-        }
-      });
+    // Account selection shown in the unified "▶" line (acc:...)
+    const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
-      if (result.success) {
-        preserveUsageReservation = true;
-        return result.response;
+    // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
+    if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
+      const pid = await getProjectIdForConnection(credentials.connectionId, refreshedCredentials.accessToken, provider);
+      if (pid) {
+        refreshedCredentials.projectId = pid;
+        // Persist to DB in background so subsequent requests have it immediately
+        updateProviderCredentials(credentials.connectionId, { projectId: pid }).catch(() => { });
       }
+    }
 
-      // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
-      const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
-
-      if (shouldFallback) {
-        log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
-        excludeConnectionIds.add(credentials.connectionId);
-        lastError = result.error;
-        lastStatus = result.status;
-        continue;
+    // Use shared chatCore
+    const result = await handleChatCore({
+      body: preparedBody,
+      modelInfo: { provider, model },
+      credentials: refreshedCredentials,
+      log,
+      clientRawRequest,
+      connectionId: credentials.connectionId,
+      userAgent,
+      apiKey,
+      usageReservationId,
+      ccFilterNaming: !!chatSettings.ccFilterNaming,
+      rtkEnabled: !!chatSettings.rtkEnabled,
+      headroomEnabled: !!chatSettings.headroomEnabled,
+      headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
+      headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
+      headroomTimeoutMs: chatSettings.headroomTimeoutMs,
+      cavemanEnabled: !!chatSettings.cavemanEnabled,
+      cavemanLevel,
+      ponytailEnabled: !!chatSettings.ponytailEnabled,
+      ponytailLevel,
+      pxpipeEnabled: !!chatSettings.pxpipeEnabled,
+      pxpipeMinChars: chatSettings.pxpipeMinChars,
+      pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
+      // Lazily warms the in-process module on first use; null when not installed (fail-open)
+      pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
+      onPxpipeEvent: appendPxpipeEvent,
+      providerThinking,
+      serverMutationsApplied: true,
+      // Detect source format by endpoint + body
+      sourceFormatOverride,
+      onCredentialsRefreshed: async (newCreds) => {
+        await updateProviderCredentials(credentials.connectionId, {
+          ...newCreds,
+          existingProviderSpecificData: credentials.providerSpecificData,
+          testStatus: "active"
+        });
+      },
+      onRequestSuccess: async () => {
+        await clearAccountError(credentials.connectionId, credentials, model);
       }
+    });
 
+    if (result.success) {
+      preserveUsageReservation = true;
       return result.response;
     }
+
+    // Antigravity 409/429: refresh live quota to get exact resetAt before locking
+    let quotaResetMs = null;
+    let resetsAtMs = result.resetsAtMs;
+    if (provider === "antigravity" && (result.status === 409 || result.status === 429)) {
+      quotaResetMs = await handleAntigravityQuotaError(
+        credentials.connectionId, result.status, model,
+        refreshedCredentials.accessToken, credentials.providerSpecificData
+      );
+      if (quotaResetMs) resetsAtMs = quotaResetMs;
+    }
+
+    // Exhausted Antigravity model is blocked only in RAM cache until upstream resetAt.
+    // Do not persist a modelLock_* for this path.
+    const shouldFallback = provider === "antigravity" && quotaResetMs
+      ? true
+      : (await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, resetsAtMs)).shouldFallback;
+
+    if (shouldFallback) {
+      log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
+      excludeConnectionIds.add(credentials.connectionId);
+      lastError = result.error;
+      lastStatus = result.status;
+      continue;
+    }
+
+    return result.response;
+  }
   } finally {
     if (usageReservationId && !preserveUsageReservation) {
       await releaseApiKeyUsageReservation(usageReservationId);
