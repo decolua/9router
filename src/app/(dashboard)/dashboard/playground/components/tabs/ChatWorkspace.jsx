@@ -1,79 +1,101 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import ChatAttachments from "./ChatAttachments";
 import { buildPlaygroundRequest } from "../../lib/requestBuilder";
 import { createSseParser } from "../../lib/sseParser";
 import { createMetricAccumulator } from "../../lib/metrics.js";
 import { sanitizePlaygroundData } from "../../lib/sanitize";
 
+function withoutImageParts(request) {
+  return {
+    ...request,
+    messages: request.messages.map((message) => (
+      Array.isArray(message.content)
+        ? { ...message, content: message.content.filter((part) => part.type !== "image_url") }
+        : message
+    )),
+  };
+}
+
 export default function ChatWorkspace({ configState, onMetricsUpdate, onResult, draft, onDraftChange }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState(draft || "");
+  const [attachments, setAttachments] = useState([]);
+  const [attachmentResetKey, setAttachmentResetKey] = useState(0);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState(null);
-  const abortControllerRef = useRef(null);
-  const abortMetricsRef = useRef(null);
-  const outputRef = useRef("");
+  const abortControllerRef = React.useRef(null);
+  const abortMetricsRef = React.useRef(null);
+  const outputRef = React.useRef("");
+  const canAttachImages = Boolean(configState?.model?.capabilities?.images);
 
-  useEffect(() => {
-    setInput(draft || "");
-  }, [draft]);
+  useEffect(() => { setInput(draft || ""); }, [draft]);
+  useEffect(() => { if (!canAttachImages) setAttachments([]); }, [canAttachImages]);
+  useEffect(() => () => abortControllerRef.current?.abort(), []);
 
-  useEffect(() => {
-    return () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-        abortControllerRef.current = null;
-      }
-    };
-  }, []);
+  const reportError = useCallback((message) => setError(sanitizePlaygroundData(message)), []);
+  const validateAttachments = useCallback((nextAttachments) => {
+    try {
+      buildPlaygroundRequest({ model: configState?.model, systemPrompt: "", messages: [], controls: {}, images: nextAttachments });
+      setAttachments(nextAttachments);
+      setError(null);
+    } catch (validationError) {
+      reportError(validationError.message);
+    }
+  }, [configState, reportError]);
 
   const handleStop = useCallback(() => {
-    const abortController = abortControllerRef.current;
-    if (abortController) {
-      abortController.abort();
-      const accumulator = abortMetricsRef.current;
-      if (accumulator) {
-        accumulator.abort(Date.now());
-        const snap = accumulator.snapshot();
-        if (onMetricsUpdate && snap.terminalState !== null) {
-          onMetricsUpdate(snap);
-        }
-      }
-      abortControllerRef.current = null;
-      abortMetricsRef.current = null;
+    const controller = abortControllerRef.current;
+    if (!controller) return;
+    controller.abort();
+    const accumulator = abortMetricsRef.current;
+    if (accumulator) {
+      accumulator.abort(Date.now());
+      const snapshot = accumulator.snapshot();
+      if (onMetricsUpdate && snapshot.terminalState !== null) onMetricsUpdate(snapshot);
     }
+    abortControllerRef.current = null;
+    abortMetricsRef.current = null;
     setIsStreaming(false);
   }, [onMetricsUpdate]);
-  
+
+  const appendAssistantText = useCallback((text) => {
+    outputRef.current += text;
+    setMessages((previous) => {
+      const lastIndex = previous.length - 1;
+      const lastMessage = previous[lastIndex];
+      if (!lastMessage || lastMessage.role !== "assistant") return previous;
+      return [...previous.slice(0, lastIndex), { ...lastMessage, content: lastMessage.content + text }];
+    });
+  }, []);
+
+  const finishAssistant = useCallback((partial) => {
+    setMessages((previous) => {
+      const lastIndex = previous.length - 1;
+      const lastMessage = previous[lastIndex];
+      if (!lastMessage || lastMessage.role !== "assistant") return previous;
+      return [...previous.slice(0, lastIndex), { ...lastMessage, partial }];
+    });
+  }, []);
+
   const sendMessage = useCallback(async (forcedMessages = null) => {
     if (isStreaming) return;
-    
-    if (!configState?.model?.id) {
-        setError("A selected model is required.");
-        return;
-    }
+    if (!configState?.model?.id) return reportError("A selected model is required.");
+    const hasContent = input.trim().length > 0;
+    const currentMessages = forcedMessages || (hasContent || attachments.length > 0
+      ? [...messages, { role: "user", content: input, partial: false }]
+      : null);
+    if (!currentMessages) return;
 
-    let currentMessages = forcedMessages;
-    if (!currentMessages) {
-       if (!input.trim()) return;
-       const newMsg = { role: "user", content: input, partial: false };
-       currentMessages = [...messages, newMsg];
-       setMessages(currentMessages);
-       setInput("");
-       onDraftChange?.("");
-    }
-    
+    let requestBody = null;
+    let responseStatus = null;
+    const controller = new AbortController();
+    const accumulator = createMetricAccumulator(Date.now());
+    const isCurrent = () => abortControllerRef.current === controller;
+    abortControllerRef.current = controller;
+    abortMetricsRef.current = accumulator;
     setError(null);
     setIsStreaming(true);
     outputRef.current = "";
-    
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
-    const accumulator = createMetricAccumulator(Date.now());
-    abortMetricsRef.current = accumulator;
-    
-    const isCurrent = () => abortControllerRef.current === abortController;
-    let requestBody = null;
-    let responseStatus = null;
 
     try {
       requestBody = buildPlaygroundRequest({
@@ -81,234 +103,118 @@ export default function ChatWorkspace({ configState, onMetricsUpdate, onResult, 
         systemPrompt: configState.systemPrompt,
         messages: currentMessages,
         controls: configState.params,
-        images: [] 
+        images: forcedMessages ? [] : attachments,
       });
-      
+      if (!forcedMessages) {
+        setMessages(currentMessages);
+        setInput("");
+        setAttachments([]);
+        setAttachmentResetKey((key) => key + 1);
+        onDraftChange?.("");
+      }
       const response = await fetch("/api/dashboard/chat/completions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(requestBody),
-        signal: abortController.signal
+        signal: controller.signal,
       });
-      
       if (!isCurrent()) return;
-
       responseStatus = response.status ?? null;
-      if (!response.ok) {
-        throw new Error(`HTTP error ${response.status}`);
-      }
-      
+      if (!response.ok) throw new Error(`HTTP error ${response.status}`);
+
       const parser = createSseParser();
       const reader = response.body.getReader();
-      setMessages((prev) => [...prev, { role: "assistant", content: "", partial: true }]);
-
+      setMessages((previous) => [...previous, { role: "assistant", content: "", partial: true }]);
       while (true) {
         const { done, value } = await reader.read();
         if (!isCurrent()) { reader.cancel().catch(() => {}); return; }
-        
         if (done) {
-            const closeEvent = parser.close();
-            if (closeEvent) accumulator.record(closeEvent, Date.now());
-            break;
+          const closeEvent = parser.close();
+          if (closeEvent) accumulator.record(closeEvent, Date.now());
+          break;
         }
-
-        const events = parser.push(value);
-        
-        for (const event of events) {
-           accumulator.record(event, Date.now());
-           if (!isCurrent()) { reader.cancel().catch(() => {}); return; }
-           
-            if (event.type === "delta" && event.text) {
-                outputRef.current += event.text;
-                if (isCurrent()) {
-                   setMessages((prev) => {
-                       if (prev.length === 0) return prev;
-                       const lastIndex = prev.length - 1;
-                       const lastMsg = prev[lastIndex];
-                       if (lastMsg.role !== "assistant") return prev;
-                       return [
-                           ...prev.slice(0, lastIndex),
-                           { ...lastMsg, content: lastMsg.content + event.text }
-                       ];
-                   });
-               }
-           } else if (event.type === "malformed") {
-               accumulator.record({ type: "error", message: "Malformed stream frame received" }, Date.now());
-               reader.cancel().catch(() => {});
-               throw new Error("Malformed stream frame received");
-           } else if (event.type === "error") {
-               accumulator.record(event, Date.now());
-               reader.cancel().catch(() => {});
-               throw new Error(event.message);
-           }
-
-           const snap = accumulator.snapshot();
-           if (snap.terminalState) {
-               reader.cancel().catch(() => {});
-               if (isCurrent()) {
-                   if (snap.terminalState === "complete") {
-                       setMessages((prev) => {
-                          if (prev.length === 0) return prev;
-                          const lastIndex = prev.length - 1;
-                          const lastMsg = prev[lastIndex];
-                          if (lastMsg.role !== "assistant") return prev;
-                          return [
-                              ...prev.slice(0, lastIndex),
-                              { ...lastMsg, partial: false }
-                          ];
-                       });
-                   } else if (snap.terminalState === "incomplete") {
-                       setError("Stream ended unexpectedly.");
-                   }
-               }
-               return;
-           }
+        for (const event of parser.push(value)) {
+          accumulator.record(event, Date.now());
+          if (!isCurrent()) { reader.cancel().catch(() => {}); return; }
+          if (event.type === "delta" && event.text) appendAssistantText(event.text);
+          if (event.type === "malformed") {
+            accumulator.record({ type: "error", message: "Malformed stream frame received" }, Date.now());
+            reader.cancel().catch(() => {});
+            throw new Error("Malformed stream frame received");
+          }
+          if (event.type === "error") { reader.cancel().catch(() => {}); throw new Error(event.message); }
+          const snapshot = accumulator.snapshot();
+          if (snapshot.terminalState) {
+            reader.cancel().catch(() => {});
+            if (snapshot.terminalState === "complete") finishAssistant(false);
+            if (snapshot.terminalState === "incomplete") reportError("Stream ended unexpectedly.");
+            return;
+          }
         }
       }
-
+      const snapshot = accumulator.snapshot();
+      if (snapshot.terminalState === "incomplete") reportError("Stream ended unexpectedly.");
+      if (snapshot.terminalState === "complete") finishAssistant(false);
+    } catch (caughtError) {
       if (!isCurrent()) return;
-      
-      const snapEOF = accumulator.snapshot();
-      if (snapEOF.terminalState === "incomplete") {
-          setError("Stream ended unexpectedly.");
-      } else if (snapEOF.terminalState === "complete") {
-          setMessages((prev) => {
-             if (prev.length === 0) return prev;
-             const lastIndex = prev.length - 1;
-             const lastMsg = prev[lastIndex];
-             if (lastMsg.role !== "assistant") return prev;
-             return [
-                 ...prev.slice(0, lastIndex),
-                 { ...lastMsg, partial: false }
-             ];
-          });
-      }
-
-    } catch (err) {
-      if (!isCurrent()) return;
-
-      if (err.name === "AbortError") {
-        accumulator.abort(Date.now());
-      } else {
-        accumulator?.record?.({ type: "error", message: err.message }, Date.now());
-        setError(sanitizePlaygroundData(err.message));
+      if (caughtError.name === "AbortError") accumulator.abort(Date.now());
+      else {
+        accumulator.record({ type: "error", message: caughtError.message }, Date.now());
+        reportError(caughtError.message);
       }
     } finally {
-      if (isCurrent()) {
-        abortControllerRef.current = null;
-        abortMetricsRef.current = null;
-        setIsStreaming(false);
-
-          const snap = accumulator.snapshot();
-          if (onMetricsUpdate && snap.terminalState !== null) {
-             onMetricsUpdate(snap);
-          }
-          if (onResult && requestBody) {
-             onResult(sanitizePlaygroundData({
-               request: requestBody,
-               response: { status: responseStatus, output: outputRef.current },
-               metrics: snap,
-             }));
-          }
-      }
+      if (!isCurrent()) return;
+      abortControllerRef.current = null;
+      abortMetricsRef.current = null;
+      setIsStreaming(false);
+      const snapshot = accumulator.snapshot();
+      if (onMetricsUpdate && snapshot.terminalState !== null) onMetricsUpdate(snapshot);
+      if (onResult && requestBody) onResult(sanitizePlaygroundData({
+        request: withoutImageParts(requestBody),
+        response: { status: responseStatus, output: outputRef.current },
+        metrics: snapshot,
+      }));
     }
-  }, [input, messages, isStreaming, configState, onMetricsUpdate, onResult, onDraftChange]);
+  }, [appendAssistantText, attachments, configState, finishAssistant, input, isStreaming, messages, onDraftChange, onMetricsUpdate, onResult, reportError]);
 
   const handleRegenerate = useCallback(() => {
     if (messages.length === 0 || isStreaming) return;
-    
-    const newMessages = [...messages];
-    if (newMessages[newMessages.length - 1].role === "assistant") {
-        newMessages.pop();
-    }
-    setMessages(newMessages);
-    sendMessage(newMessages);
-  }, [messages, isStreaming, sendMessage]);
+    const nextMessages = messages.at(-1)?.role === "assistant" ? messages.slice(0, -1) : messages;
+    setMessages(nextMessages);
+    sendMessage(nextMessages);
+  }, [isStreaming, messages, sendMessage]);
 
   const handleClear = useCallback(() => {
-    if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-        abortControllerRef.current = null;
-    }
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
     setIsStreaming(false);
     setMessages([]);
+    setAttachments([]);
+    setAttachmentResetKey((key) => key + 1);
     setError(null);
   }, []);
 
   return (
     <div className="flex flex-col h-full relative" data-testid="playground-chat-workspace">
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((msg, i) => (
-          <div key={i} className={`p-4 rounded-lg ${msg.role === 'user' ? 'bg-primary/10 ml-8' : 'bg-surface mr-8 border border-border'}`}>
-             <div className="flex justify-between items-center mb-1">
-                 <div className="font-semibold text-sm text-text-muted">{msg.role === 'user' ? 'User' : 'Assistant'}</div>
-                 {msg.partial && <span className="text-xs bg-warning/20 text-warning px-2 py-0.5 rounded" data-testid="partial-indicator">Partial</span>}
-             </div>
-             <pre className="whitespace-pre-wrap font-sans text-sm">{msg.content}</pre>
+        {messages.map((message, index) => (
+          <div key={index} className={`p-4 rounded-lg ${message.role === "user" ? "bg-primary/10 ml-8" : "bg-surface mr-8 border border-border"}`}>
+            <div className="flex justify-between items-center mb-1"><div className="font-semibold text-sm text-text-muted">{message.role === "user" ? "User" : "Assistant"}</div>{message.partial && <span className="text-xs bg-warning/20 text-warning px-2 py-0.5 rounded" data-testid="partial-indicator">Partial</span>}</div>
+            <pre className="whitespace-pre-wrap font-sans text-sm">{message.content}</pre>
           </div>
         ))}
-        {error && (
-            <div className="p-4 bg-error/10 text-error rounded-lg text-sm border border-error/20" data-testid="chat-error">
-                {error}
-            </div>
-        )}
+        {error && <div className="p-4 bg-error/10 text-error rounded-lg text-sm border border-error/20" data-testid="chat-error">{error}</div>}
       </div>
-      
-      <div className="p-4 border-t border-border bg-bg-alt flex gap-2 items-end">
-         <textarea 
-            value={input}
-            onChange={(e) => {
-                setInput(e.target.value);
-                onDraftChange?.(e.target.value);
-            }}
-            onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    sendMessage();
-                }
-            }}
-            placeholder="Send a message..."
-            className="flex-1 bg-surface border border-border rounded-lg p-3 text-sm focus:outline-none focus:border-primary resize-none min-h-[60px] max-h-[200px]"
-            disabled={isStreaming}
-         />
-         <div className="flex flex-col gap-2 shrink-0">
-             {isStreaming ? (
-                 <button 
-                    onClick={handleStop}
-                    className="bg-error hover:bg-error-hover text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                    data-testid="playground-stop"
-                 >
-                    Stop
-                 </button>
-             ) : (
-                 <button 
-                    onClick={() => sendMessage()}
-                    disabled={!input.trim()}
-                    className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                    data-testid="playground-send"
-                 >
-                    Send
-                 </button>
-             )}
-             {messages.length > 0 && !isStreaming && (
-                 <button 
-                    onClick={handleRegenerate}
-                    className="text-text-muted hover:text-text-main text-xs text-center"
-                    data-testid="playground-regenerate"
-                 >
-                    Regenerate
-                 </button>
-             )}
-             {messages.length > 0 && !isStreaming && (
-                 <button 
-                    onClick={handleClear}
-                    className="text-text-muted hover:text-text-main text-xs text-center"
-                    data-testid="playground-clear"
-                 >
-                    Clear
-                 </button>
-             )}
-         </div>
+      <div className="p-4 border-t border-border bg-bg-alt flex flex-col gap-2">
+        <ChatAttachments attachments={attachments} canAttach={canAttachImages} disabled={isStreaming} onChange={validateAttachments} onError={reportError} resetKey={attachmentResetKey} />
+        <div className="flex gap-2 items-end">
+          <textarea value={input} onChange={(event) => { setInput(event.target.value); onDraftChange?.(event.target.value); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendMessage(); } }} placeholder="Send a message..." className="flex-1 bg-surface border border-border rounded-lg p-3 text-sm focus:outline-none focus:border-primary resize-none min-h-[60px] max-h-[200px]" disabled={isStreaming} />
+          <div className="flex flex-col gap-2 shrink-0">
+            {isStreaming ? <button onClick={handleStop} className="bg-error hover:bg-error-hover text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors" data-testid="playground-stop">Stop</button> : <button onClick={() => sendMessage()} disabled={!input.trim() && attachments.length === 0} className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors" data-testid="playground-send">Send</button>}
+            {messages.length > 0 && !isStreaming && <button onClick={handleRegenerate} className="text-text-muted hover:text-text-main text-xs text-center" data-testid="playground-regenerate">Regenerate</button>}
+            {(messages.length > 0 || attachments.length > 0) && !isStreaming && <button onClick={handleClear} className="text-text-muted hover:text-text-main text-xs text-center" data-testid="playground-clear">Clear</button>}
+          </div>
+        </div>
       </div>
     </div>
   );
