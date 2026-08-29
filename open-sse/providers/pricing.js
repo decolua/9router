@@ -403,6 +403,12 @@ export function formatCost(cost) {
   return `$${cost.toFixed(2)}`;
 }
 
+function nonnegativeFiniteNumber(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
 /**
  * Calculate cost from tokens and pricing
  * @param {object} tokens
@@ -410,7 +416,12 @@ export function formatCost(cost) {
  * @returns {number} cost in dollars
  */
 export function calculateCostFromTokens(tokens, pricing) {
-  if (!tokens || !pricing) return 0;
+  if (!tokens) return 0;
+  const directCost = nonnegativeFiniteNumber(tokens.cost_usd ?? tokens.cost_in_usd);
+  if (directCost !== null) return directCost;
+  const ticks = nonnegativeFiniteNumber(tokens.cost_in_usd_ticks);
+  if (ticks !== null) return ticks / 10_000_000_000;
+  if (!pricing) return 0;
 
   let cost = 0;
 
