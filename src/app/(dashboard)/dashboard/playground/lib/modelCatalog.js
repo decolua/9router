@@ -38,11 +38,15 @@ function containsForbiddenConnectionField(connection) {
 
 function normalizeCapabilities(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  return Object.fromEntries(
+  const normalized = Object.fromEntries(
     Object.entries(value).filter(([key, capability]) => (
       CAPABILITY_FIELDS.has(key) && (typeof capability === "boolean" || typeof capability === "number" || typeof capability === "string")
     ))
   );
+  if (!Object.prototype.hasOwnProperty.call(value, "images") && value.vision === true) {
+    normalized.images = true;
+  }
+  return normalized;
 }
 
 function modelIdentity(providerId, modelId) {

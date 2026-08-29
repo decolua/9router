@@ -30,7 +30,7 @@ describe("normalizeModelCatalog", () => {
         label: "Zeta",
         provider: { id: "alpha", name: "Alpha", connectionId: "connection-a" },
         available: true,
-        capabilities: { vision: true, reasoning: true, maxOutput: 1024 },
+        capabilities: { vision: true, images: true, reasoning: true, maxOutput: 1024 },
       },
       {
         id: "beta/alpha-model",
@@ -96,6 +96,53 @@ describe("normalizeModelCatalog", () => {
       capabilities: { temperature: true },
     }]);
     expect(JSON.stringify(catalog)).not.toMatch(/secret|password|headers|providerSpecificData|customField/i);
+  });
+
+  it("maps vision:true to images:true when images is absent, but respects explicit images:false precedence", () => {
+    const catalog = normalizeModelCatalog({
+      connections: [{ id: "conn-1", provider: "p1", name: "P1", isActive: true }],
+      staticModelsByProvider: {},
+      liveModelsByConnection: {
+        "conn-1": [
+          {
+            id: "m-vision-only",
+            capabilities: { vision: true },
+          },
+          {
+            id: "m-images-explicit-false",
+            capabilities: { vision: true, images: false },
+          },
+          {
+            id: "m-images-explicit-true",
+            capabilities: { vision: false, images: true },
+          },
+        ],
+      },
+    });
+
+    expect(catalog).toEqual([
+      {
+        id: "p1/m-images-explicit-false",
+        label: "m-images-explicit-false",
+        provider: { id: "p1", name: "P1", connectionId: "conn-1" },
+        available: true,
+        capabilities: { vision: true, images: false },
+      },
+      {
+        id: "p1/m-images-explicit-true",
+        label: "m-images-explicit-true",
+        provider: { id: "p1", name: "P1", connectionId: "conn-1" },
+        available: true,
+        capabilities: { vision: false, images: true },
+      },
+      {
+        id: "p1/m-vision-only",
+        label: "m-vision-only",
+        provider: { id: "p1", name: "P1", connectionId: "conn-1" },
+        available: true,
+        capabilities: { vision: true, images: true },
+      },
+    ]);
   });
 });
 
