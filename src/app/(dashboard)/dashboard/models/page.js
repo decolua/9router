@@ -104,6 +104,27 @@ async function loadEffectivePreview(signal) {
   return data;
 }
 
+async function loadPolicyDryRun(signal) {
+  const res = await fetch(
+    "/api/models/control-center/dry-run",
+    {
+      cache: "no-store",
+      ...(signal ? { signal } : {}),
+    },
+  );
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new Error(
+      data.error
+      || "Failed to load policy dry-run",
+    );
+  }
+
+  return data;
+}
+
 function effectiveBadge(effective) {
   if (!effective) {
     return {
@@ -161,6 +182,45 @@ function effectiveBadge(effective) {
   };
 }
 
+function dryRunBadge(direct) {
+  if (!direct) {
+    return {
+      label: "UNKNOWN",
+      cls: "text-text-muted bg-surface-2",
+    };
+  }
+
+  const state =
+    direct.operatorPolicy?.state
+    || "default";
+
+  if (direct.dryRun?.excluded) {
+    return {
+      label: "WOULD EXCLUDE",
+      cls: "text-red-500 bg-red-500/10",
+    };
+  }
+
+  if (state === "deprioritize") {
+    return {
+      label: "DIRECT N/A",
+      cls: "text-amber-600 bg-amber-500/10",
+    };
+  }
+
+  if (state === "allow") {
+    return {
+      label: "KEEP",
+      cls: "text-green-600 bg-green-500/10",
+    };
+  }
+
+  return {
+    label: "NO CHANGE",
+    cls: "text-text-muted bg-surface-2",
+  };
+}
+
 function SummaryCard({ label, value }) {
   return (
     <div className="rounded-xl border border-border bg-background px-4 py-3">
@@ -173,6 +233,7 @@ function SummaryCard({ label, value }) {
 export default function ModelControlCenterPage() {
   const [state, setState] = useState(null);
   const [effectiveState, setEffectiveState] = useState(null);
+  const [dryRunState, setDryRunState] = useState(null);
   const [busy, setBusy] = useState("");
   const [policyBusy, setPolicyBusy] = useState("");
   const [message, setMessage] = useState("");
@@ -217,6 +278,32 @@ export default function ModelControlCenterPage() {
 
     return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    if (!effectiveState?.generatedAt) {
+      return undefined;
+    }
+
+    const controller =
+      new AbortController();
+
+    loadPolicyDryRun(
+      controller.signal,
+    )
+      .then((data) => {
+        setDryRunState(data);
+      })
+      .catch((error) => {
+        if (error.name !== "AbortError") {
+          setMessage(
+            `Policy dry-run unavailable: ${error.message}`,
+          );
+        }
+      });
+
+    return () =>
+      controller.abort();
+  }, [effectiveState]);
 
   const refreshEffectivePreview = () => {
     loadEffectivePreview()
@@ -303,7 +390,7 @@ export default function ModelControlCenterPage() {
       const note =
         nextState === "disable"
           ? "Existing disabledModels semantics now apply."
-          : "Policy persisted. Selector integration remains unchanged in Phase B.2.";
+          : "Policy persisted. Selector integration remains unchanged in Phase B.3.";
 
       setMessage(
         `Policy ${model.fullModel}: ${currentState.toUpperCase()} → ${nextState.toUpperCase()}. ${note}`,
@@ -488,9 +575,29 @@ export default function ModelControlCenterPage() {
     effectiveState,
   ]);
 
+  const dryRunDirectByFullModel =
+    useMemo(
+      () =>
+        new Map(
+          (dryRunState?.direct || [])
+            .map((item) => [
+              item.fullModel,
+              item,
+            ]),
+        ),
+      [dryRunState],
+    );
+
   const summary = state?.summary || {};
+
   const effectiveSummary =
     effectiveState?.summary || {};
+
+  const dryRunSummary =
+    dryRunState?.summary || {};
+
+  const dryRunCombos =
+    dryRunState?.combos || [];
 
   return (
     <div className="p-6 space-y-6">
@@ -604,7 +711,7 @@ export default function ModelControlCenterPage() {
             Operator Policy
           </div>
           <div className="text-xs text-text-muted mt-1">
-            Persistent operator intent. DISABLE uses the existing disabledModels policy; ALLOW, DEPRIORITIZE, and QUARANTINE are not selector authority in Phase B.2.
+            Persistent operator intent. DISABLE uses the existing disabledModels policy; ALLOW, DEPRIORITIZE, and QUARANTINE remain non-authoritative while Phase B.3 evaluates their routing impact.
           </div>
         </div>
 
@@ -629,6 +736,64 @@ export default function ModelControlCenterPage() {
             label="Disable"
             value={effectiveSummary.policyDisable}
           />
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-border bg-background">
+        <div className="p-4 border-b border-border flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="font-medium text-text-main">
+              Policy Dry-run
+            </div>
+
+            <div className="text-xs text-text-muted mt-1">
+              Simulated routing impact only. No selector or production routing changes are applied.
+            </div>
+
+            <div className="text-[11px] font-semibold text-amber-600 mt-2">
+              DRY-RUN ONLY · ROUTING UNCHANGED · SELECTOR NOT INTEGRATED
+            </div>
+          </div>
+
+          <div className="text-[11px] text-text-muted">
+            {dryRunState?.generatedAt
+              ? `Generated ${new Date(dryRunState.generatedAt).toLocaleString()}`
+              : "Loading dry-run..."}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 p-4">
+          <SummaryCard
+            label="Direct Would Exclude"
+            value={dryRunSummary.directWouldExclude}
+          />
+
+          <SummaryCard
+            label="Combo Current Excluded"
+            value={dryRunSummary.comboCurrentExcluded}
+          />
+
+          <SummaryCard
+            label="Combo Dry-run Excluded"
+            value={dryRunSummary.comboDryRunExcluded}
+          />
+
+          <SummaryCard
+            label="Combo Deprioritized"
+            value={dryRunSummary.comboDryRunDeprioritized}
+          />
+
+          <SummaryCard
+            label="Combos"
+            value={dryRunSummary.combos}
+          />
+        </div>
+
+        <div className="border-t border-border px-4 py-3 text-xs text-text-muted">
+          {dryRunSummary.models ?? 0} direct model projections
+          {" · "}
+          {dryRunSummary.comboMemberOccurrences ?? 0} configured combo member occurrences.
+          Round-robin rank is intentionally not predicted.
         </div>
       </div>
 
@@ -684,6 +849,7 @@ export default function ModelControlCenterPage() {
                 <th className="px-4 py-3 font-medium">Health</th>
                 <th className="px-4 py-3 font-medium">Policy</th>
                 <th className="px-4 py-3 font-medium">Effective</th>
+                <th className="px-4 py-3 font-medium">Dry-run</th>
                 <th className="px-4 py-3 font-medium">Latency</th>
                 <th className="px-4 py-3 font-medium">Changed</th>
               </tr>
@@ -799,6 +965,42 @@ export default function ModelControlCenterPage() {
                     })()}
                   </td>
 
+                  <td className="px-4 py-3">
+                    {(() => {
+                      const direct =
+                        dryRunDirectByFullModel.get(
+                          model.fullModel,
+                        );
+
+                      const status =
+                        dryRunBadge(direct);
+
+                      const reason =
+                        direct?.dryRun?.reasons
+                          ?.join(", ")
+                        || "No additional policy effect";
+
+                      return (
+                        <>
+                          <span
+                            className={`inline-flex px-2 py-1 rounded text-[11px] font-semibold ${status.cls}`}
+                            title={reason}
+                          >
+                            {status.label}
+                          </span>
+
+                          {direct?.operatorPolicy?.state
+                            && direct.operatorPolicy.state !== "default"
+                            && (
+                              <div className="text-[10px] text-text-muted mt-1">
+                                policy:{direct.operatorPolicy.state}
+                              </div>
+                            )}
+                        </>
+                      );
+                    })()}
+                  </td>
+
                   <td className="px-4 py-3 text-text-muted">
                     {model.health?.latencyMs != null ? `${model.health.latencyMs} ms` : "—"}
                   </td>
@@ -813,7 +1015,7 @@ export default function ModelControlCenterPage() {
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center text-text-muted">
+                  <td colSpan={11} className="px-4 py-12 text-center text-text-muted">
                     No models match the current filters.
                   </td>
                 </tr>
@@ -821,6 +1023,115 @@ export default function ModelControlCenterPage() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-border bg-background">
+        <div className="p-4 border-b border-border flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <div className="font-medium text-text-main">
+              Policy Dry-run — Combos
+            </div>
+
+            <div className="text-xs text-text-muted mt-1">
+              Current candidate membership compared with the simulated policy candidate set.
+            </div>
+          </div>
+
+          <div className="text-[11px] text-text-muted">
+            {dryRunCombos.length} combo(s)
+          </div>
+        </div>
+
+        {dryRunCombos.length === 0 ? (
+          <div className="px-4 py-10 text-center text-sm text-text-muted">
+            No combos are configured.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 p-4">
+            {dryRunCombos.map((combo) => (
+              <div
+                key={combo.id || combo.name}
+                className="rounded-xl border border-border bg-surface-1 p-4 min-w-0"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-medium text-text-main truncate">
+                      {combo.name}
+                    </div>
+
+                    <div className="text-[11px] text-text-muted mt-1">
+                      Strategy: {combo.strategy}
+                      {" · "}
+                      Order: {combo.orderMode}
+                    </div>
+                  </div>
+
+                  <div className="text-[11px] text-text-muted whitespace-nowrap">
+                    {combo.summary?.configuredMembers ?? 0} member(s)
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
+                  <SummaryCard
+                    label="Current"
+                    value={combo.summary?.currentCandidates}
+                  />
+
+                  <SummaryCard
+                    label="Dry-run"
+                    value={combo.summary?.dryRunCandidates}
+                  />
+
+                  <SummaryCard
+                    label="Excluded"
+                    value={combo.summary?.dryRunExcluded}
+                  />
+
+                  <SummaryCard
+                    label="Deprioritized"
+                    value={combo.summary?.dryRunDeprioritized}
+                  />
+                </div>
+
+                <div className="mt-4 space-y-3">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-text-muted">
+                      Current
+                    </div>
+
+                    <div
+                      className="text-xs text-text-main mt-1 truncate"
+                      title={(combo.currentCandidates || []).join(" → ")}
+                    >
+                      {(combo.currentCandidates || []).join(" → ")
+                        || "No current candidates"}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wide text-text-muted">
+                      Dry-run
+                    </div>
+
+                    <div
+                      className="text-xs text-text-main mt-1 truncate"
+                      title={(combo.dryRunCandidates || []).join(" → ")}
+                    >
+                      {(combo.dryRunCandidates || []).join(" → ")
+                        || "No dry-run candidates"}
+                    </div>
+                  </div>
+
+                  {combo.orderMode === "rotation-dependent" && (
+                    <div className="text-[11px] text-amber-600">
+                      Round-robin order is rotation-dependent; policy effects shown here are relative only.
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
