@@ -1,12 +1,12 @@
 import "open-sse/utils/proxyFetch.js";
 import { sanitizeOAuthError } from "open-sse/utils/oauthError.js";
 import { NextResponse } from "next/server";
-import { 
-  getProvider, 
-  generateAuthData, 
-  exchangeTokens, 
-  requestDeviceCode, 
-  pollForToken 
+import {
+  getProvider,
+  generateAuthData,
+  exchangeTokens,
+  requestDeviceCode,
+  pollForToken
 } from "@/lib/oauth/providers";
 import { createProviderConnection } from "@/models";
 import { ensureOutboundProxyInitialized } from "@/lib/network/initOutboundProxy";
@@ -36,7 +36,24 @@ import {
   releaseDeviceAuthorizationFlow,
   isDeviceAuthorizationFlowCurrent,
   clearDeviceAuthorizationFlow,
+  startTraeProxy,
+  stopTraeProxy,
+  registerTraeSession,
+  getTraeSessionStatus,
+  clearTraeSession,
+  startWindsurfProxy,
+  stopWindsurfProxy,
+  registerWindsurfSession,
+  getWindsurfSessionStatus,
+  clearWindsurfSession,
+  startZedProxy,
+  stopZedProxy,
+  registerZedSession,
+  getZedSessionStatus,
+  clearZedSession,
 } from "@/lib/oauth/utils/server";
+import { detectIdeInstalled } from "@/lib/oauth/utils/ideDetect";
+import { ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
 
 const PUBLIC_DEVICE_ERROR_CODES = new Set(["authorization_pending", "slow_down", "expired_token", "access_denied"]);
 
@@ -161,6 +178,11 @@ export async function GET(request, { params }) {
       const reservedParams = new Set(["redirect_uri", "proxyPoolId"]);
       const meta = {};
       searchParams.forEach((value, key) => { if (!reservedParams.has(key)) meta[key] = value; });
+      // Zed: derive native_app_port from the local callback URL so the RSA keypair
+      // is bound to the port the proxy is actually listening on.
+      if (provider === "zed") {
+        try { const p = new URL(redirectUri).port; if (p) meta.nativeAppPort = p; } catch { /* ignore */ }
+      }
       const proxyOptions = await proxyOptionsForPool(proxyPoolId);
       const authData = await generateAuthData(
         provider,
@@ -186,6 +208,89 @@ export async function GET(request, { params }) {
       }
       const { codeVerifier: _codeVerifier, codeChallenge: _codeChallenge, redirectUri: _redirectUri, ...publicAuthData } = authData;
       return NextResponse.json(publicAuthData);
+
+    if (action === "start-proxy") {
+      // Trae/Windsurf/Zed use a dynamic-port local callback server (singleton session,
+      // state is registered separately via /register-session after /authorize).
+      if (provider === "trae") {
+        const result = await startTraeProxy();
+        return NextResponse.json(result);
+      }
+      if (provider === "windsurf") {
+        const result = await startWindsurfProxy();
+        return NextResponse.json(result);
+      }
+      if (provider === "zed") {
+        // Prefer ZED_HOSTED_CONFIG.defaultNativeAppPort (58443) so the browser redirect
+        // matches what Zed expects; falls back to a random port if it's busy.
+        const result = await startZedProxy(searchParams.get("native_app_port") || ZED_HOSTED_CONFIG.defaultNativeAppPort);
+        return NextResponse.json(result);
+      }
+      if (!["codex", "xai"].includes(provider)) {
+        return NextResponse.json({ error: "Proxy only supported for codex/xai/trae/windsurf/zed" }, { status: 400 });
+      }
+      const appPort = searchParams.get("app_port");
+      if (!appPort) {
+        return NextResponse.json({ error: "Missing app_port" }, { status: 400 });
+      }
+      const state = searchParams.get("state");
+      const codeVerifier = searchParams.get("code_verifier");
+      const redirectUri = searchParams.get("redirect_uri");
+      const result = provider === "xai"
+        ? await startXaiProxy(Number(appPort))
+        : await startCodexProxy(Number(appPort));
+      let serverSide = false;
+      if (result.success && state && codeVerifier && redirectUri) {
+        serverSide = provider === "xai"
+          ? registerXaiSession({ state, codeVerifier, redirectUri })
+          : registerCodexSession({ state, codeVerifier, redirectUri });
+      }
+      return NextResponse.json({ ...result, serverSide });
+    }
+
+    if (action === "poll-status") {
+      const state = searchParams.get("state");
+      if (!state) {
+        return NextResponse.json({ error: "Missing state" }, { status: 400 });
+      }
+      let session;
+      if (provider === "trae") session = getTraeSessionStatus(state);
+      else if (provider === "windsurf") session = getWindsurfSessionStatus(state);
+      else if (provider === "zed") session = getZedSessionStatus(state);
+      else if (provider === "xai") session = getXaiSessionStatus(state);
+      else if (provider === "codex") session = getCodexSessionStatus(state);
+      else return NextResponse.json({ error: "Poll only supported for codex/xai/trae/windsurf/zed" }, { status: 400 });
+      if (!session) return NextResponse.json({ status: "unknown" });
+      if (session.status === "done" || session.status === "error") {
+        const payload = { ...session };
+        if (provider === "trae") clearTraeSession(state);
+        else if (provider === "windsurf") clearWindsurfSession(state);
+        else if (provider === "zed") clearZedSession(state);
+        else if (provider === "xai") clearXaiSession(state);
+        else clearCodexSession(state);
+        return NextResponse.json(payload);
+      }
+      return NextResponse.json({ status: session.status });
+    }
+
+    if (action === "stop-proxy") {
+      if (provider === "trae") stopTraeProxy();
+      else if (provider === "windsurf") stopWindsurfProxy();
+      else if (provider === "zed") stopZedProxy();
+      else if (provider === "xai") stopXaiProxy();
+      else if (provider === "codex") stopCodexProxy();
+      else return NextResponse.json({ error: "Proxy only supported for codex/xai/trae/windsurf/zed" }, { status: 400 });
+      return NextResponse.json({ success: true });
+
+    }
+
+    if (action === "ide-status") {
+      // Detect whether the IDE is installed locally (used by import-token UX).
+      if (provider !== "trae" && provider !== "windsurf") {
+        return NextResponse.json({ error: "ide-status only supported for trae/windsurf" }, { status: 400 });
+      }
+      const status = await detectIdeInstalled(provider);
+      return NextResponse.json(status);
     }
 
     if (action === "device-code") {
@@ -226,6 +331,7 @@ export async function GET(request, { params }) {
         "kimi-coding",
         "kilocode",
         "codebuddy-cn",
+        "codebuddy-intl",
         "qoder",
         "grok-cli",
       ];
@@ -273,6 +379,21 @@ export async function POST(request, { params }) {
     } catch {
       return NextResponse.json({ error: "Invalid or empty request body" }, { status: 400 });
     }
+
+    if (action === "register-session") {
+      // Register proxy session out of URL query (state) + body (codeVerifier).
+      // Zed's codeVerifier encodes the RSA private key — must stay out of URL/logs.
+      const searchParams = new URL(request.url).searchParams;
+      const state = searchParams.get("state") || body?.state;
+      if (!state) return NextResponse.json({ error: "Missing state" }, { status: 400 });
+      let ok = false;
+      if (provider === "trae") ok = registerTraeSession({ state });
+      else if (provider === "windsurf") ok = registerWindsurfSession({ state });
+      else if (provider === "zed") ok = registerZedSession({ state, codeVerifier: body?.codeVerifier });
+      else return NextResponse.json({ error: "register-session only supported for trae/windsurf/zed" }, { status: 400 });
+      return NextResponse.json({ success: ok });
+    }
+
 
     if (action === "cancel") {
       const state = normalizeFlowId(body.state);
@@ -488,7 +609,7 @@ export async function POST(request, { params }) {
       const { deviceCode, codeVerifier, extraData, proxyPoolId, proxyOptions } = flow;
 
       // Providers that don't use PKCE for device code
-      const noPkceProviders = ["github", "kimi", "kimi-coding", "kilocode", "codebuddy-cn", "grok-cli"];
+      const noPkceProviders = ["github", "kimi", "kimi-coding", "kilocode", "codebuddy-cn", "codebuddy-intl", "grok-cli"];
       let result;
       try {
         if (noPkceProviders.includes(provider) || provider === "kiro") {

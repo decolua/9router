@@ -20,7 +20,7 @@ const getHermesEnvPath = () => path.join(getHermesDir(), ".env");
 const MODEL_BLOCK_RE = /^model:[ \t]*\r?\n((?:[ \t]+.*\r?\n?|[ \t]*\r?\n)*)/m;
 
 const buildModelBlock = (model, baseUrl) =>
-  `model:\n  default: "${model}"\n  provider: "custom"\n  base_url: "${baseUrl}"\n`;
+  `model:\n  default: "${model}"\n  provider: "custom"\n  base_url: "${baseUrl}"\n  api_key: \${OPENAI_API_KEY}\n`;
 
 // Parse current model block back to fields (best-effort, simple key:value)
 const parseModelBlock = (yaml) => {
@@ -35,6 +35,7 @@ const parseModelBlock = (yaml) => {
     default: get("default"),
     provider: get("provider"),
     base_url: get("base_url"),
+    api_key: get("api_key"),
   };
 };
 

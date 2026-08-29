@@ -5,15 +5,19 @@ import {
   refreshXaiToken,
   refreshAccessToken,
   refreshKimiToken,
+  refreshClineToken,
   refreshClaudeOAuthToken,
   refreshGoogleToken,
-  refreshQwenToken,
   refreshCodexToken,
   refreshKiroToken,
   refreshIflowToken,
   refreshGitHubToken,
   refreshCopilotToken,
   refreshCodebuddyToken,
+  refreshCodebuddyIntlToken,
+  refreshTraeToken,
+  refreshZedToken,
+  refreshWindsurfToken,
   classifyOAuthRefreshError,
 } from "./tokenRefresh/providers.js";
 
@@ -21,15 +25,19 @@ import {
 export {
   refreshAccessToken,
   refreshKimiToken,
+  refreshClineToken,
   refreshClaudeOAuthToken,
   refreshGoogleToken,
-  refreshQwenToken,
   refreshCodexToken,
   refreshKiroToken,
   refreshIflowToken,
   refreshGitHubToken,
   refreshCopilotToken,
   refreshCodebuddyToken,
+  refreshCodebuddyIntlToken,
+  refreshTraeToken,
+  refreshZedToken,
+  refreshWindsurfToken,
   classifyOAuthRefreshError,
 };
 
@@ -132,7 +140,6 @@ const REFRESH_HANDLERS = {
   antigravity: (c, log, proxyOptions) => refreshGoogleToken(c.refreshToken, PROVIDERS.antigravity.clientId, PROVIDERS.antigravity.clientSecret, log, proxyOptions),
   claude: (c, log, proxyOptions) => refreshClaudeOAuthToken(c.refreshToken, log, proxyOptions),
   codex: (c, log, proxyOptions) => refreshCodexToken(c.refreshToken, log, proxyOptions),
-  qwen: (c, log, proxyOptions) => refreshQwenToken(c.refreshToken, log, proxyOptions),
   iflow: (c, log, proxyOptions) => refreshIflowToken(c.refreshToken, log, proxyOptions),
   github: (c, log, proxyOptions) => refreshGitHubToken(c.refreshToken, log, proxyOptions),
   kiro: (c, log, proxyOptions) => refreshKiroToken(c.refreshToken, c.providerSpecificData, log, proxyOptions),
@@ -141,6 +148,11 @@ const REFRESH_HANDLERS = {
   "grok-cli": (c, log, proxyOptions) => refreshXaiToken(c.refreshToken, log, proxyOptions),
   gcli: (c, log, proxyOptions) => refreshXaiToken(c.refreshToken, log, proxyOptions),
   "codebuddy-cn": (c, log, proxyOptions) => refreshCodebuddyToken(c.refreshToken, log, proxyOptions),
+  "codebuddy-intl": (c, log, proxyOptions) => refreshCodebuddyIntlToken(c.refreshToken, log, proxyOptions),
+  trae: (c, log, proxyOptions) => refreshTraeToken(c.refreshToken, c, log, proxyOptions),
+  cline: (c, log, proxyOptions) => refreshClineToken(c.refreshToken, log, proxyOptions),
+  zed: () => refreshZedToken(),
+  windsurf: (c, log, proxyOptions) => refreshWindsurfToken(c, log, proxyOptions),
   // Kimi Code OAuth (merged into id `kimi`); legacy id still routes here
   kimi: (c, log, proxyOptions) => refreshKimiToken(c.refreshToken, c, log, proxyOptions),
   "kimi-coding": (c, log, proxyOptions) => refreshKimiToken(c.refreshToken, c, log, proxyOptions),
@@ -198,7 +210,6 @@ export function formatProviderCredentials(provider, credentials, log) {
       };
 
     case "codex":
-    case "qwen":
     case "iflow":
     case "openai":
     case "openrouter":

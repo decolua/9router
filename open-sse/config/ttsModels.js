@@ -33,6 +33,21 @@ const GEMINI_VOICES = [
   "Vindemiatrix", "Sadachbia", "Sadaltager", "Sulafat",
 ].map((id) => ({ id, name: id, type: "tts" }));
 
+// Xiaomi MiMo preset voices (from https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/audio/speech-synthesis-v2.5).
+// Voice id is passed via `audio.voice`; `mimo_default` = default (冰糖 on CN cluster, Mia elsewhere).
+// Voices are language-independent — the spoken language is a separate hint, not bound to the voice.
+const MIMO_VOICES = [
+  { id: "mimo_default", name: "mimo_default" },
+  { id: "冰糖",           name: "冰糖" },
+  { id: "茉莉",           name: "茉莉" },
+  { id: "苏打",           name: "苏打" },
+  { id: "白桦",           name: "白桦" },
+  { id: "Mia",           name: "Mia" },
+  { id: "Chloe",         name: "Chloe" },
+  { id: "Milo",          name: "Milo" },
+  { id: "Dean",          name: "Dean" },
+].map((v) => ({ type: "tts", ...v }));
+
 // ── TTS Config (config-driven, single source of truth) ─────────────────────
 export const TTS_MODELS_CONFIG = {
   openai: {
@@ -106,6 +121,14 @@ export const TTS_MODELS_CONFIG = {
       "gemini-2.5-pro-preview-tts":   GEMINI_VOICES,
     },
     allVoices: GEMINI_VOICES,
+  },
+  "xiaomi-mimo": {
+    models: [
+      { id: "mimo-v2.5-tts", name: "MiMo V2.5 TTS", type: "tts" },
+    ],
+    voices: {
+      "mimo-v2.5-tts": MIMO_VOICES,
+    },
   },
 };
 
