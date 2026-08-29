@@ -227,7 +227,9 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
         result.usage.completion_tokens_details = { reasoning_tokens: usage.thoughtsTokenCount };
       }
     }
-    return result;
+    return sourceFormat === FORMATS.OPENAI_RESPONSES
+      ? openAICompletionToResponses(result, customToolNames)
+      : result;
   }
 
   // Claude

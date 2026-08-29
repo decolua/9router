@@ -5,6 +5,7 @@ import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { geminiToOpenAIResponse } from "../../translator/response/gemini-to-openai.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -175,6 +176,31 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   return result;
 }
 
+function parseGeminiSSEToOpenAIResponse(rawSSE, fallbackModel) {
+  const state = {};
+  const chunks = [];
+  let streamError = null;
+
+  for (const line of String(rawSSE || "").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) continue;
+    const payload = trimmed.slice(5).trim();
+    if (!payload || payload === "[DONE]") continue;
+    try {
+      const parsed = JSON.parse(payload);
+      if (parsed?.error) streamError = parsed.error;
+      else chunks.push(...(geminiToOpenAIResponse(parsed, state) || []));
+    } catch { /* ignore malformed lines */ }
+  }
+
+  if (streamError) return { error: streamError };
+  if (chunks.length === 0) return null;
+  return parseSSEToOpenAIResponse(
+    chunks.map((chunk) => `data: ${JSON.stringify(chunk)}`).join("\n"),
+    fallbackModel
+  );
+}
+
 /**
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
@@ -196,10 +222,24 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
   // Branch on the UPSTREAM format (targetFormat = format we spoke to the provider in),
   // not the client format: a Responses-API client behind a chat-native forced-streaming
   // provider still receives chat SSE chunks, which must go through the standard path.
+  const isGeminiSse = [
+    FORMATS.ANTIGRAVITY,
+    FORMATS.GEMINI,
+    FORMATS.GEMINI_CLI,
+    FORMATS.VERTEX,
+  ].includes(targetFormat);
   const isCodexResponsesApi = isResponsesProvider(provider) || targetFormat === FORMATS.OPENAI_RESPONSES;
-  if (isCodexResponsesApi) {
+  if (isCodexResponsesApi || isGeminiSse) {
     try {
-      const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
+      let jsonResponse;
+      if (isGeminiSse) {
+        const parsed = parseGeminiSSEToOpenAIResponse(await providerResponse.text(), model);
+        if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid Gemini SSE response for non-streaming request");
+        if (parsed.error) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, parsed.error.message || "Upstream SSE stream failed");
+        jsonResponse = chatCompletionToResponses(parsed, customToolNames);
+      } else {
+        jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
+      }
       if (onRequestSuccess) await onRequestSuccess();
 
       const usage = jsonResponse.usage || {};
