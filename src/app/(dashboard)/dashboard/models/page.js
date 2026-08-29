@@ -80,6 +80,7 @@ export default function ModelControlCenterPage() {
         try {
           const res = await fetch(`/api/providers/${encodeURIComponent(connection.id)}/models`, {
             cache: "no-store",
+            signal: AbortSignal.timeout(20000),
           });
           const data = await res.json().catch(() => ({}));
           return {
@@ -89,11 +90,17 @@ export default function ModelControlCenterPage() {
             warning: res.ok ? (data.warning || null) : (data.error || `HTTP ${res.status}`),
           };
         } catch (error) {
+          const timedOut =
+            error?.name === "TimeoutError"
+            || error?.name === "AbortError";
+
           return {
             connectionId: connection.id,
             provider: connection.provider,
             models: [],
-            warning: error.message,
+            warning: timedOut
+              ? "Model discovery timed out after 20s"
+              : (error?.message || "Model discovery failed"),
           };
         }
       });
