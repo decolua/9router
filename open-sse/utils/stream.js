@@ -77,7 +77,8 @@ export function createSSEStream(options = {}) {
     connectionId = null,
     body = null,
     onStreamComplete = null,
-    apiKey = null
+    apiKey = null,
+    customToolNames = null
   } = options;
 
   let buffer = "";
@@ -86,7 +87,7 @@ export function createSSEStream(options = {}) {
   // Per-stream decoder with stream:true to correctly handle multi-byte chars split across chunks
   const decoder = new TextDecoder("utf-8", { fatal: false });
 
-  const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap, model } : null;
+  const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap, customToolNames: new Set(customToolNames || []), model } : null;
 
   let totalContentLength = 0;
   let accumulatedContent = "";
@@ -475,8 +476,11 @@ export function createSSEStream(options = {}) {
         }
 
         if (buffer.trim()) {
-            const parsed = parseSSELine(buffer.trim());
-            if (parsed && !parsed.done) {
+            const parsed = parseSSELine(buffer.trim(), targetFormat);
+            const isDoneSentinel = parsed?.done && targetFormat !== FORMATS.OLLAMA;
+            if (parsed && !isDoneSentinel) {
+              const extracted = extractUsage(parsed);
+              if (extracted) state.usage = mergeUsage(state.usage, extracted);
               const openAIResponsesEventName = targetFormat === FORMATS.OPENAI_RESPONSES
                 ? getOpenAIResponsesEventName(currentOpenAIResponsesEvent, parsed)
                 : null;
@@ -563,7 +567,7 @@ export function createSSEStream(options = {}) {
   return transformStream;
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -575,7 +579,8 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    customToolNames
   });
 }
 
