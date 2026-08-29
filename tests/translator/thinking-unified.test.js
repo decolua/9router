@@ -18,6 +18,12 @@ describe("parseSuffix", () => {
   it("parses level suffix", () => {
     expect(parseSuffix("gpt-5(high)")).toEqual({ cleanModel: "gpt-5", override: { mode: "level", level: "high" } });
   });
+  it("parses ultra suffix", () => {
+    expect(parseSuffix("gpt-5.6-sol(ultra)")).toEqual({
+      cleanModel: "gpt-5.6-sol",
+      override: { mode: "level", level: "ultra" },
+    });
+  });
   it("parses numeric budget suffix", () => {
     expect(parseSuffix("model(8192)")).toEqual({ cleanModel: "model", override: { mode: "budget", budget: 8192 } });
   });
@@ -51,6 +57,18 @@ describe("extractThinking", () => {
   });
   it("no intent → null", () => {
     expect(extractThinking({ messages: [] })).toBeNull();
+  });
+  it("reasoning_effort wins over thinking:{type:enabled} (no budget)", () => {
+    expect(extractThinking({
+      thinking: { type: "enabled" },
+      reasoning_effort: "high",
+    })).toEqual({ mode: "level", level: "high" });
+  });
+  it("reasoning.effort wins over thinking:{type:enabled} (no budget)", () => {
+    expect(extractThinking({
+      thinking: { type: "enabled" },
+      reasoning: { effort: "medium" },
+    })).toEqual({ mode: "level", level: "medium" });
   });
 });
 
@@ -108,6 +126,27 @@ describe("applyThinking per provider format", () => {
     expect(out.enable_thinking).toBe(false);
     expect(out.thinking).toBeUndefined();
   });
+  it.each([
+    ["high", "high"],
+    ["max", "max"],
+    ["xhigh", "max"],
+    ["low", "low"],
+    ["medium", "high"],
+    ["minimal", "low"],
+  ])("GLM-5.3 %s → reasoning_effort=%s (low|high|max only, per z.ai docs)", (input, expected) => {
+    const out = apply("openai", "glm-5.3", { reasoning_effort: input }, "glm-cn");
+    expect(out.thinking).toEqual({ type: "enabled" });
+    expect(out.reasoning_effort).toBe(expected);
+  });
+  it("GLM-5.2 also gets reasoning_effort (supported from 5.2 onward)", () => {
+    const out = apply("openai", "glm-5.2", { reasoning_effort: "low" }, "glm-cn");
+    expect(out.reasoning_effort).toBe("low");
+  });
+  it("GLM-4.7 (pre-5.2) does not get reasoning_effort — z.ai ignores it", () => {
+    const out = apply("openai", "glm-4.7", { reasoning_effort: "low" }, "glm-cn");
+    expect(out.thinking).toEqual({ type: "enabled" });
+    expect(out.reasoning_effort).toBeUndefined();
+  });
   it("Qwen on → enable_thinking + thinking_budget", () => {
     const out = apply("openai", "qwen3-max", { reasoning_effort: "medium" }, "qwen");
     expect(out.enable_thinking).toBe(true);
@@ -155,6 +194,25 @@ describe("applyThinking per provider format", () => {
   });
   it("openai keeps xhigh for reasoning models", () => {
     const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "xhigh" }, "codex");
+    expect(out.reasoning_effort).toBe("xhigh");
+  });
+  it.each([
+    ["gpt-5.6-sol", "max", "max"],
+    ["gpt-5.6-sol", "ultra", "ultra"],
+    ["gpt-5.6-terra", "max", "max"],
+    ["gpt-5.6-terra", "ultra", "ultra"],
+    ["gpt-5.6-luna", "max", "max"],
+    ["gpt-5.6-luna", "ultra", "max"],
+  ])("normalizes Codex %s effort %s to %s", (model, effort, expected) => {
+    const out = apply("openai-responses", model, { reasoning: { effort } }, "codex");
+    expect(out.reasoning_effort).toBe(expected);
+  });
+  it("applies a supported Codex Ultra suffix", () => {
+    const out = apply("openai-responses", "gpt-5.6-sol(ultra)", {}, "codex");
+    expect(out.reasoning_effort).toBe("ultra");
+  });
+  it("keeps Codex-only GPT-5.6 levels out of Kiro translation", () => {
+    const out = apply("openai", "gpt-5.6-sol", { reasoning_effort: "max" }, "kiro");
     expect(out.reasoning_effort).toBe("xhigh");
   });
 });
