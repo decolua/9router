@@ -1,3 +1,202 @@
+# v0.5.59 (2026-08-29)
+
+## Features
+- **Search**: new web search providers — Antigravity (Google Search grounding
+  on the existing OAuth account pool, citations keyed and merged by URL) and
+  Xquik (X search with `x-api-key` auth, cursor pagination, credit-based
+  usage), both on `POST /v1/search`. Based on #3437 by @Nautilaceae
+- **Search**: ollama-search and zai-search borrow a chat provider's API key
+  instead of requiring their own connection, driven by a new
+  `credentialFallback` registry field. zai-search later folded into the `glm`
+  provider itself so the web search page shows the shared connection
+- **Models**: daily background sync of model capabilities from models.dev —
+  modalities keyed by model id (majority of sources must declare one),
+  context/output limits keyed by provider + model, strictly additive and
+  sitting below the hand-written tables. ETag + mtime cache, 60s startup
+  delay, `MODEL_CATALOG_SYNC=off` to disable
+- **Models**: add GLM-5.3-Flash (1M context, natively multimodal), DeepSeek
+  V4 Vision, Grok 4.5/4.6 (500k context); correct glm-4.6v/4.5v video input
+  and output limits, backfill glm-4.6v on glm-cn
+- **Usage**: show the Zed plan quota on the dashboard — plan, edit
+  predictions, hosted model requests and billing-cycle reset; unlimited rows
+  render as "N used · Unlimited"
+- **Usage**: track GPT-5.3-Codex-Spark quota windows (spark_session /
+  spark_weekly) from the Codex usage response (#3431)
+- **Antigravity**: quota-aware routing — on 409/429 fetch live quota for the
+  exact per-model resetAt and skip only the exhausted account/model pair;
+  report the earliest reset when every account is blocked (#3561)
+- **Antigravity**: map image `size` to the aspect-ratio model suffix (-WxH);
+  add the Gemini 3.7 Flash tiers to MITM defaultModels so they show up in
+  the dashboard model-mapping table
+- **Dashboard**: bulk import Grok CLI accounts from JSON — paste an array or
+  drag-drop multiple .json files, all OAuth connections created in a single
+  call, mirroring the codex flow
+- **CLI tools**: endpoint presets shared across every tool card through one
+  live-resyncing store, instead of per-card localStorage copies that never
+  saw each other's saved endpoints
+- **Token Saver**: configurable compression timeout (`headroomTimeoutMs`) —
+  the fixed 3000 ms made busy machines time out and send inconsistently
+  compressed bodies, hurting prompt caching
+- **i18n**: pt-BR expanded to 1132 terms
+
+## Fixes
+- **Stream**: record usage when a client closes on the terminal event — the
+  Responses API has no [DONE] sentinel, so codex closed the socket on
+  `response.completed` and cancelled the reader before flush() ran its usage
+  side effects; the tail now lives in a once-guarded finalizeStream(). Also
+  stop logging a disconnect for every completed Responses call
+- **Stream**: parse the trailing NDJSON line an Ollama stream leaves behind
+  without a closing newline — the final chunk carrying `done_reason` and the
+  token counts was dropped
+- **Session**: read the Claude Code session id from the
+  `x-claude-code-session-id` header — `metadata.user_id` is dropped by
+  Responses translation, splitting one conversation across several
+  `prompt_cache_key` values and missing the upstream prefix cache
+- **Usage**: preserve nested `cached_tokens` — the top-level-only read
+  persisted `cached_tokens: 0` for every Responses-format provider (codex,
+  grok-cli, …), billing cache hits at the full input rate
+- **Usage**: GLM quotas accept CREDIT_LIMIT plans and multi-interval windows
+  (5h session / 7d weekly) instead of overwriting a single "session" key
+- **Models**: the catalog sync no longer erases its own output — deltas were
+  measured against the previous run's writes (the second run cut `providers`
+  from 20 entries to 5); one vote per provider in the modality tally, ETag
+  restored from file on startup, and the worker thread dropped after the
+  bundler rewrote its path into a module-not-found error
+- **Executor**: CommandCode returns errors as a `type:"error"` event inside
+  an HTTP 200 NDJSON stream — peek the first events before committing, abort
+  and return a real 4xx/5xx so combo/account fallback triggers instead of
+  streaming the error text as content
+- **Search**: scope failure locks on the credential-fallback path — a failing
+  search locked `modelLock___all` and took the shared glm key offline for
+  chat as well; locks are now attributed to the connection's owner and
+  scoped to `websearch:<provider>`
+- **Providers**: connection tests get a 15s AbortSignal timeout instead of
+  hanging and exhausting the browser socket pool; guard undefined provider
+  names on the providers page
+- **Antigravity**: sanitize competing-client branding via a config-driven
+  rule table (Zed's Claude-agent prompt, opencode → antigravity) — upstream
+  answers 429 Quota Exhausted. Applied in the executor so the shared
+  openai-to-gemini translator leaves gemini/vertex/zed untouched
+- **MiniMax**: preserve images on the sourceFormat-matched OpenAI transport
+  — MiniMax-M3 resolved a Claude-shaped body posted to the OpenAI endpoint,
+  silently dropping `image_url` blocks (#3418)
+- **Claude**: decloak tool names in same-format streaming passthrough —
+  OAuth-cloaked names (CLAUDE_TOOL_SUFFIX) leaked to the client and every
+  tool call was rejected as unknown
+- **Tools**: default a missing `tools[].type` to "custom" on Claude-format
+  requests — strict Anthropic-compatible gateways (MiniMax) reject the
+  request with 400 otherwise
+- **Translator**: zai thinkingFormat sends the top-level `reasoning_effort`
+  object GLM-5.2+ requires — every GLM-5.x request ran at the model default
+  (max); gated on GLM-5.2+ since older GLM does not read it (#2721)
+- **RTK**: system prompt injection matches each target wire format
+  (Chat/Responses/Claude/Gemini/Kiro) and is exact-idempotent across retries,
+  so distinct prompts sharing a long prefix are no longer collapsed (#3202).
+  Also set the diagnostic before the silent null return on Responses
+  translation failure so the panel is no longer blank
+- **OpenCode**: route muse-spark through /zen/v1/responses (it 500s on
+  chat/completions), normalizing the Chat fields the Responses API rejects
+  and clamping max/ultra effort to xhigh
+- **CLI**: install better-sqlite3 without build tools on Node 22+ (N-API
+  13.0.3 ships per-platform prebuilds, `--ignore-scripts` skips the implicit
+  node-gyp build); Node < 22 stays on 12.6.2, working installs untouched
+- **CLI tools**: send the API key Codex actually reads —
+  `[model_providers.9router.http_headers]` instead of auth.json (which left
+  every request 401 and clobbered an existing ChatGPT login); subagent model
+  moved to `agents.default_subagent_model`
+- **OAuth**: refresh Cline tokens with the extension JSON contract
+- **Dashboard**: clamp the API key mask length — keys shorter than 8 chars
+  threw RangeError and crashed the media-provider detail page
+- **UI**: wait for the Material Symbols font itself before revealing icons —
+  `document.fonts.ready` resolved before the 4MB woff2 even started loading,
+  leaving icons blank until a second load
+
+# v0.5.55 (2026-08-14)
+
+## Features
+- **Auth**: native SAML 2.0 SSO alongside OIDC — AuthnRequest generation, ACS
+  assertion handling, SP metadata export, admin config test, replay-protected
+  via a `saml_state` cookie matched against `InResponseTo`
+- **Providers**: add Alibaba Token Plan (`token-plan.ap-southeast-1`) — the
+  fourth Alibaba key type, Singapore-only and OpenAI-compatible transport only
+- **Providers**: add `glm-5.3` to GLM Coding and GLM (China)
+- **Providers**: Kimchi accepts API keys as well as OAuth (dual auth), with a
+  working Test Connection for both modes
+- **Antigravity**: add Gemini 3.7 Flash and its tiered high/medium/low variants
+  (also in the Gemini registry) with pricing and quota tracking
+- **TTS**: add Fish Audio — model id travels in an HTTP `model` header, voice
+  is a `reference_id` (preset or cloned voice model)
+- **OpenCode-Go**: route by request format via declared transports instead of
+  forcing every client into `/messages` — Codex/OpenAI clients no longer pay a
+  lossy Responses→OpenAI→Claude double translation. Per-model `supportedFormats`
+  guard; the bespoke executor is gone (its shared `_lastModel` cache could cross
+  auth headers between concurrent requests)
+- **Usage**: dedup + cache Claude quota calls (120s TTL keyed by access token,
+  in-flight promise dedup, last-good read on soft failure) to stop multiple
+  tabs tripping 429; manual refresh (↻) sends `force=1` to bypass the cache
+
+## Fixes
+- **Docker**: ship `sql.js` in the image so the pure-JS DB fallback can start —
+  file tracing carried the package's JS without `dist/sql-wasm.wasm`, so a
+  container with no native driver aborted with ENOENT and never got a database
+  (#3248)
+- **Usage**: read Gemini `usageMetadata` out of the antigravity `{ response }`
+  envelope — every non-streaming antigravity request logged `IN 0 | OUT 0`
+  (#3260)
+- **Claude**: re-anchor passthrough cache breakpoints — the client's own
+  `cache_control` markers point at pre-normalization offsets, so the tail was
+  re-cached every request. Last system block and last tool pinned at 1h TTL,
+  last assistant turn at 5m, mid-conversation system messages folded into the
+  neighbouring user turn instead of hoisted into `body.system`
+- **Combos**: detect images from Hermes and attachment payloads (`images[]`,
+  `experimental_attachments`, message-level `image_url`/`audio_url`, inline
+  `data:` URIs) so the Vision Adapter auto-switch fires for Hermes/Ollama/
+  Vercel AI SDK shapes
+- **Kiro**: intercept chat via `x-amz-target` — Kiro IDE 1.0.228+ moved
+  `GenerateAssistantResponse` to `POST /` + header, bypassing MITM. Also emit
+  the now-mandatory initial-response frame and map the `auto` model slot
+- **Kiro**: report real output tokens and stop discarding usable turns
+- **Qoder**: detect billing blocks at stream start and return a synthetic 403
+  so combo/account fallback triggers instead of leaking the error into chat
+- **Antigravity**: strip competitive system prompts (Zed IDE's Claude-agent
+  prompt) that Antigravity flags with a 429 Quota Exhausted
+- **OpenCode**: send the official client fingerprint on free-tier requests so
+  the Console stops classifying traffic as unidentified and rate-limiting it;
+  session id resolves conversation-stable to preserve prompt caching
+- **Responses**: don't close the message on an empty `tool_calls` array — some
+  providers attach one to every chunk, and the truthy check ended the message
+  on the first content token (#3234)
+- **Translator**: preserve `prompt_cache_key` when converting chat to responses
+- **Models**: expose snake_case token limits on `/v1/models`
+- **Combos**: strip `stream_options` from the Fusion panel fan-out to avoid a
+  DeepSeek 400 (#3024); raise the dashboard model-test probe budget to 1024 and
+  soft-pass reasoning-only responses (#3010)
+- **Headroom**: the toggle reflects the `headroomEnabled` setting even when the
+  proxy is down — it previously showed OFF while the engine kept calling
+  `/v1/compress`; proxy status stays visible via the status chip
+- **Hermes**: add the `api_key` parameter to the model block in YAML config
+- **Providers**: add llm7 to provider test support
+
+## Docs
+- **i18n**: add Spanish, French, and Brazilian Portuguese README translations
+
+## Security
+- **Real IP**: `x-9r-real-ip` and the Host fallback were trusted from
+  client-controlled headers whenever `custom-server.js` was not in the request
+  path (`npm run start`, `start:bun`), letting a remote caller pose as local to
+  skip API key auth and reach `LOCAL_ONLY_PATHS` (`/api/mcp/*`,
+  `/api/tunnel/enable`, `/api/auth/reset-password`). The server now stamps a
+  per-process `x-9r-peer-token` on every request it sanitizes and only trusts
+  `x-9r-real-ip` behind it — falling back to Host in development and failing
+  closed in production (GHSA-pjm4-8fpg-f9p6). Also fixes IPv6 loopback
+  detection (`::1`, `::ffff:127.0.0.1`) and routes `npm run start` /
+  `start:bun` through `custom-server.js`
+- **Search**: `resolveBaseUrl()` rejects client-supplied non-public baseUrls
+  (SSRF guard on `/v1/search`)
+- **Login**: fresh-install remote login with the default password returns 403
+  without issuing a JWT
+- **Usage**: `/api/usage/request-details` redacts request/response payloads
+
 # v0.5.50 (2026-08-05)
 
 ## Features
