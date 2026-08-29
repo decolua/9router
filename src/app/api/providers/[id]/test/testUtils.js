@@ -640,6 +640,46 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy("https://api.deepseek.com/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
+      case "poolside": {
+        const res = await fetchWithConnectionProxy(
+          "https://inference.poolside.ai/v1/models",
+          {
+            method: "GET",
+            headers: {
+              Authorization: `Bearer ${connection.apiKey}`,
+              Accept: "application/json",
+            },
+          },
+          effectiveProxy,
+        );
+
+        if (res.ok) {
+          return {
+            valid: true,
+            error: null,
+          };
+        }
+
+        if (res.status === 401 || res.status === 403) {
+          return {
+            valid: false,
+            error: "Invalid API key",
+          };
+        }
+
+        if (res.status === 429) {
+          return {
+            valid: true,
+            error: "Poolside validation rate limited",
+          };
+        }
+
+        return {
+          valid: false,
+          error: `Poolside validation failed (HTTP ${res.status})`,
+        };
+      }
+
       case "groq": {
         const res = await fetchWithConnectionProxy("https://api.groq.com/openai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
