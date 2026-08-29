@@ -174,6 +174,7 @@ export default function ModelControlCenterPage() {
   const [state, setState] = useState(null);
   const [effectiveState, setEffectiveState] = useState(null);
   const [busy, setBusy] = useState("");
+  const [policyBusy, setPolicyBusy] = useState("");
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
   const [providerFilter, setProviderFilter] = useState("all");
@@ -223,6 +224,97 @@ export default function ModelControlCenterPage() {
         setEffectiveState(data);
       })
       .catch(() => undefined);
+  };
+
+  const updateOperatorPolicy = async (
+    provider,
+    model,
+    effective,
+    nextState,
+  ) => {
+    if (policyBusy) return;
+
+    const currentState =
+      effective?.operatorPolicy?.state
+      || (
+        effective?.operatorDisabled
+          ? "disable"
+          : "default"
+      );
+
+    if (currentState === nextState) {
+      return;
+    }
+
+    const providerAlias =
+      provider.alias
+      || provider.providerId;
+
+    if (
+      currentState === "disable"
+      || nextState === "disable"
+    ) {
+      const confirmation =
+        nextState === "disable"
+          ? `Disable ${model.fullModel} using the existing disabledModels policy?`
+          : `Remove ${model.fullModel} from the existing disabledModels policy and set ${nextState.toUpperCase()}?`;
+
+      if (!window.confirm(confirmation)) {
+        return;
+      }
+    }
+
+    const key =
+      `${provider.providerId}:${model.id}`;
+
+    setPolicyBusy(key);
+
+    try {
+      const res = await fetch(
+        "/api/models/control-center/policy",
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            providerAlias,
+            modelId: model.id,
+            state: nextState,
+          }),
+        },
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(
+          data.error
+          || "Failed to update operator policy",
+        );
+      }
+
+      const nextEffective =
+        await loadEffectivePreview();
+
+      setEffectiveState(nextEffective);
+
+      const note =
+        nextState === "disable"
+          ? "Existing disabledModels semantics now apply."
+          : "Policy persisted. Selector integration remains unchanged in Phase B.2.";
+
+      setMessage(
+        `Policy ${model.fullModel}: ${currentState.toUpperCase()} → ${nextState.toUpperCase()}. ${note}`,
+      );
+    } catch (error) {
+      setMessage(
+        `Policy update failed: ${error.message}`,
+      );
+    } finally {
+      setPolicyBusy("");
+    }
   };
 
   const refreshModels = async () => {
@@ -506,6 +598,38 @@ export default function ModelControlCenterPage() {
             value={effectiveSummary.comboQuarantined}
           />
         </div>
+
+        <div className="border-t border-border p-4">
+          <div className="font-medium text-text-main">
+            Operator Policy
+          </div>
+          <div className="text-xs text-text-muted mt-1">
+            Persistent operator intent. DISABLE uses the existing disabledModels policy; ALLOW, DEPRIORITIZE, and QUARANTINE are not selector authority in Phase B.2.
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3 px-4 pb-4">
+          <SummaryCard
+            label="Default"
+            value={effectiveSummary.policyDefault}
+          />
+          <SummaryCard
+            label="Allow"
+            value={effectiveSummary.policyAllow}
+          />
+          <SummaryCard
+            label="Deprioritize"
+            value={effectiveSummary.policyDeprioritize}
+          />
+          <SummaryCard
+            label="Quarantine"
+            value={effectiveSummary.policyQuarantine}
+          />
+          <SummaryCard
+            label="Disable"
+            value={effectiveSummary.policyDisable}
+          />
+        </div>
       </div>
 
       <div className="rounded-xl border border-border bg-background">
@@ -558,6 +682,7 @@ export default function ModelControlCenterPage() {
                 <th className="px-4 py-3 font-medium">Source</th>
                 <th className="px-4 py-3 font-medium">Availability</th>
                 <th className="px-4 py-3 font-medium">Health</th>
+                <th className="px-4 py-3 font-medium">Policy</th>
                 <th className="px-4 py-3 font-medium">Effective</th>
                 <th className="px-4 py-3 font-medium">Latency</th>
                 <th className="px-4 py-3 font-medium">Changed</th>
@@ -593,6 +718,56 @@ export default function ModelControlCenterPage() {
                       </div>
                     )}
                   </td>
+                  <td className="px-4 py-3">
+                    <select
+                      value={
+                        effective?.operatorPolicy?.state
+                        || (
+                          effective?.operatorDisabled
+                            ? "disable"
+                            : "default"
+                        )
+                      }
+                      onChange={(event) =>
+                        updateOperatorPolicy(
+                          provider,
+                          model,
+                          effective,
+                          event.target.value,
+                        )
+                      }
+                      disabled={!!policyBusy}
+                      title={
+                        effective?.operatorPolicy?.source
+                          ? `Source: ${effective.operatorPolicy.source}`
+                          : "Operator policy"
+                      }
+                      className="min-w-[132px] px-2 py-1.5 rounded-lg border border-border bg-background text-xs text-text-main disabled:opacity-50"
+                    >
+                      <option value="default">
+                        DEFAULT
+                      </option>
+                      <option value="allow">
+                        ALLOW
+                      </option>
+                      <option value="deprioritize">
+                        DEPRIORITIZE
+                      </option>
+                      <option value="quarantine">
+                        QUARANTINE
+                      </option>
+                      <option value="disable">
+                        DISABLE
+                      </option>
+                    </select>
+
+                    {effective?.operatorPolicy?.source && (
+                      <div className="text-[10px] text-text-muted mt-1">
+                        {effective.operatorPolicy.source}
+                      </div>
+                    )}
+                  </td>
+
                   <td className="px-4 py-3">
                     {(() => {
                       const effectiveStatus =
@@ -638,7 +813,7 @@ export default function ModelControlCenterPage() {
               ))}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-text-muted">
+                  <td colSpan={10} className="px-4 py-12 text-center text-text-muted">
                     No models match the current filters.
                   </td>
                 </tr>

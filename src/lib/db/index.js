@@ -55,6 +55,14 @@ export {
   getDisabledModels, getDisabledByProvider, disableModels, enableModels,
 } from "./repos/disabledModelsRepo.js";
 
+// Model operator policies
+export {
+  getModelPolicies,
+  getModelPolicy,
+  setModelPolicy,
+  deleteModelPolicy,
+} from "./repos/modelPoliciesRepo.js";
+
 // Usage
 export {
   statsEmitter, trackPendingRequest, getActiveRequests,
@@ -83,12 +91,19 @@ export async function exportDb() {
     customModels: [],
     mitmAlias: {},
     pricing: {},
+    disabledModels: {},
+    modelPolicies: [],
   };
 
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'modelAliases'`)) out.modelAliases[r.key] = parseJson(r.value);
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'customModels'`)) out.customModels.push(parseJson(r.value));
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'mitmAlias'`)) out.mitmAlias[r.key] = parseJson(r.value);
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'pricing'`)) out.pricing[r.key] = parseJson(r.value);
+  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'disabledModels'`)) out.disabledModels[r.key] = parseJson(r.value, []);
+  for (const r of db.all(`SELECT value FROM kv WHERE scope = 'modelPolicies'`)) {
+    const policy = parseJson(r.value, null);
+    if (policy) out.modelPolicies.push(policy);
+  }
 
   return out;
 }
@@ -108,6 +123,16 @@ export async function importDb(payload) {
     db.run(`DELETE FROM apiKeys`);
     db.run(`DELETE FROM combos`);
     db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing')`);
+
+    // Older exports did not carry these fields.
+    // Preserve existing values when the field is absent.
+    if (Object.prototype.hasOwnProperty.call(payload, "disabledModels")) {
+      db.run(`DELETE FROM kv WHERE scope = 'disabledModels'`);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, "modelPolicies")) {
+      db.run(`DELETE FROM kv WHERE scope = 'modelPolicies'`);
+    }
 
     // Settings
     if (payload.settings) {
@@ -159,6 +184,49 @@ export async function importDb(payload) {
     }
     for (const [provider, models] of Object.entries(payload.pricing || {})) {
       db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('pricing', ?, ?)`, [provider, stringifyJson(models || {})]);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, "disabledModels")) {
+      for (const [provider, ids] of Object.entries(payload.disabledModels || {})) {
+        db.run(
+          `INSERT OR REPLACE INTO kv(scope, key, value) VALUES('disabledModels', ?, ?)`,
+          [provider, stringifyJson(Array.isArray(ids) ? ids : [])],
+        );
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(payload, "modelPolicies")) {
+      for (const policy of Array.isArray(payload.modelPolicies) ? payload.modelPolicies : []) {
+        const providerAlias = String(policy?.providerAlias || "").trim();
+        const modelId = String(policy?.modelId || "").trim();
+        const state = String(policy?.state || "").trim();
+
+        if (
+          !providerAlias
+          || !modelId
+          || !["allow", "deprioritize", "quarantine"].includes(state)
+        ) {
+          continue;
+        }
+
+        const key = [
+          encodeURIComponent(providerAlias),
+          encodeURIComponent(modelId),
+        ].join("|");
+
+        db.run(
+          `INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelPolicies', ?, ?)`,
+          [
+            key,
+            stringifyJson({
+              providerAlias,
+              modelId,
+              state,
+              updatedAt: policy?.updatedAt || null,
+            }),
+          ],
+        );
+      }
     }
   });
 

@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { getProviderConnections } from "../db/repos/connectionsRepo.js";
 import { getDisabledModels } from "../db/repos/disabledModelsRepo.js";
+import { getModelPolicies } from "../db/repos/modelPoliciesRepo.js";
 import { isModelLockActive } from "../../../open-sse/services/accountFallback.js";
 
 import { DATA_DIR } from "../dataDir.js";
@@ -274,15 +275,27 @@ export async function buildEffectiveModelSet() {
   const [
     connections,
     disabled,
+    storedPolicies,
   ] = await Promise.all([
     getProviderConnections({
       isActive: true,
     }),
     getDisabledModels(),
+    getModelPolicies(),
   ]);
 
   const quarantine =
     readComboQuarantine();
+
+  const storedPolicyByModel =
+    new Map();
+
+  for (const policy of storedPolicies) {
+    storedPolicyByModel.set(
+      `${policy.providerAlias}\0${policy.modelId}`,
+      policy,
+    );
+  }
 
   const connectionsByProvider =
     new Map();
@@ -309,6 +322,13 @@ export async function buildEffectiveModelSet() {
   let operatorDisabled = 0;
   let comboQuarantined = 0;
   let allConnectionsLocked = 0;
+
+  let policyExplicit = 0;
+  let policyDefault = 0;
+  let policyAllow = 0;
+  let policyDeprioritize = 0;
+  let policyQuarantine = 0;
+  let policyDisable = 0;
 
   for (const [
     providerId,
@@ -354,6 +374,79 @@ export async function buildEffectiveModelSet() {
           references,
           modelId,
         );
+
+      const storedPolicy =
+        isDisabled
+          ? null
+          : (
+              storedPolicyByModel.get(
+                `${alias}\0${modelId}`,
+              )
+              || storedPolicyByModel.get(
+                `${providerId}\0${modelId}`,
+              )
+              || null
+            );
+
+      const operatorPolicyState =
+        isDisabled
+          ? "disable"
+          : storedPolicy?.state || "default";
+
+      const operatorPolicy = {
+        state:
+          operatorPolicyState,
+
+        explicit:
+          operatorPolicyState
+          !== "default",
+
+        source:
+          isDisabled
+            ? "disabledModels"
+            : storedPolicy
+              ? "modelPolicies"
+              : "default",
+
+        updatedAt:
+          storedPolicy?.updatedAt
+          || null,
+      };
+
+      if (
+        operatorPolicyState === "default"
+      ) {
+        policyDefault += 1;
+      } else {
+        policyExplicit += 1;
+
+        if (
+          operatorPolicyState === "allow"
+        ) {
+          policyAllow += 1;
+        }
+
+        if (
+          operatorPolicyState
+          === "deprioritize"
+        ) {
+          policyDeprioritize += 1;
+        }
+
+        if (
+          operatorPolicyState
+          === "quarantine"
+        ) {
+          policyQuarantine += 1;
+        }
+
+        if (
+          operatorPolicyState
+          === "disable"
+        ) {
+          policyDisable += 1;
+        }
+      }
 
       const isComboQuarantined =
         quarantinedForCombo(
@@ -426,6 +519,30 @@ export async function buildEffectiveModelSet() {
         );
       }
 
+      if (
+        operatorPolicyState === "allow"
+      ) {
+        signals.push("policy:allow");
+      }
+
+      if (
+        operatorPolicyState
+        === "deprioritize"
+      ) {
+        signals.push(
+          "policy:deprioritize",
+        );
+      }
+
+      if (
+        operatorPolicyState
+        === "quarantine"
+      ) {
+        signals.push(
+          "policy:quarantine",
+        );
+      }
+
       if (effectivePreview) {
         previewEligible += 1;
       } else {
@@ -490,6 +607,8 @@ export async function buildEffectiveModelSet() {
             model.health?.statusCode ?? null,
         },
 
+        operatorPolicy,
+
         operatorDisabled:
           isDisabled,
 
@@ -550,6 +669,8 @@ export async function buildEffectiveModelSet() {
     authority: {
       routingChanged: false,
       healthIsRoutingAuthority: false,
+      operatorPolicyIsRoutingAuthority:
+        false,
       enabledModelsIsRoutingAuthority:
         false,
       comboQuarantineIsGlobalAuthority:
@@ -568,10 +689,18 @@ export async function buildEffectiveModelSet() {
       operatorDisabled,
       comboQuarantined,
       allConnectionsLocked,
+
+      policyExplicit,
+      policyDefault,
+      policyAllow,
+      policyDeprioritize,
+      policyQuarantine,
+      policyDisable,
     },
 
     limitations: [
       "Health is observational only.",
+      "ALLOW, DEPRIORITIZE, and QUARANTINE are persisted operator intent only and are not used by the selector in Phase B.2.",
       "enabledModels is reported as connection configuration and is not treated as a direct-routing gate.",
       "Combo quarantine is contextual and is not treated as a global direct-routing gate.",
       "Antigravity live quota cache is not included in this preview.",
