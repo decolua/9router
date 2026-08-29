@@ -1,6 +1,6 @@
 import { saveRequestUsage, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { COLORS } from "../../utils/stream.js";
-import { canonicalizeUsage } from "../../utils/usageTracking.js";
+import { canonicalizeUsage, hasValidUsage } from "../../utils/usageTracking.js";
 
 const OPTIONAL_PARAMS = [
   "temperature", "top_p", "top_k",
@@ -50,6 +50,7 @@ export function extractUsageFromResponse(responseBody) {
     return {
       prompt_tokens: usageMetadata.promptTokenCount || 0,
       completion_tokens: usageMetadata.candidatesTokenCount || 0,
+      total_tokens: usageMetadata.totalTokenCount || 0,
       cached_tokens: usageMetadata.cachedContentTokenCount || 0,
       reasoning_tokens: usageMetadata.thoughtsTokenCount || 0
     };
@@ -94,13 +95,13 @@ export function formatDoneLine({ usage, latency }) {
   return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
 }
 
-export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE", silent = false }) {
-  if (!tokens || typeof tokens !== "object") return;
+export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, usageReservationId, endpoint, label = "USAGE", silent = false }) {
+  if (!hasValidUsage(tokens)) return;
 
-  const inTokens = tokens.input_tokens ?? tokens.prompt_tokens ?? 0;
-  const outTokens = tokens.output_tokens ?? tokens.completion_tokens ?? 0;
-
-  if (inTokens === 0 && outTokens === 0) return;
+  const normalized = canonicalizeUsage(tokens);
+  if (!normalized) return;
+  const inTokens = normalized.prompt_tokens ?? 0;
+  const outTokens = normalized.completion_tokens ?? 0;
 
   if (!silent) {
     const time = new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -110,11 +111,6 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
 
   // Canonicalize to one storage convention (prompt_tokens cache-inclusive) so
   // cached/cache-creation tokens survive to cost calc + stats. See canonicalizeUsage.
-  const normalized = canonicalizeUsage(tokens) || {
-    prompt_tokens: tokens.prompt_tokens ?? tokens.input_tokens ?? 0,
-    completion_tokens: tokens.completion_tokens ?? tokens.output_tokens ?? 0
-  };
-
   saveRequestUsage({
     provider: provider || "unknown",
     model: model || "unknown",
@@ -122,6 +118,7 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     timestamp: new Date().toISOString(),
     connectionId: connectionId || undefined,
     apiKey: apiKey || undefined,
+    usageReservationId: usageReservationId || undefined,
     endpoint: endpoint || null
   }).catch(() => {});
 }

@@ -65,6 +65,29 @@ describe("DB SQLite layer — public API parity", () => {
     expect(await sqliteDb.getApiKeyById(k.id)).toBeNull();
   });
 
+  it("apiKeys: daily usage limit status uses today's API-key tokens", async () => {
+    const k = await sqliteDb.createApiKey("limited-key", "machine-abc", 100);
+    let status = await sqliteDb.getApiKeyUsageLimitStatus(k.key);
+    expect(status.enforced).toBe(true);
+    expect(status.exceeded).toBe(false);
+
+    await sqliteDb.saveRequestUsage({
+      provider: "openai",
+      model: "gpt-4o",
+      apiKey: k.key,
+      tokens: { prompt_tokens: 60, completion_tokens: 30, total_tokens: 90, reasoning_tokens: 20, cost_usd: 0.2 },
+    });
+
+    status = await sqliteDb.getApiKeyUsageLimitStatus(k.key);
+    expect(status.usedTokens).toBe(90);
+    expect(status.exceeded).toBe(false);
+
+    await sqliteDb.updateApiKey(k.id, { dailyLimitTokens: null });
+    status = await sqliteDb.getApiKeyUsageLimitStatus(k.key);
+    expect(status.enforced).toBe(false);
+    await sqliteDb.deleteApiKey(k.id);
+  });
+
   it("providerConnections: CRUD + reorder by priority", async () => {
     const c1 = await sqliteDb.createProviderConnection({ provider: "test", authType: "apikey", name: "a", apiKey: "k1" });
     const c2 = await sqliteDb.createProviderConnection({ provider: "test", authType: "apikey", name: "b", apiKey: "k2" });
@@ -212,6 +235,21 @@ describe("DB SQLite layer — public API parity", () => {
     expect(stats.byProvider.openai).toBeDefined();
     expect(stats.byProvider.openai.requests).toBeGreaterThanOrEqual(2);
     expect(stats.byProvider.openai.promptTokens).toBeGreaterThanOrEqual(300);
+  });
+
+  it("usage: API key stats keep same-prefix keys separate", async () => {
+    await sqliteDb.saveRequestUsage({
+      provider: "openai", model: "gpt-4o", apiKey: "sk-sameprefix-111",
+      tokens: { prompt_tokens: 1, completion_tokens: 1, cost_usd: 0.01 },
+    });
+    await sqliteDb.saveRequestUsage({
+      provider: "openai", model: "gpt-4o", apiKey: "sk-sameprefix-222",
+      tokens: { prompt_tokens: 1, completion_tokens: 1, cost_usd: 0.02 },
+    });
+
+    const stats = await sqliteDb.getUsageStats("24h");
+    expect(stats.byApiKey["sk-sameprefix-111|gpt-4o|openai"].requests).toBe(1);
+    expect(stats.byApiKey["sk-sameprefix-222|gpt-4o|openai"].requests).toBe(1);
   });
 
   it("usage: pending tracking in-memory", () => {

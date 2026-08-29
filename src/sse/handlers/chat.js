@@ -8,8 +8,9 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { handleAntigravityQuotaError } from "../services/antigravityQuota.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, releaseApiKeyUsageReservation, reserveApiKeyUsage } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
+import { estimateChatUsageReservation } from "../services/usageReservation.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
@@ -18,8 +19,11 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "open-sse/services/combo.js";
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
-import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
+import { applyProviderThinking, detectFormat } from "open-sse/services/provider.js";
+import { injectCaveman } from "open-sse/rtk/caveman.js";
+import { injectPonytail } from "open-sse/rtk/ponytail.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
@@ -214,6 +218,41 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   }
 
   const { provider, model } = modelInfo;
+  const resolvedBody = { ...body, model: `${provider}/${model}` };
+  const chatSettings = await getSettings();
+  const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+  const sourceFormatOverride = request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null;
+  const sourceFormat = sourceFormatOverride || detectFormat(resolvedBody);
+  const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
+  const cavemanLevel = chatSettings.cavemanLevel || "full";
+  const ponytailLevel = chatSettings.ponytailLevel || "full";
+  let preparedBody = applyProviderThinking(structuredClone(resolvedBody), providerThinking);
+  if (tokenSaverEnabled && chatSettings.cavemanEnabled && cavemanLevel) {
+    injectCaveman(preparedBody, sourceFormat, cavemanLevel);
+  }
+  if (tokenSaverEnabled && chatSettings.ponytailEnabled && ponytailLevel) {
+    injectPonytail(preparedBody, sourceFormat, ponytailLevel);
+  }
+  let usageReservationId = null;
+  if (apiKey) {
+    let requestedTokens;
+    try {
+      requestedTokens = estimateChatUsageReservation(preparedBody, { provider, model });
+    } catch (error) {
+      log.warn("AUTH", error.message);
+      return errorResponse(HTTP_STATUS.BAD_REQUEST, error.message);
+    }
+
+    const limitStatus = await reserveApiKeyUsage(apiKey, requestedTokens);
+    if (!limitStatus.accepted) {
+      const consumed = Math.min(Number.MAX_SAFE_INTEGER, limitStatus.usedTokens + limitStatus.reservedTokens);
+      const used = Math.round(consumed);
+      const limit = Math.round(limitStatus.limitTokens);
+      log.warn("AUTH", `API key daily token limit exceeded (${used}/${limit})`);
+      return errorResponse(HTTP_STATUS.RATE_LIMITED, `API key daily token limit exceeded (${used}/${limit} tokens)`);
+    }
+    usageReservationId = limitStatus.reservationId;
+  }
 
   // Routing shown in the unified "▶" line (client model → provider/model)
 
@@ -225,6 +264,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastError = null;
   let lastStatus = null;
 
+  let preserveUsageReservation = false;
+  try {
   while (true) {
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
 
@@ -258,10 +299,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     }
 
     // Use shared chatCore
-    const chatSettings = await getSettings();
-    const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
     const result = await handleChatCore({
-      body: { ...body, model: `${provider}/${model}` },
+      body: preparedBody,
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
       log,
@@ -269,6 +308,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       connectionId: credentials.connectionId,
       userAgent,
       apiKey,
+      usageReservationId,
       ccFilterNaming: !!chatSettings.ccFilterNaming,
       rtkEnabled: !!chatSettings.rtkEnabled,
       headroomEnabled: !!chatSettings.headroomEnabled,
@@ -276,9 +316,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
       headroomTimeoutMs: chatSettings.headroomTimeoutMs,
       cavemanEnabled: !!chatSettings.cavemanEnabled,
-      cavemanLevel: chatSettings.cavemanLevel || "full",
+      cavemanLevel,
       ponytailEnabled: !!chatSettings.ponytailEnabled,
-      ponytailLevel: chatSettings.ponytailLevel || "full",
+      ponytailLevel,
       pxpipeEnabled: !!chatSettings.pxpipeEnabled,
       pxpipeMinChars: chatSettings.pxpipeMinChars,
       pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
@@ -286,8 +326,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
       onPxpipeEvent: appendPxpipeEvent,
       providerThinking,
+      serverMutationsApplied: true,
       // Detect source format by endpoint + body
-      sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+      sourceFormatOverride,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           ...newCreds,
@@ -300,7 +341,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
     });
 
-    if (result.success) return result.response;
+    if (result.success) {
+      preserveUsageReservation = true;
+      return result.response;
+    }
 
     // Antigravity 409/429: refresh live quota to get exact resetAt before locking
     let quotaResetMs = null;
@@ -328,5 +372,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     }
 
     return result.response;
+  }
+  } finally {
+    if (usageReservationId && !preserveUsageReservation) {
+      await releaseApiKeyUsageReservation(usageReservationId);
+    }
   }
 }

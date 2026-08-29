@@ -84,7 +84,7 @@ export function createSSEStream(options = {}) {
     finalized = true;
 
     const isPassthrough = mode === STREAM_MODE.PASSTHROUGH;
-    let finalUsage = isPassthrough ? usage : state?.usage;
+    let finalUsage = usage;
 
     if (!hasValidUsage(finalUsage) && totalContentLength > 0) {
       finalUsage = estimateUsage(body, totalContentLength, isPassthrough ? FORMATS.OPENAI : sourceFormat);
@@ -317,7 +317,10 @@ export function createSSEStream(options = {}) {
 
         // Extract usage
         const extracted = extractUsage(parsed);
-        if (extracted) state.usage = mergeUsage(state.usage, extracted); // Keep original usage for logging
+        if (extracted) {
+          usage = mergeUsage(usage, extracted);
+          state.usage = mergeUsage(state.usage, extracted); // Keep original usage for logging
+        }
 
         // Responses same-format passthrough: re-emit with original event framing
         if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {
@@ -354,13 +357,14 @@ export function createSSEStream(options = {}) {
 
             // Inject estimated usage if finish chunk has no valid usage
             const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
-            if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
+            if (state.finishReason && isFinishChunk && !hasValidUsage(usage) && totalContentLength > 0) {
               const estimated = estimateUsage(body, totalContentLength, sourceFormat);
               item.usage = filterUsageForFormat(estimated, sourceFormat); // Filter + already has buffer
+              usage = estimated;
               state.usage = estimated;
-            } else if (state.finishReason && isFinishChunk && state.usage) {
+            } else if (state.finishReason && isFinishChunk && hasValidUsage(usage)) {
               // Add buffer and filter usage for client (but keep original in state.usage for logging)
-              const buffered = addBufferToUsage(state.usage);
+              const buffered = addBufferToUsage(usage);
               item.usage = filterUsageForFormat(buffered, sourceFormat);
             }
 
@@ -407,6 +411,7 @@ export function createSSEStream(options = {}) {
           return;
         }
 
+        const keepsOpenAIResponsesFormatFlush = targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI_RESPONSES;
         if (buffer.trim()) {
           // Same parse as the transform loop: without targetFormat this only
           // accepts "data: " lines, so an NDJSON provider (Ollama) lost whatever
@@ -418,12 +423,24 @@ export function createSSEStream(options = {}) {
           // counts — so it has to go through.
           const isDoneSentinel = parsed?.done && targetFormat !== FORMATS.OLLAMA;
           if (parsed && !isDoneSentinel) {
+            const openAIResponsesEventName = targetFormat === FORMATS.OPENAI_RESPONSES
+              ? getOpenAIResponsesEventName(currentOpenAIResponsesEvent, parsed)
+              : null;
+            if (targetFormat === FORMATS.OPENAI_RESPONSES && isOpenAIResponsesTerminalEvent(openAIResponsesEventName, parsed)) {
+              openAIResponsesTerminalSeen = true;
+            }
             // Same accumulation the transform loop does, so finalizeStream() can
             // log a tail chunk's tokens instead of falling back to null.
             const extracted = extractUsage(parsed);
-            if (extracted) state.usage = mergeUsage(state.usage, extracted);
+            if (extracted) {
+              usage = mergeUsage(usage, extracted);
+              state.usage = mergeUsage(state.usage, extracted);
+            }
 
-            const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
+            const translated = keepsOpenAIResponsesFormatFlush && openAIResponsesEventName
+              ? [{ event: openAIResponsesEventName, data: parsed }]
+              : translateResponse(targetFormat, sourceFormat, parsed, state);
+            currentOpenAIResponsesEvent = null;
 
             if (translated?._openaiIntermediate) {
               for (const item of translated._openaiIntermediate) {

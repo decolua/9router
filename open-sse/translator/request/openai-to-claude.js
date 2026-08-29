@@ -1,7 +1,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { CLAUDE_SYSTEM_PROMPT } from "../../config/appConstants.js";
-import { adjustMaxTokens } from "../formats/maxTokens.js";
+import { getTranslatedMaxTokens } from "../formats/maxTokens.js";
 import { safeParseJSON } from "../concerns/json.js";
 import { parseDataUri } from "../concerns/image.js";
 import { extractTextContent } from "../formats/gemini.js";
@@ -22,7 +22,7 @@ export function openaiToClaudeRequest(model, body, stream) {
   const modelCeiling = getCapabilitiesForModel(null, model).maxOutput || undefined;
   const result = {
     model: model,
-    max_tokens: adjustMaxTokens(body, modelCeiling),
+    max_tokens: getTranslatedMaxTokens(FORMATS.CLAUDE, body, modelCeiling),
     stream: stream
   };
 
@@ -38,13 +38,13 @@ export function openaiToClaudeRequest(model, body, stream) {
   if (body.messages && Array.isArray(body.messages)) {
     // Extract system messages
     for (const msg of body.messages) {
-      if (msg.role === ROLE.SYSTEM) {
+      if (msg.role === ROLE.SYSTEM || msg.role === ROLE.DEVELOPER) {
         systemParts.push(typeof msg.content === "string" ? msg.content : extractTextContent(msg.content, "\n"));
       }
     }
 
     // Filter out system messages for separate processing
-    const nonSystemMessages = body.messages.filter(m => m.role !== ROLE.SYSTEM);
+    const nonSystemMessages = body.messages.filter(m => m.role !== ROLE.SYSTEM && m.role !== ROLE.DEVELOPER);
 
     // Process messages with merging logic
     // CRITICAL: tool_result must be in separate message immediately after tool_use
@@ -380,4 +380,3 @@ export { openaiToClaudeRequestForAntigravity };
 
 // Register
 register(FORMATS.OPENAI, FORMATS.CLAUDE, openaiToClaudeRequest, null);
-

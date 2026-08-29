@@ -49,11 +49,19 @@ describe("canonicalizeUsage", () => {
     expect(out.reasoning_tokens).toBe(40);
   });
 
+  it("folds separately reported Gemini thoughts into completion", () => {
+    const out = canonicalizeUsage({
+      prompt_tokens: 100,
+      completion_tokens: 40,
+      total_tokens: 150,
+      reasoning_tokens: 10,
+    });
+    expect(out.completion_tokens).toBe(50);
+    expect(out.total_tokens).toBe(150);
+    expect(out.reasoning_tokens).toBe(10);
+  });
+
   it("reads cached_tokens from the nested buildUsage() shape", () => {
-    // buildUsage() only emits cache reads under prompt_tokens_details. The
-    // Responses translator overwrites state.usage with that shape on
-    // response.completed, so a top-level-only read silently drops the cache
-    // count for every Responses provider (codex, grok-cli, ...).
     const out = canonicalizeUsage(
       buildUsage({ promptTokens: 330, completionTokens: 50, totalTokens: 380, cachedTokens: 200 })
     );

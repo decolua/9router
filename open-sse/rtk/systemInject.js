@@ -49,7 +49,7 @@ export function injectSystemPrompt(body, format, prompt) {
       return;
     }
     if (typeof body.input === "string") {
-      // string input must stay untouched
+      body.instructions = prompt;
       return;
     }
 
@@ -159,13 +159,27 @@ function injectResponsesInputSystem(body, prompt) {
     // find system/developer message items only (type === message)
     let idx = -1;
     try {
-      idx = arr.findIndex(m => m && m.type === RESPONSES_ITEM.MESSAGE && (m.role === ROLE.SYSTEM || m.role === ROLE.DEVELOPER));
+      idx = arr.findIndex(m => m && (!m.type || m.type === RESPONSES_ITEM.MESSAGE || m.type === "message") && (m.role === ROLE.SYSTEM || m.role === ROLE.DEVELOPER));
     } catch (_) { return; }
     if (idx >= 0) {
       appendToResponsesMessage(arr[idx], prompt);
     } else {
-      const msg = { type: RESPONSES_ITEM.MESSAGE, role: ROLE.SYSTEM, content: [{ type: RESPONSES_ITEM.INPUT_TEXT, text: prompt }] };
-      try { arr.unshift(msg); } catch (_) {}
+      try {
+        const insertAt = arr.findIndex(m => m?.type !== "additional_tools");
+        if (insertAt > 0) {
+          arr.splice(insertAt, 0, {
+            type: RESPONSES_ITEM.MESSAGE,
+            role: ROLE.DEVELOPER,
+            content: [{ type: RESPONSES_ITEM.INPUT_TEXT, text: prompt }],
+          });
+        } else {
+          arr.unshift({
+            type: RESPONSES_ITEM.MESSAGE,
+            role: ROLE.SYSTEM,
+            content: [{ type: RESPONSES_ITEM.INPUT_TEXT, text: prompt }],
+          });
+        }
+      } catch (_) {}
     }
   } catch (_) {}
 }

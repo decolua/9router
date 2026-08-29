@@ -1,4 +1,5 @@
 import { DEFAULT_MAX_TOKENS, DEFAULT_MIN_TOKENS } from "../../config/runtimeConfig.js";
+import { FORMATS } from "../formats.js";
 
 /**
  * Adjust max_tokens based on request context
@@ -32,3 +33,13 @@ export function adjustMaxTokens(body, ceiling = DEFAULT_MAX_TOKENS) {
   return maxTokens;
 }
 
+const TRANSLATED_MAX_TOKEN_RESOLVERS = {
+  [FORMATS.CLAUDE]: (body, ceiling) => adjustMaxTokens(body, ceiling),
+  [FORMATS.CURSOR]: () => DEFAULT_MIN_TOKENS,
+  [FORMATS.KIRO]: () => DEFAULT_MIN_TOKENS,
+  [FORMATS.COMMANDCODE]: (body) => body.max_tokens ?? body.max_output_tokens ?? DEFAULT_MAX_TOKENS,
+};
+
+export function getTranslatedMaxTokens(targetFormat, body, ceiling = DEFAULT_MAX_TOKENS) {
+  return TRANSLATED_MAX_TOKEN_RESOLVERS[targetFormat]?.(body, ceiling) ?? null;
+}

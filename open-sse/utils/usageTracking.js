@@ -115,13 +115,11 @@ export function filterUsageForFormat(usage, targetFormat) {
  * Normalize usage object - ensure all values are valid numbers
  */
 export function normalizeUsage(usage) {
-  if (!usage || typeof usage !== "object" || Array.isArray(usage)) return null;
+  if (!hasValidUsage(usage)) return null;
 
   const normalized = {};
   const assignNumber = (key, value) => {
-    if (value === undefined || value === null) return;
-    const numeric = Number(value);
-    if (Number.isFinite(numeric)) normalized[key] = numeric;
+    if (value !== undefined) normalized[key] = value;
   };
 
   assignNumber("prompt_tokens", usage?.prompt_tokens);
@@ -166,7 +164,11 @@ export function canonicalizeUsage(usage) {
 
   const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
   const completion = num(usage.completion_tokens ?? usage.output_tokens);
-  const reasoning = num(usage.reasoning_tokens);
+  const reasoningSource = usage.reasoning_tokens
+    ?? usage.completion_tokens_details?.reasoning_tokens
+    ?? usage.output_tokens_details?.reasoning_tokens;
+  const reasoning = num(reasoningSource);
+  const reportedTotal = num(usage.total_tokens);
   // Fall back to the nested prompt_tokens_details.cache_creation_tokens shape
   // (buildUsage()'s OpenAI-forwarding format) when the top-level field is
   // absent, so callers that pass a buildUsage() object through don't silently
@@ -174,6 +176,11 @@ export function canonicalizeUsage(usage) {
   const cacheCreation = num(usage.cache_creation_input_tokens ?? usage.prompt_tokens_details?.cache_creation_tokens);
 
   let prompt = num(usage.prompt_tokens ?? usage.input_tokens);
+  const reasoningIsSeparate = reasoning > 0
+    && reportedTotal >= prompt + completion + reasoning;
+  const canonicalCompletion = reasoningIsSeparate
+    ? completion + reasoning
+    : Math.max(completion, reasoning);
   let cached;
 
   // Claude path: prompt excludes cache; cache_read_input_tokens and/or
@@ -198,39 +205,86 @@ export function canonicalizeUsage(usage) {
 
   const result = {
     prompt_tokens: prompt,
-    completion_tokens: completion,
+    completion_tokens: canonicalCompletion,
     // Recompute rather than pass through: when the fold branch ran above,
     // an upstream total_tokens (cache-exclusive) would otherwise be stale.
-    total_tokens: prompt + completion,
+    total_tokens: prompt + canonicalCompletion,
     cached_tokens: cached,
     cache_creation_input_tokens: cacheCreation,
   };
-  if (reasoning > 0) result.reasoning_tokens = reasoning;
+  if (reasoningSource !== undefined) result.reasoning_tokens = reasoning;
+  if (usage.estimated === true) result.estimated = true;
   return result;
 }
 
 /**
- * Check if usage has valid token data
- * Valid = has at least one token field with value > 0
- * Invalid = empty object {}, null, undefined, no token fields, or all zeros
+ * Check whether usage is safe and complete enough for billing authority.
+ * Explicit zero primary/reasoning components are authoritative. Totals and
+ * cache components alone are not enough to derive trustworthy billable usage.
  */
-export function hasValidUsage(usage) {
-  if (!usage || typeof usage !== "object") return false;
+function hasSafeUsageComponents(usage) {
+  if (!usage || typeof usage !== "object" || Array.isArray(usage)) return false;
 
-  // Check for any known token field with value > 0
-  const tokenFields = [
-    "prompt_tokens", "completion_tokens", "total_tokens",  // OpenAI
-    "input_tokens", "output_tokens",                        // Claude
-    "promptTokenCount", "candidatesTokenCount"              // Gemini
+  const details = [
+    usage.prompt_tokens_details,
+    usage.completion_tokens_details,
+    usage.input_tokens_details,
+    usage.output_tokens_details,
   ];
-
-  for (const field of tokenFields) {
-    if (typeof usage[field] === "number" && usage[field] > 0) {
-      return true;
-    }
+  if (details.some((value) => value !== undefined && (!value || typeof value !== "object" || Array.isArray(value)))) {
+    return false;
   }
 
-  return false;
+  const components = [
+    usage.prompt_tokens,
+    usage.input_tokens,
+    usage.completion_tokens,
+    usage.output_tokens,
+    usage.reasoning_tokens,
+    usage.total_tokens,
+    usage.cached_tokens,
+    usage.cache_read_input_tokens,
+    usage.cache_creation_input_tokens,
+    usage.prompt_cache_hit_tokens,
+    usage.promptTokenCount,
+    usage.candidatesTokenCount,
+    usage.totalTokenCount,
+    usage.cachedContentTokenCount,
+    usage.thoughtsTokenCount,
+    usage.prompt_eval_count,
+    usage.eval_count,
+    usage.prompt_tokens_details?.cached_tokens,
+    usage.prompt_tokens_details?.cache_creation_tokens,
+    usage.completion_tokens_details?.reasoning_tokens,
+    usage.input_tokens_details?.cached_tokens,
+    usage.output_tokens_details?.reasoning_tokens,
+  ];
+  if (components.some((value) => value !== undefined && (!Number.isSafeInteger(value) || value < 0))) {
+    return false;
+  }
+
+  return true;
+}
+
+export function hasValidUsage(usage) {
+  if (!hasSafeUsageComponents(usage)) return false;
+
+  const hasInput = usage.prompt_tokens !== undefined
+    || usage.input_tokens !== undefined
+    || usage.promptTokenCount !== undefined
+    || usage.prompt_eval_count !== undefined;
+  const hasOutput = usage.completion_tokens !== undefined
+    || usage.output_tokens !== undefined
+    || usage.candidatesTokenCount !== undefined
+    || usage.eval_count !== undefined;
+  const hasReasoning = [
+    usage.reasoning_tokens,
+    usage.thoughtsTokenCount,
+    usage.completion_tokens_details?.reasoning_tokens,
+    usage.output_tokens_details?.reasoning_tokens,
+  ].some((value) => value !== undefined);
+
+  return (hasInput && hasOutput) || hasReasoning;
 }
 
 /**
@@ -244,31 +298,32 @@ export function extractUsage(chunk) {
   // so callers must MERGE (mergeUsage), not overwrite, to keep cache counts.
   if (chunk.type === "message_start" && chunk.message?.usage && typeof chunk.message.usage === "object") {
     const u = chunk.message.usage;
-    return normalizeUsage({
-      prompt_tokens: u.input_tokens || 0,
-      completion_tokens: u.output_tokens || 0,
+    if (!hasSafeUsageComponents(u) || u.input_tokens === undefined) return null;
+    return {
+      prompt_tokens: u.input_tokens,
       cache_read_input_tokens: u.cache_read_input_tokens,
       cache_creation_input_tokens: u.cache_creation_input_tokens
-    });
+    };
   }
 
   // Claude format (message_delta event)
   if (chunk.type === "message_delta" && chunk.usage && typeof chunk.usage === "object") {
-    return normalizeUsage({
-      prompt_tokens: chunk.usage.input_tokens || 0,
-      completion_tokens: chunk.usage.output_tokens || 0,
+    if (!hasSafeUsageComponents(chunk.usage) || chunk.usage.output_tokens === undefined) return null;
+    return {
+      completion_tokens: chunk.usage.output_tokens,
       cache_read_input_tokens: chunk.usage.cache_read_input_tokens,
       cache_creation_input_tokens: chunk.usage.cache_creation_input_tokens
-    });
+    };
   }
 
   // OpenAI Responses API format (response.completed or response.done)
   if ((chunk.type === "response.completed" || chunk.type === "response.done") && chunk.response?.usage && typeof chunk.response.usage === "object") {
     const usage = chunk.response.usage;
+    if (!hasValidUsage(usage)) return null;
     const cachedTokens = usage.input_tokens_details?.cached_tokens;
     return normalizeUsage({
-      prompt_tokens: usage.input_tokens || usage.prompt_tokens || 0,
-      completion_tokens: usage.output_tokens || usage.completion_tokens || 0,
+      prompt_tokens: usage.input_tokens ?? usage.prompt_tokens,
+      completion_tokens: usage.output_tokens ?? usage.completion_tokens,
       cached_tokens: cachedTokens,
       reasoning_tokens: usage.output_tokens_details?.reasoning_tokens,
       prompt_tokens_details: cachedTokens ? { cached_tokens: cachedTokens } : undefined
@@ -277,10 +332,11 @@ export function extractUsage(chunk) {
 
   // OpenAI format (also covers DeepSeek which uses prompt_cache_hit_tokens)
   if (chunk.usage && typeof chunk.usage === "object" && chunk.usage.prompt_tokens !== undefined) {
+    if (!hasValidUsage(chunk.usage)) return null;
     return normalizeUsage({
       prompt_tokens: chunk.usage.prompt_tokens,
-      completion_tokens: chunk.usage.completion_tokens || 0,
-      cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens || chunk.usage.prompt_cache_hit_tokens,
+      completion_tokens: chunk.usage.completion_tokens,
+      cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens ?? chunk.usage.prompt_cache_hit_tokens,
       reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens,
       prompt_tokens_details: chunk.usage.prompt_tokens_details,
       completion_tokens_details: chunk.usage.completion_tokens_details
@@ -291,9 +347,10 @@ export function extractUsage(chunk) {
   // Antigravity wraps usageMetadata inside response: { response: { usageMetadata: {...} } }
   const usageMeta = chunk.usageMetadata || chunk.response?.usageMetadata;
   if (usageMeta && typeof usageMeta === "object") {
+    if (!hasValidUsage(usageMeta)) return null;
     return normalizeUsage({
-      prompt_tokens: usageMeta.promptTokenCount || 0,
-      completion_tokens: usageMeta.candidatesTokenCount || 0,
+      prompt_tokens: usageMeta.promptTokenCount,
+      completion_tokens: usageMeta.candidatesTokenCount,
       total_tokens: usageMeta.totalTokenCount,
       cached_tokens: usageMeta.cachedContentTokenCount,
       reasoning_tokens: usageMeta.thoughtsTokenCount
@@ -303,6 +360,7 @@ export function extractUsage(chunk) {
   // Ollama NDJSON format (raw from provider, before translation)
   // Ollama sends: {"model":"...","done":true,"prompt_eval_count":N,"eval_count":M}
   if (chunk.done === true && typeof chunk.prompt_eval_count === "number") {
+    if (!hasValidUsage(chunk)) return null;
     return normalizeUsage({
       prompt_tokens: chunk.prompt_eval_count || 0,
       completion_tokens: chunk.eval_count || 0,
