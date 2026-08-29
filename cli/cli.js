@@ -525,12 +525,10 @@ function openBrowser(url) {
 }
 
 // Find standalone server (bundled in bin/app for published package).
-// Prefer custom-server.js (injects real socket IP) when present.
+// custom-server.js installs the trusted request-origin boundary.
 const standaloneDir = path.join(__dirname, "app");
 const customServerPath = path.join(standaloneDir, "custom-server.js");
-const serverPath = fs.existsSync(customServerPath)
-  ? customServerPath
-  : path.join(standaloneDir, "server.js");
+const serverPath = customServerPath;
 
 if (!fs.existsSync(serverPath)) {
   console.error("Error: Standalone build not found.");

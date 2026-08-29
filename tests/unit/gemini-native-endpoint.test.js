@@ -3,10 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   handleChat: vi.fn(),
   getSettings: vi.fn(),
-  isValidApiKey: vi.fn(),
+  resolveApiKeyId: vi.fn(),
   getProviderCredentials: vi.fn(),
   markAccountUnavailable: vi.fn(),
   clearAccountError: vi.fn(),
+  trackApiKeyClientActivity: vi.fn(),
 }));
 
 vi.mock("@/sse/handlers/chat.js", () => ({
@@ -15,13 +16,17 @@ vi.mock("@/sse/handlers/chat.js", () => ({
 
 vi.mock("@/sse/services/auth.js", () => ({
   getProviderCredentials: mocks.getProviderCredentials,
-  isValidApiKey: mocks.isValidApiKey,
+  resolveApiKeyId: mocks.resolveApiKeyId,
   markAccountUnavailable: mocks.markAccountUnavailable,
   clearAccountError: mocks.clearAccountError,
 }));
 
 vi.mock("@/lib/localDb", () => ({
   getSettings: mocks.getSettings,
+}));
+
+vi.mock("@/sse/services/apiKeyClientActivity.js", () => ({
+  trackApiKeyClientActivity: mocks.trackApiKeyClientActivity,
 }));
 
 const { GET } = await import("../../src/app/api/v1beta/models/route.js");
@@ -60,7 +65,7 @@ describe("Gemini native v1beta endpoint", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getSettings.mockResolvedValue({ requireApiKey: true });
-    mocks.isValidApiKey.mockResolvedValue(true);
+    mocks.resolveApiKeyId.mockResolvedValue("key-id");
     mocks.getProviderCredentials.mockResolvedValue({
       apiKey: "real-gemini-key",
       connectionId: "gemini-conn",
@@ -107,6 +112,7 @@ describe("Gemini native v1beta endpoint", () => {
     expect(JSON.parse(options.body)).toEqual(body);
     expect(options.headers["x-goog-api-key"]).toBe("real-gemini-key");
     expect(options.headers.Authorization).toBeUndefined();
+    expect(mocks.trackApiKeyClientActivity).toHaveBeenCalledTimes(1);
   });
 
   it("accepts Google-style client keys without forwarding them upstream", async () => {
@@ -122,9 +128,29 @@ describe("Gemini native v1beta endpoint", () => {
       params: Promise.resolve({ path: ["gemini-2.5-flash-preview-tts:generateContent"] }),
     });
 
-    expect(mocks.isValidApiKey).toHaveBeenCalledWith("client-router-key");
+    expect(mocks.resolveApiKeyId).toHaveBeenCalledWith("client-router-key");
     expect(global.fetch.mock.calls[0][1].headers["x-goog-api-key"]).toBe("real-gemini-key");
     expect(global.fetch.mock.calls[0][1].headers["x-goog-api-key"]).not.toBe("client-router-key");
+  });
+
+  it("tracks zero native requests with invalid API keys", async () => {
+    mocks.resolveApiKeyId.mockResolvedValue(null);
+
+    const response = await POST(makeGeminiRequest("gemini-3.1-flash-tts-preview:generateContent", audioBody()), {
+      params: Promise.resolve({ path: ["gemini-3.1-flash-tts-preview:generateContent"] }),
+    });
+
+    expect(response.status).toBe(401);
+    expect(mocks.trackApiKeyClientActivity).not.toHaveBeenCalled();
+  });
+
+  it("tracks zero native requests with invalid model IDs", async () => {
+    const response = await POST(makeGeminiRequest("gemini/bad-model:generateContent", audioBody()), {
+      params: Promise.resolve({ path: ["gemini", "bad$model:generateContent"] }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(mocks.trackApiKeyClientActivity).not.toHaveBeenCalled();
   });
 
   it("does not forward stale compression headers from native upstream responses", async () => {

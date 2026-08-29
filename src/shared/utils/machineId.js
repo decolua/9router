@@ -57,6 +57,13 @@ export async function getRawMachineId() {
   return loadRawMachineId();
 }
 
+export async function getPrivateMachineId(salt = "9r-private") {
+  return crypto
+    .createHash("sha256")
+    .update(loadRawMachineId() + salt + loadCliSecret())
+    .digest("hex");
+}
+
 /**
  * Check if we're running in browser or server environment
  * @returns {boolean} True if in browser, false if in server

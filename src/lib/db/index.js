@@ -1,6 +1,7 @@
 // Public API barrel — all DB functions
 import { getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
+import { clearAllPendingApiKeyClientActivity } from "./repos/apiKeyClientsRepo.js";
 
 // Settings
 export {
@@ -29,8 +30,15 @@ export {
 
 // API keys
 export {
-  getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey, validateApiKey,
+  getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey,
+  validateApiKey, getActiveApiKeyId,
 } from "./repos/apiKeysRepo.js";
+
+export {
+  recordApiKeyClientRequest, flushApiKeyClientActivity,
+  clearPendingApiKeyClientActivity, clearAllPendingApiKeyClientActivity,
+  getApiKeyClientActivity,
+} from "./repos/apiKeyClientsRepo.js";
 
 // Combos
 export {
@@ -98,6 +106,7 @@ export async function importDb(payload) {
     throw new Error("Invalid database payload");
   }
   const db = await getAdapter();
+  clearAllPendingApiKeyClientActivity();
 
   db.transaction(() => {
     // Wipe all tables (keep _meta)
@@ -105,6 +114,7 @@ export async function importDb(payload) {
     db.run(`DELETE FROM providerConnections`);
     db.run(`DELETE FROM providerNodes`);
     db.run(`DELETE FROM proxyPools`);
+    db.run(`DELETE FROM apiKeyClients`);
     db.run(`DELETE FROM apiKeys`);
     db.run(`DELETE FROM combos`);
     db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing')`);

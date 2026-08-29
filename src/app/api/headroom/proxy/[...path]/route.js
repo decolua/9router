@@ -14,6 +14,12 @@ const HOP_BY_HOP_HEADERS = new Set([
   "transfer-encoding",
   "upgrade",
 ]);
+const PEER_METADATA_HEADERS = new Set([
+  "cf-connecting-ip",
+  "forwarded",
+  "x-forwarded-for",
+  "x-real-ip",
+]);
 
 const DASHBOARD_PREFIX = "/api/headroom/proxy";
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -37,8 +43,13 @@ function buildTargetUrl(base, path, search) {
 
 function forwardedHeaders(request, target) {
   const headers = new Headers(request.headers);
-  for (const header of headers.keys()) {
-    if (HOP_BY_HOP_HEADERS.has(header.toLowerCase())) headers.delete(header);
+  for (const header of [...headers.keys()]) {
+    const name = header.toLowerCase();
+    if (
+      HOP_BY_HOP_HEADERS.has(name)
+      || PEER_METADATA_HEADERS.has(name)
+      || name.startsWith("x-9r-")
+    ) headers.delete(header);
   }
   headers.delete("host");
   // Never leak viewer credentials to a non-loopback Headroom host

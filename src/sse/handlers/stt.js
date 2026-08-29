@@ -1,5 +1,5 @@
 import {
-  extractApiKey, isValidApiKey,
+  extractApiKey, resolveApiKeyId,
   getProviderCredentials, markAccountUnavailable,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
@@ -9,6 +9,7 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import * as log from "../utils/logger.js";
+import { trackApiKeyClientActivity } from "../services/apiKeyClientActivity.js";
 
 // Providers requiring credentials for STT
 const CREDENTIALED_PROVIDERS = new Set(
@@ -26,14 +27,15 @@ export async function handleStt(request) {
   }
 
   const modelStr = formData.get("model");
+  const apiKey = extractApiKey(request);
   log.request("POST", `/v1/audio/transcriptions | ${modelStr}`);
 
   const settings = await getSettings();
+  let apiKeyId = null;
   if (settings.requireApiKey) {
-    const apiKey = extractApiKey(request);
     if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+    apiKeyId = await resolveApiKeyId(apiKey);
+    if (!apiKeyId) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
   }
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
@@ -43,6 +45,15 @@ export async function handleStt(request) {
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
   const { provider, model } = modelInfo;
+  if (apiKey) {
+    await trackApiKeyClientActivity({
+      request,
+      body: { model: modelStr },
+      apiKey,
+      apiKeyId,
+      endpoint: "/v1/audio/transcriptions",
+    });
+  }
   log.info("ROUTING", `Provider: ${provider}, Model: ${model}`);
 
   // noAuth providers

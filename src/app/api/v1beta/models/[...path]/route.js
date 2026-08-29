@@ -2,13 +2,14 @@ import { handleChat } from "@/sse/handlers/chat.js";
 import {
   clearAccountError,
   getProviderCredentials,
-  isValidApiKey,
+  resolveApiKeyId,
   markAccountUnavailable,
 } from "@/sse/services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { PROVIDER_MODELS } from "@/shared/constants/models";
 import { GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
 import { initTranslators } from "open-sse/translator/index.js";
+import { trackApiKeyClientActivity } from "@/sse/services/apiKeyClientActivity.js";
 
 let initialized = false;
 const GEMINI_NATIVE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -178,20 +179,20 @@ function buildGeminiNativeUrl(requestUrl, model, action) {
 }
 
 async function validateGeminiNativeClientKey(request) {
-  const settings = await getSettings();
-  if (!settings.requireApiKey) return null;
-
   const apiKey = extractGeminiClientApiKey(request);
+  const settings = await getSettings();
+  if (!settings.requireApiKey) return { apiKey, apiKeyId: null };
+
   if (!apiKey) {
-    return Response.json({ error: { message: "Missing API key" } }, { status: 401 });
+    return { error: Response.json({ error: { message: "Missing API key" } }, { status: 401 }) };
   }
 
-  const valid = await isValidApiKey(apiKey);
-  if (!valid) {
-    return Response.json({ error: { message: "Invalid API key" } }, { status: 401 });
+  const apiKeyId = await resolveApiKeyId(apiKey);
+  if (!apiKeyId) {
+    return { error: Response.json({ error: { message: "Invalid API key" } }, { status: 401 }) };
   }
 
-  return null;
+  return { apiKey, apiKeyId };
 }
 
 function buildGeminiNativeAuthHeaders(credentials) {
@@ -236,12 +237,21 @@ function getSafeGeminiNativeErrorText(error) {
 }
 
 async function forwardGeminiNativeRequest(request, body, model, action) {
-  const authError = await validateGeminiNativeClientKey(request);
-  if (authError) return authError;
+  const auth = await validateGeminiNativeClientKey(request);
+  if (auth.error) return auth.error;
 
   const modelId = normalizeGeminiNativeModel(model);
   if (!GEMINI_NATIVE_MODEL_PATTERN.test(modelId)) {
     return Response.json({ error: { message: "Invalid model" } }, { status: 400 });
+  }
+  if (auth.apiKey) {
+    await trackApiKeyClientActivity({
+      request,
+      body,
+      apiKey: auth.apiKey,
+      apiKeyId: auth.apiKeyId,
+      endpoint: new URL(request.url).pathname,
+    });
   }
   const excludeConnectionIds = new Set();
   const bodyText = JSON.stringify(body);

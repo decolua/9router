@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, useReducer } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
 
@@ -18,6 +18,11 @@ import dynamic from "next/dynamic";
 // Lazy-load: keeps @xyflow/react out of the shared bundle until topology renders
 const ProviderTopology = dynamic(() => import("@/app/(dashboard)/dashboard/usage/components/ProviderTopology"), { ssr: false });
 import UsageChart from "@/app/(dashboard)/dashboard/usage/components/UsageChart";
+import ApiKeyClientsTable from "@/app/(dashboard)/dashboard/usage/components/ApiKeyClientsTable";
+import {
+  createClientActivityState,
+  reduceClientActivity,
+} from "@/app/(dashboard)/dashboard/usage/components/apiKeyClientState";
 
 function timeAgo(timestamp) {
   const diff = Math.floor((Date.now() - new Date(timestamp)) / 1000);
@@ -189,6 +194,7 @@ const TABLE_OPTIONS = [
   { value: "model", label: "Usage by Model" },
   { value: "account", label: "Usage by Account" },
   { value: "apiKey", label: "Usage by API Key" },
+  { value: "apiClients", label: "API Key Clients" },
   { value: "endpoint", label: "Usage by Endpoint" },
 ];
 
@@ -212,6 +218,11 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const [fetching, setFetching] = useState(false);
   const [tableView, setTableView] = useState("model");
   const [viewMode, setViewMode] = useState("costs");
+  const [clientActivity, dispatchClientActivity] = useReducer(
+    reduceClientActivity,
+    undefined,
+    createClientActivityState,
+  );
   const [providers, setProviders] = useState([]);
   const [periodLocal, setPeriodLocal] = useState("today");
   const isInitialLoad = useRef(true);
@@ -275,6 +286,38 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         setFetching(false);
       });
   }, [period]);
+
+  useEffect(() => {
+    if (tableView !== "apiClients") return;
+    let cancelled = false;
+    let timer = null;
+
+    const loadClients = async () => {
+      dispatchClientActivity({ type: "start", period });
+      try {
+        const response = await fetch(`/api/usage/clients?period=${period}`, { cache: "no-store" });
+        if (!response.ok) throw new Error("Client activity request failed");
+        const data = await response.json();
+        if (!cancelled) dispatchClientActivity({ type: "success", period, data });
+      } catch {
+        if (!cancelled) dispatchClientActivity({ type: "failure", period });
+      } finally {
+        if (!cancelled) {
+          timer = setTimeout(loadClients, 30000);
+        }
+      }
+    };
+
+    void loadClients();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [period, tableView]);
+
+  const visibleClientActivity = clientActivity.requestedPeriod === period
+    ? clientActivity
+    : { ...createClientActivityState(), requestedPeriod: period, loading: true };
 
   // SSE connection - real-time updates for activeRequests + recentRequests only
   useEffect(() => {
@@ -496,7 +539,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
               <option key={opt.value} value={opt.value}>{opt.label}</option>
             ))}
           </select>
-          <div className="grid grid-cols-2 items-center gap-1 rounded-lg border border-border bg-bg-subtle p-1 sm:flex">
+          {tableView !== "apiClients" && <div className="grid grid-cols-2 items-center gap-1 rounded-lg border border-border bg-bg-subtle p-1 sm:flex">
             <button
               onClick={() => setViewMode("costs")}
               className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === "costs" ? "bg-primary text-white shadow-sm" : "text-text-muted hover:text-text hover:bg-bg-hover"}`}
@@ -509,9 +552,11 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
             >
               Tokens
             </button>
-          </div>
+          </div>}
         </div>
-        {loading ? spinner : activeTableConfig && (
+        {tableView === "apiClients" ? (
+          <ApiKeyClientsTable {...visibleClientActivity} />
+        ) : loading ? spinner : activeTableConfig && (
           <UsageTable
             title=""
             columns={activeTableConfig.columns}
