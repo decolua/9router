@@ -11,6 +11,7 @@ import {
   readControlCenter,
   writeControlCenter,
 } from "./store.js";
+import { getModelDiscoveryGuard } from "@/shared/utils/modelDiscoveryGuard.js";
 
 function normalizeKind(model = {}) {
   if (model.kind) return model.kind;
@@ -103,6 +104,8 @@ export async function rebuildControlCenter(discovery = []) {
     const registryEntry = registryMap.get(providerId);
     const providerDiscovery = discoveryByProvider.get(providerId) || [];
     const modelMap = {};
+    const detectedMap = {};
+    const discoveryGuard = getModelDiscoveryGuard(providerId);
 
     for (const model of getModelsByProviderId(providerId)) {
       addModel(modelMap, model, { configured: true, source: "static" });
@@ -113,13 +116,38 @@ export async function rebuildControlCenter(discovery = []) {
     }
 
     const successfulDiscovery = providerDiscovery.filter(
-      (item) => !item.warning,
+      (item) =>
+        !item.warning
+        && (
+          !discoveryGuard.customProvider
+          || item.catalog === true
+        ),
     );
 
     for (const item of providerDiscovery) {
       const isLiveDiscovery = !item.warning;
+      const observeOnly =
+        discoveryGuard.customProvider
+        && item.catalog !== true;
 
       for (const model of item.models || []) {
+        // Guarded custom providers default to observe-only. Their live model
+        // listing is evidence, not automatic Control Center catalog authority.
+        if (observeOnly) {
+          if (isLiveDiscovery) {
+            addModel(
+              detectedMap,
+              model,
+              {
+                discovered: true,
+                source: "resolved",
+              },
+              item.connectionId,
+            );
+          }
+          continue;
+        }
+
         addModel(
           modelMap,
           model,
@@ -133,6 +161,44 @@ export async function rebuildControlCenter(discovery = []) {
     }
 
     const previousProvider = previous.providers?.[providerId];
+
+    const detectedModels = {};
+    for (const entry of Object.values(detectedMap)) {
+      detectedModels[entry.id] = {
+        id: entry.id,
+        name: entry.name,
+        kind: entry.kind || "llm",
+        fullModel: `${alias}/${entry.id}`,
+        detected: true,
+        cataloged: Boolean(modelMap[entry.id]),
+        testable: false,
+        routable: false,
+        stale: false,
+        source: sourceLabel(entry._sources),
+        connectionsAvailable: entry._connections.size,
+        connectionsQueried: providerDiscovery.length,
+      };
+    }
+
+    // A later normal refresh deliberately performs no automatic discovery for
+    // custom providers. Preserve the last explicit observe-only snapshot.
+    if (
+      discoveryGuard.customProvider
+      && providerDiscovery.length === 0
+    ) {
+      for (
+        const [modelId, old]
+        of Object.entries(previousProvider?.detectedModels || {})
+      ) {
+        detectedModels[modelId] = {
+          ...old,
+          cataloged: Boolean(modelMap[modelId]),
+          testable: false,
+          routable: false,
+        };
+      }
+    }
+
     const currentModels = {};
 
     for (const entry of Object.values(modelMap)) {
@@ -146,6 +212,9 @@ export async function rebuildControlCenter(discovery = []) {
         configured: entry.configured === true,
         discovered: entry.discovered === true,
         custom: entry.custom === true,
+        cataloged: true,
+        testable: discoveryGuard.customProvider ? false : null,
+        routable: discoveryGuard.customProvider ? false : null,
         stale: false,
         source: sourceLabel(sources),
         connectionsAvailable: connectionSet.size,
@@ -168,8 +237,39 @@ export async function rebuildControlCenter(discovery = []) {
 
     for (const [modelId, old] of Object.entries(previousProvider?.models || {})) {
       if (currentModels[modelId]) continue;
+
+      // Remove legacy auto-discovered custom models from catalog authority.
+      // Preserve them only as detected/observe-only evidence.
+      if (
+        discoveryGuard.customProvider
+        && old.discovered === true
+        && old.configured !== true
+        && old.custom !== true
+      ) {
+        if (!detectedModels[modelId]) {
+          detectedModels[modelId] = {
+            id: modelId,
+            name: old.name || modelId,
+            kind: old.kind || "llm",
+            fullModel: old.fullModel || `${alias}/${modelId}`,
+            detected: true,
+            cataloged: false,
+            testable: false,
+            routable: false,
+            stale: true,
+            source: old.source || "resolved",
+            connectionsAvailable: 0,
+            connectionsQueried: 0,
+          };
+        }
+        continue;
+      }
+
       currentModels[modelId] = {
         ...old,
+        cataloged: true,
+        testable: discoveryGuard.customProvider ? false : null,
+        routable: discoveryGuard.customProvider ? false : null,
         stale: true,
         changed: true,
         connectionsAvailable: 0,
@@ -195,6 +295,9 @@ export async function rebuildControlCenter(discovery = []) {
           .map((item) => item.warning)
           .filter(Boolean),
       )].join(" | ") || null,
+      discoveryGuard,
+      detectedModels,
+      detectedCount: Object.keys(detectedModels).length,
       models: currentModels,
     };
   }

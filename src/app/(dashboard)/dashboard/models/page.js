@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { classifyHealth } from "@/lib/modelControlCenter/health.js";
+import { isGuardedCustomProvider } from "@/shared/utils/modelDiscoveryGuard.js";
 
 async function mapLimit(items, limit, fn) {
   const queue = [...items];
@@ -427,7 +428,13 @@ export default function ModelControlCenterPage() {
       if (!providersRes.ok) throw new Error(providersData.error || "Failed to load providers");
 
       const connections = (providersData.connections || []).filter((connection) => connection.isActive !== false);
-      const discovery = await mapLimit(connections, 4, async (connection) => {
+      // Custom/compatible discovery is explicit-only. A normal Control Center
+      // refresh must never enumerate arbitrary custom upstream model catalogs.
+      const autoDiscoveryConnections = connections.filter(
+        (connection) => !isGuardedCustomProvider(connection.provider),
+      );
+
+      const discovery = await mapLimit(autoDiscoveryConnections, 4, async (connection) => {
         try {
           const res = await fetch(`/api/providers/${encodeURIComponent(connection.id)}/models`, {
             cache: "no-store",
