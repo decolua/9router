@@ -21,6 +21,79 @@ function toIsoDate(value) {
   return Number.isFinite(time) ? date.toISOString() : null;
 }
 
+function normalizeSubscriptionIso(value) {
+  if (value == null) return null;
+  if (value instanceof Date) {
+    const t = value.getTime();
+    return Number.isFinite(t) ? value.toISOString() : null;
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return null;
+    const ms = value < 1e12 ? value * 1000 : value;
+    const d = new Date(ms);
+    return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (/^\d+$/.test(trimmed)) {
+      const num = Number(trimmed);
+      if (!Number.isFinite(num)) return null;
+      const ms = num < 1e12 ? num * 1000 : num;
+      const d = new Date(ms);
+      return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+    }
+    const d = new Date(trimmed);
+    return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+  }
+  return null;
+}
+
+function decodeJwtPayload(jwt) {
+  try {
+    if (!jwt || typeof jwt !== "string") return null;
+    const parts = jwt.split(".");
+    if (parts.length !== 3) return null;
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const pad = (4 - (base64.length % 4)) % 4;
+    const padded = base64 + "=".repeat(pad);
+    return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function getJwtSubscriptionClaimFromPayload(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  const nested = payload["https://api.openai.com/auth"];
+  if (nested && typeof nested === "object" && nested.chatgpt_subscription_active_until != null) {
+    return nested.chatgpt_subscription_active_until;
+  }
+  if (payload.chatgpt_subscription_active_until != null) return payload.chatgpt_subscription_active_until;
+  return null;
+}
+
+function getJwtPlanFromPayload(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  const nested = payload["https://api.openai.com/auth"];
+  let plan = null;
+  if (nested && typeof nested === "object") plan = nested.chatgpt_plan_type || nested.chatgpt_plan || null;
+  if (!plan) plan = payload.chatgpt_plan_type || payload.plan_type || null;
+  if (typeof plan === "string") {
+    const t = plan.trim();
+    return t || null;
+  }
+  return plan || null;
+}
+
+function getJwtSubscriptionClaim(idToken) {
+  return getJwtSubscriptionClaimFromPayload(decodeJwtPayload(idToken));
+}
+
+function getJwtPlan(idToken) {
+  return getJwtPlanFromPayload(decodeJwtPayload(idToken));
+}
+
 function getCodexAccountId(providerSpecificData) {
   return providerSpecificData?.workspaceId || providerSpecificData?.accountId || providerSpecificData?.chatgptAccountId || null;
 }
@@ -198,4 +271,320 @@ export async function consumeCodexRateLimitResetCredit(accessToken, redeemReques
     message: data?.message || null,
     raw: data,
   };
+}
+
+// ponytail: minimal expiry helper; add retry/backoff or org-list caching when needed
+export async function getCodexSubscriptionEntitlement({ accessToken, idToken, providerSpecificData, proxyOptions, force = false, now = Date.now() } = {}) {
+  const psd = providerSpecificData || {};
+  const nowMs = typeof now === "number" ? now : Date.now();
+  let nowIso;
+  try { nowIso = new Date(nowMs).toISOString(); } catch { nowIso = new Date().toISOString(); }
+  const jwtPayload = decodeJwtPayload(idToken);
+
+  try {
+    const rawClaim = getJwtSubscriptionClaimFromPayload(jwtPayload);
+    const normalized = normalizeSubscriptionIso(rawClaim);
+    if (normalized) {
+      const claimTime = new Date(normalized).getTime();
+      if (Number.isFinite(claimTime) && claimTime > nowMs) {
+        const plan = getJwtPlanFromPayload(jwtPayload);
+        const sameMetadata =
+          psd.codexSubscriptionActiveUntil === normalized &&
+          (psd.codexSubscriptionPlan || null) === (plan || null) &&
+          psd.codexSubscriptionSource === "idToken";
+        const fetchedAtMs = psd.codexSubscriptionFetchedAt ? new Date(psd.codexSubscriptionFetchedAt).getTime() : NaN;
+        const ttlExpired = !Number.isFinite(fetchedAtMs) || nowMs - fetchedAtMs >= 6 * 60 * 60 * 1000;
+        if (sameMetadata && !ttlExpired) {
+          return {
+            subscriptionActiveUntil: normalized,
+            subscriptionPlan: plan,
+            subscriptionSource: "idToken",
+            patch: {},
+          };
+        }
+        const patch = {};
+        if (psd.codexSubscriptionActiveUntil !== normalized) patch.codexSubscriptionActiveUntil = normalized;
+        if ((psd.codexSubscriptionPlan || null) !== (plan || null)) patch.codexSubscriptionPlan = plan;
+        if (psd.codexSubscriptionSource !== "idToken") patch.codexSubscriptionSource = "idToken";
+        if (ttlExpired) {
+          patch.codexSubscriptionFetchedAt = nowIso;
+          patch.codexSubscriptionAttemptAt = nowIso;
+        } else if (Object.keys(patch).length) {
+          patch.codexSubscriptionFetchedAt = nowIso;
+          patch.codexSubscriptionAttemptAt = nowIso;
+        }
+        if (!Object.keys(patch).length) {
+          return {
+            subscriptionActiveUntil: normalized,
+            subscriptionPlan: plan,
+            subscriptionSource: "idToken",
+            patch: {},
+          };
+        }
+        return {
+          subscriptionActiveUntil: normalized,
+          subscriptionPlan: plan,
+          subscriptionSource: "idToken",
+          patch,
+        };
+      }
+    }
+  } catch {}
+
+  const safeCachedExpiry = (() => {
+    const iso = normalizeSubscriptionIso(psd.codexSubscriptionActiveUntil);
+    const ms = iso ? new Date(iso).getTime() : NaN;
+    if (iso && Number.isFinite(ms) && ms > nowMs) return iso;
+    return null;
+  })();
+  const safeCachedSnapshot = safeCachedExpiry ? {
+    activeUntil: safeCachedExpiry,
+    plan: psd.codexSubscriptionPlan || null,
+    source: psd.codexSubscriptionSource || null,
+  } : null;
+
+  if (!force) {
+    const fetchedAtMs = psd.codexSubscriptionFetchedAt ? new Date(psd.codexSubscriptionFetchedAt).getTime() : NaN;
+    if (Number.isFinite(fetchedAtMs) && nowMs - fetchedAtMs < 6 * 60 * 60 * 1000) {
+      if (safeCachedSnapshot) {
+        return {
+          subscriptionActiveUntil: safeCachedSnapshot.activeUntil,
+          subscriptionPlan: safeCachedSnapshot.plan,
+          subscriptionSource: safeCachedSnapshot.source,
+          patch: {},
+        };
+      }
+      if (!accessToken) {
+        return {
+          subscriptionActiveUntil: null,
+          subscriptionPlan: null,
+          subscriptionSource: null,
+          patch: { codexSubscriptionAttemptAt: nowIso },
+        };
+      }
+      // past/invalid cache: fall through to network
+    } else {
+      const attemptAtMs = psd.codexSubscriptionAttemptAt ? new Date(psd.codexSubscriptionAttemptAt).getTime() : NaN;
+      if (Number.isFinite(attemptAtMs) && nowMs - attemptAtMs < 30 * 60 * 1000) {
+        if (safeCachedSnapshot) {
+          return {
+            subscriptionActiveUntil: safeCachedSnapshot.activeUntil,
+            subscriptionPlan: safeCachedSnapshot.plan,
+            subscriptionSource: safeCachedSnapshot.source,
+            patch: {},
+          };
+        }
+        if (!accessToken) {
+          return {
+            subscriptionActiveUntil: null,
+            subscriptionPlan: null,
+            subscriptionSource: null,
+            patch: { codexSubscriptionAttemptAt: nowIso },
+          };
+        }
+        // past/invalid cache with recent attempt: fall through if token exists
+      }
+    }
+  }
+
+  if (!accessToken) {
+    if (safeCachedSnapshot) {
+      return {
+        subscriptionActiveUntil: safeCachedSnapshot.activeUntil,
+        subscriptionPlan: safeCachedSnapshot.plan,
+        subscriptionSource: safeCachedSnapshot.source,
+        patch: { codexSubscriptionAttemptAt: nowIso },
+      };
+    }
+    return {
+      subscriptionActiveUntil: null,
+      subscriptionPlan: null,
+      subscriptionSource: null,
+      patch: { codexSubscriptionAttemptAt: nowIso },
+    };
+  }
+
+  try {
+    const cfg = U("codex");
+    const accountsCheckUrl = cfg.accountsCheckUrl;
+    const subscriptionsUrl = cfg.subscriptionsUrl;
+    if (!accountsCheckUrl) throw new Error("missing accountsCheckUrl");
+    const offsetMin = -new Date().getTimezoneOffset();
+    const url = `${accountsCheckUrl}?timezone_offset_min=${encodeURIComponent(String(offsetMin))}`;
+    const resp = await proxyAwareFetch(url, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Accept": "application/json",
+      },
+    }, proxyOptions);
+    if (!resp.ok) throw new Error(`accounts check ${resp.status}`);
+    let data;
+    try { data = await resp.json(); } catch { throw new Error("malformed accounts json"); }
+
+    let accounts = [];
+    if (Array.isArray(data.accounts)) accounts = data.accounts;
+    else if (data.accounts && typeof data.accounts === "object" && !Array.isArray(data.accounts)) accounts = Object.values(data.accounts);
+    else if (Array.isArray(data)) accounts = data;
+    else if (data.data && Array.isArray(data.data)) accounts = data.data;
+    else accounts = [];
+
+    let explicitOrgId = null;
+    let explicitId = null;
+    try {
+      const payload = jwtPayload;
+      if (payload) {
+        const nested = payload["https://api.openai.com/auth"];
+        if (nested && typeof nested === "object") {
+          explicitOrgId = nested.organization_id || nested.org_id || nested.chatgpt_organization_id || null;
+          if (explicitOrgId != null) explicitOrgId = String(explicitOrgId).trim() || null;
+          if (!explicitOrgId && nested.chatgpt_account_id) explicitId = String(nested.chatgpt_account_id).trim() || null;
+        }
+        if (!explicitId && payload.organization_id) explicitId = explicitId || String(payload.organization_id).trim() || null;
+        if (!explicitId && payload.org_id) explicitId = explicitId || String(payload.org_id).trim() || null;
+        if (!explicitId && payload.chatgpt_account_id) explicitId = String(payload.chatgpt_account_id).trim() || null;
+        if (!explicitId && payload.account_id) explicitId = String(payload.account_id).trim() || null;
+        // if org id was stored as account id alias, keep it
+        if (!explicitOrgId && explicitId) {
+          // try to detect org-looking id later via matching
+        }
+      }
+    } catch {}
+    let psdOrgId = psd.organizationId || psd.chatgptOrganizationId || psd.orgId || null;
+    if (psdOrgId) psdOrgId = String(psdOrgId).trim() || null;
+    let psdId = psd.chatgptAccountId || psd.workspaceId || psd.accountId || null;
+    if (psdId) psdId = String(psdId).trim() || null;
+
+    let selected = null;
+    const accountKeys = (a) => [a.id, a.account_id, a.chatgpt_account_id, a.accountId, a.organization_id, a.org_id, a.workspace_id].map((v) => String(v ?? "").trim()).filter(Boolean);
+    const byId = (id) => accounts.find((a) => accountKeys(a).includes(String(id).trim()));
+    const byOrgMatch = (orgId) => accounts.find((a) => {
+      const keys = [a.organization_id, a.org_id, a.workspace_id, a.chatgpt_account_id, a.id, a.account_id, a.accountId].map((v) => String(v ?? "").trim()).filter(Boolean);
+      return keys.includes(String(orgId).trim());
+    });
+    const planForSelection = (a) => a.subscription_plan ?? a.plan_type ?? a.planType ?? a.plan ?? a.entitlement?.subscription_plan ?? a.entitlement?.plan_type ?? a.entitlement?.plan ?? null;
+    if (explicitOrgId) selected = byOrgMatch(explicitOrgId) || byId(explicitOrgId) || null;
+    if (!selected && psdOrgId) selected = byOrgMatch(psdOrgId) || byId(psdOrgId) || null;
+    if (!selected && explicitId) selected = byId(explicitId) || null;
+    if (!selected && psdId) selected = byId(psdId) || null;
+    if (!selected) {
+      const nonFree = accounts.filter((a) => {
+        const plan = String(planForSelection(a) ?? "").trim().toLowerCase();
+        return plan && plan !== "free";
+      });
+      if (nonFree.length) {
+        selected = nonFree.find((a) => a.is_default === true || a.isDefault === true) || nonFree[0];
+      }
+    }
+    if (!selected) selected = accounts.find((a) => a.is_default === true || a.isDefault === true) || null;
+    if (!selected && accounts.length) selected = accounts[0];
+    if (!selected) throw new Error("no account selected");
+
+    let plan = null;
+    let expiresRaw = null;
+    let source = "accounts";
+    if (selected.entitlement && typeof selected.entitlement === "object" && !Array.isArray(selected.entitlement)) {
+      plan = selected.entitlement.subscription_plan || selected.entitlement.plan_type || selected.entitlement.plan || null;
+      expiresRaw = selected.entitlement.expires_at || selected.entitlement.expiresAt || selected.entitlement.active_until || selected.entitlement.activeUntil || null;
+    }
+    if (!plan) plan = selected.subscription_plan || selected.plan_type || selected.planType || selected.plan || null;
+    if (!expiresRaw) expiresRaw = selected.expires_at || selected.expiresAt || selected.active_until || selected.activeUntil || null;
+    if (typeof plan === "string") plan = plan.trim() || null;
+    let normalizedExpiry = normalizeSubscriptionIso(expiresRaw);
+    const expiryMs = normalizedExpiry ? new Date(normalizedExpiry).getTime() : NaN;
+    const isExpired = !normalizedExpiry || !Number.isFinite(expiryMs) || expiryMs <= nowMs;
+    const accountsPlanSnapshot = plan;
+    const accountsExpirySnapshot = normalizedExpiry;
+    const accountsExpiryMsSnapshot = expiryMs;
+
+    if ((!plan || isExpired) && subscriptionsUrl) {
+      const accountIdForSub = String(selected.id || selected.account_id || selected.chatgpt_account_id || psdId || explicitId || "").trim();
+      if (accountIdForSub) {
+        try {
+          const subUrl = `${subscriptionsUrl}?account_id=${encodeURIComponent(accountIdForSub)}`;
+          const subResp = await proxyAwareFetch(subUrl, {
+            method: "GET",
+            headers: {
+              "Authorization": `Bearer ${accessToken}`,
+              "Accept": "application/json",
+            },
+          }, proxyOptions);
+          if (subResp.ok) {
+            let subData;
+            try { subData = await subResp.json(); } catch { subData = null; }
+            if (subData) {
+              let subObj = subData;
+              if (Array.isArray(subData)) subObj = subData[0] || {};
+              else if (subData.data && Array.isArray(subData.data)) subObj = subData.data[0] || subData;
+              else if (subData.subscriptions && Array.isArray(subData.subscriptions)) subObj = subData.subscriptions[0] || subData;
+              const fallbackPlan = subObj.subscription_plan || subObj.plan_type || subObj.planType || subObj.plan || null;
+              const fallbackExpires = subObj.active_until || subObj.expires_at || subObj.activeUntil || subObj.expiresAt || null;
+              const fallbackIso = normalizeSubscriptionIso(fallbackExpires);
+              const fallbackMs = fallbackIso ? new Date(fallbackIso).getTime() : NaN;
+              const fallbackIsFuture = fallbackIso && Number.isFinite(fallbackMs) && fallbackMs > nowMs;
+              if (fallbackIsFuture) {
+                if (fallbackPlan && typeof fallbackPlan === "string" && fallbackPlan.trim()) plan = fallbackPlan.trim();
+                normalizedExpiry = fallbackIso;
+                source = "subscriptions";
+              }
+            }
+          } else {
+            // keep accounts snapshot if subscriptions fails; don't throw
+          }
+        } catch {}
+      }
+    }
+
+    let finalExpiryMs = normalizedExpiry ? new Date(normalizedExpiry).getTime() : NaN;
+    const normalizedIsPast = normalizedExpiry && Number.isFinite(finalExpiryMs) && finalExpiryMs <= nowMs;
+    const hasFutureAccountsSnapshot = accountsExpirySnapshot && Number.isFinite(accountsExpiryMsSnapshot) && accountsExpiryMsSnapshot > nowMs;
+    const psdExpiryIso = psd.codexSubscriptionActiveUntil || null;
+    const psdExpiryMs = psdExpiryIso ? new Date(psdExpiryIso).getTime() : NaN;
+    const hasFuturePsdCache = psdExpiryIso && Number.isFinite(psdExpiryMs) && psdExpiryMs > nowMs;
+    if (normalizedIsPast || !normalizedExpiry || !Number.isFinite(finalExpiryMs)) {
+      if (hasFutureAccountsSnapshot) {
+        normalizedExpiry = accountsExpirySnapshot;
+        if (!plan) plan = accountsPlanSnapshot;
+        source = "accounts";
+        finalExpiryMs = accountsExpiryMsSnapshot;
+      } else if (hasFuturePsdCache) {
+        normalizedExpiry = psdExpiryIso;
+        if (!plan) plan = psd.codexSubscriptionPlan || plan;
+        source = psd.codexSubscriptionSource || "accounts";
+        finalExpiryMs = psdExpiryMs;
+      }
+    }
+    finalExpiryMs = normalizedExpiry ? new Date(normalizedExpiry).getTime() : NaN;
+    if (!normalizedExpiry || !Number.isFinite(finalExpiryMs) || finalExpiryMs <= nowMs) throw new Error("no valid expiry");
+
+    if (typeof plan === "string") plan = plan.trim() || null;
+
+    return {
+      subscriptionActiveUntil: normalizedExpiry,
+      subscriptionPlan: plan || null,
+      subscriptionSource: source,
+      patch: {
+        codexSubscriptionActiveUntil: normalizedExpiry,
+        codexSubscriptionPlan: plan || null,
+        codexSubscriptionSource: source,
+        codexSubscriptionFetchedAt: nowIso,
+        codexSubscriptionAttemptAt: nowIso,
+      },
+    };
+  } catch {
+    if (safeCachedSnapshot) {
+      return {
+        subscriptionActiveUntil: safeCachedSnapshot.activeUntil,
+        subscriptionPlan: safeCachedSnapshot.plan,
+        subscriptionSource: safeCachedSnapshot.source,
+        patch: { codexSubscriptionAttemptAt: nowIso },
+      };
+    }
+    return {
+      subscriptionActiveUntil: null,
+      subscriptionPlan: null,
+      subscriptionSource: null,
+      patch: { codexSubscriptionAttemptAt: nowIso },
+    };
+  }
 }

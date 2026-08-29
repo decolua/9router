@@ -584,3 +584,29 @@ export function parseQuotaData(provider, data) {
 
   return normalizedQuotas;
 }
+
+export function formatSubscriptionActiveUntil(value) {
+  if (value == null || value === "") return null;
+  let d;
+  if (value instanceof Date) d = value;
+  else if (typeof value === "number") d = new Date(value < 1e12 ? value * 1000 : value);
+  else if (typeof value === "string") {
+    const t = value.trim();
+    if (!t) return null;
+    if (/^\d+$/.test(t)) {
+      const n = Number(t);
+      if (!Number.isFinite(n)) return null;
+      d = new Date(n < 1e12 ? n * 1000 : n);
+    } else d = new Date(t);
+  } else return null;
+  if (!d || !Number.isFinite(d.getTime())) return null;
+  const dateTime = d.toISOString();
+  const display = d.toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+  return { dateTime, display };
+}
+
+export function shouldShowSubscriptionExpiry({ subscriptionPlan, subscriptionActiveUntil } = {}) {
+  const normalizedPlan = typeof subscriptionPlan === "string" ? subscriptionPlan.trim().toLowerCase() : "";
+  if (normalizedPlan === "free") return false;
+  return formatSubscriptionActiveUntil(subscriptionActiveUntil) != null;
+}
