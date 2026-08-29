@@ -246,6 +246,9 @@ export default function ModelControlCenterPage() {
   // PRE_B4_TABS_PAGINATION_V1
   const [activeTab, setActiveTab] = useState("overview");
   const [discoverySearch, setDiscoverySearch] = useState("");
+  const [discoveryPage, setDiscoveryPage] = useState(1);
+  const [discoveryPageSize, setDiscoveryPageSize] = useState(25);
+  const [providerDisplayNames, setProviderDisplayNames] = useState({});
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
 
@@ -904,9 +907,134 @@ export default function ModelControlCenterPage() {
     }
   };
 
+  useEffect(() => {
+    const controller =
+      new AbortController();
+
+    fetch(
+      "/api/providers",
+      {
+        cache: "no-store",
+        signal: controller.signal,
+      },
+    )
+      .then(async (response) => {
+        const data =
+          await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data.error
+            || "Failed to load provider display names",
+          );
+        }
+
+        return data;
+      })
+      .then((data) => {
+        const nextNames = {};
+
+        for (
+          const connection
+          of data.connections || []
+        ) {
+          const providerId =
+            connection.provider;
+
+          if (
+            !isGuardedCustomProvider(
+              providerId,
+            )
+          ) {
+            continue;
+          }
+
+          const candidate =
+            String(
+              connection
+                .providerSpecificData
+                ?.nodeName
+              || connection.name
+              || "",
+            ).trim();
+
+          if (
+            !candidate
+            || candidate === providerId
+          ) {
+            continue;
+          }
+
+          if (!nextNames[providerId]) {
+            nextNames[providerId] =
+              candidate;
+          }
+        }
+
+        setProviderDisplayNames(
+          nextNames,
+        );
+      })
+      .catch((error) => {
+        if (
+          error?.name
+          !== "AbortError"
+        ) {
+          console.log(
+            "[modelControlCenter] provider display names:",
+            error,
+          );
+        }
+      });
+
+    return () =>
+      controller.abort();
+  }, []);
+
   const providerList = useMemo(
-    () => Object.values(state?.providers || {}).sort((a, b) => a.name.localeCompare(b.name)),
-    [state],
+    () =>
+      Object.values(
+        state?.providers || {},
+      )
+        .map((provider) => {
+          if (
+            !isGuardedCustomProvider(
+              provider.providerId,
+            )
+          ) {
+            return provider;
+          }
+
+          const friendlyName =
+            providerDisplayNames[
+              provider.providerId
+            ];
+
+          if (!friendlyName) {
+            return provider;
+          }
+
+          return {
+            ...provider,
+            name: friendlyName,
+          };
+        })
+        .sort(
+          (a, b) =>
+            String(
+              a.name
+              || a.providerId,
+            ).localeCompare(
+              String(
+                b.name
+                || b.providerId,
+              ),
+            ),
+        ),
+    [
+      state,
+      providerDisplayNames,
+    ],
   );
 
   const discoveryRows = useMemo(
@@ -978,6 +1106,40 @@ export default function ModelControlCenterPage() {
       discoverySearch,
     ],
   );
+
+  const discoveryTotalPages =
+    Math.max(
+      1,
+      Math.ceil(
+        discoveryRows.length
+        / discoveryPageSize,
+      ),
+    );
+
+  const discoveryCurrentPage =
+    Math.min(
+      discoveryPage,
+      discoveryTotalPages,
+    );
+
+  const discoveryPageStart =
+    (discoveryCurrentPage - 1)
+    * discoveryPageSize;
+
+  const pagedDiscoveryRows =
+    useMemo(
+      () =>
+        discoveryRows.slice(
+          discoveryPageStart,
+          discoveryPageStart
+            + discoveryPageSize,
+        ),
+      [
+        discoveryRows,
+        discoveryPageStart,
+        discoveryPageSize,
+      ],
+    );
 
   const rows = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -1654,11 +1816,12 @@ export default function ModelControlCenterPage() {
 
               <input
                 value={discoverySearch}
-                onChange={(event) =>
+                onChange={(event) => {
                   setDiscoverySearch(
                     event.target.value,
-                  )
-                }
+                  );
+                  setDiscoveryPage(1);
+                }}
                 placeholder="Search detected models..."
                 className="w-full md:w-72 px-3 py-2 rounded-lg border border-border bg-background text-sm text-text-main outline-none focus:border-primary"
               />
@@ -1693,7 +1856,7 @@ export default function ModelControlCenterPage() {
                 </thead>
 
                 <tbody>
-                  {discoveryRows.map(
+                  {pagedDiscoveryRows.map(
                     ({ provider, model }) => {
                       const catalogBusy =
                         busy
@@ -1819,12 +1982,84 @@ export default function ModelControlCenterPage() {
               </table>
             </div>
 
-            <div className="border-t border-border px-4 py-3 text-[11px] text-text-muted">
-              {discoveryRows.length} detected custom/compatible model(s) shown.
-              {" · "}
-              Catalog action persists one selected model only.
-              {" · "}
-              Probe and routing authority remain unchanged.
+            <div className="border-t border-border px-4 py-3">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="text-[11px] text-text-muted">
+                  {discoveryRows.length > 0
+                    ? (
+                      `Showing ${discoveryPageStart + 1}-${Math.min(
+                        discoveryPageStart + discoveryPageSize,
+                        discoveryRows.length,
+                      )} of ${discoveryRows.length} detected custom/compatible model(s).`
+                    )
+                    : "0 detected custom/compatible models."}
+                  {" · "}
+                  Catalog persists one selected model only.
+                  {" · "}
+                  Probe and routing authority remain unchanged.
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="flex items-center gap-2 text-xs text-text-muted">
+                    Rows
+                    <select
+                      value={discoveryPageSize}
+                      onChange={(event) => {
+                        setDiscoveryPageSize(
+                          Number(event.target.value),
+                        );
+                        setDiscoveryPage(1);
+                      }}
+                      className="rounded-lg border border-border bg-background px-2 py-1.5 text-xs text-text-main"
+                    >
+                      <option value={25}>25</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </label>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDiscoveryPage(
+                        Math.max(
+                          1,
+                          discoveryCurrentPage - 1,
+                        ),
+                      )
+                    }
+                    disabled={
+                      discoveryCurrentPage <= 1
+                    }
+                    className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-text-main disabled:opacity-40"
+                  >
+                    Previous
+                  </button>
+
+                  <div className="min-w-24 text-center text-xs text-text-muted">
+                    Page {discoveryCurrentPage} / {discoveryTotalPages}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDiscoveryPage(
+                        Math.min(
+                          discoveryTotalPages,
+                          discoveryCurrentPage + 1,
+                        ),
+                      )
+                    }
+                    disabled={
+                      discoveryCurrentPage
+                      >= discoveryTotalPages
+                    }
+                    className="rounded-lg border border-border bg-background px-3 py-1.5 text-xs font-medium text-text-main disabled:opacity-40"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
