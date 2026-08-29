@@ -8,8 +8,6 @@ export const PLAYGROUND_PERSISTENCE_LIMITS = Object.freeze({
   presets: 20,
   stopSequences: 4,
   stopSequenceCharacters: 256,
-  images: 4,
-  imageBytes: 2 * 1024 * 1024,
   serializedBytes: 2 * 1024 * 1024,
 });
 
@@ -57,21 +55,11 @@ function trimStopSequences(config) {
   };
 }
 
-function normalizeAttachment(attachment) {
-  if (!isRecord(attachment) || attachment.size > PLAYGROUND_PERSISTENCE_LIMITS.imageBytes) return null;
-  return sanitize(attachment);
-}
-
 function normalizeMessage(message) {
   if (!isRecord(message)) return sanitize(message);
-  const attachments = Array.isArray(message.attachments) ? message.attachments : [];
-  return {
-    ...sanitize(message),
-    attachments: attachments
-      .map(normalizeAttachment)
-      .filter(Boolean)
-      .slice(0, PLAYGROUND_PERSISTENCE_LIMITS.images),
-  };
+  const textMessage = { ...message };
+  delete textMessage.attachments;
+  return sanitize(textMessage);
 }
 
 function normalizeSession(session) {

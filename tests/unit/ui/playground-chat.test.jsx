@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ChatWorkspace from '@/app/(dashboard)/dashboard/playground/components/tabs/ChatWorkspace.jsx';
-import ChatAttachments from '@/app/(dashboard)/dashboard/playground/components/tabs/ChatAttachments.jsx';
 
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
@@ -25,26 +24,6 @@ function createFakeStream(chunks) {
   };
 }
 
-// FileReader stub whose completion is triggered manually, so tests can resolve
-// reads after capability loss, Clear, Send, unmount, or a newer selection.
-class DelayedFileReader {
-  static instances = [];
-  constructor() {
-    this.onload = null;
-    this.onerror = null;
-    DelayedFileReader.instances.push(this);
-  }
-  readAsDataURL(file) {
-    this._file = file;
-  }
-  complete(result) {
-    this.onload?.({ target: { result } });
-  }
-  fail(error) {
-    this.onerror?.(error);
-  }
-}
-
 describe('ChatWorkspace', () => {
   const mockConfig = {
     model: { id: 'test-model' },
@@ -56,7 +35,6 @@ describe('ChatWorkspace', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    DelayedFileReader.instances = [];
   });
 
   afterEach(() => {
@@ -489,216 +467,21 @@ describe('ChatWorkspace', () => {
     expect(signal.aborted).toBe(true);
   });
 
-  it('sends an image-only request through the real request builder without rendering its data URL', async () => {
-    const originalFileReader = global.FileReader;
-    global.FileReader = class {
-      readAsDataURL() { this.onload({ target: { result: 'data:image/png;base64,attachment-data' } }); }
-    };
-    const onResult = vi.fn();
-    const imageConfig = { ...mockConfig, model: { id: 'vision-model', capabilities: { images: true } } };
+  it('sends text only without attachment controls, even for a vision-capable model', async () => {
+    const visionConfig = { ...mockConfig, model: { id: 'vision-model', capabilities: { images: true } } };
     mockFetch.mockResolvedValueOnce({ ok: true, body: createFakeStream(['data: [DONE]\n\n']) });
 
-    try {
-      const { container } = render(<ChatWorkspace configState={imageConfig} onResult={onResult} />);
-      const file = new File(['image'], 'attachment.png', { type: 'image/png' });
-      const imageInput = screen.getByTestId('playground-image-input');
-      expect(imageInput.accept).toBe('image/*');
-      expect(imageInput.multiple).toBe(true);
-      fireEvent.change(imageInput, { target: { files: [file] } });
+    render(<ChatWorkspace configState={visionConfig} />);
 
-      await waitFor(() => expect(screen.getByText(/attachment\.png/)).toBeTruthy());
-      expect(container.innerHTML).not.toContain('attachment-data');
-      fireEvent.click(screen.getByTestId('playground-send'));
+    expect(screen.queryByTestId('playground-image-input')).toBeNull();
+    expect(screen.queryByTestId('playground-image-upload')).toBeNull();
+    expect(screen.queryByTestId('playground-image-preview')).toBeNull();
 
-      await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
-      const request = JSON.parse(mockFetch.mock.calls[0][1].body);
-      expect(request.messages.at(-1)).toEqual({
-        role: 'user',
-        content: [{ type: 'image_url', image_url: { url: 'data:image/png;base64,attachment-data' } }]
-      });
-      await waitFor(() => expect(onResult).toHaveBeenCalled());
-      expect(screen.queryByText(/attachment\.png/)).toBeNull();
-      expect(JSON.stringify(onResult.mock.calls)).not.toContain('attachment-data');
-    } finally {
-      global.FileReader = originalFileReader;
-    }
-  });
+    fireEvent.change(screen.getByPlaceholderText('Send a message...'), { target: { value: 'text prompt' } });
+    fireEvent.click(screen.getByTestId('playground-send'));
 
-  it('removes a single attachment', async () => {
-    const originalFileReader = global.FileReader;
-    global.FileReader = DelayedFileReader;
-    const imageConfig = { ...mockConfig, model: { id: 'vision-model', capabilities: { images: true } } };
-
-    try {
-      render(<ChatWorkspace configState={imageConfig} />);
-      fireEvent.change(screen.getByTestId('playground-image-input'), { target: { files: [new File(['one'], 'one.png', { type: 'image/png' })] } });
-      DelayedFileReader.instances[0].complete('data:image/png;base64,one');
-      await waitFor(() => expect(screen.getByText(/one\.png/)).toBeTruthy());
-      fireEvent.click(screen.getByRole('button', { name: 'Remove one.png (1)' }));
-      expect(screen.queryByText(/one\.png/)).toBeNull();
-    } finally {
-      global.FileReader = originalFileReader;
-    }
-  });
-
-  it('clears a pending attachment without sending', async () => {
-    const originalFileReader = global.FileReader;
-    global.FileReader = DelayedFileReader;
-    const imageConfig = { ...mockConfig, model: { id: 'vision-model', capabilities: { images: true } } };
-
-    try {
-      render(<ChatWorkspace configState={imageConfig} />);
-      fireEvent.change(screen.getByTestId('playground-image-input'), { target: { files: [new File(['one'], 'one.png', { type: 'image/png' })] } });
-      DelayedFileReader.instances[0].complete('data:image/png;base64,one');
-      await waitFor(() => expect(screen.getByText(/one\.png/)).toBeTruthy());
-
-      fireEvent.click(screen.getByTestId('playground-clear'));
-
-      expect(screen.queryByText(/one\.png/)).toBeNull();
-      expect(mockFetch).not.toHaveBeenCalled();
-    } finally {
-      global.FileReader = originalFileReader;
-    }
-  });
-
-  it('clears existing attachments when image capability is lost', async () => {
-    const originalFileReader = global.FileReader;
-    global.FileReader = DelayedFileReader;
-    const imageConfig = { ...mockConfig, model: { id: 'vision-model', capabilities: { images: true } } };
-
-    try {
-      const { rerender } = render(<ChatWorkspace configState={imageConfig} />);
-      fireEvent.change(screen.getByTestId('playground-image-input'), { target: { files: [new File(['one'], 'one.png', { type: 'image/png' })] } });
-      DelayedFileReader.instances[0].complete('data:image/png;base64,one');
-      await waitFor(() => expect(screen.getByText(/one\.png/)).toBeTruthy());
-
-      rerender(<ChatWorkspace configState={mockConfig} />);
-
-      expect(screen.queryByTestId('playground-image-input')).toBeNull();
-      expect(screen.queryByText(/one\.png/)).toBeNull();
-    } finally {
-      global.FileReader = originalFileReader;
-    }
-  });
-
-  it('does not restore a delayed FileReader completion after image capability is lost', async () => {
-    const originalFileReader = global.FileReader;
-    global.FileReader = DelayedFileReader;
-    const imageConfig = { ...mockConfig, model: { id: 'vision-model', capabilities: { images: true } } };
-
-    try {
-      const { rerender } = render(<ChatWorkspace configState={imageConfig} />);
-      fireEvent.change(screen.getByTestId('playground-image-input'), { target: { files: [new File(['one'], 'one.png', { type: 'image/png' })] } });
-      expect(DelayedFileReader.instances).toHaveLength(1);
-
-      rerender(<ChatWorkspace configState={mockConfig} />);
-
-      DelayedFileReader.instances[0].complete('data:image/png;base64,one');
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(screen.queryByText(/one\.png/)).toBeNull();
-
-      rerender(<ChatWorkspace configState={imageConfig} />);
-      expect(screen.queryByText(/one\.png/)).toBeNull();
-    } finally {
-      global.FileReader = originalFileReader;
-    }
-  });
-
-  it('drops a file read that resolves after Clear', async () => {
-    const originalFileReader = global.FileReader;
-    global.FileReader = DelayedFileReader;
-    const imageConfig = { ...mockConfig, model: { id: 'vision-model', capabilities: { images: true } } };
-
-    try {
-      render(<ChatWorkspace configState={imageConfig} />);
-      fireEvent.change(screen.getByTestId('playground-image-input'), { target: { files: [new File(['one'], 'one.png', { type: 'image/png' })] } });
-      DelayedFileReader.instances[0].complete('data:image/png;base64,one');
-      await waitFor(() => expect(screen.getByText(/one\.png/)).toBeTruthy());
-
-      fireEvent.change(screen.getByTestId('playground-image-input'), { target: { files: [new File(['two'], 'two.png', { type: 'image/png' })] } });
-      expect(DelayedFileReader.instances).toHaveLength(2);
-
-      fireEvent.click(screen.getByTestId('playground-clear'));
-      DelayedFileReader.instances[1].complete('data:image/png;base64,two');
-      await Promise.resolve();
-      await Promise.resolve();
-
-      expect(screen.queryByText(/two\.png/)).toBeNull();
-      expect(screen.queryByText(/one\.png/)).toBeNull();
-      expect(mockFetch).not.toHaveBeenCalled();
-    } finally {
-      global.FileReader = originalFileReader;
-    }
-  });
-
-  it('drops a file read that resolves after an accepted send', async () => {
-    const originalFileReader = global.FileReader;
-    global.FileReader = DelayedFileReader;
-    const imageConfig = { ...mockConfig, model: { id: 'vision-model', capabilities: { images: true } } };
-    mockFetch.mockResolvedValueOnce({ ok: true, body: createFakeStream(['data: [DONE]\n\n']) });
-
-    try {
-      render(<ChatWorkspace configState={imageConfig} onMetricsUpdate={mockOnMetricsUpdate} />);
-      fireEvent.change(screen.getByTestId('playground-image-input'), { target: { files: [new File(['one'], 'one.png', { type: 'image/png' })] } });
-      DelayedFileReader.instances[0].complete('data:image/png;base64,one');
-      await waitFor(() => expect(screen.getByText(/one\.png/)).toBeTruthy());
-
-      fireEvent.change(screen.getByTestId('playground-image-input'), { target: { files: [new File(['two'], 'two.png', { type: 'image/png' })] } });
-      fireEvent.change(screen.getByPlaceholderText('Send a message...'), { target: { value: 'send now' } });
-      fireEvent.click(screen.getByTestId('playground-send'));
-
-      await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
-
-      DelayedFileReader.instances[1].complete('data:image/png;base64,two');
-      await Promise.resolve();
-      await Promise.resolve();
-
-      expect(screen.queryByText(/two\.png/)).toBeNull();
-      await waitFor(() => expect(mockOnMetricsUpdate).toHaveBeenCalled());
-    } finally {
-      global.FileReader = originalFileReader;
-    }
-  });
-
-  it('drops an earlier pending read when a newer file selection replaces it', async () => {
-    const originalFileReader = global.FileReader;
-    global.FileReader = DelayedFileReader;
-    const imageConfig = { ...mockConfig, model: { id: 'vision-model', capabilities: { images: true } } };
-
-    try {
-      render(<ChatWorkspace configState={imageConfig} />);
-      fireEvent.change(screen.getByTestId('playground-image-input'), { target: { files: [new File(['one'], 'one.png', { type: 'image/png' })] } });
-      fireEvent.change(screen.getByTestId('playground-image-input'), { target: { files: [new File(['two'], 'two.png', { type: 'image/png' })] } });
-      expect(DelayedFileReader.instances).toHaveLength(2);
-
-      DelayedFileReader.instances[0].complete('data:image/png;base64,one');
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(screen.queryByText(/one\.png/)).toBeNull();
-
-      DelayedFileReader.instances[1].complete('data:image/png;base64,two');
-      await waitFor(() => expect(screen.getByText(/two\.png/)).toBeTruthy());
-    } finally {
-      global.FileReader = originalFileReader;
-    }
-  });
-
-  it('ignores a FileReader completion after unmount', async () => {
-    const originalFileReader = global.FileReader;
-    global.FileReader = DelayedFileReader;
-    const onChange = vi.fn();
-
-    try {
-      const { unmount } = render(<ChatAttachments attachments={[]} canAttach disabled={false} onChange={onChange} onError={vi.fn()} resetKey={0} />);
-      fireEvent.change(screen.getByTestId('playground-image-input'), { target: { files: [new File(['x'], 'x.png', { type: 'image/png' })] } });
-      unmount();
-      DelayedFileReader.instances[0].complete('data:image/png;base64,x');
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(onChange).not.toHaveBeenCalled();
-    } finally {
-      global.FileReader = originalFileReader;
-    }
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+    const request = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(request.messages.at(-1)).toEqual({ role: 'user', content: 'text prompt' });
   });
 });

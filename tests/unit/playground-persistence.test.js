@@ -67,7 +67,7 @@ describe("playground persistence", () => {
           ...session.messages[0],
           attachments: [
             { id: "image", dataUrl: "data:image/png;base64,payload", size: 1024 },
-            { id: "too-large", size: PLAYGROUND_PERSISTENCE_LIMITS.imageBytes + 1 },
+            { id: "too-large", size: 2048 },
             ...Array.from({ length: 4 }, (_, imageIndex) => ({ id: `image-${imageIndex}`, size: 1024 })),
           ],
           providerSpecificData: { apiKey: "sk-secret-value" },
@@ -76,7 +76,7 @@ describe("playground persistence", () => {
           ...session.messages.at(-1),
           attachments: [
             { id: "image", dataUrl: "data:image/png;base64,payload", size: 1024 },
-            { id: "too-large", size: PLAYGROUND_PERSISTENCE_LIMITS.imageBytes + 1 },
+            { id: "too-large", size: 2048 },
             ...Array.from({ length: 4 }, (_, imageIndex) => ({ id: `image-${imageIndex}`, size: 1024 })),
           ],
           providerSpecificData: { apiKey: "sk-secret-value" },
@@ -98,8 +98,6 @@ describe("playground persistence", () => {
     expect(saved).toEqual({ persisted: true, memoryOnly: false, warning: null, evictedSessionIds: [] });
     expect(restored.sessions).toHaveLength(PLAYGROUND_PERSISTENCE_LIMITS.sessions);
     expect(restored.sessions.every((session) => session.messages.length === PLAYGROUND_PERSISTENCE_LIMITS.messagesPerSession)).toBe(true);
-    expect(restored.sessions[0].messages.at(-1).attachments).toHaveLength(PLAYGROUND_PERSISTENCE_LIMITS.images);
-    expect(restored.sessions[0].messages.at(-1).attachments.every((attachment) => attachment.size <= PLAYGROUND_PERSISTENCE_LIMITS.imageBytes)).toBe(true);
     expect(restored.presets).toHaveLength(PLAYGROUND_PERSISTENCE_LIMITS.presets);
     expect(restored.config.stop).toEqual(["END"]);
     expect(restored.presets[0].config.stop).toEqual(["a", "b", "c", "d"]);
@@ -110,6 +108,58 @@ describe("playground persistence", () => {
     expect(serialized).not.toContain("sk-secret-value");
     expect(serialized).not.toContain("session-secret");
     expect(serialized).not.toContain("providerSpecificData");
+  });
+
+  it("strips legacy attachments and sensitive request data on save and load while preserving text message content", () => {
+    // Given: an existing legacy state containing message attachments, dataUrls, and sensitive fields.
+    const storage = new MemoryStorage();
+    const legacyState = createState({
+      sessions: [
+        {
+          id: "legacy-session-1",
+          updatedAt: "2026-08-26T12:00:00.000Z",
+          messages: [
+            {
+              id: "msg-1",
+              role: "user",
+              content: "Legacy text prompt",
+              attachments: [
+                { id: "att-1", name: "photo.png", dataUrl: "data:image/png;base64,secretdata", size: 2048 },
+              ],
+              providerSpecificData: { token: "secret-token" },
+              authorization: "Bearer secret-auth",
+            },
+            {
+              id: "msg-2",
+              role: "assistant",
+              content: "Legacy text response",
+            },
+          ],
+        },
+      ],
+    });
+
+    // When: saved by persistence and restored by a fresh persistence instance.
+    const saveResult = createPlaygroundPersistence(storage).save(legacyState);
+    const restored = createPlaygroundPersistence(storage).load();
+    const serialized = [...storage.values.values()].join("\n");
+
+    // Then: message text, id, and role survive intact, while attachments and request secrets are completely absent.
+    expect(saveResult).toEqual({ persisted: true, memoryOnly: false, warning: null, evictedSessionIds: [] });
+    expect(restored.sessions).toHaveLength(1);
+    expect(restored.sessions[0].id).toBe("legacy-session-1");
+    expect(restored.sessions[0].messages).toEqual([
+      { id: "msg-1", role: "user", content: "Legacy text prompt" },
+      { id: "msg-2", role: "assistant", content: "Legacy text response" },
+    ]);
+    expect(restored.sessions[0].messages[0].attachments).toBeUndefined();
+    expect(serialized).not.toContain("attachments");
+    expect(serialized).not.toContain("dataUrl");
+    expect(serialized).not.toContain("secretdata");
+    expect(serialized).not.toContain("providerSpecificData");
+    expect(serialized).not.toContain("authorization");
+    expect(serialized).not.toContain("secret-token");
+    expect(serialized).not.toContain("secret-auth");
   });
 
   it("resets only malformed and unknown-version namespaces", () => {

@@ -1,47 +1,22 @@
 import React, { useState, useEffect, useCallback } from "react";
-import ChatAttachments from "./ChatAttachments";
 import { buildPlaygroundRequest } from "../../lib/requestBuilder";
 import { createSseParser } from "../../lib/sseParser";
 import { createMetricAccumulator } from "../../lib/metrics.js";
 import { sanitizePlaygroundData } from "../../lib/sanitize";
 
-function withoutImageParts(request) {
-  return {
-    ...request,
-    messages: request.messages.map((message) => (
-      Array.isArray(message.content)
-        ? { ...message, content: message.content.filter((part) => part.type !== "image_url") }
-        : message
-    )),
-  };
-}
-
 export default function ChatWorkspace({ configState, onMetricsUpdate, onResult, draft, onDraftChange }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState(draft || "");
-  const [attachments, setAttachments] = useState([]);
-  const [attachmentResetKey, setAttachmentResetKey] = useState(0);
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState(null);
   const abortControllerRef = React.useRef(null);
   const abortMetricsRef = React.useRef(null);
   const outputRef = React.useRef("");
-  const canAttachImages = Boolean(configState?.model?.capabilities?.images);
 
   useEffect(() => { setInput(draft || ""); }, [draft]);
-  useEffect(() => { if (!canAttachImages) setAttachments([]); }, [canAttachImages]);
   useEffect(() => () => abortControllerRef.current?.abort(), []);
 
   const reportError = useCallback((message) => setError(sanitizePlaygroundData(message)), []);
-  const validateAttachments = useCallback((nextAttachments) => {
-    try {
-      buildPlaygroundRequest({ model: configState?.model, systemPrompt: "", messages: [], controls: {}, images: nextAttachments });
-      setAttachments(nextAttachments);
-      setError(null);
-    } catch (validationError) {
-      reportError(validationError.message);
-    }
-  }, [configState, reportError]);
 
   const handleStop = useCallback(() => {
     const controller = abortControllerRef.current;
@@ -81,7 +56,7 @@ export default function ChatWorkspace({ configState, onMetricsUpdate, onResult, 
     if (isStreaming) return;
     if (!configState?.model?.id) return reportError("A selected model is required.");
     const hasContent = input.trim().length > 0;
-    const currentMessages = forcedMessages || (hasContent || attachments.length > 0
+    const currentMessages = forcedMessages || (hasContent
       ? [...messages, { role: "user", content: input, partial: false }]
       : null);
     if (!currentMessages) return;
@@ -103,13 +78,10 @@ export default function ChatWorkspace({ configState, onMetricsUpdate, onResult, 
         systemPrompt: configState.systemPrompt,
         messages: currentMessages,
         controls: configState.params,
-        images: forcedMessages ? [] : attachments,
       });
       if (!forcedMessages) {
         setMessages(currentMessages);
         setInput("");
-        setAttachments([]);
-        setAttachmentResetKey((key) => key + 1);
         onDraftChange?.("");
       }
       const response = await fetch("/api/dashboard/chat/completions", {
@@ -170,12 +142,12 @@ export default function ChatWorkspace({ configState, onMetricsUpdate, onResult, 
       const snapshot = accumulator.snapshot();
       if (onMetricsUpdate && snapshot.terminalState !== null) onMetricsUpdate(snapshot);
       if (onResult && requestBody) onResult(sanitizePlaygroundData({
-        request: withoutImageParts(requestBody),
+        request: requestBody,
         response: { status: responseStatus, output: outputRef.current },
         metrics: snapshot,
       }));
     }
-  }, [appendAssistantText, attachments, configState, finishAssistant, input, isStreaming, messages, onDraftChange, onMetricsUpdate, onResult, reportError]);
+  }, [appendAssistantText, configState, finishAssistant, input, isStreaming, messages, onDraftChange, onMetricsUpdate, onResult, reportError]);
 
   const handleRegenerate = useCallback(() => {
     if (messages.length === 0 || isStreaming) return;
@@ -189,8 +161,6 @@ export default function ChatWorkspace({ configState, onMetricsUpdate, onResult, 
     abortControllerRef.current = null;
     setIsStreaming(false);
     setMessages([]);
-    setAttachments([]);
-    setAttachmentResetKey((key) => key + 1);
     setError(null);
   }, []);
 
@@ -206,13 +176,12 @@ export default function ChatWorkspace({ configState, onMetricsUpdate, onResult, 
         {error && <div className="p-4 bg-error/10 text-error rounded-lg text-sm border border-error/20" data-testid="chat-error">{error}</div>}
       </div>
       <div className="p-4 border-t border-border bg-bg-alt flex flex-col gap-2">
-        <ChatAttachments attachments={attachments} canAttach={canAttachImages} disabled={isStreaming} onChange={validateAttachments} onError={reportError} resetKey={attachmentResetKey} />
         <div className="flex gap-2 items-end">
           <textarea value={input} onChange={(event) => { setInput(event.target.value); onDraftChange?.(event.target.value); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendMessage(); } }} placeholder="Send a message..." className="flex-1 bg-surface border border-border rounded-lg p-3 text-sm focus:outline-none focus:border-primary resize-none min-h-[60px] max-h-[200px]" disabled={isStreaming} />
           <div className="flex flex-col gap-2 shrink-0">
-            {isStreaming ? <button onClick={handleStop} className="bg-error hover:bg-error-hover text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors" data-testid="playground-stop">Stop</button> : <button onClick={() => sendMessage()} disabled={!input.trim() && attachments.length === 0} className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors" data-testid="playground-send">Send</button>}
+            {isStreaming ? <button onClick={handleStop} className="bg-error hover:bg-error-hover text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors" data-testid="playground-stop">Stop</button> : <button onClick={() => sendMessage()} disabled={!input.trim()} className="bg-primary hover:bg-primary-hover disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors" data-testid="playground-send">Send</button>}
             {messages.length > 0 && !isStreaming && <button onClick={handleRegenerate} className="text-text-muted hover:text-text-main text-xs text-center" data-testid="playground-regenerate">Regenerate</button>}
-            {(messages.length > 0 || attachments.length > 0) && !isStreaming && <button onClick={handleClear} className="text-text-muted hover:text-text-main text-xs text-center" data-testid="playground-clear">Clear</button>}
+            {messages.length > 0 && !isStreaming && <button onClick={handleClear} className="text-text-muted hover:text-text-main text-xs text-center" data-testid="playground-clear">Clear</button>}
           </div>
         </div>
       </div>
