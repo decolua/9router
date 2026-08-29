@@ -1,6 +1,5 @@
 // In-memory progressive lockout for dashboard login. Resets on process restart.
-
-import { getTrustedRequestOrigin } from "@/lib/requestOrigin";
+import { hasTrustedPeerHeaders } from "./trustedPeer.js";
 
 const MAX_FAILS_BEFORE_LOCK = 5;
 const LOCK_STEPS_MS = [30_000, 120_000, 600_000, 1_800_000]; // 30s, 2m, 10m, 30m
@@ -48,5 +47,18 @@ export function recordSuccess(ip) {
 }
 
 export function getClientIp(request) {
-  return getTrustedRequestOrigin(request)?.ip || "unknown";
+  // Trusted only when custom-server.js proves it stamped the header from the TCP socket;
+  // otherwise a client could rotate the value to escape its own lockout bucket.
+  if (hasTrustedPeerHeaders(request)) {
+    const realIp = request.headers.get("x-9r-real-ip");
+    if (realIp) return realIp;
+  }
+  // Behind a trusted reverse proxy that overwrites XFF with the real client IP.
+  if (process.env.TRUST_PROXY === "true") {
+    const xff = request.headers.get("x-forwarded-for");
+    if (xff) return xff.split(",")[0].trim();
+  }
+  // Direct exposure without custom-server: single bucket so spoofed XFF
+  // rotation cannot escape the limiter.
+  return "unknown";
 }
