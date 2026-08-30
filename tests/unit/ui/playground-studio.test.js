@@ -3,8 +3,9 @@
  */
 import React from 'react';
 import { test, expect, describe, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import PlaygroundStudio from '../../../src/app/(dashboard)/dashboard/playground/PlaygroundStudio.jsx';
+import StudioConfigPane from '../../../src/app/(dashboard)/dashboard/playground/components/StudioConfigPane.jsx';
 import * as modelCatalog from '../../../src/app/(dashboard)/dashboard/playground/lib/modelCatalog.js';
 import { PLAYGROUND_PERSISTENCE_KEYS } from '../../../src/app/(dashboard)/dashboard/playground/lib/persistence.js';
 
@@ -13,6 +14,41 @@ vi.mock('../../../src/app/(dashboard)/dashboard/playground/lib/modelCatalog.js',
   normalizeModelCatalog: vi.fn()
 }));
 
+const providerFilterModels = [
+  { id: 'wrongprefix/first', label: 'First', provider: { id: 'alpha', name: 'Zulu', connectionId: 'a-2' } },
+  { id: 'alpha/second', label: 'Second', provider: { id: 'alpha', name: 'Alpha', connectionId: 'a-1' } },
+  { id: 'beta/third', label: 'Third', provider: { id: 'beta', name: 'Shared', connectionId: 'b-1' } },
+  { id: 'gamma/fourth', label: 'Fourth', provider: { id: 'gamma', name: 'Shared', connectionId: 'g-1' } },
+  { id: 'delta/fifth', label: 'Fifth', provider: { id: ' delta ', name: '   ', connectionId: 'd-1' } },
+  { id: 'missing/sixth', label: 'Missing', provider: { name: 'Missing ID', connectionId: 'm-1' } },
+  { id: 'blank/seventh', label: 'Blank', provider: { id: '   ', name: 'Blank ID', connectionId: 'z-1' } },
+  { id: 'numeric/eighth', label: 'Numeric', provider: { id: 8, name: 'Numeric ID', connectionId: 'n-1' } },
+];
+
+function renderConfigPane({ models = providerFilterModels, config = {}, loading = false, error = null } = {}) {
+  function Harness() {
+    const [currentConfig, setCurrentConfig] = React.useState({
+      systemPrompt: '',
+      temperature: 0.7,
+      maxTokens: 2000,
+      model: null,
+      ...config,
+    });
+    return React.createElement(React.Fragment, null,
+      React.createElement(StudioConfigPane, {
+        config: currentConfig,
+        onChange: setCurrentConfig,
+        models,
+        loading,
+        error,
+      }),
+      React.createElement('output', { 'data-testid': 'config-state' }, JSON.stringify(currentConfig))
+    );
+  }
+
+  return render(React.createElement(Harness));
+}
+
 describe('PlaygroundStudio Shell', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -20,6 +56,7 @@ describe('PlaygroundStudio Shell', () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.restoreAllMocks();
   });
 
@@ -99,12 +136,14 @@ describe('PlaygroundStudio Shell', () => {
 
     const { unmount } = render(React.createElement(PlaygroundStudio));
     expect(screen.getByRole('status', { name: 'Loading models...' })).toBeDefined();
+    expect(screen.queryByTestId('chat-provider-filter')).toBeNull();
 
     resolvePromise({ models: [] });
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeDefined();
     });
     expect(screen.getByText(/No models available/)).toBeDefined();
+    expect(screen.queryByTestId('chat-provider-filter')).toBeNull();
 
     unmount();
 
@@ -115,6 +154,7 @@ describe('PlaygroundStudio Shell', () => {
       expect(screen.getByRole('alert')).toBeDefined();
     });
     expect(screen.getByText('Network error')).toBeDefined();
+    expect(screen.queryByTestId('chat-provider-filter')).toBeNull();
   });
 
   test('hydrates persisted namespaces before saving and keeps restored values intact', async () => {
@@ -200,9 +240,177 @@ describe('PlaygroundStudio Shell', () => {
       expect(inspector).toContain('5');
     });
 
+    const submittedBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(submittedBody.model).toBe('safe/model');
+
     const storage = Object.values(PLAYGROUND_PERSISTENCE_KEYS).map((key) => localStorage.getItem(key)).join('');
     expect(screen.getByTestId('playground-inspector').textContent).not.toContain('sk-secret-value');
     expect(storage).not.toContain('sk-secret-value');
+  });
+
+  test('exposes the loaded catalog with full model IDs in the Chat selector', async () => {
+    const connectedModels = [
+      {
+        id: 'wrongprefix/first',
+        label: 'First',
+        provider: { id: 'alpha', name: 'Alpha', connectionId: 'connection-a' },
+        available: true,
+        capabilities: {},
+      },
+      {
+        id: 'beta/second',
+        label: 'Second',
+        provider: { id: 'beta', name: 'Beta', connectionId: 'connection-b' },
+        available: true,
+        capabilities: {},
+      },
+    ];
+    modelCatalog.fetchModelCatalog.mockResolvedValue({ models: connectedModels });
+
+    render(React.createElement(PlaygroundStudio));
+
+    await waitFor(() => {
+      const selector = screen.getByLabelText('Select Model');
+      expect(Array.from(selector.options, (option) => option.value)).toEqual([
+        '',
+        'wrongprefix/first',
+        'beta/second',
+      ]);
+    });
+  });
+
+  test('derives stable canonical Chat provider options and filters by provider identity', () => {
+    const { unmount } = renderConfigPane();
+    const providerFilter = screen.getByTestId('chat-provider-filter');
+
+    expect(providerFilter.tagName).toBe('SELECT');
+    expect(providerFilter.getAttribute('aria-label')).toBe('Filter models by provider');
+    expect(Array.from(providerFilter.options, (option) => [option.value, option.textContent])).toEqual([
+      ['', 'All providers'],
+      ['alpha', 'Alpha'],
+      ['beta', 'Shared'],
+      ['gamma', 'Shared'],
+      ['delta', 'delta'],
+    ]);
+
+    fireEvent.change(providerFilter, { target: { value: 'alpha' } });
+    expect(Array.from(screen.getByLabelText('Select Model').options, (option) => option.value)).toEqual([
+      '',
+      'wrongprefix/first',
+      'alpha/second',
+    ]);
+
+    unmount();
+    const reversed = renderConfigPane({ models: [...providerFilterModels].reverse() });
+    expect(Array.from(screen.getByTestId('chat-provider-filter').options, (option) => [option.value, option.textContent])).toEqual([
+      ['', 'All providers'],
+      ['alpha', 'Alpha'],
+      ['beta', 'Shared'],
+      ['gamma', 'Shared'],
+      ['delta', 'delta'],
+    ]);
+    reversed.unmount();
+  });
+
+  test('clears an incompatible Chat model with an explicit model-null configuration transition', () => {
+    const { unmount } = renderConfigPane({ config: { model: providerFilterModels[0] } });
+    const providerFilter = screen.getByTestId('chat-provider-filter');
+    const modelSelect = screen.getByLabelText('Select Model');
+
+    fireEvent.change(providerFilter, { target: { value: 'alpha' } });
+    expect(modelSelect.value).toBe('wrongprefix/first');
+    fireEvent.change(providerFilter, { target: { value: '' } });
+    expect(modelSelect.value).toBe('wrongprefix/first');
+    fireEvent.change(providerFilter, { target: { value: 'beta' } });
+    expect(modelSelect.value).toBe('');
+    expect(JSON.parse(screen.getByTestId('config-state').textContent).model).toBeNull();
+
+    unmount();
+    const catalogAbsent = renderConfigPane({ config: { model: { id: 'historic/model', label: 'Historic' } } });
+    fireEvent.change(screen.getByTestId('chat-provider-filter'), { target: { value: 'alpha' } });
+    expect(screen.getByLabelText('Select Model').value).toBe('');
+
+    catalogAbsent.unmount();
+    const catalogPresent = renderConfigPane({ config: { model: { id: 'wrongprefix/first', label: 'Historic without provider' } } });
+    fireEvent.change(screen.getByTestId('chat-provider-filter'), { target: { value: 'alpha' } });
+    expect(screen.getByLabelText('Select Model').value).toBe('wrongprefix/first');
+    catalogPresent.unmount();
+  });
+
+  test('prevents a cleared hidden Chat model from submission and keeps the provider filter ephemeral', async () => {
+    modelCatalog.fetchModelCatalog.mockResolvedValue({ models: providerFilterModels });
+    global.fetch = vi.fn();
+
+    render(React.createElement(PlaygroundStudio));
+    await waitFor(() => expect(screen.getByTestId('chat-provider-filter')).toBeDefined());
+
+    fireEvent.change(screen.getByLabelText('Select Model'), { target: { value: 'wrongprefix/first' } });
+    await waitFor(() => {
+      const persisted = JSON.parse(localStorage.getItem(PLAYGROUND_PERSISTENCE_KEYS.presetsConfig));
+      expect(persisted.value.config.model.id).toBe('wrongprefix/first');
+      expect(persisted.value.config).not.toHaveProperty('providerId');
+      expect(persisted.value.config).not.toHaveProperty('providerFilter');
+    });
+
+    fireEvent.change(screen.getByTestId('chat-provider-filter'), { target: { value: 'beta' } });
+    await waitFor(() => {
+      const persisted = JSON.parse(localStorage.getItem(PLAYGROUND_PERSISTENCE_KEYS.presetsConfig));
+      expect(persisted.value.config.model).toBeNull();
+      expect(persisted.value.config).not.toHaveProperty('providerId');
+      expect(persisted.value.config).not.toHaveProperty('providerFilter');
+    });
+
+    fireEvent.change(screen.getByPlaceholderText('Send a message...'), { target: { value: 'Do not send stale Alpha' } });
+    fireEvent.click(screen.getByTestId('playground-send'));
+
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test('does not clear the selected Chat model solely when catalog state becomes loading or errored', () => {
+    const onChange = vi.fn();
+    const config = {
+      systemPrompt: '',
+      temperature: 0.7,
+      maxTokens: 2000,
+      model: providerFilterModels[0],
+    };
+    const { rerender } = render(React.createElement(StudioConfigPane, {
+      config,
+      onChange,
+      models: providerFilterModels,
+      loading: false,
+      error: null,
+    }));
+
+    rerender(React.createElement(StudioConfigPane, {
+      config,
+      onChange,
+      models: [],
+      loading: true,
+      error: null,
+    }));
+    rerender(React.createElement(StudioConfigPane, {
+      config,
+      onChange,
+      models: [],
+      loading: false,
+      error: 'Network error',
+    }));
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  test('does not render the Chat provider filter while loading, errored, or globally empty', () => {
+    const { unmount } = renderConfigPane({ loading: true });
+    expect(screen.queryByTestId('chat-provider-filter')).toBeNull();
+
+    unmount();
+    renderConfigPane({ error: 'Network error' });
+    expect(screen.queryByTestId('chat-provider-filter')).toBeNull();
+
+    unmount();
+    renderConfigPane({ models: [] });
+    expect(screen.queryByTestId('chat-provider-filter')).toBeNull();
   });
 
   test('exposes the connected catalog to separate Compare selectors before a global model is selected', async () => {
@@ -228,7 +436,9 @@ describe('PlaygroundStudio Shell', () => {
     fireEvent.click(screen.getByTestId('playground-compare-tab'));
 
     await waitFor(() => {
-      const selectors = screen.getAllByRole('combobox');
+      const selectors = screen.getAllByRole('combobox').filter((selector) => (
+        selector !== screen.getByTestId('chat-provider-filter')
+      ));
       expect(selectors).toHaveLength(3);
       for (const selector of selectors.slice(1)) {
         expect(Array.from(selector.options, (option) => option.value)).toEqual([
@@ -239,7 +449,9 @@ describe('PlaygroundStudio Shell', () => {
       }
     });
 
-    const [, firstColumn, secondColumn] = screen.getAllByRole('combobox');
+    const [, firstColumn, secondColumn] = screen.getAllByRole('combobox').filter((selector) => (
+      selector !== screen.getByTestId('chat-provider-filter')
+    ));
     fireEvent.change(firstColumn, { target: { value: 'alpha/first' } });
     fireEvent.change(secondColumn, { target: { value: 'beta/second' } });
 
