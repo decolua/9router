@@ -1,7 +1,27 @@
 import { describe, it, expect } from "vitest";
 import { parseQuotaData } from "@/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
+import { normalizeCodexUsage } from "../../open-sse/services/usage/codex.js";
 
 describe("Codex Spark Quota Tracking (#3431)", () => {
+  it("labels a Pro account's single seven-day primary window as weekly", () => {
+    const usage = normalizeCodexUsage({
+      plan_type: "pro",
+      rate_limit: {
+        primary_window: {
+          used_percent: 1,
+          limit_window_seconds: 604800,
+          reset_at: 1788654857,
+        },
+        secondary_window: null,
+      },
+    });
+
+    expect(usage.plan).toBe("pro");
+    expect(usage.quotas.session).toBeUndefined();
+    expect(usage.quotas.weekly).toMatchObject({ used: 1, remaining: 99 });
+    expect(parseQuotaData("codex", usage)[0].name).toBe("Weekly");
+  });
+
   it("correctly normalizes spark_session and spark_weekly quotas with display labels", () => {
     const mockCodexUsage = {
       plan: "team",
