@@ -4,6 +4,11 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import {
+  CODEX_LOOPBACK_REDIRECT_URI,
+  hasMatchingOAuthState,
+  isLoopbackBrowserHostname,
+} from "@/shared/utils/oauthBrowserFlow";
 
 // Providers using the dynamic-port local callback proxy.
 // Browser OAuth: popup → auto callback → auto exchange → poll-status.
@@ -52,20 +57,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const openedRef = useRef(false);
   const { copied, copy } = useCopyToClipboard();
 
-  // State for client-only values to avoid hydration mismatch
-  const [isLocalhost, setIsLocalhost] = useState(false);
   const [placeholderUrl, setPlaceholderUrl] = useState("/callback?code=...");
   const callbackProcessedRef = useRef(false);
-
-  // Detect if running on localhost (client-side only)
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setIsLocalhost(
-        window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
-      );
-      setPlaceholderUrl(`${window.location.origin}/callback?code=...`);
-    }
-  }, []);
 
   // Define all useCallback hooks BEFORE the useEffects that reference them
 
@@ -73,6 +66,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const exchangeTokens = useCallback(async (code, state) => {
     if (!authData) return;
     try {
+      const isRawAccessToken = typeof code === "string" && code.startsWith("eyJ") && code.includes(".");
+      if (provider === "codex" && !isRawAccessToken && !hasMatchingOAuthState(authData.state, state)) {
+        throw new Error("OAuth state mismatch. Start the Codex connection again.");
+      }
       const res = await fetch(`/api/oauth/${provider}/exchange`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -215,6 +212,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     if (!provider) return;
     try {
       setError(null);
+      setPlaceholderUrl(`${window.location.origin}/callback?code=...`);
 
       // Trae/Windsurf: proxy OAuth (browser mode) — handled by dedicated flow.
       // Paste-token mode is handled by handleManualSubmit (no /authorize call).
@@ -293,9 +291,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
       // Authorization code flow - build redirect URI (some providers require fixed ports)
       const appPort = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
+      const browserIsLoopback = isLoopbackBrowserHostname(window.location.hostname);
       let redirectUri;
       if (provider === "codex") {
-        redirectUri = "http://localhost:1455/auth/callback";
+        redirectUri = CODEX_LOOPBACK_REDIRECT_URI;
       } else if (provider === "xai") {
         redirectUri = "http://127.0.0.1:56121/callback";
       } else {
@@ -315,7 +314,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       // Codex: start proxy with server-side session (auto-exchange) + fallback to channels
       let codexProxyActive = false;
       let codexServerSide = false;
-      if (provider === "codex") {
+      if (provider === "codex" && browserIsLoopback) {
         try {
           const proxyUrl = new URL(`/api/oauth/codex/start-proxy`, window.location.origin);
           proxyUrl.searchParams.set("app_port", appPort);
@@ -380,10 +379,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         if (!popupRef.current) {
           setStep("input");
         }
-      } else if (!isLocalhost || provider === "codex" || provider === "xai") {
+      } else if (!browserIsLoopback || provider === "codex" || provider === "xai") {
         // Non-localhost or proxy failed: manual input mode
         setStep("input");
-        window.open(data.authUrl, "_blank");
+        window.open(data.authUrl, "_blank", "noopener,noreferrer");
       } else {
         // Localhost (non-Codex/xAI): Open popup and wait for message
         setStep("waiting");
@@ -396,7 +395,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(err.message);
       setStep("error");
     }
-  }, [provider, isLocalhost, startPolling, oauthMeta, idcConfig, authMode, startProxyFlow]);
+  }, [provider, startPolling, oauthMeta, idcConfig, authMode, startProxyFlow]);
 
   // Reset state and start OAuth when modal opens
   useEffect(() => {
@@ -675,9 +674,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const modalTitle = isXaiProvider ? "Connect Grok Build OAuth" : `Connect ${providerInfo.name}`;
   const manualPlaceholder = isXaiProvider
     ? "http://127.0.0.1:56121/callback?code=... or copied code"
-    : isKimchiProvider
-      ? `${placeholderUrl.replace("code=...", "token=...")} or copied token`
-      : placeholderUrl;
+    : provider === "codex"
+      ? `${CODEX_LOOPBACK_REDIRECT_URI}?code=...&state=...`
+      : isKimchiProvider
+        ? `${placeholderUrl.replace("code=...", "token=...")} or copied token`
+        : placeholderUrl;
 
   return (
     <Modal isOpen={isOpen} title={modalTitle} onClose={handleClose} size="lg">
@@ -759,22 +760,26 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         {/* Waiting + Manual Input combined (non-device-code, non-proxy) */}
         {(step === "waiting" || step === "input") && !isDeviceCode && !PROXY_OAUTH_PROVIDERS.has(provider) && (
           <>
-            {/* Option A: Auto via popup */}
-            <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg bg-sidebar/50">
-              <span className="material-symbols-outlined text-base text-primary animate-spin">
-                progress_activity
-              </span>
-              <span className="text-sm">
-                {isXaiProvider ? "Waiting for Grok Build OAuth…" : "Waiting for popup authorization…"}
-              </span>
-            </div>
+            {step === "waiting" && (
+              <>
+                {/* Option A: Auto via popup */}
+                <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg bg-sidebar/50">
+                  <span className="material-symbols-outlined text-base text-primary animate-spin">
+                    progress_activity
+                  </span>
+                  <span className="text-sm">
+                    {isXaiProvider ? "Waiting for Grok Build OAuth…" : "Waiting for popup authorization…"}
+                  </span>
+                </div>
 
-            {/* Divider */}
-            <div className="flex items-center gap-3 my-1">
-              <div className="flex-1 h-px bg-border" />
-              <span className="text-xs text-text-muted uppercase tracking-wider">Or paste callback URL manually</span>
-              <div className="flex-1 h-px bg-border" />
-            </div>
+                {/* Divider */}
+                <div className="flex items-center gap-3 my-1">
+                  <div className="flex-1 h-px bg-border" />
+                  <span className="text-xs text-text-muted uppercase tracking-wider">Or paste callback URL manually</span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+              </>
+            )}
 
             {/* Option B: Manual paste */}
             <div className="space-y-4">
