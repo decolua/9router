@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { FORMATS } from "../../open-sse/translator/formats.js";
-import { createSSETransformStreamWithLogger } from "../../open-sse/utils/stream.js";
+import { createSSEStream } from "../../open-sse/utils/stream.js";
 
-async function runTransform(input, sourceFormat = FORMATS.OPENAI_RESPONSES) {
+async function runTransform(input, sourceFormat = FORMATS.OPENAI_RESPONSES, ensureOpenAIDone = false) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     start(controller) {
@@ -13,14 +13,14 @@ async function runTransform(input, sourceFormat = FORMATS.OPENAI_RESPONSES) {
   });
 
   const output = stream.pipeThrough(
-    createSSETransformStreamWithLogger(
-      FORMATS.OPENAI_RESPONSES,
+    createSSEStream({
+      mode: "translate",
+      targetFormat: FORMATS.OPENAI_RESPONSES,
       sourceFormat,
-      "codex",
-      null,
-      null,
-      "gpt-5.5",
-    ),
+      provider: "codex",
+      model: "gpt-5.5",
+      ensureOpenAIDone,
+    }),
   );
 
   const reader = output.getReader();
@@ -94,7 +94,7 @@ describe("OpenAI Responses streaming termination", () => {
     expect(output).not.toContain("data: null");
   });
 
-  it("terminates translated Responses output for an OpenAI client exactly once", async () => {
+  it("preserves a public OpenAI translated stream without an injected sentinel", async () => {
     const output = await runTransform([
       `event: response.created`,
       `data: ${JSON.stringify({ type: "response.created", response: { id: "resp_test", status: "in_progress" } })}`,
@@ -108,7 +108,30 @@ describe("OpenAI Responses streaming termination", () => {
     ].join("\n"), FORMATS.OPENAI);
 
     expect(output).toContain('"content":"OK"');
+    expect(output).not.toContain("data: [DONE]\n\n");
+  });
+
+  it("terminates a trusted dashboard OpenAI translated stream exactly once", async () => {
+    const output = await runTransform([
+      `event: response.created`,
+      `data: ${JSON.stringify({ type: "response.created", response: { id: "resp_test", status: "in_progress" } })}`,
+      "",
+      `event: response.output_text.delta`,
+      `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "OK" })}`,
+      "",
+      `event: response.completed`,
+      `data: ${JSON.stringify({ type: "response.completed", response: { id: "resp_test", status: "completed" } })}`,
+      "",
+    ].join("\n"), FORMATS.OPENAI, true);
+
+    expect(output).toContain('"content":"OK"');
     expect(output).toMatch(/data: \[DONE\]\n\n$/);
+    expect(output.match(/data: \[DONE\]\n\n/g)).toHaveLength(1);
+  });
+
+  it("does not duplicate a direct upstream sentinel for a trusted dashboard stream", async () => {
+    const output = await runTransform("data: [DONE]\n\n", FORMATS.OPENAI, true);
+
     expect(output.match(/data: \[DONE\]\n\n/g)).toHaveLength(1);
   });
 
