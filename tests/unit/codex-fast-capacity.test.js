@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CodexExecutor } from "../../open-sse/executors/codex.js";
+import { applyCodexFastMode } from "../../src/sse/handlers/chat.js";
 
 function streamFromText(text) {
   const encoder = new TextEncoder();
@@ -25,22 +26,30 @@ describe("Codex fast tier and capacity handling", () => {
     expect(body.reasoning.effort).toBe("xhigh");
   });
 
-  it("defaults gpt-5.6-sol to priority tier when the client sends no service_tier", () => {
-    const body = new CodexExecutor().transformRequest("gpt-5.6-sol", {
-      model: "gpt-5.6-sol",
-      input: "hi",
-    }, true, {});
+  it("leaves Sol on the upstream default tier when Fast mode is off", () => {
+    const body = applyCodexFastMode({ input: "hi" }, "codex", "gpt-5.6-sol", {});
+    expect(body.service_tier).toBeUndefined();
+  });
 
+  it("adds priority tier to Sol when Fast mode is on", () => {
+    const body = applyCodexFastMode({ input: "hi" }, "codex", "gpt-5.6-sol", { codexFastMode: true });
     expect(body.service_tier).toBe("priority");
   });
 
-  it("does not force a service tier on non-sol codex models", () => {
-    const body = new CodexExecutor().transformRequest("gpt-5.6-terra", {
-      model: "gpt-5.6-terra",
-      input: "hi",
-    }, true, {});
+  it("adds priority tier to Sol review requests when Fast mode is on", () => {
+    const body = applyCodexFastMode({ input: "hi" }, "codex", "gpt-5.6-sol-review", { codexFastMode: true });
+    expect(body.service_tier).toBe("priority");
+  });
 
+  it("does not add Fast tier to non-Sol models", () => {
+    const body = applyCodexFastMode({ input: "hi" }, "codex", "gpt-5.6-terra", { codexFastMode: true });
     expect(body.service_tier).toBeUndefined();
+  });
+
+  it("preserves a client-supplied service tier", () => {
+    const effectiveBody = applyCodexFastMode({ input: "hi", service_tier: "default" }, "codex", "gpt-5.6-sol", { codexFastMode: true });
+    const body = new CodexExecutor().transformRequest("gpt-5.6-sol", effectiveBody, true, {});
+    expect(body.service_tier).toBe("default");
   });
 
   it("uses ChatGPT workspace header fallback", () => {

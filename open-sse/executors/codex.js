@@ -9,7 +9,6 @@ import { normalizeResponsesInput } from "../translator/formats/responsesApi.js";
 import { fetchImageAsBase64 } from "../translator/concerns/image.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
 import { getThinkingLevels } from "../providers/thinkingLevels.js";
-import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
@@ -516,14 +515,7 @@ export class CodexExecutor extends BaseExecutor {
     delete body.safety_identifier; // Droid CLI sends this but Codex doesn't support it
     delete body.previous_response_id; // store=false → backend can't resolve previous resp; avoid 404
 
-    // Model-config default service tier (e.g. gpt-5.6-sol → fast/priority).
-    // Only applied when the client didn't explicitly send a service_tier.
-    if (!body.service_tier) {
-      const { defaultServiceTier } = getCapabilitiesForModel(this.provider, body.model);
-      if (defaultServiceTier) body.service_tier = defaultServiceTier;
-    }
     if (body.service_tier === "fast") body.service_tier = "priority";
-    if (body.service_tier && body.service_tier !== "priority") delete body.service_tier;
 
     // Final allowlist filter — strip any unknown field that could trigger upstream "routing_unsupported"
     for (const k of Object.keys(body)) {

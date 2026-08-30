@@ -24,6 +24,17 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 
+export function applyCodexFastMode(body, provider, model, settings) {
+  if (
+    provider !== "codex" ||
+    !["gpt-5.6-sol", "gpt-5.6-sol-review"].includes(model) ||
+    settings?.codexFastMode !== true ||
+    body.service_tier
+  ) return body;
+
+  return { ...body, service_tier: "priority" };
+}
+
 /**
  * Handle chat completion request
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
@@ -260,8 +271,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Use shared chatCore
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+    const effectiveBody = applyCodexFastMode(body, provider, model, chatSettings);
     const result = await handleChatCore({
-      body: { ...body, model: `${provider}/${model}` },
+      body: { ...effectiveBody, model: `${provider}/${model}` },
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
       log,
