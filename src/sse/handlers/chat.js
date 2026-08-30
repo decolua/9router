@@ -5,7 +5,7 @@ import {
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
-  isValidApiKey,
+  isApiRequestAuthorized,
 } from "../services/auth.js";
 import { handleAntigravityQuotaError } from "../services/antigravityQuota.js";
 import { getSettings } from "@/lib/localDb";
@@ -64,14 +64,11 @@ export async function handleChat(request, clientRawRequest = null) {
   // Enforce API key if enabled in settings
   const settings = await getSettings();
   if (settings.requireApiKey) {
-    if (!apiKey) {
-      log.warn("AUTH", "Missing API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
-      log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+    const authorized = await isApiRequestAuthorized(request);
+    if (!authorized) {
+      const message = apiKey ? "Invalid API key" : "Missing API key";
+      log.warn("AUTH", `${message} (requireApiKey=true)`);
+      return errorResponse(HTTP_STATUS.UNAUTHORIZED, message);
     }
   }
 
