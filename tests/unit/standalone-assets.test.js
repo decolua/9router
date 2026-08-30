@@ -11,8 +11,10 @@ function createBuildFixture(distDir) {
   mkdirSync(join(buildRoot, "standalone"), { recursive: true });
   mkdirSync(join(buildRoot, "static", "chunks"), { recursive: true });
   mkdirSync(join(projectRoot, "public"), { recursive: true });
+  mkdirSync(join(projectRoot, "node_modules", "sql.js", "dist"), { recursive: true });
   writeFileSync(join(buildRoot, "static", "chunks", "app.js"), "static asset");
   writeFileSync(join(projectRoot, "public", "favicon.svg"), "public asset");
+  writeFileSync(join(projectRoot, "node_modules", "sql.js", "dist", "sql-wasm.wasm"), "wasm asset");
   return projectRoot;
 }
 
@@ -46,6 +48,15 @@ describe("standalone build assets", () => {
 
     expect(readFileSync(join(projectRoot, ".next", "standalone", "custom-server.js"), "utf8"))
       .toBe("wrapper");
+  });
+
+  it("copies the sql.js WASM fallback into standalone output", () => {
+    const projectRoot = createBuildFixture(".next");
+
+    copyStandaloneAssets({ projectRoot, distDir: ".next" });
+
+    expect(readFileSync(join(projectRoot, ".next", "standalone", "node_modules", "sql.js", "dist", "sql-wasm.wasm"), "utf8"))
+      .toBe("wasm asset");
   });
 
   it("does not modify workspace-traced CLI builds", () => {

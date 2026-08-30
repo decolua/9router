@@ -37,6 +37,13 @@ export function copyStandaloneAssets({ projectRoot = process.cwd(), distDir = pr
     cpSync(serverWrapperSource, serverWrapperDestination, { force: true });
     console.log(`[standalone-assets] Copied custom-server.js to ${serverWrapperDestination}`);
   }
+
+  const sqlWasmSource = resolve(projectRoot, "node_modules/sql.js/dist/sql-wasm.wasm");
+  const sqlWasmDestination = resolve(standaloneDir, "node_modules/sql.js/dist/sql-wasm.wasm");
+  if (existsSync(sqlWasmSource)) {
+    cpSync(sqlWasmSource, sqlWasmDestination, { force: true });
+    console.log(`[standalone-assets] Copied sql.js WASM to ${sqlWasmDestination}`);
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(dirname(fileURLToPath(import.meta.url)), "copy-standalone-assets.mjs")) {

@@ -2,6 +2,7 @@
 import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
 import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
+import { resolveAuthorizedBareModel } from "@/lib/auth/apiKeyAuthorization";
 
 // Local provider alias overrides (HMR-friendly, applied on top of open-sse map)
 const LOCAL_PROVIDER_ALIASES = {
@@ -30,6 +31,13 @@ export function parseModel(modelStr) {
 export async function resolveModelAlias(alias) {
   const aliases = await getModelAliases();
   return resolveModelAliasFromMap(alias, aliases);
+}
+
+export async function resolveBareHarnessModel(modelStr, apiKeyRecord) {
+  if (typeof modelStr !== "string" || modelStr.includes("/")) return modelStr;
+  if (await getComboByName(modelStr)) return modelStr;
+  if (await resolveModelAlias(modelStr)) return modelStr;
+  return resolveAuthorizedBareModel(apiKeyRecord, modelStr) || modelStr;
 }
 
 /**

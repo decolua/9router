@@ -17,6 +17,7 @@ import EndpointRow from "./components/EndpointRow";
 import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
+import ApiKeyAuthorizationModal from "./components/ApiKeyAuthorizationModal";
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -24,6 +25,7 @@ export default function APIPageClient({ machineId }) {
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
+  const [editingKey, setEditingKey] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -1039,11 +1041,23 @@ export default function APIPageClient({ machineId }) {
                   <p className="text-xs text-text-muted mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
                   </p>
+                  <p className="text-xs text-text-muted mt-1">
+                    {key.authorization?.enabled
+                      ? `${Object.keys(key.authorization.connections || {}).length} account(s)${key.authorization.visionFallback ? " - Vision fallback" : ""}`
+                      : "Unrestricted access"}
+                  </p>
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setEditingKey(key)}
+                    className="p-2 hover:bg-primary/10 rounded text-text-muted hover:text-primary transition-all"
+                    title="Edit permissions"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">manage_accounts</span>
+                  </button>
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -1075,6 +1089,18 @@ export default function APIPageClient({ machineId }) {
           </div>
         )}
       </Card>
+
+      {editingKey && (
+        <ApiKeyAuthorizationModal
+          key={editingKey.id}
+          apiKey={editingKey}
+          onClose={() => setEditingKey(null)}
+          onSaved={(updated) => {
+            setKeys((current) => current.map((key) => key.id === updated.id ? updated : key));
+            setEditingKey(null);
+          }}
+        />
+      )}
 
       {/* Add Key Modal */}
       <Modal

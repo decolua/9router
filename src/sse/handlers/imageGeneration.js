@@ -13,6 +13,22 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat } from "open-sse/services/combo.js";
 import * as log from "../utils/logger.js";
+import {
+  API_KEY_MODEL_KIND,
+  canUseModel,
+  getAuthorizedConnectionIds,
+  resolveApiKeyRecord,
+} from "@/lib/auth/apiKeyAuthorization";
+import { checkApiKeyQuota, recordApiKeyQuotaUsage } from "../services/apiKeyQuota.js";
+
+async function filterAuthorizedImageModels(models, apiKeyRecord) {
+  const allowed = [];
+  for (const modelStr of models) {
+    const { provider, model } = await getModelInfo(modelStr);
+    if (provider && canUseModel(apiKeyRecord, provider, model, API_KEY_MODEL_KIND.IMAGE)) allowed.push(modelStr);
+  }
+  return allowed;
+}
 
 // Providers that don't require credentials (noAuth)
 const NO_AUTH_PROVIDERS = new Set(["sdwebui", "comfyui"]);
@@ -36,6 +52,7 @@ export async function handleImageGeneration(request) {
   const modelStr = body.model;
 
   const apiKey = extractApiKey(request);
+  const apiKeyRecord = await resolveApiKeyRecord(apiKey);
   const settings = await getSettings();
   if (settings.requireApiKey) {
     if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
@@ -49,14 +66,18 @@ export async function handleImageGeneration(request) {
   // Combo expansion: model may be a combo name → run fallback/round-robin across models
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
+    const allowedComboModels = await filterAuthorizedImageModels(comboModels, apiKeyRecord);
+    if (allowedComboModels.length === 0) {
+      return errorResponse(HTTP_STATUS.FORBIDDEN, "API key is not authorized for this image model");
+    }
     const comboStrategies = settings.comboStrategies || {};
     const comboStrategy = comboStrategies[modelStr]?.fallbackStrategy || settings.comboStrategy || "fallback";
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    log.info("IMAGE", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+    log.info("IMAGE", `Combo "${modelStr}" with ${allowedComboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
-      models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelImage(b, m, { wantsStream, binaryOutput, preferredConnectionId }),
+      models: allowedComboModels,
+      handleSingleModel: (b, m) => handleSingleModelImage(b, m, { wantsStream, binaryOutput, preferredConnectionId, apiKeyRecord }),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -64,14 +85,18 @@ export async function handleImageGeneration(request) {
     });
   }
 
-  return handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId });
+  return handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId, apiKeyRecord });
 }
 
-async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId } = {}) {
+async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId, apiKeyRecord } = {}) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
   const { provider, model } = modelInfo;
+  if (!canUseModel(apiKeyRecord, provider, model, API_KEY_MODEL_KIND.IMAGE)) {
+    return errorResponse(HTTP_STATUS.FORBIDDEN, "API key is not authorized for this image model");
+  }
+  const allowedConnectionIds = getAuthorizedConnectionIds(apiKeyRecord, provider, model, API_KEY_MODEL_KIND.IMAGE);
 
   // noAuth providers — no credential needed
   if (NO_AUTH_PROVIDERS.has(provider)) {
@@ -91,7 +116,7 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId, allowedConnectionIds });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
@@ -106,6 +131,19 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
     }
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+    const quota = await checkApiKeyQuota({
+      apiKeyRecord,
+      connectionId: credentials.connectionId,
+      provider,
+      model,
+      credentials: refreshedCredentials,
+    });
+    if (quota.exceeded) {
+      excludeConnectionIds.add(credentials.connectionId);
+      lastStatus = HTTP_STATUS.RATE_LIMITED;
+      lastError = `API key quota limit reached (${quota.usedPercent.toFixed(1)}%/${quota.limit}% of ${quota.quotaName})`;
+      continue;
+    }
 
     const result = await handleImageGenerationCore({
       body,
@@ -123,6 +161,17 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
       },
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
+        recordApiKeyQuotaUsage({
+          apiKeyRecord,
+          connectionId: credentials.connectionId,
+          provider,
+          model,
+          credentials: refreshedCredentials,
+          kind: "image",
+          size: body.size,
+          quality: body.quality,
+          count: body.n,
+        }).catch((error) => console.warn(`[API key quota] image usage callback failed: ${error.message}`));
       }
     });
 

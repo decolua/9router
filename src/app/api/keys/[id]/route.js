@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
+import { sanitizeApiKeyAuthorization } from "@/lib/auth/apiKeyAuthorization";
+import { getApiKeyQuotaStatus } from "@/sse/services/apiKeyQuota";
 
 // GET /api/keys/[id] - Get single key
 export async function GET(request, { params }) {
@@ -9,7 +11,7 @@ export async function GET(request, { params }) {
     if (!key) {
       return NextResponse.json({ error: "Key not found" }, { status: 404 });
     }
-    return NextResponse.json({ key });
+    return NextResponse.json({ key, quotaStatus: await getApiKeyQuotaStatus(key) });
   } catch (error) {
     console.log("Error fetching key:", error);
     return NextResponse.json({ error: "Failed to fetch key" }, { status: 500 });
@@ -21,7 +23,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive } = body;
+    const { isActive, authorization } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -30,6 +32,7 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (authorization !== undefined) updateData.authorization = sanitizeApiKeyAuthorization(authorization);
 
     const updated = await updateApiKey(id, updateData);
 

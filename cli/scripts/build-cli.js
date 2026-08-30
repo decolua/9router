@@ -246,6 +246,13 @@ function buildCliPackage() {
     console.log(`✅ Bundled ${pkg}`);
   }
   ensureModuleInBundle("sql.js");
+  const sqlWasmSrc = path.join(appDir, "node_modules", "sql.js", "dist", "sql-wasm.wasm");
+  const sqlWasmDest = path.join(cliAppDir, "node_modules", "sql.js", "dist", "sql-wasm.wasm");
+  if (fs.existsSync(sqlWasmSrc)) {
+    fs.mkdirSync(path.dirname(sqlWasmDest), { recursive: true });
+    fs.copyFileSync(sqlWasmSrc, sqlWasmDest);
+    console.log("✅ Bundled sql.js WASM");
+  }
   // `open` is external (see serverExternalPackages in next.config.mjs), so it must exist in
   // the bundle's node_modules or every importer throws MODULE_NOT_FOUND at runtime. Output
   // tracing normally copies it; this is the same belt-and-braces guard used for sql.js.

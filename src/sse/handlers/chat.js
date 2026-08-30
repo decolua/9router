@@ -9,7 +9,7 @@ import {
 } from "../services/auth.js";
 import { handleAntigravityQuotaError } from "../services/antigravityQuota.js";
 import { getSettings } from "@/lib/localDb";
-import { getModelInfo, getComboModels } from "../services/model.js";
+import { getModelInfo, getComboModels, resolveBareHarnessModel } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
@@ -23,6 +23,23 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import {
+  API_KEY_MODEL_KIND,
+  canUseModel,
+  canUseVisionFallback,
+  getAuthorizedConnectionIds,
+  resolveApiKeyRecord,
+} from "@/lib/auth/apiKeyAuthorization";
+import { checkApiKeyQuota, recordApiKeyQuotaUsage } from "../services/apiKeyQuota.js";
+
+async function filterAuthorizedModels(models, apiKeyRecord) {
+  const allowed = [];
+  for (const modelStr of models) {
+    const { provider, model } = await getModelInfo(modelStr);
+    if (provider && canUseModel(apiKeyRecord, provider, model, API_KEY_MODEL_KIND.LLM)) allowed.push(modelStr);
+  }
+  return allowed;
+}
 
 /**
  * Handle chat completion request
@@ -47,13 +64,20 @@ export async function handleChat(request, clientRawRequest = null) {
       headers: Object.fromEntries(request.headers.entries())
     };
   }
-  const modelStr = body.model;
+  let modelStr = body.model;
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
 
   // Log API key (masked)
   const authHeader = request.headers.get("Authorization");
   const apiKey = extractApiKey(request);
+  const apiKeyRecord = await resolveApiKeyRecord(apiKey);
+  const resolvedModelStr = await resolveBareHarnessModel(modelStr, apiKeyRecord);
+  if (resolvedModelStr !== modelStr) {
+    log.info("ROUTING", `${modelStr} -> ${resolvedModelStr}`);
+    modelStr = resolvedModelStr;
+    body = { ...body, model: modelStr };
+  }
   if (authHeader && apiKey) {
     const masked = log.maskKey(apiKey);
     log.debug("AUTH", `API Key: ${masked}`);
@@ -90,25 +114,32 @@ export async function handleChat(request, clientRawRequest = null) {
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
+    const allowedComboModels = await filterAuthorizedModels(comboModels, apiKeyRecord);
+    if (allowedComboModels.length === 0) {
+      return errorResponse(HTTP_STATUS.FORBIDDEN, "API key is not authorized for this model");
+    }
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
     const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
-    const augmentedModels = augmentModelsWithCapacityAdapter(comboModels, requiredCapabilities, settings);
-    const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m));
+    const augmentedModels = augmentModelsWithCapacityAdapter(allowedComboModels, requiredCapabilities, settings);
+    const adapterAdded = augmentedModels.filter((m) => !allowedComboModels.includes(m));
+    if (adapterAdded.length > 0 && requiredCapabilities.has("vision") && !canUseVisionFallback(apiKeyRecord)) {
+      return errorResponse(HTTP_STATUS.FORBIDDEN, "Vision fallback is not authorized for this API key");
+    }
 
     if (comboStrategy === "fusion") {
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
       return handleFusionChat({
         body,
-        models: comboModels,
+        models: allowedComboModels,
         handleSingleModel: (b, m, isPanel) => {
           let cleanRawReq = clientRawRequest;
           if (isPanel && clientRawRequest) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
             cleanRawReq = { ...clientRawRequest, body: cleanBody };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, apiKeyRecord);
         },
         log,
         comboName: modelStr,
@@ -123,7 +154,7 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: augmentedModels,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, apiKeyRecord, adapterAdded.includes(m) && requiredCapabilities.has("vision")),
         adapterAdded
       ),
       log,
@@ -135,15 +166,22 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Single model request — may still switch to a capacity-adapter model if the
   // target lacks a capability the request needs (e.g. no vision, request has an image).
+  const requestedModel = await getModelInfo(modelStr);
+  if (requestedModel.provider && !canUseModel(apiKeyRecord, requestedModel.provider, requestedModel.model, API_KEY_MODEL_KIND.LLM)) {
+    return errorResponse(HTTP_STATUS.FORBIDDEN, "API key is not authorized for this model");
+  }
   const soloAugmented = augmentModelsWithCapacityAdapter([modelStr], requiredCapabilities, settings);
   if (soloAugmented.length > 1) {
     const adapterAdded = soloAugmented.filter((m) => m !== modelStr);
+    if (adapterAdded.length > 0 && requiredCapabilities.has("vision") && !canUseVisionFallback(apiKeyRecord)) {
+      return errorResponse(HTTP_STATUS.FORBIDDEN, "Vision fallback is not authorized for this API key");
+    }
     log.info("CHAT", `Capacity adapter for [${[...requiredCapabilities].join(",")}] on "${modelStr}" → trying ${soloAugmented.join(", ")}`);
     return handleComboChat({
       body,
       models: soloAugmented,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, apiKeyRecord, adapterAdded.includes(m) && requiredCapabilities.has("vision")),
         adapterAdded
       ),
       log,
@@ -152,13 +190,13 @@ export async function handleChat(request, clientRawRequest = null) {
     });
   }
 
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, apiKeyRecord);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, apiKeyRecord = null, visionAdapter = false) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -171,21 +209,28 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
       const comboStrategy = comboSpecificStrategy || chatSettings.comboStrategy || "fallback";
       const requiredCapabilities = detectRequiredCapabilities(body);
-      const augmentedModels = augmentModelsWithCapacityAdapter(comboModels, requiredCapabilities, chatSettings);
-      const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m));
+      const allowedComboModels = await filterAuthorizedModels(comboModels, apiKeyRecord);
+      if (allowedComboModels.length === 0) {
+        return errorResponse(HTTP_STATUS.FORBIDDEN, "API key is not authorized for this model");
+      }
+      const augmentedModels = augmentModelsWithCapacityAdapter(allowedComboModels, requiredCapabilities, chatSettings);
+      const adapterAdded = augmentedModels.filter((m) => !allowedComboModels.includes(m));
+      if (adapterAdded.length > 0 && requiredCapabilities.has("vision") && !canUseVisionFallback(apiKeyRecord)) {
+        return errorResponse(HTTP_STATUS.FORBIDDEN, "Vision fallback is not authorized for this API key");
+      }
 
       if (comboStrategy === "fusion") {
         log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
         return handleFusionChat({
           body,
-          models: comboModels,
+          models: allowedComboModels,
           handleSingleModel: (b, m, isPanel) => {
             let cleanRawReq = clientRawRequest;
             if (isPanel && clientRawRequest) {
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, apiKeyRecord);
           },
           log,
           comboName: modelStr,
@@ -200,7 +245,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         body,
         models: augmentedModels,
         handleSingleModel: withCapacityAdapterStripping(
-          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, apiKeyRecord, adapterAdded.includes(m) && requiredCapabilities.has("vision")),
           adapterAdded
         ),
         log,
@@ -214,6 +259,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   }
 
   const { provider, model } = modelInfo;
+  if (visionAdapter) {
+    if (!canUseVisionFallback(apiKeyRecord)) {
+      return errorResponse(HTTP_STATUS.FORBIDDEN, "Vision fallback is not authorized for this API key");
+    }
+  } else if (!canUseModel(apiKeyRecord, provider, model, API_KEY_MODEL_KIND.LLM)) {
+    return errorResponse(HTTP_STATUS.FORBIDDEN, "API key is not authorized for this model");
+  }
+  const allowedConnectionIds = visionAdapter
+    ? null
+    : getAuthorizedConnectionIds(apiKeyRecord, provider, model, API_KEY_MODEL_KIND.LLM);
 
   // Routing shown in the unified "▶" line (client model → provider/model)
 
@@ -226,7 +281,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { allowedConnectionIds });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -246,6 +301,20 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     // Account selection shown in the unified "▶" line (acc:...)
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+    const quota = await checkApiKeyQuota({
+      apiKeyRecord,
+      connectionId: credentials.connectionId,
+      provider,
+      model,
+      credentials: refreshedCredentials,
+    });
+    if (quota.exceeded) {
+      excludeConnectionIds.add(credentials.connectionId);
+      lastStatus = HTTP_STATUS.RATE_LIMITED;
+      lastError = `API key quota limit reached (${quota.usedPercent.toFixed(1)}%/${quota.limit}% of ${quota.quotaName})`;
+      log.warn("AUTH", `${credentials.connectionName} | ${lastError}`);
+      continue;
+    }
 
     // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
     if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
@@ -297,6 +366,20 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       },
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
+      },
+      onUsage: async (usage, providerBody) => {
+        await recordApiKeyQuotaUsage({
+          apiKeyRecord,
+          connectionId: credentials.connectionId,
+          provider,
+          model,
+          credentials: refreshedCredentials,
+          usage,
+          effort: providerBody?.reasoning?.effort
+            || providerBody?.reasoning_effort
+            || body.reasoning?.effort
+            || body.reasoning_effort,
+        });
       }
     });
 

@@ -31,6 +31,7 @@ export {
   getMitmAlias,
   setMitmAliasAll,
   getApiKeys,
+  getApiKeyByValue,
   createApiKey,
   deleteApiKey,
   validateApiKey,

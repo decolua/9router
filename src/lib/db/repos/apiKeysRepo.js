@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
+import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
 function rowToKey(row) {
   if (!row) return null;
@@ -9,6 +10,7 @@ function rowToKey(row) {
     name: row.name,
     machineId: row.machineId,
     isActive: row.isActive === 1 || row.isActive === true,
+    authorization: parseJson(row.authorization, null),
     createdAt: row.createdAt,
   };
 }
@@ -22,6 +24,13 @@ export async function getApiKeys() {
 export async function getApiKeyById(id) {
   const db = await getAdapter();
   const row = db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
+  return rowToKey(row);
+}
+
+export async function getApiKeyByValue(key) {
+  if (!key) return null;
+  const db = await getAdapter();
+  const row = db.get(`SELECT * FROM apiKeys WHERE key = ?`, [key]);
   return rowToKey(row);
 }
 
@@ -39,8 +48,8 @@ export async function createApiKey(name, machineId) {
     createdAt: new Date().toISOString(),
   };
   db.run(
-    `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
-    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.createdAt]
+    `INSERT INTO apiKeys(id, key, name, machineId, isActive, authorization, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, null, apiKey.createdAt]
   );
   return apiKey;
 }
@@ -53,8 +62,8 @@ export async function updateApiKey(id, data) {
     if (!row) return;
     const merged = { ...rowToKey(row), ...data };
     db.run(
-      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ? WHERE id = ?`,
-      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, id]
+      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, authorization = ? WHERE id = ?`,
+      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, stringifyJson(merged.authorization), id]
     );
     result = merged;
   });

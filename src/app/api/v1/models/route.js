@@ -18,6 +18,14 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { extractApiKey } from "@/sse/services/auth";
+import { getModelInfo } from "@/sse/services/model";
+import {
+  API_KEY_MODEL_KIND,
+  getAuthorizedConnectionIds,
+  isApiKeyRestricted,
+  resolveApiKeyRecord,
+} from "@/lib/auth/apiKeyAuthorization";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -541,6 +549,22 @@ export async function buildModelsList(kindFilter, options = {}) {
   return dedupedModels;
 }
 
+export async function filterModelsForApiKey(models, apiKeyRecord, kind) {
+  if (!isApiKeyRestricted(apiKeyRecord)) return models;
+  const activeIds = new Set(
+    (await getProviderConnections({ isActive: true })).map((connection) => connection.id)
+  );
+  const allowed = [];
+  for (const entry of models) {
+    const { provider, model } = await getModelInfo(entry.id);
+    const connectionIds = provider
+      ? getAuthorizedConnectionIds(apiKeyRecord, provider, model, kind)
+      : [];
+    if (connectionIds?.some((connectionId) => activeIds.has(connectionId))) allowed.push(entry);
+  }
+  return allowed;
+}
+
 /**
  * Handle CORS preflight
  */
@@ -562,7 +586,9 @@ export async function GET(request) {
   try {
     // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
-    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+    const apiKeyRecord = await resolveApiKeyRecord(extractApiKey(request));
+    const models = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+    const data = await filterModelsForApiKey(models, apiKeyRecord, API_KEY_MODEL_KIND.LLM);
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });

@@ -1,0 +1,68 @@
+name: Release CLI Package
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-cli-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Verify tag matches package version
+        run: |
+          VERSION=$(node -p "require('./cli/package.json').version")
+          test "${GITHUB_REF_NAME}" = "v${VERSION}"
+
+      - name: Install dependencies
+        run: |
+          npm install --no-audit --no-fund
+          npm --prefix cli install --ignore-scripts --no-audit --no-fund
+
+      - name: Build CLI package
+        run: npm run cli:pack
+
+      - name: Verify package
+        run: |
+          VERSION=$(node -p "require('./cli/package.json').version")
+          PACKAGE="9router-${VERSION}.tgz"
+          test -f "${PACKAGE}"
+          tar -xOf "${PACKAGE}" package/package.json | grep -q '"9router": "./cli.js"'
+          PREFIX=$(mktemp -d)
+          npm install -g --prefix "${PREFIX}" "./${PACKAGE}" --ignore-scripts --no-audit --no-fund
+          test -L "${PREFIX}/bin/9router"
+          sha256sum "${PACKAGE}" > "${PACKAGE}.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 9router-${{ github.ref_name }}
+          path: |
+            9router-*.tgz
+            9router-*.tgz.sha256
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(node -p "require('./cli/package.json').version")
+          PACKAGE="9router-${VERSION}.tgz"
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" "${PACKAGE}" "${PACKAGE}.sha256" --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" "${PACKAGE}" "${PACKAGE}.sha256" \
+              --title "9Router ${VERSION}" --generate-notes
+          fi

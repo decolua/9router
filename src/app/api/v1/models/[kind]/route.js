@@ -1,4 +1,9 @@
-import { buildModelsList } from "../route.js";
+import { buildModelsList, filterModelsForApiKey } from "../route.js";
+import { extractApiKey } from "@/sse/services/auth";
+import {
+  API_KEY_MODEL_KIND,
+  resolveApiKeyRecord,
+} from "@/lib/auth/apiKeyAuthorization";
 
 // URL slug → service kind(s). `web` covers both webSearch and webFetch.
 const KIND_SLUG_MAP = {
@@ -24,7 +29,7 @@ export async function OPTIONS() {
  * GET /v1/models/{kind} - OpenAI-compatible models list filtered by capability.
  * Supported kinds: image, tts, stt, embedding, image-to-text, web.
  */
-export async function GET(_request, { params }) {
+export async function GET(request, { params }) {
   try {
     const { kind } = await params;
     const kindFilter = KIND_SLUG_MAP[kind];
@@ -41,7 +46,11 @@ export async function GET(_request, { params }) {
       );
     }
 
-    const data = await buildModelsList(kindFilter);
+    const models = await buildModelsList(kindFilter);
+    const apiKeyRecord = await resolveApiKeyRecord(extractApiKey(request));
+    const data = kind === "image"
+      ? await filterModelsForApiKey(models, apiKeyRecord, API_KEY_MODEL_KIND.IMAGE)
+      : models;
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });

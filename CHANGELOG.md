@@ -1,3 +1,22 @@
+# v0.5.60 (2026-08-30)
+
+## Features
+- **API keys**: optional per-key authorization for exact provider accounts,
+  chat models, image-generation models, and the global Vision Adapter
+- **API keys**: estimated fair-use quota limits per account, using the shortest
+  available Codex/Claude quota window, account fallback, and `429` enforcement
+- **API keys**: self-learned quota rates by model/effort and image
+  size/quality, with learned metrics shown in the permissions UI
+- **Harnesses**: opt-in bare model routing for authorized Codex `gpt-*` and
+  Claude Code `claude-*` model names
+- **Release**: tag-triggered GitHub Actions build for the installable CLI tgz
+
+## Fixes
+- Preserve API-key quota ledgers across small provider `resetAt` drift while
+  still resetting on a real new quota bank
+- Normalize Codex `ultra` reasoning effort to the upstream-supported `max`
+- Bundle the sql.js WASM fallback in standalone and CLI packages
+
 # v0.5.59 (2026-08-29)
 
 ## Features

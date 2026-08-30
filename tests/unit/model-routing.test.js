@@ -10,12 +10,15 @@ async function setupDb() {
   process.env.DATA_DIR = tempDir;
   vi.resetModules();
 
-  const { createProviderNode } = await import("@/models/index.js");
-  const { getModelInfo } = await import("@/sse/services/model.js");
+  const { createProviderNode, setModelAlias, createCombo } = await import("@/models/index.js");
+  const { getModelInfo, resolveBareHarnessModel } = await import("@/sse/services/model.js");
 
   return {
     createProviderNode,
+    setModelAlias,
+    createCombo,
     getModelInfo,
+    resolveBareHarnessModel,
     cleanup() {
       fs.rmSync(tempDir, { recursive: true, force: true });
     },
@@ -76,5 +79,41 @@ describe("model routing", () => {
         provider: "openai-compatible-chat-test",
         model: "gpt-image-1",
       });
+  });
+
+  it("adds cx/ only when bare Codex fallback is enabled and authorized", async () => {
+    const ctx = await setupDb();
+    cleanup = ctx.cleanup;
+    const key = {
+      authorization: {
+        enabled: true,
+        bareModelFallback: { codex: true, claude: false },
+        connections: {
+          codex1: { models: ["codex/gpt-5.6-sol"], imageModels: [] },
+        },
+      },
+    };
+
+    await expect(ctx.resolveBareHarnessModel("gpt-5.6-sol", key)).resolves.toBe("cx/gpt-5.6-sol");
+    await expect(ctx.resolveBareHarnessModel("gpt-5.6-luna", key)).resolves.toBe("gpt-5.6-luna");
+  });
+
+  it("keeps custom aliases and combos ahead of bare-model fallback", async () => {
+    const ctx = await setupDb();
+    cleanup = ctx.cleanup;
+    const key = {
+      authorization: {
+        enabled: true,
+        bareModelFallback: { codex: true },
+        connections: {
+          codex1: { models: ["codex/gpt-5.6-sol"], imageModels: [] },
+        },
+      },
+    };
+    await ctx.setModelAlias("gpt-5.6-sol", "ds/deepseek-chat");
+    await expect(ctx.resolveBareHarnessModel("gpt-5.6-sol", key)).resolves.toBe("gpt-5.6-sol");
+
+    await ctx.createCombo({ name: "gpt-5.6-luna", models: ["cx/gpt-5.6-sol"] });
+    await expect(ctx.resolveBareHarnessModel("gpt-5.6-luna", key)).resolves.toBe("gpt-5.6-luna");
   });
 });
