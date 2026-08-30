@@ -35,6 +35,8 @@ const CODEX_GPT_5_6_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh
 
 // Model-name pattern overrides (glob, first match wins) — more precise than format default.
 const PATTERN_THINKING = [
+  // Cerebras hanya menerima none/low/medium/high untuk reasoning_effort (xhigh/minimal/max/ultra ditolak 400)
+  { provider: "cerebras", pattern: "*", levels: ["none", "low", "medium", "high"] },
   { provider: "codex", pattern: "*gpt-5.6-sol*", levels: [...CODEX_GPT_5_6_LEVELS, "ultra"] },
   { provider: "codex", pattern: "*gpt-5.6-terra*", levels: [...CODEX_GPT_5_6_LEVELS, "ultra"] },
   { provider: "codex", pattern: "*gpt-5.6-luna*", levels: CODEX_GPT_5_6_LEVELS },

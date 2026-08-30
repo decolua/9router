@@ -1,3 +1,11 @@
+# v0.5.69 (2026-08-30) — 9router-imagefix
+
+## Fixes
+- **Cerebras**: clamp `reasoning_effort` to `none|low|medium|high` — upstream
+  rejects `xhigh|max|minimal|ultra` with `400 wrong_api_format`. New levels
+  are clamped to `high` and the picker no longer offers unsupported values
+  (`thinkingLevels.js` + `thinkingUnified.js`)
+
 # v0.5.59 (2026-08-29)
 
 ## Features
