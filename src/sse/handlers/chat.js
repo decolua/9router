@@ -9,6 +9,7 @@ import {
 } from "../services/auth.js";
 import { handleAntigravityQuotaError } from "../services/antigravityQuota.js";
 import { getOperatorPolicy } from "@/lib/modelControlCenter/operatorPolicy.js";
+import { buildAdaptiveFallbackRuntimeOrder } from "@/lib/modelControlCenter/adaptiveRuntime.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
@@ -119,11 +120,37 @@ export async function handleChat(request, clientRawRequest = null) {
       });
     }
 
+    const adaptiveRuntime =
+      await buildAdaptiveFallbackRuntimeOrder({
+        models:
+          augmentedModels,
+
+        strategy:
+          comboStrategy,
+
+        capabilityPriorityModels:
+          adapterAdded,
+      });
+
+    const adaptiveModels =
+      adaptiveRuntime.models;
+
+    if (
+      comboStrategy === "fallback"
+      && adaptiveRuntime.applied
+      && adaptiveRuntime.wouldChangeOrder
+    ) {
+      log.info(
+        "ROUTING",
+        `Adaptive fallback "${modelStr}": ${augmentedModels.join(" -> ")} => ${adaptiveModels.join(" -> ")}`,
+      );
+    }
+
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+    log.info("CHAT", `Combo "${modelStr}" with ${adaptiveModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
-      models: augmentedModels,
+      models: adaptiveModels,
       handleSingleModel: withCapacityAdapterStripping(
         (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
         adapterAdded
@@ -211,11 +238,37 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         });
       }
 
+      const adaptiveRuntime =
+        await buildAdaptiveFallbackRuntimeOrder({
+          models:
+            augmentedModels,
+
+          strategy:
+            comboStrategy,
+
+          capabilityPriorityModels:
+            adapterAdded,
+        });
+
+      const adaptiveModels =
+        adaptiveRuntime.models;
+
+      if (
+        comboStrategy === "fallback"
+        && adaptiveRuntime.applied
+        && adaptiveRuntime.wouldChangeOrder
+      ) {
+        log.info(
+          "ROUTING",
+          `Adaptive fallback "${modelStr}": ${augmentedModels.join(" -> ")} => ${adaptiveModels.join(" -> ")}`,
+        );
+      }
+
       const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
-      log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+      log.info("CHAT", `Combo "${modelStr}" with ${adaptiveModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
       return handleComboChat({
         body,
-        models: augmentedModels,
+        models: adaptiveModels,
         handleSingleModel: withCapacityAdapterStripping(
           (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
           adapterAdded
