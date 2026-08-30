@@ -16,7 +16,8 @@ export const UNSUPPORTED_SCHEMA_CONSTRAINTS = [
   "unevaluatedProperties", "unevaluatedItems", "contentSchema",
   // Claude rejects these in VALIDATED mode
   "default", "examples",
-  // JSON Schema meta keywords
+  // JSON Schema meta keywords ($ref/$defs are resolved by resolveJsonSchemaRefs in Phase 0;
+  // these remain as fallback cleanup for any unresolved remnants)
   "$schema", "$defs", "definitions", "const", "$ref", "$comment",
   // Annotation keywords (rejected by Gemini/Antigravity - e.g. MCP tool schemas set these)
   "deprecated", "readOnly", "writeOnly",
@@ -32,6 +33,73 @@ export const UNSUPPORTED_SCHEMA_CONSTRAINTS = [
   "cornerRadius", "fillColor", "fontFamily", "fontSize", "fontWeight",
   "gap", "padding", "strokeColor", "strokeThickness", "textColor"
 ];
+
+// Resolve $ref pointers in-place before removing unsupported keywords.
+// Supports #/$defs/<name> and #/definitions/<name> (JSON Schema draft-07 / 2020-12).
+// Circular/deeply-nested refs are guarded by a max depth to prevent infinite recursion.
+const MAX_REF_DEPTH = 10;
+
+function resolveJsonSchemaRefs(schema) {
+  if (!schema || typeof schema !== "object") return;
+
+  // Collect definitions from $defs or definitions
+  const defs = schema.$defs || schema.definitions || {};
+
+  function resolve(obj, depth) {
+    if (!obj || typeof obj !== "object" || depth > MAX_REF_DEPTH) return;
+
+    if (Array.isArray(obj)) {
+      for (let i = 0; i < obj.length; i++) {
+        if (obj[i] && typeof obj[i] === "object" && obj[i].$ref) {
+          const resolved = lookupRef(obj[i].$ref);
+          if (resolved) {
+            obj[i] = structuredClone(resolved);
+            resolve(obj[i], depth + 1);
+          }
+        } else {
+          resolve(obj[i], depth + 1);
+        }
+      }
+      return;
+    }
+
+    for (const key of Object.keys(obj)) {
+      const val = obj[key];
+      if (val && typeof val === "object") {
+        if (val.$ref) {
+          const resolved = lookupRef(val.$ref);
+          if (resolved) {
+            obj[key] = structuredClone(resolved);
+            resolve(obj[key], depth + 1);
+          } else {
+            // Unresolvable $ref — remove it and mark as string fallback
+            delete val.$ref;
+            if (Object.keys(val).length === 0) {
+              obj[key] = { type: "string", description: "(unresolved reference)" };
+            }
+          }
+        } else {
+          resolve(val, depth + 1);
+        }
+      }
+    }
+  }
+
+  function lookupRef(ref) {
+    if (typeof ref !== "string") return null;
+    // Support #/$defs/Name and #/definitions/Name
+    const match = ref.match(/^#\/(\$defs|definitions)\/(.+)$/);
+    if (!match) return null;
+    const name = match[2];
+    return defs[name] || null;
+  }
+
+  resolve(schema, 0);
+
+  // Remove the definitions containers after resolving
+  delete schema.$defs;
+  delete schema.definitions;
+}
 
 // Default safety settings
 export const DEFAULT_SAFETY_SETTINGS = [
@@ -314,6 +382,12 @@ export function cleanJSONSchemaForAntigravity(schema) {
 
   // Mutate directly (schema is only used once per request)
   let cleaned = schema;
+
+  // Phase 0: Resolve $ref pointers BEFORE removing unsupported keywords.
+  // This inlines referenced definitions so that the schema is self-contained.
+  // Without this, $ref removal leaves empty objects that get placeholder-filled,
+  // producing invalid schemas that Google Antigravity rejects (bug #2877/#2884).
+  resolveJsonSchemaRefs(cleaned);
 
   // Phase 1: Convert and prepare
   convertConstToEnum(cleaned);
