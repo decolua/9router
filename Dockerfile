@@ -40,6 +40,10 @@ COPY --from=builder /app/node_modules/next ./node_modules/next
 # sql.js loads dist/sql-wasm.wasm by path at runtime; tracing only follows JS imports,
 # so the last-resort DB driver would abort with ENOENT on the missing binary.
 COPY --from=builder /app/node_modules/sql.js ./node_modules/sql.js
+# Telegram bot charts: skia-bound canvas + chart.js (pure JS).
+COPY --from=builder /app/node_modules/@napi-rs ./node_modules/@napi-rs
+COPY --from=builder /app/node_modules/chart.js ./node_modules/chart.js
+COPY --from=builder /app/node_modules/@kurkle ./node_modules/@kurkle
 
 RUN mkdir -p /app/data && chown -R node:node /app && \
   mkdir -p /app/data-home && chown node:node /app/data-home && \

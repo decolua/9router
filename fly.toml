@@ -1,0 +1,55 @@
+# Fly.io configuration for 9Router.
+# Edit `app` to whatever name you pick during `flyctl launch --no-deploy`.
+app = "airouter-kh"
+primary_region = "iad"  # change to closest region: https://fly.io/docs/reference/regions/
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "20128"
+  HOSTNAME = "0.0.0.0"
+  DATA_DIR = "/app/data"
+  # NEXT_PUBLIC_* are baked into the client at build time. Update + redeploy if hostname changes.
+  NEXT_PUBLIC_BASE_URL = "https://airouter-kh.fly.dev"
+  NEXT_PUBLIC_CLOUD_URL = "https://9router.com"
+  BASE_URL = "https://airouter-kh.fly.dev"
+  CLOUD_URL = "https://9router.com"
+  AUTH_COOKIE_SECURE = "true"
+  REQUIRE_API_KEY = "false"
+  OBSERVABILITY_ENABLED = "true"
+
+# Persistent volume so SQLite, OAuth tokens, JWT secret, and certs survive restarts.
+[mounts]
+  source = "router_data"
+  destination = "/app/data"
+  initial_size = "1gb"
+
+# Single VM only — the app holds in-memory state (rate limiters, token caches).
+# Do NOT scale this above 1 instance.
+[http_service]
+  internal_port = 20128
+  force_https = true
+  auto_stop_machines = "off"   # keep the machine warm; OAuth refresh + tunnels need it
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+  # Cheap health probe. /api/settings returns JSON without auth.
+  [[http_service.checks]]
+    grace_period = "30s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/api/settings"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
+  cpus = 1
