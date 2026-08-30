@@ -381,6 +381,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       providerThinking,
       // Detect source format by endpoint + body
       sourceFormatOverride: sourceFormatForRequest(request, body),
+      ensureOpenAIDone: dashboardAuthorizedRequests.has(request),
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           ...newCreds,
@@ -459,6 +460,7 @@ async function dispatchChatAttempt({ body, provider, model, credentials, log, cl
     pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null, onPxpipeEvent: appendPxpipeEvent,
     providerThinking: (chatSettings.providerThinking || {})[provider] || null,
     sourceFormatOverride: sourceFormatForRequest(request, body),
+    ensureOpenAIDone: dashboardAuthorizedRequests.has(request),
     onCredentialsRefreshed: async (newCreds) => updateProviderCredentials(credentials.connectionId, { ...newCreds, existingProviderSpecificData: credentials.providerSpecificData, testStatus: "active" }),
      onRequestSuccess: async () => clearAccountError(credentials.connectionId, credentials, model),
      onResilienceEvent,

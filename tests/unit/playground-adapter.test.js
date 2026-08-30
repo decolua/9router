@@ -148,7 +148,27 @@ describe("dashboard playground chat adapter", () => {
 
     await handleChat(openAiRequest(), null, DASHBOARD_AUTHORIZED_CONTEXT);
 
-    expect(mocks.handleChatCore).toHaveBeenCalledWith(expect.objectContaining({ sourceFormatOverride: "openai" }));
+    expect(mocks.handleChatCore).toHaveBeenCalledWith(expect.objectContaining({ sourceFormatOverride: "openai", ensureOpenAIDone: true }));
+  });
+
+  it.each([
+    ["body", "", { ensureOpenAIDone: true }],
+    ["header", "", {}],
+    ["query", "?ensureOpenAIDone=true", {}],
+  ])("does not derive terminal completion from forged %s fields", async (source, query, body) => {
+    mocks.getSettings.mockResolvedValue({ requireApiKey: false });
+    const headers = { "content-type": "application/json" };
+    if (source === "header") headers["x-ensure-openai-done"] = "true";
+    const request = new Request(`http://router.test/v1/chat/completions${query}`, {
+      method: "POST",
+      body: JSON.stringify({ model: "openai/gpt-test", messages: [], ...body }),
+      headers,
+    });
+    const { handleChat } = await vi.importActual("../../src/sse/handlers/chat.js");
+
+    await handleChat(request);
+
+    expect(mocks.handleChatCore).toHaveBeenCalledWith(expect.objectContaining({ ensureOpenAIDone: false }));
   });
 
   it("preserves the dashboard OpenAI format override for nested Freebuff dispatch", async () => {
@@ -158,6 +178,6 @@ describe("dashboard playground chat adapter", () => {
 
     await handleChat(openAiRequest(), null, DASHBOARD_AUTHORIZED_CONTEXT);
 
-    expect(mocks.handleChatCore).toHaveBeenCalledWith(expect.objectContaining({ sourceFormatOverride: "openai" }));
+    expect(mocks.handleChatCore).toHaveBeenCalledWith(expect.objectContaining({ sourceFormatOverride: "openai", ensureOpenAIDone: true }));
   });
 });
