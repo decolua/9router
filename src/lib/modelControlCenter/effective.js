@@ -477,6 +477,15 @@ export async function buildEffectiveModelSet() {
         );
       }
 
+      if (
+        operatorPolicyState
+        === "quarantine"
+      ) {
+        reasons.push(
+          "operator_quarantine",
+        );
+      }
+
       if (!connectionless) {
         if (
           connection.activeConnections === 0
@@ -685,7 +694,7 @@ export async function buildEffectiveModelSet() {
       routingChanged: false,
       healthIsRoutingAuthority: false,
       operatorPolicyIsRoutingAuthority:
-        false,
+        true,
       enabledModelsIsRoutingAuthority:
         false,
       comboQuarantineIsGlobalAuthority:
@@ -715,7 +724,7 @@ export async function buildEffectiveModelSet() {
 
     limitations: [
       "Health is observational only.",
-      "ALLOW, DEPRIORITIZE, and QUARANTINE are persisted operator intent only and are not used by the selector in Phase B.2.",
+      "Operator policy is runtime routing authority: DISABLE and QUARANTINE block routing; DEPRIORITIZE lowers combo priority; ALLOW remains eligible subject to runtime availability.",
       "enabledModels is reported as connection configuration and is not treated as a direct-routing gate.",
       "Combo quarantine is contextual and is not treated as a global direct-routing gate.",
       "Antigravity live quota cache is not included in this preview.",
