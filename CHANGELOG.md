@@ -1,3 +1,15 @@
+# Unreleased
+
+## Features
+- **Routing**: global connect-timeout setting (`connectTimeoutMs`, default 15s)
+  plus a per-provider override. Aborts an upstream request when its response
+  headers don't arrive in time so a stalled provider fails over to the next
+  model/account instead of burning the per-request budget. Per-provider override
+  wins; if neither is set, the existing registry `timeoutMs` (or env default
+  `FETCH_CONNECT_TIMEOUT_MS=60000`) still applies. UI: global input in
+  `Settings → Routing Strategy`, per-provider input in the provider page next
+  to the Round Robin toggle.
+
 # v0.5.59 (2026-08-29)
 
 ## Features

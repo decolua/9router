@@ -12,6 +12,13 @@ const DEFAULT_SETTINGS = {
   tailscaleEnabled: false,
   tailscaleUrl: "",
   stickyRoundRobinLimit: 3,
+  // Global upstream connect timeout (ms). Aborts the request and triggers
+  // fallback to the next model/account when the provider doesn't return
+  // response headers within this window. Per-provider registry `timeoutMs`
+  // still wins. Default 15s — generous enough for cold starts, fast enough
+  // to fail over from a stalled provider (e.g. rate-limited NIM) within a
+  // reasonable budget.
+  connectTimeoutMs: 15000,
   providerStrategies: {},
   quotaVisibility: {},
   comboStrategy: "fallback",
