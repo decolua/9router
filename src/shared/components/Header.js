@@ -155,6 +155,13 @@ const getPageInfo = (pathname) => {
       icon: "settings",
       breadcrumbs: [],
     };
+  if (pathname.includes("/playground"))
+    return {
+      title: "Testing Studio",
+      description: "Test and compare models",
+      icon: "science",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/translator"))
     return {
       title: "Translator",
@@ -179,7 +186,7 @@ const getPageInfo = (pathname) => {
   return { title: "", description: "", breadcrumbs: [] };
 };
 
-export default function Header({ onMenuClick, showMenuButton = true }) {
+export default function Header({ onMenuClick, showMenuButton = true, sidebarOpen = false }) {
   const pathname = usePathname();
   const [displayName, setDisplayName] = useState("");
   const [loginMethod, setLoginMethod] = useState("");
@@ -234,6 +241,9 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
           <button
             onClick={onMenuClick}
             className="text-text-main hover:text-primary transition-colors"
+            aria-label="Open menu"
+            aria-expanded={sidebarOpen}
+            aria-controls="mobile-sidebar"
           >
             <span className="material-symbols-outlined">menu</span>
           </button>
@@ -370,4 +380,5 @@ function HeaderSearch() {
 Header.propTypes = {
   onMenuClick: PropTypes.func,
   showMenuButton: PropTypes.bool,
+  sidebarOpen: PropTypes.bool,
 };

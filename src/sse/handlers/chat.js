@@ -8,6 +8,7 @@ import {
   isValidApiKey,
   getApiKeyPolicyError,
 } from "../services/auth.js";
+import { handleAntigravityQuotaError } from "../services/antigravityQuota.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
@@ -19,7 +20,7 @@ import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "o
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
-import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
+import { detectFormatByEndpoint, FORMATS } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
@@ -33,7 +34,17 @@ import { evaluateCircuit, recordCircuitOutcome } from "open-sse/services/circuit
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
  * Format detection and translation handled by translator
  */
-export async function handleChat(request, clientRawRequest = null) {
+export const DASHBOARD_AUTHORIZED_CONTEXT = Symbol("dashboard-authorized-context");
+const dashboardAuthorizedRequests = new WeakSet();
+
+function sourceFormatForRequest(request, body) {
+  if (dashboardAuthorizedRequests.has(request)) return FORMATS.OPENAI;
+  return request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null;
+}
+
+export async function handleChat(request, clientRawRequest = null, requestContext = null) {
+  const isDashboardAuthorized = requestContext === DASHBOARD_AUTHORIZED_CONTEXT;
+  if (isDashboardAuthorized) dashboardAuthorizedRequests.add(request);
   let body;
   try {
     body = await request.json();
@@ -55,9 +66,10 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
 
-  // Log API key (masked)
-  const authHeader = request.headers.get("Authorization");
-  const apiKey = extractApiKey(request);
+  // Dashboard authorization is represented only by the server-owned symbol above.
+  // It never accepts client API credentials or API-key-specific policy.
+  const authHeader = isDashboardAuthorized ? null : request.headers.get("Authorization");
+  const apiKey = isDashboardAuthorized ? null : extractApiKey(request);
   if (authHeader && apiKey) {
     const masked = log.maskKey(apiKey);
     log.debug("AUTH", `API Key: ${masked}`);
@@ -67,7 +79,7 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Enforce API key if enabled in settings
   const settings = await getSettings();
-  if (settings.requireApiKey) {
+  if (settings.requireApiKey && !isDashboardAuthorized) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
@@ -357,6 +369,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       headroomEnabled: !!chatSettings.headroomEnabled,
       headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
       headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
+      headroomTimeoutMs: chatSettings.headroomTimeoutMs,
       cavemanEnabled: !!chatSettings.cavemanEnabled,
       cavemanLevel: chatSettings.cavemanLevel || "full",
       ponytailEnabled: !!chatSettings.ponytailEnabled,
@@ -369,7 +382,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       onPxpipeEvent: appendPxpipeEvent,
       providerThinking,
       // Detect source format by endpoint + body
-      sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+      sourceFormatOverride: sourceFormatForRequest(request, body),
+      ensureOpenAIDone: dashboardAuthorizedRequests.has(request),
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           ...newCreds,
@@ -397,8 +411,22 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
      if (result.success) return result.response;
 
-    // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
+    // Antigravity 409/429: refresh live quota to get exact resetAt before locking
+    let quotaResetMs = null;
+    let resetsAtMs = result.resetsAtMs;
+    if (provider === "antigravity" && (result.status === 409 || result.status === 429)) {
+      quotaResetMs = await handleAntigravityQuotaError(
+        credentials.connectionId, result.status, model,
+        refreshedCredentials.accessToken, credentials.providerSpecificData
+      );
+      if (quotaResetMs) resetsAtMs = quotaResetMs;
+    }
+
+    // Exhausted Antigravity model is blocked only in RAM cache until upstream resetAt.
+    // Do not persist a modelLock_* for this path.
+    const shouldFallback = provider === "antigravity" && quotaResetMs
+      ? true
+      : (await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, resetsAtMs)).shouldFallback;
 
     if (shouldFallback) {
       log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
@@ -447,7 +475,8 @@ async function dispatchChatAttempt({ body, provider, model, credentials, log, cl
     pxpipeEnabled: !!chatSettings.pxpipeEnabled, pxpipeMinChars: chatSettings.pxpipeMinChars, pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
     pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null, onPxpipeEvent: appendPxpipeEvent,
     providerThinking: (chatSettings.providerThinking || {})[provider] || null,
-    sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+    sourceFormatOverride: sourceFormatForRequest(request, body),
+    ensureOpenAIDone: dashboardAuthorizedRequests.has(request),
     onCredentialsRefreshed: async (newCreds) => updateProviderCredentials(credentials.connectionId, { ...newCreds, existingProviderSpecificData: credentials.providerSpecificData, testStatus: "active" }),
      onRequestSuccess: async () => clearAccountError(credentials.connectionId, credentials, model),
      onResilienceEvent,
