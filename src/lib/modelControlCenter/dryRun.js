@@ -7,6 +7,205 @@ import {
   buildEffectiveModelSet,
 } from "./effective.js";
 
+import {
+  buildRoutingTelemetryBatch,
+  getRoutingTelemetry,
+} from "./routingTelemetry.js";
+
+import {
+  normalizeAuthoritySignal,
+  normalizeHealthSignal,
+  normalizePricingSignal,
+  normalizeQuotaSignal,
+} from "./routingSignals.js";
+
+import {
+  rankRoutingCandidates,
+  scoreRoutingCandidate,
+  ROUTING_SCORE_PROFILE,
+} from "./routingScore.js";
+
+function neutralLatencySignal() {
+  return {
+    known: false,
+    authority: false,
+
+    totalSamples: 0,
+    ttftSamples: 0,
+
+    totalMedianMs: null,
+    totalP95Ms: null,
+
+    ttftMedianMs: null,
+    ttftP95Ms: null,
+  };
+}
+
+function neutralReliabilitySignal() {
+  return {
+    known: false,
+    authority: false,
+
+    successSamples: 0,
+    failureSamples: 0,
+    successRate: null,
+  };
+}
+
+function neutralHistoryFreshness() {
+  return {
+    newestObservedAt: null,
+    newestAgeMs: null,
+    classified: false,
+  };
+}
+
+function buildPreviewSignals(
+  entry,
+  scoringContext,
+) {
+  const model =
+    entry?.model || {};
+
+  const nowMs =
+    scoringContext?.nowMs
+    || Date.now();
+
+  const telemetry =
+    getRoutingTelemetry(
+      scoringContext?.historyIndex,
+      {
+        providers: [
+          entry?.providerId,
+          entry?.alias,
+        ].filter(Boolean),
+
+        model:
+          model.id,
+      },
+    );
+
+  const health =
+    normalizeHealthSignal(
+      model.health,
+      {
+        nowMs,
+      },
+    );
+
+  return {
+    v: 1,
+
+    identity: {
+      provider:
+        entry?.providerId
+        || entry?.alias
+        || null,
+
+      model:
+        model.id || null,
+
+      connectionId:
+        null,
+    },
+
+    authority:
+      normalizeAuthoritySignal(
+        model,
+      ),
+
+    health,
+
+    quota:
+      normalizeQuotaSignal(
+        null,
+        {
+          nowMs,
+          exact: false,
+          source: null,
+        },
+      ),
+
+    latency:
+      telemetry?.latency
+      || neutralLatencySignal(),
+
+    reliability:
+      telemetry?.reliability
+      || neutralReliabilitySignal(),
+
+    cost:
+      normalizePricingSignal(
+        null,
+      ),
+
+    freshness: {
+      history:
+        telemetry?.freshness
+        || neutralHistoryFreshness(),
+
+      health: {
+        observedAt:
+          health.testedAt,
+
+        ageMs:
+          health.ageMs,
+      },
+    },
+
+    routing: {
+      changed: false,
+      score: null,
+      rank: null,
+    },
+  };
+}
+
+function directScoringPreview(
+  entry,
+  scoringContext,
+) {
+  if (!scoringContext) {
+    return null;
+  }
+
+  const signals =
+    buildPreviewSignals(
+      entry,
+      scoringContext,
+    );
+
+  const result =
+    scoreRoutingCandidate(
+      signals,
+    );
+
+  return {
+    ...result,
+
+    rank: null,
+
+    telemetrySamples:
+      (
+        signals.reliability
+          .successSamples
+        || 0
+      )
+      + (
+        signals.reliability
+          .failureSamples
+        || 0
+      ),
+
+    routingChanged:
+      false,
+
+    selectorIntegrated:
+      false,
+  };
+}
+
+
 function addReference(
   map,
   reference,
@@ -70,7 +269,10 @@ function buildModelIndex(effective) {
   return index;
 }
 
-function directProjection(entry) {
+function directProjection(
+  entry,
+  scoringContext = null,
+) {
   const model = entry.model;
 
   const state =
@@ -110,6 +312,12 @@ function directProjection(entry) {
       "allow_does_not_override_runtime_availability",
     );
   }
+
+  const scoringPreview =
+    directScoringPreview(
+      entry,
+      scoringContext,
+    );
 
   return {
     providerId:
@@ -159,6 +367,8 @@ function directProjection(entry) {
 
       reasons,
     },
+
+    scoringPreview,
   };
 }
 
@@ -317,6 +527,7 @@ function buildComboProjection(
   combo,
   settings,
   modelIndex,
+  scoringContext = null,
 ) {
   const strategy =
     comboStrategyFor(
@@ -376,6 +587,115 @@ function buildComboProjection(
         };
       },
     );
+
+  const scoreResult =
+    scoringContext
+      ? rankRoutingCandidates(
+          projected
+            .filter(
+              (item) =>
+                item.resolved,
+            )
+            .map(
+              (item) => ({
+                occurrence:
+                  item.originalIndex,
+
+                member:
+                  item.member,
+
+                signals:
+                  buildPreviewSignals(
+                    {
+                      providerId:
+                        item.providerId,
+
+                      alias:
+                        item.resolved
+                          ? (
+                              resolveComboMember(
+                                modelIndex,
+                                item.member,
+                              )?.alias
+                              || item.providerId
+                            )
+                          : item.providerId,
+
+                      model:
+                        resolveComboMember(
+                          modelIndex,
+                          item.member,
+                        )?.model
+                        || null,
+                    },
+
+                    scoringContext,
+                  ),
+              }),
+            ),
+        )
+      : {
+          ranked: [],
+          blocked: [],
+          routingChanged: false,
+          selectorIntegrated: false,
+        };
+
+  const scoreByOccurrence =
+    new Map();
+
+  for (
+    const item
+    of [
+      ...scoreResult.ranked,
+      ...scoreResult.blocked,
+    ]
+  ) {
+    scoreByOccurrence.set(
+      item.occurrence,
+      item.routingScore,
+    );
+  }
+
+  const projectedWithScore =
+    projected.map(
+      (item) => ({
+        ...item,
+
+        scoringPreview:
+          item.resolved
+            ? (
+                scoreByOccurrence.get(
+                  item.originalIndex,
+                )
+                || null
+              )
+            : {
+                eligibleForRanking:
+                  false,
+
+                tier:
+                  "unresolved",
+
+                score:
+                  null,
+
+                confidence:
+                  0,
+
+                components:
+                  {},
+
+                reasons: [
+                  "unresolved_member",
+                ],
+
+                rank:
+                  null,
+              },
+      }),
+    );
+
 
   const currentRetained =
     projected.filter(
@@ -497,6 +817,12 @@ function buildComboProjection(
             === "tail",
         ).length,
 
+      scoringRanked:
+        scoreResult.ranked.length,
+
+      scoringBlocked:
+        scoreResult.blocked.length,
+
       unresolved:
         projected.filter(
           (item) =>
@@ -504,21 +830,60 @@ function buildComboProjection(
         ).length,
     },
 
+    scoringPreview: {
+      mode:
+        "deterministic-score-preview",
+
+      rankedCandidates:
+        scoreResult.ranked.map(
+          (item) =>
+            item.member,
+        ),
+
+      blockedCandidates:
+        scoreResult.blocked.map(
+          (item) =>
+            item.member,
+        ),
+
+      routingChanged:
+        false,
+
+      selectorIntegrated:
+        false,
+    },
+
     members:
-      projected,
+      projectedWithScore,
   };
 }
 
 export async function buildPolicyDryRun() {
+  const nowMs =
+    Date.now();
+
   const [
     effective,
     combos,
     settings,
+    routingTelemetry,
   ] = await Promise.all([
     buildEffectiveModelSet(),
     getCombos(),
     getSettings(),
+
+    buildRoutingTelemetryBatch({
+      limit: 200,
+      nowMs,
+    }),
   ]);
+
+  const scoringContext = {
+    nowMs,
+
+    historyIndex:
+      routingTelemetry.historyIndex,
+  };
 
   const modelIndex =
     buildModelIndex(effective);
@@ -538,15 +903,19 @@ export async function buildPolicyDryRun() {
       )
     ) {
       direct.push(
-        directProjection({
-          providerId:
-            provider.providerId,
+        directProjection(
+          {
+            providerId:
+              provider.providerId,
 
-          alias:
-            provider.alias,
+            alias:
+              provider.alias,
 
-          model,
-        }),
+            model,
+          },
+
+          scoringContext,
+        ),
       );
     }
   }
@@ -561,6 +930,7 @@ export async function buildPolicyDryRun() {
           item,
           settings || {},
           modelIndex,
+          scoringContext,
         ),
     );
 
@@ -640,6 +1010,34 @@ export async function buildPolicyDryRun() {
 
       comboRotationStateMutated:
         false,
+
+      scoringPreviewIsRoutingAuthority:
+        false,
+    },
+
+    scoringPreview: {
+      mode:
+        "deterministic-score-preview",
+
+      profile:
+        ROUTING_SCORE_PROFILE,
+
+      telemetry: {
+        rowsRead:
+          routingTelemetry.rowsRead,
+
+        limit:
+          routingTelemetry.limit,
+      },
+
+      routingChanged:
+        false,
+
+      selectorIntegrated:
+        false,
+
+      rankIsAdvisory:
+        true,
     },
 
     source: {
@@ -700,6 +1098,9 @@ export async function buildPolicyDryRun() {
       "Antigravity live quota cache is not included in this dry-run.",
       "Direct baseCandidateSignal is observational and is not claimed to reproduce every runtime selector condition.",
       "Unresolved combo members are retained and marked unresolved rather than being guessed.",
+      "C.2.2 scoring rank is advisory preview only and does not replace current combo order or round-robin rotation.",
+      "Telemetry is read once as a bounded recent batch and grouped in memory; it is not routing authority.",
+      "Pricing and live quota are not yet injected into the C.2.2 scoring preview and therefore remain neutral.",
     ],
 
     direct,
@@ -715,4 +1116,6 @@ export const __test__ = {
   currentComboState,
   dryRunComboState,
   buildComboProjection,
+  buildPreviewSignals,
+  directScoringPreview,
 };
