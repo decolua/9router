@@ -122,14 +122,6 @@ export async function getProjectIdForConnection(connectionId, accessToken, provi
 }
 
 /**
- * Invalidate the cached project ID for a connection.
- * Call this when a connection's credentials are fully revoked or refreshed.
- */
-export function invalidateProjectId(connectionId) {
-    projectIdCache.delete(connectionId);
-}
-
-/**
  * Fully remove a connection: abort any in-flight fetch and delete its cached project ID.
  * Wire this into your connection close / disconnect lifecycle events to prevent memory leaks.
  *
@@ -238,7 +230,11 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints, provi
                     console.log(`[ProjectId] Successfully onboarded, project ID: ${projectId}`);
                     return projectId;
                 }
-                throw new Error("onboardUser done but no project_id in response");
+                // done:true with no usable project id is terminal: Google returns an
+                // empty cloudaicompanionProject object for accounts it won't provision.
+                // Retrying cannot change the answer, so bail out immediately.
+                console.warn("[ProjectId] onboardUser finished without a project ID (account not provisioned)");
+                return null;
             }
 
             // Server not done yet – wait and retry

@@ -63,6 +63,25 @@ describe("Gemini Cloud Code endpoint isolation", () => {
     expect(antigravity.transport.baseUrls).toEqual(["https://daily-cloudcode-pa.googleapis.com"]);
     removeConnection(connectionId);
   });
+  it("fails fast when onboardUser returns done:true without a project id", async () => {
+    const connectionId = "onboard-terminal-test";
+    const fetchMock = vi.fn(async (_url, init) => {
+      const body = JSON.parse(init.body);
+      if ("tierId" in body) {
+        // Google's actual response for accounts it won't provision
+        return { ok: true, json: async () => ({ done: true, response: { cloudaicompanionProject: {} } }) };
+      }
+      return { ok: true, json: async () => ({ allowedTiers: [{ id: "standard-tier", isDefault: true }] }) };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const projectId = await getProjectIdForConnection(connectionId, "token", "gemini-cli");
+
+    expect(projectId).toBeNull();
+    // 1 discovery + 1 onboarding call — the old code retried onboarding 5 times
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    removeConnection(connectionId);
+  });
 });
 
 describe("Gemini 3.6 Antigravity tiers", () => {
