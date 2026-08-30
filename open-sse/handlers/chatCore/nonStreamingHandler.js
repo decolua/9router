@@ -10,6 +10,54 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { buildToolCallId } from "../../translator/concerns/thoughtSignature.js";
+
+const DEFAULT_THOUGHT_SIGNATURE = "";
+
+function extractGeminiThoughtSignature(part, pending = DEFAULT_THOUGHT_SIGNATURE) {
+  return part?.thoughtSignature || part?.thought_signature || pending;
+}
+
+function buildGeminiToolCall(part, index, pendingSignature) {
+  const signature = extractGeminiThoughtSignature(part, pendingSignature);
+  const rawId = part.functionCall.id;
+  // Preserve the upstream Gemini call id when present, else derive a stable one.
+  const id = rawId
+    ? (signature ? `${rawId}_TSIG_${Buffer.from(signature, "utf8").toString("base64url")}` : rawId)
+    : buildToolCallId(part.functionCall.name, index, signature);
+  return {
+    id,
+    type: "function",
+    function: {
+      name: part.functionCall.name,
+      arguments: JSON.stringify(part.functionCall.args || {}),
+    },
+  };
+}
+
+function appendGeminiToolCalls(parts, toolCalls) {
+  let pendingSignature = DEFAULT_THOUGHT_SIGNATURE;
+  for (const part of parts) {
+    const signature = extractGeminiThoughtSignature(part);
+    if (signature) pendingSignature = signature;
+    if (!part.functionCall) continue;
+    toolCalls.push(buildGeminiToolCall(part, toolCalls.length, pendingSignature));
+    pendingSignature = DEFAULT_THOUGHT_SIGNATURE;
+  }
+}
+
+function convertGeminiParts(parts) {
+  const result = { text: "", reasoning: "", toolCalls: [] };
+  for (const part of parts || []) {
+    if (part.thought === true && part.text) result.reasoning += part.text;
+    else if (part.text !== undefined) result.text += part.text;
+  }
+  appendGeminiToolCalls(parts, result.toolCalls);
+  return result;
+}
+
+export const __test__ = { convertGeminiParts };
+
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -161,26 +209,17 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     const candidate = response.candidates[0];
     const content = candidate.content;
     const usage = response.usageMetadata || responseBody.usageMetadata;
-    let textContent = "", reasoningContent = "";
-    const toolCalls = [];
+    const convertedParts = convertGeminiParts(content?.parts);
+    let textContent = convertedParts.text;
+    const reasoningContent = convertedParts.reasoning;
+    const toolCalls = convertedParts.toolCalls;
 
-    if (content?.parts) {
-      for (const part of content.parts) {
-        if (part.thought === true && part.text) reasoningContent += part.text;
-        else if (part.text !== undefined) textContent += part.text;
-        if (part.functionCall) {
-          toolCalls.push({
-            id: `call_${part.functionCall.name}_${Date.now()}_${toolCalls.length}`,
-            type: "function",
-            function: { name: part.functionCall.name, arguments: JSON.stringify(part.functionCall.args || {}) }
-          });
-        }
-        // Handle inline image data (from image generation models)
-        const inlineData = part.inlineData || part.inline_data;
-        if (inlineData?.data) {
-          const mimeType = inlineData.mimeType || inlineData.mime_type || "image/png";
-          textContent += `\n![image](data:${mimeType};base64,${inlineData.data})\n`;
-        }
+    // Handle inline image data (from image generation models)
+    for (const part of content?.parts || []) {
+      const inlineData = part.inlineData || part.inline_data;
+      if (inlineData?.data) {
+        const mimeType = inlineData.mimeType || inlineData.mime_type || "image/png";
+        textContent += `\n![image](data:${mimeType};base64,${inlineData.data})\n`;
       }
     }
 

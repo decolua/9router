@@ -18,6 +18,7 @@ import {
 } from "../formats/gemini.js";
 import { deriveSessionId, toNumericSessionId } from "../../utils/sessionManager.js";
 import { ROLE, GEMINI_ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
+import { splitToolCallId } from "../concerns/thoughtSignature.js";
 
 // Sanitize function names for Gemini API.
 // Gemini requires: starts with [a-zA-Z_], followed by [a-zA-Z0-9_.:\-], max 64 chars.
@@ -68,26 +69,26 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
     result.generationConfig.maxOutputTokens = body.max_tokens;
   }
 
-  // Build tool_call_id -> name map
+  // Build tool_call_id -> name map; IDs may carry a preserved Gemini signature.
   const tcID2Name = {};
   if (body.messages && Array.isArray(body.messages)) {
     for (const msg of body.messages) {
       if (msg.role === ROLE.ASSISTANT && msg.tool_calls) {
         for (const tc of msg.tool_calls) {
           if (tc.type === OPENAI_BLOCK.FUNCTION && tc.id && tc.function?.name) {
-            tcID2Name[tc.id] = tc.function.name;
+            tcID2Name[splitToolCallId(tc.id).rawId] = tc.function.name;
           }
         }
       }
     }
   }
 
-  // Build tool responses cache
+  // Build tool responses cache using the raw Gemini call ID.
   const toolResponses = {};
   if (body.messages && Array.isArray(body.messages)) {
     for (const msg of body.messages) {
       if (msg.role === ROLE.TOOL && msg.tool_call_id) {
-        toolResponses[msg.tool_call_id] = msg.content;
+        toolResponses[splitToolCallId(msg.tool_call_id).rawId] = msg.content;
       }
     }
   }
@@ -137,15 +138,16 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
             if (tc.type !== OPENAI_BLOCK.FUNCTION) continue;
 
             const args = tryParseJSON(tc.function?.arguments || "{}");
+            const { rawId, thoughtSignature } = splitToolCallId(tc.id);
             parts.push({
-              thoughtSignature: signature,
+              ...(thoughtSignature ? { thoughtSignature } : { thoughtSignature: signature }),
               functionCall: {
-                id: tc.id,
+                id: rawId,
                 name: sanitizeGeminiFunctionName(tc.function.name),
                 args: args
               }
             });
-            toolCallIds.push(tc.id);
+            toolCallIds.push(rawId);
           }
 
           if (parts.length > 0) {
