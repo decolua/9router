@@ -367,6 +367,40 @@ describe("handleImageGenerationCore", () => {
     expect(responseBody.data[0].b64_json).toBe("base64codeximage");
   });
 
+  it("notifies Codex streaming callers when the stream ends without an image", async () => {
+    global.fetch.mockResolvedValueOnce(
+      new Response(
+        [
+          "event: response.completed",
+          'data: {"type":"response.completed"}',
+          "",
+          "",
+        ].join("\n"),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } }
+      )
+    );
+    const onRequestSuccess = vi.fn();
+    const onRequestFailure = vi.fn();
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "A green square" },
+      modelInfo: { provider: "codex", model: "gpt-5.5-image" },
+      credentials: {
+        accessToken: "codex-token",
+        providerSpecificData: { chatgptAccountId: "account-123" },
+      },
+      streamToClient: true,
+      onRequestSuccess,
+      onRequestFailure,
+    });
+
+    expect(result.success).toBe(true);
+    const streamed = await result.response.text();
+    expect(streamed).toContain("event: error");
+    expect(onRequestSuccess).not.toHaveBeenCalled();
+    expect(onRequestFailure).toHaveBeenCalledTimes(1);
+  });
+
   it("generates image with Cloudflare Workers AI JSON response", async () => {
     global.fetch.mockResolvedValueOnce(
       new Response(

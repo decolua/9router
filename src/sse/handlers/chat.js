@@ -30,7 +30,7 @@ import {
   getAuthorizedConnectionIds,
   resolveApiKeyRecord,
 } from "@/lib/auth/apiKeyAuthorization";
-import { checkApiKeyQuota, recordApiKeyQuotaUsage } from "../services/apiKeyQuota.js";
+import { checkApiKeyQuota, recordApiKeyQuotaUsage, releaseApiKeyQuotaReservation } from "../services/apiKeyQuota.js";
 
 async function filterAuthorizedModels(models, apiKeyRecord) {
   const allowed = [];
@@ -307,6 +307,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       provider,
       model,
       credentials: refreshedCredentials,
+      reserve: true,
+      effort: body.reasoning?.effort || body.reasoning_effort,
     });
     if (quota.exceeded) {
       excludeConnectionIds.add(credentials.connectionId);
@@ -315,6 +317,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       log.warn("AUTH", `${credentials.connectionName} | ${lastError}`);
       continue;
     }
+    const quotaReservation = quota.reservation;
 
     // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
     if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
@@ -329,61 +332,74 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Use shared chatCore
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
-    const result = await handleChatCore({
-      body: { ...body, model: `${provider}/${model}` },
-      modelInfo: { provider, model },
-      credentials: refreshedCredentials,
-      log,
-      clientRawRequest,
-      connectionId: credentials.connectionId,
-      userAgent,
-      apiKey,
-      ccFilterNaming: !!chatSettings.ccFilterNaming,
-      rtkEnabled: !!chatSettings.rtkEnabled,
-      headroomEnabled: !!chatSettings.headroomEnabled,
-      headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
-      headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
-      headroomTimeoutMs: chatSettings.headroomTimeoutMs,
-      cavemanEnabled: !!chatSettings.cavemanEnabled,
-      cavemanLevel: chatSettings.cavemanLevel || "full",
-      ponytailEnabled: !!chatSettings.ponytailEnabled,
-      ponytailLevel: chatSettings.ponytailLevel || "full",
-      pxpipeEnabled: !!chatSettings.pxpipeEnabled,
-      pxpipeMinChars: chatSettings.pxpipeMinChars,
-      pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
-      // Lazily warms the in-process module on first use; null when not installed (fail-open)
-      pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
-      onPxpipeEvent: appendPxpipeEvent,
-      providerThinking,
-      // Detect source format by endpoint + body
-      sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
-      onCredentialsRefreshed: async (newCreds) => {
-        await updateProviderCredentials(credentials.connectionId, {
-          ...newCreds,
-          existingProviderSpecificData: credentials.providerSpecificData,
-          testStatus: "active"
-        });
-      },
-      onRequestSuccess: async () => {
-        await clearAccountError(credentials.connectionId, credentials, model);
-      },
-      onUsage: async (usage, providerBody) => {
-        await recordApiKeyQuotaUsage({
-          apiKeyRecord,
-          connectionId: credentials.connectionId,
-          provider,
-          model,
-          credentials: refreshedCredentials,
-          usage,
-          effort: providerBody?.reasoning?.effort
-            || providerBody?.reasoning_effort
-            || body.reasoning?.effort
-            || body.reasoning_effort,
-        });
-      }
-    });
+    let result;
+    try {
+      result = await handleChatCore({
+        body: { ...body, model: `${provider}/${model}` },
+        modelInfo: { provider, model },
+        credentials: refreshedCredentials,
+        log,
+        clientRawRequest,
+        connectionId: credentials.connectionId,
+        userAgent,
+        apiKey,
+        ccFilterNaming: !!chatSettings.ccFilterNaming,
+        rtkEnabled: !!chatSettings.rtkEnabled,
+        headroomEnabled: !!chatSettings.headroomEnabled,
+        headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
+        headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
+        headroomTimeoutMs: chatSettings.headroomTimeoutMs,
+        cavemanEnabled: !!chatSettings.cavemanEnabled,
+        cavemanLevel: chatSettings.cavemanLevel || "full",
+        ponytailEnabled: !!chatSettings.ponytailEnabled,
+        ponytailLevel: chatSettings.ponytailLevel || "full",
+        pxpipeEnabled: !!chatSettings.pxpipeEnabled,
+        pxpipeMinChars: chatSettings.pxpipeMinChars,
+        pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
+        // Lazily warms the in-process module on first use; null when not installed (fail-open)
+        pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
+        onPxpipeEvent: appendPxpipeEvent,
+        providerThinking,
+        // Detect source format by endpoint + body
+        sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+        onCredentialsRefreshed: async (newCreds) => {
+          await updateProviderCredentials(credentials.connectionId, {
+            ...newCreds,
+            existingProviderSpecificData: credentials.providerSpecificData,
+            testStatus: "active"
+          });
+        },
+        onRequestSuccess: async () => {
+          await clearAccountError(credentials.connectionId, credentials, model);
+        },
+        onUsage: async (usage, providerBody) => {
+          await recordApiKeyQuotaUsage({
+            apiKeyRecord,
+            connectionId: credentials.connectionId,
+            provider,
+            model,
+            credentials: refreshedCredentials,
+            usage,
+            effort: providerBody?.reasoning?.effort
+              || providerBody?.reasoning_effort
+              || body.reasoning?.effort
+              || body.reasoning_effort,
+            reservation: quotaReservation,
+          });
+        },
+        onDisconnect: () => {
+          releaseApiKeyQuotaReservation(quotaReservation)
+            .catch((error) => console.warn(`[API key quota] disconnect release failed: ${error.message}`));
+        },
+      });
+    } catch (error) {
+      await releaseApiKeyQuotaReservation(quotaReservation);
+      throw error;
+    }
 
     if (result.success) return result.response;
+
+    await releaseApiKeyQuotaReservation(quotaReservation);
 
     // Antigravity 409/429: refresh live quota to get exact resetAt before locking
     let quotaResetMs = null;

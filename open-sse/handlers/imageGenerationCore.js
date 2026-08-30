@@ -24,6 +24,7 @@ function serializeRequestBody(requestBody) {
  * @param {boolean} [options.binaryOutput] - Return raw image bytes
  * @param {function} [options.onCredentialsRefreshed]
  * @param {function} [options.onRequestSuccess]
+ * @param {function} [options.onRequestFailure]
  * @returns {Promise<{ success: boolean, response: Response, status?: number, error?: string }>}
  */
 export async function handleImageGenerationCore({
@@ -35,6 +36,7 @@ export async function handleImageGenerationCore({
   binaryOutput = false,
   onCredentialsRefreshed,
   onRequestSuccess,
+  onRequestFailure,
 }) {
   const { provider, model } = modelInfo;
 
@@ -170,6 +172,7 @@ export async function handleImageGenerationCore({
         log,
         streamToClient,
         onRequestSuccess,
+        onRequestFailure,
         url,
         requestBody,
         model,

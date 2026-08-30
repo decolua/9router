@@ -224,6 +224,197 @@ describe("API key quota", () => {
       .toBe("image:codex/gpt-5.5-image:size=1024x1024:quality=high");
   });
 
+  it("falls back while a concurrent request is still pending quota accounting", async () => {
+    const { db, authorization, quota } = await setup();
+    const resetAt = new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString();
+    const first = await db.createProviderConnection({ provider: "codex", authType: "oauth", name: "first", accessToken: "token-1" });
+    const second = await db.createProviderConnection({ provider: "codex", authType: "oauth", name: "second", accessToken: "token-2" });
+    const key = await db.createApiKey("limited", "machine-1");
+    await db.updateApiKey(key.id, {
+      authorization: authorization.sanitizeApiKeyAuthorization({
+        enabled: true,
+        connections: {
+          [first.id]: { models: ["codex/gpt-5.6-luna"], imageModels: [], quotaPercent: 40 },
+          [second.id]: { models: ["codex/gpt-5.6-luna"], imageModels: [], quotaPercent: 40 },
+        },
+      }),
+    });
+    const apiKeyRecord = await db.getApiKeyById(key.id);
+    const usageByToken = {
+      "token-1": [10, 49],
+      "token-2": [10],
+    };
+    mocks.getCodexUsage.mockImplementation(async (token) => ({
+      quotas: { session: quotaWindow(usageByToken[token].shift() ?? 10, resetAt) },
+    }));
+
+    const firstCredentials = { accessToken: "token-1", providerSpecificData: {} };
+    await quota.checkApiKeyQuota({ apiKeyRecord, connectionId: first.id, provider: "codex", model: "gpt-5.6-luna", credentials: firstCredentials });
+    await quota.recordApiKeyQuotaUsage({
+      apiKeyRecord,
+      connectionId: first.id,
+      provider: "codex",
+      model: "gpt-5.6-luna",
+      credentials: firstCredentials,
+      usage: { prompt_tokens: 500, completion_tokens: 500 },
+    });
+
+    let releaseFirst;
+    let markFirstStarted;
+    const firstStarted = new Promise((resolve) => { markFirstStarted = resolve; });
+    const firstBlocked = new Promise((resolve) => { releaseFirst = resolve; });
+    const usedTokens = [];
+    mocks.handleChatCore.mockImplementation(async ({ credentials }) => {
+      usedTokens.push(credentials.accessToken);
+      if (usedTokens.length === 1) {
+        markFirstStarted();
+        await firstBlocked;
+      }
+      return { success: true, response: new Response("ok", { status: 200 }) };
+    });
+
+    const { handleChat } = await import("@/sse/handlers/chat.js");
+    const makeRequest = () => new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key.key}` },
+      body: JSON.stringify({ model: "cx/gpt-5.6-luna", messages: [{ role: "user", content: "hi" }] }),
+    });
+
+    const firstResponsePromise = handleChat(makeRequest());
+    await firstStarted;
+    const secondResponse = await handleChat(makeRequest());
+
+    expect(secondResponse.status).toBe(200);
+    expect(usedTokens).toEqual(["token-1", "token-2"]);
+
+    releaseFirst();
+    const firstResponse = await firstResponsePromise;
+    expect(firstResponse.status).toBe(200);
+  });
+
+  it("returns 429 when a concurrent request has no other eligible assigned account", async () => {
+    const { db, authorization, quota } = await setup();
+    const resetAt = new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString();
+    const connection = await db.createProviderConnection({ provider: "codex", authType: "oauth", name: "only", accessToken: "token" });
+    const key = await db.createApiKey("limited", "machine-1");
+    await db.updateApiKey(key.id, {
+      authorization: authorization.sanitizeApiKeyAuthorization({
+        enabled: true,
+        connections: {
+          [connection.id]: { models: ["codex/gpt-5.6-luna"], imageModels: [], quotaPercent: 40 },
+        },
+      }),
+    });
+    const apiKeyRecord = await db.getApiKeyById(key.id);
+    mocks.getCodexUsage
+      .mockResolvedValueOnce({ quotas: { session: quotaWindow(10, resetAt) } })
+      .mockResolvedValueOnce({ quotas: { session: quotaWindow(49, resetAt) } });
+    const credentials = { accessToken: "token", providerSpecificData: {} };
+    await quota.checkApiKeyQuota({ apiKeyRecord, connectionId: connection.id, provider: "codex", model: "gpt-5.6-luna", credentials });
+    await quota.recordApiKeyQuotaUsage({
+      apiKeyRecord,
+      connectionId: connection.id,
+      provider: "codex",
+      model: "gpt-5.6-luna",
+      credentials,
+      usage: { prompt_tokens: 500, completion_tokens: 500 },
+    });
+
+    let releaseFirst;
+    let markFirstStarted;
+    const firstStarted = new Promise((resolve) => { markFirstStarted = resolve; });
+    const firstBlocked = new Promise((resolve) => { releaseFirst = resolve; });
+    mocks.handleChatCore.mockImplementationOnce(async () => {
+      markFirstStarted();
+      await firstBlocked;
+      return { success: true, response: new Response("ok", { status: 200 }) };
+    });
+
+    const { handleChat } = await import("@/sse/handlers/chat.js");
+    const makeRequest = () => new Request("http://localhost/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${key.key}` },
+      body: JSON.stringify({ model: "cx/gpt-5.6-luna", messages: [{ role: "user", content: "hi" }] }),
+    });
+
+    const firstResponsePromise = handleChat(makeRequest());
+    await firstStarted;
+    const secondResponse = await handleChat(makeRequest());
+
+    expect(secondResponse.status).toBe(429);
+    await expect(secondResponse.json()).resolves.toMatchObject({
+      error: { message: expect.stringContaining("API key quota limit reached") },
+    });
+    expect(mocks.handleChatCore).toHaveBeenCalledTimes(1);
+
+    releaseFirst();
+    const firstResponse = await firstResponsePromise;
+    expect(firstResponse.status).toBe(200);
+  });
+
+  it("releases an abandoned quota reservation so the account becomes eligible again", async () => {
+    const { db, authorization, quota } = await setup();
+    const resetAt = new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString();
+    const key = await db.createApiKey("limited", "machine-1");
+    await db.updateApiKey(key.id, {
+      authorization: authorization.sanitizeApiKeyAuthorization({
+        enabled: true,
+        connections: {
+          "codex-a": { models: ["codex/gpt-5.6-luna"], imageModels: [], quotaPercent: 40 },
+        },
+      }),
+    });
+    const apiKeyRecord = await db.getApiKeyById(key.id);
+    const credentials = { accessToken: "token", providerSpecificData: {} };
+    mocks.getCodexUsage
+      .mockResolvedValueOnce({ quotas: { session: quotaWindow(10, resetAt) } })
+      .mockResolvedValueOnce({ quotas: { session: quotaWindow(49, resetAt) } });
+
+    await quota.checkApiKeyQuota({ apiKeyRecord, connectionId: "codex-a", provider: "codex", model: "gpt-5.6-luna", credentials });
+    await quota.recordApiKeyQuotaUsage({
+      apiKeyRecord,
+      connectionId: "codex-a",
+      provider: "codex",
+      model: "gpt-5.6-luna",
+      credentials,
+      usage: { prompt_tokens: 500, completion_tokens: 500 },
+    });
+
+    const first = await quota.checkApiKeyQuota({
+      apiKeyRecord,
+      connectionId: "codex-a",
+      provider: "codex",
+      model: "gpt-5.6-luna",
+      credentials,
+      reserve: true,
+    });
+    const blocked = await quota.checkApiKeyQuota({
+      apiKeyRecord,
+      connectionId: "codex-a",
+      provider: "codex",
+      model: "gpt-5.6-luna",
+      credentials,
+      reserve: true,
+    });
+
+    expect(first.exceeded).toBe(false);
+    expect(blocked.exceeded).toBe(true);
+
+    await quota.releaseApiKeyQuotaReservation(first.reservation);
+    await quota.releaseApiKeyQuotaReservation(first.reservation);
+
+    const afterRelease = await quota.checkApiKeyQuota({
+      apiKeyRecord,
+      connectionId: "codex-a",
+      provider: "codex",
+      model: "gpt-5.6-luna",
+      credentials,
+      reserve: true,
+    });
+    expect(afterRelease.exceeded).toBe(false);
+    await quota.releaseApiKeyQuotaReservation(afterRelease.reservation);
+  });
+
   it("falls back to the next assigned account when the first reaches the API-key limit", async () => {
     const { db, authorization, quota } = await setup();
     const resetAt = new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString();

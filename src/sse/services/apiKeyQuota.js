@@ -11,6 +11,7 @@ const RESET_DRIFT_TOLERANCE_MS = 5 * 60 * 1000;
 const MODEL_RATE_ALPHA = 0.3;
 const snapshotCache = new Map();
 const queues = new Map();
+const reservations = new Map();
 
 function withConnectionLock(connectionId, fn) {
   const previous = queues.get(connectionId) || Promise.resolve();
@@ -119,17 +120,17 @@ function averageLearnedRate(state) {
   return rates.length > 0 ? rates.reduce((sum, rate) => sum + rate, 0) / rates.length : null;
 }
 
-function fallbackModelRate(state, forProjection = false) {
+function fallbackModelRate(state) {
   const lastRate = number(state?.lastRate, 0);
   if (lastRate > 0) return lastRate;
   const learned = averageLearnedRate(state);
   if (learned !== null) return learned;
-  return forProjection ? 0 : 1;
+  return 1;
 }
 
-function effectiveWeight(state, entry, forProjection = false) {
+function effectiveWeight(state, entry) {
   const normalized = normalizePendingEntry(entry);
-  const fallback = fallbackModelRate(state, forProjection);
+  const fallback = fallbackModelRate(state);
   return Object.entries(normalized.models).reduce((sum, [profileKey, rawWeight]) => {
     const rate = learnedProfileRate(state, profileKey) ?? fallback;
     return sum + (Math.max(0, number(rawWeight, 0)) * rate);
@@ -211,13 +212,58 @@ async function connectionHasQuotaPolicy(connectionId) {
   return keys.some((key) => getApiKeyQuotaPercent(key, connectionId) !== null);
 }
 
-function keyUsage(state, apiKeyId) {
-  const charged = number(state?.charged?.[apiKeyId], 0);
-  const pending = effectiveWeight(state, state?.pending?.[apiKeyId], true);
-  return charged + pending;
+function activeReservationUsage(state, connectionId, apiKeyId) {
+  if (!connectionId) return 0;
+  const bucket = reservations.get(connectionId);
+  if (!bucket || bucket.size === 0) return 0;
+  const combined = { weight: 0, models: {} };
+  for (const reservation of bucket) {
+    if (reservation.apiKeyId !== apiKeyId) continue;
+    combined.weight += reservation.weight;
+    combined.models[reservation.profile] = number(combined.models[reservation.profile], 0) + reservation.weight;
+  }
+  return effectiveWeight(state, combined);
 }
 
-export async function checkApiKeyQuota({ apiKeyRecord, connectionId, provider, model, credentials }) {
+function addReservation(connectionId, apiKeyId, profile, weight) {
+  const reservation = { connectionId, apiKeyId, profile, weight };
+  let bucket = reservations.get(connectionId);
+  if (!bucket) {
+    bucket = new Set();
+    reservations.set(connectionId, bucket);
+  }
+  bucket.add(reservation);
+  return reservation;
+}
+
+function removeReservation(reservation) {
+  const connectionId = reservation?.connectionId;
+  if (!connectionId) return;
+  const bucket = reservations.get(connectionId);
+  if (!bucket) return;
+  bucket.delete(reservation);
+  if (bucket.size === 0) reservations.delete(connectionId);
+}
+
+function keyUsage(state, apiKeyId, connectionId = null) {
+  const charged = number(state?.charged?.[apiKeyId], 0);
+  const pending = effectiveWeight(state, state?.pending?.[apiKeyId]);
+  return charged + pending + activeReservationUsage(state, connectionId, apiKeyId);
+}
+
+export async function checkApiKeyQuota({
+  apiKeyRecord,
+  connectionId,
+  provider,
+  model,
+  credentials,
+  reserve = false,
+  kind = "chat",
+  effort,
+  size,
+  quality,
+  count,
+}) {
   const limit = getApiKeyQuotaPercent(apiKeyRecord, connectionId);
   if (limit === null || !SUPPORTED_PROVIDERS.has(provider)) return { limited: false, exceeded: false };
 
@@ -227,20 +273,37 @@ export async function checkApiKeyQuota({ apiKeyRecord, connectionId, provider, m
       if (!snapshot) return { limited: true, exceeded: false, unavailable: true };
       const state = reconcile(await quotaStore.get(connectionId), snapshot);
       await quotaStore.set(connectionId, state);
-      const usedPercent = keyUsage(state, apiKeyRecord.id);
+      const usedPercent = keyUsage(state, apiKeyRecord.id, connectionId);
+      const exceeded = usedPercent >= limit;
+      const reservation = !exceeded && reserve
+        ? addReservation(
+            connectionId,
+            apiKeyRecord.id,
+            buildQuotaProfile({ provider, model, kind, effort, size, quality }),
+            requestWeight(null, kind, count)
+          )
+        : null;
       return {
         limited: true,
-        exceeded: usedPercent >= limit,
+        exceeded,
         usedPercent,
         limit,
         quotaName: state.quotaName,
         resetAt: state.resetAt,
+        reservation,
       };
     });
   } catch (error) {
     console.warn(`[API key quota] check failed for ${provider}:${connectionId}: ${error.message}`);
     return { limited: true, exceeded: false, unavailable: true };
   }
+}
+
+export async function releaseApiKeyQuotaReservation(reservation) {
+  if (!reservation?.connectionId) return;
+  await withConnectionLock(reservation.connectionId, async () => {
+    removeReservation(reservation);
+  });
 }
 
 function requestWeight(usage, kind, count = 1) {
@@ -265,13 +328,14 @@ export function buildQuotaProfile({ provider, model, kind = "chat", effort, size
   return `chat:${base}:effort=${cleanProfileValue(normalizedEffort, "default")}`;
 }
 
-export async function recordApiKeyQuotaUsage({ apiKeyRecord, connectionId, provider, model, credentials, usage, kind = "chat", effort, size, quality, count }) {
-  if (!connectionId || !SUPPORTED_PROVIDERS.has(provider)) return;
-  if (!(await connectionHasQuotaPolicy(connectionId))) return;
-  const apiKeyId = apiKeyRecord?.id || "__unattributed__";
-
+export async function recordApiKeyQuotaUsage({ apiKeyRecord, connectionId, provider, model, credentials, usage, kind = "chat", effort, size, quality, count, reservation }) {
   try {
+    if (!connectionId || !SUPPORTED_PROVIDERS.has(provider)) return;
+    if (!(await connectionHasQuotaPolicy(connectionId))) return;
+    const apiKeyId = apiKeyRecord?.id || "__unattributed__";
+
     await withConnectionLock(connectionId, async () => {
+      removeReservation(reservation);
       let state = await quotaStore.get(connectionId);
       if (!state) {
         const before = await fetchQuotaSnapshot({ connectionId, provider, model, credentials, force: true });
@@ -290,6 +354,14 @@ export async function recordApiKeyQuotaUsage({ apiKeyRecord, connectionId, provi
     });
   } catch (error) {
     console.warn(`[API key quota] record failed for ${provider}:${connectionId}: ${error.message}`);
+  } finally {
+    if (reservation) {
+      try {
+        await releaseApiKeyQuotaReservation(reservation);
+      } catch (error) {
+        console.warn(`[API key quota] reservation release failed for ${provider}:${connectionId}: ${error.message}`);
+      }
+    }
   }
 }
 
@@ -302,7 +374,7 @@ export async function getApiKeyQuotaStatus(apiKeyRecord) {
     const state = await quotaStore.get(connectionId);
     result[connectionId] = {
       limit,
-      usedPercent: state ? keyUsage(state, apiKeyRecord.id) : 0,
+      usedPercent: state ? keyUsage(state, apiKeyRecord.id, connectionId) : 0,
       quotaName: state?.quotaName || null,
       resetAt: state?.resetAt || null,
       profiles: Object.entries(state?.profileRates || state?.modelRates || {}).map(([profile, value]) => ({

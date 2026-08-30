@@ -19,7 +19,7 @@ import {
   getAuthorizedConnectionIds,
   resolveApiKeyRecord,
 } from "@/lib/auth/apiKeyAuthorization";
-import { checkApiKeyQuota, recordApiKeyQuotaUsage } from "../services/apiKeyQuota.js";
+import { checkApiKeyQuota, recordApiKeyQuotaUsage, releaseApiKeyQuotaReservation } from "../services/apiKeyQuota.js";
 
 async function filterAuthorizedImageModels(models, apiKeyRecord) {
   const allowed = [];
@@ -137,6 +137,11 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
       provider,
       model,
       credentials: refreshedCredentials,
+      reserve: true,
+      kind: "image",
+      size: body.size,
+      quality: body.quality,
+      count: body.n,
     });
     if (quota.exceeded) {
       excludeConnectionIds.add(credentials.connectionId);
@@ -144,38 +149,51 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
       lastError = `API key quota limit reached (${quota.usedPercent.toFixed(1)}%/${quota.limit}% of ${quota.quotaName})`;
       continue;
     }
+    const quotaReservation = quota.reservation;
 
-    const result = await handleImageGenerationCore({
-      body,
-      modelInfo: { provider, model },
-      credentials: refreshedCredentials,
-      streamToClient: wantsStream,
-      binaryOutput,
-      onCredentialsRefreshed: async (newCreds) => {
-        await updateProviderCredentials(credentials.connectionId, {
-          accessToken: newCreds.accessToken,
-          refreshToken: newCreds.refreshToken,
-          providerSpecificData: newCreds.providerSpecificData,
-          testStatus: "active"
-        });
-      },
-      onRequestSuccess: async () => {
-        await clearAccountError(credentials.connectionId, credentials, model);
-        recordApiKeyQuotaUsage({
-          apiKeyRecord,
-          connectionId: credentials.connectionId,
-          provider,
-          model,
-          credentials: refreshedCredentials,
-          kind: "image",
-          size: body.size,
-          quality: body.quality,
-          count: body.n,
-        }).catch((error) => console.warn(`[API key quota] image usage callback failed: ${error.message}`));
-      }
-    });
+    let result;
+    try {
+      result = await handleImageGenerationCore({
+        body,
+        modelInfo: { provider, model },
+        credentials: refreshedCredentials,
+        streamToClient: wantsStream,
+        binaryOutput,
+        onCredentialsRefreshed: async (newCreds) => {
+          await updateProviderCredentials(credentials.connectionId, {
+            accessToken: newCreds.accessToken,
+            refreshToken: newCreds.refreshToken,
+            providerSpecificData: newCreds.providerSpecificData,
+            testStatus: "active"
+          });
+        },
+        onRequestSuccess: async () => {
+          await clearAccountError(credentials.connectionId, credentials, model);
+          recordApiKeyQuotaUsage({
+            apiKeyRecord,
+            connectionId: credentials.connectionId,
+            provider,
+            model,
+            credentials: refreshedCredentials,
+            kind: "image",
+            size: body.size,
+            quality: body.quality,
+            count: body.n,
+            reservation: quotaReservation,
+          }).catch((error) => console.warn(`[API key quota] image usage callback failed: ${error.message}`));
+        },
+        onRequestFailure: async () => {
+          await releaseApiKeyQuotaReservation(quotaReservation);
+        },
+      });
+    } catch (error) {
+      await releaseApiKeyQuotaReservation(quotaReservation);
+      throw error;
+    }
 
     if (result.success) return result.response;
+
+    await releaseApiKeyQuotaReservation(quotaReservation);
 
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
 

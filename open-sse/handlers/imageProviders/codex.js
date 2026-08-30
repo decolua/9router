@@ -108,7 +108,7 @@ async function parseStream(response, log, callbacks = {}) {
 }
 
 // SSE Response that pipes codex progress + partial + done events to client
-function buildSseResponse(providerResponse, log, onSuccess) {
+function buildSseResponse(providerResponse, log, onSuccess, onFailure) {
   const stream = new ReadableStream({
     async start(controller) {
       const enc = new TextEncoder();
@@ -121,12 +121,14 @@ function buildSseResponse(providerResponse, log, onSuccess) {
           onPartialImage: (info) => send("partial_image", info),
         });
         if (!b64) {
+          try { if (onFailure) await onFailure(); } catch {}
           send("error", { message: "Codex did not return an image. Account may not be entitled (Plus/Pro required)." });
         } else {
           if (onSuccess) await onSuccess();
           send("done", { created: nowSec(), data: [{ b64_json: b64 }] });
         }
       } catch (err) {
+        try { if (onFailure) await onFailure(); } catch {}
         send("error", { message: err?.message || "Stream failed" });
       } finally {
         controller.close();
@@ -185,9 +187,9 @@ export default {
     };
   },
   // Custom: codex parses SSE → either pipe to client or collect b64
-  async parseResponse(response, { log, streamToClient, onRequestSuccess }) {
+  async parseResponse(response, { log, streamToClient, onRequestSuccess, onRequestFailure }) {
     if (streamToClient) {
-      return { sseResponse: buildSseResponse(response, log, onRequestSuccess) };
+      return { sseResponse: buildSseResponse(response, log, onRequestSuccess, onRequestFailure) };
     }
     const b64 = await parseStream(response, log);
     if (!b64) {
