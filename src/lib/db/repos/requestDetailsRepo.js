@@ -192,6 +192,75 @@ export async function getRequestDetails(filter = {}) {
   };
 }
 
+/**
+ * Read one bounded recent telemetry window.
+ *
+ * This deliberately avoids getRequestDetails(),
+ * because that API performs COUNT + SELECT for
+ * every invocation. Routing preview can group
+ * this batch in memory instead of issuing N+1
+ * model queries.
+ */
+export async function getRecentRequestDetailsBatch(
+  limit = 200,
+) {
+  const db = await getAdapter();
+
+  const safeLimit = Math.max(
+    1,
+    Math.min(
+      Number(limit) || 200,
+      1000,
+    ),
+  );
+
+  const rows = db.all(
+    `SELECT
+       provider,
+       model,
+       connectionId,
+       timestamp,
+       data
+     FROM requestDetails
+     ORDER BY timestamp DESC
+     LIMIT ?`,
+    [safeLimit],
+  );
+
+  return rows.map((row) => {
+    const parsed =
+      parseJson(
+        row.data,
+        {},
+      ) || {};
+
+    return {
+      ...parsed,
+
+      provider:
+        row.provider
+        ?? parsed.provider
+        ?? null,
+
+      model:
+        row.model
+        ?? parsed.model
+        ?? null,
+
+      connectionId:
+        row.connectionId
+        ?? parsed.connectionId
+        ?? null,
+
+      timestamp:
+        row.timestamp
+        ?? parsed.timestamp
+        ?? null,
+    };
+  });
+}
+
+
 export async function getDistinctProviders() {
   const db = await getAdapter();
   const rows = db.all(`SELECT DISTINCT provider FROM requestDetails WHERE provider IS NOT NULL ORDER BY provider ASC`);
