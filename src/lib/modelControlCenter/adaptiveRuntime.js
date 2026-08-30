@@ -12,6 +12,10 @@ import {
   loadRuntimeAuthoritySnapshot,
 } from "./runtimeAuthority.js";
 
+import {
+  buildRoutingFeedbackRuntimePreview,
+} from "./routingFeedbackRuntime.js";
+
 function copyModels(models) {
   return Array.isArray(models)
     ? [...models]
@@ -290,6 +294,7 @@ export async function buildAdaptiveFallbackRuntimeOrder({
   models = [],
   strategy = "fallback",
   capabilityPriorityModels = [],
+  comboName = null,
 
   nowMs = Date.now(),
 
@@ -298,6 +303,9 @@ export async function buildAdaptiveFallbackRuntimeOrder({
 
   authorityLoader =
     loadRuntimeAuthoritySnapshot,
+
+  feedbackLoader =
+    buildRoutingFeedbackRuntimePreview,
 } = {}) {
   const configured =
     copyModels(models);
@@ -381,6 +389,32 @@ export async function buildAdaptiveFallbackRuntimeOrder({
         snapshot,
       });
 
+    let feedbackRuntime =
+      null;
+
+    try {
+      feedbackRuntime =
+        await feedbackLoader({
+          models:
+            configured,
+
+          comboName,
+
+          nowMs,
+        });
+    } catch {
+      // C.4 feedback must never disable C.3 adaptive routing.
+      feedbackRuntime =
+        null;
+    }
+
+    const learningScoresByModel =
+      feedbackRuntime?.scoresByModel
+      instanceof Map
+        ? feedbackRuntime
+          .scoresByModel
+        : null;
+
     const plan =
       planAdaptiveComboOrder({
         models:
@@ -401,6 +435,8 @@ export async function buildAdaptiveFallbackRuntimeOrder({
         hardBlocks:
           runtimeInputs
             .hardBlocks,
+
+        learningScoresByModel,
       });
 
     // Preserve existing error semantics when

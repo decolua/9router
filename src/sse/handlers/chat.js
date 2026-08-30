@@ -129,6 +129,9 @@ export async function handleChat(request, clientRawRequest = null) {
         strategy:
           comboStrategy,
 
+        comboName:
+          modelStr,
+
         capabilityPriorityModels:
           adapterAdded,
       });
@@ -253,6 +256,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
           strategy:
             comboStrategy,
+
+          comboName:
+            modelStr,
 
           capabilityPriorityModels:
             adapterAdded,

@@ -43,6 +43,59 @@ function lookupByModel(
   return null;
 }
 
+function boundedLearningAdjustment(
+  source,
+  model,
+) {
+  const entry =
+    lookupByModel(
+      source,
+      model,
+    );
+
+  const raw =
+    Number(
+      entry?.scoreAdjustment
+      ?? entry
+      ?? 0,
+    );
+
+  if (!Number.isFinite(raw)) {
+    return 0;
+  }
+
+  return Math.max(
+    -20,
+    Math.min(
+      10,
+      raw,
+    ),
+  );
+}
+
+
+function learnedTierValue(
+  candidate,
+) {
+  const tier =
+    candidate?.routingScore
+      ?.tier;
+
+  if (tier === "normal") {
+    return 0;
+  }
+
+  if (
+    tier
+    === "deprioritized"
+  ) {
+    return 1;
+  }
+
+  return 99;
+}
+
+
 function normalizeReasonList(value) {
   if (!value) {
     return [];
@@ -164,6 +217,7 @@ function rankGroup({
   models,
   signalsByModel,
   hardBlocks,
+  learningScoresByModel,
 }) {
   const candidates =
     models.map(
@@ -198,9 +252,83 @@ function rankGroup({
       candidates,
     );
 
+  const learnedRanked =
+    result.ranked
+      .map(
+        (candidate) => {
+          const learningAdjustment =
+            boundedLearningAdjustment(
+              learningScoresByModel,
+              candidate.model,
+            );
+
+          const baseScore =
+            Number(
+              candidate?.routingScore
+                ?.score,
+            );
+
+          const effectiveRoutingScore =
+            Number.isFinite(baseScore)
+              ? Math.max(
+                  0,
+                  Math.min(
+                    100,
+                    baseScore
+                      + learningAdjustment,
+                  ),
+                )
+              : baseScore;
+
+          return {
+            ...candidate,
+
+            learningAdjustment,
+
+            effectiveRoutingScore:
+              Number.isFinite(
+                effectiveRoutingScore,
+              )
+                ? Number(
+                    effectiveRoutingScore
+                      .toFixed(4),
+                  )
+                : effectiveRoutingScore,
+          };
+        },
+      )
+      .sort(
+        (a, b) => {
+          const aTier =
+            learnedTierValue(a);
+
+          const bTier =
+            learnedTierValue(b);
+
+          if (aTier !== bTier) {
+            return aTier - bTier;
+          }
+
+          if (
+            a.effectiveRoutingScore
+            !== b.effectiveRoutingScore
+          ) {
+            return (
+              b.effectiveRoutingScore
+              - a.effectiveRoutingScore
+            );
+          }
+
+          return (
+            a.occurrence
+            - b.occurrence
+          );
+        },
+      );
+
   return {
     ranked:
-      result.ranked.map(
+      learnedRanked.map(
         (candidate) => ({
           model:
             candidate.model,
@@ -210,6 +338,12 @@ function rankGroup({
 
           routingScore:
             candidate.routingScore,
+
+          learningAdjustment:
+            candidate.learningAdjustment,
+
+          effectiveRoutingScore:
+            candidate.effectiveRoutingScore,
         }),
       ),
 
@@ -246,6 +380,7 @@ export function planAdaptiveComboOrder({
   capabilityPriorityModels = [],
   signalsByModel = null,
   hardBlocks = null,
+  learningScoresByModel = null,
 } = {}) {
   const configured =
     normalizeModels(models);
@@ -318,6 +453,8 @@ export function planAdaptiveComboOrder({
 
       signalsByModel,
       hardBlocks,
+
+      learningScoresByModel,
     });
 
   const standardResult =
@@ -327,6 +464,8 @@ export function planAdaptiveComboOrder({
 
       signalsByModel,
       hardBlocks,
+
+      learningScoresByModel,
     });
 
   const ranked = [
@@ -445,6 +584,7 @@ export const ADAPTIVE_COMBO_CONTRACT =
       "runtime_model_lock_exact_quota",
       "operator_deprioritize_tier",
       "adaptive_soft_score",
+      "adaptive_learning_adjustment",
       "existing_fallback",
     ],
 
