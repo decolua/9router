@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -150,6 +150,42 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_provider ON requestDetails(provider)",
       "CREATE INDEX IF NOT EXISTS idx_rd_model ON requestDetails(model)",
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
+    ],
+  },
+
+  routingFeedbackEvents: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      observedAt: "TEXT NOT NULL",
+      routeKind: "TEXT NOT NULL",
+      comboName: "TEXT NOT NULL",
+      strategy: "TEXT NOT NULL",
+      candidateModel: "TEXT NOT NULL",
+      attemptIndex: "INTEGER NOT NULL",
+      attemptCount: "INTEGER NOT NULL",
+      outcome: "TEXT NOT NULL",
+      status: "INTEGER",
+      isWinner: "INTEGER NOT NULL DEFAULT 0",
+      fallbackEligible: "INTEGER NOT NULL DEFAULT 0",
+      durationMs: "REAL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_rfe_combo_ts ON routingFeedbackEvents(comboName, observedAt DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_rfe_model_ts ON routingFeedbackEvents(candidateModel, observedAt DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_rfe_ts ON routingFeedbackEvents(observedAt DESC)",
+    ],
+  },
+  routingFeedbackStates: {
+    columns: {
+      comboName: "TEXT NOT NULL",
+      candidateModel: "TEXT NOT NULL",
+      state: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    primaryKey:
+      "PRIMARY KEY (comboName, candidateModel)",
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_rfs_updated ON routingFeedbackStates(updatedAt DESC)",
     ],
   },
 };
