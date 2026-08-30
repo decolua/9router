@@ -1,3 +1,10 @@
+# v0.5.70 (2026-08-30) — 9router-imagefix
+
+## Fixes
+- **Cerebras**: strip `reasoning_content` from assistant message history —
+  Cerebras rejects `messages.N.assistant.reasoning_content` with `400 wrong_api_format`
+  during multi-turn conversations in Claude Code and OpenCode.
+
 # v0.5.69 (2026-08-30) — 9router-imagefix
 
 ## Fixes
