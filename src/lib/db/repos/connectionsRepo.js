@@ -1,6 +1,9 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { encryptSecret, decryptSecret } from "@/lib/crypto.js";
+
+const SENSITIVE_FIELDS = ["apiKey", "accessToken", "refreshToken", "idToken"];
 
 const OPTIONAL_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
@@ -13,6 +16,10 @@ const OPTIONAL_FIELDS = [
 function rowToConn(row) {
   if (!row) return null;
   const extra = parseJson(row.data, {});
+  // Decrypt sensitive fields if encrypted
+  for (const field of SENSITIVE_FIELDS) {
+    if (extra[field]) extra[field] = decryptSecret(extra[field]);
+  }
   return {
     ...extra,
     id: row.id,
@@ -29,6 +36,11 @@ function rowToConn(row) {
 
 function connToRow(c) {
   const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
+  const dataToStore = { ...rest };
+  // Encrypt sensitive fields before saving
+  for (const field of SENSITIVE_FIELDS) {
+    if (dataToStore[field]) dataToStore[field] = encryptSecret(dataToStore[field]);
+  }
   return {
     id,
     provider,
@@ -37,7 +49,7 @@ function connToRow(c) {
     email: email ?? null,
     priority: priority ?? null,
     isActive: isActive === false ? 0 : 1,
-    data: stringifyJson(rest),
+    data: stringifyJson(dataToStore),
     createdAt,
     updatedAt,
   };

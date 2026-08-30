@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import fs from "node:fs";
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
 // CLI bundling needs workspace root so tracing includes hoisted node_modules (slim ~50MB).
@@ -8,6 +9,30 @@ const tracingRoot = process.env.NEXT_TRACING_ROOT_MODE === "workspace"
   ? join(projectRoot, "..")
   : projectRoot;
 const proxyClientMaxBodySize = process.env.NINEROUTER_PROXY_CLIENT_MAX_BODY_SIZE || "128mb";
+
+function loadSecurityHeaders() {
+  const defaultPath = join(projectRoot, "src/config/security-headers.json");
+  const dataDirPath = process.env.DATA_DIR ? join(process.env.DATA_DIR, "security-headers.json") : null;
+  let headersObj = {};
+
+  try {
+    if (fs.existsSync(defaultPath)) {
+      headersObj = JSON.parse(fs.readFileSync(defaultPath, "utf8"));
+    }
+  } catch {}
+
+  try {
+    if (dataDirPath && fs.existsSync(dataDirPath)) {
+      const override = JSON.parse(fs.readFileSync(dataDirPath, "utf8"));
+      headersObj = { ...headersObj, ...override };
+    }
+  } catch {}
+
+  return Object.entries(headersObj).map(([key, value]) => ({
+    key,
+    value: String(value),
+  }));
+}
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -92,7 +117,15 @@ const nextConfig = {
         destination: "/api/v1"
       }
     ];
-  }
+  },
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: loadSecurityHeaders(),
+      },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -68,7 +68,7 @@ function sanitizeHeaders(headers) {
   return sanitized;
 }
 
-export const __test__ = { sanitizeHeaders };
+export const __test__ = { sanitizeHeaders, flushToDatabase };
 
 function generateDetailId(model) {
   const timestamp = new Date().toISOString();
@@ -101,6 +101,7 @@ async function flushToDatabase() {
           if (!item.id) item.id = generateDetailId(item.model);
           if (!item.timestamp) item.timestamp = new Date().toISOString();
           if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
+          if (item.providerRequest?.headers) item.providerRequest.headers = sanitizeHeaders(item.providerRequest.headers);
 
           const record = {
             id: item.id,

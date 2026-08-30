@@ -46,6 +46,35 @@ function startBackgroundTokenRefreshFromCustomServer() {
     });
 }
 
+const https = require("https");
+const origCreateHttps = https.createServer.bind(https);
+
+// Function to load TLS certificates if provided via env or files
+function loadTlsCredentials() {
+  let cert = null;
+  let key = null;
+
+  const certPath = process.env.TLS_CERT_PATH || process.env.SSL_CERT_PATH;
+  const keyPath = process.env.TLS_KEY_PATH || process.env.SSL_KEY_PATH;
+
+  if (certPath && keyPath && fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+    try {
+      cert = fs.readFileSync(certPath);
+      key = fs.readFileSync(keyPath);
+    } catch (e) {
+      console.error("[TLS] Failed to read certificate files:", e.message);
+    }
+  } else if (process.env.TLS_CERT && process.env.TLS_KEY) {
+    cert = process.env.TLS_CERT;
+    key = process.env.TLS_KEY;
+  }
+
+  if (cert && key) {
+    return { cert, key, minVersion: "TLSv1.2" };
+  }
+  return null;
+}
+
 // Wrap Next standalone HTTP server: derive client IP from the TCP socket
 // (unspoofable) and strip client-supplied forwarding headers so downstream
 // rate-limiting keys on the real peer address instead of attacker-controlled XFF.
@@ -63,6 +92,13 @@ http.createServer = (...args) => {
     // Direct/public sockets remain keyed by the unspoofable peer address.
     const proxyIp = xRealIp || (xff ? String(xff).split(",")[0].trim() : "");
     const ip = isLoopbackProxy && proxyIp ? proxyIp : socketIp;
+
+    // Sanitize X-Forwarded-Host if not from trusted loopback reverse proxy (Host Header Injection mitigation)
+    if (!isLoopbackProxy) {
+      delete req.headers["x-forwarded-host"];
+      delete req.headers["x-forwarded-proto"];
+    }
+
     delete req.headers["x-9r-real-ip"];
     delete req.headers["x-forwarded-for"];
     delete req.headers["x-9r-via-proxy"];
@@ -75,6 +111,21 @@ http.createServer = (...args) => {
   const server = origCreate(...rest, wrapped);
   server.once("listening", () => {
     startBackgroundTokenRefreshFromCustomServer();
+
+    // Start optional secondary HTTPS server if credentials configured
+    const tlsCreds = loadTlsCredentials();
+    const httpsPort = process.env.TLS_PORT || process.env.HTTPS_PORT;
+    if (tlsCreds && httpsPort && !server._httpsStarted) {
+      server._httpsStarted = true;
+      try {
+        const httpsServer = origCreateHttps(tlsCreds, wrapped);
+        httpsServer.listen(Number(httpsPort), () => {
+          console.log(`🔒 [TLS] HTTPS server running on port ${httpsPort}`);
+        });
+      } catch (err) {
+        console.error("Failed to start HTTPS server:", err);
+      }
+    }
   });
   const origEmit = server.emit;
   // JBR 25 sends h2c upgrades that the HTTP/1.1 server would otherwise close.

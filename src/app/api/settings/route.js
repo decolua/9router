@@ -3,6 +3,8 @@ import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
 import bcrypt from "bcryptjs";
+import { validatePasswordStrength } from "@/lib/auth/passwordPolicy";
+import { getInitialDashboardPassword } from "@/lib/auth/dashboardSession";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -44,6 +46,14 @@ export async function PATCH(request) {
 
     // If updating password, hash it
     if (body.newPassword) {
+      const passwordValidation = validatePasswordStrength(body.newPassword);
+      if (!passwordValidation.valid) {
+        return NextResponse.json(
+          { error: passwordValidation.errors.join(" "), details: passwordValidation.errors },
+          { status: 400 }
+        );
+      }
+
       const settings = await getSettings();
       const currentHash = settings.password;
 
@@ -57,10 +67,10 @@ export async function PATCH(request) {
           return NextResponse.json({ error: "Invalid current password" }, { status: 401 });
         }
       } else {
-        // First time setting password, no current password needed
-        // Allow empty currentPassword or default "123456"
-        if (body.currentPassword && body.currentPassword !== "123456") {
-           return NextResponse.json({ error: "Invalid current password" }, { status: 401 });
+        // First time setting password: allow empty currentPassword or matching initial password
+        const initialPassword = getInitialDashboardPassword();
+        if (body.currentPassword && body.currentPassword !== initialPassword && body.currentPassword !== "123456") {
+          return NextResponse.json({ error: "Invalid current password" }, { status: 401 });
         }
       }
 

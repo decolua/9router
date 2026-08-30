@@ -98,8 +98,8 @@ export function createSamlInstance(settings, origin) {
     callbackUrl: callbackUrl,
     acceptedClockSkewMs: 60000,
     wantAssertionsSigned: true,
-    validateInResponseTo: "never",
-    requestIdExpirationMs: 28800000, // 8 hours
+    validateInResponseTo: "ifPresent",
+    requestIdExpirationMs: 300000, // 5 minutes validity
   });
 }
 
