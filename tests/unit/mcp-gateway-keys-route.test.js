@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   createGatewayKey: vi.fn(),
   getConsistentMachineId: vi.fn(),
   isLocalRequest: vi.fn(),
+  hasValidCliToken: vi.fn(),
 }));
 
 vi.mock("next/server", () => ({
@@ -28,6 +29,7 @@ vi.mock("@/shared/utils/machineId", () => ({
 
 vi.mock("@/dashboardGuard", () => ({
   isLocalRequest: mocks.isLocalRequest,
+  hasValidCliToken: mocks.hasValidCliToken,
 }));
 
 // Import after mocks are set up
@@ -87,6 +89,7 @@ describe("MCP Gateway Keys POST endpoint - local-only hardening", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getConsistentMachineId.mockResolvedValue("test-machine-id");
+    mocks.hasValidCliToken.mockResolvedValue(false);
   });
 
   it("rejects key creation from remote requests", async () => {
@@ -117,6 +120,37 @@ describe("MCP Gateway Keys POST endpoint - local-only hardening", () => {
     expect(response.body.key).toEqual(mockKey);
     expect(response.body.key.key).toBe("gw_secret_key_123");
     expect(mocks.createGatewayKey).toHaveBeenCalledWith("test-key", "test-machine-id");
+  });
+
+  it("allows key creation from remote request with valid CLI token", async () => {
+    mocks.isLocalRequest.mockReturnValue(false);
+    mocks.hasValidCliToken.mockResolvedValue(true);
+    const mockKey = {
+      id: "new-key-id",
+      name: "test-key",
+      key: "gw_secret_key_123",
+      createdAt: "2024-01-01",
+    };
+    mocks.createGatewayKey.mockResolvedValue(mockKey);
+
+    const req = request({ host: "remote.example.com" }, { name: "test-key" });
+    const response = await POST(req);
+
+    expect(response.status).toBe(201);
+    expect(response.body.key).toEqual(mockKey);
+    expect(mocks.createGatewayKey).toHaveBeenCalledWith("test-key", "test-machine-id");
+  });
+
+  it("rejects key creation from remote request without CLI token", async () => {
+    mocks.isLocalRequest.mockReturnValue(false);
+    mocks.hasValidCliToken.mockResolvedValue(false);
+
+    const req = request({ host: "remote.example.com" }, { name: "test-key" });
+    const response = await POST(req);
+
+    expect(response.status).toBe(403);
+    expect(response.body.error).toBe("Key creation is only available from local requests.");
+    expect(mocks.createGatewayKey).not.toHaveBeenCalled();
   });
 
   it("allows key creation with no name from local requests", async () => {
