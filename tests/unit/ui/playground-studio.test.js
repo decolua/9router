@@ -6,6 +6,7 @@ import { test, expect, describe, vi, afterEach, beforeEach } from 'vitest';
 import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import PlaygroundStudio from '../../../src/app/(dashboard)/dashboard/playground/PlaygroundStudio.jsx';
 import StudioConfigPane from '../../../src/app/(dashboard)/dashboard/playground/components/StudioConfigPane.jsx';
+import CompareWorkspace from '../../../src/app/(dashboard)/dashboard/playground/components/tabs/CompareWorkspace.jsx';
 import * as modelCatalog from '../../../src/app/(dashboard)/dashboard/playground/lib/modelCatalog.js';
 import { PLAYGROUND_PERSISTENCE_KEYS } from '../../../src/app/(dashboard)/dashboard/playground/lib/persistence.js';
 
@@ -24,6 +25,32 @@ const providerFilterModels = [
   { id: 'blank/seventh', label: 'Blank', provider: { id: '   ', name: 'Blank ID', connectionId: 'z-1' } },
   { id: 'numeric/eighth', label: 'Numeric', provider: { id: 8, name: 'Numeric ID', connectionId: 'n-1' } },
 ];
+
+function renderCompareWorkspace({ models = providerFilterModels, onResult = vi.fn() } = {}) {
+  return render(React.createElement(CompareWorkspace, {
+    configState: { systemPrompt: '', params: { temperature: 0.7, max_tokens: 2000 } },
+    availableModels: models,
+    onResult,
+    draft: '',
+    onDraftChange: vi.fn(),
+  }));
+}
+
+function successfulCompareResponse(text = 'Done') {
+  const encoder = new TextEncoder();
+  return {
+    ok: true,
+    status: 200,
+    body: {
+      getReader: () => ({
+        read: vi.fn()
+          .mockResolvedValueOnce({ done: false, value: encoder.encode(`data: {"choices":[{"delta":{"content":"${text}"}}]}\n\ndata: [DONE]\n\n`) })
+          .mockResolvedValueOnce({ done: true, value: undefined }),
+        cancel: vi.fn().mockResolvedValue(undefined),
+      }),
+    },
+  };
+}
 
 function renderConfigPane({ models = providerFilterModels, config = {}, loading = false, error = null } = {}) {
   function Harness() {
@@ -436,11 +463,10 @@ describe('PlaygroundStudio Shell', () => {
     fireEvent.click(screen.getByTestId('playground-compare-tab'));
 
     await waitFor(() => {
-      const selectors = screen.getAllByRole('combobox').filter((selector) => (
-        selector !== screen.getByTestId('chat-provider-filter')
-      ));
-      expect(selectors).toHaveLength(3);
-      for (const selector of selectors.slice(1)) {
+      for (const selector of [
+        screen.getByTestId('model-select-col-default-a'),
+        screen.getByTestId('model-select-col-default-b'),
+      ]) {
         expect(Array.from(selector.options, (option) => option.value)).toEqual([
           '',
           'alpha/first',
@@ -449,14 +475,119 @@ describe('PlaygroundStudio Shell', () => {
       }
     });
 
-    const [, firstColumn, secondColumn] = screen.getAllByRole('combobox').filter((selector) => (
-      selector !== screen.getByTestId('chat-provider-filter')
-    ));
+    const firstColumn = screen.getByTestId('model-select-col-default-a');
+    const secondColumn = screen.getByTestId('model-select-col-default-b');
     fireEvent.change(firstColumn, { target: { value: 'alpha/first' } });
     fireEvent.change(secondColumn, { target: { value: 'beta/second' } });
 
     expect(firstColumn.value).toBe('alpha/first');
     expect(secondColumn.value).toBe('beta/second');
+  });
+
+  test('preserves independent Compare full model selections and request bodies', async () => {
+    global.fetch = vi.fn().mockImplementation(() => Promise.resolve(successfulCompareResponse()));
+    const onResult = vi.fn();
+    renderCompareWorkspace({ onResult });
+
+    const firstModel = screen.getByTestId('model-select-col-default-a');
+    const secondModel = screen.getByTestId('model-select-col-default-b');
+    fireEvent.change(firstModel, { target: { value: 'wrongprefix/first' } });
+    fireEvent.change(secondModel, { target: { value: 'beta/third' } });
+    fireEvent.change(screen.getByTestId('compare-input'), { target: { value: 'Compare both' } });
+    fireEvent.click(screen.getByTestId('compare-send'));
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
+    const requestBodies = global.fetch.mock.calls.map(([, request]) => JSON.parse(request.body));
+    expect(requestBodies.map((body) => body.model)).toEqual([
+      'wrongprefix/first',
+      'beta/third',
+    ]);
+    for (const body of requestBodies) {
+      expect(body).not.toHaveProperty('providerId');
+      expect(body).not.toHaveProperty('providerFilter');
+    }
+    await waitFor(() => expect(onResult).toHaveBeenCalledTimes(2));
+  });
+
+  test('filters Compare columns independently and clears only an incompatible changed column', () => {
+    renderCompareWorkspace();
+    const firstFilter = screen.getByTestId('provider-filter-col-default-a');
+    const secondFilter = screen.getByTestId('provider-filter-col-default-b');
+    const firstModel = screen.getByTestId('model-select-col-default-a');
+    const secondModel = screen.getByTestId('model-select-col-default-b');
+
+    expect(firstFilter.getAttribute('aria-label')).toBe('Filter models by provider for column 1');
+    expect(secondFilter.getAttribute('aria-label')).toBe('Filter models by provider for column 2');
+    expect(Array.from(firstFilter.options, (option) => [option.value, option.textContent])).toEqual([
+      ['', 'All providers'],
+      ['alpha', 'Alpha'],
+      ['beta', 'Shared'],
+      ['gamma', 'Shared'],
+      ['delta', 'delta'],
+    ]);
+
+    fireEvent.change(firstFilter, { target: { value: 'alpha' } });
+    fireEvent.change(secondFilter, { target: { value: 'beta' } });
+    expect(Array.from(firstModel.options, (option) => option.value)).toEqual(['', 'wrongprefix/first', 'alpha/second']);
+    expect(Array.from(secondModel.options, (option) => option.value)).toEqual(['', 'beta/third']);
+
+    fireEvent.change(firstModel, { target: { value: 'wrongprefix/first' } });
+    fireEvent.change(secondModel, { target: { value: 'beta/third' } });
+    fireEvent.change(firstFilter, { target: { value: 'beta' } });
+
+    expect(firstModel.value).toBe('');
+    expect(secondModel.value).toBe('beta/third');
+    expect(secondFilter.value).toBe('beta');
+  });
+
+  test('defaults Compare filters for new and re-added columns and resets them only on remount', async () => {
+    modelCatalog.fetchModelCatalog.mockResolvedValue({ models: providerFilterModels });
+    const mounted = render(React.createElement(PlaygroundStudio));
+    await waitFor(() => expect(screen.getByTestId('provider-filter-col-default-a')).toBeDefined());
+    fireEvent.click(screen.getByTestId('playground-compare-tab'));
+    fireEvent.change(screen.getByTestId('provider-filter-col-default-a'), { target: { value: 'alpha' } });
+    fireEvent.click(screen.getByTestId('playground-chat-tab'));
+    fireEvent.click(screen.getByTestId('playground-compare-tab'));
+    expect(screen.getByTestId('provider-filter-col-default-a').value).toBe('alpha');
+
+    fireEvent.click(screen.getByTitle('Add model column'));
+    const filtersAfterAdd = screen.getAllByLabelText(/Filter models by provider for column/);
+    expect(filtersAfterAdd).toHaveLength(3);
+    expect(filtersAfterAdd[2].value).toBe('');
+    fireEvent.change(filtersAfterAdd[2], { target: { value: 'beta' } });
+    const thirdColumn = filtersAfterAdd[2].closest('[data-testid^="compare-col-"]');
+    fireEvent.click(thirdColumn.querySelector('[title="Remove column"]'));
+    expect(screen.getAllByLabelText(/Filter models by provider for column/)).toHaveLength(2);
+    fireEvent.click(screen.getByTitle('Add model column'));
+    expect(screen.getAllByLabelText(/Filter models by provider for column/)[2].value).toBe('');
+
+    mounted.unmount();
+    render(React.createElement(PlaygroundStudio));
+    await waitFor(() => expect(screen.getByTestId('provider-filter-col-default-a').value).toBe(''));
+  });
+
+  test('keeps an in-flight Compare request bound to its captured full model after filtering', async () => {
+    let resolveFetch;
+    const responsePromise = new Promise((resolve) => { resolveFetch = resolve; });
+    global.fetch = vi.fn().mockReturnValue(responsePromise);
+    const onResult = vi.fn();
+    renderCompareWorkspace({ onResult });
+
+    fireEvent.change(screen.getByTestId('model-select-col-default-a'), { target: { value: 'wrongprefix/first' } });
+    fireEvent.change(screen.getByTestId('compare-input'), { target: { value: 'Keep captured model' } });
+    fireEvent.click(screen.getByTestId('compare-send'));
+    expect(JSON.parse(global.fetch.mock.calls[0][1].body).model).toBe('wrongprefix/first');
+
+    fireEvent.change(screen.getByTestId('provider-filter-col-default-a'), { target: { value: 'beta' } });
+    expect(screen.getByTestId('model-select-col-default-a').value).toBe('');
+    resolveFetch(successfulCompareResponse('Original Alpha output'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('compare-col-col-default-a').textContent).toContain('Original Alpha output');
+      expect(screen.getByTestId('state-col-default-a').textContent).toBe('COMPLETE');
+    });
+    expect(screen.getByTestId('compare-col-col-default-b').textContent).not.toContain('Original Alpha output');
+    expect(onResult.mock.calls[0][0].request.model).toBe('wrongprefix/first');
   });
 
   test('desktop and mobile structural responsive classes', async () => {
