@@ -1,3 +1,11 @@
+# v0.5.62 (2026-08-31)
+
+## Changes
+- **Routing**: bare `gpt-*` model names now default to the Codex provider and
+  bare `claude-*` names to the Claude provider (prefix inference), so Codex/Claude
+  CLIs work without a `cx/`/`cc/` prefix or per-model alias. Explicit
+  `provider/model` and user aliases still take precedence.
+
 # v0.5.61 (2026-08-31)
 
 ## Fixes
