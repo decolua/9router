@@ -3,6 +3,7 @@ import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/con
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil, MODEL_LOCK_ALL, ADAPTIVE_FAILURE_ACTION, classifyAdaptiveFailure } from "open-sse/services/accountFallback.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { modelPatternMatches } from "@/shared/utils/modelPermissions.js";
+import { getAntigravityQuotaCache } from "./antigravityQuota.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -90,10 +91,23 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    // Filter out model-locked and excluded connections
+    // Antigravity quota cache is lazy: only populated after that account returns 409/429.
+    const isAntigravity = providerId === "antigravity";
+    const antigravityQuotaCache = isAntigravity && model ? getAntigravityQuotaCache() : null;
+
+    // Filter out model-locked, excluded, and Antigravity quota-exhausted connections.
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
+      // Antigravity: skip if live quota exhausted for this model
+      if (isAntigravity && model && antigravityQuotaCache) {
+        const quota = antigravityQuotaCache.get(c.id)?.[model];
+        if (quota && quota.remainingPercentage <= 0 && quota.resetAt && new Date(quota.resetAt).getTime() > Date.now()) {
+          const account = c.id?.slice(0, 8) || "unknown";
+          log.info("AG_QUOTA", `${account} | CACHE_BLOCK ${model} — skip upstream until ${quota.resetAt}`);
+          return false;
+        }
+      }
       return true;
     });
 
@@ -108,9 +122,15 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     });
 
     if (availableConnections.length === 0) {
-      // Find earliest lock expiry across all connections for retry timing
+      // Find earliest persistent lock or lazy Antigravity quota-cache reset for retry timing.
       const lockedConns = connections.filter(c => isModelLockActive(c, model));
       const expiries = lockedConns.map(c => getEarliestModelLockUntil(c)).filter(Boolean);
+      if (isAntigravity && model && antigravityQuotaCache) {
+        connections.forEach((c) => {
+          const resetAt = antigravityQuotaCache.get(c.id)?.[model]?.resetAt;
+          if (resetAt && new Date(resetAt).getTime() > Date.now()) expiries.push(resetAt);
+        });
+      }
       const earliest = expiries.sort()[0] || null;
       if (earliest) {
         const earliestConn = lockedConns[0];
@@ -278,16 +298,28 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const action = githubResetAtMs ? ADAPTIVE_FAILURE_ACTION.ACCOUNT_QUOTA_LOCK : classification.action;
   const expiresAtMs = githubResetAtMs || classification.expiresAtMs;
 
-  if (action === ADAPTIVE_FAILURE_ACTION.ACCOUNT_QUOTA_LOCK || action === ADAPTIVE_FAILURE_ACTION.MODEL_QUOTA_LOCK) {
+  // Antigravity's live quota API (open-sse/services/usage/google.js via
+  // src/sse/services/antigravityQuota.js) always supplies an explicit,
+  // trustworthy resetsAtMs from a successful upstream quota fetch — this can
+  // arrive even when the raw error text doesn't match classifyAdaptiveFailure's
+  // quota regexes (e.g. a bare 409/429 with no "quota exceeded" wording). Treat
+  // that case as an explicit model-quota lock too, so the precise reset time is
+  // never dropped in favor of a generic transient backoff.
+  const isExplicitProviderReset = resetsAtMs && resetsAtMs > Date.now()
+    && action !== ADAPTIVE_FAILURE_ACTION.ACCOUNT_QUOTA_LOCK
+    && action !== ADAPTIVE_FAILURE_ACTION.MODEL_QUOTA_LOCK;
+
+  if (action === ADAPTIVE_FAILURE_ACTION.ACCOUNT_QUOTA_LOCK || action === ADAPTIVE_FAILURE_ACTION.MODEL_QUOTA_LOCK || isExplicitProviderReset) {
     const lockModel = action === ADAPTIVE_FAILURE_ACTION.ACCOUNT_QUOTA_LOCK ? null : model;
+    const finalExpiresAtMs = isExplicitProviderReset ? resetsAtMs : expiresAtMs;
     const lock = {
-      expiresAt: new Date(expiresAtMs).toISOString(),
+      expiresAt: new Date(finalExpiresAtMs).toISOString(),
       reason: classification.reason || "Quota limit",
       source: classification.source,
       classifiedAt: new Date().toISOString(),
     };
     await extendConnectionModelLock(connectionId, lockModel, lock);
-    const cooldownMs = Math.max(0, expiresAtMs - Date.now());
+    const cooldownMs = Math.max(0, finalExpiresAtMs - Date.now());
     return { shouldFallback: true, cooldownMs };
   }
 
