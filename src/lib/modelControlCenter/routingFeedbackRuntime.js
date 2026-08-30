@@ -17,16 +17,29 @@ import {
   buildRoutingLearningScorePreview,
 } from "./routingLearningScore.js";
 
+import {
+  loadPersistedRoutingFeedbackEvents,
+  loadPersistedRoutingFeedbackStates,
+  persistRoutingFeedbackOutcome,
+  persistRoutingFeedbackStates,
+} from "../db/repos/routingFeedbackRepo.js";
+
 
 export const ROUTING_FEEDBACK_RUNTIME_CONTRACT =
   Object.freeze({
-    version: 1,
+    version: 2,
 
     authority:
       "soft-ranking-only",
 
     persistence:
-      "none",
+      "sqlite-best-effort",
+
+    hydration:
+      "lazy-combo-scoped",
+
+    writes:
+      "best-effort-non-blocking",
 
     failOpen:
       true,
@@ -45,6 +58,12 @@ let unsubscribe =
   null;
 
 const previousStatesByScope =
+  new Map();
+
+const hydratedScopes =
+  new Set();
+
+const hydrationPromisesByScope =
   new Map();
 
 
@@ -160,6 +179,148 @@ function neutralPreview(
 }
 
 
+async function hydrateRoutingFeedbackScope({
+  comboName = null,
+  nowMs = Date.now(),
+} = {}) {
+  const key =
+    scopeKey(
+      comboName,
+    );
+
+  /*
+   * Persistence is deliberately combo-scoped.
+   * Unscoped/direct routing never becomes global
+   * learned state.
+   */
+  if (
+    key === "__global__"
+  ) {
+    return false;
+  }
+
+  if (
+    hydratedScopes.has(
+      key,
+    )
+  ) {
+    return true;
+  }
+
+  const existing =
+    hydrationPromisesByScope.get(
+      key,
+    );
+
+  if (
+    existing
+    && typeof existing.then
+      === "function"
+  ) {
+    try {
+      return await existing;
+    } catch {
+      return false;
+    }
+  }
+
+  const hydration =
+    (async () => {
+      try {
+        const [
+          persistedEvents,
+          persistedStates,
+        ] =
+          await Promise.all([
+            loadPersistedRoutingFeedbackEvents({
+              comboName:
+                key,
+
+              routeKind:
+                "chat",
+
+              strategy:
+                "fallback",
+
+              nowMs,
+            }),
+
+            loadPersistedRoutingFeedbackStates({
+              comboName:
+                key,
+
+              nowMs,
+            }),
+          ]);
+
+        /*
+         * Repository evidence is canonical and bounded.
+         * Replay directly into process-local performance
+         * memory so it is not published a second time.
+         */
+        if (
+          Array.isArray(
+            persistedEvents,
+          )
+        ) {
+          for (
+            const event
+            of persistedEvents
+          ) {
+            try {
+              recordRoutingPerformanceOutcome(
+                event,
+              );
+            } catch {
+              // Invalid individual evidence is neutral.
+            }
+          }
+        }
+
+        if (
+          persistedStates
+          instanceof Map
+          && persistedStates.size > 0
+        ) {
+          previousStatesByScope.set(
+            key,
+            new Map(
+              persistedStates,
+            ),
+          );
+        }
+
+        hydratedScopes.add(
+          key,
+        );
+
+        return true;
+      } catch {
+        /*
+         * Persistence cannot make routing unavailable.
+         * Leave hydration retryable.
+         */
+        return false;
+      } finally {
+        hydrationPromisesByScope.delete(
+          key,
+        );
+      }
+    })();
+
+  hydrationPromisesByScope.set(
+    key,
+    hydration,
+  );
+
+  try {
+    return await hydration;
+  } catch {
+    return false;
+  }
+}
+
+
 export function ensureRoutingFeedbackRuntimeStarted() {
   if (
     typeof unsubscribe
@@ -178,6 +339,29 @@ export function ensureRoutingFeedbackRuntimeStarted() {
             );
           } catch {
             // Feedback collection is strictly fail-open.
+          }
+
+          /*
+           * Persist canonical outcome asynchronously.
+           * This Promise is never awaited by routing.
+           */
+          try {
+            const write =
+              persistRoutingFeedbackOutcome(
+                event,
+              );
+
+            if (
+              write
+              && typeof write.catch
+                === "function"
+            ) {
+              void write.catch(
+                () => {},
+              );
+            }
+          } catch {
+            // Persistence failure is strictly fail-open.
           }
         },
       );
@@ -217,6 +401,36 @@ export function resetRoutingFeedbackRuntimeState() {
   }
 
   previousStatesByScope.clear();
+  hydratedScopes.clear();
+  hydrationPromisesByScope.clear();
+}
+
+
+export async function buildHydratedRoutingFeedbackRuntimePreview({
+  models = [],
+  comboName = null,
+  nowMs = Date.now(),
+} = {}) {
+  /*
+   * C.5 runtime path:
+   * hydrate persisted combo-scoped evidence first,
+   * then delegate to the unchanged synchronous
+   * C.4 feedback preview semantics.
+   */
+  try {
+    await hydrateRoutingFeedbackScope({
+      comboName,
+      nowMs,
+    });
+  } catch {
+    // Hydration is strictly fail-open.
+  }
+
+  return buildRoutingFeedbackRuntimePreview({
+    models,
+    comboName,
+    nowMs,
+  });
 }
 
 
@@ -266,12 +480,48 @@ export function buildRoutingFeedbackRuntimePreview({
         },
       );
 
-    previousStatesByScope.set(
-      key,
+    const nextStates =
       extractRoutingStabilityStates(
         stabilitySnapshot,
-      ),
+      );
+
+    previousStatesByScope.set(
+      key,
+      nextStates,
     );
+
+    /*
+     * Persist combo-scoped hysteresis state.
+     * The Promise stays detached from routing.
+     */
+    if (
+      key !== "__global__"
+    ) {
+      try {
+        const write =
+          persistRoutingFeedbackStates({
+            comboName:
+              key,
+
+            statesByModel:
+              nextStates,
+
+            nowMs,
+          });
+
+        if (
+          write
+          && typeof write.catch
+            === "function"
+        ) {
+          void write.catch(
+            () => {},
+          );
+        }
+      } catch {
+        // State persistence is strictly fail-open.
+      }
+    }
 
     const learningPreview =
       buildRoutingLearningScorePreview(

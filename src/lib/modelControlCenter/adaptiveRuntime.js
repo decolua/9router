@@ -13,7 +13,7 @@ import {
 } from "./runtimeAuthority.js";
 
 import {
-  buildRoutingFeedbackRuntimePreview,
+  buildHydratedRoutingFeedbackRuntimePreview,
 } from "./routingFeedbackRuntime.js";
 
 function copyModels(models) {
@@ -305,7 +305,7 @@ export async function buildAdaptiveFallbackRuntimeOrder({
     loadRuntimeAuthoritySnapshot,
 
   feedbackLoader =
-    buildRoutingFeedbackRuntimePreview,
+    buildHydratedRoutingFeedbackRuntimePreview,
 } = {}) {
   const configured =
     copyModels(models);
