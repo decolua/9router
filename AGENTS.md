@@ -259,6 +259,28 @@ When multiple implementations are correct, prefer the one that:
 
 Generality and theoretical elegance come last.
 
+## Fork Release Memory
+
+This fork is maintained at `github.com/vutranHS/9router`. Preserve these shipped behaviors in future changes:
+
+### v0.5.60 — API-Key Authorization and Fair Use
+
+- API keys can optionally whitelist multiple provider accounts and the chat or image-generation models allowed on each account. An unconfigured key remains unrestricted for backward compatibility.
+- `/v1/models` only exposes models authorized for that key, and requests for other accounts, models, image generation, or a disabled Vision Adapter are rejected.
+- Vision fallback is a per-key capability toggle and uses the globally configured Vision Adapter; adapter usage is not charged to the key quota.
+- Each key can receive a percentage limit per account. Enforcement uses only the account's shortest current Codex or Claude quota window, combines chat and image usage, falls back to another authorized account when possible, and otherwise returns `429`.
+- Quota cost is estimated from learned provider deltas by model/reasoning effort and image size/quality. It is an estimate, not token-accurate billing.
+- Tag pushes build an installable CLI `.tgz` through `.github/workflows/release-cli.yml`.
+
+### v0.5.61 — Live Account Models
+
+- The API-key permissions UI merges live Claude and Codex model catalogs from every selected account instead of relying only on the static registry.
+- Claude discovery uses OAuth Bearer authentication, refreshes expired tokens, and follows model-list pagination.
+
+### v0.5.62 — Bare Harness Model Routing
+
+- Bare `gpt-*` names default to the `codex` provider and bare `claude-*` names default to the `claude` provider. Explicit `provider/model` names and user aliases still take precedence.
+
 ### Communication
 
 For straightforward work, act instead of narrating every step.
