@@ -128,9 +128,10 @@ function directProjection(entry) {
       model.operatorPolicy,
 
     current: {
-      policyAuthority: false,
+      policyAuthority: true,
 
-      policyExcluded: false,
+      policyExcluded:
+        dryRunExcluded,
 
       baseCandidateSignal,
 
@@ -138,11 +139,14 @@ function directProjection(entry) {
         model.routingSnapshot,
 
       note:
-        "Current direct routing does not consult B.2 operator policy.",
+        "Current direct routing enforces operator DISABLE/QUARANTINE; DEPRIORITIZE is not applicable to an explicit direct target.",
     },
 
     dryRun: {
-      policyAuthoritySimulated: true,
+      policyAuthoritySimulated: false,
+
+      policyAuthorityMirrorsRuntime:
+        true,
 
       excluded:
         dryRunExcluded,
@@ -172,6 +176,7 @@ function currentComboState(
     return {
       included: true,
       excludedReasons: [],
+      deprioritized: false,
       unresolved: true,
     };
   }
@@ -180,6 +185,10 @@ function currentComboState(
     resolved.model;
 
   const excludedReasons = [];
+
+  const state =
+    model.operatorPolicy?.state
+    || "default";
 
   if (model.operatorDisabled) {
     excludedReasons.push(
@@ -196,11 +205,25 @@ function currentComboState(
     );
   }
 
+  if (
+    state === "quarantine"
+    || state === "disable"
+  ) {
+    const reason = `policy:${state}`;
+
+    if (!excludedReasons.includes(reason)) {
+      excludedReasons.push(reason);
+    }
+  }
+
   return {
     included:
       excludedReasons.length === 0,
 
     excludedReasons,
+
+    deprioritized:
+      state === "deprioritize",
 
     unresolved: false,
   };
@@ -354,15 +377,30 @@ function buildComboProjection(
       },
     );
 
-  const currentCandidates =
-    projected
-      .filter(
-        (item) =>
-          item.current.included,
-      )
-      .map(
-        (item) => item.member,
-      );
+  const currentRetained =
+    projected.filter(
+      (item) =>
+        item.current.included,
+    );
+
+  const currentNormal =
+    currentRetained.filter(
+      (item) =>
+        !item.current.deprioritized,
+    );
+
+  const currentTail =
+    currentRetained.filter(
+      (item) =>
+        item.current.deprioritized,
+    );
+
+  const currentCandidates = [
+    ...currentNormal,
+    ...currentTail,
+  ].map(
+    (item) => item.member,
+  );
 
   const retained =
     projected.filter(
@@ -437,6 +475,12 @@ function buildComboProjection(
         projected.filter(
           (item) =>
             !item.current.included,
+        ).length,
+
+      currentDeprioritized:
+        projected.filter(
+          (item) =>
+            item.current.deprioritized,
         ).length,
 
       dryRunExcluded:
@@ -586,7 +630,10 @@ export async function buildPolicyDryRun() {
         false,
 
       selectorIntegrated:
-        false,
+        true,
+
+      operatorPolicyIsRoutingAuthority:
+        true,
 
       comboRotationStateRead:
         false,
@@ -636,13 +683,13 @@ export async function buildPolicyDryRun() {
         "Keep candidate eligible when otherwise feasible. Does not override model locks, provider errors, quota exhaustion, or other runtime constraints.",
 
       deprioritize:
-        "For combo candidates, move toward the tail while preserving membership. Not applicable to an explicit direct target.",
+        "Runtime combo routing moves DEPRIORITIZE candidates to the tail while preserving membership. It remains not applicable to an explicit direct target.",
 
       quarantine:
-        "Dry-run exclusion from policy candidate sets. No selector enforcement in Phase B.3.",
+        "Runtime routing excludes QUARANTINE targets. This endpoint reports that authority without mutating selector state.",
 
       disable:
-        "Existing disabledModels already excludes combo members. Dry-run additionally shows the effect a global policy gate would have on direct requests.",
+        "DISABLE is runtime routing authority for both direct and combo targets; legacy disabledModels remains authoritative as well.",
     },
 
     limitations: [
@@ -661,3 +708,11 @@ export async function buildPolicyDryRun() {
       combo,
   };
 }
+
+
+export const __test__ = {
+  directProjection,
+  currentComboState,
+  dryRunComboState,
+  buildComboProjection,
+};
