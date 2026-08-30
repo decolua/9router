@@ -33,6 +33,10 @@ vi.mock("@/lib/auth/dashboardSession", () => ({
   verifyDashboardAuthToken: mocks.verifyDashboardAuthToken,
 }));
 
+vi.mock("@/lib/auth/trustedPeer", () => ({
+  hasTrustedPeerHeaders: vi.fn(() => true),
+}));
+
 const { proxy, __test__ } = await import("../../src/dashboardGuard.js");
 
 const PEER_TOKEN = "peer-token-fixture";
@@ -287,6 +291,35 @@ describe("dashboard guard MCP CIMD client-metadata", () => {
       host: "router.example.com",
     }));
     expect(response.status).toBe(401);
+  });
+});
+
+describe("hasValidDashboardToken", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+  });
+
+  it("returns true when valid JWT token is present", async () => {
+    mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    const req = request("/dashboard", { host: "router.example.com" });
+    const result = await __test__.hasValidDashboardToken(req);
+    expect(result).toBe(true);
+  });
+
+  it("returns true when requireLogin=false (no JWT)", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+    const req = request("/dashboard", { host: "router.example.com" });
+    const result = await __test__.hasValidDashboardToken(req);
+    expect(result).toBe(true);
+  });
+
+  it("returns false when requireLogin=true and no JWT", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    const req = request("/dashboard", { host: "router.example.com" });
+    const result = await __test__.hasValidDashboardToken(req);
+    expect(result).toBe(false);
   });
 });
 

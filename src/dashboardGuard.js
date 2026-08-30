@@ -202,9 +202,19 @@ export const __test__ = {
   extractApiKey,
   canAccessPublicLlmApi,
   canAccessLocalOnlyRoute,
+  hasValidDashboardToken,
 };
 
-export { hasValidToken as hasValidDashboardToken };
+// Dashboard session gate for route handlers: mirrors middleware `isAuthenticated`
+// semantics so route handlers can reuse the same authorization rule. Returns
+// true when a valid JWT is present OR when the deployment is configured with
+// requireLogin=false (open dashboard).
+export async function hasValidDashboardToken(request) {
+  if (await hasValidToken(request)) return true;
+  const settings = await loadSettings();
+  if (settings && settings.requireLogin === false) return true;
+  return false;
+}
 
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
