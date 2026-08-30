@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getGatewayKeys, createGatewayKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { isLocalRequest, hasValidCliToken } from "@/dashboardGuard";
+import { isLocalRequest, hasValidCliToken, hasValidDashboardToken } from "@/dashboardGuard";
 
 export const dynamic = "force-dynamic";
 
@@ -25,10 +25,15 @@ export async function GET() {
 
 export async function POST(request) {
   try {
-    // Key creation reveals the raw key. Restrict to local requests or a valid
-    // CLI token (SSRF-style protection — remote callers must not be able to
-    // create and reveal keys unless they hold the machine-bound CLI token).
-    if (!isLocalRequest(request) && !(await hasValidCliToken(request))) {
+    // Key creation reveals the raw key. Restrict to local requests, a valid
+    // CLI token, or an authenticated dashboard session (SSRF-style protection —
+    // remote callers must not be able to create and reveal keys unless they
+    // hold the machine-bound CLI token or a valid dashboard session).
+    if (
+      !isLocalRequest(request) &&
+      !(await hasValidCliToken(request)) &&
+      !(await hasValidDashboardToken(request))
+    ) {
       return NextResponse.json(
         { error: "Key creation is only available from local requests." },
         { status: 403 }

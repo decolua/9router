@@ -204,6 +204,8 @@ export const __test__ = {
   canAccessLocalOnlyRoute,
 };
 
+export { hasValidToken as hasValidDashboardToken };
+
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
 

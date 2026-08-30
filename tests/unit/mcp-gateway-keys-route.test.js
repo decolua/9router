@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   getConsistentMachineId: vi.fn(),
   isLocalRequest: vi.fn(),
   hasValidCliToken: vi.fn(),
+  hasValidDashboardToken: vi.fn(),
 }));
 
 vi.mock("next/server", () => ({
@@ -30,6 +31,7 @@ vi.mock("@/shared/utils/machineId", () => ({
 vi.mock("@/dashboardGuard", () => ({
   isLocalRequest: mocks.isLocalRequest,
   hasValidCliToken: mocks.hasValidCliToken,
+  hasValidDashboardToken: mocks.hasValidDashboardToken,
 }));
 
 // Import after mocks are set up
@@ -90,6 +92,7 @@ describe("MCP Gateway Keys POST endpoint - local-only hardening", () => {
     vi.clearAllMocks();
     mocks.getConsistentMachineId.mockResolvedValue("test-machine-id");
     mocks.hasValidCliToken.mockResolvedValue(false);
+    mocks.hasValidDashboardToken.mockResolvedValue(false);
   });
 
   it("rejects key creation from remote requests", async () => {
@@ -141,9 +144,10 @@ describe("MCP Gateway Keys POST endpoint - local-only hardening", () => {
     expect(mocks.createGatewayKey).toHaveBeenCalledWith("test-key", "test-machine-id");
   });
 
-  it("rejects key creation from remote request without CLI token", async () => {
+  it("rejects key creation from remote request without CLI token or dashboard session", async () => {
     mocks.isLocalRequest.mockReturnValue(false);
     mocks.hasValidCliToken.mockResolvedValue(false);
+    mocks.hasValidDashboardToken.mockResolvedValue(false);
 
     const req = request({ host: "remote.example.com" }, { name: "test-key" });
     const response = await POST(req);
@@ -151,6 +155,26 @@ describe("MCP Gateway Keys POST endpoint - local-only hardening", () => {
     expect(response.status).toBe(403);
     expect(response.body.error).toBe("Key creation is only available from local requests.");
     expect(mocks.createGatewayKey).not.toHaveBeenCalled();
+  });
+
+  it("allows key creation from remote request with valid dashboard session", async () => {
+    mocks.isLocalRequest.mockReturnValue(false);
+    mocks.hasValidCliToken.mockResolvedValue(false);
+    mocks.hasValidDashboardToken.mockResolvedValue(true);
+    const mockKey = {
+      id: "new-key-id",
+      name: "dashboard-key",
+      key: "gw_secret_key_abc",
+      createdAt: "2024-01-01",
+    };
+    mocks.createGatewayKey.mockResolvedValue(mockKey);
+
+    const req = request({ host: "9router.example.com" }, { name: "dashboard-key" });
+    const response = await POST(req);
+
+    expect(response.status).toBe(201);
+    expect(response.body.key).toEqual(mockKey);
+    expect(mocks.createGatewayKey).toHaveBeenCalledWith("dashboard-key", "test-machine-id");
   });
 
   it("allows key creation with no name from local requests", async () => {
