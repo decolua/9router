@@ -67,7 +67,7 @@ Open `/dashboard/playground` from the dashboard sidebar. It replaces the legacy 
 
 Testing Studio uses the authenticated dashboard chat endpoint and the models already available through your connected providers. It does not expose provider credentials to the browser. It currently accepts text prompts only; it does not attach or upload images.
 
-The studio keeps its draft, selected models, presets, and recent sessions in versioned browser localStorage keys. Before display or storage, client-visible data is sanitized: credential-shaped fields and values are redacted, and large or deeply nested values are bounded. Provider connection details and raw stream events remain transient. Browser storage can be unavailable or full; in that case, the current session remains usable but later changes stay in memory only.
+The studio keeps its draft, selected models, presets, and recent sessions in versioned browser localStorage keys. Chat has one provider-type filter, and each Compare column has its own independent provider-type filter. These filters use the provider ID from each model's provider metadata, not a configured account. Filter choices are ephemeral and are not persisted. Selected model persistence remains unchanged, so a selected model can still be restored when the studio is remounted. Before display or storage, client-visible data is sanitized: credential-shaped fields and values are redacted, and large or deeply nested values are bounded. Provider connection details and raw stream events remain transient. Browser storage can be unavailable or full; in that case, the current session remains usable but later changes stay in memory only.
 
 ## Architecture at a Glance
 
