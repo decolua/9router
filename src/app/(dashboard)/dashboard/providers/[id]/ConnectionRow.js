@@ -6,7 +6,7 @@ import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null, verification = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null);
@@ -211,7 +211,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
         </div>
       </div>
       <div className="flex w-full items-center justify-between gap-2 sm:w-auto sm:justify-end">
-        <div className="grid flex-1 grid-cols-3 gap-1 sm:flex sm:flex-none">
+        <div className="grid flex-1 grid-cols-4 gap-1 sm:flex sm:flex-none">
           {/* Proxy button with inline dropdown */}
           {(proxyPools || []).length > 0 && (
             <div className="relative" ref={proxyDropdownRef}>
@@ -256,6 +256,26 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 <span className="text-[10px] leading-tight">Auto-ping</span>
               </button>
             </Tooltip>
+          )}
+          {verification && typeof verification.url === "string" && (
+            <button
+              onClick={() => {
+                try {
+                  const parsed = new URL(verification.url);
+                  if (parsed.protocol === "https:" && parsed.hostname === "accounts.google.com") {
+                    window.open(verification.url, "_blank", "noopener,noreferrer");
+                  }
+                } catch {
+                  // invalid url
+                }
+              }}
+              className="flex flex-col items-center rounded px-2 py-1 text-amber-600 hover:bg-amber-500/10 dark:text-amber-400"
+              title="Verify account"
+              aria-label="Verify account"
+            >
+              <span className="material-symbols-outlined text-[18px]">verified_user</span>
+              <span className="text-[10px] leading-tight font-medium">Verify</span>
+            </button>
           )}
           <button onClick={onEdit} className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5">
             <span className="material-symbols-outlined text-[18px]">edit</span>
@@ -314,5 +334,11 @@ ConnectionRow.propTypes = {
     on: PropTypes.bool,
     onToggle: PropTypes.func,
     provider: PropTypes.string,
+  }),
+  verification: PropTypes.shape({
+    url: PropTypes.string,
+    connectionId: PropTypes.string,
+    account: PropTypes.string,
+    createdAt: PropTypes.number,
   }),
 };

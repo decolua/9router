@@ -140,7 +140,7 @@ describe("Antigravity quota-aware routing", () => {
 
     expect(mocks.getAntigravityUsage).toHaveBeenCalledWith("token", {}, expect.objectContaining({
       strictProxy: true,
-    }));
+    }), "ag-strict-proxy");
   });
 
   it("keeps known cache when quota endpoint returns an error payload", async () => {

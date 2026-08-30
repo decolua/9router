@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useNotificationStore } from "@/store/notificationStore";
+import { useVerificationStore, isValidVerificationUrl } from "@/store/verificationStore";
 import Sidebar from "../Sidebar";
 import Header from "../Header";
-
+import Button from "../Button";
 function getToastStyle(type) {
   if (type === "success") {
     return {
@@ -33,13 +34,104 @@ function getToastStyle(type) {
 
 export default function DashboardLayout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const verificationData = useVerificationStore((state) => state.latestVerification);
+  const setFromPayload = useVerificationStore((state) => state.setFromPayload);
+  const [dismissedKey, setDismissedKey] = useState(null);
   const pathname = usePathname();
   const notifications = useNotificationStore((state) => state.notifications);
   const removeNotification = useNotificationStore((state) => state.removeNotification);
 
+  useEffect(() => {
+    let es;
+    try {
+      es = new EventSource("/api/usage/stream");
+      es.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          setFromPayload(data);
+          if (!data.antigravityVerification && !data.antigravityVerifications) {
+            setDismissedKey(null);
+          }
+        } catch {
+          // ignore json parse error
+        }
+      };
+      es.onerror = () => {
+        // EventSource auto-reconnects
+      };
+    } catch {
+      // EventSource not supported or initialization failed
+    }
+
+    return () => {
+      if (es) {
+        es.close();
+      }
+    };
+  }, []);
+
+  const currentVerificationKey = verificationData
+    ? `${verificationData.connectionId || ""}-${verificationData.url}`
+    : null;
+  const showVerification =
+    verificationData &&
+    isValidVerificationUrl(verificationData.url) &&
+    dismissedKey !== currentVerificationKey;
+
+  const handleOpenVerification = () => {
+    if (verificationData && isValidVerificationUrl(verificationData.url)) {
+      window.open(verificationData.url, "_blank", "noopener,noreferrer");
+    }
+  };
   return (
     <div className="flex h-screen w-full overflow-hidden bg-bg">
       <div className="fixed top-4 right-4 z-[80] flex w-[min(92vw,380px)] flex-col gap-2">
+        {showVerification && (
+          <div
+            role="alert"
+            aria-live="assertive"
+            className="rounded-lg border px-3.5 py-3 shadow-lg backdrop-blur-sm border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200"
+          >
+            <div className="flex items-start gap-2.5">
+              <span className="material-symbols-outlined text-[20px] leading-5 text-amber-600 dark:text-amber-400 shrink-0">
+                verified_user
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <span className="text-xs font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
+                    Antigravity
+                  </span>
+                  {verificationData.account ? (
+                    <span className="text-[11px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-800 dark:text-amber-200 truncate max-w-[180px]">
+                      {verificationData.account}
+                    </span>
+                  ) : null}
+                </div>
+                <p className="text-xs text-amber-800/90 dark:text-amber-200/90 mb-2.5">
+                  Google account verification required to proceed.
+                </p>
+                <div>
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    className="w-full text-xs font-medium !bg-amber-600 hover:!bg-amber-700 !text-white"
+                    onClick={handleOpenVerification}
+                  >
+                    Verify account
+                  </Button>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDismissedKey(currentVerificationKey)}
+                className="text-amber-800/70 hover:text-amber-900 dark:text-amber-200/70 dark:hover:text-amber-100 p-0.5"
+                aria-label="Dismiss verification alert"
+              >
+                <span className="material-symbols-outlined text-[16px]">close</span>
+              </button>
+            </div>
+          </div>
+        )}
         {notifications.map((n) => {
           const style = getToastStyle(n.type);
           return (

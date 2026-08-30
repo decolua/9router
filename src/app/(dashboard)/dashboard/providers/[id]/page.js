@@ -23,6 +23,7 @@ import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
 import BulkImportGrokCliModal from "./BulkImportGrokCliModal";
+import { useVerificationStore } from "@/store/verificationStore";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -73,6 +74,8 @@ export default function ProviderDetailPage() {
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
+  const verificationsMap = useVerificationStore((state) => state.verifications);
+  const latestVerification = useVerificationStore((state) => state.latestVerification);
   const [showAgRiskModal, setShowAgRiskModal] = useState(false);
   const [oneByOneRunning, setOneByOneRunning] = useState(false);
   const [oneByOneStopping, setOneByOneStopping] = useState(false);
@@ -345,6 +348,7 @@ export default function ProviderDetailPage() {
       setLoading(false);
     }
   }, [providerId, isCompatible]);
+
 
   const handleUpdateNode = async (formData) => {
     try {
@@ -988,6 +992,11 @@ export default function ProviderDetailPage() {
                     console.log("Error updating proxy:", error);
                   }
                 }}
+                verification={
+                  providerId === "antigravity"
+                    ? (verificationsMap[conn.id] || (latestVerification?.connectionId === conn.id ? latestVerification : null))
+                    : null
+                }
                 onEdit={() => {
                   setSelectedConnection(conn);
                   setShowEditModal(true);
