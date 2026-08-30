@@ -75,6 +75,82 @@ export class CommandCodeExecutor extends BaseExecutor {
     result.response = await wrapNdjsonAsOpenAISse(opts.model, peek.consumed, peek.reader);
     return result;
   }
+
+  parseError(response, bodyText) {
+    let parsed = null;
+    try {
+      parsed = JSON.parse(bodyText || "{}");
+    } catch {
+      parsed = null;
+    }
+    const errObj = parsed?.error || parsed;
+    const msg = errObj?.message || parsed?.message || bodyText || response.statusText;
+    const status = Number(errObj?.code || errObj?.statusCode || response.status) || response.status;
+    return {
+      status,
+      message: msg || `CommandCode upstream error: ${response.status}`,
+    };
+  }
+}
+
+export function parseCommandCodeError(event) {
+  if (!event || typeof event !== "object") {
+    return {
+      statusCode: 503,
+      message: "CommandCode upstream error",
+      type: "server_error",
+    };
+  }
+
+  const errVal = event.error ?? event.message ?? "unknown";
+  let message = "";
+  let statusCode = null;
+  let type = "server_error";
+
+  if (typeof errVal === "object" && errVal !== null) {
+    message = errVal.message || errVal.error || JSON.stringify(errVal);
+    if (errVal.statusCode && Number.isInteger(Number(errVal.statusCode))) {
+      statusCode = Number(errVal.statusCode);
+    } else if (errVal.status && Number.isInteger(Number(errVal.status))) {
+      statusCode = Number(errVal.status);
+    }
+    if (errVal.type) type = errVal.type;
+  } else if (typeof errVal === "string") {
+    message = errVal;
+  } else {
+    message = JSON.stringify(errVal);
+  }
+
+  if (event.statusCode && Number.isInteger(Number(event.statusCode))) {
+    statusCode = Number(event.statusCode);
+  }
+
+  if (!statusCode || statusCode < 400 || statusCode > 599) {
+    const lower = message.toLowerCase();
+    if (lower.includes("rate limit") || lower.includes("too many requests")) {
+      statusCode = 429;
+      type = "rate_limit_error";
+    } else if (lower.includes("unauthorized") || lower.includes("invalid api key") || lower.includes("authentication")) {
+      statusCode = 401;
+      type = "authentication_error";
+    } else if (lower.includes("payment required") || lower.includes("billing")) {
+      statusCode = 402;
+      type = "billing_error";
+    } else if (lower.includes("quota") || lower.includes("forbidden") || lower.includes("permission")) {
+      statusCode = 403;
+      type = "permission_error";
+    } else if (lower.includes("not found")) {
+      statusCode = 404;
+      type = "invalid_request_error";
+    } else if (lower.includes("unavailable") || lower.includes("overloaded") || lower.includes("server error")) {
+      statusCode = 503;
+      type = "server_error";
+    } else {
+      statusCode = 503;
+    }
+  }
+
+  return { statusCode, message, type };
 }
 
 /**
