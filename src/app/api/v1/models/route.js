@@ -17,7 +17,7 @@ import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
-import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { DEFAULT_CAPABILITIES, capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -237,6 +237,120 @@ function comboMatchesKinds(combo, kindFilter) {
   return kindFilter.includes(kind);
 }
 
+// Combo members are stored as the model picker's `{prefix}/{model}` strings,
+// where the prefix may be a connection's custom prefix, the provider's static
+// alias, or the raw provider id. Capabilities are keyed by provider id, so map
+// every prefix a member could carry back to one.
+function buildProviderIdByPrefix(connections) {
+  const byPrefix = new Map();
+  for (const [providerId, alias] of Object.entries(PROVIDER_ID_TO_ALIAS)) {
+    byPrefix.set(providerId, providerId);
+    if (alias) byPrefix.set(alias, providerId);
+  }
+  for (const conn of connections) {
+    const providerId = conn?.provider;
+    if (!providerId) continue;
+    const alias = getProviderAlias(providerId);
+    if (alias) byPrefix.set(alias, providerId);
+    const prefix = conn?.providerSpecificData?.prefix;
+    if (typeof prefix === "string" && prefix.trim()) byPrefix.set(prefix.trim(), providerId);
+  }
+  return byPrefix;
+}
+
+// Combos can list other combos as members, so resolution recurses. The cap is
+// a guard against a pathological chain, not a supported nesting depth.
+const MAX_COMBO_NESTING_DEPTH = 5;
+
+function comboMemberCapabilities(member, ctx, depth, visited) {
+  if (typeof member !== "string") return null;
+  let fullModel = member.trim();
+  if (!fullModel) return null;
+
+  // A bare member is a nested combo or a model alias — routing resolves it in
+  // that order (getModelInfo checks combos before aliases), so match it here.
+  // Anything else bare is a provider-as-model entry with no member model to
+  // read limits from, so it contributes nothing.
+  if (!fullModel.includes("/")) {
+    const nested = ctx.comboByName.get(fullModel);
+    if (nested) return comboCapabilities(nested, ctx, depth + 1, visited);
+    const resolved = ctx.modelAliases?.[fullModel];
+    if (typeof resolved !== "string" || !resolved.includes("/")) return null;
+    fullModel = resolved;
+  }
+
+  const separator = fullModel.indexOf("/");
+  const prefix = fullModel.slice(0, separator);
+  const modelId = fullModel.slice(separator + 1).trim();
+  if (!modelId) return null;
+
+  return getCapabilitiesForModel(ctx.providerIdByPrefix.get(prefix) || prefix, modelId);
+}
+
+// Merged capabilities for one combo, recursing into combo members. `visited`
+// tracks the current chain only (removed on the way out), so a combo reached
+// twice by different paths still contributes — only a cycle is cut.
+function comboCapabilities(combo, ctx, depth = 0, visited = new Set()) {
+  if (depth >= MAX_COMBO_NESTING_DEPTH) return null;
+  const name = typeof combo?.name === "string" ? combo.name : null;
+  if (name !== null) {
+    if (visited.has(name)) return null;
+    visited.add(name);
+  }
+  try {
+    const memberCapabilities = (combo?.models || [])
+      .map((member) => comboMemberCapabilities(member, ctx, depth, visited))
+      .filter(Boolean);
+    return mergeMemberCapabilities(memberCapabilities);
+  } finally {
+    if (name !== null) visited.delete(name);
+  }
+}
+
+// null means "no clamp", so a member without a range constrains nothing; the
+// combo's range is the overlap of the members that do clamp.
+function intersectThinkingRanges(ranges) {
+  const bounded = ranges.filter((r) => Number.isFinite(r?.min) && Number.isFinite(r?.max));
+  if (bounded.length === 0) return null;
+  const min = Math.max(...bounded.map((r) => r.min));
+  const max = Math.min(...bounded.map((r) => r.max));
+  return min <= max ? { min, max } : null;
+}
+
+// A combo routes to whichever member is reachable, so it can only promise what
+// EVERY member delivers: booleans intersect, limits take the minimum.
+// Advertising the best member's window would let a client send a prompt the
+// fallback member cannot accept — the same over-guessing this route already
+// avoids by emitting context_length for single models.
+function mergeMemberCapabilities(memberCapabilities) {
+  if (memberCapabilities.length === 0) return null;
+
+  // A budget range only means something alongside the format it belongs to, so
+  // it survives merging only when every member speaks the same one.
+  const formats = memberCapabilities.map((caps) => caps.thinkingFormat);
+  const sharesThinkingFormat = formats.every((format) => format === formats[0]);
+
+  const merged = {};
+  for (const key of Object.keys(DEFAULT_CAPABILITIES)) {
+    const values = memberCapabilities.map((caps) => caps[key]);
+    if (key === "contextWindow" || key === "maxOutput") {
+      const numbers = values.filter((value) => Number.isFinite(value));
+      merged[key] = numbers.length > 0 ? Math.min(...numbers) : DEFAULT_CAPABILITIES[key];
+    } else if (key === "thinkingRange") {
+      merged[key] = sharesThinkingFormat ? intersectThinkingRanges(values) : null;
+    } else if (values.every((value) => typeof value === "boolean")) {
+      merged[key] = values.every((value) => value === true);
+    } else if (values.every((value) => value === values[0])) {
+      merged[key] = values[0];
+    } else {
+      // Members disagree (e.g. different thinkingFormat) — no single answer
+      // holds for the whole combo, so fall back to the neutral default.
+      merged[key] = DEFAULT_CAPABILITIES[key];
+    }
+  }
+  return merged;
+}
+
 /**
  * Build OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
@@ -291,6 +405,19 @@ export async function buildModelsList(kindFilter, options = {}) {
   }
 
   const models = [];
+  // Only LLM combos are nestable targets: a web combo answers a different kind
+  // of request and has no member limits to inherit.
+  const comboByName = new Map();
+  for (const combo of combos) {
+    if (typeof combo?.name !== "string") continue;
+    if ((combo.kind || LLM_KIND) !== LLM_KIND) continue;
+    if (!comboByName.has(combo.name)) comboByName.set(combo.name, combo);
+  }
+  const capabilityContext = {
+    providerIdByPrefix: buildProviderIdByPrefix(connections),
+    modelAliases,
+    comboByName,
+  };
 
   // Combos first (filtered by kind). Web combos expose `kind` so AI knows search vs fetch.
   for (const combo of combos) {
@@ -302,6 +429,15 @@ export async function buildModelsList(kindFilter, options = {}) {
     };
     if (combo.kind === "webSearch" || combo.kind === "webFetch") {
       entry.kind = combo.kind;
+    } else if ((combo.kind || LLM_KIND) === LLM_KIND) {
+      // Inherit from the members: without this a combo is an id with no limits,
+      // so clients guess its window from the name and guess high.
+      const caps = comboCapabilities(combo, capabilityContext);
+      if (caps) {
+        entry.capabilities = caps;
+        if (Number.isFinite(caps.contextWindow)) entry.context_length = caps.contextWindow;
+        if (Number.isFinite(caps.maxOutput)) entry.max_completion_tokens = caps.maxOutput;
+      }
     }
     models.push(entry);
   }

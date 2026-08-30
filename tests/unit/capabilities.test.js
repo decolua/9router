@@ -55,4 +55,23 @@ describe("getCapabilitiesForModel", () => {
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-luna-agentic")).toMatchObject(kiroGpt56Expected);
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-sol-thinking-agentic")).toMatchObject(kiroGpt56Expected);
   });
+
+  it("reports all muse-spark-1.2 variants with 1M context window and 128k output", () => {
+    const expected = {
+      contextWindow: 1048576,
+      maxOutput: 131072,
+      reasoning: true,
+      thinkingFormat: "openai",
+    };
+    for (const model of [
+      "muse-spark-1.2",
+      "muse-spark-1.2-contributor",
+      "muse-spark-1.2-contributor-free",
+      "meta/muse-spark-1.2-contributor",
+      "ocg/muse-spark-1.2-contributor-free",
+    ]) {
+      expect(getCapabilitiesForModel("opencode", model)).toMatchObject(expected);
+      expect(getCapabilitiesForModel("orcarouter", model)).toMatchObject(expected);
+    }
+  });
 });
