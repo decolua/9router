@@ -319,12 +319,37 @@ function recordComboRotationSuccess(
  * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
  * @param {string} [options.comboStrategy] - Strategy: "fallback" or "round-robin"
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
+ * @param {Function|null} [options.onRoutingOutcome=null] - Fail-open terminal attribution observer
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
+export async function handleComboChat({
+  body,
+  models,
+  handleSingleModel,
+  log,
+  comboName,
+  comboStrategy,
+  comboStickyLimit = 1,
+  autoSwitch = true,
+  onRoutingOutcome = null,
+}) {
   // Apply rotation strategy if enabled
   let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
   const rotationStartModel = rotatedModels?.[0] || null;
+
+  const emitRoutingOutcome = (event) => {
+    if (typeof onRoutingOutcome !== "function") return;
+
+    try {
+      onRoutingOutcome({
+        comboName: comboName || null,
+        strategy: comboStrategy || "fallback",
+        ...event,
+      });
+    } catch {
+      // Attribution must never affect runtime routing.
+    }
+  };
 
   // Auto-switch: float models that satisfy the request's required capabilities to the front.
   if (autoSwitch) {
@@ -344,6 +369,8 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
+    const attemptStartedAt = Date.now();
+
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
@@ -359,6 +386,17 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
           rotationStartModel,
           modelStr
         );
+
+        emitRoutingOutcome({
+          candidateModel: modelStr,
+          attemptIndex: i + 1,
+          attemptCount: rotatedModels.length,
+          outcome: "success",
+          status: result.status,
+          fallbackEligible: false,
+          durationMs: Math.max(0, Date.now() - attemptStartedAt),
+        });
+
         log.info("COMBO", `Model ${modelStr} succeeded`);
         return result;
       }
@@ -388,9 +426,29 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
 
       if (!shouldFallback) {
+        emitRoutingOutcome({
+          candidateModel: modelStr,
+          attemptIndex: i + 1,
+          attemptCount: rotatedModels.length,
+          outcome: "failure",
+          status: result.status,
+          fallbackEligible: false,
+          durationMs: Math.max(0, Date.now() - attemptStartedAt),
+        });
+
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
         return result;
       }
+
+      emitRoutingOutcome({
+        candidateModel: modelStr,
+        attemptIndex: i + 1,
+        attemptCount: rotatedModels.length,
+        outcome: "failure",
+        status: result.status,
+        fallbackEligible: true,
+        durationMs: Math.max(0, Date.now() - attemptStartedAt),
+      });
 
       // For transient errors (503/502/504), wait for cooldown before falling through
       // so a briefly-overloaded provider gets a chance to recover rather than being
@@ -409,6 +467,17 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       // Catch unexpected exceptions to ensure fallback continues
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
+
+      emitRoutingOutcome({
+        candidateModel: modelStr,
+        attemptIndex: i + 1,
+        attemptCount: rotatedModels.length,
+        outcome: "exception",
+        status: null,
+        fallbackEligible: true,
+        durationMs: Math.max(0, Date.now() - attemptStartedAt),
+      });
+
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
   }

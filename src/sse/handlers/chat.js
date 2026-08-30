@@ -10,6 +10,7 @@ import {
 import { handleAntigravityQuotaError } from "../services/antigravityQuota.js";
 import { getOperatorPolicy } from "@/lib/modelControlCenter/operatorPolicy.js";
 import { buildAdaptiveFallbackRuntimeOrder } from "@/lib/modelControlCenter/adaptiveRuntime.js";
+import { publishRoutingOutcome } from "@/lib/modelControlCenter/routingOutcome.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
@@ -158,7 +159,14 @@ export async function handleChat(request, clientRawRequest = null) {
       log,
       comboName: modelStr,
       comboStrategy,
-      comboStickyLimit
+      comboStickyLimit,
+      onRoutingOutcome:
+        comboStrategy === "fallback"
+          ? (event) => publishRoutingOutcome({
+              ...event,
+              routeKind: "chat",
+            })
+          : undefined
     });
   }
 
@@ -276,7 +284,14 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         log,
         comboName: modelStr,
         comboStrategy,
-        comboStickyLimit
+        comboStickyLimit,
+        onRoutingOutcome:
+          comboStrategy === "fallback"
+            ? (event) => publishRoutingOutcome({
+                ...event,
+                routeKind: "chat",
+              })
+            : undefined
       });
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });
