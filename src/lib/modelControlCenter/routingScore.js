@@ -34,29 +34,153 @@ function policyState(signals) {
 export function classifyRoutingCandidate(
   signals = {},
 ) {
-  const reasons = [];
+  const authority =
+    signals?.authority
+    && typeof signals.authority
+      === "object"
+      ? signals.authority
+      : {};
+
+  const rawPolicy =
+    String(
+      authority?.operatorPolicy
+        ?.state
+      || "default",
+    )
+      .trim()
+      .toLowerCase();
 
   const policy =
-    policyState(signals);
+    [
+      "default",
+      "allow",
+      "deprioritize",
+      "quarantine",
+      "disable",
+    ].includes(rawPolicy)
+      ? rawPolicy
+      : "default";
 
-  if (
-    signals?.authority
-      ?.effectiveEligible === false
-  ) {
+  const reasons = [];
+
+  // C.0 authority boundary:
+  // operator DISABLE / QUARANTINE are
+  // explicit routing authority.
+  if (policy === "disable") {
     reasons.push(
-      ...(
-        Array.isArray(
-          signals?.authority?.reasons,
-        )
-          ? signals.authority.reasons
-          : ["effective_ineligible"]
-      ),
+      "operator_disabled",
     );
   }
 
+  if (policy === "quarantine") {
+    reasons.push(
+      "operator_quarantine",
+    );
+  }
+
+  // effectiveEligible is an observational
+  // aggregate and may be false for reasons
+  // that are NOT routing authority
+  // (for example stale/no_active_connection).
+  //
+  // Therefore only explicitly-authoritative
+  // reason codes may cross this boundary.
+  const hardAuthorityReasons =
+    new Set([
+      "operator_disabled",
+      "operator_quarantine",
+
+      "disabled_model",
+
+      "runtime_model_lock",
+      "all_connections_model_locked",
+
+      "exact_quota_exhausted",
+
+      "selector_quarantine",
+
+      "capability_incompatible",
+    ]);
+
+  const effectiveReasons =
+    Array.isArray(
+      authority?.reasons,
+    )
+      ? authority.reasons
+      : [];
+
+  for (
+    const reason
+    of effectiveReasons
+  ) {
+    if (
+      hardAuthorityReasons.has(
+        reason,
+      )
+    ) {
+      reasons.push(reason);
+    }
+  }
+
+  // Explicit runtime-authority channel.
+  // C.3.2 may provide a hard authority
+  // independently of effective preview.
+  if (
+    authority?.runtimeHardBlock
+    === true
+  ) {
+    const runtimeReasons =
+      Array.isArray(
+        authority
+          .runtimeHardReasons,
+      )
+        ? authority
+          .runtimeHardReasons
+        : [];
+
+    if (
+      runtimeReasons.length > 0
+    ) {
+      reasons.push(
+        ...runtimeReasons,
+      );
+    } else {
+      reasons.push(
+        "runtime_authority_block",
+      );
+    }
+  }
+
+  // Capability is a hard request
+  // constraint only when explicitly
+  // classified as authoritative.
+  const capability =
+    signals?.capability;
+
+  if (
+    capability
+      ?.authoritativeBlock
+    === true
+    || (
+      capability
+        ?.hardConstraint
+      === true
+      && capability
+        ?.compatible
+      === false
+    )
+  ) {
+    reasons.push(
+      "capability_incompatible",
+    );
+  }
+
+  // Only exact/current quota exhaustion
+  // may act as quota authority.
   if (
     signals?.quota
-      ?.authoritativeBlock === true
+      ?.authoritativeBlock
+    === true
   ) {
     reasons.push(
       "quota_authoritative_block",
@@ -72,7 +196,8 @@ export function classifyRoutingCandidate(
     tier:
       blocked
         ? "blocked"
-        : policy === "deprioritize"
+        : policy
+          === "deprioritize"
           ? "deprioritized"
           : "normal",
 
