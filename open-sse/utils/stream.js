@@ -62,6 +62,16 @@ export function createSSEStream(options = {}) {
     ? { ...initState(sourceFormat), provider, toolNameMap, customToolNames: new Set(customToolNames || []), model }
     : null;
 
+  // Claude-format clients (Claude Code) track context size from message_start.usage.
+  // OpenAI streams only report usage in the FINAL chunk, so the translated
+  // message_start would otherwise say input_tokens: 0 — the client then believes
+  // its context is empty, never auto-compacts, and eventually hard-fails upstream
+  // with "Prompt exceeds max length". Seed it with a request-size estimate
+  // (chars/4 + buffer); the final message_delta still carries the real usage.
+  if (state && sourceFormat === FORMATS.CLAUDE) {
+    state.inputTokenEstimate = estimateUsage(body, 0, FORMATS.CLAUDE)?.input_tokens || 0;
+  }
+
   let totalContentLength = 0;
   let accumulatedContent = "";
   let accumulatedThinking = "";
@@ -147,6 +157,14 @@ export function createSSEStream(options = {}) {
               if (parsed.choices !== undefined) {
                 if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
                 if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
+              }
+
+              // Rewrite colliding tool_use ids from native-claude passthrough providers
+              // (e.g. kimi-k3 reuses "toolu_<tool>_<n>" every turn) so clients can
+              // uniquely pair tool_result.tool_use_id ↔ tool_use.id across turns.
+              if (parsed.type === "content_block_start" && parsed.content_block?.type === "tool_use" && parsed.content_block.id) {
+                parsed.content_block.id = parsed.content_block.id + "_" + Math.random().toString(36).slice(2, 10);
+                fieldsInjected = true;
               }
 
               // Strip Azure-specific non-standard fields from streaming chunks

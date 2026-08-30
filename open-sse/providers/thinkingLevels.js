@@ -39,6 +39,7 @@ const PATTERN_THINKING = [
   { provider: "codex", pattern: "*gpt-5.6-terra*", levels: [...CODEX_GPT_5_6_LEVELS, "ultra"] },
   { provider: "codex", pattern: "*gpt-5.6-luna*", levels: CODEX_GPT_5_6_LEVELS },
   { pattern: "*codex*", levels: ["low", "medium", "high", "xhigh"] }, // codex cannot disable thinking
+  { pattern: "*x-preview*", levels: ["low", "high", "max"] }, // OpenCode Zen Ox Alpha: low/high/max only
 ];
 
 // Returns valid thinking levels for a model, or null when the model has no reasoning.

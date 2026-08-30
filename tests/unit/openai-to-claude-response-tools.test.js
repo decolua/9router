@@ -58,4 +58,31 @@ describe("openaiToClaudeResponse tool argument sanitization", () => {
       pages: "1-3",
     });
   });
+
+  it("does not emit buffered tool arguments again on repeated finish chunks", () => {
+    const state = createState();
+
+    openaiToClaudeResponse({
+      id: "chatcmpl-repeat-finish",
+      model: "test-model",
+      choices: [{ delta: { tool_calls: [{ index: 0, id: "toolu_read", function: { name: "Read" } }] } }],
+    }, state);
+
+    const firstFinish = openaiToClaudeResponse({
+      id: "chatcmpl-repeat-finish",
+      model: "test-model",
+      choices: [{
+        delta: { tool_calls: [{ index: 0, function: { arguments: '{"file_path":"/tmp/a.txt"}' } }] },
+        finish_reason: "tool_calls",
+      }],
+    }, state);
+    const repeatedFinish = openaiToClaudeResponse({
+      id: "chatcmpl-repeat-finish",
+      model: "test-model",
+      choices: [{ delta: {}, finish_reason: "tool_calls" }],
+    }, state);
+
+    expect(getInputJsonDelta(firstFinish)).toBe('{"file_path":"/tmp/a.txt"}');
+    expect(repeatedFinish).toBeNull();
+  });
 });
