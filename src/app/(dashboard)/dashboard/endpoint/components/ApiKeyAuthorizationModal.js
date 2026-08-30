@@ -4,6 +4,30 @@ import { useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import { Button, Input, Modal, Toggle } from "@/shared/components";
 
+const LIVE_MODEL_PROVIDERS = new Set(["claude", "codex"]);
+
+function mergeLiveModels(connection, liveModels) {
+  const models = [...connection.models];
+  const imageModels = [...connection.imageModels];
+  const seen = new Set([...models, ...imageModels].map((model) => model.id));
+  for (const raw of liveModels || []) {
+    let modelId = raw?.id || raw?.model || raw?.name;
+    if (typeof modelId !== "string" || !modelId.trim()) continue;
+    modelId = modelId.trim();
+    for (const prefix of [connection.alias, connection.provider]) {
+      if (prefix && modelId.startsWith(`${prefix}/`)) modelId = modelId.slice(prefix.length + 1);
+    }
+    const id = `${connection.provider}/${modelId}`;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const option = { id, label: `${connection.alias}/${modelId}` };
+    const kind = raw.kind || raw.type;
+    if (kind === "image" || /image|imagen|dall-?e|flux|sdxl|stable-diffusion/i.test(modelId)) imageModels.push(option);
+    else models.push(option);
+  }
+  return { ...connection, models, imageModels };
+}
+
 function updateGrant(connections, connectionId, field, modelId, checked) {
   const current = connections[connectionId] || { models: [], imageModels: [], quotaPercent: null };
   const values = new Set(current[field] || []);
@@ -33,8 +57,19 @@ export default function ApiKeyAuthorizationModal({ apiKey, onClose, onSaved }) {
         const [optionsData, keyData] = await Promise.all([optionsResponse.json(), keyResponse.json()]);
         if (!optionsResponse.ok) throw new Error(optionsData.error || "Failed to load accounts");
         if (!keyResponse.ok) throw new Error(keyData.error || "Failed to load quota status");
+        const hydratedConnections = await Promise.all((optionsData.connections || []).map(async (connection) => {
+          if (!LIVE_MODEL_PROVIDERS.has(connection.provider)) return connection;
+          try {
+            const response = await fetch(`/api/providers/${connection.id}/models`, { cache: "no-store" });
+            if (!response.ok) return connection;
+            const data = await response.json();
+            return mergeLiveModels(connection, data.models);
+          } catch {
+            return connection;
+          }
+        }));
         if (active) {
-          setOptions(optionsData.connections || []);
+          setOptions(hydratedConnections);
           setQuotaStatus(keyData.quotaStatus || {});
         }
       })

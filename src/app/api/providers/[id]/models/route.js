@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
-import { refreshGoogleToken, refreshCodexToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
+import { refreshClaudeOAuthToken, refreshGoogleToken, refreshCodexToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
@@ -20,11 +20,40 @@ const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fe
 // back 200 with those entries quietly missing instead of erroring.
 const CODEX_CLIENT_VERSION = "0.144.6";
 const CODEX_MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${CODEX_CLIENT_VERSION}`;
+const CLAUDE_MODELS_URL = "https://api.anthropic.com/v1/models";
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
   return data?.data || data?.models || data?.results || [];
 };
+
+async function fetchClaudeModels(accessToken) {
+  const models = [];
+  let afterId = null;
+  for (let page = 0; page < 10; page += 1) {
+    const url = new URL(CLAUDE_MODELS_URL);
+    url.searchParams.set("limit", "100");
+    if (afterId) url.searchParams.set("after_id", afterId);
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Accept": "application/json",
+        "Authorization": `Bearer ${accessToken}`,
+        "Anthropic-Version": "2023-06-01",
+        "Anthropic-Beta": "oauth-2025-04-20",
+      },
+    });
+    if (!response.ok) return response;
+    const data = await response.json();
+    models.push(...(Array.isArray(data?.data) ? data.data : []));
+    if (data?.has_more !== true || !data?.last_id) break;
+    afterId = data.last_id;
+  }
+  return new Response(JSON.stringify({ data: models }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 
 const parseGeminiCliModels = (data) => {
   if (Array.isArray(data?.models)) {
@@ -128,14 +157,12 @@ const buildOAuthResolver = ({ refreshFn, fetchFn, parseFn, errorLabel }) => asyn
 // Provider models endpoints configuration
 const PROVIDER_MODELS_CONFIG = {
   claude: {
-    url: "https://api.anthropic.com/v1/models",
-    method: "GET",
-    headers: {
-      "Anthropic-Version": "2023-06-01",
-      "Content-Type": "application/json"
-    },
-    authHeader: "x-api-key",
-    parseResponse: (data) => data.data || []
+    customResolver: buildOAuthResolver({
+      refreshFn: (conn) => refreshClaudeOAuthToken(conn.refreshToken),
+      fetchFn: (token) => fetchClaudeModels(token),
+      parseFn: (data) => data.data || [],
+      errorLabel: "Failed to fetch Claude models",
+    }),
   },
   gemini: {
     url: "https://generativelanguage.googleapis.com/v1beta/models",

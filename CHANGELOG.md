@@ -1,3 +1,11 @@
+# v0.5.61 (2026-08-31)
+
+## Fixes
+- **API keys**: permissions now preload and merge each Claude/Codex account's
+  live model catalog instead of showing only the static registry
+- **Claude**: live model discovery uses OAuth Bearer authentication, refreshes
+  expired tokens, and follows pagination so every available model is returned
+
 # v0.5.60 (2026-08-30)
 
 ## Features

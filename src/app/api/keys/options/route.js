@@ -28,6 +28,7 @@ export async function GET() {
         return {
           id: connection.id,
           provider: connection.provider,
+          alias,
           name: connection.displayName || connection.name || connection.email || connection.id,
           quotaSupported: connection.provider === "codex" || connection.provider === "claude",
           models: rawModels.filter((model) => ["llm", "imageToText"].includes(inferKind(model))).map(toOption),
