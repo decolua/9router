@@ -22,6 +22,15 @@ function flattenToolHistory(messages) {
   return messages
     .filter((msg) => msg)
     .map((msg) => {
+      if (msg.type === "function_call") {
+        return { role: "assistant", content: `${TOOL_CALL_PREFIX}${msg.name || "tool"}]` };
+      }
+      if (msg.type === "function_call_output") {
+        const output = Array.isArray(msg.output)
+          ? msg.output.map((part) => part?.text || "").filter(Boolean).join("\n")
+          : extractTextContent(msg.output) || String(msg.output ?? "");
+        return { role: "assistant", content: `${TOOL_RESULT_PREFIX}${output}]` };
+      }
       if (msg.role === "tool" || msg.role === "function") {
         return { role: "assistant", content: `${TOOL_RESULT_PREFIX}${extractTextContent(msg.content) || String(msg.content ?? "")}]` };
       }

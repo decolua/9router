@@ -213,4 +213,36 @@ describe("fusion combo", () => {
     // Flattened tool_result
     expect(panelBody.messages[2].content).toBe("[Tool result: done]");
   });
+
+  it("flattens Responses API function items into prose for panel calls", async () => {
+    const handleSingleModel = vi.fn(async () => okResponse("ans"));
+    await handleFusionChat({
+      body: {
+        input: [
+          { type: "message", role: "user", content: [{ type: "input_text", text: "find files" }] },
+          { type: "function_call", name: "exec_command", call_id: "c1", arguments: "{\"cmd\":\"dir\"}" },
+          { type: "function_call_output", call_id: "c1", output: [{ type: "input_text", text: "file.txt" }] },
+          { type: "message", role: "user", content: [{ type: "input_text", text: "describe it" }] }
+        ],
+        tools: [{ type: "function" }]
+      },
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+      judgeModel: "p/judge"
+    });
+
+    const panelCalls = handleSingleModel.mock.calls.filter(([,, isPanel]) => isPanel === true);
+    expect(panelCalls).toHaveLength(2);
+    for (const [panelBody] of panelCalls) {
+      expect(panelBody.tools).toBeUndefined();
+      expect(panelBody.input).toEqual([
+        { type: "message", role: "user", content: [{ type: "input_text", text: "find files" }] },
+        { role: "assistant", content: "[Called tools: exec_command]" },
+        { role: "assistant", content: "[Tool result: file.txt]" },
+        { type: "message", role: "user", content: [{ type: "input_text", text: "describe it" }] }
+      ]);
+      expect(panelBody.input.some((item) => item.type === "function_call" || item.type === "function_call_output")).toBe(false);
+    }
+  });
 });
