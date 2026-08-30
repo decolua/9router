@@ -97,7 +97,7 @@ export class BaseExecutor {
     return { status: response.status, message: bodyText || `HTTP ${response.status}` };
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, connectTimeoutMs = null }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;
@@ -131,9 +131,10 @@ export class BaseExecutor {
 
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 
-      // Abort if upstream doesn't return response headers within connection timeout
+      // Abort if upstream doesn't return response headers within connection timeout.
+      // Precedence: caller-supplied (per-provider settings) → registry `timeoutMs` → env default.
       const connectCtrl = new AbortController();
-      const timeoutMs = this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
+      const timeoutMs = connectTimeoutMs ?? this.config?.timeoutMs ?? FETCH_CONNECT_TIMEOUT_MS;
       const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), timeoutMs);
       const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
 

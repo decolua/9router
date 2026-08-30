@@ -66,6 +66,7 @@ export default function ProviderDetailPage() {
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
+  const [providerConnectTimeout, setProviderConnectTimeout] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const [suggestedModels, setSuggestedModels] = useState([]);
@@ -315,6 +316,7 @@ export default function ProviderDetailPage() {
       const override = (settingsData.providerStrategies || {})[providerId] || {};
       setProviderStrategy(override.fallbackStrategy || null);
       setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
+      setProviderConnectTimeout(override.connectTimeoutMs != null ? String(override.connectTimeoutMs) : "");
       // Load per-provider thinking config
       const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
       setThinkingMode(thinkingCfg.mode || "auto");
@@ -405,6 +407,48 @@ export default function ProviderDetailPage() {
   const handleStickyLimitChange = (value) => {
     setProviderStickyLimit(value);
     saveProviderStrategy("round-robin", value);
+  };
+
+  const saveProviderConnectTimeout = async (value) => {
+    try {
+      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
+      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
+      const current = settingsData.providerStrategies || {};
+      const existing = current[providerId] || {};
+
+      let updated = { ...current };
+      if (value === "" || value === null) {
+        delete existing.connectTimeoutMs;
+        if (Object.keys(existing).length === 0) {
+          delete updated[providerId];
+        } else {
+          updated[providerId] = existing;
+        }
+      } else {
+        updated[providerId] = { ...existing, connectTimeoutMs: Number(value) };
+      }
+
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerStrategies: updated }),
+      });
+    } catch (error) {
+      console.log("Error saving provider connect timeout:", error);
+    }
+  };
+
+  const handleProviderConnectTimeoutChange = (value) => {
+    setProviderConnectTimeout(value);
+    const trimmed = value.trim();
+    if (trimmed === "") {
+      saveProviderConnectTimeout(null);
+    } else {
+      const num = parseInt(trimmed);
+      if (!isNaN(num) && num >= 1000 && num <= 120000) {
+        saveProviderConnectTimeout(num);
+      }
+    }
   };
 
   const saveThinkingConfig = async (mode) => {
@@ -1490,6 +1534,19 @@ export default function ProviderDetailPage() {
                     />
                   </div>
                 )}
+                <div className="flex items-center gap-1.5 ml-2">
+                  <span className="text-xs text-text-muted" title="Per-provider connect timeout in ms. Leave blank to use the global default.">Timeout&nbsp;(ms):</span>
+                  <input
+                    type="number"
+                    min={1000}
+                    max={120000}
+                    step={1000}
+                    value={providerConnectTimeout}
+                    onChange={(e) => handleProviderConnectTimeoutChange(e.target.value)}
+                    placeholder="global"
+                    className="w-20 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
+                  />
+                </div>
               </div>
             </div>
           </div>

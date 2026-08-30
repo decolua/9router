@@ -304,6 +304,24 @@ export default function ProfilePage() {
     }
   };
 
+  const updateConnectTimeout = async (ms) => {
+    const numMs = parseInt(ms);
+    if (isNaN(numMs) || numMs < 1000 || numMs > 120000) return;
+
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectTimeoutMs: numMs }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, connectTimeoutMs: numMs }));
+      }
+    } catch (err) {
+      console.error("Failed to update connect timeout:", err);
+    }
+  };
+
   const updateComboStickyLimit = async (limit) => {
     const numLimit = parseInt(limit);
     if (isNaN(numLimit) || numLimit < 1) return;
@@ -1473,6 +1491,26 @@ export default function ProfilePage() {
               </div>
             )}
 
+            {/* Global Connect Timeout (ms) */}
+            <div className="flex items-start sm:items-center justify-between gap-4 pt-4 border-t border-border/50">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Connect Timeout (ms)</p>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  Abort request and fall back if the provider doesn&apos;t return response headers in time. Per-provider override wins.
+                </p>
+              </div>
+              <Input
+                type="number"
+                min="1000"
+                max="120000"
+                step="1000"
+                value={settings.connectTimeoutMs || 15000}
+                onChange={(e) => updateConnectTimeout(e.target.value)}
+                disabled={loading}
+                className="w-20 sm:w-24 text-center shrink-0"
+              />
+            </div>
+
             {/* Combo Round Robin */}
             <div className="flex items-start sm:items-center justify-between gap-4 pt-4 border-t border-border/50">
               <div className="flex-1 min-w-0">
@@ -1516,6 +1554,7 @@ export default function ProfilePage() {
               {settings.comboStrategy === "round-robin"
                 ? ` Combos rotate after ${settings.comboStickyRoundRobinLimit || 1} call${(settings.comboStickyRoundRobinLimit || 1) === 1 ? "" : "s"} per model.`
                 : " Combos always start with their first model."}
+              {` Connect timeout: ${(settings.connectTimeoutMs || 15000) / 1000}s (per-provider override wins).`}
             </p>
           </div>
         </Card>

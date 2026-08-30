@@ -260,6 +260,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Use shared chatCore
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+    // Connect-timeout precedence: per-provider setting → global setting → registry → env default.
+    // Per-provider lets the user pin a tight timeout to a flaky provider (e.g. nvidia: 10000)
+    // while leaving a generous global default (15s) for everything else.
+    const providerConnectTimeout = (chatSettings.providerStrategies || {})[provider]?.connectTimeoutMs;
+    const connectTimeoutMs = providerConnectTimeout ?? chatSettings.connectTimeoutMs;
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
@@ -286,6 +291,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
       onPxpipeEvent: appendPxpipeEvent,
       providerThinking,
+      connectTimeoutMs,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
       onCredentialsRefreshed: async (newCreds) => {
