@@ -430,7 +430,7 @@ export default function CompareWorkspace({ configState, availableModels = [], on
                         </select>
                     </div>
                     {columns.length > 1 && (
-                        <button onClick={() => removeColumn(col.id)} className="text-text-muted hover:text-error shrink-0" title="Remove column">×</button>
+                        <button onClick={() => removeColumn(col.id)} className="text-text-muted hover:text-error shrink-0" title="Remove column" aria-label="Remove column">×</button>
                     )}
                 </div>
 
@@ -481,7 +481,8 @@ export default function CompareWorkspace({ configState, availableModels = [], on
                 onClick={addColumn}
                 className="w-12 border border-dashed border-border rounded-lg flex items-center justify-center text-text-muted hover:bg-surface hover:text-text-main transition-colors shrink-0"
                 title="Add model column"
-             >
+                 aria-label="Add model column"
+              >
                 +
              </button>
          )}

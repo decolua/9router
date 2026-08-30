@@ -604,16 +604,21 @@ describe('PlaygroundStudio Shell', () => {
     fireEvent.click(screen.getByTestId('playground-compare-tab'));
     expect(screen.getByTestId('provider-filter-col-default-a').value).toBe('alpha');
 
-    fireEvent.click(screen.getByTitle('Add model column'));
+    expect(screen.getAllByRole('button', { name: 'Remove column' })).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Add model column' }));
     const filtersAfterAdd = screen.getAllByLabelText(/Filter models by provider for column/);
     expect(filtersAfterAdd).toHaveLength(3);
     expect(filtersAfterAdd[2].value).toBe('');
+    expect(screen.getAllByRole('button', { name: 'Remove column' })).toHaveLength(3);
     fireEvent.change(filtersAfterAdd[2], { target: { value: 'beta' } });
     const thirdColumn = filtersAfterAdd[2].closest('[data-testid^="compare-col-"]');
-    fireEvent.click(thirdColumn.querySelector('[title="Remove column"]'));
+    expect(thirdColumn.querySelector('[title="Remove column"]')).toBe(screen.getAllByRole('button', { name: 'Remove column' })[2]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove column' })[2]);
     expect(screen.getAllByLabelText(/Filter models by provider for column/)).toHaveLength(2);
-    fireEvent.click(screen.getByTitle('Add model column'));
+    expect(screen.getAllByRole('button', { name: 'Remove column' })).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Add model column' }));
     expect(screen.getAllByLabelText(/Filter models by provider for column/)[2].value).toBe('');
+    expect(screen.getAllByRole('button', { name: 'Remove column' })).toHaveLength(3);
 
     mounted.unmount();
     render(React.createElement(PlaygroundStudio));

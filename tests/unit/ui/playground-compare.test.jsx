@@ -117,18 +117,22 @@ describe("CompareWorkspace", () => {
     
     expect(screen.getAllByRole("combobox", { name: /Select model for column/ }).length).toBe(2);
     
-    const addButton = screen.getByTitle("Add model column");
+    expect(screen.getAllByRole("button", { name: "Remove column" })).toHaveLength(2);
+    const addButton = screen.getByRole("button", { name: "Add model column" });
     fireEvent.click(addButton);
     expect(screen.getAllByRole("combobox", { name: /Select model for column/ }).length).toBe(3);
+    expect(screen.getAllByRole("button", { name: "Remove column" })).toHaveLength(3);
     
     fireEvent.click(addButton);
     expect(screen.getAllByRole("combobox", { name: /Select model for column/ }).length).toBe(4);
+    expect(screen.getAllByRole("button", { name: "Remove column" })).toHaveLength(4);
     
-    expect(screen.queryByTitle("Add model column")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add model column" })).toBeNull();
     
-    const removeButtons = screen.getAllByTitle("Remove column");
+    const removeButtons = screen.getAllByRole("button", { name: "Remove column" });
     fireEvent.click(removeButtons[0]);
     expect(screen.getAllByRole("combobox", { name: /Select model for column/ }).length).toBe(3);
+    expect(screen.getAllByRole("button", { name: "Remove column" })).toHaveLength(3);
   });
 
   it("sends identical requests to selected models", async () => {
@@ -306,8 +310,8 @@ describe("CompareWorkspace", () => {
     ];
 
     const { unmount } = render(<CompareWorkspace configState={mockConfigState} availableModels={availableModels4} />);
-    fireEvent.click(screen.getByTitle("Add model column")); // get to 3 columns
-    fireEvent.click(screen.getByTitle("Add model column")); // get to 4 columns
+    fireEvent.click(screen.getByRole("button", { name: "Add model column" })); // get to 3 columns
+    fireEvent.click(screen.getByRole("button", { name: "Add model column" })); // get to 4 columns
 
     const selects = screen.getAllByRole("combobox", { name: /Select model for column/ });
     fireEvent.change(selects[0], { target: { value: "openai/gpt-4o" } });
