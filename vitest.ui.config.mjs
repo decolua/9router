@@ -8,7 +8,10 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     globals: true,
-    include: ["tests/unit/ui/**/*.test.jsx"],
+    include: [
+      "tests/unit/ui/playground-chat.test.jsx",
+      "tests/unit/ui/playground-studio.test.js",
+    ],
     exclude: ["**/node_modules/**", "**/.claude/**", "**/dist/**"],
   },
   resolve: {
