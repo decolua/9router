@@ -8,6 +8,7 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { handleAntigravityQuotaError } from "../services/antigravityQuota.js";
+import { getOperatorPolicy } from "@/lib/modelControlCenter/operatorPolicy.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
@@ -23,6 +24,7 @@ import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+
 
 /**
  * Handle chat completion request
@@ -160,6 +162,21 @@ export async function handleChat(request, clientRawRequest = null) {
  */
 async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
   const modelInfo = await getModelInfo(modelStr);
+
+  // B.4: Operator policy gate for direct (non-combo) model routing
+  // DISABLE + QUARANTINE block; ALLOW/DEPRIORITIZE pass through normally.
+  // Combo names (modelInfo.provider === null) are gated inside getComboModels().
+  if (modelInfo.provider) {
+    const policy = await getOperatorPolicy(modelInfo.provider, modelInfo.model);
+    if (policy.state === 'disable') {
+      log.warn("POLICY", `[${modelInfo.provider}/${modelInfo.model}] operator disabled — rejecting direct routing`);
+      return errorResponse(HTTP_STATUS.FORBIDDEN, `[${modelInfo.provider}/${modelInfo.model}] disabled by operator policy`);
+    }
+    if (policy.state === 'quarantine') {
+      log.warn("POLICY", `[${modelInfo.provider}/${modelInfo.model}] operator quarantined — rejecting direct routing`);
+      return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, `[${modelInfo.provider}/${modelInfo.model}] quarantined by operator policy`);
+    }
+  }
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {

@@ -1,6 +1,7 @@
 // Re-export from open-sse with localDb integration
 import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
+import { getModelPolicies } from "@/lib/db/repos/modelPoliciesRepo.js";
 import fs from "node:fs";
 import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
@@ -117,13 +118,24 @@ export async function getComboModels(modelStr) {
 
   // Respect 9Router's persistent disabled-model registry so models disabled
   // from the dashboard or shared selector are also excluded from combos.
-  const disabled = await getDisabledModels();
-  const quarantined = getSelectorQuarantinedModels();
+  const [disabled, storedPolicies] = await Promise.all([
+    getDisabledModels(),
+    getModelPolicies(),
+  ]);
+  const externalQuarantined = getSelectorQuarantinedModels();
+
+  // Build operator policy lookup map (alias\0modelId → state)
+  const policyMap = new Map();
+  for (const p of storedPolicies) {
+    policyMap.set(`${p.providerAlias}\0${p.modelId}`, p.state);
+  }
 
   const activeModels = combo.models.filter((member) => {
-    if (quarantined.has(member)) {
+    // External quarantine (legacy combo quarantine file) blocks immediately
+    if (externalQuarantined.has(member)) {
       return false;
     }
+
     if (typeof member !== "string" || !member.includes("/")) {
       return true;
     }
@@ -133,6 +145,7 @@ export async function getComboModels(modelStr) {
     const rawAlias = member.slice(0, slash);
     const rawModel = member.slice(slash + 1);
 
+    // Existing disabledModels check (authoritative)
     const aliases = new Set([
       rawAlias,
       parsed?.providerAlias,
@@ -152,8 +165,52 @@ export async function getComboModels(modelStr) {
       }
     }
 
+    // B.4 operator policy enforcement for combo members
+    for (const alias of aliases) {
+      const policyState = policyMap.get(`${alias}\0${rawModel}`);
+      if (policyState === "disable" || policyState === "quarantine") {
+        return false;
+      }
+    }
+
     return true;
   });
 
-  return activeModels.length > 0 ? activeModels : null;
+  if (activeModels.length === 0) return null;
+
+  // B.4: Deprioritize models sort to tail, preserving original order among groups
+  const normalModels = [];
+  const deprioritizedModels = [];
+  for (const member of activeModels) {
+    if (!member.includes("/")) {
+      normalModels.push(member);
+      continue;
+    }
+    const parsed = parseModel(member);
+    const slash = member.indexOf("/");
+    const rawAlias = member.slice(0, slash);
+    const rawModel = member.slice(slash + 1);
+
+    const aliases = new Set([
+      rawAlias,
+      parsed?.providerAlias,
+      parsed?.provider,
+    ].filter(Boolean));
+
+    let deprioritized = false;
+    for (const alias of aliases) {
+      if (policyMap.get(`${alias}\0${rawModel}`) === "deprioritize") {
+        deprioritized = true;
+        break;
+      }
+    }
+
+    if (deprioritized) {
+      deprioritizedModels.push(member);
+    } else {
+      normalModels.push(member);
+    }
+  }
+
+  return [...normalModels, ...deprioritizedModels];
 }
