@@ -266,6 +266,50 @@ export function getComboModelsFromData(modelStr, combosData) {
 }
 
 /**
+ * Correct round-robin state after the model that actually served the request
+ * is known. getRotatedModels() advances eagerly for request scheduling; when
+ * fallback serves a different model, the next request must continue from the
+ * actual winner rather than the originally scheduled target.
+ */
+function recordComboRotationSuccess(
+  models,
+  comboName,
+  strategy,
+  stickyLimit,
+  rotationStartModel,
+  servedModel
+) {
+  if (!models || models.length <= 1 || strategy !== "round-robin") return;
+
+  const servedIndex = models.indexOf(servedModel);
+  if (servedIndex < 0) return;
+
+  const rotationKey = comboName || "__default__";
+  const normalizedStickyLimit = normalizeStickyLimit(stickyLimit);
+
+  // True round-robin: next request starts immediately after actual winner.
+  if (normalizedStickyLimit <= 1) {
+    comboRotationState.set(rotationKey, {
+      index: (servedIndex + 1) % models.length,
+      consecutiveUseCount: 0,
+    });
+    return;
+  }
+
+  // Sticky mode: when fallback changed the winner, transfer stickiness to
+  // that winner and count this successful request as its first use.
+  //
+  // If the scheduled model itself succeeded, getRotatedModels() already
+  // accounted for this request and no correction is needed.
+  if (servedModel !== rotationStartModel) {
+    comboRotationState.set(rotationKey, {
+      index: servedIndex,
+      consecutiveUseCount: 1,
+    });
+  }
+}
+
+/**
  * Handle combo chat with fallback
  * @param {Object} options
  * @param {Object} options.body - Request body
@@ -280,6 +324,7 @@ export function getComboModelsFromData(modelStr, combosData) {
 export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
   // Apply rotation strategy if enabled
   let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+  const rotationStartModel = rotatedModels?.[0] || null;
 
   // Auto-switch: float models that satisfy the request's required capabilities to the front.
   if (autoSwitch) {
@@ -306,6 +351,14 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       
       // Success (2xx) - return response
       if (result.ok) {
+        recordComboRotationSuccess(
+          models,
+          comboName,
+          comboStrategy,
+          comboStickyLimit,
+          rotationStartModel,
+          modelStr
+        );
         log.info("COMBO", `Model ${modelStr} succeeded`);
         return result;
       }

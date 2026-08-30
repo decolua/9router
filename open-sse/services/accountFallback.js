@@ -1,5 +1,38 @@
 import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
 
+// HTTP 400 is normally a caller/request error and must not poison a healthy
+// provider/model. Only known model/provider-scoped 400 signals are eligible
+// for fallback. Keep this deliberately bounded; unknown 400s fail closed
+// without account/model cooldown.
+const RETRYABLE_BAD_REQUEST_PATTERNS = [
+  /\binvalid model\b/i,
+  /\bmodel.*not.*(?:available|found|supported|accessible)\b/i,
+  /\bmodel.*(?:does not exist|doesn't exist)\b/i,
+  /\bunsupported model\b/i,
+  /\bplease select a different model\b/i,
+
+  // Provider/model transient signals sometimes surfaced as HTTP 400.
+  /\bcapacity\b/i,
+  /\boverloaded\b/i,
+  /\brate limit\b/i,
+  /\btoo many requests\b/i,
+  /\bquota exceeded\b/i,
+  /\brequest not allowed\b/i,
+
+  // Context overflow may legitimately succeed on another combo target.
+  /\bcontext.*(?:too long|exceeded|overflow|limit)\b/i,
+  /\btoo many tokens\b/i,
+  /\bprompt is too long\b/i,
+  /\bmaximum context\b/i,
+  /\bmax.*token\b/i,
+  /\btoken limit\b/i,
+  /\brequest too large\b/i,
+];
+
+function isRetryableBadRequest(errorText) {
+  return RETRYABLE_BAD_REQUEST_PATTERNS.some((pattern) => pattern.test(errorText));
+}
+
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
  * Level 1: 1s, Level 2: 2s, Level 3: 4s... → max 4 min
@@ -24,6 +57,18 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
   const lowerError = errorText
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
+
+  // 499 represents client cancellation/disconnect. It says nothing about
+  // provider/model health and must never create cooldown or modelLock state.
+  if (status === 499) {
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
+
+  // Generic/malformed HTTP 400 is caller-scoped. Only explicitly recognized
+  // model/provider-scoped 400 errors may participate in fallback.
+  if (status === 400 && !isRetryableBadRequest(lowerError)) {
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
 
   for (const rule of ERROR_RULES) {
     // Text-based rule: match substring in error message
