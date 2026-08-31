@@ -739,6 +739,57 @@ function formatLogDate(date = new Date()) {
 // No-op: request log is now derived from usageHistory table on read.
 export async function appendRequestLog() {}
 
+const RESET_PERIOD_MS = {
+  "5m": 5 * 60 * 1000,
+  "1h": 60 * 60 * 1000,
+  "3h": 3 * 60 * 60 * 1000,
+  "6h": 6 * 60 * 60 * 1000,
+  "12h": 12 * 60 * 60 * 1000,
+  "1d": 24 * 60 * 60 * 1000,
+  "7d": 7 * 24 * 60 * 60 * 1000,
+  "30d": 30 * 24 * 60 * 60 * 1000,
+};
+
+const VALID_RESET_PERIODS = new Set(["5m", "1h", "3h", "6h", "12h", "1d", "7d", "30d", "all"]);
+
+export async function resetUsageHistory(period) {
+  if (!VALID_RESET_PERIODS.has(period)) {
+    throw new Error(`Invalid reset period: ${period}`);
+  }
+
+  const db = await getAdapter();
+
+  db.transaction(() => {
+    if (period === "all") {
+      // Delete everything
+      db.run(`DELETE FROM usageHistory`);
+      db.run(`DELETE FROM usageDaily`);
+      db.run(`DELETE FROM _meta WHERE key = 'totalRequestsLifetime'`);
+    } else {
+      const cutoff = Date.now() - RESET_PERIOD_MS[period];
+      const cutoffIso = new Date(cutoff).toISOString();
+      const cutoffDate = new Date(cutoff);
+      const cutoffKey = `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, "0")}-${String(cutoffDate.getDate()).padStart(2, "0")}`;
+
+      // Delete usageHistory entries older than the cutoff (keep recent data within the period)
+      db.run(`DELETE FROM usageHistory WHERE timestamp < ?`, [cutoffIso]);
+
+      // Delete usageDaily entries older than the cutoff
+      db.run(`DELETE FROM usageDaily WHERE dateKey < ?`, [cutoffKey]);
+
+      // Recalculate totalRequestsLifetime from remaining history
+      const remaining = db.get(`SELECT COUNT(*) AS cnt FROM usageHistory`);
+      db.run(`INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(remaining.cnt)]);
+    }
+  });
+
+  // Clear in-memory ring buffer
+  recentRing.items = [];
+
+  // Emit update so connected clients refresh
+  statsEmitter.emit("update");
+}
+
 export async function getRecentLogs(limit = 200) {
   try {
     const db = await getAdapter();
