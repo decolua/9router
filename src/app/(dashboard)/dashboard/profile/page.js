@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Card, Button, Toggle, Input } from "@/shared/components";
 import Modal, { ConfirmModal } from "@/shared/components/Modal";
 import LanguageSwitcher from "@/shared/components/LanguageSwitcher";
+import ProviderComboTransferModal from "@/shared/components/ProviderComboTransferModal";
 import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
@@ -32,7 +33,9 @@ export default function ProfilePage() {
   const [passLoading, setPassLoading] = useState(false);
   const [dbLoading, setDbLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
+  const [databaseLocation, setDatabaseLocation] = useState("9Router data directory");
   const [dbAuth, setDbAuth] = useState({ open: false, mode: "", password: "" });
+  const [transferMode, setTransferMode] = useState("");
   const pendingImportRef = useRef(null);
   const [oidcForm, setOidcForm] = useState({
     authMode: "password",
@@ -122,6 +125,15 @@ export default function ProfilePage() {
         console.error("Failed to fetch settings:", err);
         setLoading(false);
       });
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/settings/storage", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.databaseLocation) setDatabaseLocation(data.databaseLocation);
+      })
+      .catch(() => {});
   }, []);
 
   const updateOutboundProxy = async (e) => {
@@ -760,7 +772,7 @@ export default function ProfilePage() {
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-0">
       <div className="flex flex-col gap-6">
-        {/* Local Mode Info */}
+        {/* Data storage and transfer */}
         <Card>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
             <div className="flex items-center gap-3 sm:gap-4">
@@ -768,16 +780,92 @@ export default function ProfilePage() {
                 <span className="material-symbols-outlined text-xl sm:text-2xl">computer</span>
               </div>
               <div>
-                <h2 className="text-lg sm:text-xl font-semibold">Local Mode</h2>
-                <p className="text-sm text-text-muted">Running on your machine</p>
+                <h2 className="text-lg sm:text-xl font-semibold">Data & Transfer</h2>
+                <p className="text-sm text-text-muted">Back up or selectively move your 9Router configuration</p>
               </div>
             </div>
-            <div className="inline-flex p-1 rounded-lg bg-black/5 dark:bg-white/5 w-full sm:w-auto">
+          </div>
+          <div className="flex flex-col gap-3 pt-4 border-t border-border">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 rounded-lg bg-bg border border-border gap-2">
+              <div>
+                <p className="font-medium text-sm sm:text-base">Database Location</p>
+                <p className="text-xs sm:text-sm text-text-muted font-mono break-all">{databaseLocation}</p>
+              </div>
+            </div>
+            <div className="rounded-lg border border-border p-3">
+              <div className="mb-3">
+                <p className="font-medium text-sm sm:text-base">Full backup</p>
+                <p className="text-xs sm:text-sm text-text-muted">Download or restore the complete database. Restore replaces the current configuration.</p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Button
+                  variant="secondary"
+                  icon="download"
+                  onClick={() => setDbAuth({ open: true, mode: "export", password: "" })}
+                  loading={dbLoading}
+                  className="w-full sm:w-auto"
+                >
+                  Download Backup
+                </Button>
+                <Button
+                  variant="outline"
+                  icon="upload"
+                  onClick={() => importFileRef.current?.click()}
+                  disabled={dbLoading}
+                  className="w-full sm:w-auto"
+                >
+                  Import Backup
+                </Button>
+                <input
+                  ref={importFileRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={handleImportDatabase}
+                />
+              </div>
+            </div>
+            <div className="rounded-lg border border-border p-3">
+              <div className="mb-3">
+                <p className="font-medium text-sm sm:text-base">Selective transfer</p>
+                <p className="text-xs sm:text-sm text-text-muted">Move provider accounts and combos without deleting unrelated destination data.</p>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Button variant="secondary" icon="file_export" onClick={() => setTransferMode("export")} className="w-full sm:w-auto">
+                  Export Selected
+                </Button>
+                <Button variant="outline" icon="upload_file" onClick={() => setTransferMode("import")} className="w-full sm:w-auto">
+                  Import Selected
+                </Button>
+              </div>
+            </div>
+            {dbStatus.message && (
+              <p className={`text-sm ${dbStatus.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
+                {dbStatus.message}
+              </p>
+            )}
+          </div>
+        </Card>
+
+        {/* Appearance */}
+        <Card>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="size-10 rounded-lg bg-purple-500/10 text-purple-500 flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[20px]">palette</span>
+              </div>
+              <div>
+                <h3 className="text-base sm:text-lg font-semibold">Appearance</h3>
+                <p className="text-xs sm:text-sm text-text-muted">Choose how the dashboard looks</p>
+              </div>
+            </div>
+            <div className="inline-flex p-1 rounded-lg bg-black/5 dark:bg-white/5 w-full sm:w-auto" aria-label="Theme">
               {["light", "dark", "system"].map((option) => (
                 <button
                   key={option}
                   type="button"
                   onClick={() => setTheme(option)}
+                  aria-pressed={theme === option}
                   className={cn(
                     "flex items-center justify-center gap-1 sm:gap-1.5 px-2 sm:px-3 py-1.5 rounded-md font-medium transition-all flex-1 sm:flex-initial",
                     theme === option
@@ -792,46 +880,6 @@ export default function ProfilePage() {
                 </button>
               ))}
             </div>
-          </div>
-          <div className="flex flex-col gap-3 pt-4 border-t border-border">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between p-3 rounded-lg bg-bg border border-border gap-2">
-              <div>
-                <p className="font-medium text-sm sm:text-base">Database Location</p>
-                <p className="text-xs sm:text-sm text-text-muted font-mono break-all">~/.9router/db/data.sqlite</p>
-              </div>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <Button
-                variant="secondary"
-                icon="download"
-                onClick={() => setDbAuth({ open: true, mode: "export", password: "" })}
-                loading={dbLoading}
-                className="w-full sm:w-auto"
-              >
-                Download Backup
-              </Button>
-              <Button
-                variant="outline"
-                icon="upload"
-                onClick={() => importFileRef.current?.click()}
-                disabled={dbLoading}
-                className="w-full sm:w-auto"
-              >
-                Import Backup
-              </Button>
-              <input
-                ref={importFileRef}
-                type="file"
-                accept="application/json,.json"
-                className="hidden"
-                onChange={handleImportDatabase}
-              />
-            </div>
-            {dbStatus.message && (
-              <p className={`text-sm ${dbStatus.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
-                {dbStatus.message}
-              </p>
-            )}
           </div>
         </Card>
 
@@ -1639,7 +1687,7 @@ export default function ProfilePage() {
         {/* App Info */}
         <div className="text-center text-xs sm:text-sm text-text-muted py-4">
           <p>{APP_CONFIG.name} v{APP_CONFIG.version}</p>
-          <p className="mt-1">Local Mode - All data stored on your machine</p>
+          <p className="mt-1">Configuration stored in the 9Router data directory</p>
         </div>
       </div>
 
@@ -1682,6 +1730,11 @@ export default function ProfilePage() {
         <p className="text-text-muted mb-3 text-sm">
           Enter your current password to {dbAuth.mode === "export" ? "export" : "import"} the database.
         </p>
+        {dbAuth.mode === "import" && (
+          <p className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-600 dark:text-red-400">
+            Full restore replaces current providers, combos, keys, and settings. Use Selective Transfer to preserve unrelated destination data.
+          </p>
+        )}
         <Input
           type="password"
           value={dbAuth.password}
@@ -1691,6 +1744,15 @@ export default function ProfilePage() {
           autoFocus
         />
       </Modal>
+      {transferMode && (
+        <ProviderComboTransferModal
+          key={transferMode}
+          isOpen
+          mode={transferMode}
+          onClose={() => setTransferMode("")}
+          onComplete={(message) => setDbStatus({ type: "success", message })}
+        />
+      )}
     </div>
   );
 }
