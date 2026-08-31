@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
+import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import { TTS_GENERATED_EVENT, MIN_USAGE_REFETCH_MS } from "@/shared/constants/ttsProviders";
 import PropTypes from "prop-types";
 import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal, ConfirmModal } from "@/shared/components";
 
@@ -30,11 +32,83 @@ function CooldownTimer({ until }) {
 CooldownTimer.propTypes = { until: PropTypes.string.isRequired };
 
 // ── ConnectionRow ──────────────────────────────────────────────
-function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {
+// Locale-default, like every other number in the dashboard — pinning en-US here
+// would render the same credit figure differently than the TTS panel does.
+const fmtCredits = (n) => Number(n || 0).toLocaleString();
+
+// Stale connection errors auto-hide after this long (still dismissible sooner via ×).
+const ERROR_DISPLAY_TTL_MS = 10 * 60 * 1000;
+
+function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, onClearError }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const [isCooldown, setIsCooldown] = useState(false);
+  const [usage, setUsage] = useState(null); // { label, used, total, remaining, remainingPercentage, resetAt, unlimited }
+  const [errorIsFresh, setErrorIsFresh] = useState(false); // recent error → show; stale → auto-hide
   const proxyDropdownRef = useRef(null);
+
+  useEffect(() => {
+    const compute = () => setErrorIsFresh(
+      !!connection.lastError && connection.isActive !== false
+        && !!connection.lastErrorAt
+        && (Date.now() - new Date(connection.lastErrorAt).getTime()) < ERROR_DISPLAY_TTL_MS
+    );
+    compute();
+    if (!connection.lastError || !connection.lastErrorAt) return;
+    // An error goes stale at exactly one known moment, so schedule that single
+    // transition rather than re-checking every minute for the life of the page —
+    // after the TTL the answer can never change again.
+    const remaining = ERROR_DISPLAY_TTL_MS - (Date.now() - new Date(connection.lastErrorAt).getTime());
+    if (remaining <= 0) return;
+    const t = setTimeout(compute, remaining);
+    return () => clearTimeout(t);
+  }, [connection.lastError, connection.lastErrorAt, connection.isActive]);
+
+  // Fetch credit/quota for apikey connections (e.g. ElevenLabs characters).
+  // Refreshed on the events that can actually move the number — mount, tab
+  // return, and a finished generation — rather than on a timer. A quota only
+  // changes when something spends it, so a blind interval would just burn one
+  // upstream API call per connection per tick for an unchanged value.
+  useEffect(() => {
+    // Only providers with a usage handler report quotas — skip the rest to avoid dead fetches.
+    if (isOAuth || connection.isActive === false || !USAGE_APIKEY_PROVIDERS.includes(connection.provider)) return;
+    let cancelled = false;
+    let pending = null;
+    let lastLoadedAt = 0;
+    const load = () => {
+      if (document.hidden) return; // a hidden tab can wait; onVisible refetches on return
+      lastLoadedAt = Date.now();
+      fetch(`/api/usage/${connection.id}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          if (cancelled || !d?.quotas) return;
+          const first = Object.entries(d.quotas)[0];
+          if (first) setUsage({ label: first[1]?.displayName || first[0], ...first[1] });
+        })
+        .catch(() => {});
+    };
+    load();
+    // Each row hits the upstream API directly, so a burst of tab-switches must
+    // not become a burst of billable calls for a number that cannot have moved.
+    const onVisible = () => {
+      if (!document.hidden && Date.now() - lastLoadedAt > MIN_USAGE_REFETCH_MS) load();
+    };
+    // Refetch shortly after a generation so the provider's counter has updated
+    const onGenerated = (e) => {
+      if (!e?.detail?.provider || e.detail.provider === connection.provider) {
+        clearTimeout(pending);
+        pending = setTimeout(load, 1500);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener(TTS_GENERATED_EVENT, onGenerated);
+    return () => {
+      cancelled = true;
+      clearTimeout(pending); // otherwise a generation right before unmount still fires
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener(TTS_GENERATED_EVENT, onGenerated);
+    };
+  }, [connection.id, connection.provider, isOAuth, connection.isActive]);
 
   const proxyPoolMap = new Map((proxyPools || []).map((p) => [p.id, p]));
   const boundProxyPoolId = connection.providerSpecificData?.proxyPoolId || null;
@@ -119,11 +193,41 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
             </Badge>
             {hasAnyProxy && <Badge variant={proxyBadgeVariant} size="sm">Proxy</Badge>}
             {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
-            {connection.lastError && connection.isActive !== false && (
-              <span className="text-xs text-red-500 truncate max-w-[300px]" title={connection.lastError}>{connection.lastError}</span>
+            {errorIsFresh && (
+              <span className="inline-flex items-center gap-1 max-w-[320px]">
+                <span className="text-xs text-red-500 truncate" title={connection.lastError}>{connection.lastError}</span>
+                <button
+                  type="button"
+                  onClick={onClearError}
+                  title="Dismiss this error"
+                  className="shrink-0 text-red-400 hover:text-red-600 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[14px]">close</span>
+                </button>
+              </span>
             )}
             <span className="text-xs text-text-muted">#{connection.priority}</span>
           </div>
+          {usage && (
+            <div className="mt-1.5 flex items-center gap-2" title={usage.resetAt ? `Reset: ${new Date(usage.resetAt).toLocaleString()}` : undefined}>
+              {!usage.unlimited && usage.total > 0 && (
+                <div className="h-1.5 w-24 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden shrink-0">
+                  <div
+                    className={`h-full ${usage.remainingPercentage <= 10 ? "bg-red-500" : usage.remainingPercentage <= 30 ? "bg-amber-500" : "bg-primary"}`}
+                    style={{ width: `${usage.remainingPercentage}%` }}
+                  />
+                </div>
+              )}
+              <span className="text-[11px] text-text-muted">
+                {usage.unlimited
+                  ? "Credits: Unlimited"
+                  : <>{fmtCredits(usage.remaining)} / {fmtCredits(usage.total)}{" "}credits left</>}
+                {usage.resetAt && (
+                  <span className="text-text-muted/70">{" · "}resets{" "}{new Date(usage.resetAt).toLocaleDateString()}</span>
+                )}
+              </span>
+            </div>
+          )}
           {hasAnyProxy && (
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <span className="text-[11px] text-text-muted truncate max-w-[420px]" title={proxyDisplayText}>{proxyDisplayText}</span>
@@ -191,6 +295,7 @@ ConnectionRow.propTypes = {
   onUpdateProxy: PropTypes.func,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
+  onClearError: PropTypes.func,
 };
 
 // ── AddApiKeyModal ─────────────────────────────────────────────
@@ -375,6 +480,18 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
     } catch (e) { console.log("toggle error:", e); }
   };
 
+  // Dismiss a stale lastError on a connection (e.g. an error from an old, fixed bug)
+  const handleClearError = async (id) => {
+    try {
+      const res = await fetch(`/api/providers/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lastError: null, lastErrorAt: null }),
+      });
+      if (res.ok) setConnections((prev) => prev.map((c) => c.id === id ? { ...c, lastError: null, lastErrorAt: null } : c));
+    } catch (e) { console.log("clear error:", e); }
+  };
+
   const handleUpdateProxy = async (connId, proxyPoolId) => {
     try {
       const res = await fetch(`/api/providers/${connId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ proxyPoolId: proxyPoolId || null }) });
@@ -449,6 +566,7 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
                   onUpdateProxy={(poolId) => handleUpdateProxy(conn.id, poolId)}
                   onEdit={() => { setSelectedConnection(conn); setShowEditModal(true); }}
                   onDelete={() => handleDelete(conn.id)}
+                  onClearError={() => handleClearError(conn.id)}
                 />
               ))}
             </div>

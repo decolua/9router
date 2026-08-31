@@ -48,6 +48,47 @@ const MIMO_VOICES = [
   { id: "Dean",          name: "Dean" },
 ].map((v) => ({ type: "tts", ...v }));
 
+// Per-model ElevenLabs capabilities, shared by the adapter and the dashboard
+// panel so the two can't drift apart. One row per model — adding a model means
+// adding one line here, not editing three parallel tables.
+//
+//   langCode — accepts `language_code`. Verified against the live API:
+//     eleven_multilingual_v2 answers 400 unsupported_language ("Model
+//     'eleven_multilingual_v2' does not support language_code 'vi'"), while v3,
+//     flash_v2_5 and turbo_v2_5 all return audio.
+//   classic  — accepts the classic voice_settings knobs. Per the docs, "speed,
+//     similarity, and Speaker Boost settings are not available for the Eleven v3
+//     model" — v3 is directed with audio tags and stability instead.
+//   maxChars — /v1/models maximum_text_length_per_request.
+export const ELEVEN_MODELS = {
+  eleven_v3:              { maxChars: 5000,  langCode: true,  classic: false },
+  eleven_multilingual_v2: { maxChars: 10000, langCode: false, classic: true  },
+  eleven_flash_v2_5:      { maxChars: 40000, langCode: true,  classic: true  },
+  eleven_turbo_v2_5:      { maxChars: 40000, langCode: true,  classic: true  },
+};
+
+// Unknown model → assume the most restrictive shape rather than sending fields
+// the upstream may reject.
+const ELEVEN_MODEL_FALLBACK = { maxChars: 5000, langCode: false, classic: false };
+
+export const elevenModel = (id) => ELEVEN_MODELS[id] || ELEVEN_MODEL_FALLBACK;
+
+// ElevenLabs output_format values, as codec_samplerate_bitrate. The default is
+// mp3_44100_128; higher mp3 bitrates and PCM need a paid plan, and µ-law exists
+// for telephony (Twilio) rather than listening. `container` is declared rather
+// than parsed back out of the id, so the response is labelled from data.
+export const ELEVEN_OUTPUT_FORMATS = [
+  { id: "mp3_44100_128", name: "MP3 128 kbps (default)", container: "mp3" },
+  { id: "mp3_44100_192", name: "MP3 192 kbps (Creator+)", container: "mp3" },
+  { id: "mp3_22050_32", name: "MP3 32 kbps (smallest)", container: "mp3" },
+  { id: "pcm_44100", name: "PCM 44.1 kHz (Pro+)", container: "pcm" },
+  { id: "pcm_16000", name: "PCM 16 kHz", container: "pcm" },
+  { id: "ulaw_8000", name: "µ-law 8 kHz (telephony)", container: "ulaw" },
+];
+
+export const elevenContainer = (outputFormatId) =>
+  ELEVEN_OUTPUT_FORMATS.find((f) => f.id === outputFormatId)?.container || "mp3";
+
 // ── TTS Config (config-driven, single source of truth) ─────────────────────
 export const TTS_MODELS_CONFIG = {
   openai: {
@@ -79,10 +120,13 @@ export const TTS_MODELS_CONFIG = {
   },
   elevenlabs: {
     models: [
+      { id: "eleven_v3",              name: "Eleven v3 (Most Expressive · 70+ langs)", type: "tts" },
+      { id: "eleven_multilingual_v2", name: "Multilingual v2 (Quality)",  type: "tts" },
       { id: "eleven_flash_v2_5",      name: "Flash v2.5 (Fastest)",      type: "tts" },
       { id: "eleven_turbo_v2_5",      name: "Turbo v2.5 (Fast)",         type: "tts" },
-      { id: "eleven_multilingual_v2", name: "Multilingual v2 (Quality)",  type: "tts" },
-      { id: "eleven_monolingual_v1",  name: "Monolingual v1 (English)",  type: "tts" },
+      // eleven_monolingual_v1 removed: the API now rejects it with
+      // "the models eleven_monolingual_v1 and eleven_multilingual_v1 have been
+      // deprecated and are no longer available", so offering it only produces a 400.
     ],
     // voices come from API, not hardcoded
   },
