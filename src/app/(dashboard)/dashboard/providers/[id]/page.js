@@ -64,6 +64,9 @@ export default function ProviderDetailPage() {
   const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
   const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [groupValue, setGroupValue] = useState("");
+  const [groupUpdating, setGroupUpdating] = useState(false);
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
@@ -846,6 +849,40 @@ export default function ProviderDetailPage() {
 
   const selectedConnections = connections.filter((conn) => selectedConnectionIds.includes(conn.id));
   const allSelected = connections.length > 0 && selectedConnectionIds.length === connections.length;
+  const connectionGroups = [...new Set(connections.map((c) => (c.group || "").trim()).filter(Boolean))].sort();
+
+  const openGroupModal = () => {
+    if (selectedConnectionIds.length === 0) return;
+    const groups = [...new Set(selectedConnections.map((c) => (c.group || "").trim()))];
+    setGroupValue(groups.length === 1 ? groups[0] : "");
+    setShowGroupModal(true);
+  };
+
+  const applyGroupToSelected = async () => {
+    const ids = [...selectedConnectionIds];
+    if (ids.length === 0) return;
+    setGroupUpdating(true);
+    const g = groupValue.trim();
+    let failed = 0;
+    for (const id of ids) {
+      try {
+        const res = await fetch(`/api/providers/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ group: g }),
+        });
+        if (!res.ok) failed += 1;
+      } catch (e) {
+        console.log("Error setting group for", id, e);
+        failed += 1;
+      }
+    }
+    await fetchConnections();
+    setGroupUpdating(false);
+    setShowGroupModal(false);
+    setSelectedConnectionIds([]);
+    if (failed > 0) alert(`Set group on ${ids.length - failed} connection(s), ${failed} failed.`);
+  };
 
   const toggleSelectConnection = (connectionId) => {
     setSelectedConnectionIds((prev) => (
@@ -1441,6 +1478,16 @@ export default function ProviderDetailPage() {
                   {selectedConnectionIds.length > 0 && (
                     <Button
                       size="sm"
+                      variant="secondary"
+                      icon="folder"
+                      onClick={openGroupModal}
+                    >
+                      Set Group ({selectedConnectionIds.length})
+                    </Button>
+                  )}
+                  {selectedConnectionIds.length > 0 && (
+                    <Button
+                      size="sm"
                       variant="danger"
                       icon="delete"
                       onClick={handleBulkDelete}
@@ -1704,6 +1751,48 @@ export default function ProviderDetailPage() {
 
       {bulkActionModal}
 
+      <Modal
+        isOpen={showGroupModal}
+        onClose={() => { if (!groupUpdating) setShowGroupModal(false); }}
+        title={`Set group for ${selectedConnectionIds.length} connection${selectedConnectionIds.length > 1 ? "s" : ""}`}
+      >
+        <div className="flex flex-col gap-3">
+          <datalist id="provider-group-options">
+            {connectionGroups.map((g) => <option key={g} value={g} />)}
+          </datalist>
+          <Input
+            label="Group (leave blank to clear)"
+            value={groupValue}
+            onChange={(e) => setGroupValue(e.target.value)}
+            placeholder="pick an existing group or type a new one"
+            list="provider-group-options"
+            autoFocus
+          />
+          {connectionGroups.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {connectionGroups.map((g) => (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => setGroupValue(g)}
+                  className="rounded-full border border-border px-2.5 py-0.5 text-xs text-text-muted hover:border-primary hover:text-primary"
+                >
+                  {g}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Button onClick={applyGroupToSelected} fullWidth disabled={groupUpdating}>
+              {groupUpdating ? "Applying..." : (groupValue.trim() ? `Set to "${groupValue.trim()}"` : "Clear group")}
+            </Button>
+            <Button onClick={() => setShowGroupModal(false)} variant="ghost" fullWidth disabled={groupUpdating}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* Modals */}
       {providerId === "kiro" ? (
         <KiroOAuthWrapper
@@ -1753,6 +1842,7 @@ export default function ProviderDetailPage() {
         proxyPools={proxyPools}
         error={addConnectionError}
         existingNames={connections.map((c) => c.name).filter(Boolean)}
+        existingGroups={connectionGroups}
         onSave={handleSaveApiKey}
         onBulkDone={fetchConnections}
         onClose={() => {

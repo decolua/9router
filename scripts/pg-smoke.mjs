@@ -41,6 +41,17 @@ try {
   assert.equal(byId.isActive, false);
   ok("create / list / update / getById");
 
+  line("connection group + skipIfExists");
+  const g1 = await db.createProviderConnection({ provider: "smoke", authType: "apikey", name: "g1", apiKey: "dup-key", group: " team-a " });
+  assert.equal(g1.group, "team-a"); // trimmed
+  const g1dup = await db.createProviderConnection({ provider: "smoke", authType: "apikey", name: "g1-again", apiKey: "dup-key" }, { skipIfExists: true });
+  assert.equal(g1dup.skipped, true);
+  assert.equal(g1dup.id, g1.id);
+  assert.equal((await db.getProviderConnections({ provider: "smoke" })).filter((c) => c.apiKey === "dup-key").length, 1);
+  const g1re = await db.updateProviderConnection(g1.id, { group: "" });
+  assert.equal(g1re.group, "");
+  ok("group trim / skipIfExists dedup by key value / clear group");
+
   line("api keys");
   const k = await db.createApiKey("smoke-key", "machine-123");
   assert.ok(await db.validateApiKey(k.key));

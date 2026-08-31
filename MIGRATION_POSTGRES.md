@@ -56,6 +56,26 @@ Download the project CA from the Aiven console → service → *Connection
 information* → *CA certificate*, and drop it at `certs/aiven-ca.pem`
 (`*.pem` is git-ignored).
 
+## Extra: connection groups + dedup on add
+
+Beyond the storage swap, this fork adds:
+
+- **`group` field on provider connections** (stored in the connection's `data`
+  JSON — no schema change). Blank = no group.
+  - Add-key modal: a "Group" field (datalist combobox — pick an existing group
+    or type a new one), single and bulk.
+  - Bulk-add line format is now `name | apiKey | group` (group optional →
+    `name | apiKey` still works). Caveat: with 3 fields the last `|` segment is
+    the group, so a key containing a literal `|` must use the 2-field form.
+  - Providers page: select connections → **Set Group** to assign/clear a group
+    on many at once (`PUT /api/providers/:id { group }`).
+  - Shown as a badge on each connection row.
+- **`skipIfExists`** on `POST /api/providers` — dedup by **API-key value**
+  (distinct from the existing name-based upsert). A matching key is left
+  untouched and the response is `{ skipped: true }` (HTTP 200). The bulk-add
+  modal has a "Skip keys that already exist" checkbox (on by default), so
+  re-pasting an overlapping list only adds the new keys.
+
 ## What changed
 
 | Area | Before (SQLite) | After (Postgres) |
