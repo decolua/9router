@@ -32,36 +32,71 @@ describe("getCodexSubscriptionEntitlement", () => {
     mocks.proxyAwareFetch.mockReset();
   });
 
-  it("nested chatgpt_subscription_active_until wins (ISO) and avoids network even with force", async () => {
+  it("nested chatgpt_subscription_active_until wins (ISO) and avoids network when not forced (force bypasses JWT)", async () => {
     const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const now = Date.now();
     const future = isoNowPlus(10);
     const jwt = makeJwt({ "https://api.openai.com/auth": { chatgpt_subscription_active_until: future } });
+    const normalizedFuture = new Date(future).toISOString();
+    const freshAt = new Date(now - 60 * 1000).toISOString();
     const res = await getCodexSubscriptionEntitlement({
       accessToken: "at",
       idToken: jwt,
-      providerSpecificData: {},
+      providerSpecificData: {
+        codexSubscriptionActiveUntil: normalizedFuture,
+        codexSubscriptionPlan: null,
+        codexSubscriptionSource: "idToken",
+        codexSubscriptionFetchedAt: freshAt,
+        codexSubscriptionAttemptAt: freshAt,
+      },
       proxyOptions: { connectionProxyEnabled: false },
-      force: true,
-      now: Date.now(),
+      force: false,
+      now,
     });
-    expect(res.subscriptionActiveUntil).toBe(new Date(future).toISOString());
+    expect(res.subscriptionActiveUntil).toBe(normalizedFuture);
     expect(res.subscriptionSource).toBeTruthy();
     expect(mocks.proxyAwareFetch).not.toHaveBeenCalled();
-    expect(res.patch.codexSubscriptionActiveUntil).toBe(res.subscriptionActiveUntil);
-  });
-
-  it("top-level chatgpt_subscription_active_until wins", async () => {
-    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
-    const future = isoNowPlus(5);
-    const jwt = makeJwt({ chatgpt_subscription_active_until: future });
-    const res = await getCodexSubscriptionEntitlement({
+    expect(Object.keys(res.patch || {}).length).toBe(0);
+    // with force, JWT fast-path is bypassed and network is used
+    const future2 = isoNowPlus(5);
+    mocks.proxyAwareFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ accounts: [{ id: "a", entitlement: { subscription_plan: "plus", expires_at: future2 } }] }),
+    });
+    const r2 = await getCodexSubscriptionEntitlement({
       accessToken: "at",
       idToken: jwt,
       providerSpecificData: {},
       proxyOptions: null,
+      force: true,
       now: Date.now(),
     });
-    expect(res.subscriptionActiveUntil).toBe(new Date(future).toISOString());
+    expect(mocks.proxyAwareFetch).toHaveBeenCalled();
+    expect(r2.subscriptionSource).toBe("accounts");
+  });
+
+  it("top-level chatgpt_subscription_active_until wins", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const now = Date.now();
+    const future = isoNowPlus(5);
+    const jwt = makeJwt({ chatgpt_subscription_active_until: future });
+    const normalizedFuture = new Date(future).toISOString();
+    const freshAt = new Date(now - 60 * 1000).toISOString();
+    const res = await getCodexSubscriptionEntitlement({
+      accessToken: "at",
+      idToken: jwt,
+      providerSpecificData: {
+        codexSubscriptionActiveUntil: normalizedFuture,
+        codexSubscriptionPlan: null,
+        codexSubscriptionSource: "idToken",
+        codexSubscriptionFetchedAt: freshAt,
+        codexSubscriptionAttemptAt: freshAt,
+      },
+      proxyOptions: null,
+      now,
+    });
+    expect(res.subscriptionActiveUntil).toBe(normalizedFuture);
     expect(mocks.proxyAwareFetch).not.toHaveBeenCalled();
   });
 
@@ -88,14 +123,21 @@ describe("getCodexSubscriptionEntitlement", () => {
 
   it("normalizes epoch seconds and ms from JWT claim", async () => {
     const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
-    const seconds = Math.floor(Date.now() / 1000) + 86400;
-    const ms = Date.now() + 86400000;
+    const now = Date.now();
+    const seconds = Math.floor(now / 1000) + 86400;
+    const ms = now + 86400000;
     const jwtSec = makeJwt({ chatgpt_subscription_active_until: seconds });
     const jwtMs = makeJwt({ chatgpt_subscription_active_until: ms });
-    const r1 = await getCodexSubscriptionEntitlement({ accessToken: "a", idToken: jwtSec, providerSpecificData: {}, now: Date.now() });
-    const r2 = await getCodexSubscriptionEntitlement({ accessToken: "a", idToken: jwtMs, providerSpecificData: {}, now: Date.now() });
-    expect(r1.subscriptionActiveUntil).toBe(new Date(seconds * 1000).toISOString());
-    expect(r2.subscriptionActiveUntil).toBe(new Date(ms).toISOString());
+    const secIso = new Date(seconds * 1000).toISOString();
+    const msIso = new Date(ms).toISOString();
+    const freshAt = new Date(now - 60 * 1000).toISOString();
+    const psdSec = { codexSubscriptionActiveUntil: secIso, codexSubscriptionPlan: null, codexSubscriptionSource: "idToken", codexSubscriptionFetchedAt: freshAt, codexSubscriptionAttemptAt: freshAt };
+    const psdMs = { codexSubscriptionActiveUntil: msIso, codexSubscriptionPlan: null, codexSubscriptionSource: "idToken", codexSubscriptionFetchedAt: freshAt, codexSubscriptionAttemptAt: freshAt };
+    const r1 = await getCodexSubscriptionEntitlement({ accessToken: "a", idToken: jwtSec, providerSpecificData: psdSec, now });
+    const r2 = await getCodexSubscriptionEntitlement({ accessToken: "a", idToken: jwtMs, providerSpecificData: psdMs, now });
+    expect(r1.subscriptionActiveUntil).toBe(secIso);
+    expect(r2.subscriptionActiveUntil).toBe(msIso);
+    expect(mocks.proxyAwareFetch).not.toHaveBeenCalled();
   });
 
   it("selects org ID via nested claim > providerSpecificData > default > non-free > first", async () => {
@@ -255,7 +297,7 @@ describe("getCodexSubscriptionEntitlement", () => {
     expect(res.subscriptionActiveUntil).toBe(psd.codexSubscriptionActiveUntil);
   });
 
-  it("force bypasses 6h and 30m caches but not valid JWT claim", async () => {
+  it("force bypasses 6h and 30m caches and JWT future fast-path", async () => {
     const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
     const now = Date.now();
     const fetchedAt = new Date(now - 1000).toISOString();
@@ -274,11 +316,17 @@ describe("getCodexSubscriptionEntitlement", () => {
     const res = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: null, providerSpecificData: psd, proxyOptions: null, force: true, now });
     expect(mocks.proxyAwareFetch).toHaveBeenCalled();
     expect(res.subscriptionPlan).toBe("pro");
-    // JWT claim still wins even with force
+    // JWT claim is bypassed when force=true (reaches network)
     const jwt = makeJwt({ chatgpt_subscription_active_until: isoNowPlus(15) });
     mocks.proxyAwareFetch.mockClear();
+    mocks.proxyAwareFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ accounts: [{ id: "b", entitlement: { subscription_plan: "plus", expires_at: isoNowPlus(12) } }] }),
+    });
     const r2 = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: jwt, providerSpecificData: psd, proxyOptions: null, force: true, now });
-    expect(mocks.proxyAwareFetch).not.toHaveBeenCalled();
+    expect(mocks.proxyAwareFetch).toHaveBeenCalled();
+    expect(r2.subscriptionSource).toBe("accounts");
   });
 
   it("never returns token or raw payload in result or throw", async () => {
@@ -299,18 +347,24 @@ describe("getCodexSubscriptionEntitlement", () => {
 
   it("handles numeric-string epoch seconds and milliseconds for JWT claim", async () => {
     const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
-    const secStr = String(Math.floor(Date.now() / 1000) + 86400);
-    const msStr = String(Date.now() + 86400000);
+    const now = Date.now();
+    const secStr = String(Math.floor(now / 1000) + 86400);
+    const msStr = String(now + 86400000);
     const jwtSecStr = makeJwt({ chatgpt_subscription_active_until: secStr });
     const jwtMsStr = makeJwt({ chatgpt_subscription_active_until: msStr });
-    const r1 = await getCodexSubscriptionEntitlement({ accessToken: "a", idToken: jwtSecStr, providerSpecificData: {}, now: Date.now() });
-    const r2 = await getCodexSubscriptionEntitlement({ accessToken: "a", idToken: jwtMsStr, providerSpecificData: {}, now: Date.now() });
-    expect(r1.subscriptionActiveUntil).toBe(new Date(Number(secStr) * 1000).toISOString());
-    expect(r2.subscriptionActiveUntil).toBe(new Date(Number(msStr)).toISOString());
+    const secIso = new Date(Number(secStr) * 1000).toISOString();
+    const msIso = new Date(Number(msStr)).toISOString();
+    const freshAt = new Date(now - 60 * 1000).toISOString();
+    const psdSec = { codexSubscriptionActiveUntil: secIso, codexSubscriptionPlan: null, codexSubscriptionSource: "idToken", codexSubscriptionFetchedAt: freshAt, codexSubscriptionAttemptAt: freshAt };
+    const psdMs = { codexSubscriptionActiveUntil: msIso, codexSubscriptionPlan: null, codexSubscriptionSource: "idToken", codexSubscriptionFetchedAt: freshAt, codexSubscriptionAttemptAt: freshAt };
+    const r1 = await getCodexSubscriptionEntitlement({ accessToken: "a", idToken: jwtSecStr, providerSpecificData: psdSec, now });
+    const r2 = await getCodexSubscriptionEntitlement({ accessToken: "a", idToken: jwtMsStr, providerSpecificData: psdMs, now });
+    expect(r1.subscriptionActiveUntil).toBe(secIso);
+    expect(r2.subscriptionActiveUntil).toBe(msIso);
     expect(mocks.proxyAwareFetch).not.toHaveBeenCalled();
   });
 
-  it("prefers providerSpecificData organization over stale idToken when accessToken has no hint", async () => {
+  it("prefers providerSpecificData organization over stale idToken when accessToken has no hint (Free is valid with null expiry)", async () => {
     const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
     const accounts = [
       { id: "personal_free", organization_id: "org_personal", plan_type: "free", entitlement: { subscription_plan: "free", expires_at: isoNowPlus(1) } },
@@ -326,7 +380,7 @@ describe("getCodexSubscriptionEntitlement", () => {
       now: Date.now(),
     });
     expect(res.subscriptionPlan).toBe("free");
-    expect(res.subscriptionActiveUntil).toBe(new Date(accounts[0].entitlement.expires_at).toISOString());
+    expect(res.subscriptionActiveUntil).toBeNull();
     expect(res.subscriptionSource).toBe("accounts");
   });
 
@@ -350,20 +404,7 @@ describe("getCodexSubscriptionEntitlement", () => {
   it("subscriptions fallback non-2xx preserves accounts snapshot expiry (fail-open)", async () => {
     const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
     const validExpiry = isoNowPlus(10);
-    const accounts = [{ id: "acc1", is_default: true, entitlement: { subscription_plan: "pro", expires_at: validExpiry } }];
-    mocks.proxyAwareFetch
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ accounts }) })
-      .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) });
-    // Force subscription fallback by making isExpired false but we still want to test non-2xx path:
-    // To trigger fallback, make accounts expired so subscriptions is attempted and fails, but snapshot should be returned.
-    // So use expired accounts then fallback, but if fallback fails we still return last-known-good; to test snapshot path, we need valid accounts snapshot that wouldn't trigger fallback.
-    // Instead test: expired accounts + subscriptions non-2xx -> snapshot valid is not used; but we test valid snapshot preserved when subscriptions called and fails.
-    // We'll make accounts with expired expiry and also set plan, then mock subscription to non-2xx, but code should fallback to snapshot if snapshot had valid expiry? Actually expired means snapshot invalid, so fallback won't help.
-    // Instead we test case where subscriptions is not called for valid snapshot: verify that when subscriptions is attempted due to missing plan but accounts snapshot is valid, non-2xx preserves snapshot.
-    // Simpler: accounts has valid plan+expiry, but we force subscription attempt by mocking expired via missing plan, then subscription fails -> should still return accounts expiry if we had one.
-    // We'll directly test the snapshot logic by having an expired plan trigger but accounts still had expiry before, now patched to preserve.
-    const accWithExpiry = { id: "acc2", is_default: true, plan_type: "free", entitlement: { subscription_plan: null, expires_at: validExpiry } };
-    mocks.proxyAwareFetch.mockReset();
+    const accWithExpiry = { id: "acc2", is_default: true, plan_type: "team", entitlement: { subscription_plan: null, expires_at: validExpiry } };
     mocks.proxyAwareFetch
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ accounts: [accWithExpiry] }) })
       .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) });
@@ -381,7 +422,7 @@ describe("getCodexSubscriptionEntitlement", () => {
   it("subscriptions network error preserves accounts snapshot expiry", async () => {
     const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
     const validExpiry = isoNowPlus(12);
-    const acc = { id: "acc3", is_default: true, plan_type: "free", entitlement: { subscription_plan: null, expires_at: validExpiry } };
+    const acc = { id: "acc3", is_default: true, plan_type: "team", entitlement: { subscription_plan: null, expires_at: validExpiry } };
     mocks.proxyAwareFetch
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ accounts: [acc] }) })
       .mockRejectedValueOnce(new Error("network down"));
@@ -415,7 +456,7 @@ describe("getCodexSubscriptionEntitlement", () => {
     expect(Object.keys(res.patch || {}).length).toBe(0);
   });
 
-  it("same valid idToken after 6h may refresh fetchedAt once", async () => {
+  it("same valid idToken after 6h falls through to network (no forever refresh)", async () => {
     const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
     const baseNow = Date.now();
     const future = new Date(baseNow + 10 * 86400000).toISOString();
@@ -428,10 +469,15 @@ describe("getCodexSubscriptionEntitlement", () => {
       codexSubscriptionFetchedAt: staleAt,
       codexSubscriptionAttemptAt: staleAt,
     };
+    mocks.proxyAwareFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ accounts: [{ id: "a", entitlement: { subscription_plan: "plus", expires_at: future } }] }),
+    });
     const res = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: jwt, providerSpecificData: psd, proxyOptions: null, now: baseNow });
-    expect(res.subscriptionActiveUntil).toBe(future);
-    expect(mocks.proxyAwareFetch).not.toHaveBeenCalled();
-    expect(res.patch.codexSubscriptionFetchedAt).toBeTruthy();
+    expect(mocks.proxyAwareFetch).toHaveBeenCalled();
+    expect(res.subscriptionActiveUntil).toBe(new Date(future).toISOString());
+    expect(res.subscriptionSource).toBe("accounts");
   });
 
   it("uses provider registry via U('codex') not hardcoded endpoint", async () => {
@@ -440,7 +486,7 @@ describe("getCodexSubscriptionEntitlement", () => {
     expect(U("codex").subscriptionsUrl).toBe("https://chatgpt.com/backend-api/subscriptions");
   });
 
-  // RED: past network-derived expiry handling
+  // past network-derived expiry handling
   it("past /subscriptions expiry is rejected, not returned or persisted (falls back to null when no future snapshot/cache)", async () => {
     const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
     const past = isoNowPlus(-10);
@@ -472,7 +518,7 @@ describe("getCodexSubscriptionEntitlement", () => {
     const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
     const future = isoNowPlus(10);
     const past = isoNowPlus(-10);
-    const acc = { id: "acc2", is_default: true, plan_type: "free", entitlement: { subscription_plan: null, expires_at: future } };
+    const acc = { id: "acc2", is_default: true, plan_type: "team", entitlement: { subscription_plan: null, expires_at: future } };
     mocks.proxyAwareFetch
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ accounts: [acc] }) })
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ subscription_plan: "pro", active_until: past }) });
@@ -536,7 +582,7 @@ describe("getCodexSubscriptionEntitlement", () => {
     expect(res.subscriptionActiveUntil).toBeTruthy();
   });
 
-  // REVIEW FIXES RED
+  // review fixes
   it("fresh 6h cache with past activeUntil must NOT return past (proceeds to network)", async () => {
     const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
     const now = Date.now();
@@ -900,5 +946,286 @@ describe("getCodexSubscriptionEntitlement", () => {
     }
     const allowedPatchKeys = new Set(["codexSubscriptionActiveUntil", "codexSubscriptionPlan", "codexSubscriptionSource", "codexSubscriptionFetchedAt", "codexSubscriptionAttemptAt"]);
     for (const key of Object.keys(result.patch || {})) expect(allowedPatchKeys.has(key)).toBe(true);
+  });
+
+  it("force=true + future JWT chatgptplusplan + accounts/check Free/no expiry: fetch happens; free/null/accounts", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const future = isoNowPlus(10);
+    const jwt = makeJwt({ "https://api.openai.com/auth": { chatgpt_subscription_active_until: future, chatgpt_plan_type: "chatgptplusplan" } });
+    mocks.proxyAwareFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ accounts: [{ id: "acc1", is_default: true, entitlement: { subscription_plan: "chatgptfreeplan", expires_at: null } }] }),
+    });
+    const now = Date.now();
+    const res = await getCodexSubscriptionEntitlement({
+      accessToken: "at",
+      idToken: jwt,
+      providerSpecificData: {},
+      proxyOptions: null,
+      force: true,
+      now,
+    });
+    expect(mocks.proxyAwareFetch).toHaveBeenCalled();
+    expect(res.subscriptionPlan).toBe("free");
+    expect(res.subscriptionActiveUntil).toBeNull();
+    expect(res.subscriptionSource).toBe("accounts");
+    expect(res.patch.codexSubscriptionActiveUntil).toBeNull();
+    expect(res.patch.codexSubscriptionPlan).toBe("free");
+    expect(res.patch.codexSubscriptionSource).toBe("accounts");
+    expect(res.patch.codexSubscriptionFetchedAt).toBeTruthy();
+    expect(res.patch.codexSubscriptionAttemptAt).toBeTruthy();
+  });
+
+  it("same without force but cached JWT fetchedAt older than 6h: network Free wins", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const now = Date.now();
+    const future = new Date(now + 10 * 86400000).toISOString();
+    const jwt = makeJwt({ "https://api.openai.com/auth": { chatgpt_subscription_active_until: future, chatgpt_plan_type: "chatgptplusplan" } });
+    const staleAt = new Date(now - 7 * 60 * 60 * 1000).toISOString();
+    const psd = {
+      codexSubscriptionActiveUntil: future,
+      codexSubscriptionPlan: "plus",
+      codexSubscriptionSource: "idToken",
+      codexSubscriptionFetchedAt: staleAt,
+      codexSubscriptionAttemptAt: staleAt,
+    };
+    mocks.proxyAwareFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ accounts: [{ id: "acc1", is_default: true, entitlement: { subscription_plan: "chatgptfreeplan", expires_at: null } }] }),
+    });
+    const res = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: jwt, providerSpecificData: psd, proxyOptions: null, now, force: false });
+    expect(mocks.proxyAwareFetch).toHaveBeenCalled();
+    expect(res.subscriptionPlan).toBe("free");
+    expect(res.subscriptionActiveUntil).toBeNull();
+    expect(res.subscriptionSource).toBe("accounts");
+  });
+
+  it("fresh non-force JWT raw chatgptplusplan returns canonical plus no fetch", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const now = Date.now();
+    const future = isoNowPlus(10);
+    const jwt = makeJwt({ "https://api.openai.com/auth": { chatgpt_subscription_active_until: future, chatgpt_plan_type: "chatgptplusplan" } });
+    const normalizedFuture = new Date(future).toISOString();
+    const freshAt = new Date(now - 60 * 1000).toISOString();
+    const res = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: jwt, providerSpecificData: { codexSubscriptionActiveUntil: normalizedFuture, codexSubscriptionPlan: "plus", codexSubscriptionSource: "idToken", codexSubscriptionFetchedAt: freshAt, codexSubscriptionAttemptAt: freshAt }, proxyOptions: null, now, force: false });
+    expect(mocks.proxyAwareFetch).not.toHaveBeenCalled();
+    expect(res.subscriptionPlan).toBe("plus");
+    expect(res.subscriptionActiveUntil).toBe(normalizedFuture);
+    expect(res.subscriptionSource).toBe("idToken");
+  });
+
+  it("accounts/check Free with past expiry remains Free/null and subscriptions fallback not called", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const past = isoNowPlus(-5);
+    mocks.proxyAwareFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ accounts: [{ id: "acc1", is_default: true, entitlement: { subscription_plan: "chatgptfreeplan", expires_at: past } }] }),
+    });
+    const res = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: null, providerSpecificData: {}, proxyOptions: null, now: Date.now() });
+    expect(mocks.proxyAwareFetch).toHaveBeenCalledTimes(1);
+    expect(res.subscriptionPlan).toBe("free");
+    expect(res.subscriptionActiveUntil).toBeNull();
+    expect(res.subscriptionSource).toBe("accounts");
+    expect(res.patch.codexSubscriptionActiveUntil).toBeNull();
+    expect(res.patch.codexSubscriptionPlan).toBe("free");
+  });
+
+  it("transient network failure with future paid PSD retains paid snapshot", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const now = Date.now();
+    const future = new Date(now + 10 * 86400000).toISOString();
+    const staleAt = new Date(now - 7 * 60 * 60 * 1000).toISOString();
+    const psd = {
+      codexSubscriptionActiveUntil: future,
+      codexSubscriptionPlan: "pro",
+      codexSubscriptionSource: "accounts",
+      codexSubscriptionFetchedAt: staleAt,
+      codexSubscriptionAttemptAt: staleAt,
+    };
+    mocks.proxyAwareFetch.mockRejectedValueOnce(new Error("network down"));
+    const res = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: null, providerSpecificData: psd, proxyOptions: null, now });
+    expect(res.subscriptionActiveUntil).toBe(future);
+    expect(res.subscriptionPlan).toBe("pro");
+    expect(res.patch.codexSubscriptionActiveUntil).toBeUndefined();
+    expect(res.patch.codexSubscriptionAttemptAt).toBeTruthy();
+  });
+
+  it("sequential resurrection: force Free persists and second non-force JWT Plus does not resurrect", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const future = isoNowPlus(10);
+    const jwt = makeJwt({ "https://api.openai.com/auth": { chatgpt_subscription_active_until: future, chatgpt_plan_type: "chatgptplusplan" } });
+    mocks.proxyAwareFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ accounts: [{ id: "acc1", is_default: true, entitlement: { subscription_plan: "chatgptfreeplan", expires_at: null } }] }),
+    });
+    const baseNow = Date.now();
+    const r1 = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: jwt, providerSpecificData: {}, proxyOptions: null, force: true, now: baseNow });
+    expect(r1.subscriptionPlan).toBe("free");
+    expect(r1.subscriptionActiveUntil).toBeNull();
+    expect(r1.subscriptionSource).toBe("accounts");
+    const psd2 = { ...r1.patch };
+    mocks.proxyAwareFetch.mockClear();
+    const r2 = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: jwt, providerSpecificData: psd2, proxyOptions: null, force: false, now: baseNow + 60 * 1000 });
+    expect(mocks.proxyAwareFetch).not.toHaveBeenCalled();
+    expect(r2.subscriptionPlan).toBe("free");
+    expect(r2.subscriptionActiveUntil).toBeNull();
+    expect(r2.subscriptionSource).toBe("accounts");
+  });
+
+  it("fresh cached Free null accounts within 6h and no JWT returns Free null without fetch", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const now = Date.now();
+    const psd = {
+      codexSubscriptionActiveUntil: null,
+      codexSubscriptionPlan: "free",
+      codexSubscriptionSource: "accounts",
+      codexSubscriptionFetchedAt: new Date(now - 60 * 60 * 1000).toISOString(),
+      codexSubscriptionAttemptAt: new Date(now - 60 * 60 * 1000).toISOString(),
+    };
+    const res = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: null, providerSpecificData: psd, proxyOptions: null, now, force: false });
+    expect(mocks.proxyAwareFetch).not.toHaveBeenCalled();
+    expect(res.subscriptionPlan).toBe("free");
+    expect(res.subscriptionActiveUntil).toBeNull();
+    expect(res.subscriptionSource).toBe("accounts");
+  });
+
+  it("force true network throw with cached Free preserves Free", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const now = Date.now();
+    const psd = {
+      codexSubscriptionActiveUntil: null,
+      codexSubscriptionPlan: "free",
+      codexSubscriptionSource: "accounts",
+      codexSubscriptionFetchedAt: new Date(now - 7 * 60 * 60 * 1000).toISOString(),
+      codexSubscriptionAttemptAt: new Date(now - 7 * 60 * 60 * 1000).toISOString(),
+    };
+    mocks.proxyAwareFetch.mockRejectedValueOnce(new Error("network down"));
+    const res = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: null, providerSpecificData: psd, proxyOptions: null, now, force: true });
+    expect(res.subscriptionActiveUntil).toBeNull();
+    expect(res.subscriptionPlan).toBe("free");
+    expect(res.subscriptionSource).toBe("accounts");
+    expect(res.patch.codexSubscriptionActiveUntil).toBeUndefined();
+    expect(res.patch.codexSubscriptionAttemptAt).toBeTruthy();
+  });
+
+  it("JWT chatgptfreeplan with future active_until non-force returns free with null expiry", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const now = Date.now();
+    const future = isoNowPlus(10);
+    const jwt = makeJwt({ "https://api.openai.com/auth": { chatgpt_subscription_active_until: future, chatgpt_plan_type: "chatgptfreeplan" } });
+    const freshAt = new Date(now - 60 * 1000).toISOString();
+    const res = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: jwt, providerSpecificData: { codexSubscriptionActiveUntil: null, codexSubscriptionPlan: "free", codexSubscriptionSource: "idToken", codexSubscriptionFetchedAt: freshAt, codexSubscriptionAttemptAt: freshAt }, proxyOptions: null, now, force: false });
+    expect(mocks.proxyAwareFetch).not.toHaveBeenCalled();
+    expect(res.subscriptionPlan).toBe("free");
+    expect(res.subscriptionActiveUntil).toBeNull();
+    expect(Object.keys(res.patch || {}).length).toBe(0);
+  });
+
+  it("accounts missing plan then subscriptions returns chatgptfreeplan with future active_until returns free null", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const future = isoNowPlus(10);
+    mocks.proxyAwareFetch
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ accounts: [{ id: "acc1", is_default: true, entitlement: null }] }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ subscription_plan: "chatgptfreeplan", active_until: future }) });
+    const res = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: null, providerSpecificData: {}, proxyOptions: null, now: Date.now() });
+    expect(res.subscriptionPlan).toBe("free");
+    expect(res.subscriptionActiveUntil).toBeNull();
+    expect(res.subscriptionSource).toMatch(/subscriptions|accounts/i);
+    expect(res.patch.codexSubscriptionActiveUntil).toBeNull();
+    expect(mocks.proxyAwareFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("future cached PSD plan chatgptplusplan returns canonical plus", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const now = Date.now();
+    const future = new Date(now + 10 * 86400000).toISOString();
+    const psd = {
+      codexSubscriptionActiveUntil: future,
+      codexSubscriptionPlan: "chatgptplusplan",
+      codexSubscriptionSource: "accounts",
+      codexSubscriptionFetchedAt: new Date(now - 60 * 60 * 1000).toISOString(),
+      codexSubscriptionAttemptAt: new Date(now - 60 * 60 * 1000).toISOString(),
+    };
+    const res = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: null, providerSpecificData: psd, proxyOptions: null, now });
+    expect(mocks.proxyAwareFetch).not.toHaveBeenCalled();
+    expect(res.subscriptionPlan).toBe("plus");
+    expect(res.subscriptionActiveUntil).toBe(future);
+  });
+
+  it("generic observed family normalization maps chatgpt prefix and lower-cases", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const now = Date.now();
+    const future = isoNowPlus(5);
+    const normalizedFuture = new Date(future).toISOString();
+    const jwtPro = makeJwt({ "https://api.openai.com/auth": { chatgpt_subscription_active_until: future, chatgpt_plan_type: "chatgptproplan" } });
+    const freshPro = new Date(now - 60 * 1000).toISOString();
+    const r1 = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: jwtPro, providerSpecificData: { codexSubscriptionActiveUntil: normalizedFuture, codexSubscriptionPlan: "pro", codexSubscriptionSource: "idToken", codexSubscriptionFetchedAt: freshPro, codexSubscriptionAttemptAt: freshPro }, proxyOptions: null, now, force: false });
+    expect(r1.subscriptionPlan).toBe("pro");
+    const jwtUpper = makeJwt({ "https://api.openai.com/auth": { chatgpt_subscription_active_until: future, chatgpt_plan_type: "PLUS" } });
+    const freshPlus = new Date(now - 60 * 1000).toISOString();
+    const r2 = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: jwtUpper, providerSpecificData: { codexSubscriptionActiveUntil: normalizedFuture, codexSubscriptionPlan: "plus", codexSubscriptionSource: "idToken", codexSubscriptionFetchedAt: freshPlus, codexSubscriptionAttemptAt: freshPlus }, proxyOptions: null, now, force: false });
+    expect(r2.subscriptionPlan).toBe("plus");
+    const jwtTeam = makeJwt({ "https://api.openai.com/auth": { chatgpt_subscription_active_until: future, chatgpt_plan_type: "ChatGPTTeamPlan" } });
+    const freshTeam = new Date(now - 60 * 1000).toISOString();
+    const r3 = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: jwtTeam, providerSpecificData: { codexSubscriptionActiveUntil: normalizedFuture, codexSubscriptionPlan: "team", codexSubscriptionSource: "idToken", codexSubscriptionFetchedAt: freshTeam, codexSubscriptionAttemptAt: freshTeam }, proxyOptions: null, now, force: false });
+    expect(r3.subscriptionPlan).toBe("team");
+    const jwtBiz = makeJwt({ "https://api.openai.com/auth": { chatgpt_subscription_active_until: future, chatgpt_plan_type: "chatgptbusinessplan" } });
+    const freshBiz = new Date(now - 60 * 1000).toISOString();
+    const r4 = await getCodexSubscriptionEntitlement({ accessToken: "at", idToken: jwtBiz, providerSpecificData: { codexSubscriptionActiveUntil: normalizedFuture, codexSubscriptionPlan: "business", codexSubscriptionSource: "idToken", codexSubscriptionFetchedAt: freshBiz, codexSubscriptionAttemptAt: freshBiz }, proxyOptions: null, now, force: false });
+    expect(r4.subscriptionPlan).toBe("business");
+  });
+
+  it("first fetch authoritative mismatch: empty PSD, future JWT Plus must still hit accounts/check and return Free/null/accounts", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const future = isoNowPlus(10);
+    const jwt = makeJwt({ "https://api.openai.com/auth": { chatgpt_subscription_active_until: future, chatgpt_plan_type: "chatgptplusplan" } });
+    mocks.proxyAwareFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ accounts: [{ id: "acc1", is_default: true, entitlement: { subscription_plan: "chatgptfreeplan", expires_at: null } }] }),
+    });
+    const res = await getCodexSubscriptionEntitlement({
+      accessToken: "at",
+      idToken: jwt,
+      providerSpecificData: {},
+      proxyOptions: null,
+      force: false,
+      now: Date.now(),
+    });
+    expect(mocks.proxyAwareFetch).toHaveBeenCalledTimes(1);
+    expect(res.subscriptionPlan).toBe("free");
+    expect(res.subscriptionActiveUntil).toBeNull();
+    expect(res.subscriptionSource).toBe("accounts");
+    expect(res.patch.codexSubscriptionPlan).toBe("free");
+    expect(res.patch.codexSubscriptionActiveUntil).toBeNull();
+  });
+
+  it("plan trust-boundary length: accounts/check 10k-char plan capped to <=64 via public helper", async () => {
+    const { getCodexSubscriptionEntitlement } = await import("../../open-sse/services/usage/codex.js");
+    const future = isoNowPlus(10);
+    const longPlan = "a".repeat(10000);
+    mocks.proxyAwareFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ accounts: [{ id: "acc1", is_default: true, entitlement: { subscription_plan: longPlan, expires_at: future } }] }),
+    });
+    const res = await getCodexSubscriptionEntitlement({
+      accessToken: "at",
+      idToken: null,
+      providerSpecificData: {},
+      proxyOptions: null,
+      now: Date.now(),
+    });
+    expect(res.subscriptionPlan).toBeTruthy();
+    expect(res.subscriptionPlan.length).toBeLessThanOrEqual(64);
+    expect(res.subscriptionPlan).not.toBe(longPlan);
+    expect(res.patch.codexSubscriptionPlan).toBeTruthy();
+    expect(res.patch.codexSubscriptionPlan.length).toBeLessThanOrEqual(64);
+    expect(res.patch.codexSubscriptionPlan).not.toBe(longPlan);
+    expect(res.subscriptionActiveUntil).toBe(new Date(future).toISOString());
   });
 });

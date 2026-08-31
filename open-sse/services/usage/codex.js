@@ -159,6 +159,20 @@ function getJwtSubscriptionClaimFromPayload(payload) {
   return null;
 }
 
+function normalizeCodexPlan(value) {
+  if (value == null) return null;
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith("chatgpt") && lower.endsWith("plan")) {
+    const middle = lower.slice(7, -4).replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, "");
+    const tier = middle.replace(/[^a-z0-9]/g, "");
+    if (tier) return tier.slice(0, 64);
+  }
+  return lower.slice(0, 64);
+}
+
 function getJwtPlanFromPayload(payload) {
   if (!payload || typeof payload !== "object") return null;
   const nested = payload["https://api.openai.com/auth"];
@@ -370,127 +384,62 @@ export async function getCodexSubscriptionEntitlement({ accessToken, idToken, pr
   const accessTokenHints = getCodexSubscriptionHints(accessTokenPayload);
   const idTokenHints = getCodexSubscriptionHints(jwtPayload);
 
+  const cachedPlanNorm = normalizeCodexPlan(psd.codexSubscriptionPlan);
+  const isCachedFree = cachedPlanNorm === "free";
+  const safeCachedExpiry = (() => {
+    if (isCachedFree) return null;
+    const iso = normalizeSubscriptionIso(psd.codexSubscriptionActiveUntil);
+    const ms = iso ? new Date(iso).getTime() : NaN;
+    if (iso && Number.isFinite(ms) && ms > nowMs) return iso;
+    return null;
+  })();
+  const safeCachedSnapshot = (() => {
+    if (isCachedFree) return { activeUntil: null, plan: "free", source: psd.codexSubscriptionSource || "accounts" };
+    if (safeCachedExpiry) return { activeUntil: safeCachedExpiry, plan: cachedPlanNorm || psd.codexSubscriptionPlan || null, source: psd.codexSubscriptionSource || null };
+    return null;
+  })();
+
   try {
     const rawClaim = getJwtSubscriptionClaimFromPayload(jwtPayload);
     const normalized = normalizeSubscriptionIso(rawClaim);
     if (normalized) {
       const claimTime = new Date(normalized).getTime();
       if (Number.isFinite(claimTime) && claimTime > nowMs) {
-        const plan = getJwtPlanFromPayload(jwtPayload);
-        const sameMetadata =
-          psd.codexSubscriptionActiveUntil === normalized &&
-          (psd.codexSubscriptionPlan || null) === (plan || null) &&
-          psd.codexSubscriptionSource === "idToken";
-        const fetchedAtMs = psd.codexSubscriptionFetchedAt ? new Date(psd.codexSubscriptionFetchedAt).getTime() : NaN;
-        const ttlExpired = !Number.isFinite(fetchedAtMs) || nowMs - fetchedAtMs >= 6 * 60 * 60 * 1000;
-        if (sameMetadata && !ttlExpired) {
-          return {
-            subscriptionActiveUntil: normalized,
-            subscriptionPlan: plan,
-            subscriptionSource: "idToken",
-            patch: {},
-          };
+        if (!force) {
+          const rawPlan = getJwtPlanFromPayload(jwtPayload);
+          const plan = normalizeCodexPlan(rawPlan);
+          const isJwtFree = plan === "free";
+          const jwtActiveUntil = isJwtFree ? null : normalized;
+          const hasStoredMeta = Boolean(psd.codexSubscriptionSource || psd.codexSubscriptionPlan != null || psd.codexSubscriptionActiveUntil !== undefined || psd.codexSubscriptionFetchedAt);
+          const fetchedAtMs = psd.codexSubscriptionFetchedAt ? new Date(psd.codexSubscriptionFetchedAt).getTime() : NaN;
+          const ttlExpired = !Number.isFinite(fetchedAtMs) || nowMs - fetchedAtMs >= 6 * 60 * 60 * 1000;
+          const psdExpiryNorm = normalizeSubscriptionIso(psd.codexSubscriptionActiveUntil);
+          const sameMetadata = hasStoredMeta && cachedPlanNorm === plan && (isJwtFree ? psd.codexSubscriptionActiveUntil == null : psdExpiryNorm === normalized) && psd.codexSubscriptionSource === "idToken";
+          if (hasStoredMeta && sameMetadata && !ttlExpired) {
+            return { subscriptionActiveUntil: jwtActiveUntil, subscriptionPlan: plan, subscriptionSource: "idToken", patch: {} };
+          }
         }
-        const patch = {};
-        if (psd.codexSubscriptionActiveUntil !== normalized) patch.codexSubscriptionActiveUntil = normalized;
-        if ((psd.codexSubscriptionPlan || null) !== (plan || null)) patch.codexSubscriptionPlan = plan;
-        if (psd.codexSubscriptionSource !== "idToken") patch.codexSubscriptionSource = "idToken";
-        if (ttlExpired) {
-          patch.codexSubscriptionFetchedAt = nowIso;
-          patch.codexSubscriptionAttemptAt = nowIso;
-        } else if (Object.keys(patch).length) {
-          patch.codexSubscriptionFetchedAt = nowIso;
-          patch.codexSubscriptionAttemptAt = nowIso;
-        }
-        if (!Object.keys(patch).length) {
-          return {
-            subscriptionActiveUntil: normalized,
-            subscriptionPlan: plan,
-            subscriptionSource: "idToken",
-            patch: {},
-          };
-        }
-        return {
-          subscriptionActiveUntil: normalized,
-          subscriptionPlan: plan,
-          subscriptionSource: "idToken",
-          patch,
-        };
       }
     }
   } catch {}
 
-  const safeCachedExpiry = (() => {
-    const iso = normalizeSubscriptionIso(psd.codexSubscriptionActiveUntil);
-    const ms = iso ? new Date(iso).getTime() : NaN;
-    if (iso && Number.isFinite(ms) && ms > nowMs) return iso;
-    return null;
-  })();
-  const safeCachedSnapshot = safeCachedExpiry ? {
-    activeUntil: safeCachedExpiry,
-    plan: psd.codexSubscriptionPlan || null,
-    source: psd.codexSubscriptionSource || null,
-  } : null;
-
   if (!force) {
     const fetchedAtMs = psd.codexSubscriptionFetchedAt ? new Date(psd.codexSubscriptionFetchedAt).getTime() : NaN;
     if (Number.isFinite(fetchedAtMs) && nowMs - fetchedAtMs < 6 * 60 * 60 * 1000) {
-      if (safeCachedSnapshot) {
-        return {
-          subscriptionActiveUntil: safeCachedSnapshot.activeUntil,
-          subscriptionPlan: safeCachedSnapshot.plan,
-          subscriptionSource: safeCachedSnapshot.source,
-          patch: {},
-        };
-      }
-      if (!accessToken) {
-        return {
-          subscriptionActiveUntil: null,
-          subscriptionPlan: null,
-          subscriptionSource: null,
-          patch: { codexSubscriptionAttemptAt: nowIso },
-        };
-      }
-      // past/invalid cache: fall through to network
+      if (safeCachedSnapshot) return { subscriptionActiveUntil: safeCachedSnapshot.activeUntil, subscriptionPlan: safeCachedSnapshot.plan, subscriptionSource: safeCachedSnapshot.source, patch: {} };
+      if (!accessToken) return { subscriptionActiveUntil: null, subscriptionPlan: null, subscriptionSource: null, patch: { codexSubscriptionAttemptAt: nowIso } };
     } else {
       const attemptAtMs = psd.codexSubscriptionAttemptAt ? new Date(psd.codexSubscriptionAttemptAt).getTime() : NaN;
       if (Number.isFinite(attemptAtMs) && nowMs - attemptAtMs < 30 * 60 * 1000) {
-        if (safeCachedSnapshot) {
-          return {
-            subscriptionActiveUntil: safeCachedSnapshot.activeUntil,
-            subscriptionPlan: safeCachedSnapshot.plan,
-            subscriptionSource: safeCachedSnapshot.source,
-            patch: {},
-          };
-        }
-        if (!accessToken) {
-          return {
-            subscriptionActiveUntil: null,
-            subscriptionPlan: null,
-            subscriptionSource: null,
-            patch: { codexSubscriptionAttemptAt: nowIso },
-          };
-        }
-        // past/invalid cache with recent attempt: fall through if token exists
+        if (safeCachedSnapshot) return { subscriptionActiveUntil: safeCachedSnapshot.activeUntil, subscriptionPlan: safeCachedSnapshot.plan, subscriptionSource: safeCachedSnapshot.source, patch: {} };
+        if (!accessToken) return { subscriptionActiveUntil: null, subscriptionPlan: null, subscriptionSource: null, patch: { codexSubscriptionAttemptAt: nowIso } };
       }
     }
   }
 
   if (!accessToken) {
-    if (safeCachedSnapshot) {
-      return {
-        subscriptionActiveUntil: safeCachedSnapshot.activeUntil,
-        subscriptionPlan: safeCachedSnapshot.plan,
-        subscriptionSource: safeCachedSnapshot.source,
-        patch: { codexSubscriptionAttemptAt: nowIso },
-      };
-    }
-    return {
-      subscriptionActiveUntil: null,
-      subscriptionPlan: null,
-      subscriptionSource: null,
-      patch: { codexSubscriptionAttemptAt: nowIso },
-    };
+    if (safeCachedSnapshot) return { subscriptionActiveUntil: safeCachedSnapshot.activeUntil, subscriptionPlan: safeCachedSnapshot.plan, subscriptionSource: safeCachedSnapshot.source, patch: { codexSubscriptionAttemptAt: nowIso } };
+    return { subscriptionActiveUntil: null, subscriptionPlan: null, subscriptionSource: null, patch: { codexSubscriptionAttemptAt: nowIso } };
   }
 
   try {
@@ -533,8 +482,10 @@ export async function getCodexSubscriptionEntitlement({ accessToken, idToken, pr
     if (!selected && idTokenId) selected = byId(idTokenId) || null;
     if (!selected) {
       const nonFree = accounts.filter((a) => {
-        const plan = String(planForSelection(a) ?? "").trim().toLowerCase();
-        return plan && plan !== "free";
+        const raw = planForSelection(a);
+        const norm = normalizeCodexPlan(raw);
+        const cand = norm != null ? String(norm).trim().toLowerCase() : String(raw ?? "").trim().toLowerCase();
+        return cand && cand !== "free";
       });
       if (nonFree.length) {
         selected = nonFree.find((a) => a.is_default === true || a.isDefault === true) || nonFree[0];
@@ -553,8 +504,24 @@ export async function getCodexSubscriptionEntitlement({ accessToken, idToken, pr
     }
     if (!plan) plan = selected.subscription_plan || selected.plan_type || selected.planType || selected.plan || null;
     if (!expiresRaw) expiresRaw = selected.expires_at || selected.expiresAt || selected.active_until || selected.activeUntil || null;
-    if (typeof plan === "string") plan = plan.trim() || null;
+    plan = normalizeCodexPlan(plan);
     let normalizedExpiry = normalizeSubscriptionIso(expiresRaw);
+    // Free is authoritative: valid with missing/past expiry, no subscriptions resurrection
+    const isFreePlan = typeof plan === "string" && plan.toLowerCase() === "free";
+    if (isFreePlan) {
+      return {
+        subscriptionActiveUntil: null,
+        subscriptionPlan: "free",
+        subscriptionSource: "accounts",
+        patch: {
+          codexSubscriptionActiveUntil: null,
+          codexSubscriptionPlan: "free",
+          codexSubscriptionSource: "accounts",
+          codexSubscriptionFetchedAt: nowIso,
+          codexSubscriptionAttemptAt: nowIso,
+        },
+      };
+    }
     const expiryMs = normalizedExpiry ? new Date(normalizedExpiry).getTime() : NaN;
     const isExpired = !normalizedExpiry || !Number.isFinite(expiryMs) || expiryMs <= nowMs;
     const accountsPlanSnapshot = plan;
@@ -582,18 +549,30 @@ export async function getCodexSubscriptionEntitlement({ accessToken, idToken, pr
               else if (subData.data && Array.isArray(subData.data)) subObj = subData.data[0] || subData;
               else if (subData.subscriptions && Array.isArray(subData.subscriptions)) subObj = subData.subscriptions[0] || subData;
               const fallbackPlan = subObj.subscription_plan || subObj.plan_type || subObj.planType || subObj.plan || null;
+              const normFallbackPre = normalizeCodexPlan(fallbackPlan);
+              if (normFallbackPre === "free") {
+                plan = "free";
+                normalizedExpiry = null;
+                source = "subscriptions";
+                return {
+                  subscriptionActiveUntil: null,
+                  subscriptionPlan: "free",
+                  subscriptionSource: "subscriptions",
+                  patch: { codexSubscriptionActiveUntil: null, codexSubscriptionPlan: "free", codexSubscriptionSource: "subscriptions", codexSubscriptionFetchedAt: nowIso, codexSubscriptionAttemptAt: nowIso },
+                };
+              }
               const fallbackExpires = subObj.active_until || subObj.expires_at || subObj.activeUntil || subObj.expiresAt || null;
               const fallbackIso = normalizeSubscriptionIso(fallbackExpires);
               const fallbackMs = fallbackIso ? new Date(fallbackIso).getTime() : NaN;
               const fallbackIsFuture = fallbackIso && Number.isFinite(fallbackMs) && fallbackMs > nowMs;
               if (fallbackIsFuture) {
-                if (fallbackPlan && typeof fallbackPlan === "string" && fallbackPlan.trim()) plan = fallbackPlan.trim();
+                const normFallback = normalizeCodexPlan(fallbackPlan);
+                if (normFallback) plan = normFallback;
+                else if (fallbackPlan && typeof fallbackPlan === "string" && fallbackPlan.trim()) plan = fallbackPlan.trim().toLowerCase();
                 normalizedExpiry = fallbackIso;
                 source = "subscriptions";
               }
             }
-          } else {
-            // keep accounts snapshot if subscriptions fails; don't throw
           }
         } catch {}
       }
@@ -613,7 +592,10 @@ export async function getCodexSubscriptionEntitlement({ accessToken, idToken, pr
         finalExpiryMs = accountsExpiryMsSnapshot;
       } else if (hasFuturePsdCache) {
         normalizedExpiry = psdExpiryIso;
-        if (!plan) plan = psd.codexSubscriptionPlan || plan;
+        if (!plan) {
+          const psdNorm = normalizeCodexPlan(psd.codexSubscriptionPlan);
+          plan = psdNorm || psd.codexSubscriptionPlan || plan;
+        }
         source = psd.codexSubscriptionSource || "accounts";
         finalExpiryMs = psdExpiryMs;
       }
@@ -621,7 +603,7 @@ export async function getCodexSubscriptionEntitlement({ accessToken, idToken, pr
     finalExpiryMs = normalizedExpiry ? new Date(normalizedExpiry).getTime() : NaN;
     if (!normalizedExpiry || !Number.isFinite(finalExpiryMs) || finalExpiryMs <= nowMs) throw new Error("no valid expiry");
 
-    if (typeof plan === "string") plan = plan.trim() || null;
+    plan = normalizeCodexPlan(plan) || (typeof plan === "string" ? plan.trim() || null : plan);
 
     return {
       subscriptionActiveUntil: normalizedExpiry,
