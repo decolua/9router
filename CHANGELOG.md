@@ -1,3 +1,13 @@
+# v0.5.71 (2026-08-31) — 9router-imagefix
+
+## Features
+- **Antigravity**: dynamic domain circuit breaker — bulk-disable ANY GSuite
+  domain that returns permanent 400/401/403 (invalid_grant / PERMISSION_DENIED
+  / deleted by admin) after 2 failures. Handles gmilil.my.id today and any
+  future random domain (e.g. gmosel.com) without a hard-coded list.
+  Whitelists gmail.com/googlemail.com. Skips a dead domain in < 50 ms
+  instead of trying every account one-by-one (was 60-80s for 40 accounts).
+
 # v0.5.70 (2026-08-30) — 9router-imagefix
 
 ## Fixes

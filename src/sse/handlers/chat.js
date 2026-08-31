@@ -321,6 +321,25 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       if (quotaResetMs) resetsAtMs = quotaResetMs;
     }
 
+    // Antigravity permanent domain failure (401/403 deleted account by admin):
+    // dynamically group ANY GSuite domain (gmilil, gmosel, or any random new domain)
+    // and bulk-disable the whole domain so the next loop skips it in < 50ms.
+    if (provider === "antigravity" && result.status >= 400 && result.status <= 403) {
+      try {
+        const { isPermanentAntigravityAuthFailure, maybeBreakAntigravityDomain } = await import("../services/antigravityDomainBreaker.js");
+        if (isPermanentAntigravityAuthFailure(result.status, result.error)) {
+          const email = credentials.email || credentials.connectionName || "";
+          const verdict = await maybeBreakAntigravityDomain(email, provider);
+          if (verdict.broken) {
+            for (const c of []) {} // placeholder — already bulk-disabled in service
+            log.warn("AG_DOMAIN_BREAKER", `${verdict.domain} | bulk-disabled ${verdict.disabledCount} accounts -> skip domain`);
+          }
+        }
+      } catch {
+        // never break the fallback hot path for a breaker error
+      }
+    }
+
     // Exhausted Antigravity model is blocked only in RAM cache until upstream resetAt.
     // Do not persist a modelLock_* for this path.
     const shouldFallback = provider === "antigravity" && quotaResetMs
