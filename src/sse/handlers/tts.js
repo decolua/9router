@@ -2,7 +2,7 @@ import {
   extractApiKey, isValidApiKey,
   getProviderCredentials, markAccountUnavailable,
 } from "../services/auth.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getAllowedConnectionIdsForKey } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleTtsCore } from "open-sse/handlers/ttsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -33,13 +33,16 @@ export async function handleTts(request) {
   const style = body.style || ""; // Optional style/voice instructions (e.g. Xiaomi MiMo)
   log.request("POST", `${url.pathname} | ${modelStr} | format=${responseFormat}${language ? ` | lang=${language}` : ""}`);
 
+  const apiKey = extractApiKey(request);
   const settings = await getSettings();
   if (settings.requireApiKey) {
-    const apiKey = extractApiKey(request);
     if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     const valid = await isValidApiKey(apiKey);
     if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
   }
+
+  // Resolved regardless of requireApiKey — scoping must hold even if that flag is off.
+  const allowedConnectionIds = apiKey ? await getAllowedConnectionIdsForKey(apiKey) : null;
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   if (!body.input) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
@@ -54,7 +57,7 @@ export async function handleTts(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelTts(b, m, responseFormat, language, style),
+      handleSingleModel: (b, m) => handleSingleModelTts(b, m, responseFormat, language, style, allowedConnectionIds),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -62,10 +65,10 @@ export async function handleTts(request) {
     });
   }
 
-  return handleSingleModelTts(body, modelStr, responseFormat, language, style);
+  return handleSingleModelTts(body, modelStr, responseFormat, language, style, allowedConnectionIds);
 }
 
-async function handleSingleModelTts(body, modelStr, responseFormat, language, style) {
+async function handleSingleModelTts(body, modelStr, responseFormat, language, style, allowedConnectionIds = null) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
@@ -85,7 +88,7 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { allowedConnectionIds });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {

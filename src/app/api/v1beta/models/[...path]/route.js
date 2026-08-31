@@ -5,7 +5,7 @@ import {
   isValidApiKey,
   markAccountUnavailable,
 } from "@/sse/services/auth.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getAllowedConnectionIdsForKey } from "@/lib/localDb";
 import { PROVIDER_MODELS } from "@/shared/constants/models";
 import { GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
 import { initTranslators } from "open-sse/translator/index.js";
@@ -243,13 +243,17 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
   if (!GEMINI_NATIVE_MODEL_PATTERN.test(modelId)) {
     return Response.json({ error: { message: "Invalid model" } }, { status: 400 });
   }
+  // Resolved regardless of requireApiKey — scoping must hold even if that flag is off.
+  const nativeApiKey = extractGeminiClientApiKey(request);
+  const allowedConnectionIds = nativeApiKey ? await getAllowedConnectionIdsForKey(nativeApiKey) : null;
+
   const excludeConnectionIds = new Set();
   const bodyText = JSON.stringify(body);
   let lastError = null;
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials("gemini", excludeConnectionIds, modelId);
+    const credentials = await getProviderCredentials("gemini", excludeConnectionIds, modelId, { allowedConnectionIds });
     if (!credentials || credentials.allRateLimited) {
       console.log(`[GEMINI_NATIVE] exhausted model=${modelId} status=${lastStatus || Number(credentials?.lastErrorCode) || 503} error=${lastError || credentials?.lastError || "No active credentials for provider: gemini"}`);
       return Response.json(

@@ -5,7 +5,7 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getAllowedConnectionIdsForKey } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
 import { handleEmbeddingsCore } from "open-sse/handlers/embeddingsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -65,6 +65,9 @@ export async function handleEmbeddings(request) {
     }
   }
 
+  // Resolved regardless of requireApiKey — scoping must hold even if that flag is off.
+  const allowedConnectionIds = apiKey ? await getAllowedConnectionIdsForKey(apiKey) : null;
+
   if (!modelStr) {
     log.warn("EMBEDDINGS", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
@@ -95,7 +98,7 @@ export async function handleEmbeddings(request) {
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { allowedConnectionIds });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {

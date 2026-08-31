@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
+import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, AccountSelectModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import {
   TUNNEL_BENEFITS,
@@ -76,6 +76,12 @@ export default function APIPageClient({ machineId }) {
 
   // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
+
+  // Per-key account scoping (restrict a key to a subset of provider accounts)
+  const [providerConnections, setProviderConnections] = useState([]);
+  const [keyAccountsMap, setKeyAccountsMap] = useState({});
+  const [accountsModalKeyId, setAccountsModalKeyId] = useState(null);
+  const [savingAccounts, setSavingAccounts] = useState(false);
 
   // Client-side local/remote detection (UI hint only, not a security gate)
   const [isRemoteHost, setIsRemoteHost] = useState(false);
@@ -275,10 +281,67 @@ export default function APIPageClient({ machineId }) {
         } catch { /* fall through to empty render */ }
       }
       setKeys(existing);
+      fetchProviderConnections();
+      fetchAllKeyAccounts(existing);
     } catch (error) {
       console.log("Error fetching data:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchProviderConnections = async () => {
+    try {
+      const res = await fetch("/api/providers");
+      if (!res.ok) return;
+      const data = await res.json();
+      setProviderConnections(data.connections || []);
+    } catch (error) {
+      console.log("Error fetching provider connections:", error);
+    }
+  };
+
+  // Load current account scoping for every key so the row can show "All accounts"
+  // vs "Scoped to N account(s)" without waiting for the modal to open.
+  const fetchAllKeyAccounts = async (keyList) => {
+    try {
+      const entries = await Promise.all(
+        keyList.map(async (k) => {
+          const res = await fetch(`/api/keys/${k.id}/accounts`);
+          if (!res.ok) return [k.id, []];
+          const data = await res.json();
+          return [k.id, data.connectionIds || []];
+        })
+      );
+      setKeyAccountsMap(Object.fromEntries(entries));
+    } catch (error) {
+      console.log("Error fetching key accounts:", error);
+    }
+  };
+
+  const handleToggleAccount = async (connectionId) => {
+    const keyId = accountsModalKeyId;
+    if (!keyId) return;
+    const current = keyAccountsMap[keyId] || [];
+    const next = current.includes(connectionId)
+      ? current.filter((id) => id !== connectionId)
+      : [...current, connectionId];
+
+    setSavingAccounts(true);
+    try {
+      const res = await fetch(`/api/keys/${keyId}/accounts`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectionIds: next }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setKeyAccountsMap((prev) => ({ ...prev, [keyId]: data.connectionIds || next }));
+      }
+    } catch (error) {
+      console.log("Error updating key accounts:", error);
+    } finally {
+      setSavingAccounts(false);
     }
   };
 
@@ -657,6 +720,11 @@ export default function APIPageClient({ machineId }) {
             setVisibleKeys(prev => {
               const next = new Set(prev);
               next.delete(id);
+              return next;
+            });
+            setKeyAccountsMap(prev => {
+              const next = { ...prev };
+              delete next[id];
               return next;
             });
           }
@@ -1038,6 +1106,10 @@ export default function APIPageClient({ machineId }) {
                   </div>
                   <p className="text-xs text-text-muted mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
+                    {" · "}
+                    {(keyAccountsMap[key.id]?.length ?? 0) > 0
+                      ? <>Scoped to {keyAccountsMap[key.id].length} account(s)</>
+                      : "All accounts"}
                   </p>
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
@@ -1063,6 +1135,13 @@ export default function APIPageClient({ machineId }) {
                     }}
                     title={key.isActive ? "Pause key" : "Resume key"}
                   />
+                  <button
+                    onClick={() => setAccountsModalKeyId(key.id)}
+                    className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                    title="Scope provider accounts"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">manage_accounts</span>
+                  </button>
                   <button
                     onClick={() => handleDeleteKey(key.id)}
                     className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
@@ -1144,6 +1223,16 @@ export default function APIPageClient({ machineId }) {
           </Button>
         </div>
       </Modal>
+
+      {/* Scope Accounts Modal — restrict this key to a subset of provider accounts */}
+      <AccountSelectModal
+        isOpen={!!accountsModalKeyId}
+        onClose={() => setAccountsModalKeyId(null)}
+        connections={providerConnections}
+        selectedIds={keyAccountsMap[accountsModalKeyId] || []}
+        onToggleAccount={handleToggleAccount}
+        saving={savingAccounts}
+      />
 
       {/* Enable Tunnel Modal */}
       <Modal
