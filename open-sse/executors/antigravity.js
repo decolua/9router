@@ -38,6 +38,9 @@ const ANTIGRAVITY_TRANSIENT_STATUSES = new Set([
   HTTP_STATUS.GATEWAY_TIMEOUT,
 ]);
 
+// Stable per-process session ID (matches AG Manager's SESSION_ID = one UUID per app launch)
+const ANTIGRAVITY_SESSION_ID = crypto.randomUUID();
+
 // Fields Google generateContent rejects (Claude/OpenAI/Qwen thinking fields set at body root by thinkingUnified.js)
 const ANTIGRAVITY_REQUEST_BLACKLIST = [
   "output_config",
@@ -130,6 +133,7 @@ export class AntigravityExecutor extends BaseExecutor {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${credentials.accessToken}`,
       "User-Agent": this.config.headers?.["User-Agent"] || ANTIGRAVITY_HEADERS["User-Agent"],
+
     };
   }
 
@@ -146,13 +150,13 @@ export class AntigravityExecutor extends BaseExecutor {
       // Strip model name suffixes for the actual API model name
       const cleanModel = model.replace(/-(\d+)x(\d+)$/, "");
 
-      // Build simplified contents — text-only, merge all user messages
+      // Build simplified contents — text and image parts, merge all user messages
       const contents = [];
       const srcContents = body.request?.contents || body.contents || [];
       for (const c of srcContents) {
-        const textParts = (c.parts || []).filter(p => p.text !== undefined).map(p => ({ text: p.text }));
-        if (textParts.length > 0) {
-          contents.push({ role: c.role || "user", parts: textParts });
+        const validParts = (c.parts || []).filter(p => p.text !== undefined || p.inlineData !== undefined);
+        if (validParts.length > 0) {
+          contents.push({ role: c.role || "user", parts: validParts });
         }
       }
 

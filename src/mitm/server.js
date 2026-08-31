@@ -21,9 +21,10 @@ clearDumpDir();
 const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local" };
 
 // Host rewrite for upstream forward: PROD cloudcode-pa is rate-limited (429),
-// daily-cloudcode-pa (dev endpoint) accepts same body+token. Same trick as open-sse.
+// daily-cloudcode-pa.sandbox (dev/sandbox endpoint) accepts same body+token. Same trick as open-sse.
 const HOST_REWRITE = {
-  "cloudcode-pa.googleapis.com": "daily-cloudcode-pa.googleapis.com",
+  "cloudcode-pa.googleapis.com": "daily-cloudcode-pa.sandbox.googleapis.com",
+  "daily-cloudcode-pa.googleapis.com": "daily-cloudcode-pa.sandbox.googleapis.com",
 };
 
 const handlers = {

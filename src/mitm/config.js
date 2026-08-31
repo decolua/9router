@@ -14,6 +14,7 @@ const LSOF_BIN = (() => {
 })();
 
 const TARGET_HOSTS = [
+  "daily-cloudcode-pa.sandbox.googleapis.com",
   "daily-cloudcode-pa.googleapis.com",
   "cloudcode-pa.googleapis.com",
   "api.individual.githubcopilot.com",
@@ -101,7 +102,7 @@ const LOG_BLACKLIST_URL_PARTS = [
 function getToolForHost(host) {
   const h = (host || "").split(":")[0];
   if (h === "api.individual.githubcopilot.com") return "copilot";
-  if (h === "daily-cloudcode-pa.googleapis.com" || h === "cloudcode-pa.googleapis.com") return "antigravity";
+  if (h === "daily-cloudcode-pa.sandbox.googleapis.com" || h === "daily-cloudcode-pa.googleapis.com" || h === "cloudcode-pa.googleapis.com") return "antigravity";
   if (h === "q.us-east-1.amazonaws.com" || h === "codewhisperer.us-east-1.amazonaws.com" || h === "runtime.us-east-1.kiro.dev") return "kiro";
   if (h === "api2.cursor.sh") return "cursor";
   return null;
