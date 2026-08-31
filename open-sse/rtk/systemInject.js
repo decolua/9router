@@ -19,7 +19,19 @@ export function injectSystemPrompt(body, format, prompt) {
       return;
     }
 
-    // Dispatch by actual wire shape before format label.
+    // Claude/Gemini own dedicated system fields, but bodies also carry generic
+    // arrays. Resolve format first so shape sniffing never injects invalid roles.
+    if (format === FORMATS.CLAUDE) {
+      injectClaudeSystem(body, prompt);
+      return;
+    }
+    if (format === FORMATS.GEMINI || format === FORMATS.GEMINI_CLI
+      || format === FORMATS.VERTEX || format === FORMATS.ANTIGRAVITY) {
+      injectGeminiSystem(body, prompt);
+      return;
+    }
+
+    // Dispatch OpenAI formats by actual wire shape.
     // instructions string takes precedence; messages[] means Chat; input[] means Responses.
     if (typeof body.instructions === "string") {
       injectInstructionsSystem(body, prompt);
@@ -39,21 +51,8 @@ export function injectSystemPrompt(body, format, prompt) {
       return;
     }
 
-    // Fallback: use format label for Gemini/Claude when no openai-shaped array present.
-    switch (format) {
-      case FORMATS.CLAUDE:
-        injectClaudeSystem(body, prompt);
-        return;
-      case FORMATS.GEMINI:
-      case FORMATS.GEMINI_CLI:
-      case FORMATS.VERTEX:
-      case FORMATS.ANTIGRAVITY:
-        injectGeminiSystem(body, prompt);
-        return;
-      default:
-        // OpenAI-shaped but no array (e.g. empty body) — no-op
-        return;
-    }
+    // OpenAI-shaped but no array (e.g. empty body) — no-op.
+    return;
   } catch (_) {
     // fail-open
   }

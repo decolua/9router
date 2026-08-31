@@ -17,6 +17,7 @@ export default function TokenSaverClient() {
   const [rtkEnabled, setRtkEnabledState] = useState(true);
   const [headroomEnabled, setHeadroomEnabled] = useState(false);
   const [headroomUrl, setHeadroomUrl] = useState("http://localhost:8787");
+  const [headroomTimeoutMs, setHeadroomTimeoutMs] = useState(3000);
   const [headroomStatus, setHeadroomStatus] = useState({
     installed: false,
     running: false,
@@ -409,6 +410,13 @@ export default function TokenSaverClient() {
     patchSetting({ pxpipeMinChars: next });
   };
 
+  const handleHeadroomTimeoutBlur = () => {
+    const raw = Math.round(Number(headroomTimeoutMs));
+    const next = Number.isFinite(raw) && raw > 0 ? raw : 3000;
+    setHeadroomTimeoutMs(next);
+    patchSetting({ headroomTimeoutMs: next });
+  };
+
   useEffect(() => {
     const loadSettings = async () => {
       try {
@@ -418,6 +426,7 @@ export default function TokenSaverClient() {
           setRtkEnabledState(data.rtkEnabled !== false);
           setHeadroomEnabled(!!data.headroomEnabled);
           setHeadroomUrl(data.headroomUrl || "http://localhost:8787");
+          if (typeof data.headroomTimeoutMs === "number") setHeadroomTimeoutMs(data.headroomTimeoutMs);
           setCodeAware(data.headroomCodeAware === true);
           setKompress(data.headroomKompress !== false);
           setCavemanEnabled(!!data.cavemanEnabled);
@@ -964,6 +973,19 @@ export default function TokenSaverClient() {
             <p className="text-xs text-text-muted">
               Use a local proxy for Start/Stop, or an external Docker sidecar
               like http://headroom:8787.
+            </p>
+          </div>
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-medium">Timeout (ms)</p>
+            <Input
+              value={String(headroomTimeoutMs)}
+              onChange={(e) => setHeadroomTimeoutMs(e.target.value)}
+              onBlur={handleHeadroomTimeoutBlur}
+              placeholder="3000"
+              className="font-mono text-sm"
+            />
+            <p className="text-xs text-text-muted">
+              Request timeout in milliseconds. Defaults to 3000 ms.
             </p>
           </div>
           {headroomManaged ? (

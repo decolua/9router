@@ -327,17 +327,14 @@ function resolveMaxOutputTokens(body) {
  */
 export function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
   // Body already in Responses API format (e.g. Cursor CLI calling /chat/completions with input[]).
-  // Respect the caller's stream intent (undefined keeps the historical streaming default);
-  // normalize token fields and tool_choice without rebuilding/altering `input`.
+  // Preserve established passthrough fields and input, but normalize fields whose
+  // Responses contract differs. Caller-resolved model wins over stale body.model.
   if (body.input) {
-    // Caller-resolved model always wins over any stale body.model (#3447 review).
     const passthrough = { ...body, model };
     const maxOut = resolveMaxOutputTokens(body);
-    if (maxOut !== undefined) {
-      passthrough.max_output_tokens = maxOut;
-      delete passthrough.max_completion_tokens;
-      delete passthrough.max_tokens;
-    }
+    if (maxOut !== undefined) passthrough.max_output_tokens = maxOut;
+    delete passthrough.max_completion_tokens;
+    delete passthrough.max_tokens;
     const toolChoice = normalizeToolChoice(body.tool_choice);
     if (toolChoice !== undefined) passthrough.tool_choice = toolChoice;
     passthrough.stream = stream !== false;

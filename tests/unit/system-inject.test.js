@@ -210,6 +210,20 @@ describe("system-inject claude", () => {
     injectSystemPrompt(body, FORMATS.CLAUDE, P1);
     expect(body.system).toBe(P1);
   });
+
+  it("real body with messages[] injects into system, never a system role turn", () => {
+    const body = { system: "base", messages: [{ role: ROLE.USER, content: "hi" }] };
+    injectSystemPrompt(body, FORMATS.CLAUDE, P1);
+    expect(body.system).toBe(`base${SEP}${P1}`);
+    expect(body.messages).toEqual([{ role: ROLE.USER, content: "hi" }]);
+  });
+
+  it("absent system with messages[] creates system field, not a system message", () => {
+    const body = { messages: [{ role: ROLE.USER, content: "hi" }] };
+    injectSystemPrompt(body, FORMATS.CLAUDE, P1);
+    expect(body.system).toBe(P1);
+    expect(body.messages.some(m => m.role === ROLE.SYSTEM)).toBe(false);
+  });
 });
 
 describe("system-inject gemini", () => {

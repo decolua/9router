@@ -58,6 +58,15 @@ export function extractThinking(body) {
     return { mode: "level", level: e };
   }
 
+  // OpenAI chat / Responses shape — check effort first (zai sends both thinking object and reasoning.effort)
+  const effort = body.reasoning_effort ?? (typeof body.reasoning === "object" ? body.reasoning?.effort : null);
+  if (typeof effort === "string" && effort) {
+    const e = effort.toLowerCase();
+    if (e === "none" || e === "off") return { mode: "none" };
+    if (e === "auto") return { mode: "auto" };
+    return { mode: "level", level: e };
+  }
+
   // Claude shape
   const t = body.thinking;
   if (t && typeof t === "object") {
@@ -67,15 +76,6 @@ export function extractThinking(body) {
       if (Number.isFinite(budget) && budget > 0) return { mode: "budget", budget };
       return { mode: "auto" };
     }
-  }
-
-  // OpenAI chat / Responses shape
-  const effort = body.reasoning_effort ?? (typeof body.reasoning === "object" ? body.reasoning?.effort : null);
-  if (typeof effort === "string" && effort) {
-    const e = effort.toLowerCase();
-    if (e === "none" || e === "off") return { mode: "none" };
-    if (e === "auto") return { mode: "auto" };
-    return { mode: "level", level: e };
   }
 
   // Gemini shape (top-level, generationConfig, or request envelope)
@@ -285,6 +285,18 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       // Z.ai ignores thinking.disabled → must use enable_thinking:false to turn off.
       if (none && canDisable) { body.enable_thinking = false; delete body.thinking; break; }
       body.thinking = { type: "enabled" };
+      // reasoning_effort is only read by z.ai from GLM-5.2 onward — older GLM ignores it
+      // (see thinkingEffortSupported in capabilities.js). Skip on unsupported models so we
+      // don't send a field the API doesn't recognize.
+      if (caps.thinkingEffortSupported) {
+        const zaiLvl = toLevel(eff);
+        // GLM-5.3 only accepts exactly low|high|max (anything else errors); GLM-5.2 accepts
+        // a wider set but z.ai maps low/medium->high and xhigh->max server-side anyway, so
+        // this 3-value mapping matches both.
+        body.reasoning_effort = (zaiLvl === "low" || zaiLvl === "minimal") ? "low"
+          : (zaiLvl === "high" || zaiLvl === "medium") ? "high"
+          : "max";
+      }
       break;
     }
     case "qwen": {

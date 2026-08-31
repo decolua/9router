@@ -20,8 +20,7 @@ export default {
     noAuth: true,
   },
   models: [
-    // Exception to the dynamic catalog: Muse Spark 1.2 Contributor Free is
-    // Responses-only on https://opencode.ai/zen/v1/responses (@ai-sdk/openai).
+    // Only Muse Spark is served by /zen/v1/responses; Ox Alpha stays on Chat.
     { id: "muse-spark-1.2-contributor-free", name: "Muse Spark 1.2 Contributor Free", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
     { id: "x-preview-f-free", name: "Ox Alpha Free", targetFormat: "openai", supportedFormats: ["openai"] },
   ],

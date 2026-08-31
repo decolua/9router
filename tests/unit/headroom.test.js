@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
+
+const nativeFetch = global.fetch;
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog } from "../../open-sse/rtk/headroom.js";
 import { parseHeadroomTimeoutMs } from "../../src/lib/headroom/detect.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  global.fetch = nativeFetch;
   delete process.env.HEADROOM_API_KEY;
   delete process.env.HEADROOM_PROXY_TOKEN;
 });
@@ -702,6 +705,101 @@ describe("compressWithHeadroom", () => {
 
     expect(stats).toBeNull();
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  describe("timeout normalization", () => {
+    const mockResponse = JSON.stringify({
+      messages: [{ role: "user", content: "short" }],
+      tokens_before: 100,
+      tokens_after: 20,
+      tokens_saved: 80,
+    });
+
+    function makeSuccessfulFetch() {
+      global.fetch = vi.fn(async () =>
+        new Response(mockResponse, { status: 200 })
+      );
+    }
+
+    function captureTimeoutCalls() {
+      const calls = [];
+      vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+        calls.push(ms);
+        const controller = new AbortController();
+        return controller.signal;
+      });
+      return calls;
+    }
+
+    it("passes a valid positive timeout to AbortSignal.timeout", async () => {
+      makeSuccessfulFetch();
+      const calls = captureTimeoutCalls();
+      const body = { messages: [{ role: "user", content: "hello" }] };
+
+      await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787", timeoutMs: 5000 });
+
+      expect(calls).toContain(5000);
+    });
+
+    it("falls back to the default timeout when timeoutMs is null", async () => {
+      makeSuccessfulFetch();
+      const calls = captureTimeoutCalls();
+      const body = { messages: [{ role: "user", content: "hello" }] };
+
+      await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787", timeoutMs: null });
+
+      expect(calls).toContain(3000);
+    });
+
+    it("falls back to the default timeout when timeoutMs is 0", async () => {
+      makeSuccessfulFetch();
+      const calls = captureTimeoutCalls();
+      const body = { messages: [{ role: "user", content: "hello" }] };
+
+      await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787", timeoutMs: 0 });
+
+      expect(calls).toContain(3000);
+    });
+
+    it("falls back to the default timeout when timeoutMs is negative", async () => {
+      makeSuccessfulFetch();
+      const calls = captureTimeoutCalls();
+      const body = { messages: [{ role: "user", content: "hello" }] };
+
+      await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787", timeoutMs: -100 });
+
+      expect(calls).toContain(3000);
+    });
+
+    it("falls back to the default timeout when timeoutMs is NaN", async () => {
+      makeSuccessfulFetch();
+      const calls = captureTimeoutCalls();
+      const body = { messages: [{ role: "user", content: "hello" }] };
+
+      await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787", timeoutMs: NaN });
+
+      expect(calls).toContain(3000);
+    });
+
+    it("falls back to the default timeout when timeoutMs is Infinity", async () => {
+      makeSuccessfulFetch();
+      const calls = captureTimeoutCalls();
+      const body = { messages: [{ role: "user", content: "hello" }] };
+
+      await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787", timeoutMs: Infinity });
+
+      expect(calls).toContain(3000);
+    });
+
+    it("falls back to the default timeout when timeoutMs is a string", async () => {
+      makeSuccessfulFetch();
+      const calls = captureTimeoutCalls();
+      const body = { messages: [{ role: "user", content: "hello" }] };
+
+      await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787", timeoutMs: "5000" });
+
+      expect(calls).toContain(3000);
+    });
   });
 });
 

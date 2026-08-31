@@ -379,8 +379,17 @@ export function parseQuotaData(provider, data) {
       case "codex":
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([quotaType, quota]) => {
+            let displayName = quotaType;
+            if (quotaType === "spark_session") displayName = "Spark (5h)";
+            else if (quotaType === "spark_weekly") displayName = "Spark (Weekly)";
+            else if (quotaType === "session") displayName = "5h";
+            else if (quotaType === "weekly") displayName = "Weekly";
+            else if (quotaType === "review_session") displayName = "Review (5h)";
+            else if (quotaType === "review_weekly") displayName = "Review (Weekly)";
+
             normalizedQuotas.push({
-              name: quotaType,
+              name: displayName,
+              quotaType,
               used: quota.used || 0,
               total: quota.total || 0,
               remaining: quota.remaining,
@@ -549,6 +558,22 @@ export function parseQuotaData(provider, data) {
               total: quota.total || 0,
               resetAt: quota.resetAt || null,
               remainingPercentage: quota.remainingPercentage,
+            });
+          });
+        }
+        break;
+
+      case "zed":
+        // Edit predictions + optional hosted model_requests; unlimited uses remainingPercentage.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+              unlimited: quota.unlimited,
             });
           });
         }
