@@ -3,8 +3,10 @@
  */
 import React from 'react';
 import { test, expect, describe, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import PlaygroundStudio from '../../../src/app/(dashboard)/dashboard/playground/PlaygroundStudio.jsx';
+import StudioConfigPane from '../../../src/app/(dashboard)/dashboard/playground/components/StudioConfigPane.jsx';
+import CompareWorkspace from '../../../src/app/(dashboard)/dashboard/playground/components/tabs/CompareWorkspace.jsx';
 import * as modelCatalog from '../../../src/app/(dashboard)/dashboard/playground/lib/modelCatalog.js';
 import { PLAYGROUND_PERSISTENCE_KEYS } from '../../../src/app/(dashboard)/dashboard/playground/lib/persistence.js';
 
@@ -13,6 +15,67 @@ vi.mock('../../../src/app/(dashboard)/dashboard/playground/lib/modelCatalog.js',
   normalizeModelCatalog: vi.fn()
 }));
 
+const providerFilterModels = [
+  { id: 'wrongprefix/first', label: 'First', provider: { id: 'alpha', name: 'Zulu', connectionId: 'a-2' } },
+  { id: 'alpha/second', label: 'Second', provider: { id: 'alpha', name: 'Alpha', connectionId: 'a-1' } },
+  { id: 'beta/third', label: 'Third', provider: { id: 'beta', name: 'Shared', connectionId: 'b-1' } },
+  { id: 'gamma/fourth', label: 'Fourth', provider: { id: 'gamma', name: 'Shared', connectionId: 'g-1' } },
+  { id: 'delta/fifth', label: 'Fifth', provider: { id: ' delta ', name: '   ', connectionId: 'd-1' } },
+  { id: 'missing/sixth', label: 'Missing', provider: { name: 'Missing ID', connectionId: 'm-1' } },
+  { id: 'blank/seventh', label: 'Blank', provider: { id: '   ', name: 'Blank ID', connectionId: 'z-1' } },
+  { id: 'numeric/eighth', label: 'Numeric', provider: { id: 8, name: 'Numeric ID', connectionId: 'n-1' } },
+];
+
+function renderCompareWorkspace({ models = providerFilterModels, onResult = vi.fn() } = {}) {
+  return render(React.createElement(CompareWorkspace, {
+    configState: { systemPrompt: '', params: { temperature: 0.7, max_tokens: 2000 } },
+    availableModels: models,
+    onResult,
+    draft: '',
+    onDraftChange: vi.fn(),
+  }));
+}
+
+function successfulCompareResponse(text = 'Done') {
+  const encoder = new TextEncoder();
+  return {
+    ok: true,
+    status: 200,
+    body: {
+      getReader: () => ({
+        read: vi.fn()
+          .mockResolvedValueOnce({ done: false, value: encoder.encode(`data: {"choices":[{"delta":{"content":"${text}"}}]}\n\ndata: [DONE]\n\n`) })
+          .mockResolvedValueOnce({ done: true, value: undefined }),
+        cancel: vi.fn().mockResolvedValue(undefined),
+      }),
+    },
+  };
+}
+
+function renderConfigPane({ models = providerFilterModels, config = {}, loading = false, error = null } = {}) {
+  function Harness() {
+    const [currentConfig, setCurrentConfig] = React.useState({
+      systemPrompt: '',
+      temperature: 0.7,
+      maxTokens: 2000,
+      model: null,
+      ...config,
+    });
+    return React.createElement(React.Fragment, null,
+      React.createElement(StudioConfigPane, {
+        config: currentConfig,
+        onChange: setCurrentConfig,
+        models,
+        loading,
+        error,
+      }),
+      React.createElement('output', { 'data-testid': 'config-state' }, JSON.stringify(currentConfig))
+    );
+  }
+
+  return render(React.createElement(Harness));
+}
+
 describe('PlaygroundStudio Shell', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -20,6 +83,7 @@ describe('PlaygroundStudio Shell', () => {
   });
 
   afterEach(() => {
+    cleanup();
     vi.restoreAllMocks();
   });
 
@@ -99,12 +163,14 @@ describe('PlaygroundStudio Shell', () => {
 
     const { unmount } = render(React.createElement(PlaygroundStudio));
     expect(screen.getByRole('status', { name: 'Loading models...' })).toBeDefined();
+    expect(screen.queryByTestId('chat-provider-filter')).toBeNull();
 
     resolvePromise({ models: [] });
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeDefined();
     });
     expect(screen.getByText(/No models available/)).toBeDefined();
+    expect(screen.queryByTestId('chat-provider-filter')).toBeNull();
 
     unmount();
 
@@ -115,6 +181,7 @@ describe('PlaygroundStudio Shell', () => {
       expect(screen.getByRole('alert')).toBeDefined();
     });
     expect(screen.getByText('Network error')).toBeDefined();
+    expect(screen.queryByTestId('chat-provider-filter')).toBeNull();
   });
 
   test('hydrates persisted namespaces before saving and keeps restored values intact', async () => {
@@ -200,9 +267,198 @@ describe('PlaygroundStudio Shell', () => {
       expect(inspector).toContain('5');
     });
 
+    const submittedBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(submittedBody.model).toBe('safe/model');
+
     const storage = Object.values(PLAYGROUND_PERSISTENCE_KEYS).map((key) => localStorage.getItem(key)).join('');
     expect(screen.getByTestId('playground-inspector').textContent).not.toContain('sk-secret-value');
     expect(storage).not.toContain('sk-secret-value');
+  });
+
+  test('exposes the loaded catalog with full model IDs in the Chat selector', async () => {
+    const connectedModels = [
+      {
+        id: 'wrongprefix/first',
+        label: 'First',
+        provider: { id: 'alpha', name: 'Alpha', connectionId: 'connection-a' },
+        available: true,
+        capabilities: {},
+      },
+      {
+        id: 'beta/second',
+        label: 'Second',
+        provider: { id: 'beta', name: 'Beta', connectionId: 'connection-b' },
+        available: true,
+        capabilities: {},
+      },
+    ];
+    modelCatalog.fetchModelCatalog.mockResolvedValue({ models: connectedModels });
+
+    render(React.createElement(PlaygroundStudio));
+
+    await waitFor(() => {
+      const selector = screen.getByLabelText('Select Model');
+      expect(Array.from(selector.options, (option) => option.value)).toEqual([
+        '',
+        'wrongprefix/first',
+        'beta/second',
+      ]);
+    });
+  });
+
+  test('derives stable canonical Chat provider options and filters only by provider ID identity', () => {
+    const { unmount } = renderConfigPane();
+    const providerFilter = screen.getByTestId('chat-provider-filter');
+
+    expect(providerFilter.tagName).toBe('SELECT');
+    expect(providerFilter.getAttribute('aria-label')).toBe('Filter models by provider');
+    expect(providerFilterModels[0]).toMatchObject({
+      id: 'wrongprefix/first',
+      provider: { id: 'alpha', name: 'Zulu', connectionId: 'a-2' },
+    });
+    expect(providerFilterModels[1]).toMatchObject({
+      id: 'alpha/second',
+      provider: { id: 'alpha', name: 'Alpha', connectionId: 'a-1' },
+    });
+    expect(Array.from(providerFilter.options, (option) => [option.value, option.textContent])).toEqual([
+      ['', 'All providers'],
+      ['alpha', 'Alpha'],
+      ['beta', 'Shared'],
+      ['gamma', 'Shared'],
+      ['delta', 'delta'],
+    ]);
+
+    fireEvent.change(providerFilter, { target: { value: 'alpha' } });
+    const modelSelect = screen.getByRole('combobox', { name: 'Select Model' });
+    expect(modelSelect.tagName).toBe('SELECT');
+    expect(modelSelect).not.toBe(providerFilter);
+    expect(Array.from(modelSelect.options, (option) => option.value)).toEqual([
+      '',
+      'wrongprefix/first',
+      'alpha/second',
+    ]);
+
+    unmount();
+    const reversed = renderConfigPane({ models: [...providerFilterModels].reverse() });
+    expect(Array.from(screen.getByTestId('chat-provider-filter').options, (option) => [option.value, option.textContent])).toEqual([
+      ['', 'All providers'],
+      ['alpha', 'Alpha'],
+      ['beta', 'Shared'],
+      ['gamma', 'Shared'],
+      ['delta', 'delta'],
+    ]);
+    reversed.unmount();
+  });
+
+  test('clears an incompatible Chat model with an explicit model-null configuration transition', () => {
+    const { unmount } = renderConfigPane({ config: { model: providerFilterModels[0] } });
+    const providerFilter = screen.getByTestId('chat-provider-filter');
+    const modelSelect = screen.getByLabelText('Select Model');
+
+    fireEvent.change(providerFilter, { target: { value: 'alpha' } });
+    expect(modelSelect.value).toBe('wrongprefix/first');
+    fireEvent.change(providerFilter, { target: { value: '' } });
+    expect(modelSelect.value).toBe('wrongprefix/first');
+    fireEvent.change(providerFilter, { target: { value: 'beta' } });
+    expect(modelSelect.value).toBe('');
+    expect(JSON.parse(screen.getByTestId('config-state').textContent).model).toBeNull();
+
+    unmount();
+    const catalogAbsent = renderConfigPane({ config: { model: { id: 'historic/model', label: 'Historic' } } });
+    expect(JSON.parse(screen.getByTestId('config-state').textContent).model).toEqual({
+      id: 'historic/model',
+      label: 'Historic',
+    });
+    expect(screen.getByLabelText('Select Model').value).toBe('');
+    fireEvent.change(screen.getByTestId('chat-provider-filter'), { target: { value: 'alpha' } });
+    expect(screen.getByLabelText('Select Model').value).toBe('');
+    expect(JSON.parse(screen.getByTestId('config-state').textContent).model).toBeNull();
+
+    catalogAbsent.unmount();
+    const catalogPresent = renderConfigPane({ config: { model: { id: 'wrongprefix/first', label: 'Historic without provider' } } });
+    fireEvent.change(screen.getByTestId('chat-provider-filter'), { target: { value: 'alpha' } });
+    expect(screen.getByLabelText('Select Model').value).toBe('wrongprefix/first');
+    expect(JSON.parse(screen.getByTestId('config-state').textContent).model).toEqual({
+      id: 'wrongprefix/first',
+      label: 'Historic without provider',
+    });
+    catalogPresent.unmount();
+  });
+
+  test('prevents a cleared hidden Chat model from submission and keeps the provider filter ephemeral', async () => {
+    modelCatalog.fetchModelCatalog.mockResolvedValue({ models: providerFilterModels });
+    global.fetch = vi.fn();
+
+    render(React.createElement(PlaygroundStudio));
+    await waitFor(() => expect(screen.getByTestId('chat-provider-filter')).toBeDefined());
+
+    fireEvent.change(screen.getByLabelText('Select Model'), { target: { value: 'wrongprefix/first' } });
+    await waitFor(() => {
+      const persisted = JSON.parse(localStorage.getItem(PLAYGROUND_PERSISTENCE_KEYS.presetsConfig));
+      expect(persisted.value.config.model.id).toBe('wrongprefix/first');
+      expect(persisted.value.config).not.toHaveProperty('providerId');
+      expect(persisted.value.config).not.toHaveProperty('providerFilter');
+    });
+
+    fireEvent.change(screen.getByTestId('chat-provider-filter'), { target: { value: 'beta' } });
+    await waitFor(() => {
+      const persisted = JSON.parse(localStorage.getItem(PLAYGROUND_PERSISTENCE_KEYS.presetsConfig));
+      expect(persisted.value.config.model).toBeNull();
+      expect(persisted.value.config).not.toHaveProperty('providerId');
+      expect(persisted.value.config).not.toHaveProperty('providerFilter');
+    });
+
+    fireEvent.change(screen.getByPlaceholderText('Send a message...'), { target: { value: 'Do not send stale Alpha' } });
+    fireEvent.click(screen.getByTestId('playground-send'));
+
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test('does not clear the selected Chat model solely when catalog state becomes loading or errored', () => {
+    const onChange = vi.fn();
+    const config = {
+      systemPrompt: '',
+      temperature: 0.7,
+      maxTokens: 2000,
+      model: providerFilterModels[0],
+    };
+    const { rerender } = render(React.createElement(StudioConfigPane, {
+      config,
+      onChange,
+      models: providerFilterModels,
+      loading: false,
+      error: null,
+    }));
+
+    rerender(React.createElement(StudioConfigPane, {
+      config,
+      onChange,
+      models: [],
+      loading: true,
+      error: null,
+    }));
+    rerender(React.createElement(StudioConfigPane, {
+      config,
+      onChange,
+      models: [],
+      loading: false,
+      error: 'Network error',
+    }));
+
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  test('does not render the Chat provider filter while loading, errored, or globally empty', () => {
+    const { unmount } = renderConfigPane({ loading: true });
+    expect(screen.queryByTestId('chat-provider-filter')).toBeNull();
+
+    unmount();
+    renderConfigPane({ error: 'Network error' });
+    expect(screen.queryByTestId('chat-provider-filter')).toBeNull();
+
+    unmount();
+    renderConfigPane({ models: [] });
+    expect(screen.queryByTestId('chat-provider-filter')).toBeNull();
   });
 
   test('exposes the connected catalog to separate Compare selectors before a global model is selected', async () => {
@@ -228,9 +484,10 @@ describe('PlaygroundStudio Shell', () => {
     fireEvent.click(screen.getByTestId('playground-compare-tab'));
 
     await waitFor(() => {
-      const selectors = screen.getAllByRole('combobox');
-      expect(selectors).toHaveLength(3);
-      for (const selector of selectors.slice(1)) {
+      for (const selector of [
+        screen.getByTestId('model-select-col-default-a'),
+        screen.getByTestId('model-select-col-default-b'),
+      ]) {
         expect(Array.from(selector.options, (option) => option.value)).toEqual([
           '',
           'alpha/first',
@@ -239,12 +496,165 @@ describe('PlaygroundStudio Shell', () => {
       }
     });
 
-    const [, firstColumn, secondColumn] = screen.getAllByRole('combobox');
+    const firstColumn = screen.getByTestId('model-select-col-default-a');
+    const secondColumn = screen.getByTestId('model-select-col-default-b');
     fireEvent.change(firstColumn, { target: { value: 'alpha/first' } });
     fireEvent.change(secondColumn, { target: { value: 'beta/second' } });
 
     expect(firstColumn.value).toBe('alpha/first');
     expect(secondColumn.value).toBe('beta/second');
+  });
+
+  test('preserves independent Compare full model selections and request bodies', async () => {
+    global.fetch = vi.fn().mockImplementation(() => Promise.resolve(successfulCompareResponse()));
+    const onResult = vi.fn();
+    renderCompareWorkspace({ onResult });
+
+    const firstModel = screen.getByTestId('model-select-col-default-a');
+    const secondModel = screen.getByTestId('model-select-col-default-b');
+    fireEvent.change(firstModel, { target: { value: 'wrongprefix/first' } });
+    fireEvent.change(secondModel, { target: { value: 'beta/third' } });
+    fireEvent.change(screen.getByTestId('compare-input'), { target: { value: 'Compare both' } });
+    fireEvent.click(screen.getByTestId('compare-send'));
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(2));
+    const requestBodies = global.fetch.mock.calls.map(([, request]) => JSON.parse(request.body));
+    expect(requestBodies.map((body) => body.model)).toEqual([
+      'wrongprefix/first',
+      'beta/third',
+    ]);
+    for (const body of requestBodies) {
+      expect(body).not.toHaveProperty('providerId');
+      expect(body).not.toHaveProperty('providerFilter');
+    }
+    await waitFor(() => expect(onResult).toHaveBeenCalledTimes(2));
+  });
+
+  test('filters Compare columns independently by provider ID and keeps reversed provider ordering stable', () => {
+    const mounted = renderCompareWorkspace();
+    const firstFilter = screen.getByTestId('provider-filter-col-default-a');
+    const secondFilter = screen.getByTestId('provider-filter-col-default-b');
+    const firstModel = screen.getByTestId('model-select-col-default-a');
+    const secondModel = screen.getByTestId('model-select-col-default-b');
+
+    expect(firstFilter.tagName).toBe('SELECT');
+    expect(secondFilter.tagName).toBe('SELECT');
+    expect(firstModel.tagName).toBe('SELECT');
+    expect(secondModel.tagName).toBe('SELECT');
+    expect(firstFilter.getAttribute('aria-label')).toBe('Filter models by provider for column 1');
+    expect(secondFilter.getAttribute('aria-label')).toBe('Filter models by provider for column 2');
+    expect(firstModel.getAttribute('aria-label')).toBe('Select model for column 1');
+    expect(secondModel.getAttribute('aria-label')).toBe('Select model for column 2');
+    expect(new Set([firstFilter, secondFilter, firstModel, secondModel]).size).toBe(4);
+    expect(screen.getByRole('combobox', { name: 'Filter models by provider for column 1' })).toBe(firstFilter);
+    expect(screen.getByRole('combobox', { name: 'Filter models by provider for column 2' })).toBe(secondFilter);
+    expect(screen.getByRole('combobox', { name: 'Select model for column 1' })).toBe(firstModel);
+    expect(screen.getByRole('combobox', { name: 'Select model for column 2' })).toBe(secondModel);
+    expect(Array.from(firstFilter.options, (option) => [option.value, option.textContent])).toEqual([
+      ['', 'All providers'],
+      ['alpha', 'Alpha'],
+      ['beta', 'Shared'],
+      ['gamma', 'Shared'],
+      ['delta', 'delta'],
+    ]);
+
+    fireEvent.change(firstFilter, { target: { value: 'alpha' } });
+    fireEvent.change(secondFilter, { target: { value: 'beta' } });
+    expect(Array.from(firstModel.options, (option) => option.value)).toEqual(['', 'wrongprefix/first', 'alpha/second']);
+    expect(Array.from(secondModel.options, (option) => option.value)).toEqual(['', 'beta/third']);
+
+    fireEvent.change(firstModel, { target: { value: 'wrongprefix/first' } });
+    fireEvent.change(secondModel, { target: { value: 'beta/third' } });
+    fireEvent.change(firstFilter, { target: { value: 'beta' } });
+
+    expect(firstModel.value).toBe('');
+    expect(secondModel.value).toBe('beta/third');
+    expect(secondFilter.value).toBe('beta');
+
+    mounted.unmount();
+    renderCompareWorkspace({ models: [...providerFilterModels].reverse() });
+    expect(Array.from(screen.getByTestId('provider-filter-col-default-a').options, (option) => [option.value, option.textContent])).toEqual([
+      ['', 'All providers'],
+      ['alpha', 'Alpha'],
+      ['beta', 'Shared'],
+      ['gamma', 'Shared'],
+      ['delta', 'delta'],
+    ]);
+  });
+
+  test('keeps Chat and Compare filters ephemeral across tab switches and resets them on remount without losing the persisted Chat model', async () => {
+    modelCatalog.fetchModelCatalog.mockResolvedValue({ models: providerFilterModels });
+    const mounted = render(React.createElement(PlaygroundStudio));
+    await waitFor(() => expect(screen.getByTestId('chat-provider-filter')).toBeDefined());
+
+    fireEvent.change(screen.getByLabelText('Select Model'), { target: { value: 'wrongprefix/first' } });
+    fireEvent.change(screen.getByTestId('chat-provider-filter'), { target: { value: 'alpha' } });
+    await waitFor(() => {
+      const persisted = JSON.parse(localStorage.getItem(PLAYGROUND_PERSISTENCE_KEYS.presetsConfig));
+      expect(persisted.value.config.model.id).toBe('wrongprefix/first');
+      expect(persisted.value.config).not.toHaveProperty('providerId');
+      expect(persisted.value.config).not.toHaveProperty('providerFilter');
+    });
+
+    fireEvent.click(screen.getByTestId('playground-compare-tab'));
+    fireEvent.change(screen.getByTestId('provider-filter-col-default-a'), { target: { value: 'alpha' } });
+    fireEvent.click(screen.getByTestId('playground-chat-tab'));
+    expect(screen.getByTestId('chat-provider-filter').value).toBe('alpha');
+    expect(screen.getByLabelText('Select Model').value).toBe('wrongprefix/first');
+    fireEvent.click(screen.getByTestId('playground-compare-tab'));
+    expect(screen.getByTestId('provider-filter-col-default-a').value).toBe('alpha');
+
+    expect(screen.getAllByRole('button', { name: 'Remove column' })).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Add model column' }));
+    const filtersAfterAdd = screen.getAllByLabelText(/Filter models by provider for column/);
+    expect(filtersAfterAdd).toHaveLength(3);
+    expect(filtersAfterAdd[2].value).toBe('');
+    expect(screen.getAllByRole('button', { name: 'Remove column' })).toHaveLength(3);
+    fireEvent.change(filtersAfterAdd[2], { target: { value: 'beta' } });
+    const thirdColumn = filtersAfterAdd[2].closest('[data-testid^="compare-col-"]');
+    expect(thirdColumn.querySelector('[title="Remove column"]')).toBe(screen.getAllByRole('button', { name: 'Remove column' })[2]);
+    fireEvent.click(screen.getAllByRole('button', { name: 'Remove column' })[2]);
+    expect(screen.getAllByLabelText(/Filter models by provider for column/)).toHaveLength(2);
+    expect(screen.getAllByRole('button', { name: 'Remove column' })).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Add model column' }));
+    expect(screen.getAllByLabelText(/Filter models by provider for column/)[2].value).toBe('');
+    expect(screen.getAllByRole('button', { name: 'Remove column' })).toHaveLength(3);
+
+    mounted.unmount();
+    render(React.createElement(PlaygroundStudio));
+    await waitFor(() => {
+      expect(screen.getByTestId('chat-provider-filter').value).toBe('');
+      expect(screen.getByLabelText('Select Model').value).toBe('wrongprefix/first');
+      expect(screen.getByTestId('provider-filter-col-default-a').value).toBe('');
+    });
+    const persistedAfterRemount = JSON.parse(localStorage.getItem(PLAYGROUND_PERSISTENCE_KEYS.presetsConfig));
+    expect(persistedAfterRemount.value.config.model.id).toBe('wrongprefix/first');
+    expect(persistedAfterRemount.value.config).not.toHaveProperty('providerId');
+    expect(persistedAfterRemount.value.config).not.toHaveProperty('providerFilter');
+  });
+
+  test('keeps an in-flight Compare request bound to its captured full model after filtering', async () => {
+    let resolveFetch;
+    const responsePromise = new Promise((resolve) => { resolveFetch = resolve; });
+    global.fetch = vi.fn().mockReturnValue(responsePromise);
+    const onResult = vi.fn();
+    renderCompareWorkspace({ onResult });
+
+    fireEvent.change(screen.getByTestId('model-select-col-default-a'), { target: { value: 'wrongprefix/first' } });
+    fireEvent.change(screen.getByTestId('compare-input'), { target: { value: 'Keep captured model' } });
+    fireEvent.click(screen.getByTestId('compare-send'));
+    expect(JSON.parse(global.fetch.mock.calls[0][1].body).model).toBe('wrongprefix/first');
+
+    fireEvent.change(screen.getByTestId('provider-filter-col-default-a'), { target: { value: 'beta' } });
+    expect(screen.getByTestId('model-select-col-default-a').value).toBe('');
+    resolveFetch(successfulCompareResponse('Original Alpha output'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('compare-col-col-default-a').textContent).toContain('Original Alpha output');
+      expect(screen.getByTestId('state-col-default-a').textContent).toBe('COMPLETE');
+    });
+    expect(screen.getByTestId('compare-col-col-default-b').textContent).not.toContain('Original Alpha output');
+    expect(onResult.mock.calls[0][0].request.model).toBe('wrongprefix/first');
   });
 
   test('desktop and mobile structural responsive classes', async () => {

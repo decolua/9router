@@ -1,6 +1,7 @@
 # v0.5.59 (2026-08-29)
 
 ## Features
+- **Testing Studio**: filter Chat models by provider type and filter each Compare column independently; filter choices are temporary while selected-model persistence stays unchanged
 - **Search**: new web search providers — Antigravity (Google Search grounding
   on the existing OAuth account pool, citations keyed and merged by URL) and
   Xquik (X search with `x-api-key` auth, cursor pagination, credit-based

@@ -6,6 +6,36 @@ import { sanitizePlaygroundData } from "../../lib/sanitize";
 
 const DEFAULT_COLUMN_IDS = ["col-default-a", "col-default-b"]; // fixed, deterministic, no randomness at initial render
 
+function canonicalProviderId(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function compareText(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function buildProviderOptions(models) {
+  const providerNames = new Map();
+
+  for (const model of models) {
+    const id = canonicalProviderId(model.provider?.id);
+    if (!id) continue;
+    const name = typeof model.provider?.name === "string" ? model.provider.name.trim() : "";
+    const names = providerNames.get(id) || [];
+    if (name) names.push(name);
+    providerNames.set(id, names);
+  }
+
+  return Array.from(providerNames, ([id, names]) => ({
+    id,
+    label: names.sort(compareText)[0] || id,
+  })).sort((left, right) => compareText(left.label, right.label) || compareText(left.id, right.id));
+}
+
+function createColumn(id) {
+  return { id, providerId: "", model: null, output: "", state: "idle", metrics: null, error: null };
+}
+
 function generateColumnId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -19,9 +49,10 @@ export default function CompareWorkspace({ configState, availableModels = [], on
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState(draft || "");
   const [columns, setColumns] = useState([
-    { id: DEFAULT_COLUMN_IDS[0], model: null, output: "", state: "idle", metrics: null, error: null },
-    { id: DEFAULT_COLUMN_IDS[1], model: null, output: "", state: "idle", metrics: null, error: null }
+    createColumn(DEFAULT_COLUMN_IDS[0]),
+    createColumn(DEFAULT_COLUMN_IDS[1]),
   ]);
+  const providerOptions = buildProviderOptions(availableModels);
   
   const abortControllersRef = useRef({});
   const rafRefs = useRef({});
@@ -68,16 +99,24 @@ export default function CompareWorkspace({ configState, availableModels = [], on
     ));
   };
 
+  const setColumnProvider = (colId, providerId) => {
+    setColumns(prev => prev.map(col => {
+      if (col.id !== colId) return col;
+      if (!providerId || !col.model) return { ...col, providerId };
+
+      const catalogModel = availableModels.find(model => model.id === col.model.id);
+      const selectedProviderId = canonicalProviderId(catalogModel?.provider?.id ?? col.model.provider?.id);
+      return {
+        ...col,
+        providerId,
+        model: selectedProviderId === providerId ? col.model : null,
+      };
+    }));
+  };
+
   const addColumn = () => {
     if (columns.length >= 4) return;
-    setColumns(prev => [...prev, { 
-      id: generateColumnId(), 
-      model: null, 
-      output: "", 
-      state: "idle", 
-      metrics: null, 
-      error: null 
-    }]);
+    setColumns(prev => [...prev, createColumn(generateColumnId())]);
   };
 
   const removeColumn = (colId) => {
@@ -350,29 +389,48 @@ export default function CompareWorkspace({ configState, availableModels = [], on
 
       {/* Compare Columns */}
       <div className="flex-1 overflow-x-auto p-4 flex gap-4">
-         {columns.map(col => (
+         {columns.map((col, columnIndex) => {
+             const filteredModels = col.providerId
+               ? availableModels.filter(model => canonicalProviderId(model.provider?.id) === col.providerId)
+               : availableModels;
+
+             return (
              <div key={col.id} className="flex-1 min-w-[300px] max-w-[500px] flex flex-col border border-border rounded-lg bg-surface overflow-hidden" data-testid={`compare-col-${col.id}`}>
                 
                 {/* Column Header */}
-                <div className="p-3 border-b border-border bg-bg-alt flex items-center justify-between">
-                    <select 
-                       className="bg-surface border border-border rounded p-1 text-sm flex-1 mr-2"
-                       value={col.model?.id || ""}
-                       aria-label={`Select model for column ${columns.indexOf(col) + 1}`}
-                       title={col.model?.label || "Select a model..."}
-                       onChange={(e) => {
-                           const model = availableModels.find(m => m.id === e.target.value);
-                           setColumnModel(col.id, model || null);
-                       }}
-                       data-testid={`model-select-${col.id}`}
-                    >
-                        <option value="">Select a model...</option>
-                        {availableModels.map(m => (
-                            <option key={m.id} value={m.id}>{m.label}</option>
-                        ))}
-                    </select>
+                <div className="p-3 border-b border-border bg-bg-alt flex items-start justify-between">
+                    <div className="flex-1 mr-2 space-y-2">
+                        <select
+                           className="bg-surface border border-border rounded p-1 text-sm w-full"
+                           value={col.providerId}
+                           aria-label={`Filter models by provider for column ${columnIndex + 1}`}
+                           onChange={(event) => setColumnProvider(col.id, event.target.value)}
+                           data-testid={`provider-filter-${col.id}`}
+                        >
+                            <option value="">All providers</option>
+                            {providerOptions.map(provider => (
+                                <option key={provider.id} value={provider.id}>{provider.label}</option>
+                            ))}
+                        </select>
+                        <select
+                           className="bg-surface border border-border rounded p-1 text-sm w-full"
+                           value={col.model?.id || ""}
+                           aria-label={`Select model for column ${columnIndex + 1}`}
+                           title={col.model?.label || "Select a model..."}
+                           onChange={(e) => {
+                               const model = availableModels.find(m => m.id === e.target.value);
+                               setColumnModel(col.id, model || null);
+                           }}
+                           data-testid={`model-select-${col.id}`}
+                        >
+                            <option value="">Select a model...</option>
+                            {filteredModels.map(m => (
+                                <option key={m.id} value={m.id}>{m.label}</option>
+                            ))}
+                        </select>
+                    </div>
                     {columns.length > 1 && (
-                        <button onClick={() => removeColumn(col.id)} className="text-text-muted hover:text-error shrink-0" title="Remove column">×</button>
+                        <button onClick={() => removeColumn(col.id)} className="text-text-muted hover:text-error shrink-0" title="Remove column" aria-label="Remove column">×</button>
                     )}
                 </div>
 
@@ -415,14 +473,16 @@ export default function CompareWorkspace({ configState, availableModels = [], on
                     )}
                 </div>
              </div>
-         ))}
+             );
+         })}
          
          {columns.length < 4 && (
              <button 
                 onClick={addColumn}
                 className="w-12 border border-dashed border-border rounded-lg flex items-center justify-center text-text-muted hover:bg-surface hover:text-text-main transition-colors shrink-0"
                 title="Add model column"
-             >
+                 aria-label="Add model column"
+              >
                 +
              </button>
          )}

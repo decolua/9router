@@ -59,7 +59,7 @@ describe("CompareWorkspace", () => {
         />
       );
 
-      const selects = screen.getAllByRole("combobox");
+      const selects = screen.getAllByRole("combobox", { name: /Select model for column/ });
       expect(selects.length).toBe(2);
       expect(selects[0].getAttribute("aria-label")).toBe("Select model for column 1");
       expect(selects[1].getAttribute("aria-label")).toBe("Select model for column 2");
@@ -80,7 +80,7 @@ describe("CompareWorkspace", () => {
         />
       );
 
-      const select = screen.getAllByRole("combobox")[0];
+      const select = screen.getAllByRole("combobox", { name: /Select model for column/ })[0];
       fireEvent.change(select, { target: { value: "model-a" } });
       
       expect(select.getAttribute("title")).toBe(longLabel);
@@ -107,7 +107,7 @@ describe("CompareWorkspace", () => {
     render(<CompareWorkspace configState={mockConfigState} availableModels={availableModels} />);
     
     expect(screen.getByTestId("playground-compare-workspace")).toBeTruthy();
-    expect(screen.getAllByRole("combobox").length).toBe(2);
+    expect(screen.getAllByRole("combobox", { name: /Select model for column/ }).length).toBe(2);
     expect(screen.getByTestId("compare-input")).toBeTruthy();
     expect(screen.getByTestId("compare-send").disabled).toBe(true); // No models selected
   });
@@ -115,20 +115,24 @@ describe("CompareWorkspace", () => {
   it("allows adding and removing columns up to 4", () => {
     render(<CompareWorkspace configState={mockConfigState} availableModels={availableModels} />);
     
-    expect(screen.getAllByRole("combobox").length).toBe(2);
+    expect(screen.getAllByRole("combobox", { name: /Select model for column/ }).length).toBe(2);
     
-    const addButton = screen.getByTitle("Add model column");
+    expect(screen.getAllByRole("button", { name: "Remove column" })).toHaveLength(2);
+    const addButton = screen.getByRole("button", { name: "Add model column" });
     fireEvent.click(addButton);
-    expect(screen.getAllByRole("combobox").length).toBe(3);
+    expect(screen.getAllByRole("combobox", { name: /Select model for column/ }).length).toBe(3);
+    expect(screen.getAllByRole("button", { name: "Remove column" })).toHaveLength(3);
     
     fireEvent.click(addButton);
-    expect(screen.getAllByRole("combobox").length).toBe(4);
+    expect(screen.getAllByRole("combobox", { name: /Select model for column/ }).length).toBe(4);
+    expect(screen.getAllByRole("button", { name: "Remove column" })).toHaveLength(4);
     
-    expect(screen.queryByTitle("Add model column")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add model column" })).toBeNull();
     
-    const removeButtons = screen.getAllByTitle("Remove column");
+    const removeButtons = screen.getAllByRole("button", { name: "Remove column" });
     fireEvent.click(removeButtons[0]);
-    expect(screen.getAllByRole("combobox").length).toBe(3);
+    expect(screen.getAllByRole("combobox", { name: /Select model for column/ }).length).toBe(3);
+    expect(screen.getAllByRole("button", { name: "Remove column" })).toHaveLength(3);
   });
 
   it("sends identical requests to selected models", async () => {
@@ -145,7 +149,7 @@ describe("CompareWorkspace", () => {
     render(<CompareWorkspace configState={mockConfigState} availableModels={availableModels} />);
     
     // Select models
-    const selects = screen.getAllByRole("combobox");
+    const selects = screen.getAllByRole("combobox", { name: /Select model for column/ });
     fireEvent.change(selects[0], { target: { value: "openai/gpt-4o" } });
     fireEvent.change(selects[1], { target: { value: "anthropic/claude-3" } });
     
@@ -194,7 +198,7 @@ describe("CompareWorkspace", () => {
     const onResult = vi.fn();
 
     render(<CompareWorkspace configState={mockConfigState} availableModels={availableModels} onResult={onResult} />);
-    const selects = screen.getAllByRole("combobox");
+    const selects = screen.getAllByRole("combobox", { name: /Select model for column/ });
     fireEvent.change(selects[0], { target: { value: "openai/gpt-4o" } });
     fireEvent.change(selects[1], { target: { value: "anthropic/claude-3" } });
     fireEvent.change(screen.getByTestId("compare-input"), { target: { value: "Inspect terminal states" } });
@@ -228,7 +232,7 @@ describe("CompareWorkspace", () => {
       .mockResolvedValueOnce({ ok: true, status: 200, body: { getReader: () => freshReader } });
 
     render(<CompareWorkspace configState={mockConfigState} availableModels={availableModels} />);
-    fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "openai/gpt-4o" } });
+    fireEvent.change(screen.getAllByRole("combobox", { name: /Select model for column/ })[0], { target: { value: "openai/gpt-4o" } });
     fireEvent.change(screen.getByTestId("compare-input"), { target: { value: "old run" } });
     fireEvent.click(screen.getByTestId("compare-send"));
     await act(async () => { await Promise.resolve(); });
@@ -261,7 +265,7 @@ describe("CompareWorkspace", () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, body: { getReader: () => reader } });
 
     render(<CompareWorkspace configState={mockConfigState} availableModels={availableModels} />);
-    fireEvent.change(screen.getAllByRole("combobox")[0], { target: { value: "openai/gpt-4o" } });
+    fireEvent.change(screen.getAllByRole("combobox", { name: /Select model for column/ })[0], { target: { value: "openai/gpt-4o" } });
     fireEvent.change(screen.getByTestId("compare-input"), { target: { value: "malformed run" } });
     fireEvent.click(screen.getByTestId("compare-send"));
 
@@ -306,10 +310,10 @@ describe("CompareWorkspace", () => {
     ];
 
     const { unmount } = render(<CompareWorkspace configState={mockConfigState} availableModels={availableModels4} />);
-    fireEvent.click(screen.getByTitle("Add model column")); // get to 3 columns
-    fireEvent.click(screen.getByTitle("Add model column")); // get to 4 columns
+    fireEvent.click(screen.getByRole("button", { name: "Add model column" })); // get to 3 columns
+    fireEvent.click(screen.getByRole("button", { name: "Add model column" })); // get to 4 columns
 
-    const selects = screen.getAllByRole("combobox");
+    const selects = screen.getAllByRole("combobox", { name: /Select model for column/ });
     fireEvent.change(selects[0], { target: { value: "openai/gpt-4o" } });
     fireEvent.change(selects[1], { target: { value: "anthropic/claude-3" } });
     fireEvent.change(selects[2], { target: { value: "google/gemini" } });

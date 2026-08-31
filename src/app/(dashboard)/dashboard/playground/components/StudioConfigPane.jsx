@@ -1,6 +1,39 @@
 "use client";
 
+import { useMemo, useState } from "react";
+
+function canonicalProviderId(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function compareText(left, right) {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function buildProviderOptions(models) {
+  const providerNames = new Map();
+
+  for (const model of models) {
+    const id = canonicalProviderId(model.provider?.id);
+    if (!id) continue;
+    const name = typeof model.provider?.name === "string" ? model.provider.name.trim() : "";
+    const names = providerNames.get(id) || [];
+    if (name) names.push(name);
+    providerNames.set(id, names);
+  }
+
+  return Array.from(providerNames, ([id, names]) => ({
+    id,
+    label: names.sort(compareText)[0] || id,
+  })).sort((left, right) => compareText(left.label, right.label) || compareText(left.id, right.id));
+}
+
 export default function StudioConfigPane({ config, onChange, models, loading, error }) {
+  const [providerId, setProviderId] = useState("");
+  const providerOptions = useMemo(() => buildProviderOptions(models), [models]);
+  const filteredModels = providerId
+    ? models.filter((model) => canonicalProviderId(model.provider?.id) === providerId)
+    : models;
   const handleChange = (key, value) => {
     onChange({ ...config, [key]: value });
   };
@@ -26,22 +59,46 @@ export default function StudioConfigPane({ config, onChange, models, loading, er
               No models available. Connect a provider first.
             </div>
           ) : (
-            <select
-              value={config.model?.id || ""}
-              onChange={(e) => {
-                const selected = models.find(m => m.id === e.target.value);
-                handleChange("model", selected || null);
-              }}
-              className="w-full h-9 px-3 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:border-primary/50 transition-colors text-text-main"
-              aria-label="Select Model"
-            >
-              <option value="">Select a model...</option>
-              {models.map(m => (
-                <option key={m.id} value={m.id}>
-                  {m.label || m.id} ({m.provider?.name || m.provider?.id || "Unknown"})
-                </option>
-              ))}
-            </select>
+            <>
+              <select
+                value={providerId}
+                onChange={(event) => {
+                  const nextProviderId = event.target.value;
+                  setProviderId(nextProviderId);
+                  if (!nextProviderId || !config.model) return;
+
+                  const catalogModel = models.find((model) => model.id === config.model.id);
+                  const selectedProviderId = canonicalProviderId(
+                    catalogModel?.provider?.id ?? config.model.provider?.id
+                  );
+                  if (selectedProviderId !== nextProviderId) handleChange("model", null);
+                }}
+                className="w-full h-9 px-3 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:border-primary/50 transition-colors text-text-main"
+                aria-label="Filter models by provider"
+                data-testid="chat-provider-filter"
+              >
+                <option value="">All providers</option>
+                {providerOptions.map((provider) => (
+                  <option key={provider.id} value={provider.id}>{provider.label}</option>
+                ))}
+              </select>
+              <select
+                value={config.model?.id || ""}
+                onChange={(e) => {
+                  const selected = models.find(m => m.id === e.target.value);
+                  handleChange("model", selected || null);
+                }}
+                className="w-full h-9 px-3 rounded-lg border border-border bg-surface text-sm focus:outline-none focus:border-primary/50 transition-colors text-text-main"
+                aria-label="Select Model"
+              >
+                <option value="">Select a model...</option>
+                {filteredModels.map(m => (
+                  <option key={m.id} value={m.id}>
+                    {m.label || m.id} ({m.provider?.name || m.provider?.id || "Unknown"})
+                  </option>
+                ))}
+              </select>
+            </>
           )}
         </div>
 
