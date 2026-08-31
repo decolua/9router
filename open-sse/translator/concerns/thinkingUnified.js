@@ -148,6 +148,20 @@ function toGeminiThinkingLevel(cfg) {
   return effortToThinkingLevel(raw);
 }
 
+// Unified level → Anthropic's output_config.effort enum [low medium high xhigh max].
+// "auto" (think, level unspecified) and "minimal" are valid unified intents with no
+// value in that enum, and an unmapped value is not ignored — Anthropic rejects the
+// whole request (400 invalid_reasoning_effort) — so they resolve to the nearest
+// supported level, as the gemini-level and kimi branches already do for auto.
+function toClaudeAdaptiveEffort(cfg) {
+  const level = toLevel(cfg);
+  if (level === "auto") return "high";
+  if (level === "minimal") return "low";
+  // Pre-existing downgrade: kept until xhigh is verified across the 4.6+ line.
+  if (level === "xhigh") return "high";
+  return level;
+}
+
 function toKimiReasoningEffort(cfg) {
   const level = toLevel(cfg);
   if (level === "auto") return "high";
@@ -243,8 +257,7 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       // shims (e.g. GitHub Copilot /v1/messages) default thinking off even for
       // Sonnet 5. Send both fields — the documented adaptive-thinking shape.
       body.thinking = { type: "adaptive" };
-      const level = toLevel(eff);
-      body.output_config = { effort: level === "xhigh" ? "high" : level };
+      body.output_config = { effort: toClaudeAdaptiveEffort(eff) };
       break;
     }
     case "claude-budget": {
