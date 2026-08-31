@@ -3,6 +3,14 @@ export async function register() {
     const { initConsoleLogCapture } = await import("@/lib/consoleLogBuffer");
     initConsoleLogCapture();
 
+    // Server-only: lets capabilities.js read the synced catalog without pulling
+    // node:fs into the dashboard's browser bundle.
+    const { installCatalogSource } = await import("open-sse/providers/catalogOverride.js");
+    await installCatalogSource();
+
+    const { startModelCatalogSync } = await import("@/lib/modelCatalog/sync.js");
+    startModelCatalogSync();
+
     // FED-013: belt-and-suspenders loop starter for the `next start` path
     // (custom-server.js is the primary entry; both call into the
     // double-start-guarded startFederationLoops, so firing from both is
