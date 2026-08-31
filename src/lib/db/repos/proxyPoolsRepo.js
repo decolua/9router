@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { nowIso, stampInsert, stampUpsertConflict, stampDelete, NOT_DELETED } from "../../federation/stamp.js";
 
 function rowToPool(row) {
   if (!row) return null;
@@ -29,19 +30,20 @@ function poolToRow(p) {
 
 function upsert(db, p) {
   const r = poolToRow(p);
+  const s = stampInsert(db);
   db.run(
-    `INSERT INTO proxyPools(id, isActive, testStatus, data, createdAt, updatedAt)
-     VALUES(?, ?, ?, ?, ?, ?)
+    `INSERT INTO proxyPools(id, isActive, testStatus, data, createdAt, updatedAt${s.cols})
+     VALUES(?, ?, ?, ?, ?, ?${s.placeholders})
      ON CONFLICT(id) DO UPDATE SET
-       isActive=excluded.isActive, testStatus=excluded.testStatus,
-       data=excluded.data, updatedAt=excluded.updatedAt`,
-    [r.id, r.isActive, r.testStatus, r.data, r.createdAt, r.updatedAt]
+      isActive=excluded.isActive, testStatus=excluded.testStatus,
+      data=excluded.data, updatedAt=excluded.updatedAt${stampUpsertConflict()}`,
+    [r.id, r.isActive, r.testStatus, r.data, r.createdAt, r.updatedAt, ...s.params]
   );
 }
 
 export async function getProxyPools(filter = {}) {
   const db = await getAdapter();
-  const where = [];
+  const where = [NOT_DELETED];
   const params = [];
   if (filter.isActive !== undefined) { where.push("isActive = ?"); params.push(filter.isActive ? 1 : 0); }
   if (filter.testStatus) { where.push("testStatus = ?"); params.push(filter.testStatus); }
@@ -53,7 +55,7 @@ export async function getProxyPools(filter = {}) {
 
 export async function getProxyPoolById(id) {
   const db = await getAdapter();
-  return rowToPool(db.get(`SELECT * FROM proxyPools WHERE id = ?`, [id]));
+  return rowToPool(db.get(`SELECT * FROM proxyPools WHERE id = ? AND ${NOT_DELETED}`, [id]));
 }
 
 export async function createProxyPool(data) {
@@ -97,7 +99,8 @@ export async function deleteProxyPool(id) {
     const row = db.get(`SELECT * FROM proxyPools WHERE id = ?`, [id]);
     if (!row) return;
     removed = rowToPool(row);
-    db.run(`DELETE FROM proxyPools WHERE id = ?`, [id]);
+    const d = stampDelete(db);
+    db.run(`UPDATE proxyPools SET ${d.set} WHERE id = ?`, [...d.params, id]);
   });
   return removed;
 }

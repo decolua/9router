@@ -1,0 +1,113 @@
+# FED-006 — federation deployment example: 1 central + 2 edge instances.
+#
+# This is an EXAMPLE compose file for the federation feature (docs/FEDERATION.md).
+# It does NOT replace docker-compose.yml (the standalone single-instance
+# deployment) — standalone stays untouched. To use it:
+#
+#   docker compose -f docker-compose.federation.yml up -d --build
+#
+# Topology:
+#   central  — authoritative writer; serves its own dashboard + /v1 + the
+#              federation API (snapshot/delta/verify/status/replay)
+#   edge-a   — proxies /v1 + mutating dashboard API up to central while
+#              LINKED; serves from its local replica when central is down
+#   edge-b   — same, second edge (per-datacenter or per-host)
+#
+# All three share federation_net; each has its OWN data volume (the replica
+# DBs are per-instance). FEDERATION_TOKEN must be the same on every instance
+# (it is the edge↔central shared secret). JWT_SECRET/API_KEY_SECRET should
+# also be shared so dashboard sessions and API keys work identically on
+# every instance (see docs/FEDERATION.md §Env matrix for the sharing policy).
+#
+# TLS: the federation protocol carries provider credentials + API keys, so
+# in production put a TLS terminator (Caddy/Traefik) in front of central and
+# set FEDERATION_CENTRAL_URL to the https:// URL. The example uses plain
+# http://central:20128 for local testing only.
+#
+# Tuning knobs (all optional — defaults in src/lib/federation/config.js):
+#   FEDERATION_SYNC_INTERVAL_MS      delta poll interval (default 5000)
+#   FEDERATION_HEARTBEAT_INTERVAL_MS  verify heartbeat (default 2000)
+#   FEDERATION_OUTAGE_THRESHOLD_MS    consecutive-failure window → DEGRADED
+#                                     (default 15000)
+#   FEDERATION_QUEUE_MAX              pendingWrites cap (default 10000)
+#   FEDERATION_REPLAY_BATCH_SIZE      replay batch on recovery (default 50)
+#   FEDERATION_REDACT_FIELDS          optional JSON-path redaction for
+#                                     proxy-only edges (comma-separated)
+#
+# The image is built from Dockerfile.federation (the standalone Dockerfile
+# plus the src/ tree + @/ alias the federation runtime modules need). If you
+# publish a federation image, replace `build:` with `image:`.
+
+x-federation-common: &federation-common
+  build:
+    context: .
+    dockerfile: Dockerfile.federation
+  restart: unless-stopped
+  environment: &federation-env
+    NODE_ENV: production
+    HOSTNAME: "0.0.0.0"
+    DATA_DIR: /app/data
+    # Shared secrets — MUST be identical on every instance (see docs).
+    FEDERATION_TOKEN: change-me-to-a-long-random-federation-token
+    JWT_SECRET: change-me-to-a-long-random-jwt-secret
+    API_KEY_SECRET: change-me-to-a-long-random-api-key-secret
+    INITIAL_PASSWORD: change-me
+    # Federation knobs (optional; defaults shown)
+    FEDERATION_SYNC_INTERVAL_MS: "5000"
+    FEDERATION_HEARTBEAT_INTERVAL_MS: "2000"
+    FEDERATION_OUTAGE_THRESHOLD_MS: "15000"
+    FEDERATION_QUEUE_MAX: "10000"
+    FEDERATION_REPLAY_BATCH_SIZE: "50"
+  networks:
+    - federation_net
+
+services:
+  central:
+    <<: *federation-common
+    container_name: 9router-central
+    ports:
+      - "20128:20128"
+    environment:
+      <<: *federation-env
+      FEDERATION_MODE: central
+    volumes:
+      - central-data:/app/data
+
+  edge-a:
+    <<: *federation-common
+    container_name: 9router-edge-a
+    ports:
+      - "20129:20128"
+    environment:
+      <<: *federation-env
+      FEDERATION_MODE: edge
+      FEDERATION_EDGE_ID: edge-a
+      FEDERATION_CENTRAL_URL: http://central:20128
+    volumes:
+      - edge-a-data:/app/data
+    depends_on:
+      - central
+
+  edge-b:
+    <<: *federation-common
+    container_name: 9router-edge-b
+    ports:
+      - "20130:20128"
+    environment:
+      <<: *federation-env
+      FEDERATION_MODE: edge
+      FEDERATION_EDGE_ID: edge-b
+      FEDERATION_CENTRAL_URL: http://central:20128
+    volumes:
+      - edge-b-data:/app/data
+    depends_on:
+      - central
+
+networks:
+  federation_net:
+    driver: bridge
+
+volumes:
+  central-data:
+  edge-a-data:
+  edge-b-data:

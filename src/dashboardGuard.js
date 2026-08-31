@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSettings, validateApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { getRelayedClientApiKey } from "@/lib/federation/clientAuth.js";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
@@ -31,6 +32,12 @@ const PUBLIC_API_PATHS = [
   "/api/auth/saml",
   "/api/version",
   "/api/settings/require-login",
+  // Federation API (FED-012): dashboardGuard must NOT 401 before roleGuard
+  // runs — roleGuard (src/lib/federation/roleGuard.js) enforces the
+  // FEDERATION_TOKEN on central-only routes (status/snapshot/delta/verify/
+  // replay); local-status + config-status stay token-less by design
+  // (spec §3.5, FED-005).
+  "/api/federation",
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
@@ -136,6 +143,13 @@ function isPublicLlmApi(pathname) {
 }
 
 function extractApiKey(request) {
+  // FED-011: a LINKED edge proxies public LLM API calls with its own
+  // federation token in Authorization and the end client's key in
+  // X-9r-Client-Authorization. When the presented Bearer IS the federation
+  // token, authenticate the end client from the relay header instead.
+  const relayed = getRelayedClientApiKey(request);
+  if (relayed) return relayed;
+
   const authHeader = request.headers.get("Authorization");
   if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
   const apiKeyHeader = request.headers.get("x-api-key");

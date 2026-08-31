@@ -31,6 +31,15 @@ COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/custom-server.js ./custom-server.js
 COPY --from=builder /app/open-sse ./open-sse
+# FED-015 — federation runtime modules for edge mode. Next file tracing does
+# not follow custom-server.js's dynamic imports, so the standalone image
+# ships none of src/lib/federation or the DB driver chain (driver.js ->
+# paths.js -> dataDir.js) on its own. Without them FEDERATION_MODE=edge is
+# silently inert (requests fall through to local handlers); custom-server.js
+# now refuses to boot when they are missing.
+COPY --from=builder /app/src/lib/federation ./src/lib/federation
+COPY --from=builder /app/src/lib/db ./src/lib/db
+COPY --from=builder /app/src/lib/dataDir.js ./src/lib/dataDir.js
 # Next file tracing can omit sibling files; MITM runs server.js as a separate process.
 COPY --from=builder /app/src/mitm ./src/mitm
 # Standalone node_modules may omit deps only required by the MITM child process.

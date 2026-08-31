@@ -12,9 +12,19 @@ const resultsPath = process.argv[2];
 if (!resultsPath) { console.error("Missing results.json path"); process.exit(2); }
 
 const r = JSON.parse(readFileSync(resultsPath, "utf8"));
+
+// Normalize the test file path to a stable key: keep everything from the first
+// "/tests/" segment so results match regardless of absolute prefix (/app/ in
+// Docker CI, /home/<user>/<repo>/ on local runs). Falls back to the raw name
+// when "tests/" is absent.
+function normalizeTestFile(name) {
+  const i = name.indexOf("/tests/");
+  return i >= 0 ? name.slice(i + 1) : name;
+}
+
 const nowFails = r.testResults.flatMap(f =>
   f.assertionResults.filter(a => a.status === "failed")
-    .map(a => f.name.split("/app/")[1] + " :: " + a.fullName)
+    .map(a => normalizeTestFile(f.name) + " :: " + a.fullName)
 );
 
 // Regression = fail bây giờ NHƯNG không có trong baseline known-fails

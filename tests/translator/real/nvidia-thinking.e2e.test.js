@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { getApiKeys } from "../../../src/lib/db/repos/apiKeysRepo.js";
 
-const PORT = process.env.NV_E2E_PORT || "20127";
+const PORT = process.env.NV_E2E_PORT || "20128";
 const BASE = `http://localhost:${PORT}`;
 const MODELS = [
   "nvidia/minimaxai/minimax-m2.7",

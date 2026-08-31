@@ -1,3 +1,71 @@
+# Unreleased
+
+## Features
+- **Federation (docs, Docker, end-to-end)**: the federation feature is now
+  deployable and documented end to end. `docs/FEDERATION.md` covers the
+  deployment topologies (single central + N edges, per-datacenter edges,
+  edge-only degraded serving), the full env matrix (every `FEDERATION_*`
+  var plus `DATA_DIR`/`PORT`/`JWT_SECRET`/`API_KEY_SECRET` sharing policy
+  and `FEDERATION_TOKEN` setup), and a failover runbook (outage detection,
+  degraded serving, recovery/reconcile, fencing, troubleshooting
+  SCHEMA_BLOCKED + auth 401s). `docker-compose.federation.yml` runs a
+  central + 2 edge instances with per-instance volumes and a shared
+  federation network; `Dockerfile.federation` ships the `src/` tree + `@/`
+  alias the federation runtime modules need (Next file tracing does not
+  follow custom-server.js's dynamic imports). A standalone lifecycle proof
+  (`tests/federation/e2e.mjs`, runnable with `node
+  tests/federation/e2e.mjs`) spawns 3 real instances and proves:
+  standalone boot → LINKED (heartbeat + replication) → kill central →
+  DEGRADED (replica serving + queued writes) → restart central →
+  RECOVERING → replay drain + delta catch-up → LINKED → writes reconcile.
+  Standalone mode is unchanged (no-op).
+  Env: none new (all `FEDERATION_*` vars were added in FED-001..FED-005).
+- **Federation (status banner + config page)**: edge instances now show a
+  `FederationStatus` banner on every dashboard page (LINKED green /
+  DEGRADED red / RECOVERING blue + "behind N revisions" when the local
+  replica lags the central watermark). The banner reads a new token-less
+  local status endpoint (`/api/federation/local-status`) so the
+  `FEDERATION_TOKEN` never reaches browser JS. While an edge is DEGRADED,
+  dashboard API read responses carry `X-Federation-State: degraded` (the
+  queued-write responses already carried it + `X-Federation-Queued-Write-Id`).
+  A new read-only Federation config page (`/dashboard/federation`, linked
+  from the header menu) shows mode, central URL (edge only), edge ID,
+  sync/heartbeat/outage/queue settings, and token status (configured
+  yes/no — the token value is never displayed). Standalone mode is
+  unchanged (banner and page render nothing / show "Federation not
+  enabled").
+  Env: none new (reads existing `FEDERATION_*` vars).
+- **Federation (failover + write queue)**: edge instances now run a failover
+  state machine (LINKED → DEGRADED → RECOVERING → LINKED, persisted in
+  `federation_meta.last_state`). A heartbeat (`GET /api/federation/verify`)
+  every `FEDERATION_HEARTBEAT_INTERVAL_MS` flips the edge to DEGRADED after
+  consecutive failures spanning `FEDERATION_OUTAGE_THRESHOLD_MS` (with ±20%
+  jitter + bounded reconnect backoff); a proxy-side 502/timeout flips
+  immediately. While DEGRADED, `/v1` traffic is served from the local replica
+  through the unchanged chat pipeline and mutating dashboard API calls are
+  queued to `pendingWrites` (idempotency-key dedupe, cap
+  `FEDERATION_QUEUE_MAX` → 503 when full), responding with
+  `X-Federation-State: degraded` + `X-Federation-Queued-Write-Id`. On
+  recovery the queue drains to central in batches
+  (`FEDERATION_REPLAY_BATCH_SIZE`) through a fenced `POST
+  /api/federation/replay` (stale fencing tokens rejected 409, idempotency
+  keys never double-applied), deltas catch up, and the edge returns to
+  LINKED. Edges never self-promote. Edge replication pulls now send the
+  `FEDERATION_TOKEN` Bearer header (previously missing). Standalone mode is
+  unchanged (no-op).
+  Env: `FEDERATION_MODE=edge`, `FEDERATION_HEARTBEAT_INTERVAL_MS`,
+  `FEDERATION_OUTAGE_THRESHOLD_MS`, `FEDERATION_QUEUE_MAX`,
+  `FEDERATION_REPLAY_BATCH_SIZE`.
+- **Federation (edge proxy + role guard)**: LINKED edge instances now proxy
+  `/v1/*` traffic and mutating dashboard API calls to the central instance
+  with a dedicated `FEDERATION_TOKEN` (Bearer auth), preserving SSE
+  status/headers/chunks with flush + backpressure and propagating client
+  aborts upstream. Dashboard GET reads resolve locally from the replica;
+  DEGRADED state falls through to local handlers. The federation route
+  handlers (`/api/federation/*`) now require the `FEDERATION_TOKEN` Bearer
+  header in non-standalone modes. Standalone mode is unchanged (no-op).
+  Env: `FEDERATION_MODE=edge`, `FEDERATION_CENTRAL_URL`, `FEDERATION_TOKEN`.
+
 # v0.5.59 (2026-08-29)
 
 ## Features

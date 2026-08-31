@@ -1,6 +1,7 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { makeKv } from "../helpers/kvStore.js";
+import { nowIso, stampInsert } from "../../federation/stamp.js";
 
 const aliasKv = makeKv("modelAliases");
 const customKv = makeKv("customModels");
@@ -38,7 +39,8 @@ export async function addCustomModel({ providerAlias, id, type = "llm", name }) 
     const row = db.get(`SELECT 1 FROM kv WHERE scope = 'customModels' AND key = ?`, [k]);
     if (row) return;
     const value = stringifyJson({ providerAlias, id, type, name: name || id });
-    db.run(`INSERT INTO kv(scope, key, value) VALUES('customModels', ?, ?)`, [k, value]);
+    const s = stampInsert(db);
+    db.run(`INSERT INTO kv(scope, key, value${s.cols}) VALUES('customModels', ?, ?${s.placeholders})`, [k, value, ...s.params]);
     added = true;
   });
   return added;

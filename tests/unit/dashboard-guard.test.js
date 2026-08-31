@@ -268,6 +268,47 @@ describe("dashboard guard local-only access", () => {
   });
 });
 
+describe("dashboard guard federation API access (FED-012)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    mocks.validateApiKey.mockResolvedValue(false);
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+  });
+
+  it("allows /api/federation/status from remote host without cookies or CLI token", async () => {
+    // dashboardGuard must NOT 401 before roleGuard runs — roleGuard
+    // enforces FEDERATION_TOKEN on central-only routes.
+    const response = await proxy(request("/api/federation/status", {
+      host: "router.example.com",
+      authorization: "Bearer fed-token",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.verifyDashboardAuthToken).not.toHaveBeenCalled();
+  });
+
+  it("allows /api/federation/local-status without cookies (token-less by design)", async () => {
+    const response = await proxy(request("/api/federation/local-status", {
+      host: "router.example.com",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.verifyDashboardAuthToken).not.toHaveBeenCalled();
+  });
+
+  it("allows /api/federation/snapshot and /api/federation/verify sub-paths", async () => {
+    for (const path of ["/api/federation/snapshot", "/api/federation/verify", "/api/federation/delta", "/api/federation/replay"]) {
+      const response = await proxy(request(path, {
+        host: "router.example.com",
+        authorization: "Bearer fed-token",
+      }));
+      expect(response).toBe(mocks.nextResponse);
+    }
+  });
+});
+
 describe("dashboard guard helpers", () => {
   it("extracts bearer API keys before x-api-key", () => {
     const apiRequest = request("/v1/chat/completions", {
