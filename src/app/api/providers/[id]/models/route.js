@@ -11,6 +11,7 @@ import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
+import { fetchProviderLiveModels } from "@/shared/utils/providerLiveModels";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -440,6 +441,7 @@ const PROVIDER_MODELS_CONFIG = {
  * GET /api/providers/[id]/models - Get models list from provider
  */
 export async function GET(request, { params }) {
+  const refresh = request.nextUrl?.searchParams?.get("refresh") === "1";
   try {
     const { id } = await params;
     const connection = await getProviderConnectionById(id);
@@ -524,6 +526,19 @@ export async function GET(request, { params }) {
 
     const config = PROVIDER_MODELS_CONFIG[connection.provider];
     if (!config) {
+      // Generic fallback for API-key providers that declare a /models endpoint in
+      // their registry entry (nvidia, openrouter, groq, ...). The caller falls
+      // back to the static list when this returns empty.
+      if (connection.apiKey) {
+        const live = await fetchProviderLiveModels(connection.provider, connection.apiKey, { useCache: !refresh });
+        if (live?.length) {
+          return NextResponse.json({
+            provider: connection.provider,
+            connectionId: connection.id,
+            models: live,
+          });
+        }
+      }
       return NextResponse.json(
         { error: `Provider ${connection.provider} does not support models listing` },
         { status: 400 }
