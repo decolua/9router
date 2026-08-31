@@ -5,6 +5,7 @@ import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
 import Toggle from "@/shared/components/Toggle";
 import Tooltip from "@/shared/components/Tooltip";
+import { getHotReloadConfig } from "@/shared/constants/config";
 import {
   parseQuotaData,
   calculatePercentage,
@@ -140,6 +141,7 @@ export default function ProviderLimits() {
   const [deletingId, setDeletingId] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
   const [resettingLimitId, setResettingLimitId] = useState(null);
+  const [hotReloadingId, setHotReloadingId] = useState(null);
   const [resetConfirmState, setResetConfirmState] = useState(null);
   const [resetCreditsState, setResetCreditsState] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -327,6 +329,28 @@ export default function ProviderLimits() {
     },
     [fetchQuota, resettingLimitId],
   );
+
+  const handleHotReloadConnection = useCallback(async (connection) => {
+    if (hotReloadingId) return;
+    setHotReloadingId(connection.id);
+    setErrors((prev) => ({ ...prev, [connection.id]: null }));
+    try {
+      const res = await fetch(`/api/providers/${connection.id}/hotreload`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) {
+        throw new Error(data.error || "Hot reload failed");
+      }
+      if (data.reloaded !== true) {
+        throw new Error(data.error || "Hot reload did not move the quota count");
+      }
+      await fetchQuota(connection.id, connection.provider, { force: true });
+      setLastUpdated(new Date());
+    } catch (error) {
+      setErrors((prev) => ({ ...prev, [connection.id]: error.message || "Hot reload failed" }));
+    } finally {
+      setHotReloadingId(null);
+    }
+  }, [fetchQuota, hotReloadingId]);
 
   const handleViewCodexResetCredits = useCallback(async (connection) => {
     setResetCreditsState({ connection, loading: true, error: null, data: null });
@@ -1031,7 +1055,8 @@ export default function ProviderLimits() {
           const isCodex = conn.provider === "codex";
           const resetCreditCount = getCodexResetCreditCount(quota);
           const isResettingLimit = resettingLimitId === conn.id;
-          const rowBusy = deletingId === conn.id || togglingId === conn.id || isResettingLimit;
+          const isHotReloading = hotReloadingId === conn.id;
+          const rowBusy = deletingId === conn.id || togglingId === conn.id || isResettingLimit || isHotReloading;
           const rawQuotas = quota?.quotas || [];
           const visibleQuotas = filterQuotasByVisibility(conn.provider, rawQuotas, quotaVisibility);
           const hiddenQuotaRows = getHiddenQuotaRows(conn.provider, rawQuotas, quotaVisibility);
@@ -1184,6 +1209,21 @@ export default function ProviderLimits() {
                         </span>
                       </button>
                     </Tooltip>
+                    {getHotReloadConfig(conn.provider, conn.authType) && (
+                      <Tooltip text={getHotReloadConfig(conn.provider, conn.authType)?.tooltip || "Hot reload quota countdown"}>
+                        <button
+                          type="button"
+                          onClick={() => handleHotReloadConnection(conn)}
+                          disabled={isLoading || rowBusy}
+                          aria-label="Hot reload quota countdown"
+                          className={`flex h-8 w-8 items-center justify-center rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-text-muted hover:text-primary transition-colors disabled:opacity-50 ${isHotReloading ? "text-primary" : ""}`}
+                        >
+                          <span className={`material-symbols-outlined text-[18px] ${isHotReloading ? "animate-spin" : ""}`}>
+                            {isHotReloading ? "progress_activity" : "rocket_launch"}
+                          </span>
+                        </button>
+                      </Tooltip>
+                    )}
                     <Tooltip text="Edit connection">
                       <button
                         type="button"

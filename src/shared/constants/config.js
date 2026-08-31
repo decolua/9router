@@ -92,6 +92,24 @@ export const QUOTA_AUTOPING_CONFIG = {
   },
 };
 
+// Quota hot-reload: one location for all hot-reloadable providers + target models.
+// Add a provider key here and it automatically enables the button in providers/[id]
+// page, per-row ConnectionRow, QuotaTracker, and the backend /hotreload route.
+export const HOT_RELOAD_CONFIG = {
+  providers: {
+    antigravity: {
+      authType: "oauth",
+      models: ["gemini-3.5-flash-extra-low", "gpt-oss-120b-medium"],
+      tooltip: "Hot reload: poke the quota models so the pending 7-day countdown starts now",
+    },
+  },
+};
+
+export const getHotReloadConfig = (provider, authType = "oauth") => {
+  const cfg = HOT_RELOAD_CONFIG.providers[provider];
+  return cfg && (!cfg.authType || cfg.authType === authType) ? cfg : null;
+};
+
 // Re-export from providers.js for backward compatibility
 export {
   FREE_PROVIDERS,
