@@ -2,19 +2,22 @@
 //
 // ⚠️ AGENT/DEV NOTES:
 // - Backups are a best-effort safety net before schema migrations. There is NO
-//   automated restore path; recovery is manual (copy a backup file back).
+//   automated restore path; recovery is manual (`psql < backup.sql`).
 // - Backups intentionally EXCLUDE the `requestDetails` table (observability log,
 //   auto-pruned, non-critical) so a multi-hundred-MB DB backs up as a few MB.
 // - Only the newest KEEP_BACKUPS are kept; older ones are pruned automatically.
 import fs from "node:fs";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import { BACKUPS_DIR, ensureDirs } from "./paths.js";
 import { timestampSlug, getAppVersion } from "./version.js";
+import { getConnectionString } from "./pg.js";
 
 const KEEP_BACKUPS = 3;
 
 // Tables excluded from safety backups (large, non-critical, reproducible).
-const BACKUP_EXCLUDE_TABLES = ["requestDetails"];
+// Postgres folds unquoted identifiers to lower-case.
+const BACKUP_EXCLUDE_TABLES = ["requestdetails"];
 
 export function makeBackupDir(label) {
   ensureDirs();
@@ -33,31 +36,31 @@ export function backupFile(srcPath, destDir, destName = null) {
   return dest;
 }
 
-// Lightweight DB backup via ATTACH: create an empty sqlite file, copy every
-// table EXCEPT the excluded ones into it. Avoids duplicating the huge
-// observability log, so the backup stays small regardless of DB size.
-export function backupDbLite(adapter, destDir, destName = "data.sqlite") {
+// Postgres backup via `pg_dump` (plain SQL). Excludes the observability log so
+// the dump stays small regardless of DB size. Best-effort: if `pg_dump` is not
+// on PATH, logs a warning and returns null — the caller (migrate.js) already
+// treats backup failure as non-fatal.
+//
+// `adapter` is accepted for signature-compat with the previous SQLite impl but
+// unused; pg_dump connects directly with the connection string.
+export async function backupDbLite(adapter, destDir, destName = "data.sql") {
   const dest = path.join(destDir, destName);
-  try { fs.rmSync(dest, { force: true }); } catch {}
-  const escaped = dest.replace(/'/g, "''");
-
-  adapter.exec(`ATTACH DATABASE '${escaped}' AS bak`);
-  try {
-    const excluded = new Set(BACKUP_EXCLUDE_TABLES);
-    const tables = adapter
-      .all(`SELECT name, sql FROM main.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`)
-      .filter((t) => !excluded.has(t.name));
-
-    adapter.transaction(() => {
-      for (const t of tables) {
-        // Recreate table structure in backup DB, then copy rows.
-        const createSql = t.sql.replace(/CREATE TABLE\s+/i, "CREATE TABLE bak.");
-        adapter.exec(createSql);
-        adapter.exec(`INSERT INTO bak.${t.name} SELECT * FROM main.${t.name}`);
-      }
-    });
-  } finally {
-    try { adapter.exec("DETACH DATABASE bak"); } catch {}
+  const args = [
+    getConnectionString(),
+    "--no-owner",
+    "--no-privileges",
+    ...BACKUP_EXCLUDE_TABLES.flatMap((t) => ["--exclude-table-data", t]),
+    "-f",
+    dest,
+  ];
+  const env = { ...process.env };
+  const caPath = process.env.DATABASE_CA_PATH || process.env.PGSSLROOTCERT;
+  if (caPath) env.PGSSLROOTCERT = caPath;
+  const res = spawnSync("pg_dump", args, { encoding: "utf8", env });
+  if (res.error || res.status !== 0) {
+    const reason = res.error?.message || res.stderr?.trim() || `exit ${res.status}`;
+    console.warn(`[DB][backup] pg_dump unavailable or failed (${reason}) — skipping backup`);
+    return null;
   }
   return dest;
 }
@@ -70,6 +73,6 @@ export function pruneOldBackups() {
     .sort((a, b) => b.mtime - a.mtime);
 
   for (const old of entries.slice(KEEP_BACKUPS)) {
-    try { fs.rmSync(old.full, { recursive: true, force: true }); } catch {}
+    try { fs.rmSync(old.full, { recursive: true, force: true }); } catch { /* best effort */ }
   }
 }

@@ -14,7 +14,8 @@
     "build:bun": "bun --bun next build --webpack",
     "start:bun": "bun ./.next/standalone/custom-server.js",
     "cli:pack": "npm --prefix cli run pack:cli",
-    "cli:publish": "npm --prefix cli run publish:cli"
+    "cli:publish": "npm --prefix cli run publish:cli",
+    "db:smoke": "node --env-file=.env --import ./scripts/alias-hook-register.mjs scripts/pg-smoke.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -39,6 +40,7 @@
     "node-machine-id": "^1.1.12",
     "open": "^11.0.0",
     "ora": "^9.1.0",
+    "pg": "^8.23.0",
     "prop-types": "^15.8.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -46,7 +48,6 @@
     "recharts": "^3.7.0",
     "selfsigned": "^5.5.0",
     "socks-proxy-agent": "^8.0.5",
-    "sql.js": "^1.14.1",
     "undici": "^7.19.2",
     "uuid": "^13.0.0",
     "zustand": "^5.0.10"
@@ -54,7 +55,8 @@
   "optionalDependencies": {
     "better-sqlite3": "^12.6.2"
   },
-  "comment_better_sqlite3": "kept in optionalDependencies so npm install doesn't fail on systems without build tools — sql.js is used as fallback at runtime",
+  "comment_better_sqlite3": "NOT used for 9router storage (that is Postgres now, see src/lib/db/). Kept optional purely for src/app/api/oauth/cursor/auto-import, which reads Cursor's own local SQLite DB.",
+  "comment_pg": "9router persistence. Set DATABASE_URL (e.g. postgresql://ninerouter:ninerouter@127.0.0.1:5432/ninerouter). See MIGRATION_POSTGRES.md.",
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
     "eslint": "^9",

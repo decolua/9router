@@ -5,16 +5,6 @@
 // to bump only skips that backup — it does NOT break the additive auto-sync.
 export const SCHEMA_VERSION = 1;
 
-export const PRAGMA_SQL = `
-PRAGMA journal_mode = WAL;
-PRAGMA synchronous = NORMAL;
-PRAGMA temp_store = MEMORY;
-PRAGMA mmap_size = 30000000;
-PRAGMA cache_size = -64000;
-PRAGMA foreign_keys = ON;
-PRAGMA busy_timeout = 5000;
-`;
-
 // Declarative current schema. Used by syncSchemaFromTables() to
 // auto-add missing tables/columns/indexes after versioned migrations.
 // For destructive changes (drop/rename/type-change), write a migration file.
@@ -154,8 +144,23 @@ export const TABLES = {
   },
 };
 
+// ─── Postgres dialect ───────────────────────────────────────────────────
+// TABLES above is written in SQLite column syntax. Translate the few tokens
+// that differ. Everything else (TEXT, INTEGER, NOT NULL, DEFAULT, UNIQUE,
+// PRIMARY KEY, CHECK (...)) is valid Postgres as-is.
+export function toPgColumnDef(sqliteDef) {
+  return sqliteDef
+    .replace(/\bINTEGER\s+PRIMARY\s+KEY\s+AUTOINCREMENT\b/i, "BIGSERIAL PRIMARY KEY")
+    .replace(/\bAUTOINCREMENT\b/i, "")
+    .replace(/\bREAL\b/i, "DOUBLE PRECISION")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function buildCreateTableSql(name, def) {
-  const cols = Object.entries(def.columns).map(([k, v]) => `${k} ${v}`);
+  const cols = Object.entries(def.columns).map(
+    ([k, v]) => `${k} ${toPgColumnDef(v)}`,
+  );
   if (def.primaryKey) cols.push(def.primaryKey);
   return `CREATE TABLE IF NOT EXISTS ${name} (${cols.join(", ")})`;
 }

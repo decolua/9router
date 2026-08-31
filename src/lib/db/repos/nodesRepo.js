@@ -27,9 +27,9 @@ function nodeToRow(n) {
   };
 }
 
-function upsert(db, n) {
+async function upsert(db, n) {
   const r = nodeToRow(n);
-  db.run(
+  await db.run(
     `INSERT INTO providerNodes(id, type, name, data, createdAt, updatedAt)
      VALUES(?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
@@ -44,12 +44,12 @@ export async function getProviderNodes(filter = {}) {
   const params = [];
   if (filter.type) { where.push("type = ?"); params.push(filter.type); }
   const sql = `SELECT * FROM providerNodes${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
-  return db.all(sql, params).map(rowToNode);
+  return (await db.all(sql, params)).map(rowToNode);
 }
 
 export async function getProviderNodeById(id) {
   const db = await getAdapter();
-  return rowToNode(db.get(`SELECT * FROM providerNodes WHERE id = ?`, [id]));
+  return rowToNode(await db.get(`SELECT * FROM providerNodes WHERE id = ?`, [id]));
 }
 
 export async function createProviderNode(data) {
@@ -65,18 +65,18 @@ export async function createProviderNode(data) {
     createdAt: now,
     updatedAt: now,
   };
-  upsert(db, node);
+  await upsert(db, node);
   return node;
 }
 
 export async function updateProviderNode(id, data) {
   const db = await getAdapter();
   let result = null;
-  db.transaction(() => {
-    const row = db.get(`SELECT * FROM providerNodes WHERE id = ?`, [id]);
+  await db.transaction(async () => {
+    const row = await db.get(`SELECT * FROM providerNodes WHERE id = ?`, [id]);
     if (!row) return;
     const merged = { ...rowToNode(row), ...data, updatedAt: new Date().toISOString() };
-    upsert(db, merged);
+    await upsert(db, merged);
     result = merged;
   });
   return result;
@@ -85,11 +85,11 @@ export async function updateProviderNode(id, data) {
 export async function deleteProviderNode(id) {
   const db = await getAdapter();
   let removed = null;
-  db.transaction(() => {
-    const row = db.get(`SELECT * FROM providerNodes WHERE id = ?`, [id]);
+  await db.transaction(async () => {
+    const row = await db.get(`SELECT * FROM providerNodes WHERE id = ?`, [id]);
     if (!row) return;
     removed = rowToNode(row);
-    db.run(`DELETE FROM providerNodes WHERE id = ?`, [id]);
+    await db.run(`DELETE FROM providerNodes WHERE id = ?`, [id]);
   });
   return removed;
 }

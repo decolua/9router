@@ -2,8 +2,9 @@ import path from "node:path";
 import fs from "node:fs";
 import { DATA_DIR } from "@/lib/dataDir.js";
 
+// Row data now lives in Postgres (see src/lib/db/pg.js). Only the on-disk
+// backup directory and the one-time legacy JSON import files still use DATA_DIR.
 export const DB_DIR = path.join(DATA_DIR, "db");
-export const DATA_FILE = path.join(DB_DIR, "data.sqlite");
 export const BACKUPS_DIR = path.join(DB_DIR, "backups");
 export const LEGACY_FILES = {
   main: path.join(DATA_DIR, "db.json"),

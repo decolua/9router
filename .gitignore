@@ -46,6 +46,8 @@ next-env.d.ts
 
 .bin/*
 data/
+.data/
+/certs/
 logs/*
 source/*
 .cursor/*

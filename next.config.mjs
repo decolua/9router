@@ -20,7 +20,10 @@ const nextConfig = {
   // letter). That throw happens at module scope, so every consumer of `open` dies on
   // import — including xAI/Grok token refresh, which loads the OAuth service that imports
   // it. Keeping it external preserves the real `import.meta.url` at runtime.
-  serverExternalPackages: ["better-sqlite3", "sql.js", "node:sqlite", "bun:sqlite", "open"],
+  // `pg` uses dynamic requires (pg-native optional) and must not be bundled.
+  // `better-sqlite3` stays external only for the Cursor auto-import route, which
+  // reads Cursor's own local SQLite DB (unrelated to 9router storage).
+  serverExternalPackages: ["pg", "pg-native", "better-sqlite3", "open"],
   turbopack: {
     root: tracingRoot
   },

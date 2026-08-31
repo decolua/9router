@@ -74,9 +74,13 @@ Two authoritative docs already exist — read them before working in these areas
 - Add a provider: copy `providers/REGISTRY_TEMPLATE.js`, add models to `config/providerModels.js`. Only add an executor for non-OpenAI-compatible upstreams.
 
 ### Persistence — IMPORTANT (ARCHITECTURE.md is stale here)
-State is **no longer `db.json`**. It's a SQLite layer under `src/lib/db/` with an adapter fallback chain (`driver.js`): `bun:sqlite` → `better-sqlite3` (optional native dep) → `node:sqlite` (Node ≥22.5) → `sql.js` (pure-JS fallback, always works). `better-sqlite3` is deliberately in `optionalDependencies` so install never fails without build tools.
-- `src/lib/localDb.js` is a **backward-compat shim** re-exporting `src/lib/db/index.js`. New code should import from `@/lib/db/index.js`; per-entity logic lives in `src/lib/db/repos/*`. Schema/migrations in `src/lib/db/migrations/`.
-- DB file location resolves via `src/lib/db/paths.js` (`DATA_DIR`, else `~/.9router/`).
+State is **no longer `db.json` and no longer SQLite** — this fork uses **PostgreSQL**. See `MIGRATION_POSTGRES.md` for the full rationale and env contract.
+- Connection: `src/lib/db/pg.js` (pool, `?`→`$n` rewrite, case-insensitive row proxy, TLS/CA). Requires `DATABASE_URL`. The single adapter is `src/lib/db/adapters/postgresAdapter.js`; `driver.js` no longer has a fallback chain.
+- **The adapter API is async now** — `await db.get/all/run/exec/transaction(...)`. All `src/lib/db/repos/*` and `migrate.js` were updated; transactions pin one pooled client via `AsyncLocalStorage`.
+- `src/lib/localDb.js` is a **backward-compat shim** re-exporting `src/lib/db/index.js`. New code should import from `@/lib/db/index.js`; per-entity logic lives in `src/lib/db/repos/*`. Schema/migrations in `src/lib/db/migrations/` + declarative `src/lib/db/schema.js` (`buildCreateTableSql` emits Postgres DDL via `toPgColumnDef`).
+- Schema is auto-created on first connect (`runMigrationOnce`); additive column/index sync uses `information_schema`. Verify the layer with `npm run db:smoke` (`scripts/pg-smoke.mjs`).
+- `better-sqlite3` stays an optional dep **only** for `src/app/api/oauth/cursor/auto-import` (reads Cursor's own local SQLite DB — unrelated to 9router state).
+- Pre-migration safety backup is `pg_dump` (plain SQL), best-effort, in `~/.9router/db/backups`.
 - Usage/logs (`src/lib/usageDb.js`, `usage.json` + `log.txt`) still live under `~/.9router` and do **not** follow `DATA_DIR`.
 
 ### RTK token saver (`open-sse/rtk/`)

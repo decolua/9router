@@ -66,7 +66,7 @@ const DEFAULT_SETTINGS = {
 
 async function readRaw() {
   const db = await getAdapter();
-  const row = db.get(`SELECT data FROM settings WHERE id = 1`);
+  const row = await db.get(`SELECT data FROM settings WHERE id = 1`);
   return row ? parseJson(row.data, {}) : {};
 }
 
@@ -98,11 +98,11 @@ export async function getSettings() {
 export async function updateSettings(updates) {
   const db = await getAdapter();
   let next;
-  db.transaction(function () {
-    const row = db.get(`SELECT data FROM settings WHERE id = 1`);
+  await db.transaction(async function () {
+    const row = await db.get(`SELECT data FROM settings WHERE id = 1`);
     const current = row ? parseJson(row.data, {}) : {};
     next = { ...current, ...updates };
-    db.run(
+    await db.run(
       `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
       [stringifyJson(next)],
     );

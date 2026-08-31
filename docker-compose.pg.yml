@@ -1,0 +1,24 @@
+# Throwaway local Postgres for 9router dev — does NOT touch a system Postgres.
+#   docker compose -f docker-compose.pg.yml up -d
+#   DATABASE_URL=postgresql://ninerouter:ninerouter@127.0.0.1:5433/ninerouter
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: 9router-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ninerouter
+      POSTGRES_PASSWORD: ninerouter
+      POSTGRES_DB: ninerouter
+    ports:
+      - "5433:5432"
+    volumes:
+      - 9router_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ninerouter -d ninerouter"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  9router_pgdata:
