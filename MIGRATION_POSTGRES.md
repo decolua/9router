@@ -75,6 +75,17 @@ Beyond the storage swap, this fork adds:
   untouched and the response is `{ skipped: true }` (HTTP 200). The bulk-add
   modal has a "Skip keys that already exist" checkbox (on by default), so
   re-pasting an overlapping list only adds the new keys.
+- **Search** on the provider detail page — filter connections by name / email /
+  group; bulk actions (Set Group, Delete) then apply to the filtered selection.
+- **Per-combo account allow-list** — on the Combos page each combo has a "Keys"
+  button: for every provider in that combo, choose *all keys* or restrict to
+  selected **groups** / **individual keys** (a group includes all its keys).
+  Stored in `settings.comboStrategies[combo].accountFilters` keyed by bare
+  provider or exact `provider/model`; threaded through
+  `getProviderCredentials(..., { allowGroups, allowConnectionIds })`. A combo
+  entry whose filter matches no active key is skipped (falls through to the next
+  entry), so `test`→gemini can be limited to groups A/B while `test2`→gemini
+  uses only key1/key2.
 
 ## What changed
 

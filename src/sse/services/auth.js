@@ -69,12 +69,28 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       };
     }
 
-    const connections = await getProviderConnections({ provider: providerId, isActive: true });
+    let connections = await getProviderConnections({ provider: providerId, isActive: true });
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {
       log.warn("AUTH", `No credentials for ${provider}`);
       return null;
+    }
+
+    // Optional account allow-list (e.g. a combo entry restricted to certain
+    // groups / specific connections). A group match pulls in every key in it.
+    const allowGroups = Array.isArray(options?.allowGroups) ? options.allowGroups.map((g) => String(g).trim()).filter(Boolean) : [];
+    const allowConnectionIds = Array.isArray(options?.allowConnectionIds) ? options.allowConnectionIds.filter(Boolean) : [];
+    if (allowGroups.length || allowConnectionIds.length) {
+      const gset = new Set(allowGroups);
+      const cset = new Set(allowConnectionIds);
+      const before = connections.length;
+      connections = connections.filter((c) => cset.has(c.id) || gset.has((c.group || "").trim()));
+      log.debug("AUTH", `${provider} | account filter → ${connections.length}/${before} (groups: ${allowGroups.join(",") || "-"}, keys: ${allowConnectionIds.length})`);
+      if (connections.length === 0) {
+        log.warn("AUTH", `${provider} | account filter matched no active connections`);
+        return null;
+      }
     }
 
     // Antigravity quota cache is lazy: only populated after that account returns 409/429.
