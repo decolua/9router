@@ -79,7 +79,15 @@ export function createSSEStream(options = {}) {
 
   // Usage/logging tail, callable from transform() as well as flush(): a client that
   // closes right after the terminal event cancels the reader, and flush() never runs.
-  const finalizeStream = () => {
+  //
+  // RUNTIME SCOPE: the aborted path is Node-only. Every disconnect signal in Next
+  // — and therefore `cancel` in any of its shapes — descends from `res` `'close'`,
+  // which Bun's node:http ServerResponse never emits on a client hangup. Under
+  // `start:bun` nothing cancels this stream, so finalizeStream() only ever runs
+  // from flush(), exactly as before this fix. The portable hook is `req` `'close'`;
+  // see #3559, which also covers the larger consequence that the upstream provider
+  // request is never aborted on Bun either.
+  const finalizeStream = ({ aborted = false } = {}) => {
     if (finalized) return;
     finalized = true;
 
@@ -101,7 +109,7 @@ export function createSSEStream(options = {}) {
       onStreamComplete({
         content: accumulatedContent,
         thinking: accumulatedThinking
-      }, finalUsage, ttftAt);
+      }, finalUsage, ttftAt, { aborted });
     }
   };
 
@@ -482,6 +490,21 @@ export function createSSEStream(options = {}) {
       } catch (error) {
         console.log("Error in flush:", error);
         finalizeStream();
+      }
+    },
+
+    // The client hung up mid-stream. The Streams spec calls flush() or cancel(),
+    // never both, and finalizeStream() had no cancel() caller — so an aborted
+    // request left no usage row, no request detail and nothing in Recent
+    // Requests, even though the provider had already generated (and charged for)
+    // the partial answer (#3488). finalizeStream() estimates from
+    // totalContentLength when the provider reported no usage, which is the usual
+    // case here: the usage event arrives with the terminal chunk that never came.
+    cancel() {
+      try {
+        finalizeStream({ aborted: true });
+      } catch (error) {
+        console.log("Error in cancel:", error);
       }
     }
   });
