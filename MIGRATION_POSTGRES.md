@@ -94,3 +94,25 @@ There is no automatic SQLite→Postgres copy. Two paths:
 exercises every repo (CRUD, transactions, kv scopes, usage aggregation,
 export/import) and cleans up after itself. Green output = the storage layer is
 wired correctly for your `DATABASE_URL`.
+
+## Clearing test data
+
+`POST /api/settings/database/reset` truncates every data table (keeps `_meta`, so
+the schema is **not** re-migrated; resets the lifetime request counter to 0).
+
+- Guards: JWT/CLI-token (it's under `/api/settings/database`, already
+  `ALWAYS_PROTECTED`), **plus** dashboard-password re-auth, **plus** a
+  `{ "confirm": "RESET" }` body.
+- Disabled when `NODE_ENV=production` unless `ALLOW_DB_RESET=true`.
+- `{ "keepSettings": true }` preserves the `settings` row (dashboard password,
+  auth mode…).
+
+```bash
+# authenticate, then:
+curl -X POST http://localhost:20127/api/settings/database/reset \
+  -b cookies.txt -H 'content-type: application/json' \
+  -d '{"password":"<dashboard-password>","confirm":"RESET"}'
+# → {"success":true,"cleared":[...],"keptSettings":false}
+```
+
+After a full reset the dashboard password falls back to `INITIAL_PASSWORD`.

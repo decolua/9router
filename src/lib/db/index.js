@@ -172,3 +172,40 @@ export async function importDb(payload) {
 export async function initDb() {
   await getAdapter();
 }
+
+// ⚠️ DESTRUCTIVE — wipes every data table. `_meta` (schema version) is kept so
+// the schema is not re-migrated; the lifetime request counter is reset to 0.
+// Intended for dev/testing DBs. The API route that calls this is JWT-protected,
+// password-gated, and disabled in production unless ALLOW_DB_RESET=true.
+export async function resetDb({ keepSettings = false } = {}) {
+  const db = await getAdapter();
+
+  // Order doesn't matter — TRUNCATE with no FKs. RESTART IDENTITY resets the
+  // usageHistory BIGSERIAL. Unquoted names fold to lower-case, matching storage.
+  const tables = [
+    "providerConnections",
+    "providerNodes",
+    "proxyPools",
+    "apiKeys",
+    "combos",
+    "kv",
+    "usageHistory",
+    "usageDaily",
+    "requestDetails",
+  ];
+  if (!keepSettings) tables.push("settings");
+
+  await db.transaction(async () => {
+    await db.exec(`TRUNCATE TABLE ${tables.join(", ")} RESTART IDENTITY`);
+    await db.run(`UPDATE _meta SET value = '0' WHERE key = 'totalRequestsLifetime'`);
+  });
+
+  // Bust in-memory caches so the dashboard doesn't show stale rows/counters.
+  try {
+    global._recentRing = { items: [], initialized: false };
+    global._connectionMapCache = { map: {}, ts: 0 };
+    global._pendingRequests = { byModel: {}, byAccount: {} };
+  } catch { /* not running under the app */ }
+
+  return { cleared: tables, keptSettings: keepSettings };
+}
