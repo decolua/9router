@@ -1,6 +1,6 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { adjustMaxTokens } from "../formats/maxTokens.js";
+import { adjustMaxTokens, requiresMaxCompletionTokens } from "../formats/maxTokens.js";
 import { encodeDataUri } from "../concerns/image.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 import { collapseTextParts } from "../concerns/message.js";
@@ -18,9 +18,10 @@ export function claudeToOpenAIRequest(model, body, stream) {
     stream: stream
   };
 
-  // Max tokens
+  // Max tokens (gpt-5/o-series Chat Completions only accept max_completion_tokens)
   if (body.max_tokens) {
-    result.max_tokens = adjustMaxTokens(body);
+    const tokenParam = requiresMaxCompletionTokens(model) ? "max_completion_tokens" : "max_tokens";
+    result[tokenParam] = adjustMaxTokens(body);
   }
 
   // Temperature
