@@ -24,6 +24,9 @@ function githubMonthlyResetMs(status, errorText, provider) {
  * @param {string} provider - Provider name
  * @param {Set<string>|string|null} excludeConnectionIds - Connection ID(s) to exclude (for retry with next account)
  * @param {string|null} model - Model name for per-model rate limit filtering
+ * @param {Object} [options]
+ * @param {string|null} [options.preferredConnectionId] - Pin to this connection if available
+ * @param {Set<string>|null} [options.allowedConnectionIds] - Restrict candidates to this set (per-key account scoping); null = unrestricted
  */
 export async function getProviderCredentials(provider, excludeConnectionIds = null, model = null, options = {}) {
   // Normalize to Set for consistent handling
@@ -31,6 +34,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
+  const allowedConnectionIds = options?.allowedConnectionIds || null;
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
@@ -82,7 +86,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     const antigravityQuotaCache = isAntigravity && model ? getAntigravityQuotaCache() : null;
 
     // Filter out model-locked, excluded, and Antigravity quota-exhausted connections.
-    const availableConnections = connections.filter(c => {
+    let availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
       // Antigravity: skip if live quota exhausted for this model
@@ -96,6 +100,12 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       }
       return true;
     });
+
+    // Restrict candidate accounts to those assigned to this key. Applies to both
+    // initial selection and fallback (fallback re-enters this function per retry).
+    if (allowedConnectionIds) {
+      availableConnections = availableConnections.filter(c => allowedConnectionIds.has(c.id));
+    }
 
     log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}`);
     connections.forEach(c => {

@@ -5,7 +5,7 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getSettings, getCombos } from "@/lib/localDb";
+import { getSettings, getCombos, getAllowedConnectionIdsForKey } from "@/lib/localDb";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
 import { handleFetchCore } from "open-sse/handlers/fetch/index.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -87,6 +87,9 @@ export async function handleFetch(request) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, err.message);
   }
 
+  // Resolved regardless of requireApiKey — scoping must hold even if that flag is off.
+  const allowedConnectionIds = apiKey ? await getAllowedConnectionIdsForKey(apiKey) : null;
+
   // Combo expansion: providerInput may be a combo name → run fallback/round-robin across providers
   const combos = await getCombos();
   const comboModels = getComboModelsFromData(providerInput, combos);
@@ -98,7 +101,7 @@ export async function handleFetch(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleProviderFetch(b, m, request, apiKey, settings),
+      handleSingleModel: (b, m) => handleSingleProviderFetch(b, m, request, apiKey, settings, allowedConnectionIds),
       log,
       comboName: providerInput,
       comboStrategy,
@@ -106,10 +109,10 @@ export async function handleFetch(request) {
     });
   }
 
-  return handleSingleProviderFetch(body, providerInput, request, apiKey, settings);
+  return handleSingleProviderFetch(body, providerInput, request, apiKey, settings, allowedConnectionIds);
 }
 
-async function handleSingleProviderFetch(body, providerInput, request, apiKey, settings) {
+async function handleSingleProviderFetch(body, providerInput, request, apiKey, settings, allowedConnectionIds = null) {
   const targetUrl = body.url;
   const format = body.format;
   const maxCharacters = body.max_characters;
@@ -159,7 +162,7 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(providerId, excludeConnectionIds);
+    const credentials = await getProviderCredentials(providerId, excludeConnectionIds, null, { allowedConnectionIds });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {

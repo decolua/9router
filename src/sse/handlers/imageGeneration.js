@@ -5,7 +5,7 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getAllowedConnectionIdsForKey } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleImageGenerationCore } from "open-sse/handlers/imageGenerationCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -46,6 +46,9 @@ export async function handleImageGeneration(request) {
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   if (!body.prompt) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: prompt");
 
+  // Resolved regardless of requireApiKey — scoping must hold even if that flag is off.
+  const allowedConnectionIds = apiKey ? await getAllowedConnectionIdsForKey(apiKey) : null;
+
   // Combo expansion: model may be a combo name → run fallback/round-robin across models
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
@@ -56,7 +59,7 @@ export async function handleImageGeneration(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelImage(b, m, { wantsStream, binaryOutput, preferredConnectionId }),
+      handleSingleModel: (b, m) => handleSingleModelImage(b, m, { wantsStream, binaryOutput, preferredConnectionId, allowedConnectionIds }),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -64,10 +67,10 @@ export async function handleImageGeneration(request) {
     });
   }
 
-  return handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId });
+  return handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId, allowedConnectionIds });
 }
 
-async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId } = {}) {
+async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId, allowedConnectionIds } = {}) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 

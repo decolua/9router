@@ -5,7 +5,7 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getAllowedConnectionIdsForKey } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
 import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets } from "open-sse/handlers/videoCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -35,6 +35,12 @@ async function requireValidApiKey(request) {
     if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
   }
   return null;
+}
+
+// Resolved regardless of requireApiKey — scoping must hold even if that flag is off.
+async function resolveAllowedConnectionIds(request) {
+  const apiKey = extractApiKey(request);
+  return apiKey ? await getAllowedConnectionIdsForKey(apiKey) : null;
 }
 
 /**
@@ -111,13 +117,14 @@ export async function handleVideoCreate(request, action) {
 
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
   const idempotencyKey = request.headers.get("idempotency-key") || null;
+  const allowedConnectionIds = await resolveAllowedConnectionIds(request);
 
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId, allowedConnectionIds });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
@@ -187,8 +194,9 @@ export async function handleVideoGet(request, requestId) {
 
   const provider = DEFAULT_VIDEO_PROVIDER;
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
+  const allowedConnectionIds = await resolveAllowedConnectionIds(request);
 
-  const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId });
+  const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId, allowedConnectionIds });
   if (!credentials || credentials.allRateLimited) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
   }

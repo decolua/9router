@@ -5,7 +5,7 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getSettings, getCombos } from "@/lib/localDb";
+import { getSettings, getCombos, getAllowedConnectionIdsForKey } from "@/lib/localDb";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
 import { handleSearchCore } from "open-sse/handlers/search/index.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -68,6 +68,9 @@ export async function handleSearch(request) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: query");
   }
 
+  // Resolved regardless of requireApiKey — scoping must hold even if that flag is off.
+  const allowedConnectionIds = apiKey ? await getAllowedConnectionIdsForKey(apiKey) : null;
+
   // Combo expansion: providerInput may be a combo name → run fallback/round-robin across providers
   const combos = await getCombos();
   const comboModels = getComboModelsFromData(providerInput, combos);
@@ -79,7 +82,7 @@ export async function handleSearch(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleProviderSearch(b, m, request, apiKey, settings),
+      handleSingleModel: (b, m) => handleSingleProviderSearch(b, m, request, apiKey, settings, allowedConnectionIds),
       log,
       comboName: providerInput,
       comboStrategy,
@@ -87,10 +90,10 @@ export async function handleSearch(request) {
     });
   }
 
-  return handleSingleProviderSearch(body, providerInput, request, apiKey, settings);
+  return handleSingleProviderSearch(body, providerInput, request, apiKey, settings, allowedConnectionIds);
 }
 
-async function handleSingleProviderSearch(body, providerInput, request, apiKey, settings) {
+async function handleSingleProviderSearch(body, providerInput, request, apiKey, settings, allowedConnectionIds = null) {
   const query = body.query;
   const providerId = resolveProviderId(providerInput);
   const resolvedProvider = AI_PROVIDERS[providerId];
@@ -164,12 +167,12 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
     // Provider that actually owns the connection in use — differs from
     // providerId once we fall back, and error locks must be attributed to it.
     let credentialProviderId = providerId;
-    let credentials = await getProviderCredentials(providerId, excludeConnectionIds, searchLockKey);
+    let credentials = await getProviderCredentials(providerId, excludeConnectionIds, searchLockKey, { allowedConnectionIds });
 
     // Fall back to the related chat provider's credentials when this search
     // provider has none of its own (one key, chat + search).
     if (!credentials && fallbackProviderId) {
-      credentials = await getProviderCredentials(fallbackProviderId, excludeConnectionIds, searchLockKey);
+      credentials = await getProviderCredentials(fallbackProviderId, excludeConnectionIds, searchLockKey, { allowedConnectionIds });
       if (credentials) {
         credentialProviderId = fallbackProviderId;
         log.info("AUTH", `\x1b[32m${providerId} reusing ${fallbackProviderId} credentials\x1b[0m`);
