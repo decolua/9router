@@ -1,11 +1,15 @@
 import { NextResponse } from "next/server";
-import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
+import {
+  assertPublicUrl,
+  fetchPublicUrl,
+  SSRF_BLOCKED_ERROR_CODE,
+} from "@/shared/utils/ssrfGuard.js";
 import { isLocalRequest } from "@/dashboardGuard";
 
 // Fetch with timeout wrapper
-const fetchWithTimeout = (url, options, timeout = 10000) => {
+const fetchWithTimeout = (fetchImpl, url, options, timeout = 10000) => {
   return Promise.race([
-    fetch(url, options),
+    fetchImpl(url, options),
     new Promise((_, reject) => 
       setTimeout(() => reject(new Error("Request timeout")), timeout)
     )
@@ -66,8 +70,11 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid URL format" }, { status: 400 });
     }
 
-    // SSRF guard for remote callers; local host keeps self-hosted nodes (e.g. ollama-local)
-    if (!isLocalRequest(request)) {
+    // Trusted local callers keep self-hosted nodes (e.g. ollama-local). Remote callers
+    // use a DNS-aware dispatcher that also validates redirect destinations.
+    const localRequest = isLocalRequest(request);
+    const outboundFetch = localRequest ? fetch : fetchPublicUrl;
+    if (!localRequest) {
       try {
         assertPublicUrl(baseUrl);
       } catch {
@@ -81,7 +88,7 @@ export async function POST(request) {
       if (!modelId?.trim()) {
         return NextResponse.json({ valid: false, error: "Model ID required for embedding validation" });
       }
-      const embedRes = await fetchWithTimeout(`${normalizedBase}/embeddings`, {
+      const embedRes = await fetchWithTimeout(outboundFetch, `${normalizedBase}/embeddings`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${apiKey}`,
@@ -113,7 +120,7 @@ export async function POST(request) {
       }
 
       const modelsUrl = `${normalizedBase}/models`;
-      const res = await fetchWithTimeout(modelsUrl, {
+      const res = await fetchWithTimeout(outboundFetch, modelsUrl, {
         method: "GET",
         headers: {
           "x-api-key": apiKey,
@@ -131,7 +138,7 @@ export async function POST(request) {
 
       // Fallback: try chat/completions if modelId provided
       if (modelId) {
-        const chatRes = await fetchWithTimeout(`${normalizedBase}/chat/completions`, {
+        const chatRes = await fetchWithTimeout(outboundFetch, `${normalizedBase}/chat/completions`, {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${apiKey}`,
@@ -160,7 +167,7 @@ export async function POST(request) {
 
     // OpenAI Compatible Validation (Default)
     const modelsUrl = `${baseUrl.replace(/\/$/, "")}/models`;
-    const res = await fetchWithTimeout(modelsUrl, {
+    const res = await fetchWithTimeout(outboundFetch, modelsUrl, {
       headers: { "Authorization": `Bearer ${apiKey}` },
     });
 
@@ -173,7 +180,7 @@ export async function POST(request) {
 
     // Fallback: try chat/completions if modelId provided
     if (modelId) {
-      const chatRes = await fetchWithTimeout(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      const chatRes = await fetchWithTimeout(outboundFetch, `${baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${apiKey}`,
@@ -197,6 +204,9 @@ export async function POST(request) {
 
     return NextResponse.json({ valid: false, error: getModelsErrorMessage(res.status) });
   } catch (error) {
+    if (error?.code === SSRF_BLOCKED_ERROR_CODE || error?.cause?.code === SSRF_BLOCKED_ERROR_CODE) {
+      return NextResponse.json({ error: "URL not allowed" }, { status: 400 });
+    }
     const errorMessage = getErrorMessage(error);
     console.error("Error validating provider node:", {
       message: error.message,
