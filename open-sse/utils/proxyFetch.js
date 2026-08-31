@@ -112,6 +112,32 @@ const HTTPS_PORT = 443;
 const HTTP_SUCCESS_MIN = 200;
 const HTTP_SUCCESS_MAX = 300;
 
+// ─── HTTP KEEP-ALIVE AGENT FOR ALL HOSTS (Optimization #2, #9, #13) ──────────
+let _keepAliveAgent = null;
+
+async function getKeepAliveAgent() {
+  if (_keepAliveAgent) return _keepAliveAgent;
+
+  try {
+    // Use undici Agent (dispatcher) — the correct keep-alive pool for Node fetch.
+    // Node's native fetch ignores `https.Agent` (that's the old http/https request
+    // API); undici dispatcher is what fetch actually honors. This makes every
+    // upstream (tokenharbor.ai, api.kilo.ai, ...) reuse the TLS connection,
+    // cutting ~1-2s of TCP+TLS handshake per request.
+    const { Agent } = await import("undici");
+    _keepAliveAgent = new Agent({
+      keepAliveTimeout: 60000,
+      connections: 50,
+      pipelining: 1,
+      connectTimeout: 30000,
+    });
+  } catch (e) {
+    // Silently ignore - fallback to regular fetch
+  }
+
+  return _keepAliveAgent;
+}
+
 function normalizeString(value) {
   if (value === undefined || value === null) return "";
   return String(value).trim();
@@ -334,6 +360,10 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     }
   }
 
+  // Use keep-alive dispatcher for connection reuse (Optimization #2, #13).
+  // Applies to ALL hosts — non-Google providers (tokenharbor.ai, api.kilo.ai, ...)
+  // reuse the TLS connection instead of a fresh TCP+TLS handshake per request.
+  // Only used when no proxy is configured (proxy needs its own dispatcher).
   if (proxyUrl) {
     try {
       const dispatcher = await getDispatcher(proxyUrl);
@@ -346,6 +376,19 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       console.warn(`[ProxyFetch] Proxy failed, falling back to direct: ${proxyError.message}`);
       return originalFetch(url, options);
     }
+  }
+
+  try {
+    const dispatcher = await getKeepAliveAgent();
+    if (dispatcher) {
+      const response = await originalFetch(url, {
+        ...options,
+        dispatcher,
+      });
+      return response;
+    }
+  } catch (e) {
+    // Silently fall through to regular fetch
   }
 
   // got-scraping disabled — use native fetch directly

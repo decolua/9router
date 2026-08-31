@@ -78,7 +78,14 @@ export class DefaultExecutor extends BaseExecutor {
       stripUnsupportedParams(this.provider, model, transformed);
     }
 
-    return injectReasoningContent({ provider: this.provider, model, body: transformed });
+    const injected = injectReasoningContent({ provider: this.provider, model, body: transformed });
+
+    // Ensure unsupported params (such as reasoning_content on Cerebras) remain stripped after injection
+    if (injected && typeof injected === "object") {
+      stripUnsupportedParams(this.provider, model, injected);
+    }
+
+    return injected;
   }
 
   // Fallback json_schema → json_object for openai-compatible providers without native Structured Output.

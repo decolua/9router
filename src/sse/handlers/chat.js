@@ -247,14 +247,22 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Account selection shown in the unified "▶" line (acc:...)
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
-    // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
+    // Ensure real project ID is available for providers that need it.
+    // NON-BLOCKING: if projectId is missing (e.g. fresh panen account, or the
+    // cached value was evicted), do NOT stall the request waiting for
+    // loadCodeAssist/onboardUser (which can take 10-30s or fail entirely when
+    // Google returns done=true without project_id). Use the DB value (or the
+    // executor's generated fallback) for THIS request, and kick off a background
+    // fetch so the next request has it cached.
     if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
-      const pid = await getProjectIdForConnection(credentials.connectionId, refreshedCredentials.accessToken, provider);
-      if (pid) {
-        refreshedCredentials.projectId = pid;
-        // Persist to DB in background so subsequent requests have it immediately
-        updateProviderCredentials(credentials.connectionId, { projectId: pid }).catch(() => { });
-      }
+      // Fire-and-forget: fetch + persist in background; never block the hot path.
+      getProjectIdForConnection(credentials.connectionId, refreshedCredentials.accessToken, provider)
+        .then((pid) => {
+          if (pid) {
+            updateProviderCredentials(credentials.connectionId, { projectId: pid }).catch(() => { });
+          }
+        })
+        .catch(() => { });
     }
 
     // Use shared chatCore
@@ -311,6 +319,25 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         refreshedCredentials.accessToken, credentials.providerSpecificData
       );
       if (quotaResetMs) resetsAtMs = quotaResetMs;
+    }
+
+    // Antigravity permanent domain failure (401/403 deleted account by admin):
+    // dynamically group ANY GSuite domain (gmilil, gmosel, or any random new domain)
+    // and bulk-disable the whole domain so the next loop skips it in < 50ms.
+    if (provider === "antigravity" && result.status >= 400 && result.status <= 403) {
+      try {
+        const { isPermanentAntigravityAuthFailure, maybeBreakAntigravityDomain } = await import("../services/antigravityDomainBreaker.js");
+        if (isPermanentAntigravityAuthFailure(result.status, result.error)) {
+          const email = credentials.email || credentials.connectionName || "";
+          const verdict = await maybeBreakAntigravityDomain(email, provider);
+          if (verdict.broken) {
+            for (const c of []) {} // placeholder — already bulk-disabled in service
+            log.warn("AG_DOMAIN_BREAKER", `${verdict.domain} | bulk-disabled ${verdict.disabledCount} accounts -> skip domain`);
+          }
+        }
+      } catch {
+        // never break the fallback hot path for a breaker error
+      }
     }
 
     // Exhausted Antigravity model is blocked only in RAM cache until upstream resetAt.

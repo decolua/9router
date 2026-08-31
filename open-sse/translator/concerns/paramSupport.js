@@ -6,6 +6,8 @@ import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 // Each rule: optional provider, regex match on model, list of params to drop.
 // A param is removed only when it is present (!== undefined).
 const STRIP_RULES = [
+  // Cerebras: rejects reasoning_content in assistant message history (#400 wrong_api_format)
+  { provider: "cerebras", stripReasoningContent: true },
   // All Claude models: temperature deprecated/rejected upstream (Anthropic 400). #1748
   { match: /claude/i, drop: ["temperature"] },
   // GitHub Copilot gpt-5.4: temperature unsupported.
@@ -43,6 +45,14 @@ export function stripUnsupportedParams(provider, model, body) {
     if (!matches(rule, model)) continue;
     for (const key of rule.drop || []) {
       if (body[key] !== undefined) delete body[key];
+    }
+    // Cerebras rejects reasoning_content in assistant message history
+    if (rule.stripReasoningContent && Array.isArray(body.messages)) {
+      for (const msg of body.messages) {
+        if (msg && msg.reasoning_content !== undefined) {
+          delete msg.reasoning_content;
+        }
+      }
     }
     // CF Workers AI oneOf root schema only accepts content as plain string (#1926)
     if (rule.flattenContent && Array.isArray(body.messages)) {

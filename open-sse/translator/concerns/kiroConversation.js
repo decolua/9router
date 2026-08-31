@@ -52,8 +52,9 @@ function cleanSchemaValue(value) {
   if (!value || typeof value !== "object") return value;
 
   const cleaned = {};
+  const ignoredKeys = new Set(["additionalProperties", "", "", "definitions", "", "annotations", "metadata"]);
   for (const [key, child] of Object.entries(value)) {
-    if (key === "additionalProperties") continue;
+    if (ignoredKeys.has(key)) continue;
     if (key === "required" && Array.isArray(child) && child.length === 0) continue;
     cleaned[key] = cleanSchemaValue(child);
   }
@@ -80,8 +81,9 @@ export function normalizeKiroToolSpecs(tools) {
   const specs = [];
   const nameMap = new Map();
   const usedNames = new Set();
+  const rawList = Array.isArray(tools) ? tools.slice(0, 64) : [];
 
-  for (const [index, tool] of (Array.isArray(tools) ? tools : []).entries()) {
+  for (const [index, tool] of rawList.entries()) {
     if (!tool || typeof tool !== "object") continue;
     const rawName = tool.function?.name ?? tool.name;
     if (typeof rawName !== "string" || !rawName.trim()) continue;

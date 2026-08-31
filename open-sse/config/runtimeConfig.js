@@ -27,7 +27,7 @@ export const CACHE_TTL = {
 export const MEMORY_CONFIG = {
   sessionTtlMs: 2 * 60 * 60 * 1000,
   sessionCleanupIntervalMs: 30 * 60 * 1000,
-  dnsCacheTtlMs: 5 * 60 * 1000,
+  dnsCacheTtlMs: 60 * 60 * 1000, // Optimization #7: Increase from 5min to 1 hour
   proxyDispatchersMaxSize: 20,
 };
 

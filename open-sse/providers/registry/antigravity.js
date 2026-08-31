@@ -25,15 +25,9 @@ export default {
       "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
     },
     retry: {
-      "429": {
-        attempts: 3,
-      },
-      "500": {
-        attempts: 3,
-      },
-      "503": {
-        attempts: 3,
-      },
+      "429": { attempts: 1, delayMs: 500 },
+      "500": { attempts: 1, delayMs: 500 },
+      "503": { attempts: 1, delayMs: 500 },
     },
     usage: {
       // Discovery (quota/project) on PROD; daily host rejects these.

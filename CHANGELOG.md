@@ -1,3 +1,28 @@
+# v0.5.71 (2026-08-31) — 9router-imagefix
+
+## Features
+- **Antigravity**: dynamic domain circuit breaker — bulk-disable ANY GSuite
+  domain that returns permanent 400/401/403 (invalid_grant / PERMISSION_DENIED
+  / deleted by admin) after 2 failures. Handles gmilil.my.id today and any
+  future random domain (e.g. gmosel.com) without a hard-coded list.
+  Whitelists gmail.com/googlemail.com. Skips a dead domain in < 50 ms
+  instead of trying every account one-by-one (was 60-80s for 40 accounts).
+
+# v0.5.70 (2026-08-30) — 9router-imagefix
+
+## Fixes
+- **Cerebras**: strip `reasoning_content` from assistant message history —
+  Cerebras rejects `messages.N.assistant.reasoning_content` with `400 wrong_api_format`
+  during multi-turn conversations in Claude Code and OpenCode.
+
+# v0.5.69 (2026-08-30) — 9router-imagefix
+
+## Fixes
+- **Cerebras**: clamp `reasoning_effort` to `none|low|medium|high` — upstream
+  rejects `xhigh|max|minimal|ultra` with `400 wrong_api_format`. New levels
+  are clamped to `high` and the picker no longer offers unsupported values
+  (`thinkingLevels.js` + `thinkingUnified.js`)
+
 # v0.5.59 (2026-08-29)
 
 ## Features

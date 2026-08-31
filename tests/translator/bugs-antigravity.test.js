@@ -137,3 +137,85 @@ describe("Antigravity executor", () => {
     expect(system).not.toContain("Please ignore the following [ignore]");
   });
 });
+
+describe("Claude → Antigravity image preservation (direct route)", () => {
+  const PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const AG = (model, body) =>
+    translateRequest(FORMATS.CLAUDE, FORMATS.ANTIGRAVITY, model, body, true, { accessToken: "t", email: "x@y.z" }, "antigravity");
+
+  // claude-to-antigravity.js — pasted image in a user message was dropped by
+  // wrapInCloudCodeEnvelopeForClaude (no CLAUDE_BLOCK.IMAGE branch). Now it must
+  // survive as inlineData with the camelCase mimeType field.
+  it("Claude-backed model keeps image in user message as inlineData", () => {
+    const out = AG("claude-opus-4-6", {
+      model: "claude-opus-4-6",
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: "What is in this image?" },
+          { type: "image", source: { type: "base64", media_type: "image/png", data: PNG } },
+        ],
+      }],
+    });
+    const parts = out.request.contents[0].parts;
+    const inline = parts.find((p) => p.inlineData);
+    expect(inline, "image dropped for Claude model").toBeTruthy();
+    expect(inline.inlineData.mimeType).toBe("image/png");
+    expect(inline.inlineData.data).toBe(PNG);
+  });
+
+  // gemini.js convertOpenAIContentToParts produced mime_type (snake_case) while
+  // the rest of the codebase (and Antigravity) reads mimeType. Normalized here.
+  it("Gemini-backed model keeps image with camelCase mimeType", () => {
+    const out = AG("gemini-3.6-flash-high", {
+      model: "gemini-3.6-flash-high",
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: "hi" },
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: PNG } },
+        ],
+      }],
+    });
+    const inline = out.request.contents[0].parts.find((p) => p.inlineData);
+    expect(inline, "image dropped for Gemini model").toBeTruthy();
+    expect(inline.inlineData.mimeType).toBe("image/jpeg");
+    expect(JSON.stringify(out)).not.toContain("mime_type");
+  });
+
+  // claude-to-antigravity.js — image inside tool_result used to be stringified
+  // into response.result (claude-to-openai). Now it must land in
+  // functionResponse.parts[].inlineData, text stays in response.result.
+  it("image inside tool_result lands in functionResponse.parts as inlineData", () => {
+    const out = AG("claude-opus-4-6", {
+      model: "claude-opus-4-6",
+      messages: [
+        { role: "user", content: "Read this image." },
+        { role: "assistant", content: [{ type: "text", text: "OK" }] },
+        { role: "user", content: [{
+          type: "tool_result",
+          tool_use_id: "toolu_1",
+          content: [
+            { type: "image", source: { type: "base64", media_type: "image/png", data: PNG } },
+            { type: "text", text: "Here is the screenshot." },
+          ],
+        }] },
+      ],
+    });
+    const last = out.request.contents[out.request.contents.length - 1];
+    const funcResp = last.parts.find((p) => p.functionResponse);
+    expect(funcResp).toBeTruthy();
+    expect(funcResp.functionResponse.parts[0].inlineData.mimeType).toBe("image/png");
+    expect(funcResp.functionResponse.parts[0].inlineData.data).toBe(PNG);
+    expect(funcResp.functionResponse.response.result).toContain("Here is the screenshot.");
+  });
+
+  // Non-image request must keep the previous double-hop path (regression guard).
+  it("non-image request still goes through the fallback (text preserved)", () => {
+    const out = AG("claude-opus-4-6", {
+      model: "claude-opus-4-6",
+      messages: [{ role: "user", content: "hello" }],
+    });
+    expect(JSON.stringify(out.request.contents)).toContain("hello");
+  });
+});

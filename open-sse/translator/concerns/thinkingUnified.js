@@ -137,8 +137,11 @@ function toLevel(cfg) {
 }
 
 function normalizeOpenAILevel(level, supportedLevels) {
-  if (level !== "max" && level !== "ultra") return level;
   if (supportedLevels?.includes(level)) return level;
+  if (supportedLevels?.includes("high") && (level === "max" || level === "ultra" || level === "xhigh" || level === "minimal")) {
+    return "high";
+  }
+  if (level !== "max" && level !== "ultra") return level;
   if (level === "ultra" && supportedLevels?.includes("max")) return "max";
   return "xhigh";
 }

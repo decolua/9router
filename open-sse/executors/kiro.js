@@ -130,9 +130,17 @@ async function readResponsePrefix(response, signal, maxBytes, timeoutMs) {
 function appendRepairInstruction(body, kind) {
   const repaired = structuredClone(body || {});
   const instruction = REPAIR_INSTRUCTIONS[kind] || "Retry the previous incomplete Kiro response.";
-  repaired.systemPrompt = repaired.systemPrompt
-    ? `${repaired.systemPrompt}\n\n${instruction}`
-    : instruction;
+  if (repaired.systemPrompt !== undefined) {
+    repaired.systemPrompt = repaired.systemPrompt
+      ? `${repaired.systemPrompt}\n\n${instruction}`
+      : instruction;
+  }
+  const currentMsg = repaired?.conversationState?.currentMessage?.userInputMessage;
+  if (currentMsg) {
+    currentMsg.content = currentMsg.content
+      ? `${instruction}\n\n${currentMsg.content}`
+      : instruction;
+  }
   return repaired;
 }
 

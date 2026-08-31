@@ -296,7 +296,7 @@ function wrapInCloudCodeEnvelope(model, geminiCLI, credentials = null, isAntigra
 }
 
 // Wrap Claude format in Cloud Code envelope for Antigravity
-function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = null, signature = DEFAULT_THINKING_AG_SIGNATURE) {
+export function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = null, signature = DEFAULT_THINKING_AG_SIGNATURE) {
   const projectId = credentials?.projectId || generateProjectId();
 
   const envelope = {
@@ -338,6 +338,15 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
         for (const block of msg.content) {
           if (block.type === CLAUDE_BLOCK.TEXT) {
             parts.push({ text: block.text });
+          } else if (block.type === CLAUDE_BLOCK.IMAGE && block.source?.type === "base64") {
+            // Preserve pasted/attached images for vision-capable models. Without
+            // this branch the image is silently dropped before reaching Google.
+            parts.push({
+              inlineData: {
+                mimeType: block.source.media_type || "image/png",
+                data: block.source.data
+              }
+            });
           } else if (block.type === CLAUDE_BLOCK.TOOL_USE) {
             parts.push({
               thoughtSignature: signature,
@@ -349,20 +358,39 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
             });
           } else if (block.type === CLAUDE_BLOCK.TOOL_RESULT) {
             let content = block.content;
+            const imageParts = [];
             if (Array.isArray(content)) {
-              content = content.map(c => c.type === CLAUDE_BLOCK.TEXT ? c.text : JSON.stringify(c)).join("\n");
+              // Split tool_result content: text goes to response.result, images
+              // go to functionResponse.parts as inlineData (Gemini requires them
+              // there — a base64 blob must never be stringified into the result).
+              const textItems = [];
+              for (const item of content) {
+                if (item.type === CLAUDE_BLOCK.IMAGE && item.source?.type === "base64") {
+                  imageParts.push({
+                    inlineData: {
+                      mimeType: item.source.media_type || "image/png",
+                      data: item.source.data
+                    }
+                  });
+                } else if (item.type === CLAUDE_BLOCK.TEXT) {
+                  textItems.push(item.text);
+                }
+              }
+              content = textItems.join("\n");
             }
             // Resolve the original tool name from the id — Gemini requires it to match the functionCall name
             const resolvedName = toolUseIdToName[block.tool_use_id]
               ? sanitizeGeminiFunctionName(toolUseIdToName[block.tool_use_id])
               : "tool";
-            parts.push({
-              functionResponse: {
-                id: block.tool_use_id,
-                name: resolvedName,
-                response: { result: tryParseJSON(content) || content }
-              }
-            });
+            const functionResponse = {
+              id: block.tool_use_id,
+              name: resolvedName,
+              response: { result: tryParseJSON(content) || content }
+            };
+            if (imageParts.length > 0) {
+              functionResponse.parts = imageParts;
+            }
+            parts.push({ functionResponse });
           }
         }
       } else if (typeof msg.content === "string") {
