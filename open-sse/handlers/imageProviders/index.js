@@ -13,6 +13,9 @@ import runwayml from "./runwayml.js";
 import cloudflareAi from "./cloudflareAi.js";
 import antigravity from "./antigravity.js";
 
+// OpenAI-compatible custom-node image adapter (user-defined nodes: openai-compatible-*)
+import createOpenAICompatibleAdapter from "./openaiCompatible.js";
+
 const ADAPTERS = {
   openai: createOpenAIAdapter("openai"),
   minimax: createOpenAIAdapter("minimax"),
@@ -35,6 +38,8 @@ const ADAPTERS = {
 };
 
 export function getImageAdapter(provider) {
+  // Custom openai-compatible nodes: use the generic adapter (node's own baseUrl)
+  if (provider?.startsWith?.("openai-compatible-")) return createOpenAICompatibleAdapter();
   return ADAPTERS[provider] || null;
 }
 

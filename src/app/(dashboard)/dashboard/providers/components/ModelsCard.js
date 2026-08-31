@@ -116,6 +116,10 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
   const [testingModelId, setTestingModelId] = useState(null);
   const [testError, setTestError] = useState("");
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
+  const [fetchedModels, setFetchedModels] = useState(null);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [fetchError, setFetchError] = useState("");
+  const [addedModels, setAddedModels] = useState(new Set());
 
   const providerAlias = providerAliasOverride || getProviderAlias(providerId);
   const effectiveType = kindFilter || "llm";
@@ -177,6 +181,31 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
         window.dispatchEvent(new CustomEvent("customModelChanged"));
       }
     } catch (e) { console.log("delete custom model error:", e); }
+  };
+
+  const handleFetchModels = async () => {
+    if (fetchingModels) return;
+    setFetchingModels(true);
+    setFetchError("");
+    try {
+      const res = await fetch(`/api/providers/${providerId}/models`, { cache: "no-store" });
+      const data = await res.json();
+      if (res.ok && data.models) {
+        setFetchedModels(data.models);
+      } else {
+        setFetchError(data.error || `Failed to fetch models (${res.status})`);
+      }
+    } catch (e) {
+      setFetchError("Network error");
+    } finally {
+      setFetchingModels(false);
+    }
+  };
+
+  const handleAddFetchedModel = async (modelId) => {
+    if (addedModels.has(modelId)) return;
+    await handleAddCustomModel(modelId);
+    setAddedModels((prev) => new Set(prev).add(modelId));
   };
 
   const handleTestModel = async (modelId) => {
@@ -268,6 +297,15 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
             <span className="material-symbols-outlined text-sm">add</span>
             Add Model
           </button>
+
+          <button
+            onClick={handleFetchModels}
+            disabled={fetchingModels}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-dashed border-black/15 dark:border-white/15 text-xs text-text-muted hover:text-primary hover:border-primary/40 transition-colors"
+          >
+            <span className="material-symbols-outlined text-sm">{fetchingModels ? "sync" : "cloud_download"}</span>
+            {fetchingModels ? "Fetching..." : "Fetch from upstream"}
+          </button>
         </div>
       </Card>
 
@@ -279,9 +317,88 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
         }}
         onClose={() => setShowAddCustomModel(false)}
       />
+
+      {fetchedModels && (
+        <FetchedModelsModal
+          models={fetchedModels}
+          addedModels={addedModels}
+          error={fetchError}
+          onAdd={handleAddFetchedModel}
+          onClose={() => { setFetchedModels(null); setAddedModels(new Set()); setFetchError(""); }}
+        />
+      )}
+      {!fetchedModels && fetchError && (
+        <FetchedModelsModal
+          models={[]}
+          addedModels={addedModels}
+          error={fetchError}
+          onAdd={handleAddFetchedModel}
+          onClose={() => { setFetchedModels(null); setAddedModels(new Set()); setFetchError(""); }}
+        />
+      )}
     </>
   );
 }
+
+function FetchedModelsModal({ models, addedModels, error, onAdd, onClose }) {
+  const [filter, setFilter] = useState("");
+  const shown = filter
+    ? models.filter((m) => (m.id || "").toLowerCase().includes(filter.toLowerCase()))
+    : models;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-md max-h-[80vh] flex flex-col rounded-xl bg-white dark:bg-[#1a1a1a] border border-black/10 dark:border-white/10 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-4 py-3 border-b border-black/10 dark:border-white/10">
+          <h3 className="text-sm font-semibold">Models from upstream ({models.length})</h3>
+          <button onClick={onClose} className="material-symbols-outlined text-text-muted hover:text-text">close</button>
+        </div>
+        {error && <p className="px-4 py-2 text-xs text-red-500">{error}</p>}
+        <div className="px-4 py-2">
+          <input
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter..."
+            className="w-full px-2.5 py-1.5 text-xs rounded-lg bg-black/5 dark:bg-white/5 outline-none"
+          />
+        </div>
+        <div className="flex-1 overflow-y-auto px-2 pb-3">
+          {shown.length === 0 && <p className="px-2 py-4 text-xs text-text-muted text-center">No models</p>}
+          {shown.map((m) => {
+            const id = m.id || m.model || m.name;
+            if (!id) return null;
+            const added = addedModels.has(id);
+            return (
+              <div key={id} className="flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5">
+                <div className="min-w-0">
+                  <p className="text-xs truncate">{id}</p>
+                  {m.name && m.name !== id && <p className="text-[10px] text-text-muted truncate">{m.name}</p>}
+                </div>
+                <button
+                  onClick={() => onAdd(id)}
+                  disabled={added}
+                  className={`ml-3 shrink-0 px-2 py-1 rounded-md text-[10px] border ${added ? "text-text-muted border-black/10 dark:border-white/10 cursor-default" : "text-primary border-primary/40 hover:bg-primary/10"}`}
+                >
+                  {added ? "Added" : "Add"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+FetchedModelsModal.propTypes = {
+  models: PropTypes.array.isRequired,
+  addedModels: PropTypes.object.isRequired,
+  error: PropTypes.string,
+  onAdd: PropTypes.func.isRequired,
+  onClose: PropTypes.func.isRequired,
+};
 
 ModelsCard.propTypes = {
   providerId: PropTypes.string.isRequired,

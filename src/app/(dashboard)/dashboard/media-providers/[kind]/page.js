@@ -3,7 +3,7 @@
 import { useParams, notFound, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Card, Badge, Button, Toggle, AddCustomEmbeddingModal } from "@/shared/components";
+import { Card, Badge, Button, Toggle, AddCustomEmbeddingModal, AddCustomImageProviderModal } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS, getProvidersByKind } from "@/shared/constants/providers";
 
@@ -144,6 +144,7 @@ export default function MediaProviderKindPage() {
   const [customNodes, setCustomNodes] = useState([]);
   const [combos, setCombos] = useState([]);
   const [showAddCustomEmbedding, setShowAddCustomEmbedding] = useState(false);
+  const [showAddCustomImage, setShowAddCustomImage] = useState(false);
 
   // webSearch/webFetch listing pages are merged into /web
   useEffect(() => {
@@ -154,6 +155,7 @@ export default function MediaProviderKindPage() {
 
   const kindConfig = MEDIA_PROVIDER_KINDS.find((k) => k.id === kind);
   const isEmbedding = kind === "embedding";
+  const isImage = kind === "image";
   const supportsCombo = COMBO_KINDS.has(kind);
 
   useEffect(() => {
@@ -162,7 +164,26 @@ export default function MediaProviderKindPage() {
       .then((r) => r.json())
       .then((d) => setConnections(d.connections || []))
       .catch(() => {});
-    if (isEmbedding) {
+    if (isImage) {
+      // Whitelist: only show nodes that have image-type custom models registered.
+      // Add providers explicitly via the "Add Image Provider" button (creates node +
+      // lets user register image models from upstream) — nothing is auto-shown.
+      Promise.all([
+        fetch("/api/provider-nodes", { cache: "no-store" }).then((r) => r.json()),
+        fetch("/api/models/custom", { cache: "no-store" }).then((r) => r.json()),
+      ])
+        .then(([nodesRes, customRes]) => {
+          const nodes = nodesRes.nodes || [];
+          const customModels = customRes.models || [];
+          const imageNodeIds = new Set(
+            customModels.filter((m) => m.type === "image").map((m) => m.providerAlias)
+          );
+          setCustomNodes(
+            nodes.filter((n) => n.type === "openai-compatible" && imageNodeIds.has(n.id))
+          );
+        })
+        .catch(() => {});
+    } else if (isEmbedding) {
       fetch("/api/provider-nodes", { cache: "no-store" })
         .then((r) => r.json())
         .then((d) => setCustomNodes((d.nodes || []).filter((n) => n.type === "custom-embedding")))
@@ -184,9 +205,9 @@ export default function MediaProviderKindPage() {
   // Map custom nodes to MediaProviderCard shape
   const customProviders = customNodes.map((n) => ({
     id: n.id,
-    name: n.name || "Custom Embedding",
+    name: n.name || (isEmbedding ? "Custom Embedding" : "Custom Image Provider"),
     color: "#6366F1",
-    textIcon: "CE",
+    textIcon: isEmbedding ? "CE" : "CI",
   }));
 
   const allProviders = [...providers, ...customProviders];
@@ -239,6 +260,11 @@ export default function MediaProviderKindPage() {
               Add Custom Embedding
             </Button>
           )}
+          {isImage && (
+            <Button size="sm" icon="add" onClick={() => setShowAddCustomImage(true)}>
+              Add Image Provider
+            </Button>
+          )}
         </div>
       )}
 
@@ -281,6 +307,16 @@ export default function MediaProviderKindPage() {
           onCreated={(node) => {
             setCustomNodes((prev) => [...prev, node]);
             setShowAddCustomEmbedding(false);
+          }}
+        />
+      )}
+      {isImage && (
+        <AddCustomImageProviderModal
+          isOpen={showAddCustomImage}
+          onClose={() => setShowAddCustomImage(false)}
+          onCreated={(node) => {
+            setCustomNodes((prev) => [...prev, node]);
+            setShowAddCustomImage(false);
           }}
         />
       )}

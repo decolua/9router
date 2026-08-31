@@ -237,10 +237,127 @@ function stripStoredItemReferences(body) {
 }
 
 /**
+ * Grok validates JSON Schema URI fields more strictly than most OpenAI-compatible
+ * endpoints. TypeBox emits cyclic definitions under the subschema that uses them:
+ *
+ *   items: { $defs: { AddTask: ... }, $ref: "AddTask" }
+ *
+ * Responses expects local references to use a JSON Pointer and rejects bare names.
+ * Hoist local definitions to the tool-parameter root, then rewrite references to
+ * the canonical form. Definitions are renamed only when separate scopes collide.
+ */
+function normalizeGrokCliSchema(schema) {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return schema;
+
+  const root = schema;
+  const rootScope = { defs: new Map(), parent: null };
+  const scopeByNode = new WeakMap();
+  const records = [];
+  const usedNames = new Set();
+
+  const isObject = (value) => value && typeof value === "object" && !Array.isArray(value);
+  const allocateName = (name) => {
+    let candidate = name;
+    let suffix = 2;
+    while (usedNames.has(candidate)) candidate = `${name}_${suffix++}`;
+    usedNames.add(candidate);
+    return candidate;
+  };
+
+  const collect = (node, inheritedScope) => {
+    if (!isObject(node)) return;
+    const currentScope = node === root
+      ? rootScope
+      : (isObject(node.$defs) ? { defs: new Map(), parent: inheritedScope } : inheritedScope);
+    scopeByNode.set(node, currentScope);
+
+    if (isObject(node.$defs)) {
+      for (const [name, definition] of Object.entries(node.$defs)) {
+        if (!isObject(definition)) continue;
+        const targetName = allocateName(name);
+        currentScope.defs.set(name, targetName);
+        records.push({ definition, scope: currentScope, targetName });
+        collect(definition, currentScope);
+      }
+    }
+
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "$defs") continue;
+      if (Array.isArray(value)) {
+        for (const item of value) collect(item, currentScope);
+      } else {
+        collect(value, currentScope);
+      }
+    }
+  };
+
+  const lookup = (scope, name) => {
+    for (let current = scope; current; current = current.parent) {
+      if (current.defs.has(name)) return current.defs.get(name);
+    }
+    return null;
+  };
+
+  const localRefName = (ref) => {
+    if (typeof ref !== "string") return null;
+    if (/^[A-Za-z][A-Za-z0-9+.-]*:/.test(ref)) return null;
+    const encodedName = ref.startsWith("#/$defs/")
+      ? ref.slice("#/$defs/".length)
+      : ref.startsWith("#/$definitions/")
+        ? ref.slice("#/$definitions/".length)
+        : ref.startsWith("#")
+          ? null
+          : ref;
+    if (encodedName == null) return null;
+    try {
+      return decodeURIComponent(encodedName);
+    } catch {
+      return encodedName;
+    }
+  };
+
+  const rewrite = (node, inheritedScope) => {
+    if (!isObject(node)) return;
+    const currentScope = scopeByNode.get(node) || inheritedScope;
+    if (typeof node.$ref === "string") {
+      const name = localRefName(node.$ref);
+      const targetName = name && lookup(currentScope, name);
+      if (targetName) node.$ref = `#/$defs/${targetName.replace(/~/g, "~0").replace(/\//g, "~1")}`;
+    }
+    // Local $id values such as "AddTask" are rejected by Grok and are not
+    // needed once definitions are rooted under #/$defs.
+    if (typeof node.$id === "string") delete node.$id;
+    if (node !== root) delete node.$defs;
+
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "$defs") continue;
+      if (Array.isArray(value)) {
+        for (const item of value) rewrite(item, currentScope);
+      } else {
+        rewrite(value, currentScope);
+      }
+    }
+  };
+
+  collect(root, rootScope);
+  rewrite(root, rootScope);
+  for (const { definition, scope, targetName } of records) {
+    rewrite(definition, scope);
+  }
+
+  if (records.length > 0) {
+    const defs = {};
+    for (const { definition, targetName } of records) defs[targetName] = definition;
+    root.$defs = defs;
+  }
+  return root;
+}
+
+/**
  * Flatten Chat Completions tool shape → Responses flat format.
  * Keep hosted tools (web_search / x_search) passthrough.
  */
-function normalizeGrokCliTools(body) {
+export function normalizeGrokCliTools(body) {
   if (!Array.isArray(body.tools) || body.tools.length === 0) {
     delete body.tools;
     delete body.tool_choice;
@@ -301,7 +418,7 @@ function normalizeGrokCliTools(body) {
     tool.type = "function";
     tool.name = name.slice(0, 128);
     if (description) tool.description = description;
-    tool.parameters = parameters;
+    tool.parameters = normalizeGrokCliSchema(parameters);
     validNames.add(tool.name);
     return true;
   });

@@ -67,12 +67,23 @@ const { ensureSqliteRuntime, buildEnvWithRuntime } = require("./hooks/sqliteRunt
 const { ensureTrayRuntime } = require("./hooks/trayRuntime");
 const args = process.argv.slice(2);
 
-// Subcommands (`9router xai video …`) run against an already-running gateway
+// Subcommands run against an already-running gateway / local data dir
 // and bypass the launcher flow (no runtime self-heal, no server spawn).
 if (args[0] === "xai" && args[1] === "video") {
   const { run } = require("./src/cli/commands/xaiVideo");
   run(args.slice(2))
     .then((code) => process.exit(code))
+    .catch((err) => {
+      console.error(`❌ ${err?.message || err}`);
+      process.exit(1);
+    });
+  return;
+}
+
+if (args[0] === "config") {
+  const { run } = require("./src/cli/commands/config");
+  run(args.slice(1))
+    .then((code) => process.exit(code ?? 0))
     .catch((err) => {
       console.error(`❌ ${err?.message || err}`);
       process.exit(1);
@@ -122,6 +133,7 @@ let noBrowser = false;
 let skipUpdate = false;
 let showLog = false;
 let trayMode = false;
+let noTray = false;
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--port" || args[i] === "-p") {
@@ -138,7 +150,10 @@ for (let i = 0; i < args.length; i++) {
     skipUpdate = true;
   } else if (args[i] === "--tray" || args[i] === "-t") {
     trayMode = true;
+    noTray = false;
     process.env.TRAY_MODE = "1";
+  } else if (args[i] === "--no-tray") {
+    noTray = true;
   } else if (args[i] === "--help" || args[i] === "-h") {
     console.log(`
 Usage: ${APP_NAME} [options]
@@ -149,11 +164,15 @@ Options:
   -n, --no-browser    Don't open browser automatically
   -l, --log           Show server logs (default: hidden)
   -t, --tray          Run in system tray mode (background)
+  --no-tray           Background mode without tray icon (for desktop app wrapper)
   --skip-update       Skip auto-update check
   -h, --help          Show this help message
   -v, --version       Show version
 
 Commands:
+  config export|import|publish|receive|status|device-name
+                      Export/import config or auto-sync via private git repo
+                      (see: ${APP_NAME} config --help)
   xai video --prompt "..." --output video.mp4
                       Generate a Grok Imagine video via the running gateway
                       (see: ${APP_NAME} xai video --help)
@@ -165,7 +184,8 @@ Commands:
   }
 }
 
-// Auto-relaunch after update: detached process has no TTY → fallback to tray
+// Auto-relaunch after update: detached process has no TTY → fallback to tray.
+// --no-tray (desktop app wrapper) opts out of the tray icon entirely.
 if (skipUpdate && !trayMode && !process.stdin.isTTY) {
   trayMode = true;
   process.env.TRAY_MODE = "1";
@@ -276,9 +296,14 @@ function killAllAppProcesses(appPort) {
             // Whitelist: real node process running 9router/cli.js, or next-server.
             // Avoids killing editors/grep/strace/cursor that just have "9router" in cmdline.
             const cmd = line.toLowerCase();
+            const isConfigCmd =
+              cmd.includes("config receive") || cmd.includes("config publish") ||
+              cmd.includes("config status") || cmd.includes("config import") ||
+              cmd.includes("config export") || cmd.includes("config device-name");
             const isAppProcess =
-              (cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("\\9router") || cmd.includes("/9router")))
-              || cmd.includes("next-server");
+              !isConfigCmd &&
+              ((cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("\\9router") || cmd.includes("/9router")))
+              || cmd.includes("next-server"));
             if (isAppProcess) {
               const match = line.match(/^"(\d+)"/);
               if (match && match[1] && match[1] !== process.pid.toString()) {
@@ -302,9 +327,14 @@ function killAllAppProcesses(appPort) {
             // Whitelist: real node process running 9router/cli.js, or next-server.
             // Avoids killing grep/strace/editors/cursor that incidentally match "9router".
             const cmd = line.toLowerCase();
+            const isConfigCmd =
+              cmd.includes("config receive") || cmd.includes("config publish") ||
+              cmd.includes("config status") || cmd.includes("config import") ||
+              cmd.includes("config export") || cmd.includes("config device-name");
             const isAppProcess =
-              (cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("/9router")))
-              || cmd.includes("next-server");
+              !isConfigCmd &&
+              ((cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("/9router")))
+              || cmd.includes("next-server"));
             if (isAppProcess) {
               const parts = line.trim().split(/\s+/);
               const pid = parts[1];
@@ -716,9 +746,12 @@ function startServer(updatePromise) {
     console.log(`Server: http://${displayHost}:${port}`);
 
     waitServerReady(port).then(() => {
-      initTrayIcon();
-      console.log("\n💡 Router is now running in system tray. Close this terminal if you want.");
-      console.log("   Right-click tray icon to open dashboard or quit.\n");
+      if (!noTray) initTrayIcon();
+      console.log(noTray
+        ? "\n💡 Router is now running in background (--no-tray)."
+        : "\n💡 Router is now running in system tray. Close this terminal if you want.");
+      if (!noTray) console.log("   Right-click tray icon to open dashboard or quit.");
+      console.log("\n");
     });
 
     return;

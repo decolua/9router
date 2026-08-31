@@ -224,6 +224,12 @@ async function fetchCompatibleModelIds(connection) {
 // LLM is the default kind for providers missing serviceKinds.
 function providerMatchesKinds(providerId, kindFilter) {
   const provider = AI_PROVIDERS[providerId];
+  // Custom openai-compatible nodes carry per-model kinds via customModels
+  // (e.g. type: "image"). They're LLM by default but must surface image/tts/...
+  // entries when such custom models exist, so treat them as matching any kind.
+  if (isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId)) {
+    return true;
+  }
   const kinds = Array.isArray(provider?.serviceKinds) && provider.serviceKinds.length > 0
     ? provider.serviceKinds
     : [LLM_KIND];
@@ -326,9 +332,12 @@ export async function buildModelsList(kindFilter, options = {}) {
     }
 
     for (const customModel of customModels) {
-      if (!customModel?.id || (customModel.type && customModel.type !== "llm")) continue;
-      // Custom models without active connection are LLM-only by current schema
-      if (!kindFilter.includes(LLM_KIND)) continue;
+      if (!customModel?.id) continue;
+      // Custom models carry a type (llm / image / tts / embedding / ...).
+      // Match against kindFilter when set, otherwise treat as LLM.
+      const customType = customModel.type || "llm";
+      const customKinds = customType === "llm" ? ["llm"] : [customType];
+      if (!kindFilter.some((k) => customKinds.includes(k))) continue;
       const providerAlias = customModel.providerAlias;
       if (!providerAlias) continue;
 
