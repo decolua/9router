@@ -7,8 +7,15 @@ const CORS_HEADERS = {
 /**
  * Handle CORS preflight
  */
-export async function OPTIONS() {
-  return new Response(null, { headers: CORS_HEADERS });
+export async function OPTIONS(request) {
+  const headers = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+  const reqHeaders = request?.headers?.get("Access-Control-Request-Headers");
+  if (reqHeaders) headers["Access-Control-Allow-Headers"] = reqHeaders;
+  return new Response(null, { headers });
+});
 }
 
 function countValueChars(value) {

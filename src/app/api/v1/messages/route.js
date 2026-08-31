@@ -16,13 +16,15 @@ async function ensureInitialized() {
 /**
  * Handle CORS preflight
  */
-export async function OPTIONS() {
-  return new Response(null, {
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "*"
-    }
+export async function OPTIONS(request) {
+  const headers = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  };
+  const reqHeaders = request?.headers?.get("Access-Control-Request-Headers");
+  if (reqHeaders) headers["Access-Control-Allow-Headers"] = reqHeaders;
+  return new Response(null, { headers });
+}
   });
 }
 
