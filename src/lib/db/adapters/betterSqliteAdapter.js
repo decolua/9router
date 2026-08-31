@@ -1,10 +1,15 @@
-import Database from "better-sqlite3";
+import { createRequire } from "node:module";
 import { PRAGMA_SQL } from "../schema.js";
+
+const runtimeRequire = createRequire(import.meta.url);
 
 // Periodic checkpoint to keep WAL file small (avoid huge -wal/-shm growth)
 const CHECKPOINT_INTERVAL_MS = 60 * 1000;
 
 export function createBetterSqliteAdapter(filePath) {
+  // better-sqlite3 is optional. Resolve it only when this adapter is actually
+  // selected so Next's proxy/middleware bundle can build without the package.
+  const Database = runtimeRequire("better-sqlite3");
   const db = new Database(filePath);
   db.exec(PRAGMA_SQL);
   // Schema is created/synced by migrate.js after adapter init

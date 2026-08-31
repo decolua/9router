@@ -6,7 +6,7 @@ import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onTestChat = null, onDelete, oneByOneStatus = null, autoPing = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null);
@@ -181,6 +181,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 {connection.lastError}
               </span>
             )}
+            {connection.autoRetryReason === "TEMPORARILY_SUSPENDED" && connection.autoRetryAt && (
+              <span className="text-xs text-amber-600 dark:text-amber-400" title={connection.lastError || "Kiro account temporarily suspended"}>
+                Retry after {new Date(connection.autoRetryAt).toLocaleString()}
+              </span>
+            )}
             <span className="text-xs text-text-muted">#{connection.priority}</span>
             {connection.globalPriority && (
               <span className="text-xs text-text-muted">Auto: {connection.globalPriority}</span>
@@ -261,6 +266,17 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <span className="material-symbols-outlined text-[18px]">edit</span>
             <span className="text-[10px] leading-tight">Edit</span>
           </button>
+          {onTestChat && (
+            <button
+              onClick={onTestChat}
+              disabled={connection.isActive === false}
+              className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-white/5"
+              title={connection.isActive === false ? "Enable this auth before testing chat" : "Test chat with this auth"}
+            >
+              <span className="material-symbols-outlined text-[18px]">chat</span>
+              <span className="text-[10px] leading-tight">Test Chat</span>
+            </button>
+          )}
           <button onClick={onDelete} className="flex flex-col items-center rounded px-2 py-1 text-red-500 hover:bg-red-500/10">
             <span className="material-symbols-outlined text-[18px]">delete</span>
             <span className="text-[10px] leading-tight">Delete</span>
@@ -289,6 +305,8 @@ ConnectionRow.propTypes = {
     lastError: PropTypes.string,
     priority: PropTypes.number,
     globalPriority: PropTypes.number,
+    autoRetryAt: PropTypes.string,
+    autoRetryReason: PropTypes.string,
   }).isRequired,
   proxyPools: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.string,
@@ -305,6 +323,7 @@ ConnectionRow.propTypes = {
   onToggleActive: PropTypes.func.isRequired,
   onUpdateProxy: PropTypes.func,
   onEdit: PropTypes.func.isRequired,
+  onTestChat: PropTypes.func,
   onDelete: PropTypes.func.isRequired,
   oneByOneStatus: PropTypes.shape({
     state: PropTypes.string,

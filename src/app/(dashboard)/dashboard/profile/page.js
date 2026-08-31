@@ -77,6 +77,9 @@ export default function ProfilePage() {
     outboundProxyUrl: "",
     outboundNoProxy: "",
   });
+  const [proxyTestUrl, setProxyTestUrl] = useState("");
+  const [proxyTestUrlLoading, setProxyTestUrlLoading] = useState(false);
+  const [proxyTestUrlStatus, setProxyTestUrlStatus] = useState({ type: "", message: "" });
   const [proxyStatus, setProxyStatus] = useState({ type: "", message: "" });
   const [proxyLoading, setProxyLoading] = useState(false);
   const [proxyTestLoading, setProxyTestLoading] = useState(false);
@@ -116,6 +119,7 @@ export default function ProfilePage() {
           outboundProxyUrl: data?.outboundProxyUrl || "",
           outboundNoProxy: data?.outboundNoProxy || "",
         });
+        setProxyTestUrl(data?.proxyTestUrl || "");
         setLoading(false);
       })
       .catch((err) => {
@@ -167,17 +171,19 @@ export default function ProfilePage() {
     setProxyStatus({ type: "", message: "" });
 
     try {
+      const testUrl = (proxyTestUrl || "").trim();
       const res = await fetch("/api/settings/proxy-test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ proxyUrl }),
+        body: JSON.stringify({ proxyUrl, ...(testUrl ? { testUrl } : {}) }),
       });
 
       const data = await res.json();
       if (res.ok && data?.ok) {
+        const testedUrl = data.url || testUrl || "httpbin.org/ip";
         setProxyStatus({
           type: "success",
-          message: `Proxy test OK (${data.status}) in ${data.elapsedMs}ms`,
+          message: `Proxy test OK (${data.status}) → ${testedUrl} in ${data.elapsedMs}ms`,
         });
       } else {
         setProxyStatus({
@@ -1587,6 +1593,67 @@ export default function ProfilePage() {
             {proxyStatus.message && (
               <p className={`text-xs sm:text-sm ${proxyStatus.type === "error" ? "text-red-500" : "text-green-500"} pt-2 border-t border-border/50`}>
                 {proxyStatus.message}
+              </p>
+            )}
+          </div>
+        </Card>
+
+        {/* Connection Test */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-teal-500/10 text-teal-500 shrink-0">
+              <span className="material-symbols-outlined text-[20px]">speed</span>
+            </div>
+            <h3 className="text-base sm:text-lg font-semibold">Connection Test</h3>
+          </div>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <label className="font-medium text-sm sm:text-base">Test URL</label>
+              <Input
+                placeholder="https://google.com/"
+                value={proxyTestUrl}
+                onChange={(e) => setProxyTestUrl(e.target.value)}
+                disabled={loading || proxyTestUrlLoading}
+              />
+              <p className="text-xs sm:text-sm text-text-muted">
+                Domain used when testing proxy connectivity. Leave empty for default (httpbin.org).
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <Button
+                type="button"
+                variant="primary"
+                loading={proxyTestUrlLoading}
+                disabled={loading}
+                onClick={async () => {
+                  setProxyTestUrlLoading(true);
+                  setProxyTestUrlStatus({ type: "", message: "" });
+                  try {
+                    const res = await fetch("/api/settings", {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ proxyTestUrl: proxyTestUrl.trim() }),
+                    });
+                    if (res.ok) {
+                      setProxyTestUrlStatus({ type: "success", message: "Test URL saved" });
+                    } else {
+                      const data = await res.json();
+                      setProxyTestUrlStatus({ type: "error", message: data.error || "Failed to save" });
+                    }
+                  } catch {
+                    setProxyTestUrlStatus({ type: "error", message: "An error occurred" });
+                  } finally {
+                    setProxyTestUrlLoading(false);
+                  }
+                }}
+                className="w-full sm:w-auto"
+              >
+                Save
+              </Button>
+            </div>
+            {proxyTestUrlStatus.message && (
+              <p className={`text-xs sm:text-sm ${proxyTestUrlStatus.type === "error" ? "text-red-500" : "text-green-500"}`}>
+                {proxyTestUrlStatus.message}
               </p>
             )}
           </div>
