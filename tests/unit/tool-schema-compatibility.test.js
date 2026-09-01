@@ -20,30 +20,6 @@ const tools = [{
 }];
 
 describe("normalizeToolSchemasForProvider", () => {
-  // Test for provider-specific schema normalization
-  // Ensure valid patterns are preserved and invalid ones are removed
-
-  it("normalizes schemas based on provider feature support", () => {
-    const schemaTools = [{
-      type: "function",
-      function: {
-        name: "search",
-        parameters: {
-          type: "object",
-          properties: {
-            filters: {
-              type: "array",
-              items: { type: "string", pattern: "[" },
-            },
-          },
-        },
-      },
-    }];
-
-    const normalized = normalizeToolSchemasForProvider("openrouter", schemaTools);
-    expect(normalized[0].function.parameters.properties.filters.items).toEqual({ type: "string" });
-  });
-
   it("removes malformed regex constraints for OpenRouter while preserving valid schemas", () => {
     const normalized = normalizeToolSchemasForProvider("openrouter", tools);
     const parameters = normalized[0].function.parameters;

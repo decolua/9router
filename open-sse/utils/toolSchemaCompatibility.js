@@ -1,14 +1,3 @@
-const providerFeatureRegistry = {
-  openrouter: {
-    supportsRegex: true,
-    supportsComplexConstraints: false,
-  },
-  groq: {
-    supportsRegex: true,
-    supportsComplexConstraints: true,
-  },
-};
-
 function stripPatterns(value, inProperties = false) {
   if (Array.isArray(value)) return value.map((item) => stripPatterns(item, inProperties));
   if (!value || typeof value !== "object") return value;
@@ -27,22 +16,14 @@ function stripPatterns(value, inProperties = false) {
   return cleaned;
 }
 
-function normalizeSchemaForProvider(provider, schema) {
-  const features = providerFeatureRegistry[provider] || {};
-  if (!features.supportsRegex) {
-    return stripPatterns(schema);
-  }
-  return schema;
-}
-
 export function normalizeToolSchemasForProvider(provider, tools) {
-  if (!Array.isArray(tools)) return tools;
+  if (provider !== "openrouter" || !Array.isArray(tools)) return tools;
 
   return tools.map((tool) => ({
     ...tool,
     function: tool.function ? {
       ...tool.function,
-      parameters: normalizeSchemaForProvider(provider, tool.function.parameters),
+      parameters: stripPatterns(tool.function.parameters),
     } : tool.function,
   }));
 }
