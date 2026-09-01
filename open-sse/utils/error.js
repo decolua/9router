@@ -65,45 +65,43 @@ export async function parseUpstreamError(response, executor = null) {
     bodyText = "";
   }
 
+  let json = null;
+  try {
+    json = JSON.parse(bodyText);
+  } catch { /* use status fallback */ }
+
+  const source = json?.error && typeof json.error === "object" ? json.error : json;
+  const diagnostics = {
+    type: safeDiagnostic(source?.type),
+    param: safeDiagnostic(source?.param),
+    code: safeDiagnostic(source?.code),
+    request_id: safeRequestId(response, source?.request_id || json?.request_id)
+  };
+  const providerMessage = source?.message || json?.message || (typeof json?.error === "string" ? json.error : "");
+
   // Let executor-specific parser extract provider-specific fields (e.g. codex resetsAtMs)
+  let parsed = null;
   if (executor && typeof executor.parseError === "function") {
     try {
-      const parsed = executor.parseError(response, bodyText);
-      if (parsed && typeof parsed === "object") {
-        const msg = safeDiagnostic(parsed.message) || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
-        return {
-          statusCode: parsed.status || response.status,
-          message: msg,
-          type: safeDiagnostic(parsed.type),
-          param: safeDiagnostic(parsed.param),
-          code: safeDiagnostic(parsed.code),
-          request_id: safeRequestId(response, parsed.request_id),
-          resetsAtMs: parsed.resetsAtMs
-        };
-      }
+      parsed = executor.parseError(response, bodyText);
     } catch { /* fall through to default parsing */ }
   }
 
-  let message = "";
-  let diagnostics = {};
-  try {
-    const json = JSON.parse(bodyText);
-    const source = json.error && typeof json.error === "object" ? json.error : json;
-    diagnostics = {
-      type: safeDiagnostic(source?.type),
-      param: safeDiagnostic(source?.param),
-      code: safeDiagnostic(source?.code),
-      request_id: safeRequestId(response, source?.request_id || json.request_id)
-    };
-    message = source?.message || json.message || (typeof json.error === "string" ? json.error : "");
-  } catch {
-    message = "";
-  }
-
-  const messageStr = safeDiagnostic(message);
+  const parsedMessage = parsed && typeof parsed === "object" && parsed.message !== bodyText
+    ? parsed.message
+    : providerMessage;
+  const messageStr = safeDiagnostic(parsedMessage);
   const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
 
-  return { statusCode: response.status, message: finalMessage, ...diagnostics };
+  return {
+    statusCode: parsed?.status || response.status,
+    message: finalMessage,
+    type: safeDiagnostic(parsed?.type) || diagnostics.type,
+    param: safeDiagnostic(parsed?.param) || diagnostics.param,
+    code: safeDiagnostic(parsed?.code) || diagnostics.code,
+    request_id: safeRequestId(response, parsed?.request_id || diagnostics.request_id),
+    resetsAtMs: parsed?.resetsAtMs
+  };
 }
 
 function safeDiagnostic(value) {
