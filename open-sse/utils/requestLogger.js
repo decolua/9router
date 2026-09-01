@@ -69,25 +69,26 @@ function writeJsonFile(sessionPath, filename, data) {
   }
 }
 
-// Mask sensitive data in headers (DISABLED - keep full token for testing)
-function maskSensitiveHeaders(headers) {
+// Mask sensitive data in headers
+export function maskSensitiveHeaders(headers) {
   if (!headers) return {};
-  return { ...headers };
-  
-  // Old masking code (disabled):
-  // const masked = { ...headers };
-  // const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token"];
-  // 
-  // for (const key of Object.keys(masked)) {
-  //   const lowerKey = key.toLowerCase();
-  //   if (sensitiveKeys.some(sk => lowerKey.includes(sk))) {
-  //     const value = masked[key];
-  //     if (value && value.length > 20) {
-  //       masked[key] = value.slice(0, 10) + "..." + value.slice(-5);
-  //     }
-  //   }
-  // }
-  // return masked;
+  const masked = {};
+  const sensitiveKeys = ["authorization", "api-key", "apikey", "cookie", "token", "credential", "secret"];
+  const entries = typeof headers.entries === "function" ? headers.entries() : Object.entries(headers);
+  for (const [key, value] of entries) {
+    masked[key] = sensitiveKeys.some((part) => key.toLowerCase().includes(part)) ? "[REDACTED]" : value;
+  }
+  return masked;
+}
+
+export function safePayloadMetadata(value) {
+  if (value === null || value === undefined) return { present: false };
+  if (typeof value === "string" || value instanceof Uint8Array) return { present: true, type: "bytes", size: value.length };
+  return { present: true, type: Array.isArray(value) ? "array" : typeof value };
+}
+
+function safeChunkMetadata(chunk) {
+  return JSON.stringify({ size: typeof chunk === "string" || chunk instanceof Uint8Array ? chunk.length : 0 }) + "\n";
 }
 
 // No-op logger when logging is disabled
@@ -132,7 +133,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         timestamp: new Date().toISOString(),
         endpoint,
         headers: maskSensitiveHeaders(headers),
-        body
+        body: safePayloadMetadata(body)
       });
     },
     
@@ -141,7 +142,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       writeJsonFile(sessionPath, "2_req_source.json", {
         timestamp: new Date().toISOString(),
         headers: maskSensitiveHeaders(headers),
-        body
+        body: safePayloadMetadata(body)
       });
     },
     
@@ -149,7 +150,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
     logOpenAIRequest(body) {
       writeJsonFile(sessionPath, "3_req_openai.json", {
         timestamp: new Date().toISOString(),
-        body
+        body: safePayloadMetadata(body)
       });
     },
     
@@ -159,7 +160,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         timestamp: new Date().toISOString(),
         url,
         headers: maskSensitiveHeaders(headers),
-        body
+        body: safePayloadMetadata(body)
       });
     },
     
@@ -170,8 +171,8 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         timestamp: new Date().toISOString(),
         status,
         statusText,
-        headers: headers ? (typeof headers.entries === "function" ? Object.fromEntries(headers.entries()) : headers) : {},
-        body
+        headers: maskSensitiveHeaders(headers),
+        body: safePayloadMetadata(body)
       });
     },
     
@@ -180,7 +181,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "5_res_provider.txt");
-        fs.appendFileSync(filePath, chunk);
+        fs.appendFileSync(filePath, safeChunkMetadata(chunk));
       } catch (err) {
         // Ignore append errors
       }
@@ -191,7 +192,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "6_res_openai.txt");
-        fs.appendFileSync(filePath, chunk);
+        fs.appendFileSync(filePath, safeChunkMetadata(chunk));
       } catch (err) {
         // Ignore append errors
       }
@@ -201,7 +202,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
     logConvertedResponse(body) {
       writeJsonFile(sessionPath, "7_res_client.json", {
         timestamp: new Date().toISOString(),
-        body
+        body: safePayloadMetadata(body)
       });
     },
     
@@ -210,19 +211,17 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "7_res_client.txt");
-        fs.appendFileSync(filePath, chunk);
+        fs.appendFileSync(filePath, safeChunkMetadata(chunk));
       } catch (err) {
         // Ignore append errors
       }
     },
     
     // 6. Log error
-    logError(error, requestBody = null) {
+    logError(error) {
       writeJsonFile(sessionPath, "6_error.json", {
         timestamp: new Date().toISOString(),
-        error: error?.message || String(error),
-        stack: error?.stack,
-        requestBody
+        errorType: error?.name || "Error"
       });
     }
   };
@@ -248,9 +247,7 @@ export function logError(provider, { error, url, model, requestBody }) {
       provider,
       model,
       url,
-      error: error?.message || String(error),
-      stack: error?.stack,
-      requestBody
+      errorType: error?.name || "Error"
     };
     
     fs.appendFileSync(logPath, JSON.stringify(logEntry) + "\n");

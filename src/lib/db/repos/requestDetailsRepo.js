@@ -77,12 +77,8 @@ function generateDetailId(model) {
   return `${timestamp}-${random}-${modelPart}`;
 }
 
-function truncateField(obj, maxSize) {
-  const str = JSON.stringify(obj || {});
-  if (str.length > maxSize) {
-    return { _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) };
-  }
-  return obj || {};
+function redactPayload(value) {
+  return value === undefined || value === null ? {} : { redacted: true };
 }
 
 async function flushToDatabase() {
@@ -111,10 +107,10 @@ async function flushToDatabase() {
             status: item.status || null,
             latency: item.latency || {},
             tokens: item.tokens || {},
-            request: truncateField(item.request, config.maxJsonSize),
-            providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
-            providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
-            response: truncateField(item.response, config.maxJsonSize),
+            request: redactPayload(item.request),
+            providerRequest: redactPayload(item.providerRequest),
+            providerResponse: redactPayload(item.providerResponse),
+            response: redactPayload(item.response),
             pxpipe: item.pxpipe || undefined,
           };
 
