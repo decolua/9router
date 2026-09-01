@@ -42,6 +42,13 @@ describe("detectRequiredCapabilities", () => {
     expect(r.has("search")).toBe(true);
   });
 
+  it("OpenAI function tool -> tools", () => {
+    const r = detectRequiredCapabilities({ messages: [{ role: "user", content: "q" }], tools: [
+      { type: "function", function: { name: "read_file", parameters: { type: "object" } } },
+    ] });
+    expect(r.has("tools")).toBe(true);
+  });
+
   it("responses input_image -> vision", () => {
     const r = detectRequiredCapabilities({ input: [{ role: "user", content: [
       { type: "input_image", image_url: "x" },
