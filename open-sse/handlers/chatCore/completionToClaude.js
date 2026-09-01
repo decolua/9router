@@ -38,7 +38,6 @@ export function openAICompletionToClaudeMessage(responseBody) {
       input: parseToolArguments(fn.arguments || toolCall.arguments),
     });
   }
-  if (content.length === 0) content.push({ type: "text", text: "" });
 
   const usage = responseBody.usage || {};
   return {

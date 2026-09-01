@@ -94,3 +94,17 @@ describe("forced-SSE JSON path for a Claude client", () => {
     expect(json.choices[0].message.tool_calls[0].function.name).toBe("shell");
   });
 });
+
+describe("empty completions must not produce empty text blocks", () => {
+  it("returns content: [] when the provider gave neither text nor tool calls", async () => {
+    // Claude Code 400s on re-send if history ever gains {type:"text",text:""}.
+    const res = new Response(
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"glm-5.3","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+      { headers: { "content-type": "text/event-stream" } },
+    );
+    const r = await handleForcedSSEToJson(baseCtx(res, { targetFormat: FORMATS.OPENAI }));
+    expect(r.success).toBe(true);
+    const json = await r.response.json();
+    expect(json.content).toEqual([]);
+  });
+});

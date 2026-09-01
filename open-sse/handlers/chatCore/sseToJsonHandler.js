@@ -127,7 +127,6 @@ function responsesToClaudeMessage(jsonResponse, fallbackModel) {
       });
     }
   }
-  if (content.length === 0) content.push({ type: "text", text: "" });
 
   const usage = jsonResponse?.usage || {};
   const hasToolUse = content.some((block) => block.type === "tool_use");
