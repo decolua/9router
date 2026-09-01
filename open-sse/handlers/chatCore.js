@@ -211,7 +211,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
   }
 
-  translatedBody.tools = normalizeToolSchemasForProvider(provider, translatedBody.tools);
+  translatedBody.tools = normalizeToolSchemasForProvider(provider, translatedBody.tools, log);
 
   // Token savers: applied at the final body just before dispatch
   // Covers both passthrough (source shape) and translated (target shape) flows
