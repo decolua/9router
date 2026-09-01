@@ -7,7 +7,24 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
 // Providers using the dynamic-port local callback proxy.
 // Browser OAuth: popup → auto callback → auto exchange → poll-status.
-const PROXY_OAUTH_PROVIDERS = new Set(["trae", "windsurf", "zed"]);
+// C61_DEVICE_CODE_META_URL
+function buildOAuthActionUrl(provider, action, meta = {}) {
+  const base = `/api/oauth/${provider}/${action}`;
+  if (action !== "device-code") return base;
+
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(meta || {})) {
+    if (value === undefined || value === null || value === "") continue;
+    if (!["string", "number", "boolean"].includes(typeof value)) continue;
+    params.set(key, String(value));
+  }
+
+  const query = params.toString();
+  return query ? `${base}?${query}` : base;
+}
+
+const PROXY_OAUTH_PROVIDERS = new Set(["trae", "windsurf", "zed", "zed-hosted"]);
 
 // Providers offering a paste-token fallback (import-token flow).
 // UX warns if the IDE (which issues the token) is not installed.
@@ -146,7 +163,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const res = await fetch(`/api/oauth/${provider}/poll`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceCode, codeVerifier, extraData }),
+          body: JSON.stringify({
+        extraData: { ...(oauthMeta || {}) }, /* C61_GHE_POLL_META */ deviceCode, codeVerifier, extraData }),
         });
 
         const data = await res.json();
@@ -234,12 +252,13 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         "codebuddy-intl",
         "qoder",
         "grok-cli",
+        "ghe-copilot",
       ];
       if (deviceCodeProviders.includes(provider)) {
         setIsDeviceCode(true);
         setStep("waiting");
 
-        const deviceCodeUrl = new URL(`/api/oauth/${provider}/device-code`, window.location.origin);
+        const deviceCodeUrl = new URL(buildOAuthActionUrl(provider, "device-code", oauthMeta), window.location.origin);
         if (provider === "kiro" && idcConfig?.startUrl) {
           deviceCodeUrl.searchParams.set("start_url", idcConfig.startUrl);
           if (idcConfig.region) {

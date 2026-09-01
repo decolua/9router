@@ -49,7 +49,10 @@
     "sql.js": "^1.14.1",
     "undici": "^7.19.2",
     "uuid": "^13.0.0",
-    "zustand": "^5.0.10"
+    "zustand": "^5.0.10",
+    "ws": "^8.21.3",
+    "parse5": "^8.0.1",
+    "playwright": "1.62.1"
   },
   "optionalDependencies": {
     "better-sqlite3": "^12.6.2"

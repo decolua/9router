@@ -24,6 +24,7 @@ import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
 import BulkImportGrokCliModal from "./BulkImportGrokCliModal";
 
+import ProviderOAuthModal from "@/shared/components/ProviderOAuthModal";
 const ONE_BY_ONE_DELAY_MS = 1000;
 
 const AUTO_PING_SETTINGS_KEYS = {
@@ -1726,7 +1727,7 @@ export default function ProviderDetailPage() {
           onClose={() => setShowOAuthModal(false)}
         />
       ) : (
-        <OAuthModal
+        <ProviderOAuthModal
           isOpen={showOAuthModal}
           provider={providerId}
           providerInfo={providerInfo}

@@ -7,6 +7,7 @@ import { extractCodexAccountInfo, fetchKiroProfileArn } from "../providerHelpers
 import claude from "./claude.js";
 import codex from "./codex.js";
 import xai from "./xai.js";
+import openference from "./openference.js";
 import grokCli from "./grok-cli.js";
 import geminiCli from "./gemini-cli.js";
 import antigravity from "./antigravity.js";
@@ -27,14 +28,23 @@ import trae from "./trae.js";
 import windsurf from "./windsurf.js";
 import zed from "./zed.js";
 
+import gheCopilot from "./ghe-copilot.js";
+import devinDesktop from "./devin-desktop.js";
 // Provider configurations
 const PROVIDERS = {
+  "ghe-copilot": gheCopilot,
+  "gitlab-duo": gitlab,
+  "devin-desktop": devinDesktop,
+  "zed-hosted": zed,
   claude,
   codex,
   xai,
+  "xai-oauth": xai,
+  openference,
   "grok-cli": grokCli,
   "gemini-cli": geminiCli,
   antigravity,
+  agy: antigravity,
   iflow,
   qoder,
   github,

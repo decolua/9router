@@ -124,6 +124,20 @@ import p120 from "./fish-audio.js";
 import p121 from "./alitp-intl.js";
 import p122 from "./xquik.js";
 
+import aihorde from "./aihorde.js";
+import duckduckgoWeb from "./duckduckgo-web.js";
+import cloudflarePlayground from "./cloudflare-playground.js";
+import theoldllm from "./theoldllm.js";
+import veoaifreeWeb from "./veoaifree-web.js";
+import openference from "./openference.js";
+import xaiOauth from "./xai-oauth.js";
+import agy from "./agy.js";
+import chipotle from "./chipotle.js";
+import uncloseai from "./uncloseai.js";
+import gheCopilot from "./ghe-copilot.js";
+import gitlabDuo from "./gitlab-duo.js";
+import devinDesktop from "./devin-desktop.js";
+import zedHosted from "./zed-hosted.js";
 export default [
   p0,
   p1,
@@ -247,4 +261,18 @@ export default [
   p120,
   p121,
   p122,
+  aihorde,
+  chipotle,
+  duckduckgoWeb,
+  cloudflarePlayground,
+  theoldllm,
+  veoaifreeWeb,
+  openference,
+  xaiOauth,
+  agy,
+  uncloseai,
+  gheCopilot,
+  gitlabDuo,
+  devinDesktop,
+  zedHosted,
 ];

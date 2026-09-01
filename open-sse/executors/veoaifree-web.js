@@ -1,0 +1,774 @@
+import dns from "node:dns";
+import { isIP } from "node:net";
+import { BaseExecutor } from "./base.js";
+class OutboundUrlGuardError extends Error {
+    constructor(code, message) {
+        super(message);
+        this.name = "OutboundUrlGuardError";
+        this.code = code;
+    }
+}
+
+function isPrivateIpv4(host) {
+    const parts = host
+        .split(".")
+        .map((part) => Number(part));
+
+    if (
+        parts.length !== 4 ||
+        parts.some(
+            (part) =>
+                !Number.isInteger(part) ||
+                part < 0 ||
+                part > 255
+        )
+    ) {
+        return false;
+    }
+
+    const [a, b] = parts;
+
+    if (a === 0) return true;
+    if (a === 10) return true;
+    if (a === 127) return true;
+    if (a >= 224) return true;
+
+    if (
+        a === 100 &&
+        b >= 64 &&
+        b <= 127
+    ) {
+        return true;
+    }
+
+    if (
+        a === 169 &&
+        b === 254
+    ) {
+        return true;
+    }
+
+    if (
+        a === 172 &&
+        b >= 16 &&
+        b <= 31
+    ) {
+        return true;
+    }
+
+    if (
+        a === 192 &&
+        b === 168
+    ) {
+        return true;
+    }
+
+    if (
+        a === 198 &&
+        (b === 18 || b === 19)
+    ) {
+        return true;
+    }
+
+    return false;
+}
+
+function isPrivateHost(hostname) {
+    const host = String(
+        hostname || ""
+    )
+        .trim()
+        .toLowerCase()
+        .replace(/^\[/, "")
+        .replace(/\]$/, "");
+
+    if (!host) return true;
+
+    if (
+        host === "localhost" ||
+        host.endsWith(".localhost")
+    ) {
+        return true;
+    }
+
+    const family = isIP(host);
+
+    if (family === 4) {
+        return isPrivateIpv4(host);
+    }
+
+    if (family === 6) {
+        if (
+            host === "::" ||
+            host === "::1"
+        ) {
+            return true;
+        }
+
+        if (
+            host.startsWith("fc") ||
+            host.startsWith("fd") ||
+            host.startsWith("fe8") ||
+            host.startsWith("fe9") ||
+            host.startsWith("fea") ||
+            host.startsWith("feb") ||
+            host.startsWith("ff")
+        ) {
+            return true;
+        }
+
+        const mapped =
+            host.match(
+                /^::ffff:(\d+\.\d+\.\d+\.\d+)$/
+            );
+
+        if (
+            mapped &&
+            isPrivateIpv4(mapped[1])
+        ) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function parseAndValidatePublicUrl(input) {
+    let url;
+
+    try {
+        url = new URL(String(input));
+    } catch {
+        throw new OutboundUrlGuardError(
+            "OUTBOUND_URL_INVALID",
+            "Outbound URL is invalid"
+        );
+    }
+
+    if (
+        url.protocol !== "https:" &&
+        url.protocol !== "http:"
+    ) {
+        throw new OutboundUrlGuardError(
+            "OUTBOUND_URL_INVALID",
+            "Outbound URL protocol is invalid"
+        );
+    }
+
+    if (
+        url.username ||
+        url.password
+    ) {
+        throw new OutboundUrlGuardError(
+            "OUTBOUND_URL_INVALID",
+            "Outbound URL credentials are not allowed"
+        );
+    }
+
+    if (isPrivateHost(url.hostname)) {
+        throw new OutboundUrlGuardError(
+            "OUTBOUND_URL_BLOCKED",
+            "Outbound URL host is blocked"
+        );
+    }
+
+    return url;
+}
+
+function sanitizeErrorMessage(message) {
+    return String(
+        message ||
+        "Veo AI Free upstream error"
+    )
+        .replace(
+            /Bearer\s+[A-Za-z0-9._~+\/=\-]+/gi,
+            "Bearer [redacted]"
+        )
+        .replace(
+            /(authorization|token|api[_-]?key|cookie)(\s*[:=]\s*)[^\s,;]+/gi,
+            "$1$2[redacted]"
+        )
+        .slice(0, 500);
+}
+
+const BASE_URL = "https://veoaifree.com";
+const AJAX_URL = `${BASE_URL}/wp-admin/admin-ajax.php`;
+const TTS_URL = `${BASE_URL}/video/googletts.php`;
+const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
+const POLL_INTERVAL_MS = 20_000;
+const MAX_POLLS = 30;
+const FETCH_TIMEOUT_MS = 30_000;
+const ARTIFACT_MAX_BYTES = 100 * 1024 * 1024;
+const ARTIFACT_MAX_REDIRECTS = 3;
+const ARTIFACT_READY_RETRY_INTERVAL_MS = 5_000;
+const ARTIFACT_READY_MAX_ATTEMPTS = 12;
+const RETRYABLE_ARTIFACT_STATUSES = new Set([
+    202,
+    404,
+    409,
+    425
+]);
+class VeoArtifactError extends Error {
+    code;
+    status;
+    retryable;
+    constructor(code, message, status = 502, options){
+        super(message);
+        this.name = "VeoArtifactError";
+        this.code = code;
+        this.status = status;
+        this.retryable = options?.retryable === true;
+    }
+}
+function throwIfAborted(signal) {
+    if (signal?.aborted) {
+        throw signal.reason instanceof Error ? signal.reason : new Error("Request aborted");
+    }
+}
+function withTimeout(signal) {
+    const controller = new AbortController();
+    const abort = ()=>controller.abort(signal?.reason || new Error("Request aborted"));
+    const timeout = setTimeout(()=>controller.abort(new Error("VeoAIFree request timed out")), FETCH_TIMEOUT_MS);
+    if (signal?.aborted) {
+        abort();
+    } else {
+        signal?.addEventListener("abort", abort, {
+            once: true
+        });
+    }
+    return {
+        signal: controller.signal,
+        cleanup: ()=>{
+            clearTimeout(timeout);
+            signal?.removeEventListener("abort", abort);
+        }
+    };
+}
+async function fetchWithTimeout(url, init = {}, signal) {
+    throwIfAborted(signal);
+    const timeout = withTimeout(signal);
+    try {
+        return await fetch(url, {
+            ...init,
+            signal: timeout.signal
+        });
+    } finally{
+        timeout.cleanup();
+    }
+}
+function waitForDuration(ms, signal) {
+    throwIfAborted(signal);
+    let abort;
+    return new Promise((resolve, reject)=>{
+        const timeout = setTimeout(resolve, ms);
+        abort = ()=>{
+            clearTimeout(timeout);
+            reject(signal?.reason instanceof Error ? signal.reason : new Error("Request aborted"));
+        };
+        signal?.addEventListener("abort", abort, {
+            once: true
+        });
+    }).finally(()=>{
+        if (abort) signal?.removeEventListener("abort", abort);
+    });
+}
+function waitForPoll(signal) {
+    return waitForDuration(POLL_INTERVAL_MS, signal);
+}
+function jsonResp(data, status = 200) {
+    return new Response(JSON.stringify(data), {
+        status,
+        headers: {
+            "Content-Type": "application/json"
+        }
+    });
+}
+function errResp(message, status = 502, code = "upstream_error") {
+    return jsonResp({
+        error: {
+            message: sanitizeErrorMessage(message),
+            type: "upstream_error",
+            code
+        }
+    }, status);
+}
+function getSetCookieHeaders(headers) {
+    const value = headers;
+    if (typeof value.getSetCookie === "function") {
+        return value.getSetCookie();
+    }
+    const raw = headers.get("set-cookie");
+    return raw ? [
+        raw
+    ] : [];
+}
+function parseSetCookiePair(setCookie) {
+    const pair = setCookie.split(";")[0]?.trim();
+    if (!pair) return null;
+    const eq = pair.indexOf("=");
+    if (eq <= 0) return null;
+    return {
+        name: pair.slice(0, eq).trim(),
+        value: pair.slice(eq + 1)
+    };
+}
+function mergeCookieHeaderWithSetCookie(cookieHeader, setCookieHeaders) {
+    const cookieMap = new Map();
+    for (const part of cookieHeader.split(";")){
+        const trimmed = part.trim();
+        if (!trimmed) continue;
+        const eq = trimmed.indexOf("=");
+        if (eq <= 0) continue;
+        cookieMap.set(trimmed.slice(0, eq).trim(), trimmed.slice(eq + 1));
+    }
+    for (const setCookie of setCookieHeaders){
+        const parsed = parseSetCookiePair(setCookie);
+        if (!parsed || !parsed.value) continue;
+        cookieMap.set(parsed.name, parsed.value);
+    }
+    return [
+        ...cookieMap.entries()
+    ].map(([name, value])=>`${name}=${value}`).join("; ");
+}
+function updateSessionCookies(context, response) {
+    const setCookieHeaders = getSetCookieHeaders(response.headers);
+    if (setCookieHeaders.length === 0) return;
+    context.cookieHeader = mergeCookieHeaderWithSetCookie(context.cookieHeader, setCookieHeaders);
+}
+function buildRequestHeaders(context, options) {
+    const headers = {
+        "User-Agent": context.userAgent,
+        Referer: options?.referer || context.referer
+    };
+    if (options?.contentType) headers["Content-Type"] = options.contentType;
+    if (options?.includeOrigin) headers.Origin = context.origin;
+    if (options?.includeCookie !== false && context.cookieHeader) {
+        headers.Cookie = context.cookieHeader;
+    }
+    return headers;
+}
+async function fetchSession(context, url, init = {}) {
+    const response = await fetchWithTimeout(url, init, context.signal);
+    updateSessionCookies(context, response);
+    return response;
+}
+async function fetchNonce(context) {
+    const res = await fetchSession(context, BASE_URL, {
+        headers: buildRequestHeaders(context, {
+            includeCookie: false
+        })
+    });
+    const html = await res.text();
+    const match = html.match(/nonce":"([a-f0-9]+)"/);
+    if (!match) throw new Error("Failed to extract CSRF nonce from veoaifree.com");
+    return match[1];
+}
+async function postAjax(context, nonce, params) {
+    const body = new URLSearchParams({
+        action: "veo_video_generator",
+        nonce,
+        ...params
+    });
+    const res = await fetchSession(context, AJAX_URL, {
+        method: "POST",
+        headers: buildRequestHeaders(context, {
+            contentType: "application/x-www-form-urlencoded",
+            includeOrigin: true
+        }),
+        body: body.toString()
+    });
+    return res.text();
+}
+function buildSessionContext(signal) {
+    return {
+        cookieHeader: "",
+        userAgent: USER_AGENT,
+        origin: BASE_URL,
+        referer: `${BASE_URL}/`,
+        signal
+    };
+}
+export function detectIntent(model, prompt) {
+    const m = (model || "").toLowerCase();
+    if (m.includes("tts") || m.includes("speech") || m.includes("audio")) return "tts";
+    if (m.includes("image") || m.includes("banana") || m.includes("imagen")) return "image";
+    if (m.includes("enhance") || m.includes("prompt")) return "enhance";
+    if (m.includes("video") || m.includes("veo") || m.includes("seedance")) return "video";
+    const p = (prompt || "").toLowerCase();
+    if (p.startsWith("generate image") || p.startsWith("create image") || p.startsWith("draw ")) {
+        return "image";
+    }
+    if (p.startsWith("enhance") || p.startsWith("improve prompt")) return "enhance";
+    return "video";
+}
+async function handleImage(context, nonce, prompt, aspectRatio) {
+    const result = await postAjax(context, nonce, {
+        promptIMG: prompt,
+        totalVariationsIMG: "1",
+        aspectRatioIMG: aspectRatio,
+        actionType: "banan-image-generator"
+    });
+    const trimmed = result.trim();
+    if (!trimmed || trimmed === "0" || trimmed.toLowerCase().includes("error")) {
+        return errResp("Image generation failed");
+    }
+    const parts = trimmed.split(",").map((s)=>s.trim()).filter(Boolean);
+    const images = parts.map((p)=>p.startsWith("http") ? {
+            url: p,
+            type: "image"
+        } : {
+            b64_json: p,
+            type: "image"
+        });
+    return jsonResp({
+        object: "image.generation",
+        data: images,
+        status: "completed"
+    });
+}
+async function handleTTS(prompt, voice, lang, signal) {
+    const text = prompt;
+    const selectedVoice = voice || "en-US-AvaNeural";
+    const selectedLang = lang || "en-US";
+    const res = await fetchWithTimeout(TTS_URL, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "User-Agent": USER_AGENT,
+            Origin: BASE_URL,
+            Referer: `${BASE_URL}/free-ai-text-to-speech/`
+        },
+        body: JSON.stringify({
+            text: text.slice(0, 10000),
+            voice: selectedVoice,
+            lang: selectedLang,
+            pitch: "0",
+            speed: "1.0"
+        })
+    }, signal);
+    if (!res.ok) {
+        return errResp(`TTS failed (${res.status})`);
+    }
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("audio") || contentType.includes("octet-stream") || contentType.includes("wav")) {
+        return new Response(res.body, {
+            headers: {
+                "Content-Type": contentType.includes("wav") ? "audio/wav" : "audio/mpeg",
+                "Content-Disposition": 'attachment; filename="speech.wav"'
+            }
+        });
+    }
+    const data = await res.text();
+    try {
+        const json = JSON.parse(data);
+        if (json.audio_data) {
+            return jsonResp({
+                object: "audio.speech",
+                audio: json.audio_data,
+                status: "completed"
+            });
+        }
+        if (json.url) {
+            return jsonResp({
+                object: "audio.speech",
+                url: json.url,
+                status: "completed"
+            });
+        }
+    } catch  {}
+    return errResp("TTS unexpected response format");
+}
+async function handleEnhance(context, nonce, prompt) {
+    const result = await postAjax(context, nonce, {
+        prompt,
+        actionType: "main-prompt-generation"
+    });
+    const trimmed = result.trim();
+    if (!trimmed || trimmed === "0") {
+        return errResp("Prompt enhancement failed");
+    }
+    return jsonResp({
+        object: "prompt.enhancement",
+        enhanced: trimmed,
+        status: "completed"
+    });
+}
+function validateArtifactUrl(input) {
+    let url;
+    try {
+        url = parseAndValidatePublicUrl(input);
+    } catch (error) {
+        if (error instanceof OutboundUrlGuardError) {
+            throw new VeoArtifactError(error.code === "OUTBOUND_URL_INVALID" ? "VIDEO_ARTIFACT_URL_INVALID" : "VIDEO_ARTIFACT_URL_BLOCKED", error.code === "OUTBOUND_URL_INVALID" ? "Video artifact URL is invalid" : "Video artifact URL is blocked", 502);
+        }
+        throw new VeoArtifactError("VIDEO_ARTIFACT_URL_INVALID", "Video artifact URL is invalid", 502);
+    }
+    if (url.protocol !== "https:") {
+        throw new VeoArtifactError("VIDEO_ARTIFACT_URL_INVALID", "Video artifact URL must use HTTPS", 502);
+    }
+    return url;
+}
+async function assertHostnameResolvesPublic(hostname) {
+    const bare = hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+    if (isIP(bare)) {
+        if (isPrivateHost(bare)) {
+            throw new VeoArtifactError("VIDEO_ARTIFACT_URL_BLOCKED", "Video artifact host resolves to a blocked address", 502);
+        }
+        return;
+    }
+    let resolved;
+    try {
+        resolved = await dns.promises.lookup(bare, {
+            all: true
+        });
+    } catch  {
+        throw new VeoArtifactError("VIDEO_ARTIFACT_DOWNLOAD_FAILED", "Video artifact host could not be resolved", 502);
+    }
+    if (!resolved.length) {
+        throw new VeoArtifactError("VIDEO_ARTIFACT_DOWNLOAD_FAILED", "Video artifact host could not be resolved", 502);
+    }
+    for (const { address } of resolved){
+        if (isPrivateHost(address)) {
+            throw new VeoArtifactError("VIDEO_ARTIFACT_URL_BLOCKED", "Video artifact host resolves to a blocked address", 502);
+        }
+    }
+}
+async function readCappedBuffer(response, maxBytes) {
+    const contentLengthHeader = response.headers.get("content-length");
+    const contentLength = contentLengthHeader ? Number.parseInt(contentLengthHeader, 10) : null;
+    if (contentLength !== null && Number.isFinite(contentLength) && contentLength > maxBytes) {
+        throw new VeoArtifactError("VIDEO_ARTIFACT_TOO_LARGE", "Video artifact exceeds the maximum supported size", 502);
+    }
+    if (!response.body) {
+        const buffer = Buffer.from(await response.arrayBuffer());
+        if (buffer.byteLength > maxBytes) {
+            throw new VeoArtifactError("VIDEO_ARTIFACT_TOO_LARGE", "Video artifact exceeds the maximum supported size", 502);
+        }
+        return buffer;
+    }
+    const reader = response.body.getReader();
+    const chunks = [];
+    let totalBytes = 0;
+    try {
+        while(true){
+            const { done, value } = await reader.read();
+            if (done) break;
+            const chunk = Buffer.from(value);
+            totalBytes += chunk.byteLength;
+            if (totalBytes > maxBytes) {
+                await reader.cancel();
+                throw new VeoArtifactError("VIDEO_ARTIFACT_TOO_LARGE", "Video artifact exceeds the maximum supported size", 502);
+            }
+            chunks.push(chunk);
+        }
+    } finally{
+        reader.releaseLock();
+    }
+    return Buffer.concat(chunks, totalBytes);
+}
+function validateMp4Buffer(buffer) {
+    if (buffer.length <= 0) {
+        throw new VeoArtifactError("VIDEO_ARTIFACT_SIGNATURE_INVALID", "Video artifact is empty", 502);
+    }
+    if (buffer.length < 12 || buffer.toString("ascii", 4, 8) !== "ftyp") {
+        throw new VeoArtifactError("VIDEO_ARTIFACT_SIGNATURE_INVALID", "Video artifact is not a valid MP4 file", 502);
+    }
+}
+async function downloadArtifactOnce(context, artifactUrl) {
+    let currentUrl = artifactUrl;
+    for(let redirectCount = 0; redirectCount <= ARTIFACT_MAX_REDIRECTS; redirectCount++){
+        const parsedUrl = validateArtifactUrl(currentUrl);
+        await assertHostnameResolvesPublic(parsedUrl.hostname);
+        const response = await fetchSession(context, parsedUrl.toString(), {
+            method: "GET",
+            redirect: "manual",
+            headers: buildRequestHeaders(context)
+        });
+        if (response.status >= 300 && response.status < 400) {
+            const location = response.headers.get("location");
+            if (!location) {
+                throw new VeoArtifactError("VIDEO_ARTIFACT_DOWNLOAD_FAILED", "Video artifact redirect is missing a destination", 502);
+            }
+            if (redirectCount >= ARTIFACT_MAX_REDIRECTS) {
+                throw new VeoArtifactError("VIDEO_ARTIFACT_DOWNLOAD_FAILED", "Video artifact exceeded the redirect limit", 502);
+            }
+            try {
+                currentUrl = new URL(location, parsedUrl.toString()).toString();
+            } catch  {
+                throw new VeoArtifactError("VIDEO_ARTIFACT_URL_INVALID", "Video artifact redirect destination is invalid", 502);
+            }
+            continue;
+        }
+        if (RETRYABLE_ARTIFACT_STATUSES.has(response.status)) {
+            throw new VeoArtifactError(response.status === 202 ? "VIDEO_ARTIFACT_NOT_READY" : "VIDEO_ARTIFACT_UNAVAILABLE", "Video artifact is not available yet", 502, {
+                retryable: true
+            });
+        }
+        if (!response.ok) {
+            throw new VeoArtifactError("VIDEO_ARTIFACT_DOWNLOAD_FAILED", `Video artifact download failed (${response.status})`, 502);
+        }
+        const contentType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+        if (contentType !== "video/mp4" && contentType !== "application/octet-stream") {
+            throw new VeoArtifactError("VIDEO_ARTIFACT_CONTENT_TYPE_INVALID", "Video artifact returned an unsupported content type", 502);
+        }
+        const buffer = await readCappedBuffer(response, ARTIFACT_MAX_BYTES);
+        validateMp4Buffer(buffer);
+        return buffer;
+    }
+    throw new VeoArtifactError("VIDEO_ARTIFACT_DOWNLOAD_FAILED", "Video artifact exceeded the redirect limit", 502);
+}
+async function downloadArtifactWithAvailabilityWindow(context, artifactUrl) {
+    let lastError = null;
+    for(let attempt = 0; attempt < ARTIFACT_READY_MAX_ATTEMPTS; attempt++){
+        try {
+            return await downloadArtifactOnce(context, artifactUrl);
+        } catch (error) {
+            if (!(error instanceof VeoArtifactError)) throw error;
+            if (!error.retryable) throw error;
+            lastError = error;
+            if (attempt === ARTIFACT_READY_MAX_ATTEMPTS - 1) break;
+            await waitForDuration(ARTIFACT_READY_RETRY_INTERVAL_MS, context.signal);
+        }
+    }
+    if (lastError?.code === "VIDEO_ARTIFACT_NOT_READY") {
+        throw new VeoArtifactError("VIDEO_ARTIFACT_UNAVAILABLE", "Video artifact did not become available in time", 502);
+    }
+    throw new VeoArtifactError("VIDEO_ARTIFACT_UNAVAILABLE", "Video artifact did not become available in time", 502);
+}
+function extractCandidateUrls(value) {
+    return value.split(/[,\n]/).map((part)=>part.trim()).filter((part)=>/^https?:\/\//i.test(part));
+}
+async function handleVideo(context, nonce, prompt, aspectRatio) {
+    const genResult = await postAjax(context, nonce, {
+        prompt,
+        totalVariations: "1",
+        aspectRatio,
+        actionType: "full-video-generate"
+    });
+    const sceneData = genResult.trim();
+    if (!sceneData || sceneData === "0" || sceneData.toLowerCase().includes("error")) {
+        return errResp("Video generation failed");
+    }
+    for(let i = 0; i < MAX_POLLS; i++){
+        await waitForPoll(context.signal);
+        throwIfAborted(context.signal);
+        try {
+            const pollResult = await postAjax(context, nonce, {
+                sceneData,
+                actionType: "final-video-results"
+            });
+            const trimmed = pollResult.trim();
+            if (!trimmed || trimmed === "0" || trimmed.toLowerCase().includes("error")) {
+                continue;
+            }
+            const urls = extractCandidateUrls(trimmed);
+            if (urls.length === 0) {
+                continue;
+            }
+            let artifactBuffer = null;
+            try {
+                artifactBuffer = await downloadArtifactWithAvailabilityWindow(context, urls[0]);
+                const b64 = artifactBuffer.toString("base64");
+                return jsonResp({
+                    created: Math.floor(Date.now() / 1000),
+                    data: [
+                        {
+                            b64_json: b64,
+                            format: "mp4"
+                        }
+                    ]
+                });
+            } catch (error) {
+                if (artifactBuffer) artifactBuffer.fill(0);
+                if (error instanceof VeoArtifactError) {
+                    return errResp(error.message, error.status, error.code);
+                }
+                throw error;
+            } finally{
+                if (artifactBuffer) artifactBuffer.fill(0);
+            }
+        } catch (error) {
+            if (error instanceof VeoArtifactError) {
+                return errResp(error.message, error.status, error.code);
+            }
+            if (error instanceof Error && error.message === "Request aborted") {
+                throw error;
+            }
+        }
+    }
+    return errResp("Video generation timed out after 10 minutes", 504, "VIDEO_ARTIFACT_NOT_READY");
+}
+export class VeoAIFreeWebExecutor extends BaseExecutor {
+    constructor(){
+        super("veoaifree-web", { id: "veoaifree-web", baseUrl: BASE_URL, noAuth: true, format: "openai" });
+    }
+    async execute(input) {
+        const body = input.body;
+        const model = input.model || body?.model || "veo-3.1";
+        const messages = body?.messages || [];
+        const userMsg = messages.filter((m)=>m.role === "user").pop();
+        const systemMsg = messages.filter((m)=>m.role === "system").pop();
+        const prompt = userMsg?.content || "";
+        const systemText = systemMsg?.content || "";
+        if (!prompt.trim()) {
+            return {
+                response: errResp("No prompt provided", 400, "invalid_request"),
+                url: AJAX_URL,
+                headers: {},
+                transformedBody: null
+            };
+        }
+        const intent = detectIntent(model, prompt);
+        if (intent === "tts") {
+            const voiceMatch = systemText.match(/voice:\s*(\S+)/);
+            const langMatch = systemText.match(/lang:\s*(\S+)/);
+            const resp = await handleTTS(prompt, voiceMatch?.[1], langMatch?.[1], input.signal);
+            return {
+                response: resp,
+                url: TTS_URL,
+                headers: {},
+                transformedBody: {
+                    intent,
+                    model
+                }
+            };
+        }
+        const context = buildSessionContext(input.signal || undefined);
+        let nonce;
+        try {
+            nonce = await fetchNonce(context);
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : "Failed to get nonce";
+            return {
+                response: errResp(sanitizeErrorMessage(msg), 502, "upstream_error"),
+                url: BASE_URL,
+                headers: {},
+                transformedBody: null
+            };
+        }
+        const arMatch = systemText.match(/aspect[_-]?ratio:\s*(\S+)/i);
+        const aspectRatio = arMatch?.[1] || "VIDEO_ASPECT_RATIO_LANDSCAPE";
+        let resp;
+        switch(intent){
+            case "image":
+                resp = await handleImage(context, nonce, prompt, aspectRatio.replace("VIDEO_", "IMAGE_"));
+                break;
+            case "enhance":
+                resp = await handleEnhance(context, nonce, prompt);
+                break;
+            default:
+                resp = await handleVideo(context, nonce, prompt, aspectRatio);
+        }
+        return {
+            response: resp,
+            url: AJAX_URL,
+            headers: {},
+            transformedBody: {
+                intent,
+                model
+            }
+        };
+    }
+}
+
+export default VeoAIFreeWebExecutor;

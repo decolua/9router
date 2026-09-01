@@ -22,11 +22,33 @@ import { CodeBuddyIntlExecutor } from "./codebuddy-intl.js";
 import TraeExecutor from "./trae.js";
 import ZedExecutor from "./zed.js";
 import WindsurfExecutor from "./windsurf.js";
+import { AIHordeExecutor } from "./aihorde.js";
+import { ChipotleExecutor } from "./chipotle.js";
+import { DuckDuckGoWebExecutor } from "./duckduckgo-web.js";
+import { CloudflarePlaygroundExecutor } from "./cloudflare-playground.js";
+import { TheOldLlmExecutor } from "./theoldllm.js";
+import { VeoAIFreeWebExecutor } from "./veoaifree-web.js";
+import { XaiOAuthExecutor } from "./xai-oauth.js";
 import { DefaultExecutor } from "./default.js";
 import { DevinCliExecutor } from "./devin-cli.js";
 
+import { GheCopilotExecutor } from "./ghe-copilot.js";
+import { GitLabDuoExecutor } from "./gitlab-duo.js";
+import { DevinDesktopExecutor } from "./devin-desktop.js";
 const executors = {
+  "ghe-copilot": new GheCopilotExecutor(),
+  "gitlab-duo": new GitLabDuoExecutor(),
+  "devin-desktop": new DevinDesktopExecutor(),
+  "zed-hosted": new ZedExecutor(),
+  aihorde: new AIHordeExecutor(),
+  chipotle: new ChipotleExecutor(),
+  "duckduckgo-web": new DuckDuckGoWebExecutor(),
+  "cloudflare-playground": new CloudflarePlaygroundExecutor(),
+  theoldllm: new TheOldLlmExecutor(),
+  "veoaifree-web": new VeoAIFreeWebExecutor(),
   antigravity: new AntigravityExecutor(),
+  agy: new AntigravityExecutor(),
+  "xai-oauth": new XaiOAuthExecutor(),
   azure: new AzureExecutor(),
   "gemini-cli": new GeminiCLIExecutor(),
   github: new GithubExecutor(),
@@ -97,3 +119,7 @@ export { default as TraeExecutor } from "./trae.js";
 export { default as ZedExecutor } from "./zed.js";
 export { default as WindsurfExecutor } from "./windsurf.js";
 export { DevinCliExecutor } from "./devin-cli.js";
+
+export { GheCopilotExecutor } from "./ghe-copilot.js";
+export { GitLabDuoExecutor } from "./gitlab-duo.js";
+export { DevinDesktopExecutor } from "./devin-desktop.js";

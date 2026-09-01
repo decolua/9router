@@ -448,6 +448,93 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
+    // C61_ZED_HOSTED_MODEL_DISCOVERY
+    if (connection.provider === "zed" || connection.provider === "zed-hosted") {
+      const providerData = connection.providerSpecificData || {};
+
+      const userId =
+        providerData.userId ||
+        providerData.user_id ||
+        connection.userId ||
+        connection.providerUserId;
+
+      const accessToken =
+        connection.accessToken ||
+        connection.apiKey;
+
+      if (!userId || !accessToken) {
+        return NextResponse.json(
+          { error: "Zed credentials are missing userId or accessToken" },
+          { status: 400 },
+        );
+      }
+
+      const response = await fetch("https://cloud.zed.dev/models", {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          Authorization: `${userId} ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+
+        return NextResponse.json(
+          {
+            error:
+              errorText ||
+              `Zed models request failed with HTTP ${response.status}`,
+          },
+          { status: response.status },
+        );
+      }
+
+      const payload = await response.json();
+
+      const rawModels = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.models)
+          ? payload.models
+          : Array.isArray(payload?.data)
+            ? payload.data
+            : [];
+
+      const models = rawModels
+        .map((model) => {
+          if (typeof model === "string") {
+            return { id: model, name: model };
+          }
+
+          const id = String(
+            model?.id ||
+            model?.model ||
+            model?.slug ||
+            model?.name ||
+            "",
+          ).trim();
+
+          if (!id) return null;
+
+          return {
+            ...model,
+            id,
+            name:
+              model?.displayName ||
+              model?.display_name ||
+              model?.name ||
+              id,
+          };
+        })
+        .filter(Boolean);
+
+      return NextResponse.json({
+        provider: connection.provider,
+        connectionId: connection.id,
+        models,
+      });
+    }
+
     if (isOpenAICompatibleProvider(connection.provider)) {
       const baseUrl = connection.providerSpecificData?.baseUrl;
       if (!baseUrl) {

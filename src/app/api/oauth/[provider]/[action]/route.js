@@ -215,10 +215,13 @@ export async function GET(request, { params }) {
         "codebuddy-intl",
         "qoder",
         "grok-cli",
+        "ghe-copilot",
       ];
       let deviceData;
       if (noPkceDeviceProviders.includes(provider)) {
-        deviceData = await requestDeviceCode(provider, undefined, deviceOptions);
+        // C61_GHE_DEVICE_META
+        const deviceCodeMeta = Object.fromEntries(new URL(request.url).searchParams.entries());
+        deviceData = await requestDeviceCode(provider, undefined, { ...((deviceOptions) || {}), ...deviceCodeMeta });
       } else {
         // Qwen and other PKCE providers
         deviceData = await requestDeviceCode(provider, authData.codeChallenge, deviceOptions);
@@ -381,7 +384,7 @@ export async function POST(request, { params }) {
       }
 
       // Providers that don't use PKCE for device code
-      const noPkceProviders = ["github", "kimi", "kimi-coding", "kilocode", "codebuddy-cn", "codebuddy-intl"];
+      const noPkceProviders = ["github", "kimi", "kimi-coding", "kilocode", "codebuddy-cn", "codebuddy-intl", "ghe-copilot"];
       let result;
       if (noPkceProviders.includes(provider)) {
         // kimi needs extraData._kimiDeviceId for stable X-Msh-Device-Id (CLIProxyAPI parity)

@@ -8,6 +8,7 @@ import {
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
 import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets } from "open-sse/handlers/videoCore.js";
+import { getExecutor } from "open-sse/executors/index.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
@@ -16,6 +17,209 @@ import * as log from "../utils/logger.js";
 // Video generation is xAI-only today; requests without a provider prefix
 // (bare model id, or multipart bodies we deliberately don't parse) land here.
 const DEFAULT_VIDEO_PROVIDER = "xai";
+
+function normalizeVeoAspectRatio(body) {
+  const raw =
+    body?.aspect_ratio ||
+    body?.aspectRatio ||
+    body?.ratio ||
+    null;
+
+  if (raw) {
+    const value =
+      String(raw).trim();
+
+    if (
+      value ===
+      "VIDEO_ASPECT_RATIO_LANDSCAPE"
+    ) {
+      return value;
+    }
+
+    if (
+      value ===
+      "VIDEO_ASPECT_RATIO_PORTRAIT"
+    ) {
+      return value;
+    }
+
+    if (
+      value === "9:16" ||
+      value === "portrait"
+    ) {
+      return "VIDEO_ASPECT_RATIO_PORTRAIT";
+    }
+
+    if (
+      value === "16:9" ||
+      value === "landscape"
+    ) {
+      return "VIDEO_ASPECT_RATIO_LANDSCAPE";
+    }
+  }
+
+  const size =
+    String(body?.size || "")
+      .trim()
+      .toLowerCase();
+
+  if (
+    size === "720x1280" ||
+    size === "1080x1920"
+  ) {
+    return "VIDEO_ASPECT_RATIO_PORTRAIT";
+  }
+
+  return "VIDEO_ASPECT_RATIO_LANDSCAPE";
+}
+
+function buildVeoExecutorBody(
+  parsedBody,
+  model
+) {
+  const prompt =
+    parsedBody?.prompt ??
+    parsedBody?.input ??
+    parsedBody?.text ??
+    "";
+
+  const aspectRatio =
+    normalizeVeoAspectRatio(
+      parsedBody
+    );
+
+  return {
+    model:
+      model ||
+      "veo",
+
+    messages: [
+      {
+        role: "system",
+        content:
+          `aspect_ratio: ${aspectRatio}`
+      },
+      {
+        role: "user",
+        content:
+          String(prompt)
+      }
+    ]
+  };
+}
+
+async function handleVeoFreeCreate({
+  request,
+  action,
+  parsedBody,
+  model
+}) {
+  if (action !== "generations") {
+    return errorResponse(
+      HTTP_STATUS.BAD_REQUEST,
+      "Veo AI Free currently supports the video generations action only"
+    );
+  }
+
+  if (
+    !parsedBody ||
+    typeof parsedBody !== "object"
+  ) {
+    return errorResponse(
+      HTTP_STATUS.BAD_REQUEST,
+      "Veo AI Free requires a JSON video generation request"
+    );
+  }
+
+  const prompt =
+    parsedBody.prompt ??
+    parsedBody.input ??
+    parsedBody.text ??
+    "";
+
+  if (
+    typeof prompt !== "string" ||
+    !prompt.trim()
+  ) {
+    return errorResponse(
+      HTTP_STATUS.BAD_REQUEST,
+      "Missing required field: prompt"
+    );
+  }
+
+  const executor =
+    getExecutor(
+      "veoaifree-web"
+    );
+
+  if (!executor) {
+    return errorResponse(
+      HTTP_STATUS.SERVICE_UNAVAILABLE,
+      "Veo AI Free executor is unavailable"
+    );
+  }
+
+  try {
+    const result =
+      await executor.execute({
+        model:
+          model ||
+          "veo",
+
+        body:
+          buildVeoExecutorBody(
+            parsedBody,
+            model
+          ),
+
+        stream: false,
+
+        credentials: {
+          provider:
+            "veoaifree-web",
+          authType:
+            "none",
+        },
+
+        signal:
+          request.signal,
+
+        log,
+      });
+
+    if (
+      !result ||
+      !(result.response instanceof Response)
+    ) {
+      return errorResponse(
+        HTTP_STATUS.BAD_GATEWAY,
+        "Veo AI Free returned an invalid response"
+      );
+    }
+
+    return result.response;
+  } catch (error) {
+    if (
+      error?.name === "AbortError"
+    ) {
+      return errorResponse(
+        499,
+        "Request aborted"
+      );
+    }
+
+    log?.warn?.(
+      "VIDEO",
+      "Veo AI Free upstream execution failed"
+    );
+
+    return errorResponse(
+      HTTP_STATUS.BAD_GATEWAY,
+      "Veo AI Free upstream request failed"
+    );
+  }
+}
+
 
 // Creation POSTs are billable jobs — only rotate to another account for
 // errors that upstream rejects BEFORE creating a job (auth/quota). A 5xx may
@@ -101,6 +305,19 @@ export async function handleVideoCreate(request, action) {
   const resolved = await resolveVideoProvider(bodyInfo.parsed);
   if (resolved.error) return resolved.error;
   const { provider, model } = resolved;
+
+  // Veo AI Free polls its WordPress-backed generation job
+  // internally and returns the completed artifact from the
+  // create request. It must not use the generic xAI-style
+  // transparent video proxy.
+  if (provider === "veoaifree-web") {
+    return handleVeoFreeCreate({
+      request,
+      action,
+      parsedBody: bodyInfo.parsed,
+      model,
+    });
+  }
 
   // Strip the provider prefix (e.g. "xai/grok-imagine-video") before forwarding;
   // otherwise forward the original bytes untouched.
