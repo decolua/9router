@@ -535,7 +535,15 @@ export async function buildModelsList(kindFilter, options = {}) {
   for (const model of models) {
     if (!model?.id || seenModelIds.has(model.id)) continue;
     seenModelIds.add(model.id);
-    dedupedModels.push(model);
+    // Every entry gets the same required keys regardless of which branch above
+    // produced it, so strict OpenAI clients (e.g. Continue) never see a model
+    // object missing capabilities/context_length/max_completion_tokens.
+    dedupedModels.push({
+      capabilities: {},
+      context_length: 8192,
+      max_completion_tokens: 2048,
+      ...model,
+    });
   }
 
   return dedupedModels;

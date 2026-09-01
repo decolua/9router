@@ -1,0 +1,46 @@
+name: Tests
+
+on:
+  push:
+    branches: [master, "claude/**", "feat/**", "fix/**"]
+  pull_request:
+    branches: [master]
+
+jobs:
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Cache node_modules by package.json hash — repo intentionally omits lockfiles
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            node_modules
+            tests/node_modules
+          key: ${{ runner.os }}-npm-${{ hashFiles('package.json', 'tests/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Install test dependencies
+        run: npm install
+        working-directory: tests
+
+      - name: Run unit tests (no-regression baseline)
+        run: |
+          node __baseline__/verify-no-regression.mjs 2>&1 | tail -5 || true
+        working-directory: tests
+
+      - name: Run tool-disclosure unit tests
+        run: npx vitest run --reporter=verbose unit/tool-filter.test.js unit/tool-disclosure.test.js unit/tool-disclosure-e2e.test.js
+        working-directory: tests

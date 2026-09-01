@@ -20,6 +20,8 @@ import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
+import { toolFilter } from "../utils/toolFilter.js";
+import { disclosureTools, HARD_TOOL_CEILING } from "../utils/toolDisclosure.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
@@ -58,7 +60,7 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, toolDisclosure }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -210,6 +212,68 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
   }
 
+  // Per-request opt-out: computed early so token savers (including disclosure) can respect it.
+  const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
+
+  // Progressive tool disclosure: static filter (Phase 1) + BM25 selection (Phase 2).
+  // Outer gate has no tokenSaverEnabled guard — the cache_control stamp inside
+  // must run even when the bypass header is set (translators no longer stamp).
+  if (Array.isArray(translatedBody.tools) && translatedBody.tools.length > 0) {
+    const beforeN = translatedBody.tools.length;
+    const beforeBytes = log?.debug ? JSON.stringify(translatedBody.tools).length : 0;
+
+    if (tokenSaverEnabled) {
+      if (toolDisclosure?.filterEnabled) {
+        const filtered = toolFilter(translatedBody.tools, toolDisclosure);
+        if (filtered.length < translatedBody.tools.length) {
+          log?.debug?.("TOOLDISCLOSE", `filter: ${translatedBody.tools.length}→${filtered.length} tools`);
+          translatedBody.tools = filtered;
+        }
+      }
+
+      if (toolDisclosure?.disclosureEnabled) {
+        const { tools: disclosed, stats } = disclosureTools(translatedBody.tools, body, connectionId, toolDisclosure);
+        if (stats) {
+          log?.debug?.("TOOLDISCLOSE", `bm25: ${stats.before}→${stats.after} tools (-${stats.stripped})`);
+          translatedBody.tools = disclosed;
+        }
+      }
+
+      // Hard safety ceiling — applies whether or not disclosure itself is
+      // enabled/configured. Several providers 502 above ~128 tools; this
+      // isn't a compression tuning choice, it's preventing an outright
+      // failure. No-ops when the count is already at or below the ceiling
+      // (including the common case where disclosureEnabled already capped
+      // it much lower above).
+      if (translatedBody.tools.length > HARD_TOOL_CEILING) {
+        const { tools: capped, stats } = disclosureTools(translatedBody.tools, body, connectionId, {
+          maxTools: HARD_TOOL_CEILING,
+          alwaysInclude: toolDisclosure?.alwaysInclude,
+        });
+        if (stats) {
+          log?.debug?.("TOOLDISCLOSE", `ceiling: ${stats.before}→${stats.after} tools (-${stats.stripped}, safety cap ${HARD_TOOL_CEILING})`);
+          translatedBody.tools = capped;
+        }
+      }
+    }
+
+    // Stamp cache_control on the actual last tool — single source of truth.
+    // Translators strip incoming annotations but no longer stamp; this block
+    // runs after all disclosure passes so the annotation always lands correctly.
+    // Passthrough: skip when no filtering occurred (client's annotation was
+    // already on the correct last tool).
+    if (translatedBody.tools.length > 0 && (!passthrough || translatedBody.tools.length !== beforeN)) {
+      for (const t of translatedBody.tools) delete t.cache_control;
+      translatedBody.tools[translatedBody.tools.length - 1].cache_control = { type: "ephemeral", ttl: "1h" };
+    }
+
+    const afterN = translatedBody.tools.length;
+    if (log?.debug) {
+      const afterBytes = JSON.stringify(translatedBody.tools).length;
+      log.debug("TOOLDISCLOSE", `measure: ${beforeN}tools ${beforeBytes}B → ${afterN}tools ${afterBytes}B`);
+    }
+  }
+
   // Token savers: applied at the final body just before dispatch
   // Covers both passthrough (source shape) and translated (target shape) flows
   const finalFormat = passthrough ? sourceFormat : targetFormat;
@@ -247,8 +311,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     translatedBody.tools = defaultClaudeToolType(translatedBody.tools);
   }
 
-  // Per-request opt-out: client can bypass all token savers via header
-  const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
 
   // RTK: compress tool_result content
   const rtkStats = compressMessages(translatedBody, tokenSaverEnabled && rtkEnabled);

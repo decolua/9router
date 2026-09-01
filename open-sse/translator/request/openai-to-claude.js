@@ -177,9 +177,6 @@ Respond ONLY with the JSON object, no other text.`);
       });
     }
 
-    if (result.tools.length > 0) {
-      result.tools[result.tools.length - 1].cache_control = { type: "ephemeral", ttl: "1h" };
-    }
   }
 
   // Tool choice
