@@ -17,6 +17,16 @@ const inflightRefresh = new Map();
 
 const MIN_REFRESH_INTERVAL_MS = 30_000; // 30s between refreshes per connection
 
+// Strike-based circuit breaker (#3681): Google's quota API can report remaining
+// quota while generation endpoints keep returning 429 (sprint/weekly dual-pool
+// mismatch). After STRIKE_THRESHOLD 429s within the window for the same
+// connection+model, treat the optimistic quota reading as untrusted and
+// cache-block that pair instead of retry-storming upstream.
+const STRIKE_WINDOW_MS = 60_000; // strikes older than this reset the count
+const STRIKE_THRESHOLD = 3;
+const STRIKE_BLOCK_MS = 15 * 60_000;
+const strikeCounts = new Map(); // "connectionId|model" → { count, windowStart }
+
 /**
  * Get the quota cache (read-only reference for auth.js pre-filter).
  */
@@ -89,7 +99,26 @@ export async function handleAntigravityQuotaError(connectionId, status, model, a
   // Throttle applies to error paths too: one quota request per account/30s.
   // The first 409/429 populates cache; concurrent or repeated errors reuse it.
   const quota = (await refreshAntigravityQuota(connectionId, accessToken, providerSpecificData))?.[model];
-  if (!quota || quota.remainingPercentage > 0 || !quota.resetAt) return null;
+
+  if (quota && quota.remainingPercentage > 0) {
+    // Optimistic quota reading while upstream still 429s — apply the strike
+    // breaker before trusting it. Reset if the window lapsed since last strike.
+    const key = `${connectionId}|${model}`;
+    const now = Date.now();
+    const strike = strikeCounts.get(key);
+    const count = strike && now - strike.windowStart <= STRIKE_WINDOW_MS ? strike.count + 1 : 1;
+    strikeCounts.set(key, { count, windowStart: now });
+    if (count >= STRIKE_THRESHOLD) {
+      strikeCounts.delete(key);
+      const blockedUntil = now + STRIKE_BLOCK_MS;
+      log.warn("AG_QUOTA", `${connectionId.slice(0, 8)} | STRIKE_${status} ${model} — ${count}x 429 while quota reports ${Math.round(quota.remainingPercentage)}%; CACHE_BLOCK 15m`);
+      return blockedUntil;
+    }
+    return null;
+  }
+
+  strikeCounts.delete(`${connectionId}|${model}`);
+  if (!quota || !quota.resetAt) return null;
 
   const resetMs = new Date(quota.resetAt).getTime();
   if (resetMs <= Date.now()) return null;

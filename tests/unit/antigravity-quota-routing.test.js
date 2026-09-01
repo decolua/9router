@@ -169,4 +169,55 @@ describe("Antigravity quota-aware routing", () => {
       vi.useRealTimers();
     }
   });
+
+  it("strike-breaks after 3 optimistic 429s within 60s and cache-blocks 15 minutes", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
+    // Quota API lies: reports 90% remaining while generation keeps 429ing.
+    mocks.getAntigravityUsage.mockResolvedValue({ quotas: {
+      [MODEL]: { remainingPercentage: 90, resetAt: FUTURE_RESET },
+    } });
+
+    try {
+      const first = await handleAntigravityQuotaError("ag-strike", 429, MODEL, "token", {});
+      expect(first).toBeNull();
+      const second = await handleAntigravityQuotaError("ag-strike", 429, MODEL, "token", {});
+      expect(second).toBeNull();
+
+      const third = await handleAntigravityQuotaError("ag-strike", 429, MODEL, "token", {});
+      expect(third).toBe(Date.parse("2026-08-26T00:15:00.000Z"));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("resets the strike counter when strikes fall outside the 60s window", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
+    mocks.getAntigravityUsage.mockResolvedValue({ quotas: {
+      [MODEL]: { remainingPercentage: 90, resetAt: FUTURE_RESET },
+    } });
+
+    try {
+      await handleAntigravityQuotaError("ag-window", 429, MODEL, "token", {});
+      await handleAntigravityQuotaError("ag-window", 429, MODEL, "token", {});
+      await vi.advanceTimersByTimeAsync(61_000);
+      const result = await handleAntigravityQuotaError("ag-window", 429, MODEL, "token", {});
+      expect(result).toBeNull(); // window lapsed — counter restarted at 1
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the optimistic path null without touching the quota cache", async () => {
+    mocks.getAntigravityUsage.mockResolvedValue({ quotas: {
+      [MODEL]: { remainingPercentage: 90, resetAt: FUTURE_RESET },
+    } });
+
+    await expect(handleAntigravityQuotaError("ag-optimistic", 429, MODEL, "token", {}))
+      .resolves.toBeNull();
+    // Optimistic reading must NOT poison the shared cache (auth pre-filter
+    // treats cached 0% as exhausted).
+    expect(getAntigravityQuotaCache().get("ag-optimistic")?.[MODEL]?.remainingPercentage).toBe(90);
+  });
 });
