@@ -7,6 +7,7 @@ import {
   extractPinnedNames,
   extractLastUserMessage,
   _cache,
+  HARD_TOOL_CEILING,
 } from "open-sse/utils/toolDisclosure.js";
 
 function mkTool(name, description = "", params = []) {
@@ -211,5 +212,19 @@ describe("disclosureTools", () => {
       { maxTools: 5, alwaysInclude: ["mcp__stripe__create_charge"] }
     );
     expect(result.map((t) => t.name)).toContain("mcp__stripe__create_charge");
+  });
+});
+
+describe("HARD_TOOL_CEILING", () => {
+  it("is set below the ~128-tool limit several providers enforce, with headroom", () => {
+    expect(HARD_TOOL_CEILING).toBe(120);
+    expect(HARD_TOOL_CEILING).toBeLessThan(128);
+  });
+
+  it("can itself be used as disclosureTools' maxTools to cap an oversized tool set", () => {
+    const big = Array.from({ length: 150 }, (_, i) => mkTool(`mcp__server__tool_${i}`, `tool number ${i}`));
+    const { tools, stats } = disclosureTools(big, body("do something"), "conn-ceiling", { maxTools: HARD_TOOL_CEILING });
+    expect(tools.length).toBeLessThanOrEqual(HARD_TOOL_CEILING);
+    expect(stats.before).toBe(150);
   });
 });

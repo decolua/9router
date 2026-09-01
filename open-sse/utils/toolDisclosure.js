@@ -13,6 +13,16 @@
 
 import { getToolName } from "./toolDeduper.js";
 
+// Hard safety ceiling — distinct from the BM25 relevance-mode `maxTools`
+// (whose target range is 20-30 for genuine compression, see the design doc).
+// Several providers/models reject requests above ~128 tools outright:
+//   502 Cannot have more than 128 tools per request.
+// 120 leaves headroom so a combo fallback to a slightly-stricter model
+// doesn't immediately re-trigger the same failure. This applies regardless
+// of whether the opt-in disclosure feature itself is enabled — it's a
+// correctness/availability backstop, not a compression choice.
+export const HARD_TOOL_CEILING = 120;
+
 // BM25 tuning constants (Okapi BM25 standard defaults)
 const K1 = 1.5;
 const B = 0.75;

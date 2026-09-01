@@ -21,7 +21,7 @@ import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/strea
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { toolFilter } from "../utils/toolFilter.js";
-import { disclosureTools } from "../utils/toolDisclosure.js";
+import { disclosureTools, HARD_TOOL_CEILING } from "../utils/toolDisclosure.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
@@ -236,6 +236,23 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         if (stats) {
           log?.debug?.("TOOLDISCLOSE", `bm25: ${stats.before}→${stats.after} tools (-${stats.stripped})`);
           translatedBody.tools = disclosed;
+        }
+      }
+
+      // Hard safety ceiling — applies whether or not disclosure itself is
+      // enabled/configured. Several providers 502 above ~128 tools; this
+      // isn't a compression tuning choice, it's preventing an outright
+      // failure. No-ops when the count is already at or below the ceiling
+      // (including the common case where disclosureEnabled already capped
+      // it much lower above).
+      if (translatedBody.tools.length > HARD_TOOL_CEILING) {
+        const { tools: capped, stats } = disclosureTools(translatedBody.tools, body, connectionId, {
+          maxTools: HARD_TOOL_CEILING,
+          alwaysInclude: toolDisclosure?.alwaysInclude,
+        });
+        if (stats) {
+          log?.debug?.("TOOLDISCLOSE", `ceiling: ${stats.before}→${stats.after} tools (-${stats.stripped}, safety cap ${HARD_TOOL_CEILING})`);
+          translatedBody.tools = capped;
         }
       }
     }
