@@ -98,4 +98,14 @@ describe("Codex reasoning normalization", () => {
     expect(body.model).toBe("gpt-5.6-terra");
     expect(body.reasoning.effort).toBe("ultra");
   });
+
+  it("removes reasoning summaries unsupported by Spark", () => {
+    const body = new CodexExecutor().transformRequest("gpt-5.3-codex-spark", {
+      model: "gpt-5.3-codex-spark",
+      input: "hi",
+      reasoning: { effort: "high", summary: "auto" },
+    }, true, {});
+
+    expect(body.reasoning).toEqual({ effort: "high" });
+  });
 });

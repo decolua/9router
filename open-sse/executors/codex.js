@@ -133,6 +133,10 @@ function normalizeReasoningEffort(model, value) {
   return value;
 }
 
+function supportsReasoningSummary(model) {
+  return !/^gpt-5\.3-codex-spark(?:-|$)/i.test(model);
+}
+
 function findNestedMessage(value, depth = 0) {
   if (!value || depth > 6 || typeof value === "string") return null;
   if (Array.isArray(value)) {
@@ -446,10 +450,15 @@ export class CodexExecutor extends BaseExecutor {
     // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
     if (!body.reasoning) {
       const effort = normalizeReasoningEffort(body.model, body.reasoning_effort || modelEffort || 'low');
-      body.reasoning = { effort, summary: "auto" };
+      body.reasoning = { effort };
+      if (supportsReasoningSummary(body.model)) body.reasoning.summary = "auto";
     } else {
       body.reasoning.effort = normalizeReasoningEffort(body.model, body.reasoning.effort);
-      if (!body.reasoning.summary) body.reasoning.summary = "auto";
+      if (supportsReasoningSummary(body.model)) {
+        if (!body.reasoning.summary) body.reasoning.summary = "auto";
+      } else {
+        delete body.reasoning.summary;
+      }
     }
     delete body.reasoning_effort;
 
