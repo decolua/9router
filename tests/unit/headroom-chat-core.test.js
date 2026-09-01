@@ -209,7 +209,7 @@ describe("handleChatCore Headroom diagnostics", () => {
     expect(logs).not.toContain(original);
   });
 
-  it("warns when Headroom reports savings but outbound body barely shrinks", async () => {
+  it("discards Headroom rewrites when the outbound body barely shrinks", async () => {
     const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
     const original = "x".repeat(1000);
     const nearlySame = "x".repeat(990);
@@ -247,8 +247,13 @@ describe("handleChatCore Headroom diagnostics", () => {
 
     expect(log.warn).toHaveBeenCalledWith(
       "HEADROOM",
-      expect.stringContaining("reported token delta, but outbound JSON shrank <5%; provider may bill near-original payload")
+      expect.stringContaining("discarded rewrite because outbound JSON shrank <5%; preserving provider prompt cache")
     );
+    expect(executeMock).toHaveBeenCalledWith(expect.objectContaining({
+      body: expect.objectContaining({
+        messages: [{ role: "user", content: original }],
+      }),
+    }));
   });
 
   it("bypasses token savers when requested by the client", async () => {

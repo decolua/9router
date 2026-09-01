@@ -409,7 +409,7 @@ export default function TokenSaverClient() {
 
   const handleHeadroomTimeoutBlur = () => {
     const raw = Math.round(Number(headroomTimeoutMs));
-    const next = Number.isFinite(raw) && raw > 0 ? raw : 3000;
+    const next = Number.isFinite(raw) && raw >= 0 ? raw : 3000;
     setHeadroomTimeoutMs(next);
     patchSetting({ headroomTimeoutMs: next });
   };
@@ -837,7 +837,7 @@ export default function TokenSaverClient() {
               className="font-mono text-sm"
             />
             <p className="text-xs text-text-muted">
-              Request timeout in milliseconds. Defaults to 3000 ms.
+              Request timeout in milliseconds. Use 0 for no timeout.
             </p>
           </div>
           {headroomManaged ? (
