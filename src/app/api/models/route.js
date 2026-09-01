@@ -4,10 +4,23 @@ import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { AI_MODELS } from "@/shared/constants/config";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import {
+  ensureModelInventoryFresh,
+  ensureModelInventoryScheduler,
+} from "@/lib/modelInventory/scheduler.js";
 
 // GET /api/models - Get models with aliases
 export async function GET() {
   try {
+    // C.6.2 derived inventory refresh. Do not block the native model response.
+    ensureModelInventoryScheduler();
+    void ensureModelInventoryFresh().catch((error) => {
+      console.warn(
+        "[C6.2][inventory] background refresh failed:",
+        error?.message || error,
+      );
+    });
+
     const modelAliases = await getModelAliases();
     const disabled = await getDisabledModels();
 
