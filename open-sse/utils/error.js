@@ -63,6 +63,19 @@ export async function parseUpstreamError(response, executor = null) {
     bodyText = "";
   }
 
+  const contentType = response.headers?.get?.("content-type")?.toLowerCase() || "";
+  const looksLikeHtml = contentType.includes("text/html") || /<!doctype\s+html|<html[\s>]/i.test(bodyText);
+  if (looksLikeHtml) {
+    const title = bodyText.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]
+      ?.replace(/<[^>]*>/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    return {
+      statusCode: response.status,
+      message: title || `Upstream returned an HTML error page (${response.status})`
+    };
+  }
+
   // Let executor-specific parser extract provider-specific fields (e.g. codex resetsAtMs)
   if (executor && typeof executor.parseError === "function") {
     try {
