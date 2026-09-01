@@ -8,7 +8,7 @@ import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelSupportedFormats, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
-import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
+import { createErrorResult, getClientErrorStatus, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
@@ -450,9 +450,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     // Provider request errors are retryable from Kilo's perspective after the
     // router has exhausted its own retry. Keep the original status for logs
     // and account classification, but expose 502 so the client retries.
-    const clientStatusCode = statusCode === HTTP_STATUS.BAD_REQUEST
-      ? HTTP_STATUS.BAD_GATEWAY
-      : statusCode;
+    const clientStatusCode = getClientErrorStatus(statusCode);
     return createErrorResult(clientStatusCode, errMsg, resetsAtMs, statusCode);
   }
 

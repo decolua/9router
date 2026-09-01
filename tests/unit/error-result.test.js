@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createErrorResult } from "../../open-sse/utils/error.js";
+import { createErrorResult, getClientErrorStatus } from "../../open-sse/utils/error.js";
 
 describe("createErrorResult", () => {
   it("can expose a retryable client status while preserving provider status", async () => {
@@ -16,5 +16,16 @@ describe("createErrorResult", () => {
         code: "bad_gateway"
       }
     });
+  });
+});
+
+describe("getClientErrorStatus", () => {
+  it("maps Cloudflare 524 to retryable 502", () => {
+    expect(getClientErrorStatus(524)).toBe(502);
+  });
+
+  it("preserves standard upstream statuses", () => {
+    expect(getClientErrorStatus(429)).toBe(429);
+    expect(getClientErrorStatus(503)).toBe(503);
   });
 });

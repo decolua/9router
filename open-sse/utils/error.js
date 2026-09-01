@@ -107,6 +107,11 @@ export function createErrorResult(statusCode, message, resetsAtMs, accountStatus
   };
 }
 
+/** Map nonstandard upstream statuses to broadly retryable client statuses. */
+export function getClientErrorStatus(statusCode) {
+  return statusCode === 400 || statusCode === 524 ? 502 : statusCode;
+}
+
 /**
  * Create unavailable response when all accounts are rate limited
  * @param {number} statusCode - Original error status code
