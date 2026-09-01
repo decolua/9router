@@ -4,6 +4,7 @@ import {
   getProviderAlias,
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
+  resolveProviderId,
 } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
@@ -237,6 +238,18 @@ function comboMatchesKinds(combo, kindFilter) {
   return kindFilter.includes(kind);
 }
 
+function getComboContextWindow(combo) {
+  const windows = (combo?.models || []).flatMap((fullModel) => {
+    if (typeof fullModel !== "string" || !fullModel.includes("/")) return [];
+    const slash = fullModel.indexOf("/");
+    const provider = resolveProviderId(fullModel.slice(0, slash));
+    const model = fullModel.slice(slash + 1);
+    const contextWindow = getCapabilitiesForModel(provider, model).contextWindow;
+    return Number.isFinite(contextWindow) && contextWindow > 0 ? [contextWindow] : [];
+  });
+  return windows.length > 0 ? Math.min(...windows) : null;
+}
+
 /**
  * Build OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
@@ -300,6 +313,8 @@ export async function buildModelsList(kindFilter, options = {}) {
       object: "model",
       owned_by: "combo",
     };
+    const contextWindow = getComboContextWindow(combo);
+    if (contextWindow) entry.context_length = contextWindow;
     if (combo.kind === "webSearch" || combo.kind === "webFetch") {
       entry.kind = combo.kind;
     }
