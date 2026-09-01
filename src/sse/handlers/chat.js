@@ -19,6 +19,7 @@ import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "o
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import { correlateResponse } from "../utils/requestCorrelation.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
@@ -29,7 +30,16 @@ import { getProjectIdForConnection } from "open-sse/services/projectId.js";
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
  * Format detection and translation handled by translator
  */
-export async function handleChat(request, clientRawRequest = null) {
+export async function handleChat(request, clientRawRequest = null, serverRequestId = crypto.randomUUID()) {
+  try {
+    const response = await handleChatInternal(request, clientRawRequest, serverRequestId);
+    return correlateResponse(response, serverRequestId);
+  } catch {
+    return correlateResponse(errorResponse(HTTP_STATUS.SERVER_ERROR, "Chat request failed"), serverRequestId);
+  }
+}
+
+async function handleChatInternal(request, clientRawRequest = null, serverRequestId) {
   let body;
   try {
     body = await request.json();
@@ -44,8 +54,11 @@ export async function handleChat(request, clientRawRequest = null) {
     clientRawRequest = {
       endpoint: url.pathname,
       body,
-      headers: Object.fromEntries(request.headers.entries())
+      headers: Object.fromEntries(request.headers.entries()),
+      serverRequestId
     };
+  } else {
+    clientRawRequest = { ...clientRawRequest, serverRequestId };
   }
   const modelStr = body.model;
 
