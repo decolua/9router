@@ -5,6 +5,7 @@ import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { openAICompletionToClaudeMessage } from "./completionToClaude.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -103,6 +104,58 @@ function chatCompletionToResponses(responseBody, customToolNames = null) {
       total_tokens: usage.total_tokens || (usage.prompt_tokens || 0) + (usage.completion_tokens || 0),
     },
   };
+}
+
+/**
+ * Convert a Responses API body into an Anthropic Message. A Claude client that
+ * retried without streaming against a Responses-API provider (e.g. codex) must
+ * still get a `type: "message"` body back.
+ */
+function responsesToClaudeMessage(jsonResponse, fallbackModel) {
+  const content = [];
+
+  for (const item of jsonResponse?.output || []) {
+    if (item?.type === RESPONSES_ITEM.MESSAGE) {
+      const text = textFromResponsesMessageItem(item);
+      if (text.length > 0) content.push({ type: "text", text });
+    } else if (item?.type === RESPONSES_ITEM.FUNCTION_CALL) {
+      content.push({
+        type: "tool_use",
+        id: item.call_id || item.id || `toolu_${Date.now()}_${content.length}`,
+        name: item.name || "",
+        input: parseResponsesToolInput(item.arguments),
+      });
+    }
+  }
+  if (content.length === 0) content.push({ type: "text", text: "" });
+
+  const usage = jsonResponse?.usage || {};
+  const hasToolUse = content.some((block) => block.type === "tool_use");
+  return {
+    id: String(jsonResponse?.id || `msg_${Date.now()}`),
+    type: "message",
+    role: ROLE.ASSISTANT,
+    model: jsonResponse?.model || fallbackModel || "unknown",
+    content,
+    stop_reason: hasToolUse ? "tool_use" : "end_turn",
+    stop_sequence: null,
+    usage: {
+      input_tokens: (usage.input_tokens || 0)
+        + (usage.cache_read_input_tokens || usage.cached_tokens || 0)
+        + (usage.cache_creation_input_tokens || 0),
+      output_tokens: usage.output_tokens || 0,
+    },
+  };
+}
+
+function parseResponsesToolInput(argumentsValue) {
+  if (!argumentsValue) return {};
+  if (typeof argumentsValue === "object") return argumentsValue;
+  try {
+    return JSON.parse(argumentsValue);
+  } catch {
+    return {};
+  }
 }
 
 /**
@@ -222,6 +275,13 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         response: { content: textContent, thinking: null, finish_reason: jsonResponse.status || "unknown" },
         status: "success"
       }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
+
+      // Client is Claude → build an Anthropic Message. Without this the client
+      // gets a chat.completion body on a 200, which it cannot parse.
+      if (sourceFormat === FORMATS.CLAUDE) {
+        const claudeMessage = responsesToClaudeMessage(jsonResponse, model);
+        return { success: true, response: new Response(JSON.stringify(claudeMessage), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+      }
 
       // Client is Responses API → return as-is
       if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
@@ -347,9 +407,14 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     // lost on the non-streaming return path. Inlined (not imported from
     // nonStreamingHandler.js) to avoid a circular import: nonStreamingHandler
     // already imports parseSSEToOpenAIResponse from this module.
+    // A Claude client (/v1/messages) reaches this path when it retries without
+    // streaming against a forced-streaming provider. It needs an Anthropic
+    // Message, not the chat.completion body parseSSEToOpenAIResponse produces.
     const finalBody = sourceFormat === FORMATS.OPENAI_RESPONSES
       ? chatCompletionToResponses(parsed, customToolNames)
-      : parsed;
+      : sourceFormat === FORMATS.CLAUDE
+        ? openAICompletionToClaudeMessage(parsed)
+        : parsed;
 
     return { success: true, response: new Response(JSON.stringify(finalBody), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {
