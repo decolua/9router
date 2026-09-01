@@ -46,10 +46,43 @@ describe("normalizeClaudePassthrough — foreign server_tool_use ids", () => {
     expect(out.messages[0].content).toEqual([block]);
   });
 
-  it("leaves a message with only a dropped block with an empty text block, not an empty content array", () => {
+  it("drops a message whose blocks were all stripped instead of padding it with empty text", () => {
     const out = normalizeClaudePassthrough({
-      messages: [{ role: "assistant", content: [{ type: "server_tool_use", id: "call_x", name: "analyze_image", input: {} }] }],
+      messages: [
+        { role: "user", content: [{ type: "text", text: "hi" }] },
+        { role: "assistant", content: [{ type: "server_tool_use", id: "call_x", name: "analyze_image", input: {} }] },
+        { role: "user", content: [{ type: "text", text: "bye" }] },
+      ],
     });
-    expect(out.messages[0].content).toEqual([{ type: "text", text: "" }]);
+    expect(out.messages).toHaveLength(2);
+    expect(out.messages.map(m => m.role)).toEqual(["user", "user"]);
+  });
+
+  it("strips empty text blocks a client put in the history (Anthropic 400s them)", () => {
+    const out = normalizeClaudePassthrough({
+      messages: [{ role: "assistant", content: [{ type: "text", text: "real" }, { type: "text", text: "" }] }],
+    });
+    expect(out.messages[0].content).toEqual([{ type: "text", text: "real" }]);
+  });
+
+  it("drops a message whose content is a single empty text block", () => {
+    const out = normalizeClaudePassthrough({
+      messages: [
+        { role: "user", content: [{ type: "text", text: "hi" }] },
+        { role: "assistant", content: [{ type: "text", text: "" }] },
+      ],
+    });
+    expect(out.messages).toHaveLength(1);
+  });
+
+  it("drops a message whose string content is empty", () => {
+    const out = normalizeClaudePassthrough({
+      messages: [
+        { role: "user", content: "hello" },
+        { role: "assistant", content: "" },
+      ],
+    });
+    expect(out.messages).toHaveLength(1);
+    expect(out.messages[0].content).toBe("hello");
   });
 });

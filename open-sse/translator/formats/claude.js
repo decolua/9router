@@ -199,7 +199,7 @@ export function normalizeClaudePassthrough(body, model = "") {
         if (block.type === CLAUDE_BLOCK.TOOL_USE) hasToolUse = true;
         kept.push(block);
       }
-      msg.content = kept.length > 0 ? kept : [{ type: CLAUDE_BLOCK.TEXT, text: "" }];
+      msg.content = kept;
       if (thinkingEnabled && !hasKeptThinking && hasToolUse) {
         msg.content.unshift(buildThinkingPlaceholder("claude"));
       }
@@ -216,9 +216,23 @@ export function normalizeClaudePassthrough(body, model = "") {
         && droppedServerToolUseIds.has(String(block.tool_use_id ?? ""))
       ));
       if (kept.length !== msg.content.length) {
-        msg.content = kept.length > 0 ? kept : [{ type: CLAUDE_BLOCK.TEXT, text: "" }];
+        msg.content = kept;
       }
     }
+  }
+
+  // 5. Drop empty text blocks and any message left with no content at all.
+  // Anthropic rejects `messages.N.content` blocks with empty text (400
+  // "text content blocks must be non-empty"); a message whose blocks were all
+  // stripped above must be dropped, not padded with an empty placeholder.
+  if (Array.isArray(body.messages)) {
+    body.messages = body.messages.filter(msg => {
+      if (typeof msg.content === "string") return msg.content.trim().length > 0;
+      if (!Array.isArray(msg.content)) return true;
+      msg.content = msg.content.filter(block =>
+        !(block?.type === CLAUDE_BLOCK.TEXT && !String(block.text ?? "").trim()));
+      return msg.content.length > 0;
+    });
   }
 
   return body;
