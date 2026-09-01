@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { checkFallbackError } from "../../open-sse/services/accountFallback.js";
+import { checkFallbackError, shouldSkipAccountFallback } from "../../open-sse/services/accountFallback.js";
 
 describe("account fallback classification", () => {
   it("does not lock an account for a generic request-specific 400", () => {
@@ -37,5 +37,19 @@ describe("account fallback classification", () => {
       shouldFallback: true,
       cooldownMs: 30000,
     });
+  });
+});
+
+describe("account fallback availability", () => {
+  it("skips fallback when a 524 has no alternate account", () => {
+    expect(shouldSkipAccountFallback(524, 1)).toBe(true);
+  });
+
+  it("keeps fallback available for 524 with another account", () => {
+    expect(shouldSkipAccountFallback(524, 2)).toBe(false);
+  });
+
+  it("does not affect other error statuses", () => {
+    expect(shouldSkipAccountFallback(429, 1)).toBe(false);
   });
 });
