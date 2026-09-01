@@ -100,9 +100,10 @@ export async function handleAntigravityQuotaError(connectionId, status, model, a
   // The first 409/429 populates cache; concurrent or repeated errors reuse it.
   const quota = (await refreshAntigravityQuota(connectionId, accessToken, providerSpecificData))?.[model];
 
-  if (quota && quota.remainingPercentage > 0) {
-    // Optimistic quota reading while upstream still 429s — apply the strike
-    // breaker before trusting it. Reset if the window lapsed since last strike.
+  // Strike breaker: count every 429 whose quota reading is either optimistic
+  // (remaining > 0) or unavailable (quota API 403/error). 3 within the window
+  // => the pair is unhealthy regardless of what the API claims; block 15m.
+  if (!quota || quota.remainingPercentage > 0) {
     const key = `${connectionId}|${model}`;
     const now = Date.now();
     const strike = strikeCounts.get(key);
@@ -111,14 +112,16 @@ export async function handleAntigravityQuotaError(connectionId, status, model, a
     if (count >= STRIKE_THRESHOLD) {
       strikeCounts.delete(key);
       const blockedUntil = now + STRIKE_BLOCK_MS;
-      log.warn("AG_QUOTA", `${connectionId.slice(0, 8)} | STRIKE_${status} ${model} — ${count}x 429 while quota reports ${Math.round(quota.remainingPercentage)}%; CACHE_BLOCK 15m`);
+      const reading = quota ? `${Math.round(quota.remainingPercentage)}%` : "unknown";
+      log.warn("AG_QUOTA", `${connectionId.slice(0, 8)} | STRIKE_${status} ${model} — ${count}x 429 (quota ${reading}); CACHE_BLOCK 15m`);
       return blockedUntil;
     }
     return null;
   }
 
+  // Healthy-but-exhausted reading: clear strikes and use the exact resetAt.
   strikeCounts.delete(`${connectionId}|${model}`);
-  if (!quota || !quota.resetAt) return null;
+  if (!quota.resetAt) return null;
 
   const resetMs = new Date(quota.resetAt).getTime();
   if (resetMs <= Date.now()) return null;

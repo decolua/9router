@@ -209,6 +209,22 @@ describe("Antigravity quota-aware routing", () => {
     }
   });
 
+  it("strike-breaks when the quota API is unavailable (null reading) too", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
+    // Quota endpoint failing/forbidden => quota unknown. Strikes must still count.
+    mocks.getAntigravityUsage.mockResolvedValue({ message: "forbidden", quotas: {} });
+
+    try {
+      await handleAntigravityQuotaError("ag-null", 429, MODEL, "token", {});
+      await handleAntigravityQuotaError("ag-null", 429, MODEL, "token", {});
+      const third = await handleAntigravityQuotaError("ag-null", 429, MODEL, "token", {});
+      expect(third).toBe(Date.parse("2026-08-26T00:15:00.000Z"));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps the optimistic path null without touching the quota cache", async () => {
     mocks.getAntigravityUsage.mockResolvedValue({ quotas: {
       [MODEL]: { remainingPercentage: 90, resetAt: FUTURE_RESET },
