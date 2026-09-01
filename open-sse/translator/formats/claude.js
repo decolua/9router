@@ -12,6 +12,18 @@ import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
 const CACHE_CONTROL_5M = { type: "ephemeral" };
 const CACHE_CONTROL_1H = { type: "ephemeral", ttl: "1h" };
 
+// Anthropic rejects a tool carrying BOTH defer_loading:true and cache_control
+// ("Tools defer_loading cannot use prompt caching", #3567). MCP clients put
+// deferred tools at the tail, which is exactly where the cache anchor lands.
+// Anchor on the last tool that CAN be cached instead of dropping caching.
+export function lastCacheableToolIndex(tools) {
+  if (!Array.isArray(tools)) return -1;
+  for (let i = tools.length - 1; i >= 0; i--) {
+    if (tools[i]?.defer_loading !== true) return i;
+  }
+  return -1;
+}
+
 // Check if message has valid non-empty content
 export function hasValidContent(msg) {
   if (typeof msg.content === "string" && msg.content.trim()) return true;
@@ -223,7 +235,7 @@ export function anchorClaudeCache(body) {
   }
 
   if (Array.isArray(body.tools)) {
-    const last = body.tools.length - 1;
+    const last = lastCacheableToolIndex(body.tools);
     body.tools.forEach((tool, i) => {
       if (i === last) tool.cache_control = { ...CACHE_CONTROL_1H };
       else delete tool.cache_control;
@@ -417,9 +429,10 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
         });
     }
 
+    const lastCacheable = lastCacheableToolIndex(body.tools);
     body.tools = body.tools.map((tool, i) => {
       const { cache_control, ...rest } = tool;
-      if (i === body.tools.length - 1) {
+      if (i === lastCacheable) {
         return { ...rest, cache_control: { type: "ephemeral", ttl: "1h" } };
       }
       return rest;
