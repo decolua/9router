@@ -246,6 +246,14 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   delete result.reasoning;
   delete result.client_metadata;
 
+  // Ask chat-completions upstreams to report usage on the final chunk:
+  // without include_usage most upstreams never send token counts, and the
+  // response translation below then completes with no usage — every
+  // consumer (codex CLI, billing systems) reads 0 tokens.
+  if (result.stream !== false) {
+    result.stream_options = { ...(result.stream_options || {}), include_usage: true };
+  }
+
   return result;
 }
 

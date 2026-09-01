@@ -225,16 +225,39 @@ export function createResponsesApiTransformStream(logger = null) {
   const sendCompleted = (controller) => {
     if (!state.completedSent) {
       state.completedSent = true;
+      const response = {
+        id: state.responseId,
+        object: "response",
+        created_at: state.created,
+        status: "completed",
+        background: false,
+        error: null
+      };
+      // Omit when the upstream never sent one — same conditional as
+      // usage, so no null/empty field can leak into the event.
+      if (state.model) {
+        response.model = state.model;
+      }
+      // Map the chat chunk's usage into the Responses shape:
+      // consumers (codex CLI and everything billing behind it) read
+      // token counts from response.completed — omitting them made
+      // every run through this proxy report 0 tokens.
+      if (state.usage) {
+        const input = Number(state.usage.prompt_tokens) || 0;
+        const output = Number(state.usage.completion_tokens) || 0;
+        const cached = Number(state.usage.prompt_tokens_details?.cached_tokens) || 0;
+        const reasoning = Number(state.usage.completion_tokens_details?.reasoning_tokens) || 0;
+        response.usage = {
+          input_tokens: input,
+          input_tokens_details: { cached_tokens: cached },
+          output_tokens: output,
+          output_tokens_details: { reasoning_tokens: reasoning },
+          total_tokens: Number(state.usage.total_tokens) || input + output
+        };
+      }
       emit(controller, "response.completed", {
         type: "response.completed",
-        response: {
-          id: state.responseId,
-          object: "response",
-          created_at: state.created,
-          status: "completed",
-          background: false,
-          error: null
-        }
+        response
       });
     }
   };
@@ -264,6 +287,15 @@ export function createResponsesApiTransformStream(logger = null) {
           continue;
         }
 
+        // The include_usage final chunk carries `usage` with EMPTY
+        // choices — capture it BEFORE the choices guard skips it.
+        if (parsed.usage && typeof parsed.usage === "object") {
+          state.usage = parsed.usage;
+        }
+        // Chunks carry `model` on every chunk (first wins, the rest are
+        // identical) — mirror it onto the synthesized response, whose
+        // schema requires it (upstream issue #1681's other half).
+        if (parsed.model) state.model = parsed.model;
         if (!parsed.choices?.length) continue;
         
         const choice = parsed.choices[0];
@@ -414,12 +446,16 @@ export function createResponsesApiTransformStream(logger = null) {
           }
         }
 
-        // Handle finish_reason
+        // Handle finish_reason: close items but DON'T complete yet —
+        // with stream_options.include_usage the usage chunk arrives
+        // AFTER finish_reason (empty choices), and response.completed
+        // is the protocol's final event: emitting it here would lock
+        // in usage:0 before the evidence lands (the ordering bug
+        // upstream issue #1700 describes). flush() completes.
         if (choice.finish_reason) {
           for (const i in state.msgItemAdded) closeMessage(controller, i);
           closeReasoning(controller);
           for (const i in state.funcCallIds) closeToolCall(controller, i);
-          sendCompleted(controller);
         }
       }
     },

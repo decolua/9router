@@ -195,6 +195,14 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
     }
   }
 
+  // Flush cascade: a null chunk (stream flush) must reach the
+  // source-format flush even when the target→openai flush returns nothing
+  // (claude→openai returns null), or 2-hop chains never emit their
+  // terminal event — response.completed was silently dropped at flush.
+  if (chunk === null && results.length === 0 && sourceFormat !== FORMATS.OPENAI) {
+    results = [null];
+  }
+
   // Step 2: openai -> source (if source is not openai)
   if (sourceFormat !== FORMATS.OPENAI) {
     const fromOpenAI = responseRegistry.get(`${FORMATS.OPENAI}:${sourceFormat}`);

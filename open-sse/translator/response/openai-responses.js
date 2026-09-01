@@ -18,7 +18,14 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   if (!chunk) {
     return flushEvents(state);
   }
-  
+
+  // The include_usage final chunk carries `usage` with EMPTY choices —
+  // capture usage and model BEFORE the choices guard skips it. Chunks
+  // carry `model` on every chunk (first wins, the rest are identical).
+  if (chunk.usage && typeof chunk.usage === "object") {
+    state.usage = chunk.usage;
+  }
+  if (chunk.model) state.model = chunk.model;
   if (!chunk.choices?.length) return [];
   
   const events = [];
@@ -107,12 +114,16 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
     }
   }
 
-  // Handle finish_reason
+  // Handle finish_reason: close items but DON'T complete yet —
+  // with stream_options.include_usage the usage chunk arrives AFTER
+  // finish_reason (empty choices), and response.completed is the
+  // protocol's final event: emitting it here would lock in usage:0
+  // before the evidence lands. flushEvents() (the stream.js flush)
+  // completes.
   if (choice.finish_reason) {
     for (const i in state.msgItemAdded) closeMessage(state, emit, i);
     closeReasoning(state, emit);
     for (const i in state.funcCallIds) closeToolCall(state, emit, i);
-    sendCompleted(state, emit);
   }
 
   return events;
@@ -368,16 +379,39 @@ function closeToolCall(state, emit, idx) {
 function sendCompleted(state, emit) {
   if (!state.completedSent) {
     state.completedSent = true;
+    const response = {
+      id: state.responseId,
+      object: "response",
+      created_at: state.created,
+      status: "completed",
+      background: false,
+      error: null
+    };
+    // Omit when the upstream never sent one — same conditional as
+    // usage, so no null/empty field can leak into the event.
+    if (state.model) {
+      response.model = state.model;
+    }
+    // Map the chat chunk's usage into the Responses shape: consumers
+    // (codex CLI and everything billing behind it) read token counts
+    // from response.completed — omitting them made every run through
+    // this proxy report 0 tokens.
+    if (state.usage) {
+      const input = Number(state.usage.prompt_tokens) || 0;
+      const output = Number(state.usage.completion_tokens) || 0;
+      const cached = Number(state.usage.prompt_tokens_details?.cached_tokens) || 0;
+      const reasoning = Number(state.usage.completion_tokens_details?.reasoning_tokens) || 0;
+      response.usage = {
+        input_tokens: input,
+        input_tokens_details: { cached_tokens: cached },
+        output_tokens: output,
+        output_tokens_details: { reasoning_tokens: reasoning },
+        total_tokens: Number(state.usage.total_tokens) || input + output
+      };
+    }
     emit("response.completed", {
       type: "response.completed",
-      response: {
-        id: state.responseId,
-        object: "response",
-        created_at: state.created,
-        status: "completed",
-        background: false,
-        error: null
-      }
+      response
     });
   }
 }

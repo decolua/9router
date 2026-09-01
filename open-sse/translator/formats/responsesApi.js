@@ -137,5 +137,13 @@ export function convertResponsesApiFormat(body) {
   delete result.store;
   delete result.reasoning;
 
+  // Ask chat-completions upstreams to report usage on the final chunk:
+  // without include_usage most upstreams never send token counts, and
+  // the Responses translation below then completes with no usage —
+  // every consumer (codex CLI, billing systems) reads 0 tokens.
+  if (result.stream !== false) {
+    result.stream_options = { ...(result.stream_options || {}), include_usage: true };
+  }
+
   return result;
 }
