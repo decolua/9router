@@ -14,6 +14,36 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
 import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
+import { isAutoRoutingToken } from "@/lib/autoRouting/classifier.js";
+import { resolveAutoRouting } from "@/lib/autoRouting/resolver.js";
+import {
+  finalizeAutoRoutingDecision,
+  recordAutoRoutingOutcome,
+  snapshotAutoRoutingDecision,
+} from "@/lib/autoRouting/decision.js";
+import { publishRoutingOutcome } from "@/lib/modelControlCenter/routingOutcome.js";
+
+function autoCandidateProvider(model) {
+  if (typeof model !== "string") return "";
+  const slash = model.indexOf("/");
+  return slash > 0 ? model.slice(0, slash) : model;
+}
+
+function createFetchAutoCandidateFilter() {
+  const seenProviders = new Set();
+
+  return ({ providerId }) => {
+    const resolvedId = resolveProviderId(providerId);
+    const provider = AI_PROVIDERS[resolvedId];
+
+    if (!provider?.fetchConfig || seenProviders.has(resolvedId)) {
+      return false;
+    }
+
+    seenProviders.add(resolvedId);
+    return true;
+  };
+}
 
 /**
  * Handle web fetch (URL extraction) request for the SSE/Next.js server.
@@ -104,6 +134,63 @@ export async function handleFetch(request) {
       comboStrategy,
       comboStickyLimit
     });
+  }
+
+  if (isAutoRoutingToken(providerInput)) {
+    const autoRouting = await resolveAutoRouting({
+      routingToken: providerInput,
+      body,
+      endpoint: reqUrl.pathname,
+      routeKind: "fetch",
+      candidateFilter: createFetchAutoCandidateFilter(),
+    });
+
+    if (!autoRouting.available) {
+      log.warn("AUTO_ROUTING", `${providerInput} → ${autoRouting.reason}`);
+      return errorResponse(
+        HTTP_STATUS.SERVICE_UNAVAILABLE,
+        `AUTO_ROUTING_UNAVAILABLE: ${autoRouting.resolvedClass || "unknown"}`,
+      );
+    }
+
+    log.info(
+      "AUTO_ROUTING",
+      `${providerInput} → ${autoRouting.autoComboId} | fetchProviders=${autoRouting.models.length}`,
+    );
+
+    const response = await handleComboChat({
+      body,
+      models: autoRouting.models,
+      handleSingleModel: (b, m) =>
+        handleSingleProviderFetch(
+          b,
+          autoCandidateProvider(m),
+          request,
+          apiKey,
+          settings,
+        ),
+      log,
+      comboName: autoRouting.autoComboId,
+      comboStrategy: "fallback",
+      comboStickyLimit: 1,
+      autoSwitch: false,
+      onRoutingOutcome: (event) => {
+        recordAutoRoutingOutcome(autoRouting.decision, event);
+        publishRoutingOutcome({
+          ...event,
+          routeKind: "fetch",
+        });
+      },
+    });
+
+    finalizeAutoRoutingDecision(autoRouting.decision, response);
+
+    log.info(
+      "AUTO_ROUTING_DECISION",
+      JSON.stringify(snapshotAutoRoutingDecision(autoRouting.decision)),
+    );
+
+    return response;
   }
 
   return handleSingleProviderFetch(body, providerInput, request, apiKey, settings);

@@ -11,6 +11,13 @@ import { handleAntigravityQuotaError } from "../services/antigravityQuota.js";
 import { getOperatorPolicy } from "@/lib/modelControlCenter/operatorPolicy.js";
 import { buildAdaptiveFallbackRuntimeOrder } from "@/lib/modelControlCenter/adaptiveRuntime.js";
 import { publishRoutingOutcome } from "@/lib/modelControlCenter/routingOutcome.js";
+import { isAutoRoutingToken } from "@/lib/autoRouting/classifier.js";
+import { resolveAutoRouting } from "@/lib/autoRouting/resolver.js";
+import {
+  finalizeAutoRoutingDecision,
+  recordAutoRoutingOutcome,
+  snapshotAutoRoutingDecision,
+} from "@/lib/autoRouting/decision.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
@@ -171,6 +178,57 @@ export async function handleChat(request, clientRawRequest = null) {
             })
           : undefined
     });
+  }
+
+  if (isAutoRoutingToken(modelStr)) {
+    const autoRouting = await resolveAutoRouting({
+      routingToken: modelStr,
+      body,
+      endpoint: new URL(request.url).pathname,
+      routeKind: "chat",
+      requiredCapabilities,
+    });
+
+    if (!autoRouting.available) {
+      log.warn("AUTO_ROUTING", `${modelStr} → ${autoRouting.reason}`);
+      return errorResponse(
+        HTTP_STATUS.SERVICE_UNAVAILABLE,
+        `AUTO_ROUTING_UNAVAILABLE: ${autoRouting.resolvedClass || "unknown"}`,
+      );
+    }
+
+    log.info(
+      "AUTO_ROUTING",
+      `${modelStr} → ${autoRouting.autoComboId} | candidates=${autoRouting.models.length}`,
+    );
+
+    const response = await handleComboChat({
+      body,
+      models: autoRouting.models,
+      handleSingleModel: (b, m) =>
+        handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+      log,
+      comboName: autoRouting.autoComboId,
+      comboStrategy: "fallback",
+      comboStickyLimit: 1,
+      autoSwitch: false,
+      onRoutingOutcome: (event) => {
+        recordAutoRoutingOutcome(autoRouting.decision, event);
+        publishRoutingOutcome({
+          ...event,
+          routeKind: "chat",
+        });
+      },
+    });
+
+    finalizeAutoRoutingDecision(autoRouting.decision, response);
+
+    log.info(
+      "AUTO_ROUTING_DECISION",
+      JSON.stringify(snapshotAutoRoutingDecision(autoRouting.decision)),
+    );
+
+    return response;
   }
 
   // Single model request — may still switch to a capacity-adapter model if the
