@@ -108,3 +108,14 @@ describe("empty completions must not produce empty text blocks", () => {
     expect(json.content).toEqual([]);
   });
 });
+
+describe("model echo on the non-streaming Claude path", () => {
+  it("prefers the request model when provider chunks carry a different one", async () => {
+    const lines = CHAT_SSE.map(l => l.replace(/"model":"gpt-x"/g, '"model":"glm-5.3"'));
+    const result = await handleForcedSSEToJson(
+      baseCtx(sseResponse(lines), { targetFormat: FORMATS.OPENAI })
+    );
+    const json = await result.response.json();
+    expect(json.model).toBe("gpt-x");
+  });
+});

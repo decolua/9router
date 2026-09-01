@@ -16,7 +16,7 @@ function parseToolArguments(value) {
  * Shared by the non-streaming path and the forced-SSE→JSON path so a Claude
  * client gets the same body whichever route the request took.
  */
-export function openAICompletionToClaudeMessage(responseBody) {
+export function openAICompletionToClaudeMessage(responseBody, requestModel = null) {
   if (!responseBody?.choices?.[0]) return responseBody;
   const choice = responseBody.choices[0];
   const message = choice.message || {};
@@ -44,7 +44,10 @@ export function openAICompletionToClaudeMessage(responseBody) {
     id: String(responseBody.id || `msg_${Date.now()}`).replace(/^chatcmpl-/, ""),
     type: "message",
     role: "assistant",
-    model: responseBody.model || "unknown",
+    // Echo the model the client asked for; the provider body carries the
+    // upstream model (e.g. glm-5.3), which Anthropic clients can't restore
+    // as a session model (issue #3692).
+    model: requestModel || responseBody.model || "unknown",
     content,
     stop_reason: fromOpenAIFinish(choice.finish_reason, FORMATS.CLAUDE),
     stop_sequence: null,

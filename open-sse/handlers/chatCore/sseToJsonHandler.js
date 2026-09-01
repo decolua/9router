@@ -134,7 +134,7 @@ function responsesToClaudeMessage(jsonResponse, fallbackModel) {
     id: String(jsonResponse?.id || `msg_${Date.now()}`),
     type: "message",
     role: ROLE.ASSISTANT,
-    model: jsonResponse?.model || fallbackModel || "unknown",
+    model: fallbackModel || jsonResponse?.model || "unknown",
     content,
     stop_reason: hasToolUse ? "tool_use" : "end_turn",
     stop_sequence: null,
@@ -412,7 +412,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     const finalBody = sourceFormat === FORMATS.OPENAI_RESPONSES
       ? chatCompletionToResponses(parsed, customToolNames)
       : sourceFormat === FORMATS.CLAUDE
-        ? openAICompletionToClaudeMessage(parsed)
+        ? openAICompletionToClaudeMessage(parsed, model)
         : parsed;
 
     return { success: true, response: new Response(JSON.stringify(finalBody), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
