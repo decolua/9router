@@ -106,6 +106,14 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
+    const hasAutoModelEnabled = Object.prototype.hasOwnProperty.call(body, "autoModelEnabled");
+    if (hasAutoModelEnabled && typeof body.autoModelEnabled !== "boolean") {
+      return NextResponse.json(
+        { error: "autoModelEnabled must be a boolean" },
+        { status: 400 }
+      );
+    }
+
     const proxyConfig = normalizeProxyConfig(body);
     if (proxyConfig.error) {
       return NextResponse.json({ error: proxyConfig.error }, { status: 400 });
@@ -126,6 +134,7 @@ export async function PUT(request, { params }) {
     if (testStatus !== undefined) updateData.testStatus = testStatus;
     if (lastError !== undefined) updateData.lastError = lastError;
     if (lastErrorAt !== undefined) updateData.lastErrorAt = lastErrorAt;
+    if (hasAutoModelEnabled) updateData.autoModelEnabled = body.autoModelEnabled;
 
     if (
       shouldMergeProviderSpecificData(

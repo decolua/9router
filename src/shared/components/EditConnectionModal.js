@@ -8,6 +8,7 @@ import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
+import Toggle from "@/shared/components/Toggle";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
@@ -28,7 +29,10 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [autoModelEnabled, setAutoModelEnabled] = useState(false);
+  const [autoModelTouched, setAutoModelTouched] = useState(false);
 
+  /* eslint-disable react-hooks/set-state-in-effect -- existing connection-to-form synchronization; provider parent is protected in C.6.5 */
   useEffect(() => {
     if (connection) {
       setFormData({
@@ -56,10 +60,23 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       }
       setTestResult(null);
       setValidationResult(null);
+      setAutoModelEnabled(
+        typeof connection.autoModelEnabled === "boolean"
+          ? connection.autoModelEnabled
+          : connection.authType === "oauth"
+      );
+      setAutoModelTouched(false);
     }
   }, [connection]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const isOAuth = connection?.authType === "oauth";
+  const autoModelInherited = typeof connection?.autoModelEnabled !== "boolean";
+  const autoModelDescription = autoModelInherited
+    ? (isOAuth
+      ? "Inherited default: On for OAuth connections. Change this toggle to store an explicit per-connection override."
+      : "Inherited default: Off for API key/custom connections. Change this toggle to opt this connection in explicitly.")
+    : "Explicit per-connection override. Change the toggle to update the stored Auto Model preference.";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
   const isCompatible = connection
@@ -121,6 +138,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         name: formData.name,
         priority: formData.priority,
       };
+      if (autoModelTouched) {
+        updates.autoModelEnabled = autoModelEnabled;
+      }
       if (!isOAuth && formData.apiKey) {
         updates.apiKey = formData.apiKey;
         let isValid = validationResult === "success";
@@ -201,6 +221,21 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           value={formData.priority}
           onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value, 10) || 1 })}
         />
+
+        <div className="rounded-[10px] border border-border-subtle bg-surface-2/50 p-3">
+          <Toggle
+            checked={autoModelEnabled}
+            onChange={(next) => {
+              setAutoModelEnabled(next);
+              setAutoModelTouched(true);
+            }}
+            label="Auto Model"
+            description={autoModelDescription}
+          />
+          <p className="mt-2 text-[11px] text-text-muted">
+            Per connection only. OAuth defaults On; API key and custom connections default Off until explicitly enabled.
+          </p>
+        </div>
 
         {!isOAuth && (
           <>
@@ -303,6 +338,7 @@ EditConnectionModal.propTypes = {
     email: PropTypes.string,
     priority: PropTypes.number,
     authType: PropTypes.string,
+    autoModelEnabled: PropTypes.bool,
     provider: PropTypes.string,
     providerSpecificData: PropTypes.object,
   }),

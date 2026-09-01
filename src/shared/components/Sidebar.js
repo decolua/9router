@@ -22,7 +22,17 @@ const navItems = [
   { href: "/dashboard/providers", label: "Providers", icon: "dns" },
   { href: "/dashboard/models", label: "Models", icon: "model_training" },
   // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
-  { href: "/dashboard/combos", label: "Combo & Vision Adapter", icon: "layers" },
+  {
+    id: "combo-group",
+    label: "Combo",
+    icon: "layers",
+    children: [
+      { href: "/dashboard/combos", label: "Manual Combos", icon: "layers" },
+      { href: "/dashboard/combos/auto-routing", label: "Auto Routing", icon: "route" },
+      { href: "/dashboard/combos/model-health", label: "Model Health", icon: "monitor_heart" },
+      { href: "/dashboard/combos/activity", label: "Activity", icon: "history" },
+    ],
+  },
   { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
   { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
   { href: "/dashboard/token-saver", label: "Token Saver", icon: "savings" },
@@ -43,6 +53,7 @@ const systemItems = [
 export default function Sidebar({ onClose }) {
   const pathname = usePathname();
   const [mediaOpen, setMediaOpen] = useState(false);
+  const [comboOpen, setComboOpen] = useState(false);
   const [showRemoteModal, setShowRemoteModal] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
@@ -73,6 +84,13 @@ export default function Sidebar({ onClose }) {
     if (href === "/dashboard/endpoint") {
       return pathname === "/dashboard" || pathname.startsWith("/dashboard/endpoint");
     }
+    return pathname.startsWith(href);
+  };
+
+  const isComboPath = pathname.startsWith("/dashboard/combos");
+  const comboExpanded = isComboPath || comboOpen;
+  const isComboChildActive = (href) => {
+    if (href === "/dashboard/combos") return pathname === href;
     return pathname.startsWith(href);
   };
 
@@ -159,29 +177,89 @@ export default function Sidebar({ onClose }) {
 
         {/* Navigation */}
         <nav className="flex-1 px-4 py-2 space-y-0.5 overflow-y-auto custom-scrollbar">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onClose}
-              className={cn(
-                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                isActive(item.href)
-                  ? "bg-primary/10 text-primary"
-                  : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-              )}
-            >
-              <span
+          {navItems.map((item) => {
+            if (item.id === "combo-group") {
+              return (
+                <div key={item.id}>
+                  <button
+                    type="button"
+                    onClick={() => setComboOpen((value) => !value)}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                      isComboPath
+                        ? "bg-primary/10 text-primary"
+                        : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                    )}
+                    aria-expanded={comboExpanded}
+                  >
+                    <span
+                      className={cn(
+                        "material-symbols-outlined text-[18px]",
+                        isComboPath ? "fill-1" : "group-hover:text-primary transition-colors"
+                      )}
+                    >
+                      {item.icon}
+                    </span>
+                    <span className="text-[13px] font-medium flex-1 text-left">{item.label}</span>
+                    <span
+                      className="material-symbols-outlined text-[14px] transition-transform"
+                      style={{ transform: comboExpanded ? "rotate(180deg)" : "rotate(0deg)" }}
+                    >
+                      expand_more
+                    </span>
+                  </button>
+
+                  {comboExpanded && (
+                    <div className="pl-4">
+                      {item.children.map((child) => {
+                        const active = isComboChildActive(child.href);
+                        return (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            onClick={onClose}
+                            className={cn(
+                              "flex items-center gap-3 px-4 py-1 rounded-lg transition-all group",
+                              active
+                                ? "bg-primary/10 text-primary"
+                                : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+                            )}
+                          >
+                            <span className="material-symbols-outlined text-[16px]">{child.icon}</span>
+                            <span className="text-sm">{child.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={onClose}
                 className={cn(
-                  "material-symbols-outlined text-[18px]",
-                  isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+                  "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                  isActive(item.href)
+                    ? "bg-primary/10 text-primary"
+                    : "text-text-muted hover:bg-surface-2 hover:text-text-main"
                 )}
               >
-                {item.icon}
-              </span>
-              <span className="text-[13px] font-medium">{item.label}</span>
-            </Link>
-          ))}
+                <span
+                  className={cn(
+                    "material-symbols-outlined text-[18px]",
+                    isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+                  )}
+                >
+                  {item.icon}
+                </span>
+                <span className="text-[13px] font-medium">{item.label}</span>
+              </Link>
+            );
+          })}
 
           {/* System section */}
           <div className="pt-3 mt-2 space-y-0.5">
