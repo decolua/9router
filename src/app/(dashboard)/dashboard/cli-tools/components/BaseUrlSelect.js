@@ -39,6 +39,38 @@ const buildOptions = ({ requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tai
   return opts;
 };
 
+// Decide which option a freshly-mounted picker should select.
+//
+// `currentUrl` is the endpoint the tool is *actually configured with*. A URL that
+// matches no option is still a real endpoint the user chose, so it is adopted as
+// the custom value rather than replaced by the first option. Without that, a card
+// configured with a custom endpoint silently reverts to the default local URL every
+// time this runs — the options list changes identity whenever saved presets
+// re-sync (e.g. after an Apply or status refresh) — and the next Apply then writes
+// the default URL over the endpoint the user picked.
+//
+// Returns { mode, url }; a null url means "select this mode, emit no change".
+export const resolveInitialSelection = (options, currentUrl) => {
+  const current = stripSlash(currentUrl);
+  const selectable = options.filter((o) => o.value !== CUSTOM_VALUE);
+
+  const savedMatch = current
+    ? options.find((o) => o.saved && stripSlash(o.url) === current)
+    : null;
+  if (savedMatch) return { mode: savedMatch.value, url: savedMatch.url };
+
+  const builtinMatch = current
+    ? selectable.find((o) => stripSlash(o.url) === current)
+    : null;
+  if (builtinMatch) return { mode: builtinMatch.value, url: builtinMatch.url };
+
+  // Configured, but matches nothing on offer → a custom endpoint. Keep it.
+  if (current) return { mode: CUSTOM_VALUE, url: currentUrl };
+
+  const first = selectable[0];
+  return first ? { mode: first.value, url: first.url } : { mode: CUSTOM_VALUE, url: null };
+};
+
 export default function BaseUrlSelect({
   value,
   onChange,
@@ -85,22 +117,17 @@ export default function BaseUrlSelect({
     [requiresExternalUrl, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl, cloudEnabled, cloudUrl, savedPresets, withV1]
   );
 
-  // Prefer a saved preset matching the currently configured URL, else first option
   useEffect(() => {
     if (initializedRef.current) return;
     if (!presetsLoaded || options.length === 0) return;
     initializedRef.current = true;
-    const current = stripSlash(currentUrl);
-    const matched = current
-      ? options.find((o) => o.saved && stripSlash(o.url) === current)
-      : null;
-    const target = matched || options.find((o) => o.value !== CUSTOM_VALUE);
-    if (target) {
-      setMode(target.value);
-      onChange(target.url);
-    } else {
-      setMode(CUSTOM_VALUE);
+    const choice = resolveInitialSelection(options, currentUrl);
+    setMode(choice.mode);
+    if (choice.mode === CUSTOM_VALUE && choice.url) {
+      customInputRef.current = choice.url;
+      setCustomInput(choice.url);
     }
+    if (choice.url !== null) onChange(choice.url);
   }, [presetsLoaded, options, onChange, currentUrl]);
 
   const handleSelect = (e) => {

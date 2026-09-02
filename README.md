@@ -273,6 +273,10 @@ Default URLs:
         <b>Droid</b>
       </td>
       <td align="center" width="120">
+        <img src="./public/providers/oh-my-pi.svg" width="60" alt="Oh My Pi"/><br/>
+        <b>Oh My Pi</b>
+      </td>
+      <td align="center" width="120">
         <img src="./public/providers/roo.png" width="60" alt="Roo"/><br/>
         <b>Roo</b>
       </td>
@@ -1190,6 +1194,46 @@ Dashboard → CLI Tools → OpenClaw → Select Model → Apply
 ```
 
 > **Note:** OpenClaw only works with local 9Router. Use `127.0.0.1` instead of `localhost` to avoid IPv6 resolution issues.
+
+### Oh My Pi (omp)
+
+**Option 1 — Dashboard (recommended):**
+
+```
+Dashboard → CLI Tools → Oh My Pi → Select Model → Apply
+```
+
+**Option 2 — Manual:** Edit `~/.omp/agent/models.yml`:
+
+```yaml
+providers:
+  9router:
+    baseUrl: http://127.0.0.1:20128/v1
+    api: openai-completions
+    apiKey: NINEROUTER_KEY
+    authHeader: true
+    discovery:
+      type: openai-models-list
+```
+
+Optionally pin a default in `~/.omp/agent/config.yml`:
+
+```yaml
+modelRoles:
+  default: 9router/kr/claude-sonnet-4.5
+```
+
+```bash
+# 9Router reads the key from this env var (name written in models.yml above)
+export NINEROUTER_KEY=sk-your-9router-key
+
+# verify
+omp models 9router
+omp --model 9router/kr/claude-sonnet-4.5 -p "Reply with exactly: OK"
+```
+
+> **Note:** Prefer `127.0.0.1` over `localhost` to avoid IPv6 resolution issues. Docs: https://github.com/can1357/oh-my-pi/blob/main/docs/models.md
+
 
 ### Cline / Continue / RooCode
 

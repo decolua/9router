@@ -182,6 +182,10 @@ URL mặc định:
         <b>Droid</b>
       </td>
       <td align="center" width="120">
+        <img src="../public/providers/oh-my-pi.svg" width="60" alt="Oh My Pi"/><br/>
+        <b>Oh My Pi</b>
+      </td>
+      <td align="center" width="120">
         <img src="../public/providers/roo.png" width="60" alt="Roo"/><br/>
         <b>Roo</b>
       </td>
@@ -926,6 +930,45 @@ Bảng điều khiển → CLI Tools → OpenClaw → Chọn Mô hình → Áp d
 ```
 
 > **Lưu ý:** OpenClaw chỉ hoạt động với 9Router cục bộ. Sử dụng `127.0.0.1` thay vì `localhost` để tránh các vấn đề phân giải6.
+
+### Oh My Pi (omp)
+
+**Phương án 1 — Bảng điều khiển (khuyên dùng):**
+
+```
+Bảng điều khiển → CLI Tools → Oh My Pi → Chọn Mô hình → Áp dụng
+```
+
+**Phương án 2 — Thủ công:** Chỉnh sửa `~/.omp/agent/models.yml`:
+
+```yaml
+providers:
+  9router:
+    baseUrl: http://127.0.0.1:20128/v1
+    api: openai-completions
+    apiKey: NINEROUTER_KEY
+    authHeader: true
+    discovery:
+      type: openai-models-list
+```
+
+Tùy chọn: ghim mô hình mặc định trong `~/.omp/agent/config.yml`:
+
+```yaml
+modelRoles:
+  default: 9router/kr/claude-sonnet-4.5
+```
+
+```bash
+# 9Router đọc khóa từ biến môi trường này (models.yml ở trên ghi tên biến)
+export NINEROUTER_KEY=sk-your-9router-key
+
+omp models 9router
+omp --model 9router/kr/claude-sonnet-4.5 -p "Reply with exactly: OK"
+```
+
+> **Lưu ý:** Nên dùng `127.0.0.1` thay vì `localhost` để tránh sự cố phân giải IPv6. Tài liệu: https://github.com/can1357/oh-my-pi/blob/main/docs/models.md
+
 
 ### Cline / Continue / RooCode
 

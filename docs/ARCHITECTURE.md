@@ -47,7 +47,7 @@ flowchart LR
     subgraph Clients[Developer Clients]
         C1[Claude Code]
         C2[Codex CLI]
-        C3[OpenClaw / Droid / Cline / Continue / Roo]
+        C3[OpenClaw / Droid / Cline / Continue / Roo / Oh My Pi]
         C4[Custom OpenAI-compatible clients]
         BROWSER[Browser Dashboard]
     end
@@ -534,6 +534,7 @@ Environment variables actively used by code:
 
 - App/auth: `JWT_SECRET`, `INITIAL_PASSWORD`
 - Storage: `DATA_DIR`
+- CLI/omp: `OMP_PROJECT_ROOTS`
 - Security hashing: `API_KEY_SECRET`, `MACHINE_ID_SALT`
 - Logging: `ENABLE_REQUEST_LOGS`
 - Sync/cloud URLing: `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_CLOUD_URL`

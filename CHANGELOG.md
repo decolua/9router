@@ -1,3 +1,9 @@
+# Unreleased
+
+## Features
+- **CLI tools**: add Oh My Pi (omp) (can1357/oh-my-pi) — writes `~/.omp/agent/models.yml` and optionally `~/.omp/agent/config.yml` via a YAML-aware writer that preserves user comments and unrelated providers. Dashboard → CLI Tools → Oh My Pi → Apply.
+- **CLI tools**: Oh My Pi card can assign all official omp roles (`default`, `smol`, `slow`, `vision`, `plan`, `designer`, `commit`, `tiny`, `task`, `advisor`) to selected 9Router models. Unset and Reset leave foreign-provider and unofficial custom roles alone.
+
 # v0.5.59 (2026-08-29)
 
 ## Features
@@ -327,7 +333,6 @@
 - **Alicode-intl**: split into Coding Plan + Model Studio providers
 - **Cursor**: HTTP/2 AgentService support + version bump 3.12.17
 - **Dashboard**: cut duplicate API/icon spam, lazy-load provider assets
-
 
 # v0.5.35 (2026-07-16)
 
