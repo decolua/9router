@@ -136,4 +136,62 @@ describe("Antigravity executor", () => {
     expect(system).not.toContain(ANTIGRAVITY_DEFAULT_SYSTEM);
     expect(system).not.toContain("Please ignore the following [ignore]");
   });
+
+  it("handles multi-turn with reasoning-only assistant turn without emitting empty parts or invalid contents", () => {
+    const geminiReq = openaiToAntigravityRequest("gemini-3.7-flash-high", {
+      messages: [
+        { role: "user", content: "Step 1" },
+        { role: "assistant", reasoning_content: "I am thinking about step 1...", content: "" },
+        { role: "user", content: "Continue" },
+      ],
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const out = new AntigravityExecutor().transformRequest("gemini-3.7-flash-high", geminiReq, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const contents = out.request.contents;
+    expect(Array.isArray(contents)).toBe(true);
+    expect(contents.length).toBeGreaterThan(0);
+
+    for (const turn of contents) {
+      expect(Array.isArray(turn.parts)).toBe(true);
+      expect(turn.parts.length, `Found empty parts array in turn with role ${turn.role}`).toBeGreaterThan(0);
+      for (const part of turn.parts) {
+        if ("text" in part) {
+          expect(part.text, "Found empty text in part").not.toBe("");
+        }
+      }
+    }
+
+    for (let i = 0; i < contents.length - 1; i++) {
+      expect(contents[i].role, `Consecutive duplicate role at index ${i}`).not.toBe(contents[i + 1].role);
+    }
+  });
+
+  it("handles multi-turn tool call sequence without emitting empty parts or adjacent duplicate roles", () => {
+    const geminiReq = openaiToAntigravityRequest("gemini-3.7-flash-high", {
+      messages: [
+        { role: "user", content: "Calculate" },
+        {
+          role: "assistant",
+          reasoning_content: "Calling tool",
+          tool_calls: [{ id: "call_1", type: "function", function: { name: "calc", arguments: "{}" } }],
+        },
+        { role: "tool", tool_call_id: "call_1", content: '{"result": 42}' },
+        { role: "user", content: "Great, now continue" },
+      ],
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const out = new AntigravityExecutor().transformRequest("gemini-3.7-flash-high", geminiReq, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const contents = out.request.contents;
+    expect(contents.length).toBeGreaterThan(0);
+
+    for (const turn of contents) {
+      expect(turn.parts.length, `Empty parts in ${turn.role} turn`).toBeGreaterThan(0);
+    }
+
+    for (let i = 0; i < contents.length - 1; i++) {
+      expect(contents[i].role, `Consecutive duplicate role at index ${i}`).not.toBe(contents[i + 1].role);
+    }
+  });
 });

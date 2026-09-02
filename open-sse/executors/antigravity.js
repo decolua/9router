@@ -188,35 +188,49 @@ export class AntigravityExecutor extends BaseExecutor {
     }
 
     // ─── Standard (non-image) request ───
-    // Fix contents for Claude models via Antigravity
-    const contents = body.request?.contents?.map(c => {
+    const rawContents = body.request?.contents || [];
+    const cleanedContents = [];
+
+    for (const c of rawContents) {
       let role = c.role;
-      // functionResponse must be role "user" for Claude models
       if (c.parts?.some(p => p.functionResponse)) {
         role = "user";
       }
-      // Strip thought-only parts, keep thoughtSignature on functionCall parts (Gemini 3+ requires it)
-      const parts = c.parts?.filter(p => {
-        if (p.thought && !p.functionCall) return false;
-        if (p.thoughtSignature && !p.functionCall && !p.text) return false;
-        return true;
-      });
-      // Gemini 3+ rejects functionCall parts without thoughtSignature. Clients (Claude Code, IDE)
-      // don't persist thoughtSignature in their history, so backfill the default signature on any
-      // functionCall part that arrives without one.
-      const needsBackfill = parts?.some(p => p.functionCall && !p.thoughtSignature) ?? false;
-      if (role !== c.role || parts?.length !== c.parts?.length || needsBackfill) {
-        return {
-          ...c, role,
-          parts: needsBackfill
-            ? parts.map(p => (p.functionCall && !p.thoughtSignature)
-                ? { ...p, thoughtSignature: DEFAULT_THINKING_AG_SIGNATURE }
-                : p)
-            : parts,
-        };
+
+      const validParts = (c.parts || [])
+        .filter(p => {
+          if (p.thought && !p.functionCall) return false;
+          if (p.thoughtSignature && !p.functionCall && (!p.text || p.text === "")) return false;
+          if (p.text === "") return false;
+          return true;
+        })
+        .map(p => {
+          if (p.functionCall && !p.thoughtSignature) {
+            return { ...p, thoughtSignature: DEFAULT_THINKING_AG_SIGNATURE };
+          }
+          return p;
+        });
+
+      if (validParts.length > 0) {
+        cleanedContents.push({ role, parts: validParts });
       }
-      return c;
-    });
+    }
+
+    const mergedContents = [];
+    for (const turn of cleanedContents) {
+      const last = mergedContents.at(-1);
+      if (last && last.role === turn.role) {
+        last.parts.push(...turn.parts);
+      } else {
+        mergedContents.push({ ...turn, parts: [...turn.parts] });
+      }
+    }
+
+    if (mergedContents.length === 0) {
+      mergedContents.push({ role: "user", parts: [{ text: "..." }] });
+    }
+
+    const contents = mergedContents;
 
     // Sanitize tool schemas and function names before sending to Antigravity.
     let tools = body.request?.tools;
