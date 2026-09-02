@@ -1030,6 +1030,9 @@ providers:
 ```
 
 ```bash
+# 9Router 从该环境变量读取密钥（上方 models.yml 中写的是变量名）
+export NINEROUTER_KEY=sk-your-9router-key
+
 omp models 9router
 omp --model 9router/kr/claude-sonnet-4.5 -p "Reply with exactly: OK"
 ```

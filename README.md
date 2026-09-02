@@ -1224,6 +1224,9 @@ modelRoles:
 ```
 
 ```bash
+# 9Router reads the key from this env var (name written in models.yml above)
+export NINEROUTER_KEY=sk-your-9router-key
+
 # verify
 omp models 9router
 omp --model 9router/kr/claude-sonnet-4.5 -p "Reply with exactly: OK"

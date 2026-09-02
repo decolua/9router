@@ -953,6 +953,9 @@ providers:
 ```
 
 ```bash
+# 9Router đọc khóa từ biến môi trường này (models.yml ở trên ghi tên biến)
+export NINEROUTER_KEY=sk-your-9router-key
+
 omp models 9router
 omp --model 9router/kr/claude-sonnet-4.5 -p "Reply with exactly: OK"
 ```
