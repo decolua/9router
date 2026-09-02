@@ -4,10 +4,33 @@ import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLock
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { getAntigravityQuotaCache } from "./antigravityQuota.js";
+import { getClaudeUsage } from "open-sse/services/usage/claude.js";
+import { getCodexUsage } from "open-sse/services/usage/codex.js";
+import {
+  createQuotaSnapshotCache,
+  normalizeQuotasToSnapshot,
+  sortConnectionsByRemaining,
+  DEFAULT_QUOTA_CACHE_TTL_MS,
+} from "./quotaAwareSelection.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
+
+const quotaSnapshotCacheByTtl = new Map();
+
+function getQuotaCache(ttlMs) {
+  const key = String(ttlMs);
+  if (!quotaSnapshotCacheByTtl.has(key)) {
+    quotaSnapshotCacheByTtl.set(key, createQuotaSnapshotCache({ ttlMs }));
+  }
+  return quotaSnapshotCacheByTtl.get(key);
+}
+
+const USAGE_FETCHERS = {
+  claude: getClaudeUsage,
+  codex: getCodexUsage,
+};
 
 const GITHUB_MONTHLY_USAGE_LIMIT = "you've reached your additional usage limit for your plan";
 
@@ -134,14 +157,65 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     }
 
     const settings = await getSettings();
+    const quotaAwareOn = settings.quotaAwareSelection !== false;
+    const quotaProviders = Array.isArray(settings.quotaAwareProviders)
+      ? settings.quotaAwareProviders
+      : ["claude", "codex"];
+    const ttlMs = Number(settings.quotaCacheTtlMs) > 0
+      ? Number(settings.quotaCacheTtlMs)
+      : DEFAULT_QUOTA_CACHE_TTL_MS;
+
+    let selectable = availableConnections;
+    if (quotaAwareOn && quotaProviders.includes(providerId) && USAGE_FETCHERS[providerId]) {
+      const cache = getQuotaCache(ttlMs);
+      const fetchUsage = USAGE_FETCHERS[providerId];
+      const annotated = [];
+      for (const conn of availableConnections) {
+        const proxy = await resolveConnectionProxyConfig(conn.providerSpecificData || {});
+        const proxyOptions = {
+          connectionProxyEnabled: proxy.connectionProxyEnabled === true,
+          connectionProxyUrl: proxy.connectionProxyUrl || "",
+          connectionNoProxy: proxy.connectionNoProxy || "",
+          vercelRelayUrl: proxy.vercelRelayUrl || "",
+          strictProxy: false,
+        };
+        const snap = await cache.getOrFetch(conn.id, async () => {
+          const usage = await fetchUsage(conn.accessToken, proxyOptions, { force: false });
+          return normalizeQuotasToSnapshot(providerId, usage);
+        });
+        if (snap?.blockingExhausted) {
+          log.info(
+            "AUTH",
+            `${provider} | skip ${conn.id?.slice(0, 8)} — blocking quota exhausted`,
+          );
+          continue;
+        }
+        annotated.push({ ...conn, _quotaSnapshot: snap });
+      }
+      if (annotated.length > 0) {
+        selectable = sortConnectionsByRemaining(annotated);
+        log.debug(
+          "AUTH",
+          `${provider} | quota-aware order: ${selectable.map((c) => c.id?.slice(0, 8)).join(",")}`,
+        );
+      } else {
+        // All blocking-exhausted: prefer empty so caller sees unavailable.
+        selectable = [];
+      }
+    }
+
+    if (selectable.length === 0 && quotaAwareOn && quotaProviders.includes(providerId)) {
+      log.warn("AUTH", `${provider} | all accounts blocked by quota-aware filter`);
+      return null;
+    }
+
     // Per-provider strategy overrides global setting
     const providerOverride = (settings.providerStrategies || {})[providerId] || {};
     const strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";
 
     let connection;
-    // Pin to preferred connection if specified and available
     if (preferredConnectionId) {
-      connection = availableConnections.find((c) => c.id === preferredConnectionId);
+      connection = selectable.find((c) => c.id === preferredConnectionId);
       if (connection) {
         log.info("AUTH", `${provider} | pinned to ${connection.id?.slice(0, 8)} (${connection.name || connection.email || "unnamed"})`);
       }
@@ -150,46 +224,36 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       // skip strategy
     } else if (strategy === "round-robin") {
       const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
-
-      // Sort by lastUsed (most recent first) to find current candidate
-      const byRecency = [...availableConnections].sort((a, b) => {
+      const byRecency = [...selectable].sort((a, b) => {
         if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
         if (!a.lastUsedAt) return 1;
         if (!b.lastUsedAt) return -1;
         return new Date(b.lastUsedAt) - new Date(a.lastUsedAt);
       });
-
       const current = byRecency[0];
       const currentCount = current?.consecutiveUseCount || 0;
-
       if (current && current.lastUsedAt && currentCount < stickyLimit) {
-        // Stay with current account
         connection = current;
-        // Update lastUsedAt and increment count (await to ensure persistence)
         await updateProviderConnection(connection.id, {
           lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: (connection.consecutiveUseCount || 0) + 1
+          consecutiveUseCount: (connection.consecutiveUseCount || 0) + 1,
         });
       } else {
-        // Pick the least recently used (excluding current if possible)
-        const sortedByOldest = [...availableConnections].sort((a, b) => {
+        const sortedByOldest = [...selectable].sort((a, b) => {
           if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
           if (!a.lastUsedAt) return -1;
           if (!b.lastUsedAt) return 1;
           return new Date(a.lastUsedAt) - new Date(b.lastUsedAt);
         });
-
         connection = sortedByOldest[0];
-
-        // Update lastUsedAt and reset count to 1 (await to ensure persistence)
         await updateProviderConnection(connection.id, {
           lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: 1
+          consecutiveUseCount: 1,
         });
       }
     } else {
-      // Default: fill-first (already sorted by priority in getProviderConnections)
-      connection = availableConnections[0];
+      // Default: fill-first (quota-aware reorder when enabled; else DB priority)
+      connection = selectable[0];
     }
 
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
