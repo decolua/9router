@@ -7,11 +7,19 @@ const mocks = vi.hoisted(() => ({
   getCodexUsage: vi.fn(),
   getClaudeUsage: vi.fn(),
   handleChatCore: vi.fn(),
+  logDebug: vi.fn(),
+  logWarn: vi.fn(),
 }));
 
 vi.mock("open-sse/services/usage/codex.js", () => ({ getCodexUsage: mocks.getCodexUsage }));
 vi.mock("open-sse/services/usage/claude.js", () => ({ getClaudeUsage: mocks.getClaudeUsage }));
 vi.mock("open-sse/handlers/chatCore.js", () => ({ handleChatCore: mocks.handleChatCore }));
+vi.mock("@/sse/utils/logger.js", () => ({
+  debug: mocks.logDebug,
+  info: vi.fn(),
+  warn: mocks.logWarn,
+  maskKey: (key) => key,
+}));
 
 const originalDataDir = process.env.DATA_DIR;
 let tempDir;
@@ -31,6 +39,8 @@ beforeEach(() => {
   mocks.getCodexUsage.mockReset();
   mocks.getClaudeUsage.mockReset();
   mocks.handleChatCore.mockReset();
+  mocks.logDebug.mockReset();
+  mocks.logWarn.mockReset();
 });
 
 afterEach(() => {
@@ -466,6 +476,14 @@ describe("API key quota", () => {
     expect(response.status).toBe(200);
     expect(mocks.handleChatCore).toHaveBeenCalledTimes(1);
     expect(mocks.handleChatCore.mock.calls[0][0].credentials.accessToken).toBe("token-2");
+    expect(mocks.logDebug).toHaveBeenCalledWith(
+      "AUTH",
+      expect.stringContaining("first | API key quota limit reached")
+    );
+    expect(mocks.logWarn).not.toHaveBeenCalledWith(
+      "AUTH",
+      expect.stringContaining("API key quota limit reached")
+    );
   });
 
   it("returns 429 when every assigned account has reached the API-key limit", async () => {
@@ -508,5 +526,10 @@ describe("API key quota", () => {
       error: { message: expect.stringContaining("API key quota limit reached") },
     });
     expect(mocks.handleChatCore).not.toHaveBeenCalled();
+    expect(mocks.logWarn).toHaveBeenCalledWith(
+      "CHAT",
+      "No more accounts available",
+      { provider: "codex" }
+    );
   });
 });
