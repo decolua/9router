@@ -150,6 +150,7 @@ export default function QuotaTable({
 
       <div className="space-y-px">
         {currentPageRows.map((quota) => {
+          const isUnlimited = quota.unlimited === true;
           const colors = getColorClasses(quota.remaining);
           const countdown = formatResetTime(quota.resetAt);
           const resetDisplay = formatResetTimeDisplay(quota.resetAt);
@@ -174,6 +175,7 @@ export default function QuotaTable({
 
               {/* Progress + used/total */}
               <div className={`min-w-0 flex-1 ${compact ? "space-y-1" : "space-y-1.5"}`}>
+                {!isUnlimited && (
                 <div className={`${compact ? "h-1" : "h-1.5"} rounded-full overflow-hidden border ${colors.bgLight} ${
                   quota.remaining === 0 ? "border-black/10 dark:border-white/10" : "border-transparent"
                 }`}>
@@ -182,16 +184,23 @@ export default function QuotaTable({
                     style={{ width: `${Math.min(quota.remaining, 100)}%` }}
                   />
                 </div>
+                )}
 
                 <div className={`flex items-center justify-between gap-1 min-w-0 ${compact ? "text-[10px]" : "text-xs"}`}>
                   <span
                     className="text-text-muted truncate"
-                    title={`${quota.used.toLocaleString()} / ${quota.total > 0 ? quota.total.toLocaleString() : "∞"}`}
+                    title={
+                      isUnlimited
+                        ? `${quota.used.toLocaleString()} used · Unlimited`
+                        : `${quota.used.toLocaleString()} / ${quota.total > 0 ? quota.total.toLocaleString() : "∞"}`
+                    }
                   >
-                    {quota.used.toLocaleString()} / {quota.total > 0 ? quota.total.toLocaleString() : "∞"}
+                    {isUnlimited
+                      ? `${quota.used.toLocaleString()} used · Unlimited`
+                      : `${quota.used.toLocaleString()} / ${quota.total > 0 ? quota.total.toLocaleString() : "∞"}`}
                   </span>
-                  <span className={`font-medium ${colors.text} shrink-0`}>
-                    {quota.remaining}%
+                  <span className={`font-medium ${isUnlimited ? "text-green-600 dark:text-green-400" : colors.text} shrink-0`}>
+                    {isUnlimited ? "Unlimited" : `${quota.remaining}%`}
                   </span>
                 </div>
               </div>
