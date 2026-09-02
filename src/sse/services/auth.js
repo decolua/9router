@@ -166,6 +166,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       : DEFAULT_QUOTA_CACHE_TTL_MS;
 
     let selectable = availableConnections;
+    let quotaBlockedResets = [];
     if (quotaAwareOn && quotaProviders.includes(providerId) && USAGE_FETCHERS[providerId]) {
       const cache = getQuotaCache(ttlMs);
       const fetchUsage = USAGE_FETCHERS[providerId];
@@ -184,6 +185,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           return normalizeQuotasToSnapshot(providerId, usage);
         });
         if (snap?.blockingExhausted) {
+          if (snap.blockingResetAt) quotaBlockedResets.push(snap.blockingResetAt);
           log.info(
             "AUTH",
             `${provider} | skip ${conn.id?.slice(0, 8)} — blocking quota exhausted`,
@@ -199,12 +201,26 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           `${provider} | quota-aware order: ${selectable.map((c) => c.id?.slice(0, 8)).join(",")}`,
         );
       } else {
-        // All blocking-exhausted: prefer empty so caller sees unavailable.
+        // All blocking-exhausted — surface retry metadata when resetAt is known.
         selectable = [];
       }
     }
 
-    if (selectable.length === 0 && quotaAwareOn && quotaProviders.includes(providerId)) {
+    if (selectable.length === 0 && quotaAwareOn && quotaProviders.includes(providerId) && USAGE_FETCHERS[providerId]) {
+      const earliest = quotaBlockedResets.filter(Boolean).sort()[0] || null;
+      if (earliest) {
+        log.warn(
+          "AUTH",
+          `${provider} | all accounts blocked by quota-aware filter (${formatRetryAfter(earliest)})`,
+        );
+        return {
+          allRateLimited: true,
+          retryAfter: earliest,
+          retryAfterHuman: formatRetryAfter(earliest),
+          lastError: "blocking quota exhausted",
+          lastErrorCode: 429,
+        };
+      }
       log.warn("AUTH", `${provider} | all accounts blocked by quota-aware filter`);
       return null;
     }

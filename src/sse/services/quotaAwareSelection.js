@@ -63,11 +63,21 @@ export function normalizeQuotasToSnapshot(providerId, usage) {
   const primary = quotas[sessionKey] || Object.values(quotas)[0] || null;
   const remainingFraction = fractionFromQuota(primary);
   const blockingExhausted = hasExhaustedBlockingQuota(quotas, sessionKey);
+  let blockingResetAt = null;
+  for (const [name, quota] of Object.entries(quotas)) {
+    if (!isBlockingQuotaName(name, sessionKey) || !isQuotaExhausted(quota)) continue;
+    const resetAt = quota?.resetAt || null;
+    if (!resetAt) continue;
+    if (!blockingResetAt || Date.parse(resetAt) < Date.parse(blockingResetAt)) {
+      blockingResetAt = resetAt;
+    }
+  }
   return {
     remainingFraction,
     remaining: toFiniteNumber(primary?.remaining),
     total: toFiniteNumber(primary?.total),
     resetAt: primary?.resetAt || null,
+    blockingResetAt,
     unlimited: primary?.unlimited === true,
     primaryKey: primary ? sessionKey : null,
     blockingExhausted,

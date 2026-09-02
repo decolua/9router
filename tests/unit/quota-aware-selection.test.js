@@ -52,10 +52,11 @@ describe("normalizeQuotasToSnapshot", () => {
     const snap = normalizeQuotasToSnapshot("claude", {
       quotas: {
         "session (5h)": { remaining: 50, total: 100, remainingPercentage: 50 },
-        "weekly (7d)": { remaining: 0, total: 100, remainingPercentage: 0 },
+        "weekly (7d)": { remaining: 0, total: 100, remainingPercentage: 0, resetAt: "2026-09-03T12:00:00.000Z" },
       },
     });
     expect(snap.blockingExhausted).toBe(true);
+    expect(snap.blockingResetAt).toBe("2026-09-03T12:00:00.000Z");
   });
   it("prefers Codex session key", () => {
     const snap = normalizeQuotasToSnapshot("codex", {

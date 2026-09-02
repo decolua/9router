@@ -99,4 +99,23 @@ describe("Claude remaining-first routing", () => {
     });
     expect(mocks.getClaudeUsage).not.toHaveBeenCalled();
   });
+
+  it("returns allRateLimited when every account is blocking-exhausted", async () => {
+    const resetAt = "2026-09-03T12:00:00.000Z";
+    mocks.getProviderConnections.mockResolvedValue([
+      { id: "cl-a", email: "a@example.com", isActive: true, accessToken: "t-a" },
+      { id: "cl-b", email: "b@example.com", isActive: true, accessToken: "t-b" },
+    ]);
+    mocks.getClaudeUsage.mockResolvedValue({
+      quotas: {
+        "session (5h)": { remaining: 50, total: 100, remainingPercentage: 50 },
+        "weekly (7d)": { remaining: 0, total: 100, remainingPercentage: 0, resetAt },
+      },
+    });
+
+    await expect(getProviderCredentials("claude")).resolves.toMatchObject({
+      allRateLimited: true,
+      retryAfter: resetAt,
+    });
+  });
 });
