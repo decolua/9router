@@ -464,6 +464,7 @@ export default function OmpToolCard({ tool, isExpanded, onToggle, baseUrl, apiKe
                     tunnelPublicUrl={tunnelPublicUrl}
                     tailscaleEnabled={tailscaleEnabled}
                     tailscaleUrl={tailscaleUrl}
+                    currentUrl={status?.omp?.baseURL || ""}
                   />
                 </div>
 
