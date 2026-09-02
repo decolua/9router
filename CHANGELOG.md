@@ -221,7 +221,6 @@
 - **Qoder**: support PAT (Personal Access Token) connections end-to-end, alongside
   OAuth device flow
 - **CLI tools**: add OpenDesign (manalkaff/opendesign) support
-- **CLI tools**: add Oh My Pi (omp) (can1357/oh-my-pi) — full model catalog + role management. Add/remove models with capabilities (context window, max output, thinking mode) written to ~/.omp/agent/models.yml; assign all 10 omp roles plus custom roles at global or project scope (~/.omp/agent/config.yml or <project>/.omp/config.yml, following omp modelRoleStorage). YAML-aware writer preserves comments, unrelated providers, and foreign-provider role assignments
 - **Headroom**: report effective payload savings (tool schema/history bytes broken
   out, byte-savings % reflects actual outbound reduction)
 - **Ollama**: Cloud quota tracker (session + weekly) + proactive background OAuth

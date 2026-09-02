@@ -1029,6 +1029,13 @@ providers:
       type: openai-models-list
 ```
 
+可选：在 `~/.omp/agent/config.yml` 中固定默认模型：
+
+```yaml
+modelRoles:
+  default: 9router/kr/claude-sonnet-4.5
+```
+
 ```bash
 # 9Router 从该环境变量读取密钥（上方 models.yml 中写的是变量名）
 export NINEROUTER_KEY=sk-your-9router-key
@@ -1036,6 +1043,8 @@ export NINEROUTER_KEY=sk-your-9router-key
 omp models 9router
 omp --model 9router/kr/claude-sonnet-4.5 -p "Reply with exactly: OK"
 ```
+
+> **注意：** 建议使用 `127.0.0.1` 而非 `localhost`，以避免 IPv6 解析问题。文档：https://github.com/can1357/oh-my-pi/blob/main/docs/models.md
 
 
 ### Cline / Continue / RooCode

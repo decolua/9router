@@ -952,6 +952,13 @@ providers:
       type: openai-models-list
 ```
 
+Tùy chọn: ghim mô hình mặc định trong `~/.omp/agent/config.yml`:
+
+```yaml
+modelRoles:
+  default: 9router/kr/claude-sonnet-4.5
+```
+
 ```bash
 # 9Router đọc khóa từ biến môi trường này (models.yml ở trên ghi tên biến)
 export NINEROUTER_KEY=sk-your-9router-key
@@ -959,6 +966,8 @@ export NINEROUTER_KEY=sk-your-9router-key
 omp models 9router
 omp --model 9router/kr/claude-sonnet-4.5 -p "Reply with exactly: OK"
 ```
+
+> **Lưu ý:** Nên dùng `127.0.0.1` thay vì `localhost` để tránh sự cố phân giải IPv6. Tài liệu: https://github.com/can1357/oh-my-pi/blob/main/docs/models.md
 
 
 ### Cline / Continue / RooCode
