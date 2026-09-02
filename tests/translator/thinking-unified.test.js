@@ -82,6 +82,11 @@ describe("applyThinking per provider format", () => {
     // Sonnet 5). Both fields together are the documented adaptive shape.
     expect(out.thinking).toEqual({ type: "adaptive" });
   });
+  it("Fable 5.1 → effort without a redundant thinking switch", () => {
+    const out = apply("claude", "claude-fable-5-1", { reasoning_effort: "high" }, "claude");
+    expect(out.output_config).toEqual({ effort: "high" });
+    expect(out.thinking).toBeUndefined();
+  });
   it("claude haiku → enabled+budget", () => {
     const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "high" }, "claude");
     expect(out.thinking).toEqual({ type: "enabled", budget_tokens: 24576 });
