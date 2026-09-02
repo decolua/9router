@@ -55,6 +55,7 @@ const MODEL_SYNONYMS = {
     "gemini-3.5-flash-high": "gemini-3-flash-agent",
     "gemini-3.5-flash-medium": "gemini-3.5-flash-low",
     "gemini-3.5-flash-extra-low": "gemini-3.5-flash-extra-low",
+    "gemini-3.8-flash": "gemini-3.8-flash-medium",
     "gemini-3.8-flash-high": "gemini-3.8-flash-high",
     "gemini-3.8-flash-medium": "gemini-3.8-flash-medium",
     "gemini-3.8-flash-low": "gemini-3.8-flash-low",
