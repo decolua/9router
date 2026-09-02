@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
-import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX, ANTIGRAVITY_PROMPT_REWRITES } from "../config/appConstants.js";
+import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, ANTIGRAVITY_HEADERS_V2, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX, ANTIGRAVITY_PROMPT_REWRITES } from "../config/appConstants.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
@@ -125,15 +125,19 @@ export class AntigravityExecutor extends BaseExecutor {
 
   // sessionId comes from transformRequest output; base.execute runs transformRequest before
   // buildHeaders, so we read it from instance state cached there (fallback: explicit arg).
-  buildHeaders(credentials, stream = true, sessionId = null) {
+  buildHeaders(credentials, stream = true, sessionId = null, model = null) {
+    const targetModel = model || this._currentModel || "";
+    const isV2 = typeof targetModel === "string" && targetModel.includes("3.8");
+    const userAgent = isV2 ? ANTIGRAVITY_HEADERS_V2["User-Agent"] : (this.config.headers?.["User-Agent"] || ANTIGRAVITY_HEADERS["User-Agent"]);
     return {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${credentials.accessToken}`,
-      "User-Agent": this.config.headers?.["User-Agent"] || ANTIGRAVITY_HEADERS["User-Agent"],
+      "User-Agent": userAgent,
     };
   }
 
   transformRequest(model, body, stream, credentials) {
+    this._currentModel = model;
     const projectId = credentials?.projectId || this.generateProjectId();
 
     // OpenAI clients may include stream_options even for non-streaming calls.

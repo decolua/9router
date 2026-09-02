@@ -1,6 +1,6 @@
 import { platform, arch, hostname } from "os";
 import { PROVIDERS, PROVIDER_OAUTH } from "./providers.js";
-import { ANTIGRAVITY_IDE_USER_AGENT } from "../providers/shared.js";
+import { ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_USER_AGENT_V2 } from "../providers/shared.js";
 import { createRequire } from "module";
 
 // === Gemini CLI === derive từ registry gemini-cli.transport
@@ -132,6 +132,9 @@ export const AG_DEFAULT_TOOLS = new Set([
 // Antigravity chat/stream headers
 export const ANTIGRAVITY_HEADERS = {
   "User-Agent": ANTIGRAVITY_IDE_USER_AGENT
+};
+export const ANTIGRAVITY_HEADERS_V2 = {
+  "User-Agent": ANTIGRAVITY_IDE_USER_AGENT_V2
 };
 
 // Cloud Code Assist API endpoints differ by client ecosystem.

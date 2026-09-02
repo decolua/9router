@@ -80,6 +80,8 @@ export const ANTHROPIC_COMPAT_BASE = "https://api.anthropic.com/v1";
 export const ANTIGRAVITY_IDE_VERSION = "2.1.1";
 export const ANTIGRAVITY_IDE_BASE_URL = "https://daily-cloudcode-pa.googleapis.com";
 export const ANTIGRAVITY_IDE_USER_AGENT = `antigravity/ide/${ANTIGRAVITY_IDE_VERSION} darwin/arm64`;
+export const ANTIGRAVITY_IDE_VERSION_V2 = "2.8.0";
+export const ANTIGRAVITY_IDE_USER_AGENT_V2 = `antigravity/ide/${ANTIGRAVITY_IDE_VERSION_V2} darwin/arm64`;
 
 // Antigravity OAuth client credentials (public CLI client — duplicated in usage.js + src/lib/oauth)
 export const ANTIGRAVITY_OAUTH_CLIENT = {
