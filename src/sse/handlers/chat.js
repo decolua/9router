@@ -314,7 +314,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       excludeConnectionIds.add(credentials.connectionId);
       lastStatus = HTTP_STATUS.RATE_LIMITED;
       lastError = `API key quota limit reached (${quota.usedPercent.toFixed(1)}%/${quota.limit}% of ${quota.quotaName})`;
-      log.warn("AUTH", `${credentials.connectionName} | ${lastError}`);
+      log.debug("AUTH", `${credentials.connectionName} | ${lastError}`);
       continue;
     }
     const quotaReservation = quota.reservation;
