@@ -3,6 +3,7 @@ import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.j
 import antigravityRegistry from "../../open-sse/providers/registry/antigravity.js";
 import geminiRegistry from "../../open-sse/providers/registry/gemini.js";
 import { MODEL_PRICING } from "../../open-sse/providers/pricing.js";
+import { AntigravityExecutor } from "../../open-sse/executors/antigravity.js";
 
 describe("Gemini 3.8 Flash Support & Config", () => {
   it("registers gemini-3.8-flash tiered models in antigravity provider registry", () => {
@@ -32,5 +33,19 @@ describe("Gemini 3.8 Flash Support & Config", () => {
     expect(MODEL_PRICING["gemini-3.8-flash-high"]).toEqual(MODEL_PRICING["gemini-3.7-flash-high"]);
     expect(MODEL_PRICING["gemini-3.8-flash-medium"]).toEqual(MODEL_PRICING["gemini-3.7-flash-medium"]);
     expect(MODEL_PRICING["gemini-3.8-flash-low"]).toEqual(MODEL_PRICING["gemini-3.7-flash-low"]);
+  });
+
+  it("buildHeaders selects v2 User-Agent based on model argument without instance state", () => {
+    const executor = new AntigravityExecutor();
+    const creds = { accessToken: "tok-test" };
+
+    const h38 = executor.buildHeaders(creds, true, "https://example.com", "gemini-3.8-flash-high");
+    expect(h38["User-Agent"]).toContain("2.8.0");
+
+    const h37 = executor.buildHeaders(creds, true, "https://example.com", "gemini-3.7-flash");
+    expect(h37["User-Agent"]).not.toContain("2.8.0");
+
+    executor.transformRequest("gemini-3.8-flash-high", {}, true, creds);
+    expect(executor._currentModel).toBeUndefined();
   });
 });

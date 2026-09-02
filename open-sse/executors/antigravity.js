@@ -123,11 +123,8 @@ export class AntigravityExecutor extends BaseExecutor {
     return `${baseUrl}/v1internal:${action}`;
   }
 
-  // sessionId comes from transformRequest output; base.execute runs transformRequest before
-  // buildHeaders, so we read it from instance state cached there (fallback: explicit arg).
-  buildHeaders(credentials, stream = true, sessionId = null, model = null) {
-    const targetModel = model || this._currentModel || "";
-    const isV2 = typeof targetModel === "string" && targetModel.includes("3.8");
+  buildHeaders(credentials, stream = true, url = null, model = null) {
+    const isV2 = typeof model === "string" && model.includes("3.8");
     const userAgent = isV2 ? ANTIGRAVITY_HEADERS_V2["User-Agent"] : (this.config.headers?.["User-Agent"] || ANTIGRAVITY_HEADERS["User-Agent"]);
     return {
       "Content-Type": "application/json",
@@ -137,7 +134,6 @@ export class AntigravityExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
-    this._currentModel = model;
     const projectId = credentials?.projectId || this.generateProjectId();
 
     // OpenAI clients may include stream_options even for non-streaming calls.
