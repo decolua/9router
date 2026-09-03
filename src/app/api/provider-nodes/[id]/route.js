@@ -48,6 +48,11 @@ export async function PUT(request, { params }) {
       }
     }
 
+    // Sanitize Base URL for Custom Video (strip trailing slash and a trailing action)
+    if (node.type === "custom-video") {
+      sanitizedBaseUrl = sanitizedBaseUrl.replace(/\/$/, "").replace(/\/(generations|edits|extensions)$/, "");
+    }
+
     const updates = {
       name: name.trim(),
       prefix: prefix.trim(),

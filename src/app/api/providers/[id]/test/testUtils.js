@@ -1,7 +1,7 @@
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomVideoProvider } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import {
@@ -510,6 +510,28 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       // 400/529 still confirms key accepted; only 401/403 = bad key
       const valid = res.status !== 401 && res.status !== 403;
       return { valid, error: valid ? null : "Invalid API key or base URL" };
+    } catch (err) {
+      return { valid: false, error: err.message };
+    }
+  }
+
+  if (isCustomVideoProvider(connection.provider)) {
+    // xAI-style async video node — no /models endpoint. Probe POST {base}/generations
+    // with an empty body: 401/403 = bad key; any other status (400/422 missing params,
+    // or 2xx) = reachable + authorized. Mirrors /api/provider-nodes/validate.
+    let base = connection.providerSpecificData?.baseUrl;
+    if (!base) return { valid: false, error: "Missing base URL" };
+    try {
+      base = base.replace(/\/$/, "").replace(/\/(generations|edits|extensions)$/, "");
+      const res = await fetchWithConnectionProxy(`${base}/generations`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${connection.apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }, effectiveProxy);
+      if (res.status === 401 || res.status === 403) return { valid: false, error: "Invalid API key" };
+      if (res.status === 404) return { valid: false, error: "/generations endpoint not found — check Base URL" };
+      if (res.status >= 500) return { valid: false, error: "Server error" };
+      return { valid: true, error: null };
     } catch (err) {
       return { valid: false, error: err.message };
     }
