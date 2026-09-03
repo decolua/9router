@@ -70,8 +70,10 @@ function aggregateEntryToDay(day, entry) {
   day.requests = (day.requests || 0) + 1;
   day.promptTokens = (day.promptTokens || 0) + promptTokens;
   day.completionTokens = (day.completionTokens || 0) + completionTokens;
-  day.cachedTokens = (day.cachedTokens || 0) + cachedTokens;
   day.cost = (day.cost || 0) + cost;
+
+  day.ttftSum = (day.ttftSum || 0) + (entry.ttft || 0);
+  day.totalLatencySum = (day.totalLatencySum || 0) + (entry.totalLatency || 0);
 
   day.byProvider ||= {};
   day.byModel ||= {};
@@ -279,12 +281,13 @@ export async function saveRequestUsage(entry) {
       }
 
       db.run(
-        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta, ttft, totalLatency) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
           stringifyJson(tokens), stringifyJson({}),
+          entry.ttft || 0, entry.totalLatency || 0,
         ]
       );
 
@@ -396,6 +399,7 @@ export async function getUsageStats(period = "all") {
     totalRequests: 0,
     totalPromptTokens: 0, totalCompletionTokens: 0, totalCachedTokens: 0, totalCost: 0,
     byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
+    latencyByModel: {},
     last10Minutes: [],
     pending: pendingRequests,
     activeRequests: [],
@@ -655,6 +659,48 @@ export async function getUsageStats(period = "all") {
   }
 
   stats.totalRequests = Object.values(stats.byProvider).reduce((sum, p) => sum + (p.requests || 0), 0);
+
+  // Helper to compute percentile from sorted array (0-indexed)
+  function percentile(sorted, pct) {
+    if (!sorted.length) return 0;
+    const idx = Math.ceil(pct / 100 * sorted.length) - 1;
+    return Math.round(sorted[Math.max(0, Math.min(idx, sorted.length - 1))]);
+  }
+
+  // Latency aggregation per provider/model (avg/max/min from usageHistory)
+  const periodMs = { today: 86400000, "24h": 86400000, "7d": 604800000, "30d": 2592000000, "60d": 5184000000 };
+  const cutoff = period !== "all" ? new Date(now - (periodMs[period] || 604800000)).toISOString() : null;
+  const latRows = db.all(
+    `SELECT provider, model, ttft, totalLatency FROM usageHistory WHERE (ttft > 0 OR totalLatency > 0)${cutoff ? " AND timestamp >= ?" : ""}`,
+    cutoff ? [cutoff] : []
+  );
+  const modelGroups = {};
+  for (const r of latRows) {
+    const provider = r.provider || "unknown";
+    const model = r.model || "unknown";
+    const modelKey = provider ? `${model} (${provider})` : model;
+    if (!modelGroups[modelKey]) modelGroups[modelKey] = { ttfts: [], totals: [] };
+    if (r.ttft) modelGroups[modelKey].ttfts.push(r.ttft);
+    if (r.totalLatency) modelGroups[modelKey].totals.push(r.totalLatency);
+  }
+  for (const [key, vals] of Object.entries(modelGroups)) {
+    const ttftsSorted = vals.ttfts.sort((a, b) => a - b);
+    const totalsSorted = vals.totals.sort((a, b) => a - b);
+    stats.latencyByModel[key] = {
+      avgTtft: ttftsSorted.length ? Math.round(ttftsSorted.reduce((a, b) => a + b, 0) / ttftsSorted.length) : 0,
+      maxTtft: ttftsSorted.length ? ttftsSorted[ttftsSorted.length - 1] : 0,
+      minTtft: ttftsSorted.length ? ttftsSorted[0] : 0,
+      p50Ttft: percentile(ttftsSorted, 50),
+      p95Ttft: percentile(ttftsSorted, 95),
+      avgTotal: totalsSorted.length ? Math.round(totalsSorted.reduce((a, b) => a + b, 0) / totalsSorted.length) : 0,
+      maxTotal: totalsSorted.length ? totalsSorted[totalsSorted.length - 1] : 0,
+      minTotal: totalsSorted.length ? totalsSorted[0] : 0,
+      p50Total: percentile(totalsSorted, 50),
+      p95Total: percentile(totalsSorted, 95),
+      count: ttftsSorted.length,
+    };
+  }
+
   return stats;
 }
 
@@ -670,10 +716,10 @@ export async function getChartData(period = "7d") {
     const startTime = startOfDay.getTime();
     const endTime = startTime + bucketCount * bucketMs;
     const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
+    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0, ttft: 0, totalLatency: 0, ttftSum: 0, totalLatencySum: 0, requestCount: 0 }));
 
     const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, promptTokens, completionTokens, cost, ttft, totalLatency FROM usageHistory WHERE timestamp >= ?`,
       [new Date(startTime).toISOString()]
     );
     for (const r of rows) {
@@ -683,9 +729,16 @@ export async function getChartData(period = "7d") {
       if (idx >= 0 && idx < bucketCount) {
         buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
         buckets[idx].cost += r.cost || 0;
+        buckets[idx].ttftSum += r.ttft || 0;
+        buckets[idx].totalLatencySum += r.totalLatency || 0;
+        buckets[idx].requestCount++;
       }
     }
-    return buckets;
+    return buckets.map(b => ({
+      ...b,
+      ttft: b.requestCount ? Math.round(b.ttftSum / b.requestCount) : 0,
+      totalLatency: b.requestCount ? Math.round(b.totalLatencySum / b.requestCount) : 0,
+    }));
   }
 
   if (period === "24h") {
@@ -693,10 +746,10 @@ export async function getChartData(period = "7d") {
     const bucketMs = 3600000;
     const labelFn = (ts) => new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
     const startTime = now - bucketCount * bucketMs;
-    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
+    const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0, ttft: 0, totalLatency: 0, ttftSum: 0, totalLatencySum: 0, requestCount: 0 }));
 
     const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, promptTokens, completionTokens, cost, ttft, totalLatency FROM usageHistory WHERE timestamp >= ?`,
       [new Date(startTime).toISOString()]
     );
     for (const r of rows) {
@@ -705,8 +758,15 @@ export async function getChartData(period = "7d") {
       const idx = Math.min(Math.floor((t - startTime) / bucketMs), bucketCount - 1);
       buckets[idx].tokens += (r.promptTokens || 0) + (r.completionTokens || 0);
       buckets[idx].cost += r.cost || 0;
+      buckets[idx].ttftSum += r.ttft || 0;
+      buckets[idx].totalLatencySum += r.totalLatency || 0;
+      buckets[idx].requestCount++;
     }
-    return buckets;
+    return buckets.map(b => ({
+      ...b,
+      ttft: b.requestCount ? Math.round(b.ttftSum / b.requestCount) : 0,
+      totalLatency: b.requestCount ? Math.round(b.totalLatencySum / b.requestCount) : 0,
+    }));
   }
 
   const bucketCount = period === "7d" ? 7 : period === "30d" ? 30 : 60;
@@ -727,6 +787,8 @@ export async function getChartData(period = "7d") {
       label: labelFn(d),
       tokens: dayData ? (dayData.promptTokens || 0) + (dayData.completionTokens || 0) : 0,
       cost: dayData ? (dayData.cost || 0) : 0,
+      ttft: dayData && dayData.requests ? Math.round((dayData.ttftSum || 0) / dayData.requests) : 0,
+      totalLatency: dayData && dayData.requests ? Math.round((dayData.totalLatencySum || 0) / dayData.requests) : 0,
     };
   });
 }
@@ -770,3 +832,5 @@ export async function getRecentLogs(limit = 200) {
     return [];
   }
 }
+
+// Latency distribution for bar chart: P50/P95 grouped by model or provider
