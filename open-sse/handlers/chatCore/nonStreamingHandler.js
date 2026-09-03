@@ -304,6 +304,20 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     }
   }
 
+  // Cline (api.cline.bot) wraps non-stream chat completions in
+  // {"success":true,"data":{...}}. Unwrap before any consumer reads
+  // choices/usage so non-stream clients get a bare OpenAI body and
+  // usage tracking sees data.usage. Guard matches the error envelope
+  // {"error":...,"success":false}, which must pass through untouched.
+  if (
+    responseBody?.success === true &&
+    responseBody.data &&
+    typeof responseBody.data === "object" &&
+    !Array.isArray(responseBody.data)
+  ) {
+    responseBody = responseBody.data;
+  }
+
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
   if (onRequestSuccess) {
     Promise.resolve()
