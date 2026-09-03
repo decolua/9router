@@ -149,6 +149,30 @@ describe("opencode-go DeepSeek routing contract (via real handleChatCore)", () =
   }
 });
 
+describe("opencode-go Muse Spark 1.3 routing contract (via real handleChatCore)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("routes 1.3 + responses-format client to /zen/go/v1/responses", async () => {
+    const { result, runtimeTransport } = await route("muse-spark-1.3-contributor", "openai-responses");
+    expect(result.success).toBe(true);
+    expect(runtimeTransport?.baseUrl).toBe(ENDPOINTS["openai-responses"]);
+  });
+
+  it("routes 1.3 + claude-format client to /zen/go/v1/responses via the model target format", async () => {
+    const { result, runtimeTransport } = await route("muse-spark-1.3-contributor", "claude");
+    expect(result.success).toBe(true);
+    expect(runtimeTransport?.baseUrl).toBe(ENDPOINTS["openai-responses"]);
+  });
+
+  it("routes 1.3 + Chat-format (openai) client to /zen/go/v1/responses via the model target format", async () => {
+    const { result, runtimeTransport } = await route("muse-spark-1.3-contributor", "openai");
+    expect(result.success).toBe(true);
+    expect(runtimeTransport?.baseUrl).toBe(ENDPOINTS["openai-responses"]);
+  });
+});
+
 describe("opencode-go thinking-suffix guard (regression)", () => {
   beforeEach(() => {
     vi.clearAllMocks();

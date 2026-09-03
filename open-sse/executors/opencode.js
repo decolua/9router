@@ -10,7 +10,7 @@ import { applyOcEgress, flipOcEgress } from "../utils/ocEgress.js";
 // anonymous-capacity gate rejects unidentified clients.
 const OPENCODE_UA = "opencode/latest/1.18.18/cli";
 // Models served by /zen/v1/responses; every other model stays on /chat/completions.
-const RESPONSES_MODELS = new Set(["muse-spark-1.2-contributor-free"]);
+const RESPONSES_MODELS = new Set(["muse-spark-1.2-contributor-free", "muse-spark-1.3-contributor-free"]);
 
 function generateRequestId() {
   return `msg_${crypto.randomUUID().replace(/-/g, "")}`;

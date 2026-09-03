@@ -34,6 +34,7 @@ describe("OpenCode Go model catalog", () => {
       "mimo-v2.5", "mimo-v2.5-pro",
       "minimax-m3", "minimax-m2.7", "minimax-m2.5",
       "muse-spark-1.2-contributor",
+      "muse-spark-1.3-contributor",
       "qwen3.8-max", "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus",
       "hy3",
       "ox-alpha-free",
@@ -72,6 +73,17 @@ describe("OpenCode Go per-model supportedFormats", () => {
     expect(getModelSupportedFormats("opencode-go", "deepseek-v4-flash(max)")).toEqual(["openai"]);
     expect(getModelSupportedFormats("opencode-go", "glm-5.2(max)")).toEqual(["openai"]);
     expect(getModelSupportedFormats("opencode-go", "minimax-m3(max)")).toEqual(["openai", "claude"]);
+  });
+});
+
+describe("OpenCode Go Muse Spark tool_choice quirk (config-driven)", () => {
+  it("declares the exact auto-tool-choice model list on the opencode-go transport quirks", () => {
+    expect(PROVIDERS["opencode-go"].quirks?.forceAutoToolChoiceModels).toEqual([
+      "muse-spark-1.2-contributor",
+      "muse-spark-1.3-contributor",
+    ]);
+    // The quirk must NOT leak onto the free (opencode) provider — only Go demotes.
+    expect(PROVIDERS["opencode"].quirks?.forceAutoToolChoiceModels).toBeUndefined();
   });
 });
 
@@ -138,6 +150,23 @@ describe("OpenCode Go per-model transport guard (chatCore logic)", () => {
     const t = pickTransport("opencode-go", "openai", "opencode-go", "ox-alpha-free");
     expect(t?.baseUrl).toBe("https://opencode.ai/zen/go/v1/chat/completions");
     expect(getModelTargetFormat("opencode-go", "ox-alpha-free")).toBeNull();
+  });
+});
+
+describe("Muse Spark 1.3 registries and supportedFormats", () => {
+  it("declares both 1.3 and retained 1.2 Muse Spark models on both aliases over openai-responses", () => {
+    expect(PROVIDER_MODELS["opencode-go"].map((m) => m.id)).toEqual(expect.arrayContaining(["muse-spark-1.3-contributor", "muse-spark-1.2-contributor"]));
+    expect(PROVIDER_MODELS.oc.map((m) => m.id)).toEqual(expect.arrayContaining(["muse-spark-1.3-contributor-free", "muse-spark-1.2-contributor-free"]));
+    expect(getModelSupportedFormats("opencode-go", "muse-spark-1.3-contributor")).toEqual(["openai-responses"]);
+    expect(getModelSupportedFormats("oc", "muse-spark-1.3-contributor-free")).toEqual(["openai-responses"]);
+    expect(getModelTargetFormat("opencode-go", "muse-spark-1.3-contributor")).toBe("openai-responses");
+    expect(getModelTargetFormat("oc", "muse-spark-1.3-contributor-free")).toBe("openai-responses");
+  });
+
+  it("strips a recognized 1.3 thinking suffix to the same Formats metadata", () => {
+    expect(getModelSupportedFormats("opencode-go", "muse-spark-1.3-contributor(high)")).toEqual(["openai-responses"]);
+    expect(getModelTargetFormat("opencode-go", "muse-spark-1.3-contributor(high)")).toBe("openai-responses");
+    expect(getModelSupportedFormats("oc", "muse-spark-1.3-contributor-free(high)")).toEqual(["openai-responses"]);
   });
 });
 

@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
 import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE, selectAnthropicBeta } from "../providers/shared.js";
@@ -7,6 +8,7 @@ import { buildClineHeaders } from "../shared/clineAuth.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
+import { resolveSessionId } from "../utils/sessionManager.js";
 
 // Auth header descriptors — derived from registry transport.auth, fallback to hardcoded defaults.
 const BEARER = { combined: true, header: "Authorization", scheme: "bearer" };
@@ -34,6 +36,18 @@ function applyAuth(headers, desc, credentials) {
   if (credentials.apiKey) setAuth(headers, desc.apiKey, credentials.apiKey);
   else if (credentials.accessToken) setAuth(headers, desc.oauth, credentials.accessToken);
   if (desc.anthropicVersion && !headers["anthropic-version"]) headers["anthropic-version"] = ANTHROPIC_API_VERSION;
+}
+
+function openCodeGoSession(body, credentials) {
+  const identity = resolveSessionId({
+    headers: credentials?.rawHeaders || {},
+    body,
+    connectionId: credentials?.connectionId,
+    scope: "opencode-go",
+  });
+  if (!identity) return null;
+  const hash = crypto.createHash("sha256").update(String(identity)).digest("hex").slice(0, 32);
+  return `ses_${hash}`;
 }
 
 // Provider-specific header quirks kept as small hooks (not pure auth).
@@ -67,8 +81,11 @@ export class DefaultExecutor extends BaseExecutor {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
-  transformRequest(model, body) {
+  transformRequest(model, body, stream, credentials) {
     const transformed = this.applyJsonSchemaFallback(body);
+    if (this.provider === "opencode-go" && credentials) {
+      credentials._ocgSession = openCodeGoSession(body, credentials);
+    }
 
     if (transformed && typeof transformed === "object") {
       // quirk: some openai-compatible providers reject Anthropic's client_metadata field
@@ -76,11 +93,27 @@ export class DefaultExecutor extends BaseExecutor {
         delete transformed.client_metadata;
       }
       stripUnsupportedParams(this.provider, model, transformed);
-      // ponytail: Console Go Muse Spark rejects forced tool_choice (only "auto" supported); demote to auto. Move to registry quirk when a second model needs it.
-      const suffix = typeof model === "string" ? model.match(/\((?:none|off|auto|minimal|low|medium|high|xhigh|max|ultra|\d+)\)\s*$/i) : null;
-      const bare = suffix ? model.slice(0, suffix.index).trim() : model;
-      if (this.provider === "opencode-go" && bare === "muse-spark-1.2-contributor" && "tool_choice" in transformed) {
-        if (transformed.tool_choice !== "auto") transformed.tool_choice = "auto";
+      const quirkModels = this.config.quirks?.forceAutoToolChoiceModels;
+      if (Array.isArray(quirkModels) && quirkModels.length && "tool_choice" in transformed) {
+        const suffix = typeof model === "string" ? model.match(/\((?:none|off|auto|minimal|low|medium|high|xhigh|max|ultra|\d+)\)\s*$/i) : null;
+        const bare = suffix ? model.slice(0, suffix.index).trim() : model;
+        if (quirkModels.includes(bare) && transformed.tool_choice !== "auto") transformed.tool_choice = "auto";
+      }
+
+      // Go Muse Spark Responses endpoint rejects Chat param `reasoning_effort`.
+      // Only convert when we are actually on /responses for this model.
+      if (typeof transformed.reasoning_effort === "string") {
+        const baseUrl = credentials?.runtimeTransport?.baseUrl || "";
+        const onResponses = String(baseUrl).includes("/responses");
+        const isGoMuse = this.provider === "opencode-go" && /muse-spark/i.test(String(model || ""));
+        if (onResponses && isGoMuse) {
+          const cur = transformed.reasoning;
+          const curObj = cur && typeof cur === "object" && !Array.isArray(cur) ? cur : {};
+          const normalized = transformed.reasoning_effort.toLowerCase().trim();
+          const effort = (normalized === "none" || normalized === "off") ? "minimal" : normalized;
+          transformed.reasoning = { ...curObj, effort, summary: curObj.summary || "auto" };
+          delete transformed.reasoning_effort;
+        }
       }
     }
 
@@ -159,6 +192,9 @@ export class DefaultExecutor extends BaseExecutor {
     // Hooks run BEFORE auth so dynamic overlays can't clobber the token.
     for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);
     applyAuth(headers, desc, credentials);
+    if (this.provider === "opencode-go") {
+      headers["x-opencode-session"] = credentials?._ocgSession || openCodeGoSession(null, credentials);
+    }
 
     if (this.provider === "claude" && model) {
       headers["Anthropic-Beta"] = selectAnthropicBeta(model);
