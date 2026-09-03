@@ -284,4 +284,19 @@ describe("DB SQLite layer — public API parity", () => {
     const data = await sqliteDb.getChartData("7d");
     expect(data).toHaveLength(7);
   });
+
+  it("getChartData: 90d buckets", async () => {
+    const data = await sqliteDb.getChartData("90d");
+    expect(data).toHaveLength(90);
+  });
+
+  it("getChartData: all-time returns sorted daily series", async () => {
+    const data = await sqliteDb.getChartData("all");
+    expect(Array.isArray(data)).toBe(true);
+    for (const point of data) {
+      expect(point).toHaveProperty("label");
+      expect(point).toHaveProperty("tokens");
+      expect(point).toHaveProperty("cost");
+    }
+  });
 });

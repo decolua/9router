@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
 import { getChartData } from "@/lib/usageDb";
-
-const VALID_PERIODS = new Set(["today", "24h", "7d", "30d", "60d"]);
+import { VALID_USAGE_CHART_PERIODS } from "@/lib/usagePeriods.js";
 
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const period = searchParams.get("period") || "7d";
 
-    if (!VALID_PERIODS.has(period)) {
+    if (!VALID_USAGE_CHART_PERIODS.has(period)) {
       return NextResponse.json({ error: "Invalid period" }, { status: 400 });
     }
 

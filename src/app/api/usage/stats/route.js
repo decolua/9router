@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getUsageStats } from "@/lib/usageDb";
-
-const VALID_PERIODS = new Set(["today", "24h", "7d", "30d", "60d", "all"]);
+import { VALID_USAGE_STATS_PERIODS } from "@/lib/usagePeriods.js";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +9,7 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const period = searchParams.get("period") || "7d";
 
-    if (!VALID_PERIODS.has(period)) {
+    if (!VALID_USAGE_STATS_PERIODS.has(period)) {
       return NextResponse.json({ error: "Invalid period" }, { status: 400 });
     }
 
