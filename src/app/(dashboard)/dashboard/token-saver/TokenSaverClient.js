@@ -12,7 +12,7 @@ import {
 
 export default function TokenSaverClient() {
   const [rtkEnabled, setRtkEnabledState] = useState(true);
-  const [headroomEnabled, setHeadroomEnabled] = useState(false);
+  const [headroomEnabled, setHeadroomEnabled] = useState(true);
   const [headroomUrl, setHeadroomUrl] = useState("http://localhost:8787");
   const [headroomTimeoutMs, setHeadroomTimeoutMs] = useState(3000);
   const [headroomStatus, setHeadroomStatus] = useState({
@@ -126,11 +126,20 @@ export default function TokenSaverClient() {
 
   const refreshHeadroomStatus = useCallback(async () => {
     setHeadroomStatus((s) => ({ ...s, loading: true }));
+    // Safety: force loading=false after 8s if API hangs
+    const loadingTimeout = setTimeout(() => {
+      setHeadroomStatus((s) => ({ ...s, loading: false }));
+    }, 8000);
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
       const res = await fetch("/api/headroom/status", {
         headers: { "Cache-Control": "no-store" },
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
       const data = await res.json();
+      clearTimeout(loadingTimeout);
       setHeadroomStatus({ ...data, loading: false });
       if (!data?.installed) {
         setHeadroomExtras({
@@ -156,16 +165,18 @@ export default function TokenSaverClient() {
           loading: false,
         }));
         setPendingExtras([]);
-      } catch {
-        setHeadroomExtras({
-          version: null,
-          extras: { code: false, ml: false },
-          available: ["code", "ml"],
-          loading: false,
-        });
-        setPendingExtras([]);
-      }
+} catch {
+      clearTimeout(loadingTimeout);
+      setHeadroomExtras({
+        version: null,
+        extras: { code: false, ml: false },
+        available: ["code", "ml"],
+        loading: false,
+      });
+      setPendingExtras([]);
+    }
     } catch {
+      clearTimeout(loadingTimeout);
       setHeadroomStatus({
         installed: false,
         running: false,

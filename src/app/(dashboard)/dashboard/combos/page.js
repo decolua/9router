@@ -291,6 +291,7 @@ export default function CombosPage() {
 const STRATEGY_OPTIONS = [
   { value: "fallback", label: "Fallback — try in order" },
   { value: "round-robin", label: "Round Robin — rotate" },
+  { value: "weighted", label: "Weighted — random by weight" },
   { value: "fusion", label: "Fusion — panel + judge" },
 ];
 
@@ -552,7 +553,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
   );
 }
 
-function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+function ModelItem({ id, index, model, weight = 1, isFirst, isLast, onEdit, onWeightChange, onMoveUp, onMoveDown, onRemove }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -618,6 +619,12 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
         </div>
       )}
 
+      {/* Weight (1-10) */}
+      <label className="flex shrink-0 items-center gap-0.5 text-[10px] text-text-muted" title="Weight for Weighted strategy">
+        w
+        <input type="number" min={1} max={10} value={weight} onChange={(e) => onWeightChange?.(e.target.value)} className="w-9 rounded border border-black/10 px-1 py-0.5 text-xs text-text-main dark:border-white/10 bg-transparent text-center" />
+      </label>
+
       {/* Priority arrows */}
       <div className="flex shrink-0 items-center gap-0.5">
         <button
@@ -653,11 +660,15 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
 function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
-  const [models, setModels] = useState(combo?.models || []);
+  const initialMembers = combo?.members?.length ? combo.members : (combo?.models || []).map((id) => ({ id, weight: 1 }));
+  const [members, setMembers] = useState(initialMembers);
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [advPolicy, setAdvPolicy] = useState(() => combo?.policy || combo?.config?.policy || {});
+  const [advFusion, setAdvFusion] = useState(() => combo?.fusion || combo?.config?.fusion || {});
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -665,7 +676,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   );
 
   // Use stable index-based IDs so duplicates and similar names are handled correctly
-  const modelItems = models.map((model, i) => ({ uid: `item-${i}`, model }));
+  const modelItems = members.map((m, i) => ({ uid: `item-${i}`, id: m.id, weight: m.weight }));
 
   const handleDragEnd = (event) => {
     const { active, over } = event;
@@ -673,7 +684,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
       const oldIndex = modelItems.findIndex((m) => m.uid === active.id);
       const newIndex = modelItems.findIndex((m) => m.uid === over.id);
       if (oldIndex !== -1 && newIndex !== -1) {
-        setModels((prev) => arrayMove(prev, oldIndex, newIndex));
+        setMembers((prev) => arrayMove(prev, oldIndex, newIndex));
       }
     }
   };
@@ -714,37 +725,55 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   };
 
   const handleAddModel = (model) => {
-    if (!models.includes(model.value)) {
-      setModels([...models, model.value]);
+    if (!members.find((m) => m.id === model.value)) {
+      setMembers([...members, { id: model.value, weight: 1 }]);
     }
   };
 
   const handleDeselectModel = (model) => {
-    setModels(models.filter((m) => m !== model.value));
+    setMembers(members.filter((m) => m.id !== model.value));
   };
 
   const handleRemoveModel = (index) => {
-    setModels(models.filter((_, i) => i !== index));
+    setMembers(members.filter((_, i) => i !== index));
   };
 
   const handleMoveUp = (index) => {
     if (index === 0) return;
-    const newModels = [...models];
-    [newModels[index - 1], newModels[index]] = [newModels[index], newModels[index - 1]];
-    setModels(newModels);
+    const next = [...members];
+    [next[index - 1], next[index]] = [next[index], next[index - 1]];
+    setMembers(next);
   };
 
   const handleMoveDown = (index) => {
-    if (index === models.length - 1) return;
-    const newModels = [...models];
-    [newModels[index], newModels[index + 1]] = [newModels[index + 1], newModels[index]];
-    setModels(newModels);
+    if (index === members.length - 1) return;
+    const next = [...members];
+    [next[index], next[index + 1]] = [next[index + 1], next[index]];
+    setMembers(next);
+  };
+
+  const handleWeightChange = (index, w) => {
+    const weight = Math.max(1, Math.min(10, parseInt(w, 10) || 1));
+    const next = [...members];
+    next[index] = { ...next[index], weight };
+    setMembers(next);
   };
 
   const handleSave = async () => {
     if (!validateName(name)) return;
     setSaving(true);
-    await onSave({ name: name.trim(), models });
+    const models = members.map((m) => m.id);
+    const hasWeights = members.some((m) => (m.weight || 1) !== 1);
+    const payload = { name: name.trim(), models };
+    if (hasWeights || Object.keys(advPolicy).length || Object.keys(advFusion).length) {
+      payload.members = members;
+      const cfg = {};
+      if (hasWeights) cfg.members = members;
+      if (Object.keys(advPolicy).length) cfg.policy = advPolicy;
+      if (Object.keys(advFusion).length) cfg.fusion = advFusion;
+      if (Object.keys(cfg).length) payload.config = cfg;
+    }
+    await onSave(payload);
     setSaving(false);
   };
 
@@ -774,9 +803,9 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
 
           {/* Models */}
           <div>
-            <label className="text-sm font-medium mb-1.5 block">Models</label>
+            <label className="text-sm font-medium mb-1.5 block">Models <span className="text-[11px] text-text-muted font-normal">— weights matter for Weighted strategy</span></label>
 
-            {models.length === 0 ? (
+            {members.length === 0 ? (
               <div className="text-center py-4 border border-dashed border-black/10 dark:border-white/10 rounded-lg bg-black/[0.01] dark:bg-white/[0.01]">
                 <span className="material-symbols-outlined text-text-muted text-xl mb-1">layers</span>
                 <p className="text-xs text-text-muted">No models added yet</p>
@@ -785,19 +814,21 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} modifiers={[restrictToVerticalAxis, restrictToParentElement]}>
               <SortableContext items={modelItems.map((m) => m.uid)} strategy={verticalListSortingStrategy}>
                 <div className="flex max-h-[55vh] min-w-0 flex-col gap-1 overflow-y-auto sm:max-h-[350px]">
-                  {modelItems.map(({ uid, model }, index) => (
+                  {modelItems.map(({ uid, id, weight }, index) => (
                     <ModelItem
                       key={uid}
                       id={uid}
                       index={index}
-                      model={model}
+                      model={id}
+                      weight={weight}
                       isFirst={index === 0}
                       isLast={index === modelItems.length - 1}
                       onEdit={(newVal) => {
-                        const updated = [...models];
-                        updated[index] = newVal;
-                        setModels(updated);
+                        const updated = [...members];
+                        updated[index] = { ...updated[index], id: newVal };
+                        setMembers(updated);
                       }}
+                      onWeightChange={(w) => handleWeightChange(index, w)}
                       onMoveUp={() => handleMoveUp(index)}
                       onMoveDown={() => handleMoveDown(index)}
                       onRemove={() => handleRemoveModel(index)}
@@ -816,6 +847,38 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
               <span className="material-symbols-outlined text-[16px]">add</span>
               Add Model
             </button>
+
+            {/* Advanced: weights sticky, maxHops, fusion tuning */}
+            <div className="rounded-lg border border-black/10 dark:border-white/10 p-2">
+              <button type="button" onClick={() => setShowAdvanced((v) => !v)} className="flex w-full items-center justify-between text-xs font-medium text-text-main">
+                <span>Advanced — weights, retry, fusion tuning</span>
+                <span className="material-symbols-outlined text-[16px]">{showAdvanced ? "expand_less" : "expand_more"}</span>
+              </button>
+              {showAdvanced && (
+                <div className="mt-2 flex flex-col gap-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="text-xs">Sticky (requests per model)
+                      <input type="number" min={1} max={50} value={advPolicy.sticky || 1} onChange={(e) => setAdvPolicy({ ...advPolicy, sticky: Math.max(1, parseInt(e.target.value, 10) || 1) })} className="mt-1 w-full rounded border border-black/10 px-2 py-1 text-xs dark:border-white/10 bg-transparent" />
+                    </label>
+                    <label className="text-xs">Max Hops (attempts)
+                      <input type="number" min={1} max={20} placeholder="all" value={advPolicy.maxHops || ""} onChange={(e) => { const v = parseInt(e.target.value, 10); setAdvPolicy(v ? { ...advPolicy, maxHops: v } : { ...advPolicy, maxHops: undefined }); }} className="mt-1 w-full rounded border border-black/10 px-2 py-1 text-xs dark:border-white/10 bg-transparent" />
+                    </label>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <label className="text-xs">Min Panel
+                      <input type="number" min={2} max={10} value={advFusion.minPanel || ""} placeholder="2" onChange={(e) => { const v = parseInt(e.target.value, 10); setAdvFusion(v ? { ...advFusion, minPanel: v } : { ...advFusion, minPanel: undefined }); }} className="mt-1 w-full rounded border border-black/10 px-2 py-1 text-xs dark:border-white/10 bg-transparent" />
+                    </label>
+                    <label className="text-xs">Grace ms
+                      <input type="number" min={0} max={30000} value={advFusion.stragglerGraceMs || ""} placeholder="8000" onChange={(e) => { const v = parseInt(e.target.value, 10); setAdvFusion(Number.isFinite(v) ? { ...advFusion, stragglerGraceMs: v } : { ...advFusion, stragglerGraceMs: undefined }); }} className="mt-1 w-full rounded border border-black/10 px-2 py-1 text-xs dark:border-white/10 bg-transparent" />
+                    </label>
+                    <label className="text-xs">Hard timeout ms
+                      <input type="number" min={1000} max={300000} value={advFusion.panelHardTimeoutMs || ""} placeholder="90000" onChange={(e) => { const v = parseInt(e.target.value, 10); setAdvFusion(Number.isFinite(v) ? { ...advFusion, panelHardTimeoutMs: v } : { ...advFusion, panelHardTimeoutMs: undefined }); }} className="mt-1 w-full rounded border border-black/10 px-2 py-1 text-xs dark:border-white/10 bg-transparent" />
+                    </label>
+                  </div>
+                  <p className="text-[10px] text-text-muted">Weights 1–10 affect Weighted strategy only. Sticky & Max Hops affect fallback/round-robin. Fusion tuning affects panel collection.</p>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Actions */}
@@ -846,7 +909,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
           modelAliases={modelAliases}
           title="Add Model to Combo"
           kindFilter={kindFilter}
-          addedModelValues={models}
+          addedModelValues={members.map((m) => m.id)}
           closeOnSelect={false}
         />
       )}

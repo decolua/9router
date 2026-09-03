@@ -82,6 +82,9 @@ export const ANTIGRAVITY_IDE_VERSION = "2.11.0";
 export const ANTIGRAVITY_IDE_BASE_URL = "https://daily-cloudcode-pa.googleapis.com";
 export const ANTIGRAVITY_IDE_USER_AGENT = `antigravity/ide/${ANTIGRAVITY_IDE_VERSION} darwin/arm64`;
 
+// Official Antigravity IDE endpoint for Gemini 3.7 Flash
+export const ANTIGRAVITY_GEMINI_37_FLASH_BASE_URL = "https://daily-cloudcode-pa.googleapis.com";
+
 // Antigravity OAuth client credentials (public CLI client — duplicated in usage.js + src/lib/oauth)
 export const ANTIGRAVITY_OAUTH_CLIENT = {
   clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",

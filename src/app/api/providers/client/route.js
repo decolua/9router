@@ -44,8 +44,10 @@ function sanitize(c) {
 }
 
 function isUsageEligible(connection) {
+  const auth = String(connection.authType || "").toLowerCase().replace(/[-_]/g, "");
+  const isOAuthLike = auth === "oauth" || auth === "accesstoken";
   return USAGE_SUPPORTED_PROVIDERS.includes(connection.provider) && (
-    connection.authType === "oauth" || USAGE_APIKEY_PROVIDERS.includes(connection.provider)
+    isOAuthLike || USAGE_APIKEY_PROVIDERS.includes(connection.provider)
   );
 }
 

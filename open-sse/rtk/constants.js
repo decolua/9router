@@ -38,7 +38,7 @@ export const SEARCH_LIST_TOTAL_DIR_MAX = 20;
 // Smart truncate (port of filter.rs smart_truncate fallback)
 export const SMART_TRUNCATE_HEAD = 120;        // lines kept from top
 export const SMART_TRUNCATE_TAIL = 60;         // lines kept from bottom
-export const SMART_TRUNCATE_MIN_LINES = 250;   // only kick in above this
+export const SMART_TRUNCATE_MIN_LINES = 100;   // only kick in above this
 
 // readNumbered (files with "  N|content" lines, e.g. Cursor read_file)
 export const READ_NUMBERED_MIN_HIT_RATIO = 0.7;

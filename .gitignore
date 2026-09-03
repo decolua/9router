@@ -46,7 +46,13 @@ next-env.d.ts
 
 .bin/*
 data/
+backup/
 logs/*
+!logs/.gitkeep
+# 9router background runner (explicit)
+logs/9router.log
+logs/9router.err.log
+logs/9router.pid
 source/*
 .cursor/*
 docs/*

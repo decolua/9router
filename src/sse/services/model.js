@@ -92,3 +92,23 @@ export async function getComboModels(modelStr) {
   }
   return null;
 }
+
+/**
+ * Get full combo config (members, policy, fusion, etc)
+ * @returns {Promise<{models:string[], members:Array, policy:Object, accountPolicy:Object, fusion:Object}|null>}
+ */
+export async function getComboConfig(modelStr) {
+  if (modelStr.includes("/")) return null;
+  const combo = await getComboByName(modelStr);
+  if (!combo) return null;
+  return {
+    models: combo.models || [],
+    members: combo.members || (combo.models || []).map((id) => ({ id, weight: 1 })),
+    policy: combo.policy || null,
+    accountPolicy: combo.accountPolicy || null,
+    fusion: combo.fusion || null,
+    config: combo.config || null,
+    name: combo.name,
+    kind: combo.kind,
+  };
+}
