@@ -142,7 +142,20 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
  * Translate non-streaming response body from provider format → OpenAI format.
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
-  if (targetFormat === sourceFormat) return responseBody;
+  // Same-format passthrough still normalizes NVIDIA/vLLM-style
+  // `message.reasoning` → `reasoning_content` (issue #2936).
+  if (targetFormat === sourceFormat) {
+    if (targetFormat === FORMATS.OPENAI) {
+      for (const choice of responseBody?.choices || []) {
+        const msg = choice?.message;
+        if (msg?.reasoning && typeof msg.reasoning === "string" && !msg.reasoning_content) {
+          msg.reasoning_content = msg.reasoning;
+          delete msg.reasoning;
+        }
+      }
+    }
+    return responseBody;
+  }
   // Provider responded in OpenAI Chat Completions shape but the client speaks
   // Responses API — convert so tool_calls/text surface as Responses `output`.
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {

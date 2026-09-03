@@ -174,6 +174,13 @@ export function createSSEStream(options = {}) {
                     delete choice.delta.tool_calls;
                     fieldsInjected = true;
                   }
+                  // Normalize NVIDIA/vLLM-style `delta.reasoning` → `reasoning_content`
+                  // so clients (Cursor thinking UI, AI SDK) render thinking (issue #2936).
+                  if (choice.delta?.reasoning && typeof choice.delta.reasoning === "string" && !choice.delta.reasoning_content) {
+                    choice.delta.reasoning_content = choice.delta.reasoning;
+                    delete choice.delta.reasoning;
+                    fieldsInjected = true;
+                  }
                 }
               }
 
