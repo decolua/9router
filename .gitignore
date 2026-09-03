@@ -91,3 +91,6 @@ graphify-out/*
 .serena/
 apps/
 .worktrees/
+
+# Kiro local workspace state
+.kiro/
