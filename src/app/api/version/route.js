@@ -57,5 +57,11 @@ export async function GET() {
   const currentVersion = pkg.version;
   const hasUpdate = latestVersion ? compareVersions(latestVersion, currentVersion) > 0 : false;
 
-  return Response.json({ currentVersion, latestVersion, hasUpdate });
+  // Surface tray mode so the dashboard's manual-update panel can suggest the
+  // matching relaunch command (`9router --tray` vs `9router`). Without this
+  // hint the user copies the manual install instructions, runs plain
+  // `9router` after npm install, and silently drops tray mode.
+  const isTrayMode = process.env.TRAY_MODE === "1";
+
+  return Response.json({ currentVersion, latestVersion, hasUpdate, isTrayMode });
 }
