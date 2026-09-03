@@ -12,6 +12,10 @@ import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import {
+  CODEX_SPARK_COMPACT_THRESHOLD,
+  isCodexSparkModel,
+} from "../config/codexConstants.js";
 
 // SSE error patterns inside 200-OK bodies. Some retry same account first; capacity rotates accounts.
 const CODEX_SSE_RETRY_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
@@ -42,7 +46,7 @@ const CODEX_PASSTHROUGH_TOOL_TYPES = new Set(["custom"]);
 const RESPONSES_API_ALLOWLIST = new Set([
   "model", "input", "instructions", "tools", "tool_choice", "stream", "store",
   "reasoning", "service_tier", "include", "prompt_cache_key", "client_metadata",
-  "text"
+  "text", "context_management"
 ]);
 
 // Convert role=system → role=developer in body.input (keeps content in cacheable prefix)
@@ -131,6 +135,24 @@ function normalizeReasoningEffort(model, value) {
   if (value === "ultra" && supportedLevels?.includes("max")) return "max";
   if (value === "max" || value === "ultra") return "xhigh";
   return value;
+}
+
+function supportsReasoningSummary(model) {
+  return !isCodexSparkModel(model);
+}
+
+function normalizeSparkContextManagement(value) {
+  const existing = Array.isArray(value)
+    ? value.find((entry) => entry?.type === "compaction")
+    : null;
+  const threshold = Number(existing?.compact_threshold);
+
+  return [{
+    type: "compaction",
+    compact_threshold: Number.isFinite(threshold) && threshold > 0
+      ? Math.min(threshold, CODEX_SPARK_COMPACT_THRESHOLD)
+      : CODEX_SPARK_COMPACT_THRESHOLD,
+  }];
 }
 
 function findNestedMessage(value, depth = 0) {
@@ -446,12 +468,23 @@ export class CodexExecutor extends BaseExecutor {
     // Priority: explicit reasoning.effort > reasoning_effort param > model suffix > default (medium)
     if (!body.reasoning) {
       const effort = normalizeReasoningEffort(body.model, body.reasoning_effort || modelEffort || 'low');
-      body.reasoning = { effort, summary: "auto" };
+      body.reasoning = { effort };
+      if (supportsReasoningSummary(body.model)) body.reasoning.summary = "auto";
     } else {
       body.reasoning.effort = normalizeReasoningEffort(body.model, body.reasoning.effort);
-      if (!body.reasoning.summary) body.reasoning.summary = "auto";
+      if (supportsReasoningSummary(body.model)) {
+        if (!body.reasoning.summary) body.reasoning.summary = "auto";
+      } else {
+        delete body.reasoning.summary;
+      }
     }
     delete body.reasoning_effort;
+
+    if (this._isCompact) {
+      delete body.context_management;
+    } else if (isCodexSparkModel(body.model)) {
+      body.context_management = normalizeSparkContextManagement(body.context_management);
+    }
 
     // Include reasoning encrypted content (required by Codex backend for reasoning models)
     if (body.reasoning && body.reasoning.effort && body.reasoning.effort !== 'none') {

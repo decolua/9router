@@ -98,4 +98,39 @@ describe("Codex reasoning normalization", () => {
     expect(body.model).toBe("gpt-5.6-terra");
     expect(body.reasoning.effort).toBe("ultra");
   });
+
+  it("removes reasoning summaries unsupported by Spark", () => {
+    const body = new CodexExecutor().transformRequest("gpt-5.3-codex-spark", {
+      model: "gpt-5.3-codex-spark",
+      input: "hi",
+      reasoning: { effort: "high", summary: "auto" },
+    }, true, {});
+
+    expect(body.reasoning).toEqual({ effort: "high" });
+    expect(body.context_management).toEqual([
+      { type: "compaction", compact_threshold: 100000 },
+    ]);
+  });
+
+  it("clamps Spark compaction below its context limit", () => {
+    const body = new CodexExecutor().transformRequest("gpt-5.3-codex-spark", {
+      model: "gpt-5.3-codex-spark",
+      input: "hi",
+      context_management: [{ type: "compaction", compact_threshold: 200000 }],
+    }, true, {});
+
+    expect(body.context_management).toEqual([
+      { type: "compaction", compact_threshold: 100000 },
+    ]);
+  });
+
+  it("keeps context management off standalone compact requests", () => {
+    const body = new CodexExecutor().transformRequest("gpt-5.3-codex-spark", {
+      model: "gpt-5.3-codex-spark",
+      input: "hi",
+      _compact: true,
+    }, true, {});
+
+    expect(body.context_management).toBeUndefined();
+  });
 });
