@@ -11,6 +11,8 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 import { SSE_DONE } from "../utils/sseConstants.js";
 import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
+import { getCapabilitiesForModel } from "../providers/capabilities.js";
+import { estimateInputTokens } from "../utils/usageTracking.js";
 import crypto from "crypto";
 
 export class GithubExecutor extends BaseExecutor {
@@ -264,6 +266,50 @@ export class GithubExecutor extends BaseExecutor {
     // schema rejects the extra field with a 400.
     const toolNameMap = transformedBody._toolNameMap;
     delete transformedBody._toolNameMap;
+
+    const maxPrompt = getCapabilitiesForModel("github", model).maxPrompt;
+    const preflightThreshold = maxPrompt * (this.config.countTokensPreflightRatio || 0);
+    if (Number.isFinite(maxPrompt)
+      && maxPrompt > 0
+      && estimateInputTokens(transformedBody) >= preflightThreshold) {
+      try {
+        const timeoutSignal = AbortSignal.timeout(this.config.countTokensTimeoutMs);
+        const countSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+        const countResponse = await proxyAwareFetch(this.config.countTokensUrl, {
+          method: "POST",
+          headers: this.buildHeaders(credentials, false),
+          body: JSON.stringify(transformedBody),
+          signal: countSignal,
+        }, proxyOptions);
+        if (countResponse.ok) {
+          const inputTokens = Number((await countResponse.json())?.input_tokens);
+          if (Number.isFinite(inputTokens) && inputTokens > maxPrompt) {
+            const errorBody = {
+              error: {
+                message: `Prompt is ${inputTokens} tokens; maximum for ${model} is ${maxPrompt}.`,
+                type: "invalid_request_error",
+                param: "messages",
+                code: "context_length_exceeded",
+              },
+            };
+            return {
+              response: new Response(JSON.stringify(errorBody), {
+                status: HTTP_STATUS.BAD_REQUEST,
+                headers: { "Content-Type": "application/json" },
+              }),
+              url: this.config.countTokensUrl,
+              headers,
+              transformedBody,
+            };
+          }
+        } else {
+          log?.warn?.("GITHUB", `Prompt token preflight returned ${countResponse.status}; continuing`);
+        }
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        log?.warn?.("GITHUB", `Prompt token preflight failed: ${error?.message || error}; continuing`);
+      }
+    }
 
     log?.debug("GITHUB", "Sending translated request to /v1/messages");
 

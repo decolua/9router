@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
+import github from "../../open-sse/providers/registry/github.js";
 
 describe("getCapabilitiesForModel", () => {
   const claudeSonnet5Expected = {
@@ -53,6 +54,28 @@ describe("getCapabilitiesForModel", () => {
     expect(getCapabilitiesForModel("kiro", "claude-sonnet-5-thinking")).toMatchObject(claudeSonnet5Expected);
     expect(getCapabilitiesForModel("kiro", "claude-sonnet-5-agentic")).toMatchObject(claudeSonnet5Expected);
     expect(getCapabilitiesForModel("kiro", "claude-sonnet-5-thinking-agentic")).toMatchObject(claudeSonnet5Expected);
+  });
+
+  it("keeps Copilot Claude prompt and output limits provider-specific", () => {
+    for (const model of ["claude-fable-5", "claude-opus-4.8", "claude-opus-5"]) {
+      expect(getCapabilitiesForModel("github", model)).toMatchObject({
+        contextWindow: 264000,
+        maxPrompt: 200000,
+        maxOutput: 64000,
+        thinkingFormat: "claude-adaptive",
+        reasoning: true,
+      });
+    }
+    expect(getCapabilitiesForModel("kiro", "claude-opus-4.8")).toMatchObject({
+      contextWindow: 1000000,
+      maxOutput: 128000,
+    });
+  });
+
+  it("keeps current Copilot Claude models in the static fallback catalog", () => {
+    for (const model of ["claude-fable-5", "claude-opus-4.8", "claude-opus-5"]) {
+      expect(github.models.some(({ id }) => id === model)).toBe(true);
+    }
   });
 
   it("reports Kiro GPT 5.6 models with the Kiro 272k context window", () => {
