@@ -21,6 +21,13 @@ export default {
   transport: {
     baseUrl: "https://opencode.ai/zen/go/v1/chat/completions",
     headers: {},
+    usage: {
+      url: "https://opencode.ai/zen/go/v1/usage",
+    },
+  },
+  features: {
+    usage: true,
+    usageApikey: true,
   },
   // Multi-endpoint: pick the transport matching the client sourceFormat to skip
   // translation. Guarded per-model by `supportedFormats` (see chatCore) because
