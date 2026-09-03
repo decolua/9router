@@ -102,12 +102,12 @@ export async function GET(_request, { params }) {
 
     let result;
     try {
-      result = await getCodexRateLimitResetCredits(connection.accessToken, proxyOptions, connection.providerSpecificData);
+      result = await getCodexRateLimitResetCredits(connection.accessToken, proxyOptions, connection.providerSpecificData, connection.idToken);
     } catch (fetchError) {
       if (!isOAuth || !connection.refreshToken || !isAuthExpiredError(fetchError)) throw fetchError;
       const retryResult = await refreshAndUpdateCredentials(connection, true, proxyOptions);
       connection = retryResult.connection;
-      result = await getCodexRateLimitResetCredits(connection.accessToken, proxyOptions, connection.providerSpecificData);
+      result = await getCodexRateLimitResetCredits(connection.accessToken, proxyOptions, connection.providerSpecificData, connection.idToken);
     }
 
     return Response.json(result);
@@ -135,13 +135,13 @@ export async function POST(request, { params }) {
 
     // Server-generated redeem id prevents client-controlled replay
     const redeemRequestId = crypto.randomUUID();
-    let consumeResult = await consumeCodexRateLimitResetCredit(connection.accessToken, redeemRequestId, proxyOptions);
+    let consumeResult = await consumeCodexRateLimitResetCredit(connection.accessToken, redeemRequestId, proxyOptions, connection.providerSpecificData, connection.idToken);
 
     if (isOAuth && isAuthExpiredResult(consumeResult) && connection.refreshToken) {
       try {
         const retryResult = await refreshAndUpdateCredentials(connection, true, proxyOptions);
         connection = retryResult.connection;
-        consumeResult = await consumeCodexRateLimitResetCredit(connection.accessToken, redeemRequestId, proxyOptions);
+        consumeResult = await consumeCodexRateLimitResetCredit(connection.accessToken, redeemRequestId, proxyOptions, connection.providerSpecificData, connection.idToken);
       } catch (retryError) {
         console.warn(`[Codex Reset Credits] force refresh failed: ${retryError.message}`);
       }
