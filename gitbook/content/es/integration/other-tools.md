@@ -411,6 +411,7 @@ Error: Rate limit exceeded
 
 - [Configurar Cursor](cursor.md) para integración con IDE
 - [Configurar Continue](continue.md) para VSCode
+- [Conectar OpenDesign](opendesign.md) para diseño AI-nativo
 - [Explorar uso de CLI](../cli/basic-usage.md)
 - [Aprende sobre la selección de modelos](../models/overview.md)
 - [Referencia de API](../api/reference.md)

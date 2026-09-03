@@ -411,6 +411,7 @@ Error: Rate limit exceeded
 
 - [Cấu hình Cursor](cursor.md) cho tích hợp IDE
 - [Setup Continue](continue.md) cho VSCode
+- [Kết nối OpenDesign](opendesign.md) cho AI-native design
 - [Khám phá CLI usage](../cli/basic-usage.md)
 - [Tìm hiểu về chọn model](../models/overview.md)
 - [API Reference](../api/reference.md)
