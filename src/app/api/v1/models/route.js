@@ -18,6 +18,7 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import REGISTRY from "open-sse/providers/registry/index.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -133,7 +134,7 @@ const parseOpenAIStyleModels = (data) => {
 // and break recursive loops between 9router instances connected to each other.
 const INTERNAL_MODELS_FETCH_HEADER = "x-9r-internal-models-fetch";
 
-// LLM kind sentinel — combos/models with no explicit kind default to LLM
+// LLM kind sentinel 閳?combos/models with no explicit kind default to LLM
 const LLM_KIND = "llm";
 
 // Map per-model `type` field (in PROVIDER_MODELS) to service kind.
@@ -243,7 +244,7 @@ function comboMatchesKinds(combo, kindFilter) {
  */
 export async function buildModelsList(kindFilter, options = {}) {
   // When this header is present, the /v1/models request came from another
-  // 9router instance's fetchCompatibleModelIds — skip dynamic fetch to break
+  // 9router instance's fetchCompatibleModelIds 閳?skip dynamic fetch to break
   // cross-instance recursive loops.
   const skipDynamicFetch = options.skipDynamicFetch === true;
   let connections = [];
@@ -476,9 +477,18 @@ export async function buildModelsList(kindFilter, options = {}) {
           id: `${outputAlias}/${modelId}`,
           object: "model",
           owned_by: outputAlias,
+          supported_reasoning_levels: [
+            { description: "Disable Thinking", effort: "none" },
+            { description: "Low",            effort: "low" },
+            { description: "Medium",         effort: "medium" },
+            { description: "High",           effort: "high" },
+            { description: "Extra High",     effort: "xhigh" },
+            { description: "Ultra",          effort: "ultra" },
+            { description: "Max",            effort: "max" },
+          ],
         };
         // Live-catalog resolvers (kiro/qoder/github/clinepass) mostly only return
-        // { id, name } — no per-model capability data. Fall back to the same
+        // { id, name } 閳?no per-model capability data. Fall back to the same
         // pattern-matched capabilities the dashboard uses (useModelCaps.js) so
         // dynamically-discovered LLM models still surface vision/reasoning/search/tools.
         const caps = liveCapabilitiesById.get(modelId)
@@ -509,7 +519,7 @@ export async function buildModelsList(kindFilter, options = {}) {
         models.push(model);
       }
 
-      // Web search/fetch — provider IS the model, expose as {alias}/search and/or {alias}/fetch with explicit kind
+      // Web search/fetch 閳?provider IS the model, expose as {alias}/search and/or {alias}/fetch with explicit kind
       const providerInfo = AI_PROVIDERS[providerId];
       if (kindFilter.includes("webSearch") && providerInfo?.searchConfig) {
         models.push({
@@ -528,6 +538,41 @@ export async function buildModelsList(kindFilter, options = {}) {
         });
       }
     }
+  }
+
+
+  // Passthrough/noAuth providers without DB connections
+  for (const reg of REGISTRY) {
+    if (!reg.noAuth || !reg.modelsFetcher?.url) continue;
+    const alias = reg.alias || reg.id;
+    if (activeConnectionByProvider.has(reg.id)) continue;
+    if (models.some(m => m.owned_by === alias)) continue;
+    try {
+      const resp = await fetch(reg.modelsFetcher.url, { signal: AbortSignal.timeout(5000) });
+      if (!resp.ok) continue;
+      const body = await resp.json();
+      const fetched = body.data || body.models || (Array.isArray(body) ? body : []);
+      if (!Array.isArray(fetched) || fetched.length === 0) continue;
+      for (const item of fetched) {
+        const modelId = typeof item === "string" ? item : (item.id || "");
+        if (!modelId) continue;
+        if (isDisabled(alias, modelId)) continue;
+        models.push({
+          id: alias + "/" + modelId,
+          object: "model",
+          owned_by: alias,
+          supported_reasoning_levels: [
+            { description: "Disable Thinking", effort: "none" },
+            { description: "Low",            effort: "low" },
+            { description: "Medium",         effort: "medium" },
+            { description: "High",           effort: "high" },
+            { description: "Extra High",     effort: "xhigh" },
+            { description: "Ultra",          effort: "ultra" },
+            { description: "Max",            effort: "max" },
+          ],
+        });
+      }
+    } catch(e) {}
   }
 
   const dedupedModels = [];
