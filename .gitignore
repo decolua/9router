@@ -69,3 +69,4 @@ deploy*.sh
 ecosystem.config.*
 
 scripts/agSniffer/*
+*.tgz
