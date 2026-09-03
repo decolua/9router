@@ -643,6 +643,21 @@ export default function ProfilePage() {
     }
   };
 
+  const updateExposeComboOnly = async (exposeComboOnly) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ exposeComboOnly }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, exposeComboOnly }));
+      }
+    } catch (err) {
+      console.error("Failed update exposeComboOnly:", err);
+    }
+  };
+
   const reloadSettings = async () => {
     try {
       const res = await fetch("/api/settings");
@@ -1427,6 +1442,31 @@ export default function ProfilePage() {
               )}
             </div>
           )}
+        </Card>
+
+        {/* Model */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-orange-500/10 text-orange-500 shrink-0">
+              <span className="material-symbols-outlined text-[20px]">model_training</span>
+            </div>
+            <h3 className="text-base sm:text-lg font-semibold">Model</h3>
+          </div>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start sm:items-center justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Expose Combo Only</p>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  Only configured Combo models exposed through <code className="bg-bg px-1 rounded text-xs">/v1/models</code>
+                </p>
+              </div>
+              <Toggle
+                checked={settings.exposeComboOnly === true}
+                onChange={() => updateExposeComboOnly(!settings.exposeComboOnly)}
+                disabled={loading}
+              />
+            </div>
+          </div>
         </Card>
 
         {/* Routing Preferences */}

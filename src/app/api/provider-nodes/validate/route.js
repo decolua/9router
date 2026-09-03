@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
 import { isLocalRequest } from "@/dashboardGuard";
+import { canonicalEndpoint, openAIEndpoints } from "../endpointUrls.js";
 
 // Fetch with timeout wrapper
 const fetchWithTimeout = (url, options, timeout = 10000) => {
@@ -55,7 +56,64 @@ const getChatErrorMessage = (status) => {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { baseUrl, apiKey, type, modelId } = body;
+    const { baseUrl, apiKey, type, modelId, openaiUrl, anthropicUrl } = body;
+
+    if (type === "multi-compatible") {
+      const openai = openAIEndpoints(openaiUrl);
+      const chatEndpoint = openai.chatUrl;
+      const messagesEndpoint = canonicalEndpoint(anthropicUrl, "/messages");
+      const responsesEndpoint = openai.responsesUrl;
+      const endpoints = [chatEndpoint, messagesEndpoint, responsesEndpoint].filter(Boolean);
+      if (!apiKey || !modelId?.trim() || !chatEndpoint || !messagesEndpoint) {
+        return NextResponse.json({ error: "Endpoint URLs, API key, and model ID required" }, { status: 400 });
+      }
+      if (endpoints.some((url) => !isValidUrl(url))) {
+        return NextResponse.json({ error: "Invalid URL format" }, { status: 400 });
+      }
+      if (!isLocalRequest(request)) {
+        try {
+          endpoints.forEach(assertPublicUrl);
+        } catch {
+          return NextResponse.json({ error: "URL not allowed" }, { status: 400 });
+        }
+      }
+
+      const model = modelId.trim();
+      const probes = [
+        ["openai", chatEndpoint, {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        }, { model, messages: [{ role: "user", content: "ping" }], max_tokens: 1 }],
+        ["claude", messagesEndpoint, {
+          "Authorization": `Bearer ${apiKey}`,
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "Content-Type": "application/json",
+        }, { model, messages: [{ role: "user", content: "ping" }], max_tokens: 1 }],
+        ...(responsesEndpoint ? [["openai-responses", responsesEndpoint, {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        }, { model, input: "ping", max_output_tokens: 1 }]] : []),
+      ];
+      const results = await Promise.all(probes.map(async ([format, url, headers, probeBody]) => {
+        try {
+          const response = await fetchWithTimeout(url.replace(/\/+$/, ""), {
+            method: "POST",
+            headers,
+            body: JSON.stringify(probeBody),
+          });
+          return [format, response.ok];
+        } catch {
+          return [format, false];
+        }
+      }));
+      const endpointResults = Object.fromEntries(results);
+      return NextResponse.json({
+        valid: endpointResults.openai && endpointResults.claude,
+        supportsResponses: endpointResults["openai-responses"],
+        endpoints: endpointResults,
+      });
+    }
 
     if (!baseUrl || !apiKey) {
       return NextResponse.json({ error: "Base URL and API key required" }, { status: 400 });

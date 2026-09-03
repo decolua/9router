@@ -51,13 +51,16 @@ export function extractUsageFromResponse(responseBody) {
   }
 
   // Gemini format. Antigravity / gemini-cli wrap the payload in { response: {...} }.
+  // Thoughts sit outside candidates upstream; fold them in so completion_tokens stays
+  // reasoning-inclusive (see extractUsage in usageTracking.js).
   const usageMetadata = responseBody.usageMetadata || responseBody.response?.usageMetadata;
   if (usageMetadata) {
+    const thoughts = usageMetadata.thoughtsTokenCount || 0;
     return {
       prompt_tokens: usageMetadata.promptTokenCount || 0,
-      completion_tokens: usageMetadata.candidatesTokenCount || 0,
+      completion_tokens: (usageMetadata.candidatesTokenCount || 0) + thoughts,
       cached_tokens: usageMetadata.cachedContentTokenCount || 0,
-      reasoning_tokens: usageMetadata.thoughtsTokenCount || 0
+      reasoning_tokens: thoughts
     };
   }
 

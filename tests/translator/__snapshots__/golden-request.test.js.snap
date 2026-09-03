@@ -64,7 +64,6 @@ exports[`GOLDEN request: OpenAI → Claude > full body (system/image/tool/tool_r
       "type": "text",
     },
   ],
-  "temperature": 0.7,
   "tools": [
     {
       "cache_control": {
@@ -233,7 +232,10 @@ exports[`GOLDEN request: OpenAI → Gemini > full body (system/image/tool/tool_r
 
 exports[`GOLDEN request: OpenAI → Kiro > full body (image base64 + tool_result) 1`] = `
 {
+  "agentMode": "vibe",
   "conversationState": {
+    "agentContinuationId": "dac63f87-7d74-4f1a-9e11-60e3eda019aa",
+    "agentTaskType": "vibe",
     "chatTriggerType": "MANUAL",
     "currentMessage": {
       "userInputMessage": {
@@ -281,7 +283,11 @@ continue",
     "history": [
       {
         "userInputMessage": {
-          "content": "You are helpful.
+          "content": "[Context: Current time is <TS>
+
+<instructions>
+You are helpful.
+</instructions>
 
 What's in this image?",
           "images": [

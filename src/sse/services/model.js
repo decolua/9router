@@ -54,6 +54,12 @@ export async function getModelInfo(modelStr) {
         return { provider: matchedAnthropic.id, model: parsed.model };
       }
 
+      const multiNodes = await getProviderNodes({ type: "multi-compatible" });
+      const matchedMulti = multiNodes.find((node) => node.prefix === parsed.providerAlias);
+      if (matchedMulti) {
+        return { provider: matchedMulti.id, model: parsed.model };
+      }
+
       const embeddingNodes = await getProviderNodes({ type: "custom-embedding" });
       const matchedEmbedding = embeddingNodes.find((node) => node.prefix === parsed.providerAlias);
       if (matchedEmbedding) {

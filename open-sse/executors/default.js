@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
 import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE, selectAnthropicBeta } from "../providers/shared.js";
@@ -36,6 +37,59 @@ function applyAuth(headers, desc, credentials) {
   if (desc.anthropicVersion && !headers["anthropic-version"]) headers["anthropic-version"] = ANTHROPIC_API_VERSION;
 }
 
+// OpenAI's newer Chat Completions models reject the legacy max_tokens field.
+// Keep this scoped to the first-party OpenAI provider: other OpenAI-compatible
+// providers may still require max_tokens for models with similar names.
+function usesOpenAIMaxCompletionTokens(model) {
+  return /^(?:gpt-5(?:[.-]|$)|o[134](?:[.-]|$))/i.test(model || "");
+}
+
+const OPENAI_TOOL_CALL_ID_MAX_LENGTH = 64;
+const OPENAI_TOOL_CALL_ID_PREFIX_LENGTH = 20;
+
+// OpenAI Chat Completions rejects tool-call IDs longer than 64 characters.
+// Normalize each distinct overlong ID once per request so assistant calls and
+// their tool results always keep the same relationship. A full SHA-256 digest
+// keeps IDs collision-resistant even when their retained prefixes are equal.
+function normalizeOpenAIToolCallIds(body) {
+  if (!Array.isArray(body?.messages)) return body;
+
+  const normalizedIds = new Map();
+  const normalize = (id) => {
+    if (typeof id !== "string" || id.length <= OPENAI_TOOL_CALL_ID_MAX_LENGTH) return id;
+    if (normalizedIds.has(id)) return normalizedIds.get(id);
+
+    const prefix = id.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, OPENAI_TOOL_CALL_ID_PREFIX_LENGTH) || "call";
+    const digest = createHash("sha256").update(id).digest("base64url");
+    const normalized = `${prefix}_${digest}`;
+    normalizedIds.set(id, normalized);
+    return normalized;
+  };
+
+  for (const message of body.messages) {
+    if (message?.role === "assistant" && Array.isArray(message.tool_calls)) {
+      for (const toolCall of message.tool_calls) {
+        if (toolCall && Object.hasOwn(toolCall, "id")) toolCall.id = normalize(toolCall.id);
+      }
+    }
+    if (message?.role === "tool" && Object.hasOwn(message, "tool_call_id")) {
+      message.tool_call_id = normalize(message.tool_call_id);
+    }
+  }
+
+  return body;
+}
+
+// GPT-5.6 Luna rejects function tools when reasoning is enabled on the Chat
+// Completions transport. Keep this compatibility override limited to the
+// first-party provider and to requests that declare current function tools.
+function normalizeLunaFunctionToolReasoning(model, body, sourceFormat) {
+  if (sourceFormat === "openai-responses") return;
+  if (model !== "gpt-5.6-luna") return;
+  if (!Array.isArray(body?.tools) || !body.tools.some((tool) => tool?.type === "function")) return;
+  body.reasoning_effort = "none";
+}
+
 // Provider-specific header quirks kept as small hooks (not pure auth).
 const HEADER_HOOKS = {
   // Stable device_id from OAuth connection (CLIProxyAPI KimiTokenStorage.DeviceID)
@@ -67,10 +121,33 @@ export class DefaultExecutor extends BaseExecutor {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
-  transformRequest(model, body) {
+  transformRequest(model, body, stream, credentials, sourceFormat) {
     const transformed = this.applyJsonSchemaFallback(body);
 
     if (transformed && typeof transformed === "object") {
+      // The official OpenAI transport is force-streamed even for JSON clients.
+      // Keep the actual upstream body aligned with the executor's resolved mode;
+      // the chat core still converts the SSE response back to JSON for those clients.
+      if (this.provider === "openai" && stream === true) {
+        const clientRequestedStreaming = transformed.stream === true;
+        transformed.stream = true;
+        if (!clientRequestedStreaming) {
+          transformed.stream_options = {
+            ...transformed.stream_options,
+            include_usage: true,
+          };
+        }
+      }
+      if (this.provider === "openai" && usesOpenAIMaxCompletionTokens(model) && transformed.max_tokens !== undefined) {
+        if (transformed.max_completion_tokens === undefined) {
+          transformed.max_completion_tokens = transformed.max_tokens;
+        }
+        delete transformed.max_tokens;
+      }
+      if (this.provider === "openai") {
+        normalizeOpenAIToolCallIds(transformed);
+        normalizeLunaFunctionToolReasoning(model, transformed, sourceFormat);
+      }
       // quirk: some openai-compatible providers reject Anthropic's client_metadata field
       if (this.config.quirks?.dropClientMetadata) {
         delete transformed.client_metadata;

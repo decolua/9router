@@ -118,6 +118,10 @@ async function runHeavyStartup() {
   import("@/sse/services/backgroundTokenRefresh.js")
     .then(({ startBackgroundTokenRefresh }) => startBackgroundTokenRefresh())
     .catch((e) => console.log("[BackgroundTokenRefresh] scheduler start failed:", e.message));
+
+  import("@/lib/webshare/webshareScheduler.js")
+    .then(({ startWebshareScheduler }) => startWebshareScheduler())
+    .catch((e) => console.log("[Webshare] scheduler start failed:", e.message));
 }
 
 function hasQuotaAutoPingEnabled(settings) {

@@ -1,12 +1,16 @@
 import { NextResponse } from "next/server";
 import { deleteProviderConnectionsByProvider, deleteProviderNode, getProviderConnections, getProviderNodeById, updateProviderConnection, updateProviderNode } from "@/models";
+import { canonicalEndpoint, openAIEndpoints } from "../endpointUrls.js";
+
+const BEARER_AUTH = { combined: true, header: "Authorization", scheme: "bearer" };
+const ANTHROPIC_AUTH = { combined: true, header: "x-api-key", scheme: "raw", anthropicVersion: true };
 
 // PUT /api/provider-nodes/[id] - Update provider node
 export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, prefix, apiType, baseUrl } = body;
+    const { name, prefix, apiType, baseUrl, openaiUrl, anthropicUrl, supportsResponses } = body;
     const node = await getProviderNodeById(id);
 
     if (!node) {
@@ -26,11 +30,29 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: "Invalid OpenAI compatible API type" }, { status: 400 });
     }
 
-    if (!baseUrl?.trim()) {
+    let transports = node.transports;
+    let nextBaseUrl = baseUrl;
+    if (node.type === "multi-compatible") {
+      const openai = openAIEndpoints(openaiUrl);
+      const messagesEndpoint = canonicalEndpoint(anthropicUrl, "/messages");
+
+      if (!openai.chatUrl || !messagesEndpoint) {
+        return NextResponse.json({ error: "OpenAI and Anthropic endpoint URLs are required" }, { status: 400 });
+      }
+
+      nextBaseUrl = openai.baseUrl;
+      transports = [
+        { format: "openai", baseUrl: openai.chatUrl, auth: BEARER_AUTH },
+        { format: "claude", baseUrl: messagesEndpoint, auth: ANTHROPIC_AUTH },
+        ...(supportsResponses ? [{ format: "openai-responses", baseUrl: openai.responsesUrl, auth: BEARER_AUTH }] : []),
+      ];
+    }
+
+    if (!nextBaseUrl?.trim()) {
       return NextResponse.json({ error: "Base URL is required" }, { status: 400 });
     }
 
-    let sanitizedBaseUrl = baseUrl.trim();
+    let sanitizedBaseUrl = nextBaseUrl.trim();
     
     // Sanitize Base URL for Anthropic Compatible
     if (node.type === "anthropic-compatible") {
@@ -52,6 +74,7 @@ export async function PUT(request, { params }) {
       name: name.trim(),
       prefix: prefix.trim(),
       baseUrl: sanitizedBaseUrl,
+      ...(node.type === "multi-compatible" ? { transports } : {}),
     };
 
     if (node.type === "openai-compatible") {
@@ -66,9 +89,10 @@ export async function PUT(request, { params }) {
         providerSpecificData: {
           ...(connection.providerSpecificData || {}),
           prefix: prefix.trim(),
-          apiType: node.type === "openai-compatible" ? apiType : undefined,
+          apiType: node.type === "openai-compatible" ? apiType : node.type === "multi-compatible" ? "chat" : undefined,
           baseUrl: sanitizedBaseUrl,
           nodeName: updated.name,
+          ...(node.type === "multi-compatible" ? { transports } : {}),
         }
       })
     )));

@@ -1,9 +1,9 @@
 /**
- * Misc usage handlers (iFlow, Ollama, GLM, Vercel AI Gateway, Qoder)
+ * Misc usage handlers (iFlow, Ollama, GLM, Vercel AI Gateway, Qoder, OpenCode Go)
  */
 
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
-import { U } from "./shared.js";
+import { U, parseResetTime, toFiniteNumber } from "./shared.js";
 
 export { getGlmUsage } from "./glm.js";
 
@@ -108,8 +108,6 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
     return { message: `Ollama Cloud error: ${error.message}` };
   }
 }
-
-
 
 /**
  * Vercel AI Gateway usage — credit balance for the API key
@@ -252,5 +250,196 @@ export async function getQoderUsage(accessToken, proxyOptions = null) {
     };
   } catch (error) {
     return { message: `Qoder connected. Unable to fetch usage: ${error.message}` };
+  }
+}
+
+// OpenCode Go reports each window as a percentage consumed, not absolute counts,
+// so used is the percent and total is 100.
+//
+// Labels carry no duration on purpose: only the rolling window is a fixed span
+// (and its length is server-side plan config, absent from the payload). Weekly
+// resets on a calendar week boundary and monthly on the subscription
+// anniversary, so "7d"/"30d" would be wrong. Each row renders its own countdown
+// from resetAt anyway.
+const OPENCODE_GO_WINDOWS = [
+  { key: "rolling", label: "Rolling" },
+  { key: "weekly", label: "Weekly" },
+  { key: "monthly", label: "Monthly" },
+];
+
+// Errors come back as {type:"error", error:{type, message}} — surface the
+// message rather than echoing the raw JSON envelope at the user.
+async function readOpencodeGoError(response) {
+  const text = await response.text().catch(() => "");
+  if (!text) return "";
+  try {
+    const message = JSON.parse(text)?.error?.message;
+    if (typeof message === "string" && message.trim()) return message.trim();
+  } catch {
+    // not JSON — fall through to the raw text
+  }
+  return text.slice(0, 200);
+}
+
+/**
+ * OpenCode Go Usage
+ */
+export async function getOpencodeGoUsage(apiKey, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "OpenCode Go API key not available." };
+  }
+
+  const url = U("opencode-go").url;
+  if (!url) {
+    return { message: "OpenCode Go usage endpoint is not configured." };
+  }
+
+  try {
+    const response = await proxyAwareFetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+    }, proxyOptions);
+
+    if (response.status === 401) {
+      return { message: "OpenCode Go API key invalid or expired." };
+    }
+
+    // 403 is an entitlement error, not an auth error: upstream answers it when
+    // the key authenticates but the account carries no Go subscription. Calling
+    // that an invalid key would send the user off to reissue a working one.
+    if (response.status === 403) {
+      const detail = await readOpencodeGoError(response);
+      return {
+        plan: "OpenCode Go",
+        message: detail || "OpenCode Go subscription required for this account.",
+      };
+    }
+
+    if (!response.ok) {
+      const detail = await readOpencodeGoError(response);
+      return { message: `OpenCode Go usage API error (${response.status})${detail ? `: ${detail}` : ""}` };
+    }
+
+    const data = await response.json().catch(() => null);
+    if (!data || typeof data !== "object") {
+      return { message: "OpenCode Go usage response was not JSON." };
+    }
+
+    const usage = data?.usage || {};
+    const quotas = {};
+
+    for (const { key, label } of OPENCODE_GO_WINDOWS) {
+      const window = usage[key];
+      // Upstream emits all three windows today, but the payload shape has moved
+      // once already. Skip anything unrecognised instead of emitting a 0% bar
+      // that would read as "quota untouched".
+      if (!window || typeof window !== "object") continue;
+      const percent = Number(window.percent);
+      if (!Number.isFinite(percent)) continue;
+      const used = Math.min(100, Math.max(0, percent));
+      quotas[label] = {
+        used,
+        total: 100,
+        remainingPercentage: 100 - used,
+        resetAt: parseResetTime(window.resetsAt),
+        unlimited: false,
+      };
+    }
+
+    if (Object.keys(quotas).length === 0) {
+      return { plan: "OpenCode Go", message: "OpenCode Go connected. No quota windows reported.", quotas: {} };
+    }
+
+    return { plan: "OpenCode Go", quotas };
+  } catch (error) {
+    return { message: `OpenCode Go connected. Unable to fetch usage: ${error.message}` };
+  }
+}
+
+// Command Code credits endpoint (undocumented; same one the official CLI uses
+// for its /usage overlay — extracted from dist/cli.mjs v1.39.3).
+// GET /alpha/billing/credits → { credits:{monthlyCredits,...}, windowLimits:{ fiveHour:{used,cap,resetAt}, weekly:{...} } }
+//   monthlyCredits is REMAINING, not a cap. No cap is exposed upstream, so the
+//   Monthly row is reconstructed from /alpha/usage/summary (totalCost, billing
+//   period): total = remaining + spentThisPeriod. /alpha/billing/subscriptions
+//   supplies the period end for the reset countdown. All rows are emitted as
+//   absolute {used,total,resetAt} — the dashboard computes the percentage.
+const COMMANDCODE_BASE = "https://api.commandcode.ai";
+const COMMANDCODE_HEADERS = {
+  "User-Agent": "cli",
+  "x-cli-environment": "production",
+  "x-command-code-version": "1.39.3",
+};
+
+async function commandCodeGet(path, apiKey, proxyOptions) {
+  const response = await proxyAwareFetch(`${COMMANDCODE_BASE}${path}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      Accept: "application/json",
+      ...COMMANDCODE_HEADERS,
+    },
+  }, proxyOptions);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json().catch(() => null);
+}
+
+function commandCodeWindow(name, w) {
+  if (!w || typeof w !== "object") return null;
+  const total = toFiniteNumber(w.cap, 0);
+  if (total <= 0) return null;
+  return {
+    name,
+    used: toFiniteNumber(w.used, 0),
+    total,
+    // resetAt 0 = window idle → null hides the countdown instead of lying.
+    resetAt: w.resetAt ? parseResetTime(w.resetAt) : null,
+  };
+}
+
+export async function getCommandCodeUsage(apiKey, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "Command Code API key not available." };
+  }
+
+  try {
+    const credits = await commandCodeGet("/alpha/billing/credits", apiKey, proxyOptions);
+    // Best-effort extras: without summary there is no Monthly cap to show.
+    const [summary, subscription] = await Promise.all([
+      commandCodeGet("/alpha/usage/summary", apiKey, proxyOptions).catch(() => null),
+      commandCodeGet("/alpha/billing/subscriptions", apiKey, proxyOptions).catch(() => null),
+    ]);
+
+    const quotas = [];
+    const windows = credits?.windowLimits || {};
+    const fiveHour = commandCodeWindow("5-hour", windows.fiveHour);
+    const weekly = commandCodeWindow("Weekly", windows.weekly);
+    if (fiveHour) quotas.push(fiveHour);
+    if (weekly) quotas.push(weekly);
+
+    const monthlyRemaining = toFiniteNumber(credits?.credits?.monthlyCredits, -1);
+    const spent = toFiniteNumber(summary?.totalCost, 0);
+    if (monthlyRemaining >= 0 && spent > 0) {
+      quotas.push({
+        name: "Monthly",
+        used: spent,
+        total: monthlyRemaining + spent,
+        resetAt: parseResetTime(subscription?.data?.currentPeriodEnd) || null,
+      });
+    }
+
+    if (quotas.length === 0) {
+      return { plan: "Command Code", message: "Command Code connected. No quota data reported.", quotas: {} };
+    }
+
+    return { plan: "Command Code", quotas };
+  } catch (error) {
+    if (error.message === "HTTP 401") {
+      return { message: "Command Code API key invalid or expired." };
+    }
+    return { message: `Command Code connected. Unable to fetch usage: ${error.message}` };
   }
 }

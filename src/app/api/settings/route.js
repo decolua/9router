@@ -17,8 +17,9 @@ const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
 export async function GET() {
   try {
     const settings = await getSettings();
-    const { password, oidcClientSecret, ...safeSettings } = settings;
+    const { password, oidcClientSecret, webshareApiKey, ...safeSettings } = settings;
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
+    safeSettings.hasWebshareApiKey = !!webshareApiKey;
     
     const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
     const enableTranslator = process.env.ENABLE_TRANSLATOR === "true";
@@ -76,6 +77,12 @@ export async function PATCH(request) {
       }
     }
 
+    if (Object.prototype.hasOwnProperty.call(body, "webshareApiKey")) {
+      if (!body.webshareApiKey || !String(body.webshareApiKey).trim()) {
+        delete body.webshareApiKey;
+      }
+    }
+
     const settings = await updateSettings(body);
 
     // Apply outbound proxy settings immediately (no restart required)
@@ -108,8 +115,9 @@ export async function PATCH(request) {
         .catch((error) => console.warn("[AutoPing] settings update failed:", error.message));
     }
 
-    const { password, oidcClientSecret, ...safeSettings } = settings;
+    const { password, oidcClientSecret, webshareApiKey, ...safeSettings } = settings;
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
+    safeSettings.hasWebshareApiKey = !!webshareApiKey;
     return NextResponse.json(safeSettings, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
     console.log("Error updating settings:", error);

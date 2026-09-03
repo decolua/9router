@@ -5,6 +5,7 @@ import {
   getProxyPoolById,
   updateProxyPool,
 } from "@/models";
+import { getSettings, updateSettings } from "@/lib/localDb";
 
 function normalizeProxyPoolUpdate(body = {}) {
   const updates = {};
@@ -112,6 +113,15 @@ export async function DELETE(request, { params }) {
         },
         { status: 409 }
       );
+    }
+
+    if (existing.source === "webshare" && existing.webshareId) {
+      const settings = await getSettings();
+      const deletedIds = Array.isArray(settings.webshareDeletedProxyIds) ? settings.webshareDeletedProxyIds : [];
+      const webshareId = String(existing.webshareId);
+      if (!deletedIds.includes(webshareId)) {
+        await updateSettings({ webshareDeletedProxyIds: [...deletedIds, webshareId] });
+      }
     }
 
     await deleteProxyPool(id);

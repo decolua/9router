@@ -17,6 +17,7 @@ const DEFAULT_SETTINGS = {
   comboStrategy: "fallback",
   comboStickyRoundRobinLimit: 1,
   comboStrategies: {},
+  exposeComboOnly: false,
   capacityAdapter: {
     vision: { enabled: true, roundRobin: false, models: [] },
     pdf: { enabled: false, roundRobin: false, models: [] },
@@ -62,8 +63,14 @@ const DEFAULT_SETTINGS = {
   pxpipeAutoInstall: true,
   pxpipeMinChars: 25000,
   pxpipeTimeoutMs: 15000,
+  webshareApiKey: "",
+  webshareAutoSyncEnabled: false,
+  webshareSyncIntervalMinutes: 60,
+  webshareLastSyncAt: null,
+  webshareLastSyncError: null,
+  webshareLastSyncStats: null,
+  webshareDeletedProxyIds: [],
 };
-
 async function readRaw() {
   const db = await getAdapter();
   const row = db.get(`SELECT data FROM settings WHERE id = 1`);

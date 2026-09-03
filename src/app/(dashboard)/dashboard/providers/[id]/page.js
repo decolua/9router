@@ -60,6 +60,9 @@ export default function ProviderDetailPage() {
   const [modelTestResults, setModelTestResults] = useState({});
   const [modelsTestError, setModelsTestError] = useState("");
   const [testingModelIds, setTestingModelIds] = useState(() => new Set());
+  const [testingAllModels, setTestingAllModels] = useState(false);
+  const [testAllSummary, setTestAllSummary] = useState(null);
+  const [lastTestedModelIds, setLastTestedModelIds] = useState([]);
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
   const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
   const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
@@ -1059,10 +1062,14 @@ export default function ProviderDetailPage() {
       const res = await fetch("/api/models/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}` }),
+        body: JSON.stringify({
+          model: `${providerStorageAlias}/${modelId}`,
+          connectionId: connections.find((connection) => connection.isActive !== false)?.id || null,
+        }),
       });
       const data = await res.json();
-      setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
+      const status = data.ok ? "ok" : Number(data.status) === 429 ? "rate_limited" : Number(data.status) === 504 ? "slow" : "error";
+      setModelTestResults((prev) => ({ ...prev, [modelId]: status }));
       setModelsTestError(data.ok ? "" : (data.error || "Model not reachable"));
     } catch {
       setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
@@ -1070,6 +1077,107 @@ export default function ProviderDetailPage() {
     } finally {
       setTestingModelIds((prev) => { const n = new Set(prev); n.delete(modelId); return n; });
     }
+  };
+
+  const getVisibleTestModelIds = () => {
+    if (isCompatible) {
+      return [...new Set(getProviderCustomModelRows({
+        customModels,
+        modelAliases,
+        providerAlias: providerStorageAlias,
+        type: "llm",
+      }).map((model) => model.id).filter((modelId) => modelId && !disabledModelIds.includes(modelId)))];
+    }
+
+    const allModels = [
+      ...models,
+      ...kiloFreeModels.filter((freeModel) => !models.some((model) => model.id === freeModel.id)),
+    ].filter((model) => {
+      const kind = getModelKind(model);
+      return !kind || kind === "llm";
+    });
+    const disabledSet = new Set(disabledModelIds);
+    const customModelIds = getProviderCustomModelRows({
+      customModels,
+      modelAliases,
+      providerAlias: providerStorageAlias,
+      builtInModels: models,
+      type: "llm",
+    }).map((model) => model.id);
+
+    return [...new Set([
+      ...customModelIds,
+      ...allModels.filter((model) => !disabledSet.has(model.id)).map((model) => model.id),
+    ].filter(Boolean))];
+  };
+
+  const handleTestAllModels = async () => {
+    if (testingAllModels) return;
+    const modelIds = getVisibleTestModelIds();
+    const activeConnection = connections.find((connection) => connection.isActive !== false);
+
+    if (!activeConnection) {
+      setModelsTestError("Add an active connection before testing all models.");
+      return;
+    }
+    if (modelIds.length === 0) {
+      setModelsTestError("No visible models are available to test.");
+      return;
+    }
+
+    setTestingAllModels(true);
+    setModelsTestError("");
+    setTestAllSummary(null);
+    setLastTestedModelIds(modelIds);
+    setModelTestResults({});
+
+    try {
+      const res = await fetch(`/api/providers/${activeConnection.id}/test-models`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modelIds, respectRateLimit: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Model batch test failed");
+
+      const results = data.results || [];
+      const resultMap = Object.fromEntries(results.map((result) => [result.modelId, result.status || (result.ok ? "ok" : "error")]));
+      const untestedIds = modelIds.filter((modelId) => !resultMap[modelId]);
+      untestedIds.forEach((modelId) => { resultMap[modelId] = "not_tested"; });
+      setModelTestResults(resultMap);
+      setTestAllSummary(data.summary || null);
+      if (data.stoppedEarly) {
+        setModelsTestError("Testing stopped early after repeated rate limits. Untested models were left unchanged.");
+      }
+    } catch (error) {
+      setModelsTestError(error.message || "Network error while testing models.");
+    } finally {
+      setTestingAllModels(false);
+    }
+  };
+
+  const handleDisableFailedModels = () => {
+    const failedIds = lastTestedModelIds.filter((modelId) => modelTestResults[modelId] === "error");
+    if (failedIds.length === 0) return;
+
+    setConfirmState({
+      title: "Disable failed models",
+      message: `Disable ${failedIds.length} persistent model failure(s)? Rate-limited and slow models will stay enabled.`,
+      onConfirm: async () => {
+        const res = await fetch("/api/models/disabled", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ providerAlias: providerStorageAlias, ids: failedIds }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setModelsTestError(data.error || "Failed to disable failed models.");
+          return;
+        }
+        await fetchDisabledModels();
+        setConfirmState(null);
+      },
+    });
   };
 
   const renderModelsSection = () => {
@@ -1088,6 +1196,10 @@ export default function ProviderDetailPage() {
           onDeleteCustomModel={(modelId) => handleDeleteCustomModel(modelId, "llm", providerStorageAlias)}
           connections={connections}
           isAnthropic={isAnthropicCompatible}
+          onTestModel={handleTestModel}
+          externalTestResults={modelTestResults}
+          externalTestingModelIds={testingModelIds}
+          disabledModelIds={disabledModelIds}
         />
       );
     }
@@ -1673,6 +1785,27 @@ export default function ProviderDetailPage() {
                 ))}
               </select>
             )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {testAllSummary && (
+              <span className="text-xs text-text-muted">
+                {testAllSummary.working} of {testAllSummary.total} working
+              </span>
+            )}
+            {testAllSummary && lastTestedModelIds.some((modelId) => modelTestResults[modelId] === "error") && (
+              <Button size="sm" variant="danger" icon="block" onClick={handleDisableFailedModels} disabled={testingAllModels}>
+                Disable Failed
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={testingAllModels ? "progress_activity" : "science"}
+              onClick={handleTestAllModels}
+              disabled={testingAllModels || connections.every((connection) => connection.isActive === false)}
+            >
+              {testingAllModels ? "Testing Models..." : "Test All Models"}
+            </Button>
           </div>
           {!isCompatible && (() => {
             const allIds = [

@@ -8,6 +8,16 @@ import { ROLE } from "../translator/schema/roles.js";
 
 const SEP = "\n\n";
 
+function isPromptAlreadyInjected(content, prompt) {
+  if (!content || !prompt) return false;
+  const needle = typeof prompt === 'string' ? prompt.trim() : '';
+  if (!needle) return false;
+
+  // Check if the first 100 chars of the prompt appear in content
+  const signature = needle.slice(0, 100);
+  return content.includes(signature);
+}
+
 export function injectSystemPrompt(body, format, prompt) {
   try {
     if (!body || !prompt) return;

@@ -8,6 +8,7 @@
 
 import { describe, it, expect } from "vitest";
 import { openaiToClaudeRequest } from "../../open-sse/translator/request/openai-to-claude.js";
+import { translateRequest } from "../../open-sse/translator/index.js";
 import { openaiToClaudeResponse } from "../../open-sse/translator/response/openai-to-claude.js";
 
 describe("openaiToClaudeRequest", () => {
@@ -164,6 +165,84 @@ describe("openaiToClaudeRequest", () => {
     it("omits tool_choice entirely when the request has none", () => {
       const result = openaiToClaudeRequest("claude-sonnet-4.5", baseBody, false);
       expect(result.tool_choice).toBeUndefined();
+    });
+  });
+
+  describe("temperature handling", () => {
+    // Claude's Messages API rejects `temperature` when extended thinking is
+    // active. Claude OAuth (claude-code) always sends `interleaved-thinking`
+    // in Anthropic-Beta, which forces server-side thinking on opus-4 and
+    // sonnet-4. The translator can't see headers, so it strips by model name.
+
+    it("strips temperature for claude-opus-4 family (forced thinking)", () => {
+      const body = {
+        messages: [{ role: "user", content: "hi" }],
+        temperature: 0.7
+      };
+
+      const result = openaiToClaudeRequest("claude-opus-4-7", body, false);
+      expect(result.temperature).toBeUndefined();
+    });
+
+    it("strips temperature for claude-sonnet-4 family (forced thinking)", () => {
+      const body = {
+        messages: [{ role: "user", content: "hi" }],
+        temperature: 0.7
+      };
+
+      const result = openaiToClaudeRequest("claude-sonnet-4-5", body, false);
+      expect(result.temperature).toBeUndefined();
+    });
+
+    it("preserves temperature for non-thinking models (haiku, older sonnets)", () => {
+      const body = {
+        messages: [{ role: "user", content: "hi" }],
+        temperature: 0.5
+      };
+
+      const haiku = openaiToClaudeRequest("claude-haiku-5-20251001", body, false);
+      expect(haiku.temperature).toBe(0.5);
+
+      const sonnet35 = openaiToClaudeRequest("claude-3-5-sonnet-20241022", body, false);
+      expect(sonnet35.temperature).toBe(0.5);
+    });
+
+    it("strips temperature when body.thinking is explicitly set", () => {
+      const body = {
+        messages: [{ role: "user", content: "hi" }],
+        temperature: 0.7,
+        thinking: { type: "enabled", budget_tokens: 4096 }
+      };
+
+      // Use a non-thinking-forced model so the model-based strip doesn't fire;
+      // the final guard should catch this case.
+      const result = translateRequest("openai", "claude", "claude-haiku-5-20251001", body, false);
+      expect(result.temperature).toBeUndefined();
+      expect(result.thinking).toBeDefined();
+    });
+
+    it("strips temperature when reasoning_effort triggers thinking", () => {
+      const body = {
+        messages: [{ role: "user", content: "hi" }],
+        temperature: 0.7,
+        reasoning_effort: "medium"
+      };
+
+      const result = translateRequest("openai", "claude", "claude-haiku-5-20251001", body, false);
+      expect(result.temperature).toBeUndefined();
+      expect(result.thinking).toEqual({ type: "enabled", budget_tokens: 8192 });
+    });
+
+    it("preserves temperature when reasoning_effort=none on non-thinking model", () => {
+      const body = {
+        messages: [{ role: "user", content: "hi" }],
+        temperature: 0.7,
+        reasoning_effort: "none"
+      };
+
+      const result = openaiToClaudeRequest("claude-haiku-5-20251001", body, false);
+      expect(result.temperature).toBe(0.7);
+      expect(result.thinking).toBeUndefined();
     });
   });
 });

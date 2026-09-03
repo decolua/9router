@@ -7,6 +7,7 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { cleanJSONSchemaForAntigravity } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
+import { sanitizeAntigravitySystemPrompt } from "../translator/request/openai-to-gemini.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
 function sanitizeFunctionName(name) {
@@ -246,11 +247,16 @@ export class AntigravityExecutor extends BaseExecutor {
     const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
     stripBlacklisted(requestWithoutTools);
     
-    // Rewrite competing-client branding in system prompts (e.g. Zed's Claude prompt,
-    // OpenCode naming) so Antigravity doesn't flag the request with a 429 Quota Exhausted.
+    // Rewrite competing-client branding (59 rewrites table) + Hermes identity
+    // sanitize (bizim #3359 yamasi) so Antigravity doesn't flag the request.
+    const oldText = "You are a Claude agent, built on Anthropic's Claude Agent SDK.";
     if (requestWithoutTools.systemInstruction?.parts) {
       for (const part of requestWithoutTools.systemInstruction.parts) {
         if (typeof part.text !== "string") continue;
+        if (part.text.includes(oldText)) {
+          part.text = part.text.split(oldText).join("");
+        }
+        part.text = sanitizeAntigravitySystemPrompt(part.text);
         for (const { from, to } of ANTIGRAVITY_PROMPT_REWRITES) {
           part.text = part.text.replaceAll(from, to);
         }

@@ -119,6 +119,14 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     applyThinking(targetFormat, model, result, provider, thinkingIntent);
   }
 
+  // Claude rejects `temperature` when extended thinking is active (ref #1264).
+  // applyThinking runs after the request translator, so the final temperature
+  // guard must live here, where `result.thinking` is already resolved.
+  if (targetFormat === FORMATS.CLAUDE && result.thinking
+      && result.thinking.type !== "disabled" && result.temperature !== undefined) {
+    delete result.temperature;
+  }
+
   // Always normalize to clean OpenAI format when target is OpenAI
   // This handles hybrid requests (e.g., OpenAI messages + Claude tools)
   if (targetFormat === FORMATS.OPENAI) {

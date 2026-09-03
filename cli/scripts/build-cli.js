@@ -12,6 +12,14 @@ const buildHomeDir = path.join(cliDir, ".build-home");
 const buildDistDirName = ".next-cli-build";
 const buildDistDir = path.join(appDir, buildDistDirName);
 
+function shouldUseWorkspaceTracingRoot() {
+  const appNodeModules = path.join(appDir, "node_modules");
+  const rootNodeModules = path.join(rootDir, "node_modules");
+
+  // Only widen tracing when dependencies are actually hoisted above appDir.
+  return !fs.existsSync(appNodeModules) && fs.existsSync(rootNodeModules);
+}
+
 // Exclude patterns for files/folders we don't want to copy
 const EXCLUDE_PATTERNS = [
   "@img",           // Sharp image processing (not needed with unoptimized images)
@@ -181,7 +189,7 @@ function buildCliPackage() {
         APPDATA: path.join(buildHomeDir, "AppData", "Roaming"),
         LOCALAPPDATA: path.join(buildHomeDir, "AppData", "Local"),
         NEXT_DIST_DIR: buildDistDirName,
-        NEXT_TRACING_ROOT_MODE: "workspace",
+        NEXT_TRACING_ROOT_MODE: shouldUseWorkspaceTracingRoot() ? "workspace" : "project",
       }
     });
     console.log("✅ Next.js build completed\n");

@@ -1,0 +1,143 @@
+import { describe, it, expect } from "vitest";
+import {
+  sanitizeAntigravitySystemPrompt,
+  openaiToAntigravityRequest,
+  openaiToGeminiRequest,
+  openaiToGeminiCLIRequest,
+} from "../../open-sse/translator/request/openai-to-gemini.js";
+import { AntigravityExecutor } from "../../open-sse/executors/antigravity.js";
+
+describe("Hermes Cloaking / System Prompt Sanitization", () => {
+  const HERMES_PROMPT = "You are Hermes Agent, an intelligent AI assistant created by Nous Research. You assist users with coding and tools.";
+  const SANITIZED_HERMES_PROMPT = "You are Hermes Agent. You are an intelligent AI assistant created by Nous Research. You assist users with coding and tools.";
+
+  describe("sanitizeAntigravitySystemPrompt", () => {
+    it("replaces exact Hermes Agent opening sentence", () => {
+      expect(sanitizeAntigravitySystemPrompt(HERMES_PROMPT)).toBe(SANITIZED_HERMES_PROMPT);
+    });
+
+    it("handles variations in whitespace and casing", () => {
+      const varied = "you are hermes agent,   an intelligent ai assistant created by nous research. Extra instructions.";
+      const result = sanitizeAntigravitySystemPrompt(varied);
+      expect(result).toBe("You are Hermes Agent. You are an intelligent AI assistant created by Nous Research. Extra instructions.");
+    });
+
+    it("leaves non-matching system prompts untouched", () => {
+      const normalPrompt = "You are an expert TypeScript developer.";
+      expect(sanitizeAntigravitySystemPrompt(normalPrompt)).toBe(normalPrompt);
+    });
+
+    it("handles null, undefined, and non-string values safely", () => {
+      expect(sanitizeAntigravitySystemPrompt(null)).toBe(null);
+      expect(sanitizeAntigravitySystemPrompt(undefined)).toBe(undefined);
+      expect(sanitizeAntigravitySystemPrompt(123)).toBe(123);
+    });
+  });
+
+  describe("openaiToAntigravityRequest", () => {
+    it("sanitizes Hermes system prompt in Gemini-backed Antigravity envelope", () => {
+      const req = openaiToAntigravityRequest("gemini-3.7-flash-high", {
+        messages: [
+          { role: "system", content: HERMES_PROMPT },
+          { role: "user", content: "hello" },
+        ],
+      }, false, { projectId: "test-proj", connectionId: "test-conn" });
+
+      expect(req.request.systemInstruction?.parts?.[0]?.text).toBe(SANITIZED_HERMES_PROMPT);
+    });
+
+    it("sanitizes Hermes system prompt in Claude-backed Antigravity envelope", () => {
+      const req = openaiToAntigravityRequest("claude-opus-4-6-thinking", {
+        messages: [
+          { role: "system", content: HERMES_PROMPT },
+          { role: "user", content: "hello" },
+        ],
+      }, false, { projectId: "test-proj", connectionId: "test-conn" });
+
+      expect(req.request.systemInstruction?.parts?.[0]?.text).toBe(SANITIZED_HERMES_PROMPT);
+    });
+  });
+
+  describe("AntigravityExecutor.transformRequest", () => {
+    it("sanitizes Hermes system prompt in transformRequest", () => {
+      const executor = new AntigravityExecutor();
+      const transformed = executor.transformRequest("gemini-3.7-flash-high", {
+        request: {
+          contents: [{ role: "user", parts: [{ text: "hi" }] }],
+          systemInstruction: {
+            parts: [{ text: HERMES_PROMPT }]
+          }
+        }
+      }, false, { projectId: "test-proj", connectionId: "test-conn" });
+
+      expect(transformed.request.systemInstruction.parts[0].text).toBe(SANITIZED_HERMES_PROMPT);
+    });
+
+    it("strips Zed Claude agent system prompt while also sanitizing", () => {
+      const executor = new AntigravityExecutor();
+      const zedPrompt = "You are a Claude agent, built on Anthropic's Claude Agent SDK. " + HERMES_PROMPT;
+      const transformed = executor.transformRequest("gemini-3.7-flash-high", {
+        request: {
+          contents: [{ role: "user", parts: [{ text: "hi" }] }],
+          systemInstruction: {
+            parts: [{ text: zedPrompt }]
+          }
+        }
+      }, false, { projectId: "test-proj", connectionId: "test-conn" });
+
+      expect(transformed.request.systemInstruction.parts[0].text).toBe(" " + SANITIZED_HERMES_PROMPT);
+    });
+  });
+
+  describe("Anthropic API Surface -> Antigravity", () => {
+    it("sanitizes system prompt when client connects via Anthropic format (/v1/messages)", async () => {
+      const { translateRequest } = await import("../../open-sse/translator/index.js");
+      const { FORMATS } = await import("../../open-sse/translator/formats.js");
+      await import("../translator/registerAll.js");
+
+      const claudeRequest = {
+        model: "ag/gemini-3.7-flash-high",
+        system: HERMES_PROMPT,
+        messages: [{ role: "user", content: "hello" }],
+      };
+
+      const out = translateRequest(
+        FORMATS.CLAUDE,
+        FORMATS.ANTIGRAVITY,
+        "gemini-3.7-flash-high",
+        claudeRequest,
+        true,
+        { projectId: "test-proj", connectionId: "test-conn" },
+        "antigravity"
+      );
+
+      expect(out.request.systemInstruction?.parts?.[0]?.text).toBe(SANITIZED_HERMES_PROMPT);
+    });
+
+    it("sanitizes system array blocks when client connects via Anthropic format", async () => {
+      const { translateRequest } = await import("../../open-sse/translator/index.js");
+      const { FORMATS } = await import("../../open-sse/translator/formats.js");
+      await import("../translator/registerAll.js");
+
+      const claudeRequest = {
+        model: "ag/gemini-3.7-flash-high",
+        system: [{ type: "text", text: HERMES_PROMPT }],
+        messages: [{ role: "user", content: "hello" }],
+      };
+
+      const out = translateRequest(
+        FORMATS.CLAUDE,
+        FORMATS.ANTIGRAVITY,
+        "gemini-3.7-flash-high",
+        claudeRequest,
+        true,
+        { projectId: "test-proj", connectionId: "test-conn" },
+        "antigravity"
+      );
+
+      expect(out.request.systemInstruction?.parts?.[0]?.text).toBe(SANITIZED_HERMES_PROMPT);
+    });
+  });
+});
+
+

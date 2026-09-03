@@ -741,8 +741,6 @@ export default function TokenSaverClient() {
             />
           </div>
         </div>
-        {/* PXPIPE hidden from UI — experimental, not exposed to users yet */}
-        {false && (
         <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3 flex-wrap">
@@ -786,7 +784,6 @@ export default function TokenSaverClient() {
             onChange={() => handlePxpipeEnabled(!pxpipeEnabled)}
           />
         </div>
-        )}
       </Card>
 
       <Modal
@@ -911,7 +908,7 @@ export default function TokenSaverClient() {
       </Modal>
 
       <Modal
-        isOpen={false}
+        isOpen={showPxpipeModal}
         title={pxpipeStatus.installed ? "PXPIPE" : "Setup PXPIPE"}
         onClose={() => setShowPxpipeModal(false)}
       >

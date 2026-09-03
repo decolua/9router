@@ -3,6 +3,7 @@ import { PROVIDERS } from "../config/providers.js";
 import {
   KIRO_CODEWHISPERER_TARGET,
   KIRO_ENDPOINT_FALLBACK_STATUSES,
+  resolveKiroDataPlaneUrl,
   resolveKiroModel,
 } from "../config/kiroConstants.js";
 import { v4 as uuidv4 } from "uuid";
@@ -278,8 +279,17 @@ export class KiroExecutor extends BaseExecutor {
    * tokens are what that gateway accepts.
    */
   getOrderedBaseUrls(credentials) {
-    const baseUrls = this.getBaseUrls();
+    // IAM Identity Center accounts can be homed outside us-east-1. Their token is
+    // rejected by the hardcoded us-east-1 registry baseUrls (403 "bearer token
+    // invalid"), so route to the account's regional Amazon Q endpoint. us-east-1
+    // (Builder ID / social / unset) keeps the registry baseUrls + 429 rotation.
     const authMethod = credentials?.providerSpecificData?.authMethod;
+    // No explicit auth surface: honor a non-default region directly (ref 2009).
+    if (!authMethod) {
+      const regionalDirect = resolveKiroDataPlaneUrl(credentials?.providerSpecificData?.region);
+      if (regionalDirect) return [regionalDirect];
+    }
+    const baseUrls = this.getBaseUrls();
     // IAM Identity Center (idc) tokens are AWS SSO access tokens — the same
     // family as external_idp/api_key. The kiro.dev gateway rejects them with
     // 403 "bearer token invalid", so they must hit the CodeWhisperer

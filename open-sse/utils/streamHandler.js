@@ -1,5 +1,5 @@
 // Stream handler with disconnect detection - shared for all providers
-import { STREAM_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { STREAM_STALL_TIMEOUT_MS, STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 // Get HH:MM:SS timestamp
@@ -189,13 +189,32 @@ export function createDisconnectAwareStream(transformStream, streamController, o
  * @param {TransformStream} transformStream - Transform stream for SSE
  * @param {object} streamController - Stream controller from createStreamController
  */
-export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS) {
+export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, ttftTimeoutMs = STREAM_FIRST_CHUNK_TIMEOUT_MS) {
   let stallTimer = null;
+  let firstChunkTimer = null;
   let chunkCount = 0;
   let totalBytes = 0;
   let lastChunkAt = Date.now();
   const t0 = Date.now();
   const tag = "STREAM";
+
+  // TTFT watchdog: if no upstream bytes arrive within the TTFT window, abort.
+  // Fires only once; cleared by the first upstream byte (or any termination).
+  // Separate from the inter-chunk stall watchdog so slow-but-healthy streams
+  // (e.g. reasoning models with long prefill) are never falsely aborted.
+  const clearFirstChunk = () => {
+    if (firstChunkTimer) { clearTimeout(firstChunkTimer); firstChunkTimer = null; }
+  };
+  const armFirstChunk = () => {
+    clearFirstChunk();
+    firstChunkTimer = setTimeout(() => {
+      firstChunkTimer = null;
+      dbg(tag, `TTFT TIMEOUT ${ttftTimeoutMs}ms | no bytes received`);
+      streamController.handleError?.(new Error(`stream ttft timeout (${ttftTimeoutMs}ms)`));
+      streamController.abort?.();
+    }, ttftTimeoutMs);
+  };
+
   const clearStall = () => {
     if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
   };
@@ -209,21 +228,22 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     }, stallTimeoutMs);
   };
 
-  // Wrap controller so every termination path clears the stall timer.
-  // Without this, abort/cancel/downstream-error paths leave the timer armed
+  // Wrap controller so every termination path clears both timers.
+  // Without this, abort/cancel/downstream-error paths leave the timers armed
   // and a stale abort could fire after the request has already ended.
   const wrappedController = {
     signal: streamController.signal,
     startTime: streamController.startTime,
     isConnected: () => streamController.isConnected(),
-    handleComplete: () => { dbg(tag, `complete | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleComplete(); },
-    handleError: (e) => { dbg(tag, `error: ${e?.message} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleError(e); },
-    handleDisconnect: (r) => { dbg(tag, `disconnect: ${r} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleDisconnect(r); },
-    abort: () => { clearStall(); streamController.abort(); }
+    handleComplete: () => { dbg(tag, `complete | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearFirstChunk(); clearStall(); streamController.handleComplete(); },
+    handleError: (e) => { dbg(tag, `error: ${e?.message} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearFirstChunk(); clearStall(); streamController.handleError(e); },
+    handleDisconnect: (r) => { dbg(tag, `disconnect: ${r} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearFirstChunk(); clearStall(); streamController.handleDisconnect(r); },
+    abort: () => { clearFirstChunk(); clearStall(); streamController.abort(); }
   };
 
+  armFirstChunk();
   armStall();
-  dbg(tag, `pipe start | stallTimeout=${stallTimeoutMs}ms`);
+  dbg(tag, `pipe start | ttftTimeout=${ttftTimeoutMs}ms | stallTimeout=${stallTimeoutMs}ms`);
 
   const upstreamTap = new TransformStream({
     transform(chunk, controller) {
@@ -236,15 +256,51 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
       if (isDebugEnabled && (chunkCount <= 5 || chunkCount % 20 === 0 || gap > 5000)) {
         dbg(tag, `chunk #${chunkCount} | size=${sz}B | gap=${gap}ms | total=${totalBytes}B`);
       }
+      clearFirstChunk(); // first byte received — TTFT watchdog satisfied
       armStall();
       controller.enqueue(chunk);
     },
     flush() { dbg(tag, `upstream EOF | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); }
   });
 
+  // A stream that delivers ZERO bytes to the client is never a legitimate
+  // completion — even an empty answer emits a role delta, a finish_reason and
+  // [DONE]. Without this guard that case reaches the caller as HTTP 200 with an
+  // empty body: no content, no error, nothing to branch on. Anything checking
+  // status codes reads it as success.
+  //
+  // Seen in production on 2026-08-05: a Claude account whose OAuth had expired
+  // stayed isActive, requests routed to it, and callers got 200/0 bytes while
+  // observability recorded "success" with "[Empty streaming response]".
+  //
+  // The status line is already committed by the time we know — headers go out
+  // before the first chunk — so the honest remedy is an in-band error frame. It
+  // fires ONLY on a completely empty stream, so a normal response never sees it.
+  let outBytes = 0;
+  const emptyStreamGuard = new TransformStream({
+    transform(chunk, controller) {
+      outBytes += chunk?.byteLength || chunk?.length || 0;
+      controller.enqueue(chunk);
+    },
+    flush(controller) {
+      if (outBytes > 0) return;
+      dbg(tag, `EMPTY STREAM — upstream chunks=${chunkCount} bytes=${totalBytes}; emitting error frame`);
+      const payload = JSON.stringify({
+        error: {
+          message: "Upstream returned an empty stream — no content was produced. " +
+                   "The provider connection may be unauthenticated or unavailable.",
+          type: "upstream_empty_response",
+          code: "empty_stream"
+        }
+      });
+      controller.enqueue(new TextEncoder().encode(`data: ${payload}\n\ndata: [DONE]\n\n`));
+    }
+  });
+
   const transformedBody = providerResponse.body
     .pipeThrough(upstreamTap)
-    .pipeThrough(transformStream);
+    .pipeThrough(transformStream)
+    .pipeThrough(emptyStreamGuard);
 
   return createDisconnectAwareStream(
     { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },

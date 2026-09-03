@@ -176,6 +176,12 @@ export function canonicalizeUsage(usage) {
   let prompt = num(usage.prompt_tokens ?? usage.input_tokens);
   let cached;
 
+  // buildUsage() (openai-responses streaming) writes cache-read only into the
+  // nested prompt_tokens_details.cached_tokens — treat that as top-level
+  // cached_tokens so streaming usage records cache hits instead of billing
+  // them at full input rate (issue #2873).
+  const nestedCached = num(usage.prompt_tokens_details?.cached_tokens);
+
   // Claude path: prompt excludes cache; cache_read_input_tokens and/or
   // cache_creation_input_tokens are separate. A cache-miss "first write" only
   // carries cache_creation_input_tokens (no cache_read_input_tokens yet), so
@@ -190,10 +196,9 @@ export function canonicalizeUsage(usage) {
     prompt = prompt + cached + cacheCreation;
   } else {
     // OpenAI/Gemini path (or already-canonical input): prompt already includes cached_tokens.
-    // Mirror the cacheCreation fallback above: buildUsage() only ever emits the
-    // nested prompt_tokens_details.cached_tokens shape, so without this the
-    // cache-read count is silently dropped on every buildUsage()-derived usage.
-    cached = num(usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens);
+    // Preserve nested cached_tokens (59 canonicalizeUsage fix) AND the mirror of
+    // the cacheCreation fallback (buildUsage() emits only the nested shape).
+    cached = num(usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens) || nestedCached;
   }
 
   const result = {
@@ -206,6 +211,36 @@ export function canonicalizeUsage(usage) {
     cache_creation_input_tokens: cacheCreation,
   };
   if (reasoning > 0) result.reasoning_tokens = reasoning;
+  return result;
+}
+
+/**
+ * Convert Claude's cache-exclusive input accounting to OpenAI's convention,
+ * where prompt_tokens includes cached and newly cached input tokens.
+ */
+export function claudeUsageToOpenAI(usage) {
+  const canonical = canonicalizeUsage({
+    prompt_tokens: usage?.input_tokens,
+    completion_tokens: usage?.output_tokens,
+    cache_read_input_tokens: usage?.cache_read_input_tokens,
+    cache_creation_input_tokens: usage?.cache_creation_input_tokens,
+  });
+  if (!canonical) return null;
+
+  const result = {
+    prompt_tokens: canonical.prompt_tokens,
+    completion_tokens: canonical.completion_tokens,
+    total_tokens: canonical.total_tokens,
+  };
+  if (canonical.cached_tokens > 0 || canonical.cache_creation_input_tokens > 0) {
+    result.prompt_tokens_details = {};
+    if (canonical.cached_tokens > 0) {
+      result.prompt_tokens_details.cached_tokens = canonical.cached_tokens;
+    }
+    if (canonical.cache_creation_input_tokens > 0) {
+      result.prompt_tokens_details.cache_creation_tokens = canonical.cache_creation_input_tokens;
+    }
+  }
   return result;
 }
 
@@ -291,9 +326,14 @@ export function extractUsage(chunk) {
   // Antigravity wraps usageMetadata inside response: { response: { usageMetadata: {...} } }
   const usageMeta = chunk.usageMetadata || chunk.response?.usageMetadata;
   if (usageMeta && typeof usageMeta === "object") {
+    // Gemini keeps thoughtsTokenCount OUTSIDE candidatesTokenCount. Fold it in so
+    // completion_tokens stays reasoning-inclusive like every other provider — that
+    // invariant is what lets calculateCostFromTokens avoid double-charging. This is
+    // what toOpenAIUsage's gemini extractor already does.
+    const thoughts = usageMeta.thoughtsTokenCount || 0;
     return normalizeUsage({
       prompt_tokens: usageMeta.promptTokenCount || 0,
-      completion_tokens: usageMeta.candidatesTokenCount || 0,
+      completion_tokens: (usageMeta.candidatesTokenCount || 0) + thoughts,
       total_tokens: usageMeta.totalTokenCount,
       cached_tokens: usageMeta.cachedContentTokenCount,
       reasoning_tokens: usageMeta.thoughtsTokenCount

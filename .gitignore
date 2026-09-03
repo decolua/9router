@@ -23,9 +23,14 @@ product
 /build
 .idea/
 
+# local build scratch (never commit)
+/app.new/
+# internal planning scratch (never commit)
+/apply_plan.json
 # misc
 .DS_Store
 *.pem
+.sisyphus/
 
 # debug
 npm-debug.log*

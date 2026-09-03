@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createProviderNode, getProviderNodes } from "@/models";
 import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX, CUSTOM_EMBEDDING_PREFIX } from "@/shared/constants/providers";
 import { generateId } from "@/shared/utils";
+import { canonicalEndpoint, openAIEndpoints } from "./endpointUrls.js";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +17,9 @@ const ANTHROPIC_COMPATIBLE_DEFAULTS = {
 const CUSTOM_EMBEDDING_DEFAULTS = {
   baseUrl: "https://api.openai.com/v1",
 };
+
+const BEARER_AUTH = { combined: true, header: "Authorization", scheme: "bearer" };
+const ANTHROPIC_AUTH = { combined: true, header: "x-api-key", scheme: "raw", anthropicVersion: true };
 
 // GET /api/provider-nodes - List all provider nodes
 export async function GET() {
@@ -32,7 +36,7 @@ export async function GET() {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { name, prefix, apiType, baseUrl, type } = body;
+    const { name, prefix, apiType, baseUrl, type, openaiUrl, anthropicUrl, supportsResponses } = body;
 
     if (!name?.trim()) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -44,6 +48,31 @@ export async function POST(request) {
 
     // Determine type
     const nodeType = type || "openai-compatible";
+
+    if (nodeType === "multi-compatible") {
+      const openai = openAIEndpoints(openaiUrl);
+      const messagesEndpoint = canonicalEndpoint(anthropicUrl, "/messages");
+
+      if (!openai.chatUrl || !messagesEndpoint) {
+        return NextResponse.json({ error: "OpenAI and Anthropic endpoint URLs are required" }, { status: 400 });
+      }
+
+      const transports = [
+        { format: "openai", baseUrl: openai.chatUrl, auth: BEARER_AUTH },
+        { format: "claude", baseUrl: messagesEndpoint, auth: ANTHROPIC_AUTH },
+        ...(supportsResponses ? [{ format: "openai-responses", baseUrl: openai.responsesUrl, auth: BEARER_AUTH }] : []),
+      ];
+      const node = await createProviderNode({
+        id: `${OPENAI_COMPATIBLE_PREFIX}multi-${generateId()}`,
+        type: "multi-compatible",
+        prefix: prefix.trim(),
+        apiType: "chat",
+        baseUrl: openai.baseUrl,
+        transports,
+        name: name.trim(),
+      });
+      return NextResponse.json({ node }, { status: 201 });
+    }
 
     if (nodeType === "openai-compatible") {
       if (!apiType || !["chat", "responses"].includes(apiType)) {

@@ -21,6 +21,9 @@ export default {
   transport: {
     baseUrl: "https://opencode.ai/zen/go/v1/chat/completions",
     headers: {},
+    usage: {
+      url: "https://opencode.ai/zen/go/v1/usage",
+    },
   },
   // Multi-endpoint: pick the transport matching the client sourceFormat to skip
   // translation. Guarded per-model by `supportedFormats` (see chatCore) because
@@ -36,9 +39,11 @@ export default {
     { id: "glm-5.1", name: "GLM 5.1", supportedFormats: ["openai"] },
     { id: "kimi-k2.7-code", name: "Kimi K2.7 Code", supportedFormats: ["openai"] },
     { id: "kimi-k2.6", name: "Kimi K2.6", supportedFormats: ["openai"] },
-    { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", supportedFormats: ["openai", "claude", "openai-responses"] },
-    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", supportedFormats: ["openai", "claude", "openai-responses"] },
-    { id: "deepseek-v4-flash-vision-exp", name: "DeepSeek V4 Flash Vision (Exp)", supportedFormats: ["openai", "claude", "openai-responses"] },
+    // Official docs expose DeepSeek through /chat/completions only; the
+    // /messages shim rejects real Claude Code parallel tool_use history.
+    { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", supportedFormats: ["openai"] },
+    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", supportedFormats: ["openai"] },
+    { id: "deepseek-v4-flash-vision-exp", name: "DeepSeek V4 Flash Vision (Exp)", supportedFormats: ["openai"] },
     { id: "mimo-v2.5", name: "MiMo V2.5", supportedFormats: ["openai"] },
     { id: "mimo-v2.5-pro", name: "MiMo V2.5 Pro", supportedFormats: ["openai"] },
     { id: "minimax-m3", name: "MiniMax M3", supportedFormats: ["openai", "claude"] },
@@ -48,4 +53,8 @@ export default {
     { id: "qwen3.7-plus", name: "Qwen 3.7 Plus", supportedFormats: ["openai", "claude"] },
     { id: "qwen3.6-plus", name: "Qwen 3.6 Plus", supportedFormats: ["openai", "claude"] },
   ],
+  features: {
+    usage: true,
+    usageApikey: true,
+  },
 };
