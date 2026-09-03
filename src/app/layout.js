@@ -7,6 +7,7 @@ import "@/lib/network/initOutboundProxy"; // Auto-initialize outbound proxy env
 import "@/shared/services/bootstrap"; // Auto-run initializeApp (watchdog, auto-resume tunnel)
 import { initConsoleLogCapture } from "@/lib/consoleLogBuffer";
 import { RuntimeI18nProvider } from "@/i18n/RuntimeI18nProvider";
+import { getSettings } from "@/lib/db/index.js";
 
 // Hook console immediately at module load time (server-side only, runs once)
 initConsoleLogCapture();
@@ -28,7 +29,8 @@ export const viewport = {
   themeColor: "#0a0a0a",
 };
 
-export default function RootLayout({ children }) {
+export default async function RootLayout({ children }) {
+  const settings = await getSettings();
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -52,7 +54,7 @@ export default function RootLayout({ children }) {
             {children}
           </RuntimeI18nProvider>
         </ThemeProvider>
-        <GoogleAnalytics gaId={"G-LC959F603F"} />
+        {settings.analyticsEnabled === true && <GoogleAnalytics gaId={"G-LC959F603F"} />}
       </body>
     </html>
   );
