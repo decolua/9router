@@ -6,6 +6,7 @@ import { toOpenAIUsage } from "../concerns/usage.js";
 import { reasoningDelta } from "../concerns/reasoning.js";
 import { encodeDataUri } from "../concerns/image.js";
 import { toOpenAIFinish } from "../concerns/finishReason.js";
+import { buildToolCallId } from "../concerns/thoughtSignature.js";
 
 // Build chunk meta for current gemini state
 function chunkMeta(state) {
@@ -15,12 +16,17 @@ function chunkMeta(state) {
 // Build a tool_call chunk from a gemini functionCall part (shared by sig/non-sig branches)
 function emitFunctionCall(functionCall, state) {
   const rawName = functionCall.name;
+  const functionCallWithSignature = {
+    ...functionCall,
+    thoughtSignature: functionCall.thoughtSignature || state.pendingThoughtSignature || "",
+  };
   // Restore original tool name from mapping (AG cloaking)
   const fcName = state.toolNameMap?.get(rawName) || rawName;
   const fcArgs = functionCall.args || {};
   const toolCallIndex = state.functionIndex++;
+  const thoughtSignature = functionCallWithSignature.thoughtSignature;
   const toolCall = {
-    id: `${fcName}-${Date.now()}-${toolCallIndex}`,
+    id: buildToolCallId(fcName, toolCallIndex, thoughtSignature),
     index: toolCallIndex,
     type: OPENAI_BLOCK.FUNCTION,
     function: { name: fcName, arguments: JSON.stringify(fcArgs) },
@@ -73,7 +79,8 @@ export function geminiToOpenAIResponse(chunk, state) {
         }
         
         if (hasFunctionCall) {
-          results.push(emitFunctionCall(part.functionCall, state));
+          results.push(emitFunctionCall({ ...part.functionCall, thoughtSignature: hasThoughtSig }, state));
+          state.pendingThoughtSignature = null;
         }
         continue;
       }
@@ -92,7 +99,8 @@ export function geminiToOpenAIResponse(chunk, state) {
 
       // Function call
       if (part.functionCall) {
-        results.push(emitFunctionCall(part.functionCall, state));
+        results.push(emitFunctionCall({ ...part.functionCall, thoughtSignature: hasThoughtSig }, state));
+        state.pendingThoughtSignature = null;
       }
 
       // Inline data (images)
