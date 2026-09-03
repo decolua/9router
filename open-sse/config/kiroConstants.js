@@ -46,6 +46,24 @@ export function resolveDefaultProfileArn(authMethod) {
 
 export const KIRO_THINKING_BUDGET_DEFAULT = 16000;
 
+// Generic thinking/reasoning members the Kiro request translators deliberately
+// never emit: generateAssistantResponse has no place for any of them and answers
+// a request carrying one with 400 {"reason":"REQUEST_BODY_INVALID"} (#3641,
+// #2716). Thinking intent reaches Kiro two other ways — the <thinking_mode>
+// system prefix on the session-start message, and additionalModelRequestFields
+// (nested, so untouched by this list). Mirrors the key set thinkingUnified's
+// stripAll() clears, which is what the generic normalizer writes.
+export const KIRO_UNSUPPORTED_THINKING_FIELDS = Object.freeze([
+  "thinking",
+  "reasoning",
+  "reasoning_effort",
+  "thinkingConfig",
+  "enable_thinking",
+  "thinking_budget",
+  "output_config",
+  "think",
+]);
+
 /**
  * Resolve a Kiro model after consuming the generic model(level) suffix.
  * The suffix is a 9router request override, not part of Kiro's upstream model id.
