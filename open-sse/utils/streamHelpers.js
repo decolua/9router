@@ -33,6 +33,18 @@ export function parseSSELine(line, format = null) {
   }
 }
 
+export function decloakClaudeToolUseEvent(parsed, toolNameMap) {
+  if (!toolNameMap || toolNameMap.size === 0 || parsed?.type !== "content_block_start" || parsed?.content_block?.type !== "tool_use") {
+    return false;
+  }
+
+  const original = toolNameMap.get(parsed.content_block.name);
+  if (!original) return false;
+
+  parsed.content_block = { ...parsed.content_block, name: original };
+  return true;
+}
+
 // Check if chunk has valuable content (not empty)
 export function hasValuableContent(chunk, format) {
   // OpenAI format
