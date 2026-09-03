@@ -271,6 +271,7 @@ export const PROVIDER_PRICING = {
   // reasoning tokens bill at the output rate. Contributor tier is heavily
   // discounted ($0.10 / $0.002 / $0.20). Sourced from Meta + OpenRouter pricing.
   meta: {
+    "muse-spark-1.3": { input: 1.25, output: 4.25, cached: 0.15, reasoning: 4.25 },
     "muse-spark-1.2": { input: 1.25, output: 4.25, cached: 0.15, reasoning: 4.25 },
     "muse-spark-1.1": { input: 1.25, output: 4.25, cached: 0.15, reasoning: 4.25 },
     "muse-spark-1.2-contributor": { input: 0.10, output: 0.20, cached: 0.002, reasoning: 0.20 },

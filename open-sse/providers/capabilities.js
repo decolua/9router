@@ -162,6 +162,7 @@ export const PROVIDER_CAPABILITIES = {
   },
   "meta": {
     "muse-spark-1.2-contributor": META_SPARK_CAPS,
+    "muse-spark-1.3": META_SPARK_CAPS,
     "muse-spark-1.2": META_SPARK_CAPS,
     "muse-spark-1.1": META_SPARK_CAPS,
   },

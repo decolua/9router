@@ -29,6 +29,7 @@ export default {
   },
   models: [
     { id: "muse-spark-1.2-contributor", name: "Muse Spark 1.2 Contributor" },
+    { id: "muse-spark-1.3", name: "Muse Spark 1.3" },
     { id: "muse-spark-1.2", name: "Muse Spark 1.2" },
     { id: "muse-spark-1.1", name: "Muse Spark 1.1" },
   ],
