@@ -3,7 +3,7 @@ import "open-sse/index.js";
 
 import { getSettings, getProviderConnections, updateProviderConnection } from "@/lib/localDb";
 import { getClaudeUsage } from "open-sse/services/usage/claude.js";
-import { getCodexUsage } from "open-sse/services/usage/codex.js";
+import { getCodexUsage, getCodexModels } from "open-sse/services/usage/codex.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { CLAUDE_CLI_SPOOF_HEADERS } from "open-sse/providers/shared.js";
 import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
@@ -21,6 +21,7 @@ const providerHandlers = {
   },
   codex: {
     getUsage: getCodexUsage,
+    getModels: getCodexModels,
     sendPing: sendCodexPing,
   },
 };
@@ -147,10 +148,10 @@ async function drainResponseBody(response) {
   }
 }
 
-async function sendCodexPing(connection, providerConfig, proxyOptions, deps) {
+async function sendCodexPing(connection, providerConfig, model, proxyOptions, deps) {
   const executor = deps.getExecutor("codex");
   const { response } = await executor.execute({
-    model: providerConfig.pingModel,
+    model,
     stream: true,
     credentials: {
       accessToken: connection.accessToken,
@@ -160,7 +161,7 @@ async function sendCodexPing(connection, providerConfig, proxyOptions, deps) {
     proxyOptions,
     log: console,
     body: {
-      model: providerConfig.pingModel,
+      model,
       input: buildCodexPingInput(providerConfig.pingText),
       instructions: providerConfig.pingInstructions,
       reasoning: providerConfig.pingReasoningEffort
@@ -228,7 +229,18 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   if (wasPingedRecently(connection, providerConfig.minPingIntervalMs, now)) return;
   if (lastPingedResetKey === resetKey) return;
 
-  const ok = await handler.sendPing(connection, providerConfig, proxyOptions, deps);
+  const model = provider === "codex"
+    ? (await handler.getModels(connection.accessToken, proxyOptions, connection.providerSpecificData))[0]?.slug
+    : providerConfig.pingModel;
+  if (!model) {
+    state.failureCache[key] = Date.now();
+    console.warn(`[AutoPing] ${provider}:${connection.id}: no supported model available`);
+    return;
+  }
+
+  const ok = provider === "codex"
+    ? await handler.sendPing(connection, providerConfig, model, proxyOptions, deps)
+    : await handler.sendPing(connection, providerConfig, proxyOptions, deps);
   if (!ok) {
     // Do not mark reset as pinged unless upstream accepted the tiny request.
     state.failureCache[key] = Date.now();
