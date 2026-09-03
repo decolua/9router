@@ -3,6 +3,7 @@ import { PROVIDERS } from "../config/providers.js";
 import {
   KIRO_CODEWHISPERER_TARGET,
   KIRO_ENDPOINT_FALLBACK_STATUSES,
+  KIRO_UNSUPPORTED_THINKING_FIELDS,
   resolveKiroModel,
 } from "../config/kiroConstants.js";
 import { v4 as uuidv4 } from "uuid";
@@ -322,6 +323,21 @@ export class KiroExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
+    // Last gate before generateAssistantResponse. translator/index.js skips the
+    // generic thinking normalizer for Kiro only when the CLIENT spoke OpenAI
+    // Chat or Claude, so a Responses (Codex), Gemini or Ollama client falls
+    // through it and the normalizer stamps a top-level `thinking` /
+    // `reasoning_effort` onto the finished conversationState payload. Kiro
+    // answers that with 400 {"reason":"REQUEST_BODY_INVALID"} (#3641, and the
+    // same class as #2716). The Kiro request translators already carry thinking
+    // intent by the two routes the schema does define, so the stray members are
+    // dropped here rather than in one caller: every path to this upstream,
+    // including the integrity-gate retry, is transformed through here exactly
+    // once. Deleting in place keeps the non-enumerable _kiroUpstreamModel tag
+    // and leaves the nested additionalModelRequestFields.output_config alone.
+    if (body && typeof body === "object") {
+      for (const field of KIRO_UNSUPPORTED_THINKING_FIELDS) delete body[field];
+    }
     return body;
   }
 
