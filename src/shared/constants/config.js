@@ -57,6 +57,7 @@ export const API_ENDPOINTS = {
 export const CONSOLE_LOG_CONFIG = {
   maxLines: 200,
   pollIntervalMs: 1000,
+  streamTimeoutMs: 5000,
 };
 
 // Client-side store TTL: how long fetched data stays fresh before re-fetching
