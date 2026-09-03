@@ -434,3 +434,52 @@ export function getCapabilitiesForModel(provider, model) {
   // 4. Floor
   return refine(null, provider, model);
 }
+
+const COMBO_BOOLEAN_CAPABILITIES = [
+  "vision", "pdf", "audioInput", "videoInput", "imageOutput", "audioOutput",
+  "search", "tools", "reasoning", "thinkingCanDisable",
+];
+const COMBO_LIMIT_CAPABILITIES = ["contextWindow", "maxOutput"];
+
+export function aggregateComboCapabilities(
+  models,
+  { comboLookup = {}, resolveCapabilities = () => null } = {},
+) {
+  if (!Array.isArray(models) || models.length === 0) return null;
+  const flatten = (members, stack = new Set()) => {
+    const leaves = [];
+    for (const member of members) {
+      const nested = comboLookup[member];
+      if (!nested) {
+        leaves.push(member);
+        continue;
+      }
+      if (!Array.isArray(nested) || nested.length === 0 || stack.has(member)) return null;
+      const next = new Set(stack);
+      next.add(member);
+      const resolvedNested = flatten(nested, next);
+      if (!resolvedNested) return null;
+      leaves.push(...resolvedNested);
+    }
+    return leaves;
+  };
+  const leaves = flatten(models);
+  if (!leaves) return null;
+  const resolved = leaves.map(resolveCapabilities);
+  if (resolved.some((capabilities) => !capabilities || typeof capabilities !== "object")) return null;
+
+  const aggregate = {};
+  for (const field of COMBO_BOOLEAN_CAPABILITIES) {
+    const values = resolved.map((capabilities) => capabilities[field]);
+    if (values.every((value) => value === undefined)) continue;
+    if (!values.every((value) => typeof value === "boolean")) return null;
+    aggregate[field] = values.every(Boolean);
+  }
+  for (const field of COMBO_LIMIT_CAPABILITIES) {
+    const values = resolved.map((capabilities) => capabilities[field]);
+    if (values.every((value) => value === undefined)) continue;
+    if (!values.every((value) => Number.isFinite(value) && value > 0)) return null;
+    aggregate[field] = Math.min(...values);
+  }
+  return aggregate;
+}
