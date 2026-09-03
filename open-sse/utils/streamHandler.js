@@ -15,11 +15,18 @@ function getTimeString() {
  * @param {string} options.provider - Provider name
  * @param {string} options.model - Model name
  */
-export function createStreamController({ onDisconnect, onError, log, provider, model, reqTag = "" } = {}) {
+export function createStreamController({ externalSignal, onDisconnect, onError, log, provider, model, reqTag = "" } = {}) {
   const abortController = new AbortController();
   const startTime = Date.now();
   let disconnected = false;
   let abortTimeout = null;
+  let externalAbort = null;
+
+  const clearExternalAbort = () => {
+    if (!externalAbort) return;
+    externalSignal?.removeEventListener("abort", externalAbort);
+    externalAbort = null;
+  };
 
   // Only abnormal terminations are logged; normal completion is covered by "📊 done".
   // isError uses errorLine (always shown, ignores LOG_LEVEL) so failures survive quiet levels.
@@ -30,7 +37,7 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
     else console.log(`[${getTimeString()}] ${symbol} ${provider}/${model} · ${status} · ${duration}ms`);
   };
 
-  return {
+  const streamController = {
     signal: abortController.signal,
     startTime,
 
@@ -40,6 +47,7 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
     handleDisconnect: (reason = "client_closed") => {
       if (disconnected) return;
       disconnected = true;
+      clearExternalAbort();
 
       // Debug-only: Responses API has no [DONE] sentinel, so codex/droid close the
       // socket on every completed request. "📊 done" is the authoritative outcome line.
@@ -57,6 +65,7 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
     handleComplete: () => {
       if (disconnected) return;
       disconnected = true;
+      clearExternalAbort();
 
       if (abortTimeout) {
         clearTimeout(abortTimeout);
@@ -68,6 +77,7 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
     handleError: (error) => {
       if (disconnected) return;
       disconnected = true;
+      clearExternalAbort();
 
       if (abortTimeout) {
         clearTimeout(abortTimeout);
@@ -83,8 +93,26 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
       onError?.(error);
     },
 
-    abort: () => abortController.abort()
+    abort: (reason) => abortController.abort(reason)
   };
+
+  if (externalSignal) {
+    externalAbort = () => {
+      const reason = typeof externalSignal.reason === "string"
+        ? externalSignal.reason
+        : externalSignal.reason?.message || "client_closed";
+      streamController.handleDisconnect(reason);
+      if (abortTimeout) {
+        clearTimeout(abortTimeout);
+        abortTimeout = null;
+      }
+      streamController.abort(externalSignal.reason);
+    };
+    if (externalSignal.aborted) externalAbort();
+    else externalSignal.addEventListener("abort", externalAbort, { once: true });
+  }
+
+  return streamController;
 }
 
 /**
@@ -252,4 +280,3 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     onAbortTerminal
   );
 }
-
