@@ -1,6 +1,7 @@
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
+import { readBodyWithTimeout, BodyReadTimeoutError } from "../../utils/bodyTimeout.js";
 import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
@@ -290,7 +291,9 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
 
   // Standard Chat Completions SSE path
   try {
-    const sseText = await providerResponse.text();
+    // Bounded: an upstream that opens the stream and then stalls used to hold
+    // this read open indefinitely, wedging the client with no finish_reason.
+    const sseText = await readBodyWithTimeout(providerResponse, "text");
     const parsed = parseSSEToOpenAIResponse(sseText, model);
     if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
     if (parsed.error) {
@@ -353,6 +356,12 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
 
     return { success: true, response: new Response(JSON.stringify(finalBody), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {
+    // A stalled upstream is a timeout, not a conversion failure. Reporting it as
+    // 502 would hide the fact that we gave up waiting rather than got bad data.
+    if (err instanceof BodyReadTimeoutError) {
+      console.error("[ChatCore] Chat Completions SSE→JSON body read timed out:", err.message);
+      return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `[${provider}/${model}] ${err.message}`);
+    }
     console.error("[ChatCore] Chat Completions SSE→JSON failed:", err);
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
   }

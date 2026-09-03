@@ -5,6 +5,7 @@ import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.j
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
+import { readBodyWithTimeout, BodyReadTimeoutError } from "../../utils/bodyTimeout.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
@@ -287,7 +288,17 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   let responseBody;
 
   if (contentType.includes("text/event-stream")) {
-    const sseText = await providerResponse.text();
+    let sseText;
+    try {
+      sseText = await readBodyWithTimeout(providerResponse, "text");
+    } catch (err) {
+      if (err instanceof BodyReadTimeoutError) {
+        appendLog({ status: `FAILED ${HTTP_STATUS.GATEWAY_TIMEOUT}` });
+        return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `[${provider}/${model}] ${err.message}`);
+      }
+      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `[${provider}/${model}] failed reading SSE body: ${err.message}`);
+    }
     const parsed = parseSSEToOpenAIResponse(sseText, model);
     if (!parsed) {
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
@@ -296,8 +307,15 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     responseBody = parsed;
   } else {
     try {
-      responseBody = await providerResponse.json();
+      responseBody = await readBodyWithTimeout(providerResponse, "json");
     } catch (err) {
+      // A stalled upstream is a gateway timeout, not malformed JSON — the client
+      // should see 504 and retry, not a 502 that reads as "upstream sent garbage".
+      if (err instanceof BodyReadTimeoutError) {
+        appendLog({ status: `FAILED ${HTTP_STATUS.GATEWAY_TIMEOUT}` });
+        console.error(`[ChatCore] ${provider} body read timed out:`, err.message);
+        return createErrorResult(HTTP_STATUS.GATEWAY_TIMEOUT, `[${provider}/${model}] ${err.message}`);
+      }
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
       console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
