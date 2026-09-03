@@ -1008,5 +1008,11 @@
       "preserveCacheControl": true
     },
     "format": "openai"
+  },
+  "meta": {
+    "baseUrl": "https://api.meta.ai/v1/chat/completions",
+    "validateUrl": "https://api.meta.ai/v1/models",
+    "thinkingFormat": "meta",
+    "format": "openai"
   }
 }

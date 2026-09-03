@@ -171,6 +171,9 @@ export default function ProviderDetailPage() {
     const levels = getThinkingLevels(providerId, modelId);
     return levels && levels.includes(thinkingMode) ? thinkingMode : null;
   };
+  // Meta Muse Spark encodes the reasoning level as a model-id suffix ("-xhigh")
+  // rather than the parenthesized "model(level)" form used by every other provider.
+  const thinkingSuffixProps = providerId === "meta" ? { suffixOpen: "-", suffixClose: "" } : {};
   const providerStorageAlias = isCompatible ? providerId : providerAlias;
   // Union of levels across this provider's reasoning models — drives the level picker options.
   // Include custom models too (e.g. manually added gpt-5.6-sol → max).
@@ -1134,6 +1137,7 @@ export default function ProviderDetailPage() {
             isFree={false}
             caps={getCaps(`${providerId}/${model.id}`)}
             thinkingSuffix={resolveThinkingSuffix(model.id)}
+            {...thinkingSuffixProps}
           />
         ))}
 
@@ -1160,6 +1164,7 @@ export default function ProviderDetailPage() {
               onDisable={() => handleDisableModel(model.id)}
               caps={getCaps(`${providerId}/${model.id}`)}
               thinkingSuffix={resolveThinkingSuffix(model.id)}
+              {...thinkingSuffixProps}
             />
           );
         })}

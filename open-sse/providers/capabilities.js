@@ -34,6 +34,7 @@
 
 import { matchPattern } from "./pricing.js";
 import { looksLikeVisionModel } from "./visionPatterns.js";
+import { isMuseSparkModel } from "./models/helpers.js";
 
 /**
  * Safe floor — every resolved result is merged over this so consumers
@@ -53,7 +54,7 @@ export const DEFAULT_CAPABILITIES = {
   tools: true,          // function / tool calling
   reasoning: false,     // thinking / reasoning
   // thinking wire format (only meaningful when reasoning:true). null → derive from transport.format.
-  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|hunyuan|step
+  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|hunyuan|step|meta
   thinkingFormat: null,
   thinkingCanDisable: true,  // false → model cannot turn thinking off (clamp to min instead of disable)
   thinkingRange: null,       // { min, max } for budget formats; null = no clamp
@@ -143,6 +144,12 @@ const CODEX_GPT_56_DEFAULT_CAPS = { vision: true, reasoning: true, search: true,
 /**
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
+// Meta AI (Muse Spark) — OpenAI-compatible reasoning models. Muse Spark always
+// reasons (rejects "none", HTTP 400) and accepts minimal/low/medium/high/xhigh;
+// it has no "max" (clamped to xhigh). All Muse Spark models under the meta
+// provider share these caps.
+const META_SPARK_CAPS = { reasoning: true, thinkingFormat: "meta", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 64000 };
+
 export const PROVIDER_CAPABILITIES = {
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue
@@ -152,6 +159,13 @@ export const PROVIDER_CAPABILITIES = {
     "z-ai/glm-5.2": { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 128000 },
     "deepseek-ai/deepseek-v4-pro": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 65536 },
     "deepseek-ai/deepseek-v4-flash": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 65536 },
+  },
+  "meta": {
+    "muse-spark-1.2-contributor": META_SPARK_CAPS,
+    "muse-spark-1.3-contributor": META_SPARK_CAPS,
+    "muse-spark-1.3": META_SPARK_CAPS,
+    "muse-spark-1.2": META_SPARK_CAPS,
+    "muse-spark-1.1": META_SPARK_CAPS,
   },
   "codex": {
     "gpt-5.6-sol":               CODEX_GPT_56_SOL_CAPS,
@@ -418,6 +432,15 @@ export function getCapabilitiesForModel(provider, model) {
     const providerCaps = PROVIDER_CAPABILITIES[provider];
     if (providerCaps?.[model]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[model] };
     if (providerCaps?.[baseModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] };
+  }
+
+  // Meta AI Muse Spark: any muse-spark id — including "(level)"-suffixed ids and
+  // passthrough models fetched from the API that aren't in the static table —
+  // reasons via the "meta" format (always-on, no "max"). Without this a
+  // suffixed/unknown id falls through to the generic "*muse*spark*" pattern and
+  // resolves to "openai" (which would allow "none", rejected by Meta).
+  if (provider === "meta" && isMuseSparkModel(baseModel)) {
+    return { ...DEFAULT_CAPABILITIES, ...(PROVIDER_CAPABILITIES.meta?.[baseModel] || META_SPARK_CAPS) };
   }
 
   // 2. Canonical exact
