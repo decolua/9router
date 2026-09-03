@@ -4,4 +4,5 @@ export {
   saveRequestUsage, getUsageHistory, getUsageStats, getChartData,
   appendRequestLog, getRecentLogs,
   saveRequestDetail, getRequestDetails, getRequestDetailById,
+  setAntigravityVerification, clearAntigravityVerification, getAntigravityVerification, getAllAntigravityVerifications,
 } from "@/lib/db/index.js";

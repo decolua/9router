@@ -60,6 +60,7 @@ export {
   statsEmitter, trackPendingRequest, getActiveRequests,
   saveRequestUsage, getUsageHistory, getUsageStats, getChartData,
   appendRequestLog, getRecentLogs,
+  setAntigravityVerification, clearAntigravityVerification, getAntigravityVerification, getAllAntigravityVerifications,
 } from "./repos/usageRepo.js";
 
 // Request details

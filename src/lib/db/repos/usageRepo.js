@@ -25,6 +25,7 @@ if (!global._pendingTimers) global._pendingTimers = {};
 if (!global._recentRing) global._recentRing = { items: [], initialized: false };
 if (!global._connectionMapCache) global._connectionMapCache = { map: {}, ts: 0 };
 if (!global._statsEmitTimers) global._statsEmitTimers = { pending: null, update: null };
+if (!global._antigravityVerification) global._antigravityVerification = {};
 
 const pendingRequests = global._pendingRequests;
 const lastErrorProvider = global._lastErrorProvider;
@@ -32,6 +33,7 @@ const pendingTimers = global._pendingTimers;
 const recentRing = global._recentRing;
 const connCache = global._connectionMapCache;
 const statsEmitTimers = global._statsEmitTimers;
+const antigravityVerification = global._antigravityVerification;
 
 export const statsEmitter = global._statsEmitter;
 
@@ -188,9 +190,46 @@ export function trackPendingRequest(model, provider, connectionId, started, erro
     lastErrorProvider.provider = provider.toLowerCase();
     lastErrorProvider.ts = Date.now();
   }
-
-  // [PENDING] console line removed; lifecycle is visible via "▶" and "📊 done" lines
   scheduleStatsEvent("pending");
+}
+export function setAntigravityVerification(verification) {
+  if (!verification || !verification.url) return;
+  try {
+    const parsed = new URL(verification.url);
+    if (parsed.protocol !== "https:" || parsed.hostname !== "accounts.google.com") return;
+  } catch {
+    return;
+  }
+  const connectionId = verification.connectionId || "default";
+  antigravityVerification[connectionId] = {
+    url: verification.url,
+    connectionId: verification.connectionId || undefined,
+    account: verification.account || undefined,
+    createdAt: verification.createdAt || Date.now()
+  };
+  scheduleStatsEvent("update");
+}
+
+export function clearAntigravityVerification(connectionId) {
+  const key = connectionId || "default";
+  if (antigravityVerification[key]) {
+    delete antigravityVerification[key];
+    scheduleStatsEvent("update");
+  }
+}
+
+export function getAllAntigravityVerifications() {
+  return { ...antigravityVerification };
+}
+
+export function getAntigravityVerification(connectionId = null) {
+  if (connectionId) {
+    return antigravityVerification[connectionId] || null;
+  }
+  const entries = Object.values(antigravityVerification);
+  if (!entries.length) return null;
+  // Return the most recent verification challenge
+  return entries.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0] || null;
 }
 
 export async function getActiveRequests() {
@@ -235,7 +274,15 @@ export async function getActiveRequests() {
     .slice(0, 20);
 
   const errorProvider = (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "";
-  return { activeRequests, recentRequests, errorProvider };
+  const verification = getAntigravityVerification();
+  const verifications = getAllAntigravityVerifications();
+  return {
+    activeRequests,
+    recentRequests,
+    errorProvider,
+    antigravityVerification: verification,
+    antigravityVerifications: verifications,
+  };
 }
 
 export async function saveRequestUsage(entry) {
@@ -655,6 +702,8 @@ export async function getUsageStats(period = "all") {
   }
 
   stats.totalRequests = Object.values(stats.byProvider).reduce((sum, p) => sum + (p.requests || 0), 0);
+  stats.antigravityVerification = getAntigravityVerification();
+  stats.antigravityVerifications = getAllAntigravityVerifications();
   return stats;
 }
 

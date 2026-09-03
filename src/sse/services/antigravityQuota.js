@@ -113,7 +113,7 @@ async function _doRefresh(connectionId, accessToken, providerSpecificData, now) 
       strictProxy: proxyCfg.strictProxy === true,
     };
 
-    const usage = await getAntigravityUsage(accessToken, providerSpecificData, proxyOptions);
+    const usage = await getAntigravityUsage(accessToken, providerSpecificData, proxyOptions, connectionId);
     // 401/403 usage responses can contain an empty quotas object plus message.
     // Preserve known cache instead of replacing it with an upstream error response.
     if (!usage?.quotas || usage.message) return null;

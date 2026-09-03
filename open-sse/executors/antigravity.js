@@ -2,11 +2,13 @@ import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX, ANTIGRAVITY_PROMPT_REWRITES } from "../config/appConstants.js";
+import { ANTIGRAVITY_IDE_USER_AGENT } from "../providers/shared.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { cleanJSONSchemaForAntigravity } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
+import { extractVerificationUrl } from "../services/projectId.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
 function sanitizeFunctionName(name) {
@@ -129,7 +131,9 @@ export class AntigravityExecutor extends BaseExecutor {
     return {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${credentials.accessToken}`,
-      "User-Agent": this.config.headers?.["User-Agent"] || ANTIGRAVITY_HEADERS["User-Agent"],
+      "User-Agent": this.config.headers?.["User-Agent"] || ANTIGRAVITY_IDE_USER_AGENT,
+      "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
+      "Client-Metadata": JSON.stringify({ ideType: "ANTIGRAVITY", platform: "MACOS", pluginType: "GEMINI" }),
     };
   }
 
@@ -521,6 +525,27 @@ export class AntigravityExecutor extends BaseExecutor {
       },
       toolNameMap
     };
+  }
+
+  parseError(response, bodyText) {
+    const base = super.parseError(response, bodyText);
+    if (!bodyText) return base;
+
+    try {
+      const json = JSON.parse(bodyText);
+      const err = json.error || json;
+      const message = err.message || base.message;
+      const verificationUrl = extractVerificationUrl(json) || extractVerificationUrl(bodyText);
+
+      return {
+        status: response.status,
+        message,
+        verificationUrl: verificationUrl || undefined
+      };
+    } catch {
+      const verificationUrl = extractVerificationUrl(bodyText);
+      return verificationUrl ? { ...base, verificationUrl } : base;
+    }
   }
 }
 

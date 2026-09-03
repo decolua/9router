@@ -2,6 +2,7 @@
  * Google usage handlers (Gemini CLI + Antigravity)
  */
 
+import { inspectAndPublishVerification } from "../projectId.js";
 import { CLIENT_METADATA } from "../../config/appConstants.js";
 import { ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION, ANTIGRAVITY_OAUTH_CLIENT } from "../../providers/shared.js";
 import { U, parseResetTime, normalizeCloudCodeProjectId, fetchWithTimeout } from "./shared.js";
@@ -116,10 +117,10 @@ async function getGeminiSubscriptionInfo(accessToken, proxyOptions = null) {
 /**
  * Antigravity Usage - Fetch quota from Google Cloud Code API
  */
-export async function getAntigravityUsage(accessToken, providerSpecificData, proxyOptions = null) {
+export async function getAntigravityUsage(accessToken, providerSpecificData, proxyOptions = null, connectionId = null) {
   try {
     // Fetch subscription info once — reuse for both projectId and plan
-    const subscriptionInfo = await getAntigravitySubscriptionInfo(accessToken, proxyOptions);
+    const subscriptionInfo = await getAntigravitySubscriptionInfo(accessToken, proxyOptions, connectionId);
     const projectId = subscriptionInfo?.cloudaicompanionProject || null;
 
     const response = await fetchWithTimeout(ANTIGRAVITY_CONFIG.quotaApiUrl, {
@@ -135,26 +136,28 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         ...(projectId ? { project: projectId } : {})
       }),
     }, 10000, proxyOptions);
-
-    if (response.status === 403) {
-      return {
-        message: "Antigravity quota API access forbidden. Chat may still work.",
-        quotas: {}
-      };
-    }
-
-    if (response.status === 401) {
-      return {
-        message: "Antigravity quota API authentication expired. Chat may still work.",
-        quotas: {}
-      };
-    }
-
     if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      inspectAndPublishVerification(errorText, connectionId);
+      if (response.status === 403) {
+        return {
+          message: "Antigravity quota API access forbidden. Chat may still work.",
+          quotas: {}
+        };
+      }
+
+      if (response.status === 401) {
+        return {
+          message: "Antigravity quota API authentication expired. Chat may still work.",
+          quotas: {}
+        };
+      }
+
       throw new Error(`Antigravity API error: ${response.status}`);
     }
 
     const data = await response.json();
+    inspectAndPublishVerification(data, connectionId);
     const quotas = {};
 
     // Parse model quotas (inspired by vscode-antigravity-cockpit)
@@ -226,7 +229,7 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
 /**
  * Get Antigravity subscription info
  */
-async function getAntigravitySubscriptionInfo(accessToken, proxyOptions = null) {
+async function getAntigravitySubscriptionInfo(accessToken, proxyOptions = null, connectionId = null) {
   try {
     const response = await fetchWithTimeout(ANTIGRAVITY_CONFIG.loadProjectApiUrl, {
       method: "POST",
@@ -237,9 +240,14 @@ async function getAntigravitySubscriptionInfo(accessToken, proxyOptions = null) 
       },
       body: JSON.stringify({ metadata: CLIENT_METADATA, mode: 1 }),
     }, 10000, proxyOptions);
-
-    if (!response.ok) return null;
-    return await response.json();
+    const rawText = await response.text().catch(() => "");
+    if (!response.ok) {
+      inspectAndPublishVerification(rawText, connectionId);
+      return null;
+    }
+    const data = rawText ? JSON.parse(rawText) : null;
+    inspectAndPublishVerification(data, connectionId);
+    return data;
   } catch (error) {
     console.error("[Antigravity Subscription] Error:", error.message);
     return null;

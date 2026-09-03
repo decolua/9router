@@ -8,6 +8,7 @@
  */
 
 import { CLOUD_CODE_API, LOAD_CODE_ASSIST_HEADERS, ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS, LOAD_CODE_ASSIST_METADATA } from "../config/appConstants.js";
+import { setAntigravityVerification } from "@/lib/usageDb.js";
 
 // ─── Cache ────────────────────────────────────────────────────────────────────
 // connectionId -> { projectId: string, fetchedAt: number }
@@ -102,7 +103,7 @@ export async function getProjectIdForConnection(connectionId, accessToken, provi
 
     const promise = (async () => {
         try {
-            const projectId = await fetchProjectId(accessToken, controller.signal, provider);
+            const projectId = await fetchProjectId(accessToken, controller.signal, provider, connectionId);
             if (projectId) {
                 projectIdCache.set(connectionId, {projectId, fetchedAt: Date.now()});
                 return projectId;
@@ -155,7 +156,7 @@ export function removeConnection(connectionId) {
  * @param {AbortSignal} signal
  * @returns {Promise<string|null>}
  */
-async function fetchProjectId(accessToken, signal, provider) {
+async function fetchProjectId(accessToken, signal, provider, connectionId) {
     const endpoints = CLOUD_CODE_API[provider] || CLOUD_CODE_API["gemini-cli"];
     const headers = provider === "antigravity" ? ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS : LOAD_CODE_ASSIST_HEADERS;
     const response = await fetch(endpoints.loadCodeAssist, {
@@ -166,11 +167,17 @@ async function fetchProjectId(accessToken, signal, provider) {
     });
 
     if (!response.ok) {
-        const errorText = await response.text().catch(() => "");
-        throw new Error(`loadCodeAssist failed: HTTP ${response.status} ${errorText.slice(0, 200)}`);
+        const rawText = await response.text().catch(() => "");
+        if (provider === "antigravity") {
+            inspectAndPublishVerification(rawText, connectionId);
+        }
+        throw new Error(`loadCodeAssist failed: HTTP ${response.status}`);
     }
 
     const data = await response.json();
+    if (provider === "antigravity") {
+        inspectAndPublishVerification(data, connectionId);
+    }
     const projectId = extractProjectId(data);
     if (projectId) return projectId;
 
@@ -187,7 +194,7 @@ async function fetchProjectId(accessToken, signal, provider) {
         }
     }
 
-    return onboardUser(accessToken, tierID, signal, endpoints, provider);
+    return onboardUser(accessToken, tierID, signal, endpoints, provider, connectionId);
 }
 
 /**
@@ -198,7 +205,7 @@ async function fetchProjectId(accessToken, signal, provider) {
  * @param {AbortSignal} externalSignal  – propagated from the connection's AbortController
  * @returns {Promise<string|null>}
  */
-async function onboardUser(accessToken, tierID, externalSignal, endpoints, provider) {
+async function onboardUser(accessToken, tierID, externalSignal, endpoints, provider, connectionId = null) {
     console.log(`[ProjectId] Onboarding user with tier: ${tierID}`);
 
     const reqBody = { tierId: tierID, metadata: LOAD_CODE_ASSIST_METADATA };
@@ -226,11 +233,17 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints, provi
             clearTimeout(timeoutId);
 
             if (!response.ok) {
-                const errorText = await response.text().catch(() => "");
-                throw new Error(`onboardUser HTTP ${response.status}: ${errorText.slice(0, 200)}`);
+                const rawText = await response.text().catch(() => "");
+                if (provider === "antigravity") {
+                    inspectAndPublishVerification(rawText, connectionId);
+                }
+                throw new Error(`onboardUser HTTP ${response.status}`);
             }
 
             const data = await response.json();
+            if (provider === "antigravity") {
+                inspectAndPublishVerification(data, connectionId);
+            }
 
             if (data.done === true) {
                 const projectId = extractProjectIdFromOnboard(data);
@@ -303,6 +316,112 @@ function extractProjectIdFromOnboard(data) {
     if (project && typeof project === "object") {
         const id = project.id;
         if (typeof id === "string" && id.trim()) return id.trim();
+    }
+
+    return null;
+}
+
+/**
+ * Inspect data / error payloads for Antigravity verification challenge URLs
+ * and publish to usageDb if valid HTTPS accounts.google.com with verification wording.
+ * Does not log raw bodies or sensitive URLs.
+ */
+export function inspectAndPublishVerification(payload, connectionId) {
+    const url = extractVerificationUrl(payload);
+    if (!url) return null;
+
+    try {
+        setAntigravityVerification({
+            url,
+            connectionId: connectionId || undefined,
+            createdAt: Date.now()
+        });
+    } catch {
+        // ignore verification recording failures
+    }
+    return url;
+}
+
+function isGoogleVerificationUrl(candidate) {
+    if (!candidate || typeof candidate !== "string") return false;
+    try {
+        const parsed = new URL(candidate);
+        return parsed.protocol === "https:" && parsed.hostname === "accounts.google.com";
+    } catch {
+        return false;
+    }
+}
+
+export function extractVerificationUrl(payload) {
+    if (!payload) return null;
+
+    let json = null;
+    let text = "";
+    if (typeof payload === "string") {
+        text = payload;
+        try { json = JSON.parse(payload); } catch { json = null; }
+    } else if (typeof payload === "object") {
+        json = payload;
+    }
+
+    const candidates = [];
+
+    if (json) {
+        // 1. Successful loadCodeAssist with ineligibleTiers
+        if (Array.isArray(json.ineligibleTiers)) {
+            for (const tier of json.ineligibleTiers) {
+                const reason = tier?.validationErrorMessage || tier?.reason || "";
+                const url = tier?.validationUrl || tier?.validation_url || tier?.appeal_url;
+                if (url && (/validation|verify|verification|appeal/i.test(reason) || !reason || /validation|appeal/i.test(url))) {
+                    candidates.push(url);
+                }
+            }
+        }
+
+        // 2. Direct properties on root
+        if (json.validationUrl) candidates.push(json.validationUrl);
+        if (json.validation_url) candidates.push(json.validation_url);
+        if (json.appeal_url) candidates.push(json.appeal_url);
+
+        // 3. Error structure details (ErrorInfo, Help, etc.)
+        const err = json.error || json;
+        const errMsg = typeof err?.message === "string" ? err.message : "";
+        const details = Array.isArray(err?.details) ? err.details : [];
+
+        for (const d of details) {
+            const metaUrl = d?.metadata?.validation_url || d?.metadata?.validationUrl || d?.metadata?.appeal_url || d?.metadata?.appealUrl;
+            if (metaUrl) candidates.push(metaUrl);
+        }
+
+        const hasValidationReason = details.some(d =>
+            (d["@type"]?.includes("ErrorInfo") || d.reason) &&
+            (d.reason === "VALIDATION_REQUIRED" || /validation|verify|verification|appeal/i.test(String(d.reason)))
+        ) || /validation\s+required|verification|verify\s+your\s+account/i.test(errMsg);
+
+        if (hasValidationReason) {
+            for (const d of details) {
+                if (Array.isArray(d?.links)) {
+                    for (const link of d.links) {
+                        if (link?.url) candidates.push(link.url);
+                    }
+                }
+            }
+        }
+    }
+
+    if (text && /validation|verification|verify/i.test(text)) {
+        const match = text.match(/https:\/\/accounts\.google\.com\/signin\/continue\?[^\s"'\\]+/);
+        if (match) candidates.push(match[0]);
+    }
+
+    for (const cand of candidates) {
+        if (isGoogleVerificationUrl(cand)) {
+            try {
+                return new URL(cand).href;
+            } catch {
+                return cand;
+            }
+        }
     }
 
     return null;
