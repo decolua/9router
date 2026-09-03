@@ -168,6 +168,14 @@ export async function GET(request, { params }) {
       }
     }
 
+    // Providers without a public quota API — aggregate from local usageHistory
+    if (connection.provider === 'opencode-go') {
+      return Response.json(await aggregateLocalUsage(connection, 'OpenCode Go'));
+    }
+    if (connection.provider === 'opencode') {
+      return Response.json(await aggregateLocalUsage(connection, 'OpenCode'));
+    }
+
     // Fetch usage from provider API
     let usage = await getUsageForProvider(connection, proxyOptions, { force });
 
@@ -190,3 +198,69 @@ export async function GET(request, { params }) {
     return Response.json({ error: error.message }, { status: 500 });
   }
 }
+
+async function aggregateLocalUsage(connection, label) {
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const rows = await getUsageHistory({ provider: connection.provider, startDate: since });
+  const filtered = rows.filter((r) => !connection.id || r.connectionId === connection.id);
+
+  if (!filtered.length) {
+    return {
+      message: `${label} connected. No requests recorded in the last 30 days.`,
+      quotas: {},
+      displayMessage: `${label} connected. No usage yet.`,
+    };
+  }
+
+  const totals = filtered.reduce(
+    (acc, r) => {
+      const t = r.tokens || {};
+      acc.prompt += Number(t.prompt_tokens || t.promptTokens || 0);
+      acc.completion += Number(t.completion_tokens || t.completionTokens || 0);
+      acc.cost += Number(r.cost) || 0;
+      acc.requests += 1;
+      return acc;
+    },
+    { prompt: 0, completion: 0, cost: 0, requests: 0 }
+  );
+
+  const byModel = {};
+  for (const r of filtered) {
+    const t = r.tokens || {};
+    const used = (Number(t.prompt_tokens || t.promptTokens || 0)) + (Number(t.completion_tokens || t.completionTokens || 0));
+    if (!byModel[r.model]) byModel[r.model] = 0;
+    byModel[r.model] += used;
+  }
+
+  const unlimited = { remaining: 100, resetAt: null, unlimited: true };
+
+  const quotas = {
+    'Total spend (30d)': {
+      used: Number(totals.cost.toFixed(4)),
+      total: 0,
+      unit: 'usd',
+      ...unlimited,
+    },
+    'Total tokens (30d)': {
+      used: totals.prompt + totals.completion,
+      total: 0,
+      ...unlimited,
+    },
+  };
+
+  for (const [model, used] of Object.entries(byModel)) {
+    quotas[model + ' (30d)'] = {
+      used,
+      total: 0,
+      unit: 'tokens',
+      ...unlimited,
+    };
+  }
+
+  return {
+    plan: label,
+    displayMessage: `${label} connected. ${totals.requests} requests in the last 30 days.`,
+    quotas,
+  };
+}
+
