@@ -141,8 +141,9 @@ async function transcribeOpenAICompatible(cfg, file, model, token, formData) {
   const fd = new FormData();
   fd.append("file", file, file.name || "audio.wav");
   fd.append("model", model);
-  for (const k of ["language", "prompt", "response_format", "temperature"]) {
-    const v = formData.get(k);
+  // Forward every client field as-is (covers timestamp_granularities[], include[], etc.); file/model set above
+  for (const [k, v] of formData.entries()) {
+    if (k === "file" || k === "model") continue;
     if (v !== null && v !== undefined && v !== "") fd.append(k, v);
   }
   const res = await fetch(cfg.baseUrl, { method: "POST", headers: buildAuthHeaders(cfg, token), body: fd });
