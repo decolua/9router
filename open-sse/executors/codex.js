@@ -5,7 +5,7 @@ import {
   refreshProviderCredentials,
   shouldRefreshCredentials,
 } from "../services/oauthCredentialManager.js";
-import { normalizeResponsesInput } from "../translator/formats/responsesApi.js";
+import { normalizeResponsesInput, normalizeStatelessResponseInput } from "../translator/formats/responsesApi.js";
 import { fetchImageAsBase64 } from "../translator/concerns/image.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
 import { getThinkingLevels } from "../providers/thinkingLevels.js";
@@ -24,9 +24,6 @@ const CODEX_SSE_USER_OUTPUT_PATTERNS = [
 ];
 const CODEX_SSE_PEEK_BYTES = 256 * 1024;
 const CODEX_MODEL_CAPACITY_MESSAGE = "Selected model is at capacity. Please try a different model.";
-
-// Server-generated item id prefixes that Codex /responses cannot resolve when store=false
-const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
 
 // Hosted tool types that Codex/OpenAI Responses executes server-side
 const CODEX_HOSTED_TOOL_TYPES = new Set([
@@ -53,19 +50,6 @@ function convertSystemToDeveloperRole(body) {
     const isSystemMsg = item.role === "system" && (!item.type || item.type === "message");
     if (isSystemMsg) item.role = "developer";
   }
-}
-
-// Strip server-generated item IDs (rs_/fc_/resp_/msg_) from input — avoids 404 with store=false
-function stripStoredItemReferences(body) {
-  if (!Array.isArray(body.input)) return;
-  body.input = body.input.filter((item) => {
-    if (typeof item === "string" && SERVER_ID_PATTERN.test(item)) return false;
-    if (item && typeof item === "object" && !Array.isArray(item)) {
-      if (item.type === "item_reference") return false;
-      if (typeof item.id === "string" && SERVER_ID_PATTERN.test(item.id)) delete item.id;
-    }
-    return true;
-  });
 }
 
 // Flatten Chat-Completions tool shape into Responses flat format + filter unsupported tools
@@ -406,8 +390,8 @@ export class CodexExecutor extends BaseExecutor {
 
     // Keep system prompts in body.input as role=developer so they stay in the cacheable prefix
     convertSystemToDeveloperRole(body);
-    // Strip server-generated item IDs (rs_/fc_/resp_/msg_) — Codex /responses can't resolve when store=false
-    stripStoredItemReferences(body);
+    // Strip optional call item IDs and stored references that store=false cannot resolve.
+    body.input = normalizeStatelessResponseInput(body.input);
     // Flatten function tools + drop unsupported types
     normalizeCodexTools(body);
 
