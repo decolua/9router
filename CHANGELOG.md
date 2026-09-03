@@ -1,3 +1,8 @@
+# Unreleased
+
+## Features
+- **Providers**: add Meta AI (Muse Spark) via the Meta Model API — OpenAI-compatible `api.meta.ai` endpoint, always-on reasoning (`minimal`/`low`/`medium`/`high`/`xhigh`, no `max`) selectable through the `model(level)` model-id suffix, plus provider icon, pricing and capabilities
+
 # v0.5.65 (2026-09-03)
 
 ## Features
