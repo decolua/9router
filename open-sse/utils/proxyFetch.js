@@ -191,13 +191,160 @@ function normalizeProxyUrl(proxyUrl) {
   if (!normalizedInput) return null;
 
   try {
-
     new URL(normalizedInput);
     return normalizedInput;
   } catch {
     // Allow "127.0.0.1:7890" style values
     return `http://${normalizedInput}`;
   }
+}
+
+/**
+ * Parse proxy URL from various formats
+ * Supports:
+ * - ip:port
+ * - ip:port:user:pass
+ * - user:pass@ip:port
+ * - protocol://ip:port
+ * - protocol://user:pass@ip:port
+ * - protocol://ip:port:user:pass
+ */
+function parseProxyUrl(proxyUrl) {
+  const normalizedInput = normalizeString(proxyUrl);
+  if (!normalizedInput) return null;
+
+  // Handle protocol:// prefix
+  let urlStr = normalizedInput;
+  if (urlStr.includes("://")) {
+    urlStr = urlStr.split("://")[1];
+  }
+
+  // Handle user:pass@ip:port format
+  let username = null;
+  let password = null;
+  let hostPort = urlStr;
+
+  if (urlStr.includes("@")) {
+    const [authPart, hostPortPart] = urlStr.split("@");
+    hostPort = hostPortPart;
+
+    if (authPart.includes(":")) {
+      [username, password] = authPart.split(":");
+    } else {
+      username = authPart;
+    }
+  }
+
+  // Handle ip:port:user:pass format (no @)
+  if (hostPort.includes(":") && !hostPort.startsWith("http")) {
+    const parts = hostPort.split(":");
+    if (parts.length === 4) {
+      // ip:port:user:pass format
+      [hostPort, username, password] = parts;
+    } else if (parts.length === 3) {
+      // ip:port:user format (user without password)
+      [hostPort, username] = parts;
+    }
+  }
+
+  // Parse host and port
+  let host = "";
+  let port = "";
+  let protocol = "http"; // default
+
+  if (hostPort.includes("/")) {
+    // Handle path-like formats
+    const url = new URL(`http://${hostPort}`);
+    host = url.hostname;
+    port = url.port;
+    protocol = url.protocol.replace(":", "");
+  } else if (hostPort.includes(":")) {
+    [host, port] = hostPort.split(":");
+  } else {
+    host = hostPort;
+    port = "";
+  }
+
+  // Validate host
+  if (!host || host === "") {
+    return null;
+  }
+
+  // Build proxy URL
+  let result = "";
+  if (protocol) {
+    result += `${protocol}://`;
+  }
+
+  if (username) {
+    if (password) {
+      result += `${username}:${password}@`;
+    } else {
+      result += `${username}@`;
+    }
+  }
+
+  result += host;
+
+  if (port) {
+    result += `:${port}`;
+  }
+
+  return result;
+}
+
+/**
+ * Parse multiple proxy URLs from a string (bulk import)
+ * Supports comma-separated list
+ */
+function parseProxyUrls(proxyUrls) {
+  if (!proxyUrls) return [];
+
+  const urls = normalizeString(proxyUrls).split(",");
+  const parsedUrls = [];
+
+  for (const url of urls) {
+    const parsed = parseProxyUrl(url.trim());
+    if (parsed) {
+      parsedUrls.push(parsed);
+    }
+  }
+
+  return parsedUrls;
+}
+
+/**
+ * Get proxy URL from various sources including bulk import
+ */
+function getProxyUrl(targetUrl, proxyOptions) {
+  const options = proxyOptions || {};
+  // First try connection-specific proxy
+  const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, options);
+  if (connectionProxyUrl) return connectionProxyUrl;
+
+  // Try environment variable
+  const envProxyUrl = normalizeProxyUrl(getEnvProxyUrl(targetUrl));
+  if (envProxyUrl) return envProxyUrl;
+
+  // Try bulk import proxy URLs (from proxyOptions.bulkImport)
+  if (options.bulkImport) {
+    const bulkUrls = Array.isArray(options.bulkImport)
+      ? options.bulkImport
+      : parseProxyUrls(options.bulkImport);
+
+    for (const bulkUrl of bulkUrls) {
+      try {
+        // Test if proxy works by attempting to create a dispatcher
+        const testDispatcher = new ProxyAgent({ uri: bulkUrl });
+        return bulkUrl;
+      } catch (e) {
+        // Skip invalid proxy URLs
+        continue;
+      }
+    }
+  }
+
+  return null;
 }
 
 function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
@@ -306,9 +453,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     return originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
   }
 
-  const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
-  const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
-  const proxyUrl = connectionProxyUrl || envProxyUrl;
+  const proxyUrl = getProxyUrl(targetUrl, proxyOptions);
 
   // MITM DNS bypass: for known MITM-intercepted hosts, resolve real IP to avoid DNS spoof
   if (shouldBypassMitmDns(targetUrl)) {
