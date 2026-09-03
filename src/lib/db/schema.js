@@ -115,6 +115,7 @@ export const TABLES = {
       connectionId: "TEXT",
       apiKey: "TEXT",
       endpoint: "TEXT",
+      combo: "TEXT",
       promptTokens: "INTEGER DEFAULT 0",
       completionTokens: "INTEGER DEFAULT 0",
       cost: "REAL DEFAULT 0",
@@ -127,6 +128,7 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_uh_provider ON usageHistory(provider)",
       "CREATE INDEX IF NOT EXISTS idx_uh_model ON usageHistory(model)",
       "CREATE INDEX IF NOT EXISTS idx_uh_conn ON usageHistory(connectionId)",
+      "CREATE INDEX IF NOT EXISTS idx_uh_combo ON usageHistory(combo)",
     ],
   },
   usageDaily: {

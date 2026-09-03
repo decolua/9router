@@ -22,6 +22,7 @@ function rowToConn(row) {
     email: row.email,
     priority: row.priority,
     isActive: row.isActive === 1 || row.isActive === true,
+    group: typeof extra.group === "string" ? extra.group : "",
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -29,6 +30,7 @@ function rowToConn(row) {
 
 function connToRow(c) {
   const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
+  if (!rest.group) delete rest.group; // don't persist an empty group
   return {
     id,
     provider,
@@ -99,13 +101,30 @@ function reorderInTx(db, providerId) {
   });
 }
 
-export async function createProviderConnection(data) {
+export async function createProviderConnection(data, { skipIfExists = false } = {}) {
   const db = await getAdapter();
   const now = new Date().toISOString();
+  const group = typeof data.group === "string" ? data.group.trim() : "";
   let result;
 
   db.transaction(() => {
     const all = db.all(`SELECT * FROM providerConnections WHERE provider = ?`, [data.provider]).map(rowToConn);
+
+    // Dedup by API-key value (opt-in). Distinct from the name-based upsert below:
+    // a key that already exists is left untouched and reported as skipped.
+    if (skipIfExists && data.authType === "apikey" && data.apiKey) {
+      const dupe = all.find((c) => c.authType === "apikey" && c.apiKey && c.apiKey === data.apiKey);
+      if (dupe) {
+        // Still let an explicit group land on the pre-existing row.
+        if (data.group !== undefined && group !== (dupe.group || "")) {
+          upsert(db, { ...dupe, group, updatedAt: now });
+          result = { ...dupe, group, skipped: true };
+        } else {
+          result = { ...dupe, skipped: true };
+        }
+        return;
+      }
+    }
 
     let existing = null;
     if (data.authType === "oauth" && data.email) {
@@ -148,6 +167,7 @@ export async function createProviderConnection(data) {
 
     if (existing) {
       const merged = { ...existing, ...data, updatedAt: now };
+      if (data.group !== undefined) merged.group = group;
       upsert(db, merged);
       result = merged;
       return;
@@ -179,6 +199,7 @@ export async function createProviderConnection(data) {
       conn.providerSpecificData = data.providerSpecificData;
     }
     if (data.email !== undefined) conn.email = data.email;
+    if (group) conn.group = group;
 
     upsert(db, conn);
     reorderInTx(db, data.provider);
@@ -197,6 +218,7 @@ export async function updateProviderConnection(id, data) {
     if (!row) { result = null; return; }
     const existing = rowToConn(row);
     const merged = { ...existing, ...data, updatedAt: new Date().toISOString() };
+    if (data.group !== undefined) merged.group = typeof data.group === "string" ? data.group.trim() : "";
     upsert(db, merged);
     if (data.priority !== undefined) reorderInTx(db, existing.provider);
     result = merged;

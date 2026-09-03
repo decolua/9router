@@ -1,10 +1,19 @@
-import Database from "better-sqlite3";
 import { PRAGMA_SQL } from "../schema.js";
 
 // Periodic checkpoint to keep WAL file small (avoid huge -wal/-shm growth)
 const CHECKPOINT_INTERVAL_MS = 60 * 1000;
 
 export function createBetterSqliteAdapter(filePath) {
+  // eval("require") is a deliberate webpack/Turbopack escape hatch — a literal
+  // top-level `import Database from "better-sqlite3"` gets statically bundled
+  // for EVERY consumer of this file, including Server Components / middleware
+  // (via driver.js <- settingsRepo.js <- .../layout.js), which can't load a
+  // native addon and fails to compile/render even though this function itself
+  // never runs there. Native module, so this only resolves on Node — driver.js
+  // already dynamic-imports this whole file inside a try/catch and falls back
+  // to sql.js when it's unavailable.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const Database = eval("require")("better-sqlite3");
   const db = new Database(filePath);
   db.exec(PRAGMA_SQL);
   // Schema is created/synced by migrate.js after adapter init
