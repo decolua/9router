@@ -1,55 +1,79 @@
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 
-// Browser-local endpoint presets shared by every CLI tool card
-const STORAGE_KEY = "9router.cliToolEndpointPresets";
-const CHANGE_EVENT = "9router:endpoint-presets-changed";
+// Browser-local preset stores (endpoints, API keys) shared by every CLI tool card
+function createStore({ storageKey, changeEvent, itemField, normalize = (v) => v, defaultName = (v) => v }) {
+  const read = () => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = JSON.parse(window.localStorage.getItem(storageKey) || "[]");
+      if (!Array.isArray(raw)) return [];
+      return raw.filter((p) => p?.name && p?.[itemField]);
+    } catch {
+      return [];
+    }
+  };
+
+  const write = (items) => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(storageKey, JSON.stringify(items));
+    window.dispatchEvent(new CustomEvent(changeEvent));
+  };
+
+  return {
+    read,
+    subscribe: (handler) => {
+      if (typeof window === "undefined") return () => {};
+      window.addEventListener(changeEvent, handler);
+      return () => window.removeEventListener(changeEvent, handler);
+    },
+    // Adds or replaces a preset; returns the stored name, or null when skipped
+    upsert: (value, name) => {
+      const v = normalize(value);
+      if (!v) return null;
+
+      const items = read();
+      const existing = items.find((p) => normalize(p[itemField]) === v);
+      if (existing && !name) return existing.name;
+
+      const finalName = (name || defaultName(v)).trim();
+      if (!finalName) return null;
+
+      const next = [...items.filter((p) => p.name !== finalName && normalize(p[itemField]) !== v), { name: finalName, [itemField]: v }]
+        .sort((a, b) => a.name.localeCompare(b.name));
+      write(next);
+      return finalName;
+    },
+    remove: (name) => write(read().filter((p) => p.name !== name)),
+  };
+}
 
 const stripSlash = (url) => (url || "").replace(/\/+$/, "");
 
-export function readPresets() {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "[]");
-    if (!Array.isArray(raw)) return [];
-    return raw.filter((p) => p?.name && p?.baseUrl);
-  } catch {
-    return [];
-  }
-}
+const endpoints = createStore({
+  storageKey: "9router.cliToolEndpointPresets",
+  changeEvent: "9router:endpoint-presets-changed",
+  itemField: "baseUrl",
+  normalize: stripSlash,
+  defaultName: (url) => {
+    try { return new URL(url).host; } catch { return url; }
+  },
+});
 
-function writePresets(presets) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(presets));
-  window.dispatchEvent(new CustomEvent(CHANGE_EVENT));
-}
+const apiKeys = createStore({
+  storageKey: "9router.cliToolApiKeyPresets",
+  changeEvent: "9router:api-key-presets-changed",
+  itemField: "key",
+});
 
-export function subscribePresets(handler) {
-  if (typeof window === "undefined") return () => {};
-  window.addEventListener(CHANGE_EVENT, handler);
-  return () => window.removeEventListener(CHANGE_EVENT, handler);
-}
+export const readPresets = endpoints.read;
+export const subscribePresets = endpoints.subscribe;
+export const upsertPreset = endpoints.upsert;
+export const deletePreset = endpoints.remove;
 
-function defaultNameFor(url) {
-  try { return new URL(url).host; } catch { return url; }
-}
-
-// Adds or replaces a preset; returns the stored name, or null when skipped
-export function upsertPreset(baseUrl, name) {
-  const url = stripSlash(baseUrl);
-  if (!url) return null;
-
-  const presets = readPresets();
-  const existing = presets.find((p) => stripSlash(p.baseUrl) === url);
-  if (existing && !name) return existing.name;
-
-  const finalName = (name || defaultNameFor(url)).trim();
-  if (!finalName) return null;
-
-  const next = [...presets.filter((p) => p.name !== finalName && stripSlash(p.baseUrl) !== url), { name: finalName, baseUrl: url }]
-    .sort((a, b) => a.name.localeCompare(b.name));
-  writePresets(next);
-  return finalName;
-}
+export const readKeyPresets = apiKeys.read;
+export const subscribeKeyPresets = apiKeys.subscribe;
+export const upsertKeyPreset = apiKeys.upsert;
+export const deleteKeyPreset = apiKeys.remove;
 
 // Save an applied endpoint unless it exactly matches a built-in dropdown option
 export function rememberEndpoint(baseUrl, { tunnelPublicUrl, tailscaleUrl, cloudUrl } = {}) {
@@ -62,10 +86,6 @@ export function rememberEndpoint(baseUrl, { tunnelPublicUrl, tailscaleUrl, cloud
   if (builtIns.includes(url)) return null;
 
   return upsertPreset(url);
-}
-
-export function deletePreset(name) {
-  writePresets(readPresets().filter((p) => p.name !== name));
 }
 
 export { stripSlash };
