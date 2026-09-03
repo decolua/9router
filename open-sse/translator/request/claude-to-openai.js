@@ -160,11 +160,16 @@ function convertClaudeMessage(msg) {
     const parts = [];
     const toolCalls = [];
     const toolResults = [];
+    let reasoningContent = "";
 
     for (const block of msg.content) {
       switch (block.type) {
         case CLAUDE_BLOCK.TEXT:
           parts.push({ type: OPENAI_BLOCK.TEXT, text: block.text });
+          break;
+
+        case CLAUDE_BLOCK.THINKING:
+          if (block.thinking) reasoningContent += block.thinking;
           break;
 
         case CLAUDE_BLOCK.IMAGE:
@@ -225,16 +230,23 @@ function convertClaudeMessage(msg) {
       if (parts.length > 0) {
         result.content = collapseTextParts(parts);
       }
+      if (reasoningContent) {
+        result.reasoning_content = reasoningContent;
+      }
       result.tool_calls = toolCalls;
       return result;
     }
 
     // Return content
-    if (parts.length > 0) {
-      return {
-        role,
-        content: collapseTextParts(parts)
-      };
+    if (parts.length > 0 || reasoningContent) {
+      const result2 = { role };
+      if (parts.length > 0) {
+        result2.content = collapseTextParts(parts);
+      }
+      if (reasoningContent) {
+        result2.reasoning_content = reasoningContent;
+      }
+      return result2;
     }
     
     // Empty content array
