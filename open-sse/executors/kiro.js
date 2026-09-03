@@ -5,6 +5,8 @@ import {
   KIRO_ENDPOINT_FALLBACK_STATUSES,
   resolveKiroModel,
 } from "../config/kiroConstants.js";
+import { resolveKiroRuntimeRegion } from "../config/kiroRegions.js";
+import { buildKiroClientFingerprintHeaders } from "../utils/kiroFingerprint.js";
 import { v4 as uuidv4 } from "uuid";
 import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
@@ -229,8 +231,11 @@ export class KiroExecutor extends BaseExecutor {
   buildHeaders(credentials, stream = true, url = "") {
     const headers = {
       ...this.config.headers,
+      ...buildKiroClientFingerprintHeaders(credentials),
       "Amz-Sdk-Request": "attempt=1; max=3",
-      "Amz-Sdk-Invocation-Id": uuidv4()
+      "Amz-Sdk-Invocation-Id": uuidv4(),
+      "x-amzn-bedrock-cache-control": "enable",
+      "anthropic-beta": "prompt-caching-2024-07-31",
     };
     if (url.includes("://codewhisperer.")) {
       headers["X-Amz-Target"] = KIRO_CODEWHISPERER_TARGET;
@@ -269,7 +274,9 @@ export class KiroExecutor extends BaseExecutor {
    * codewhisperer.* GenerateAssistantResponse endpoint can authenticate the key
    * but rejects the same valid payload with REQUEST_BODY_INVALID. Since a 400
    * is terminal in BaseExecutor, putting CodeWhisperer first prevents the working
-   * q.* endpoint from ever being tried. Keep q.* first only for api_key accounts.
+   * q.* endpoint from ever being tried. API-key accounts therefore use only
+   * their region-bound q.* endpoint; switching surfaces cannot repair a request
+   * and weakens cache locality.
    *
    * The Kiro IDE gateway (runtime.*.kiro.dev) expects Kiro OIDC/social tokens
    * and rejects TokenType=API_KEY. External IdP enterprise tokens instead
@@ -285,8 +292,12 @@ export class KiroExecutor extends BaseExecutor {
     // 403 "bearer token invalid", so they must hit the CodeWhisperer
     // *.amazonaws.com surface, and in the region the token was minted in
     // (the baseUrls are hardcoded us-east-1).
-    const isCodeWhispererSurface =
-      authMethod === "api_key" || authMethod === "external_idp" || authMethod === "idc";
+    if (authMethod === "api_key") {
+      const region = resolveKiroRuntimeRegion(credentials?.providerSpecificData?.region);
+      return [`https://q.${region}.amazonaws.com/generateAssistantResponse`];
+    }
+
+    const isCodeWhispererSurface = authMethod === "external_idp" || authMethod === "idc";
     if (!isCodeWhispererSurface) return baseUrls;
 
     const region = (credentials?.providerSpecificData?.region || "us-east-1").trim();
@@ -313,11 +324,15 @@ export class KiroExecutor extends BaseExecutor {
     return baseUrls[urlIndex] || baseUrls[0] || this.config.baseUrl;
   }
 
+  getFallbackCount(credentials = null) {
+    return this.getOrderedBaseUrls(credentials).length || 1;
+  }
+
   // Retry only endpoint/auth-surface failures. Payload-invalid HTTP 400 must be
   // terminal: sending the same malformed body to every surface cannot repair it.
-  shouldRetry(status, urlIndex) {
-    const hasFallback = urlIndex + 1 < this.getFallbackCount();
-    return super.shouldRetry(status, urlIndex)
+  shouldRetry(status, urlIndex, credentials = null) {
+    const hasFallback = urlIndex + 1 < this.getFallbackCount(credentials);
+    return super.shouldRetry(status, urlIndex, credentials)
       || (hasFallback && KIRO_ENDPOINT_FALLBACK_STATUSES.has(status));
   }
 
@@ -332,8 +347,8 @@ export class KiroExecutor extends BaseExecutor {
    * BaseExecutor.execute() walks config.baseUrls (runtime.us-east-1.kiro.dev →
    * codewhisperer → q) advancing to the next host on 429 (shouldRetry) and on
    * network/5xx errors, while tryRetry handles in-place retries per `retry: {429: 2}`.
-   * Note: api-key connections reorder these so the *.amazonaws.com hosts come
-   * first — see getOrderedBaseUrls/buildUrl above.
+   * API-key connections use one persisted regional q.* host. Other auth methods
+   * retain their existing endpoint fallback order.
    * Note: the baseUrls are alternate surfaces of one regional service, so rotation
    * is edge-level failover — it does not grant fresh 429 quota. Per-account 429
    * spreading is handled upstream by account rotation in sse/handlers/chat.js.
