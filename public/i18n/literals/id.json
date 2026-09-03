@@ -1389,5 +1389,7 @@
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Pemberitahuan Risiko: Penyedia ini menggunakan sesi langganan/OAuth yang tidak dilisensikan secara resmi untuk penggunaan proxy/router. Akun mungkin dibatasi atau diblokir. Gunakan dengan risiko Anda sendiri.",
   "✓ Confirm Add": "✓ Konfirmasi Tambah",
   "📝 Configure providers in dashboard or use environment variables": "📝 Konfigurasi penyedia di dasbor atau gunakan variabel lingkungan",
-  "🔐 OAuth required. Add now and authenticate after Apply; tool list will be discovered after first connect.": "🔐 OAuth diperlukan. Tambah sekarang dan autentikasi setelah Terapkan; daftar alat akan ditemukan setelah koneksi pertama."
+  "🔐 OAuth required. Add now and authenticate after Apply; tool list will be discovered after first connect.": "🔐 OAuth diperlukan. Tambah sekarang dan autentikasi setelah Terapkan; daftar alat akan ditemukan setelah koneksi pertama.",
+  "Request details logging is turned off": "Pencatatan detail permintaan sedang dimatikan",
+  "Enable Observability in Settings to start recording every request here.": "Aktifkan Observability di Pengaturan untuk mulai mencatat setiap permintaan di sini."
 }
