@@ -372,6 +372,7 @@
 - **i18n**: Thai (th) + Persian (fa) translations / README
 
 ## Fixes
+- **MiniMax**: add the required empty signature field to unsigned Anthropic thinking block starts
 - **Providers**: bulk-add API keys no longer overwrite existing keys (gap-fill `Key N`)
 - **Anthropic**: lowercase `anthropic-version` header to prevent duplication on `/v1/messages`
 - **Alicode-intl**: use DashScope compatible-mode endpoint so standard keys work
