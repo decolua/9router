@@ -41,6 +41,7 @@ export default function ProviderDetailPage() {
   const providerId = params.id;
   const { getCaps } = useModelCaps();
   const [connections, setConnections] = useState([]);
+  const [codexPlans, setCodexPlans] = useState({});
   const [loading, setLoading] = useState(true);
   const [providerNode, setProviderNode] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
@@ -306,6 +307,22 @@ export default function ProviderDetailPage() {
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
       if (connectionsRes.ok) {
         const filtered = (connectionsData.connections || []).filter(c => c.provider === providerId);
+
+        if (providerId === "codex") {
+          const plans = await Promise.all(filtered.map(async (connection) => {
+            try {
+              const usageRes = await fetch(`/api/usage/${connection.id}`);
+              const usage = usageRes.ok ? await usageRes.json() : null;
+              const plan = usage?.plan?.trim();
+              return plan && plan.toLowerCase() !== "unknown" ? [connection.id, plan] : null;
+            } catch {
+              return null;
+            }
+          }));
+          setCodexPlans(Object.fromEntries(plans.filter(Boolean)));
+        } else {
+          setCodexPlans({});
+        }
         setConnections(filtered);
       }
       if (proxyPoolsRes.ok) {
@@ -958,6 +975,7 @@ export default function ProviderDetailPage() {
             <div className="flex-1 min-w-0">
               <ConnectionRow
                 connection={conn}
+                plan={codexPlans[conn.id]}
                 proxyPools={proxyPools}
                 isOAuth={isOAuth}
                 isFirst={index === 0}
