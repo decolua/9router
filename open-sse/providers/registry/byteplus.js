@@ -19,7 +19,7 @@ export default {
   },
   category: "freeTier",
   transport: {
-    baseUrl: "https://ark.ap-southeast.bytepluses.com/api/coding/v3/chat/completions",
+    baseUrl: "https://ark.ap-southeast.bytepluses.com/api/v3/chat/completions",
     headers: {},
   },
   models: [
