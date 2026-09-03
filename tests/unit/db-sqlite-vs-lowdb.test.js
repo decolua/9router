@@ -248,16 +248,51 @@ describe("DB SQLite layer — public API parity", () => {
     expect(exported.settings).toBeDefined();
     expect(Array.isArray(exported.providerConnections)).toBe(true);
     expect(typeof exported.modelAliases).toBe("object");
+    expect(Array.isArray(exported.usageHistory)).toBe(true);
+    expect(Array.isArray(exported.usageDaily)).toBe(true);
+    expect(exported.usageMeta.totalRequestsLifetime).toEqual(expect.any(Number));
 
-    // Add marker, export, import a different payload, verify reset
+    // Add config + usage markers, then verify both are restored from snapshot.
     await sqliteDb.setModelAlias("marker", "before");
+    await sqliteDb.saveRequestUsage({
+      timestamp: "2025-01-01T00:00:00.000Z",
+      provider: "backup-snapshot", model: "backup-model", connectionId: "backup-c1",
+      tokens: { prompt_tokens: 11, completion_tokens: 7 },
+      endpoint: "/v1/backup", status: "ok",
+    });
     const snap = await sqliteDb.exportDb();
 
     await sqliteDb.setModelAlias("marker", "after");
+    await sqliteDb.saveRequestUsage({
+      timestamp: "2025-01-02T00:00:00.000Z",
+      provider: "backup-extra", model: "backup-model", connectionId: "backup-c2",
+      tokens: { prompt_tokens: 99, completion_tokens: 1 },
+      endpoint: "/v1/backup", status: "ok",
+    });
     expect((await sqliteDb.getModelAliases()).marker).toBe("after");
+    expect(await sqliteDb.getUsageHistory({ provider: "backup-extra" })).toHaveLength(1);
 
     await sqliteDb.importDb(snap);
     expect((await sqliteDb.getModelAliases()).marker).toBe("before");
+    expect(await sqliteDb.getUsageHistory({ provider: "backup-snapshot" })).toHaveLength(1);
+    expect(await sqliteDb.getUsageHistory({ provider: "backup-extra" })).toHaveLength(0);
+
+    const restored = await sqliteDb.exportDb();
+    expect(restored.usageMeta.totalRequestsLifetime).toBe(snap.usageMeta.totalRequestsLifetime);
+
+    // Legacy backups have no usage fields and must preserve current usage.
+    const legacyBackup = { ...snap };
+    delete legacyBackup.usageHistory;
+    delete legacyBackup.usageDaily;
+    delete legacyBackup.usageMeta;
+    await sqliteDb.saveRequestUsage({
+      timestamp: "2025-01-03T00:00:00.000Z",
+      provider: "legacy-preserved", model: "backup-model", connectionId: "backup-c3",
+      tokens: { prompt_tokens: 5, completion_tokens: 3 },
+      endpoint: "/v1/backup", status: "ok",
+    });
+    await sqliteDb.importDb(legacyBackup);
+    expect(await sqliteDb.getUsageHistory({ provider: "legacy-preserved" })).toHaveLength(1);
   });
 
   it("pricing: user pricing merged with constants", async () => {
