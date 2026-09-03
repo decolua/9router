@@ -75,10 +75,24 @@ export class DefaultExecutor extends BaseExecutor {
       if (this.config.quirks?.dropClientMetadata) {
         delete transformed.client_metadata;
       }
+      this.defaultResponsesTextFormat(transformed);
       stripUnsupportedParams(this.provider, model, transformed);
     }
 
     return injectReasoningContent({ provider: this.provider, model, body: transformed });
+  }
+
+  // Some Responses-compatible upstreams (e.g. LM Studio) reject a request whose
+  // `text` is an object missing `text.format` with a 400 missing_required_parameter.
+  // The Responses API default for that field is { type: "text" }, so default it
+  // for openai-compatible "responses" providers before forwarding upstream. #2093
+  defaultResponsesTextFormat(body) {
+    if (!this.provider?.startsWith?.("openai-compatible-")) return;
+    if (!this.provider.includes("responses")) return;
+    const text = body.text;
+    if (!text || typeof text !== "object" || Array.isArray(text)) return;
+    if (text.format !== undefined) return;
+    body.text = { ...text, format: { type: "text" } };
   }
 
   // Fallback json_schema → json_object for openai-compatible providers without native Structured Output.
