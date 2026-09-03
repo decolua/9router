@@ -185,6 +185,34 @@ function codexSseErrorResponse(status, message) {
   });
 }
 
+async function isInvalidEncryptedContentResponse(response) {
+  if (response?.status !== HTTP_STATUS.BAD_REQUEST || typeof response.clone !== "function") return false;
+  try {
+    const payload = JSON.parse(await response.clone().text());
+    const error = payload?.error || payload;
+    if (error?.code === "invalid_encrypted_content") return true;
+    const message = typeof error?.message === "string" ? error.message.toLowerCase() : "";
+    return message.includes("encrypted content") &&
+      (message.includes("could not be verified") || message.includes("could not be decrypted or parsed"));
+  } catch {
+    return false;
+  }
+}
+
+function removeInvalidEncryptedReasoning(body) {
+  if (!Array.isArray(body?.input)) return 0;
+  let removed = 0;
+  body.input = body.input.filter((item) => {
+    if (!item || item.type !== "reasoning" || !Object.hasOwn(item, "encrypted_content")) return true;
+    delete item.encrypted_content;
+    removed++;
+    const hasSummary = Array.isArray(item.summary) ? item.summary.length > 0 : Boolean(item.summary);
+    const hasContent = Array.isArray(item.content) ? item.content.length > 0 : Boolean(item.content);
+    return hasSummary || hasContent;
+  });
+  return removed;
+}
+
 /**
  * Codex Executor - handles OpenAI Codex API (Responses API format)
  * Automatically injects default instructions if missing
@@ -272,8 +300,20 @@ export class CodexExecutor extends BaseExecutor {
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
     const { attempts, delayMs } = resolveRetryEntry(retryConfig[503]);
     let attempt = 0;
+    let encryptedRecoveryAttempted = false;
+    let requestArgs = args;
     while (true) {
-      const result = await super.execute(args);
+      const result = await super.execute(requestArgs);
+      if (!encryptedRecoveryAttempted && await isInvalidEncryptedContentResponse(result.response)) {
+        const recoveryBody = structuredClone(requestArgs.body);
+        const removed = removeInvalidEncryptedReasoning(recoveryBody);
+        if (removed > 0) {
+          encryptedRecoveryAttempted = true;
+          requestArgs = { ...requestArgs, body: recoveryBody };
+          args.log?.warn?.("RETRY", `CODEX | invalid encrypted reasoning; retrying same account without ${removed} encrypted item(s)`);
+          continue;
+        }
+      }
       const peek = await this._peekSseTransientError(result.response);
       if (!peek.matched) {
         // Replace body with re-assembled stream (prefix bytes already read + rest)
