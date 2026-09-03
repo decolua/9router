@@ -308,12 +308,21 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const msgCount = translatedBody.messages?.length || translatedBody.input?.length || translatedBody.contents?.length || translatedBody.request?.contents?.length || 0;
   log?.debug?.("REQUEST", `${provider.toUpperCase()} | ${model} | ${msgCount} msgs`);
 
+  // Set when the response turns out to be streaming; called by the stream
+  // controller on disconnect/error to finalize the placeholder requestDetail
+  // row (flush() never runs on those paths).
+  let abandonStreamingDetail = null;
+
   const streamController = createStreamController({
     onDisconnect: (reason) => {
       trackPendingRequest(model, provider, connectionId, false);
+      abandonStreamingDetail?.(typeof reason?.reason === "string" ? reason.reason : "client_disconnected");
       if (onDisconnect) onDisconnect(reason);
     },
-    onError: () => trackPendingRequest(model, provider, connectionId, false),
+    onError: (err) => {
+      trackPendingRequest(model, provider, connectionId, false);
+      abandonStreamingDetail?.(err?.message === "stream stall timeout" ? "stall_timeout" : "stream_error");
+    },
     log, provider, model, reqTag
   });
 
@@ -468,7 +477,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   // Streaming response
-  const { onStreamComplete, streamDetailId } = buildOnStreamComplete({ ...sharedCtx });
+  const { onStreamComplete, onStreamAbandoned, streamDetailId } = buildOnStreamComplete({ ...sharedCtx });
+  abandonStreamingDetail = onStreamAbandoned;
   return handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, userAgent, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId });
 }
 
