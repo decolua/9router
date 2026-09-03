@@ -175,7 +175,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     translatedBody = { ...body, model: stripThinkingSuffix(upstreamModel) };
     if (provider === "codex") {
       const suffixThinking = {};
-      applyThinking(sourceFormat, upstreamModel, suffixThinking, provider);
+      // Pinned to OPENAI on purpose: this branch reads the flat reasoning_effort key
+      // off the scratch object and nests it itself, so applyThinking must not nest.
+      // Passing sourceFormat here would hand back {reasoning:{effort}} for a Responses
+      // client and the suffix would silently stop applying.
+      applyThinking(FORMATS.OPENAI, upstreamModel, suffixThinking, provider);
       if (suffixThinking.reasoning_effort) {
         const reasoning = translatedBody.reasoning;
         translatedBody.reasoning = {

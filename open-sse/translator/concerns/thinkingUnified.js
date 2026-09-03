@@ -5,6 +5,7 @@
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { getThinkingLevels } from "../../providers/thinkingLevels.js";
 import { PROVIDERS } from "../../providers/index.js";
+import { FORMATS } from "../formats.js";
 import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
 
 // Map a target wire-format to its native thinking format (when capability has none).
@@ -20,6 +21,8 @@ const FORMAT_TO_NATIVE = {
   antigravity: "gemini-budget",
   kiro: "kiro",
 };
+
+const RESPONSES_TARGETS = new Set([FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI_RESPONSE]);
 
 // Strip a trailing thinking suffix "model(value)" → "model" (no-op when absent).
 export function stripThinkingSuffix(model) {
@@ -361,7 +364,17 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
 
   const fmt = resolveFormat(targetFormat, cleanModel, provider);
   const supportedLevels = getThinkingLevels(provider, cleanModel);
+  const prior = body.reasoning;
+  const priorReasoning = prior && typeof prior === "object" ? prior : null;
   stripAll(body);
   applyFormat(fmt, body, cfg, caps, supportedLevels);
+  if (RESPONSES_TARGETS.has(targetFormat)) nestReasoningEffort(body, priorReasoning);
   return body;
+}
+
+function nestReasoningEffort(body, priorReasoning) {
+  if (typeof body.reasoning_effort !== "string") return;
+  const effort = body.reasoning_effort;
+  delete body.reasoning_effort;
+  body.reasoning = { ...priorReasoning, effort };
 }
