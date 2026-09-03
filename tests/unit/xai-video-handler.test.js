@@ -22,6 +22,7 @@ const authMocks = vi.hoisted(() => ({
 }));
 const tokenMocks = vi.hoisted(() => ({
   checkAndRefreshToken: vi.fn(async (_p, creds) => creds),
+  resolveRefreshProxyOptions: vi.fn(() => ({ disableEnvProxy: true })),
   updateProviderCredentials: vi.fn(async () => {}),
 }));
 

@@ -457,6 +457,15 @@ describe("handleEmbeddingsCore — success path", () => {
     expect(result.response.status).toBe(200);
   });
 
+  it("passes explicit proxy context into provider fetch", async () => {
+    const proxyOptions = { disableEnvProxy: true };
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({ proxyOptions }));
+
+    expect(vi.mocked(fetch).mock.calls[0][1].proxyOptions).toBe(proxyOptions);
+  });
+
   it("response body is valid OpenAI-format JSON", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
 

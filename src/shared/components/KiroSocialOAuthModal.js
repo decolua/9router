@@ -1,45 +1,95 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { sanitizeOAuthError } from "open-sse/utils/oauthError.js";
+import OAuthProxyPoolSelector from "./OAuthProxyPoolSelector";
 
 /**
  * Kiro Social OAuth Modal (Google/GitHub)
  * Handles manual callback URL flow for social login
  */
-export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onClose }) {
+export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onClose, proxyPools = [], proxyPoolsReady = false }) {
   const [step, setStep] = useState("loading"); // loading | input | success | error
   const [authUrl, setAuthUrl] = useState("");
   const [authData, setAuthData] = useState(null);
   const [callbackUrl, setCallbackUrl] = useState("");
   const [error, setError] = useState(null);
+  const [selectedProxyPoolId, setSelectedProxyPoolId] = useState("");
   const { copied, copy } = useCopyToClipboard();
   const openedRef = useRef(false);
+  const flowGenerationRef = useRef(0);
+  const authGenerationRef = useRef(0);
+  const authorizationStateRef = useRef(null);
+  const authorizationCancelRef = useRef(null);
+  const closePromiseRef = useRef(null);
+  const closeCompletedRef = useRef(false);
+
+  const cancelAuthorizationFlow = useCallback((stateOverride) => {
+    const state = stateOverride === undefined ? authorizationStateRef.current : stateOverride;
+    if (!state) return Promise.resolve();
+    if (authorizationCancelRef.current?.state === state) return authorizationCancelRef.current.promise;
+
+    let pending;
+    pending = fetch(`/api/oauth/${provider}/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state, kind: "kiro-social" }),
+    }).then(async (response) => {
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to cancel authorization");
+      }
+      if (authorizationStateRef.current === state) authorizationStateRef.current = null;
+    }).finally(() => {
+      if (authorizationCancelRef.current?.promise === pending) authorizationCancelRef.current = null;
+    });
+    authorizationCancelRef.current = { state, promise: pending };
+    return pending;
+  }, [provider]);
 
   // Reset auto-open guard when modal closes so it can re-open next session.
   useEffect(() => {
-    if (!isOpen) openedRef.current = false;
+    if (!isOpen) {
+      flowGenerationRef.current += 1;
+      authGenerationRef.current = 0;
+      openedRef.current = false;
+    } else {
+      closeCompletedRef.current = false;
+    }
   }, [isOpen]);
 
   // Initialize auth flow
   useEffect(() => {
     if (!isOpen || !provider) return;
+    if (!proxyPoolsReady) return;
+    const generation = ++flowGenerationRef.current;
+    let cancelled = false;
 
     const initAuth = async () => {
       try {
         setError(null);
         setStep("loading");
 
-        const res = await fetch(`/api/oauth/kiro/social-authorize?provider=${provider}`);
+        const authorizeUrl = new URL("/api/oauth/kiro/social-authorize", window.location.origin);
+        authorizeUrl.searchParams.set("provider", provider);
+        if (selectedProxyPoolId) authorizeUrl.searchParams.set("proxyPoolId", selectedProxyPoolId);
+        const res = await fetch(authorizeUrl.toString());
         const data = await res.json();
+        if (cancelled || generation !== flowGenerationRef.current) {
+          if (res.ok && data.state) await cancelAuthorizationFlow(data.state);
+          return;
+        }
 
         if (!res.ok) {
           throw new Error(data.error);
         }
 
         setAuthData(data);
+        authorizationStateRef.current = data.state;
+        authGenerationRef.current = generation;
         setAuthUrl(data.authUrl);
         setStep("input");
 
@@ -49,16 +99,38 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
           window.open(data.authUrl, "_blank");
         }
       } catch (err) {
-        setError(err.message);
+        if (cancelled || generation !== flowGenerationRef.current) return;
+        setError(sanitizeOAuthError(err));
         setStep("error");
       }
     };
 
     initAuth();
-  }, [isOpen, provider]);
+    return () => { cancelled = true; };
+  }, [cancelAuthorizationFlow, isOpen, provider, proxyPoolsReady, selectedProxyPoolId]);
+
+  const handleProxyPoolChange = async (event) => {
+    flowGenerationRef.current += 1;
+    authGenerationRef.current = 0;
+    openedRef.current = false;
+    try {
+      await cancelAuthorizationFlow(authData?.state);
+      setAuthData(null);
+      setAuthUrl("");
+      setCallbackUrl("");
+      setSelectedProxyPoolId(event.target.value);
+    } catch (err) {
+      setError(sanitizeOAuthError(err?.message));
+      setStep("error");
+    }
+  };
 
   const handleManualSubmit = async () => {
+    const generation = authGenerationRef.current;
     try {
+      if (!authData || generation !== flowGenerationRef.current) {
+        throw new Error("Authorization flow changed; restart sign-in");
+      }
       setError(null);
       
       // Parse callback URL - can be either kiro:// or http://localhost format
@@ -74,8 +146,12 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
       const state = url.searchParams.get("state");
       const errorParam = url.searchParams.get("error");
 
+      if (!state || state !== authData.state) {
+        throw new Error("OAuth state mismatch; restart sign-in");
+      }
+
       if (errorParam) {
-        throw new Error(url.searchParams.get("error_description") || errorParam);
+        throw new Error(sanitizeOAuthError(url.searchParams.get("error_description") || errorParam));
       }
 
       if (!code) {
@@ -88,29 +164,61 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           code,
-          codeVerifier: authData.codeVerifier,
+          state,
           provider,
         }),
       });
 
       const data = await res.json();
+      if (generation !== flowGenerationRef.current) return;
       if (!res.ok) throw new Error(data.error);
 
+      authorizationStateRef.current = null;
       setStep("success");
       onSuccess?.();
     } catch (err) {
-      setError(err.message);
+      setError(sanitizeOAuthError(err));
       setStep("error");
     }
   };
 
+  const handleClose = useCallback(() => {
+    if (closeCompletedRef.current) return Promise.resolve();
+    if (closePromiseRef.current) return closePromiseRef.current;
+    flowGenerationRef.current += 1;
+
+    let pending;
+    pending = (async () => {
+      try {
+        await cancelAuthorizationFlow(authData?.state);
+        closeCompletedRef.current = true;
+        onClose();
+      } catch (err) {
+        setError(sanitizeOAuthError(err?.message));
+        setStep("error");
+      }
+    })().finally(() => {
+      if (closePromiseRef.current === pending) closePromiseRef.current = null;
+    });
+    closePromiseRef.current = pending;
+    return pending;
+  }, [authData?.state, cancelAuthorizationFlow, onClose]);
+
   const providerName = provider === "google" ? "Google" : "GitHub";
 
   return (
-    <Modal isOpen={isOpen} title={`Connect Kiro via ${providerName}`} onClose={onClose} size="lg">
+    <Modal isOpen={isOpen} title={`Connect Kiro via ${providerName}`} onClose={handleClose} size="lg">
       <div className="flex flex-col gap-4">
+        <OAuthProxyPoolSelector
+          value={selectedProxyPoolId}
+          onChange={handleProxyPoolChange}
+          proxyPools={proxyPools}
+          proxyPoolsReady={proxyPoolsReady}
+          visible={step === "loading" || step === "input"}
+        />
+
         {/* Loading */}
-        {step === "loading" && (
+        {step === "loading" && proxyPoolsReady && (
           <div className="text-center py-6">
             <div className="size-16 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
               <span className="material-symbols-outlined text-3xl text-primary animate-spin">
@@ -160,7 +268,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
               <Button onClick={handleManualSubmit} fullWidth disabled={!callbackUrl}>
                 Connect
               </Button>
-              <Button onClick={onClose} variant="ghost" fullWidth>
+              <Button onClick={handleClose} variant="ghost" fullWidth>
                 Cancel
               </Button>
             </div>
@@ -177,7 +285,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
             <p className="text-sm text-text-muted mb-4">
               Your Kiro account via {providerName} has been connected.
             </p>
-            <Button onClick={onClose} fullWidth>
+            <Button onClick={handleClose} fullWidth>
               Done
             </Button>
           </div>
@@ -195,7 +303,7 @@ export default function KiroSocialOAuthModal({ isOpen, provider, onSuccess, onCl
               <Button onClick={() => setStep("input")} variant="secondary" fullWidth>
                 Try Again
               </Button>
-              <Button onClick={onClose} variant="ghost" fullWidth>
+              <Button onClick={handleClose} variant="ghost" fullWidth>
                 Cancel
               </Button>
             </div>
@@ -211,4 +319,6 @@ KiroSocialOAuthModal.propTypes = {
   provider: PropTypes.oneOf(["google", "github"]).isRequired,
   onSuccess: PropTypes.func,
   onClose: PropTypes.func.isRequired,
+  proxyPools: PropTypes.array,
+  proxyPoolsReady: PropTypes.bool,
 };

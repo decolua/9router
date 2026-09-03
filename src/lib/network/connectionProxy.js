@@ -1,9 +1,42 @@
 import { getProxyPoolById } from "@/models";
 
+const ALLOWED_PROXY_SCHEMES = ["http:", "https:", "socks5:", "socks4:", "socks5h:", "socks4a:"];
+
 // Safely normalize any value into a trimmed string.
 function normalizeString(value) {
   if (value === undefined || value === null) return "";
   return String(value).trim();
+}
+
+function normalizeProxyUrl(proxyUrl) {
+  const value = normalizeString(proxyUrl);
+  if (!value) return "";
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? value : `http://${value}`;
+}
+
+function isValidProxyUrl(proxyUrl) {
+  if (!proxyUrl || /[\n\r`$]/.test(proxyUrl)) return false;
+  try {
+    const parsed = new URL(proxyUrl);
+    return Boolean(parsed.hostname) && ALLOWED_PROXY_SCHEMES.includes(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
+
+function unavailableProxyConfig(proxyPoolId) {
+  return {
+    source: "unavailable",
+    proxyPoolId,
+    proxyPool: null,
+    proxyUnavailable: true,
+    connectionProxyEnabled: false,
+    connectionProxyUrl: "",
+    connectionNoProxy: "",
+    strictProxy: true,
+    disableEnvProxy: true,
+    vercelRelayUrl: "",
+  };
 }
 
 // ─── Proxy pool rotation state (in-memory) ─────────────────────────
@@ -66,14 +99,27 @@ function normalizeLegacyProxy(providerSpecificData = {}) {
 export async function resolveConnectionProxyConfig(
   providerSpecificData = {}
 ) {
-  try {
-    const proxyPoolIdRaw = normalizeString(
-      providerSpecificData?.proxyPoolId
-    );
+  const proxyPoolIdRaw = normalizeString(
+    providerSpecificData?.proxyPoolId
+  );
 
+  try {
     // "__none__" means explicitly disabled
-    const proxyPoolId =
-      proxyPoolIdRaw === "__none__" ? "" : proxyPoolIdRaw;
+    if (proxyPoolIdRaw === "__none__") {
+      return {
+        source: "none",
+        proxyPoolId: null,
+        proxyPool: null,
+        connectionProxyEnabled: false,
+        connectionProxyUrl: "",
+        connectionNoProxy: "",
+        strictProxy: false,
+        disableEnvProxy: true,
+        vercelRelayUrl: "",
+      };
+    }
+
+    const proxyPoolId = proxyPoolIdRaw;
 
     const legacy = normalizeLegacyProxy(providerSpecificData);
 
@@ -85,13 +131,12 @@ export async function resolveConnectionProxyConfig(
     if (proxyPoolId) {
       const proxyPool = await getProxyPoolById(proxyPoolId);
 
-      const proxyUrl = normalizeString(proxyPool?.proxyUrl);
-      const noProxy = normalizeString(proxyPool?.noProxy);
+      const proxyUrl = normalizeProxyUrl(proxyPool?.proxyUrl);
 
       const isValidPool =
         proxyPool &&
         proxyPool.isActive === true &&
-        proxyUrl;
+        isValidProxyUrl(proxyUrl);
 
       if (isValidPool) {
         /**
@@ -107,9 +152,10 @@ export async function resolveConnectionProxyConfig(
 
             connectionProxyEnabled: false,
             connectionProxyUrl: "",
-            connectionNoProxy: noProxy,
+            connectionNoProxy: "",
 
-            strictProxy: proxyPool.strictProxy === true,
+            strictProxy: true,
+            disableEnvProxy: true,
 
             vercelRelayUrl: proxyUrl, // Still mapped to vercelRelayUrl in the unified payload since they use the exact same header spec
           };
@@ -126,11 +172,14 @@ export async function resolveConnectionProxyConfig(
 
           connectionProxyEnabled: true,
           connectionProxyUrl: proxyUrl,
-          connectionNoProxy: noProxy,
+          connectionNoProxy: "",
 
-          strictProxy: proxyPool.strictProxy === true,
+          strictProxy: true,
+          disableEnvProxy: true,
         };
       }
+
+      return unavailableProxyConfig(proxyPoolId);
     }
 
     /**
@@ -164,12 +213,15 @@ export async function resolveConnectionProxyConfig(
       proxyPool: null,
 
       ...legacy,
+      disableEnvProxy: true,
     };
   } catch (error) {
     console.error(
       "[resolveConnectionProxyConfig] Failed to resolve proxy config:",
       error
     );
+
+    if (proxyPoolIdRaw) return unavailableProxyConfig(proxyPoolIdRaw);
 
     return {
       source: "error",
@@ -182,6 +234,7 @@ export async function resolveConnectionProxyConfig(
       connectionNoProxy: "",
 
       strictProxy: false,
+      disableEnvProxy: true,
     };
   }
 }

@@ -44,6 +44,7 @@ export default function ProviderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [providerNode, setProviderNode] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
+  const [proxyPoolsReady, setProxyPoolsReady] = useState(false);
   const [showOAuthModal, setShowOAuthModal] = useState(false);
   const [showIFlowCookieModal, setShowIFlowCookieModal] = useState(false);
   const [showAddApiKeyModal, setShowAddApiKeyModal] = useState(false);
@@ -293,6 +294,7 @@ export default function ProviderDetailPage() {
   }, [providerId]);
 
   const fetchConnections = useCallback(async () => {
+    setProxyPoolsReady(false);
     try {
       const [connectionsRes, nodesRes, proxyPoolsRes, settingsRes] = await Promise.all([
         fetch("/api/providers", { cache: "no-store" }),
@@ -310,6 +312,7 @@ export default function ProviderDetailPage() {
       }
       if (proxyPoolsRes.ok) {
         setProxyPools(proxyPoolsData.proxyPools || []);
+        setProxyPoolsReady(true);
       }
       // Load per-provider strategy override
       const override = (settingsData.providerStrategies || {})[providerId] || {};
@@ -454,6 +457,7 @@ export default function ProviderDetailPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loader updates state after requests settle
     fetchConnections();
     fetchAliases();
     fetchCustomModels();
@@ -869,6 +873,7 @@ export default function ProviderDetailPage() {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- selection must track removed connections
     setSelectedConnectionIds((prev) => prev.filter((id) => connections.some((conn) => conn.id === id)));
   }, [connections]);
 
@@ -1711,6 +1716,8 @@ export default function ProviderDetailPage() {
           providerInfo={providerInfo}
           onSuccess={handleOAuthSuccess}
           onClose={() => setShowOAuthModal(false)}
+          proxyPools={proxyPools}
+          proxyPoolsReady={proxyPoolsReady}
         />
       ) : providerId === "cursor" ? (
         <CursorAuthModal
@@ -1724,6 +1731,8 @@ export default function ProviderDetailPage() {
           providerInfo={providerInfo}
           onSuccess={handleOAuthSuccess}
           onClose={() => setShowOAuthModal(false)}
+          proxyPools={proxyPools}
+          proxyPoolsReady={proxyPoolsReady}
         />
       ) : (
         <OAuthModal
@@ -1732,6 +1741,8 @@ export default function ProviderDetailPage() {
           providerInfo={providerInfo}
           onSuccess={handleOAuthSuccess}
           onClose={() => setShowOAuthModal(false)}
+          proxyPools={proxyPools}
+          proxyPoolsReady={proxyPoolsReady}
         />
       )}
       {providerId === "iflow" && (

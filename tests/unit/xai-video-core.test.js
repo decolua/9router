@@ -20,6 +20,7 @@ vi.mock("open-sse/services/tokenRefresh.js", () => ({
 import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets, VIDEO_ACTIONS } from "open-sse/handlers/videoCore.js";
 import { refreshTokenByProvider } from "open-sse/services/tokenRefresh.js";
 import { PROVIDER_MEDIA, PROVIDER_MODELS } from "open-sse/providers/index.js";
+import { MAX_REMOTE_JSON_BYTES } from "open-sse/config/mediaConfig.js";
 
 const originalFetch = global.fetch;
 
@@ -164,6 +165,7 @@ describe("handleVideoProxyCore", () => {
 
     const credentials = { accessToken: "tok-OLD", refreshToken: "ref-OLD" };
     const onCredentialsRefreshed = vi.fn();
+    const proxyOptions = { disableEnvProxy: true };
 
     const result = await handleVideoProxyCore({
       provider: "xai",
@@ -172,11 +174,14 @@ describe("handleVideoProxyCore", () => {
       contentType: "application/json",
       credentials,
       onCredentialsRefreshed,
+      proxyOptions,
     });
 
     expect(result.success).toBe(true);
     expect(refreshTokenByProvider).toHaveBeenCalledTimes(1);
+    expect(refreshTokenByProvider).toHaveBeenCalledWith("xai", credentials, undefined, proxyOptions);
     expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(global.fetch.mock.calls.every((call) => call[1].proxyOptions === proxyOptions)).toBe(true);
     expect(global.fetch.mock.calls[1][1].headers.Authorization).toBe("Bearer tok-NEW");
     expect(onCredentialsRefreshed).toHaveBeenCalledWith(expect.objectContaining({ accessToken: "tok-NEW" }));
     expect(await result.response.json()).toEqual({ request_id: "req-after-refresh" });
@@ -263,6 +268,23 @@ describe("handleVideoProxyCore", () => {
     expect(result.error).not.toContain("sk-secret-token-value-123456");
     expect(result.error).not.toContain("tok-SECRETSECRET");
     expect(result.error).toContain("[redacted]");
+  });
+
+  it.each([200, 502])("rejects oversized video response bodies with status %s", async (status) => {
+    global.fetch.mockResolvedValueOnce(new Response("x".repeat(MAX_REMOTE_JSON_BYTES + 1), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    }));
+
+    const result = await handleVideoProxyCore({
+      provider: "xai",
+      requestId: "req-large",
+      credentials: { accessToken: "tok" },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(502);
+    expect(result.error).toMatch(/large|size|bytes/i);
   });
 
   it("maps client aborts to 408 without retrying", async () => {

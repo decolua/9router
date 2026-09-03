@@ -10,6 +10,7 @@ import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { refreshAndUpdateCredentials } from "@/app/api/usage/[connectionId]/route.js";
 import { QUOTA_AUTOPING_CONFIG } from "@/shared/constants/config";
+import { sanitizeOAuthError } from "open-sse/utils/oauthError.js";
 
 const C = QUOTA_AUTOPING_CONFIG;
 const CLAUDE_PING_URL = "https://api.anthropic.com/v1/messages?beta=true";
@@ -91,16 +92,6 @@ function shouldPingForReset(providerConfig, cachedReset, resetAt, now) {
 
   const resetMs = new Date(resetAt).getTime();
   return Number.isFinite(resetMs) && now >= resetMs - C.pingLeadMs;
-}
-
-function buildProxyOptions(cfg) {
-  return {
-    connectionProxyEnabled: cfg.connectionProxyEnabled === true,
-    connectionProxyUrl: cfg.connectionProxyUrl || "",
-    connectionNoProxy: cfg.connectionNoProxy || "",
-    vercelRelayUrl: cfg.vercelRelayUrl || "",
-    strictProxy: false,
-  };
 }
 
 async function sendClaudePing(connection, providerConfig, proxyOptions, deps) {
@@ -195,8 +186,10 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   // Avoid hammering provider auth/quota endpoints if a ping failed recently.
   if (shouldSkipAfterFailure(state, key)) return;
 
-  const proxyCfg = await deps.resolveConnectionProxyConfig(conn.providerSpecificData);
-  const proxyOptions = buildProxyOptions(proxyCfg);
+  const proxyOptions = await deps.resolveConnectionProxyConfig(conn.providerSpecificData);
+  if (proxyOptions?.proxyUnavailable === true || proxyOptions?.source === "unavailable") {
+    throw new Error("Selected proxy pool is unavailable");
+  }
 
   let connection = conn;
   try {
@@ -204,7 +197,7 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
     connection = r.connection;
   } catch (e) {
     state.failureCache[key] = Date.now();
-    console.warn(`[AutoPing] ${provider}:${conn.id}: refresh failed: ${e.message}`);
+    console.warn(`[AutoPing] ${provider}:${conn.id}: refresh failed: ${sanitizeOAuthError(e)}`);
     return;
   }
 
@@ -278,12 +271,12 @@ export async function runQuotaAutoPingTick(deps = createDefaultDeps(), state = g
           await pingConnection(conn, provider, providerConfig, handler, deps, state);
         } catch (e) {
           state.failureCache[cacheKey(provider, conn.id)] = Date.now();
-          console.warn(`[AutoPing] ${provider}:${conn.id}: ${e.message}`);
+          console.warn(`[AutoPing] ${provider}:${conn.id}: ${sanitizeOAuthError(e)}`);
         }
       }
     }
   } catch (e) {
-    console.warn("[AutoPing] tick error:", e.message);
+    console.warn("[AutoPing] tick error:", sanitizeOAuthError(e));
   } finally {
     state.running = false;
   }

@@ -35,7 +35,7 @@ const PASTE_TOKEN_PROVIDERS = {
  * - Localhost: Auto callback via popup message
  * - Remote: Manual paste callback URL
  */
-export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose, oauthMeta, idcConfig }) {
+export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, onClose, oauthMeta, idcConfig, proxyPools = [], proxyPoolsReady = false }) {
   const [step, setStep] = useState("waiting"); // waiting | input | success | error
   const [authData, setAuthData] = useState(null);
   const [callbackUrl, setCallbackUrl] = useState("");
@@ -44,6 +44,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const [deviceData, setDeviceData] = useState(null);
   const [polling, setPolling] = useState(false);
   // trae/windsurf: choose between browser OAuth (proxy) and paste-token (import)
+  const [selectedProxyPoolId, setSelectedProxyPoolId] = useState("");
   const [authMode, setAuthMode] = useState("browser"); // "browser" | "paste-token"
   const [pasteToken, setPasteToken] = useState("");
   const [ideStatus, setIdeStatus] = useState(null);
@@ -240,6 +241,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         setStep("waiting");
 
         const deviceCodeUrl = new URL(`/api/oauth/${provider}/device-code`, window.location.origin);
+        if (selectedProxyPoolId) deviceCodeUrl.searchParams.set("proxyPoolId", selectedProxyPoolId);
         if (provider === "kiro" && idcConfig?.startUrl) {
           deviceCodeUrl.searchParams.set("start_url", idcConfig.startUrl);
           if (idcConfig.region) {
@@ -304,6 +306,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
       // Build authorize URL first to get codeVerifier/state for codex server-side mode
       const authorizeUrl = new URL(`/api/oauth/${provider}/authorize`, window.location.origin);
+      if (selectedProxyPoolId) authorizeUrl.searchParams.set("proxyPoolId", selectedProxyPoolId);
       authorizeUrl.searchParams.set("redirect_uri", redirectUri);
       if (oauthMeta) {
         Object.entries(oauthMeta).forEach(([k, v]) => { if (v) authorizeUrl.searchParams.set(k, v); });
@@ -702,6 +705,16 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               </button>
             </div>
 
+            <OAuthProxyPoolSelector
+              value={selectedProxyPoolId}
+              onChange={(event) => {
+                const next = event.target.value;
+                setSelectedProxyPoolId(next);
+              }}
+              proxyPools={proxyPools}
+              proxyPoolsReady={proxyPoolsReady}
+              visible
+            />
             {authMode === "browser" && (
               <>
                 {step === "waiting" && (

@@ -57,6 +57,13 @@ function upsert(db, c) {
 }
 
 function deriveConnectionName(data, fallbackName) {
+  if (data.provider === "claude") {
+    const accountId = data.providerSpecificData?.accountId;
+    return data.email
+      || data.displayName
+      || (typeof accountId === "string" ? accountId.slice(0, 8) : null)
+      || fallbackName;
+  }
   if (data.provider === "github") {
     return data.providerSpecificData?.githubLogin
       || data.providerSpecificData?.githubEmail
@@ -99,16 +106,26 @@ function reorderInTx(db, providerId) {
   });
 }
 
-export async function createProviderConnection(data) {
+export async function createProviderConnection(data, { beforePersist } = {}) {
   const db = await getAdapter();
   const now = new Date().toISOString();
   let result;
 
   db.transaction(() => {
+    if (beforePersist && beforePersist() !== true) {
+      throw new Error("OAuth flow was cancelled");
+    }
     const all = db.all(`SELECT * FROM providerConnections WHERE provider = ?`, [data.provider]).map(rowToConn);
 
     let existing = null;
-    if (data.authType === "oauth" && data.email) {
+    if (data.authType === "oauth" && data.provider === "claude") {
+      const incomingAccountId = data.providerSpecificData?.accountId;
+      if (incomingAccountId) {
+        existing = all.find(c =>
+          c.authType === "oauth" && c.providerSpecificData?.accountId === incomingAccountId
+        );
+      }
+    } else if (data.authType === "oauth" && data.email) {
       const incomingUsername = data.providerSpecificData?.username;
       const incomingWs = data.providerSpecificData?.chatgptAccountId;
       existing = all.find(c => {

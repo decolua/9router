@@ -82,10 +82,10 @@ export function getProviderNames() {
  * Generate auth data for a provider
  * @param {object} [meta] - Provider-specific metadata (e.g. gitlab clientId/baseUrl)
  */
-export async function generateAuthData(providerName, redirectUri, meta) {
+export async function generateAuthData(providerName, redirectUri, meta, proxyOptions = null) {
   const provider = getProvider(providerName);
   const config = provider.prepareConfig
-    ? await provider.prepareConfig(provider.config, meta || {})
+    ? await provider.prepareConfig(provider.config, meta || {}, proxyOptions)
     : provider.config;
   const { codeVerifier: pkceVerifier, codeChallenge, state: pkceState } = generatePKCE(provider.pkceVerifierBytes);
   // Trae uses loginTraceID (set by prepareConfig) as the callback matcher, not PKCE state.
@@ -119,13 +119,13 @@ export async function generateAuthData(providerName, redirectUri, meta) {
  * Exchange code for tokens
  * @param {object} [meta] - Provider-specific metadata (e.g. gitlab clientId/baseUrl)
  */
-export async function exchangeTokens(providerName, code, redirectUri, codeVerifier, state, meta) {
+export async function exchangeTokens(providerName, code, redirectUri, codeVerifier, state, meta, proxyOptions = null) {
   const provider = getProvider(providerName);
   const config = provider.prepareConfig
-    ? await provider.prepareConfig(provider.config, meta || {})
+    ? await provider.prepareConfig(provider.config, meta || {}, proxyOptions)
     : provider.config;
 
-  const tokens = await provider.exchangeToken(config, code, redirectUri, codeVerifier, state, meta || {});
+  const tokens = await provider.exchangeToken(config, code, redirectUri, codeVerifier, state, meta || {}, proxyOptions);
 
   let extra = null;
   if (provider.postExchange) {
@@ -172,7 +172,7 @@ export async function pollForToken(providerName, deviceCode, codeVerifier, extra
       const tokens = provider.mapTokens(result.data, extra);
       // Kiro IDC/Builder-ID tokens lack profileArn; resolve it to avoid 403
       if (providerName === "kiro" && !tokens.providerSpecificData?.profileArn) {
-        const profileArn = await fetchKiroProfileArn(tokens.accessToken);
+        const profileArn = await fetchKiroProfileArn(tokens.accessToken, proxyOptions);
         if (profileArn) tokens.providerSpecificData.profileArn = profileArn;
       }
       return { success: true, tokens };

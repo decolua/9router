@@ -6,7 +6,7 @@ import { KIMI_CONFIG } from "../constants/oauth.js";
 const kimi = {
   config: KIMI_CONFIG,
   flowType: "device_code",
-  requestDeviceCode: async (config) => {
+  requestDeviceCode: async (config, _redirectUri, _meta, proxyOptions) => {
     const { buildKimiHeaders } = await import("open-sse/config/appConstants.js");
     const deviceId = crypto.randomUUID();
     const headers = {
@@ -18,6 +18,7 @@ const kimi = {
       method: "POST",
       headers,
       body: new URLSearchParams({ client_id: config.clientId }),
+      proxyOptions,
     });
     if (!response.ok) {
       const error = await response.text();
@@ -37,7 +38,7 @@ const kimi = {
       _kimiDeviceId: deviceId,
     };
   },
-  pollToken: async (config, deviceCode, _codeVerifier, extraData) => {
+  pollToken: async (config, deviceCode, _codeVerifier, extraData, proxyOptions) => {
     const { buildKimiHeaders } = await import("open-sse/config/appConstants.js");
     const deviceId = extraData?._kimiDeviceId;
     const headers = {
@@ -53,6 +54,7 @@ const kimi = {
         client_id: config.clientId,
         device_code: deviceCode,
       }),
+      proxyOptions,
     });
     let data;
     try {

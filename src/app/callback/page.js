@@ -2,87 +2,49 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { getPermittedOAuthOpenerOrigins } from "@/lib/oauth/callbackOrigins";
+import { sanitizeOAuthError } from "open-sse/utils/oauthError.js";
 
 /**
  * OAuth Callback Page Content
  */
 function CallbackContent() {
   const searchParams = useSearchParams();
-  const [status, setStatus] = useState("processing");
+  const code = searchParams.get("code");
+  const token = searchParams.get("token");
+  const state = searchParams.get("state");
+  const error = searchParams.get("error");
+  const errorDescription = searchParams.get("error_description");
+  const sanitizedError = error ? sanitizeOAuthError(error) : null;
+  const sanitizedErrorDescription = errorDescription ? sanitizeOAuthError(errorDescription) : null;
+  const errorMessage = sanitizedError || sanitizedErrorDescription;
+  const [status, setStatus] = useState(error ? "error" : (code || token ? "success" : "manual"));
 
   useEffect(() => {
-    const code = searchParams.get("code");
-    const token = searchParams.get("token");
-    const state = searchParams.get("state");
-    const error = searchParams.get("error");
-    const errorDescription = searchParams.get("error_description");
-
     const callbackData = {
       code,
       token,
       state,
-      error,
-      errorDescription,
-      fullUrl: window.location.href,
+      error: sanitizedError,
+      errorDescription: sanitizedErrorDescription,
     };
 
-    let relayed = false;
-
-    // Trusted origins that may receive this callback. The OAuth code/state
-    // must only be relayed to the dashboard window we expect to be the opener
-    // (same origin) or the Codex helper that listens on a fixed loopback port.
-    // Any other origin is treated as hostile (drive-by attacker that opened
-    // the popup against the well-known redirect_uri to phish the code).
-    const expectedOrigins = [
-      window.location.origin, // Same origin (for most providers)
-      "http://localhost:1455", // Codex specific port
-    ];
-
-    // Method 1: postMessage to opener (popup mode)
-    // Send once per expected origin. The browser delivers the message only
-    // when the opener's origin matches the targetOrigin we pass — using "*"
-    // here would leak the code/state to any opener (e.g. an attacker page
-    // that opened this URL in a popup), so iterate over the allowlist.
     if (window.opener) {
-      for (const origin of expectedOrigins) {
+      for (const origin of getPermittedOAuthOpenerOrigins(window.location.origin)) {
         try {
           window.opener.postMessage({ type: "oauth_callback", data: callbackData }, origin);
-          relayed = true;
-        } catch (e) {
-          console.log("postMessage failed:", e);
+        } catch {
+          console.log("OAuth callback opener message failed");
         }
       }
     }
 
-    // Method 2: BroadcastChannel (same origin tabs)
-    try {
-      const channel = new BroadcastChannel("oauth_callback");
-      channel.postMessage(callbackData);
-      channel.close();
-      relayed = true;
-    } catch (e) {
-      console.log("BroadcastChannel failed:", e);
-    }
-
-    // Method 3: localStorage event (fallback)
-    try {
-      localStorage.setItem("oauth_callback", JSON.stringify({ ...callbackData, timestamp: Date.now() }));
-      relayed = true;
-    } catch (e) {
-      console.log("localStorage failed:", e);
-    }
-
-    if (!(code || token || error)) {
-      setTimeout(() => setStatus("manual"), 0);
-      return;
-    }
-
-    setStatus("success");
+    if (!(code || token || error)) return;
     setTimeout(() => {
       window.close();
-      setTimeout(() => setStatus("done"), 500);
+      if (!error) setTimeout(() => setStatus("done"), 500);
     }, 1500);
-  }, [searchParams]);
+  }, [code, error, sanitizedError, sanitizedErrorDescription, state, token]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-bg">
@@ -106,6 +68,16 @@ function CallbackContent() {
             <p className="text-text-muted">
               {status === "success" ? "This window will close automatically..." : "You can close this tab now."}
             </p>
+          </>
+        )}
+
+        {status === "error" && (
+          <>
+            <div className="size-16 mx-auto mb-4 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center">
+              <span className="material-symbols-outlined text-3xl text-red-600">error</span>
+            </div>
+            <h1 className="text-xl font-semibold mb-2">Authorization Failed</h1>
+            <p className="text-text-muted">{errorMessage}</p>
           </>
         )}
 

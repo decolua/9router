@@ -1,6 +1,6 @@
 import { PROVIDERS, PROVIDER_OAUTH } from "../../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT, buildKimiHeaders } from "../../config/appConstants.js";
-import { proxyAwareFetch } from "../../utils/proxyFetch.js";
+import { proxyAwareFetch, normalizeExplicitProxyOptions as oauthRefreshProxyOptions } from "../../utils/proxyFetch.js";
 import { dedupRefresh } from "./dedup.js";
 import { buildExternalIdpRefreshParams } from "../../../src/lib/oauth/kiroExternalIdp.js";
 
@@ -82,7 +82,8 @@ function buildRefreshBody(profile, config, refreshToken) {
   return { format: "form", body: new URLSearchParams(payload) };
 }
 
-export async function refreshAccessToken(provider, refreshToken, credentials, log) {
+export async function refreshAccessToken(provider, refreshToken, credentials, log, proxyOptions = null) {
+  proxyOptions = oauthRefreshProxyOptions(proxyOptions);
   const config = PROVIDERS[provider];
   const profile = REFRESH_PROFILES[provider] || {};
   const url = resolveRefreshUrl(provider, config, profile);
@@ -107,7 +108,7 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
       Accept: "application/json",
       ...(profile.extraHeaders ? (profile.extraHeaders(credentials, config) || {}) : {}),
     };
-    const response = await fetch(url, { method: "POST", headers, body });
+    const response = await fetch(url, { method: "POST", headers, body, proxyOptions });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -143,8 +144,8 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
 
 // CLIProxyAPI DeviceFlowClient.RefreshToken: form body (no client_secret) + X-Msh-* headers
 // Delegate to refreshAccessToken("kimi", ...) — profile carries the X-Msh headers.
-export async function refreshKimiToken(refreshToken, credentials, log) {
-  return refreshAccessToken("kimi", refreshToken, credentials, log);
+export async function refreshKimiToken(refreshToken, credentials, log, proxyOptions = null) {
+  return refreshAccessToken("kimi", refreshToken, credentials, log, proxyOptions);
 }
 
 export async function refreshClineToken(refreshToken, log) {
@@ -254,8 +255,9 @@ export function classifyOAuthRefreshError(errorText = "", status = 0) {
   return { status, code, description, permanent };
 }
 
-export async function refreshCodexToken(refreshToken, log) {
+export async function refreshCodexToken(refreshToken, log, proxyOptions = null) {
   if (!refreshToken) return null;
+  proxyOptions = oauthRefreshProxyOptions(proxyOptions);
   return dedupRefresh("codex", refreshToken, async () => {
     try {
       const response = await fetch(OAUTH_ENDPOINTS.openai.token, {
@@ -269,6 +271,7 @@ export async function refreshCodexToken(refreshToken, log) {
           grant_type: "refresh_token",
           refresh_token: refreshToken,
         }),
+        proxyOptions,
       });
 
       if (!response.ok) {
@@ -313,18 +316,19 @@ export async function refreshCodexToken(refreshToken, log) {
   }, log);
 }
 
-async function resolveKiroProfileArnPatch(providerSpecificData, accessToken, refreshedArn) {
+async function resolveKiroProfileArnPatch(providerSpecificData, accessToken, refreshedArn, proxyOptions = null) {
   if (providerSpecificData?.profileArn) return {};
   let profileArn = refreshedArn?.trim?.() || null;
   if (!profileArn) {
     const { fetchKiroProfileArn } = await import("../../../src/lib/oauth/providers.js");
-    profileArn = await fetchKiroProfileArn(accessToken);
+    profileArn = await fetchKiroProfileArn(accessToken, proxyOptions);
   }
   return profileArn ? { providerSpecificData: { profileArn } } : {};
 }
 
 export async function refreshKiroToken(refreshToken, providerSpecificData, log, proxyOptions = null) {
   if (!refreshToken) return null;
+  proxyOptions = oauthRefreshProxyOptions(proxyOptions);
   return dedupRefresh("kiro", refreshToken, async () => {
   const authMethod = providerSpecificData?.authMethod;
   const clientId = providerSpecificData?.clientId;
@@ -414,7 +418,7 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
       accessToken: tokens.accessToken,
       refreshToken: tokens.refreshToken || refreshToken,
       expiresIn: tokens.expiresIn,
-      ...(await resolveKiroProfileArnPatch(providerSpecificData, tokens.accessToken, tokens.profileArn)),
+      ...(await resolveKiroProfileArnPatch(providerSpecificData, tokens.accessToken, tokens.profileArn, proxyOptions)),
     };
   }
 
@@ -450,9 +454,9 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
     accessToken: tokens.accessToken,
     refreshToken: tokens.refreshToken || refreshToken,
     expiresIn: tokens.expiresIn,
-    ...(await resolveKiroProfileArnPatch(providerSpecificData, tokens.accessToken, tokens.profileArn)),
+    ...(await resolveKiroProfileArnPatch(providerSpecificData, tokens.accessToken, tokens.profileArn, proxyOptions)),
   };
-  }, log);
+  }, log, proxyOptions);
 }
 
 // iFlow: Basic Auth + client_id+client_secret in body. Delegate to refreshAccessToken("iflow", ...).

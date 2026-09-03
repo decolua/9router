@@ -1,4 +1,14 @@
 // Shared helpers for image provider adapters
+import {
+  decodeBase64Image,
+  detectImageMime,
+  fetchRemoteImage,
+  fetchRemoteJson,
+  readBoundedResponse,
+  readBoundedJsonResponse,
+  validateImageBuffer,
+} from "../../utils/safeRemoteFetch.js";
+import { MAX_IMAGE_BYTES } from "../../config/mediaConfig.js";
 
 export const POLL_INTERVAL_MS = 1500;
 export const POLL_TIMEOUT_MS = 120000;
@@ -19,12 +29,21 @@ export function sizeToAspectRatio(size) {
 }
 
 // Fetch URL → base64 (for providers returning image URLs)
-export async function urlToBase64(url) {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to fetch image: ${res.status}`);
-  const buf = await res.arrayBuffer();
-  return Buffer.from(buf).toString("base64");
+export async function urlToBase64(url, proxyOptions = null) {
+  return (await fetchRemoteImage(url, { proxyOptions })).base64;
 }
+
+export async function readImageResponse(response) {
+  return validateImageBuffer(await readBoundedResponse(response, MAX_IMAGE_BYTES));
+}
+
+export {
+  decodeBase64Image,
+  detectImageMime,
+  fetchRemoteJson,
+  readBoundedJsonResponse,
+  validateImageBuffer,
+};
 
 export function nowSec() {
   return Math.floor(Date.now() / 1000);

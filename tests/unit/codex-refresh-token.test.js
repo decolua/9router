@@ -47,7 +47,7 @@ describe("Codex Refresh Token", () => {
       expect(result.accessToken).toBe("new-access");
       expect(result.idToken).toBe("new-id-token");
       expect(fetchMock).toHaveBeenCalledWith(
-        "https://auth.openai.com/oauth/token",
+        "https://auth.openai.com/api/accounts/oauth/token",
         expect.objectContaining({
           method: "POST",
           headers: expect.objectContaining({
@@ -76,7 +76,106 @@ describe("Codex Refresh Token", () => {
     });
   });
 
+  describe("Codex token exchange proxy fallback", () => {
+    it("does not bypass an explicitly selected proxy after a Cloudflare response", async () => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(new Response("<html>Cloudflare bad request</html>", { status: 400 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: "direct-token" }), { status: 200 }));
+      global.fetch = fetchMock;
+
+      const { getProvider } = await import("../../src/lib/oauth/providers.js");
+      const provider = getProvider("codex");
+
+      await expect(provider.exchangeToken(
+        provider.config,
+        "code",
+        "http://localhost:1455/auth/callback",
+        "verifier",
+        "state",
+        {},
+        {
+          connectionProxyEnabled: true,
+          connectionProxyUrl: "http://proxy.test:8080",
+          strictProxy: true,
+        },
+      )).rejects.toThrow("Token exchange failed");
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("retries an environment-proxy Cloudflare response with env bypass", async () => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(new Response("<html>Cloudflare bad request</html>", { status: 400 }))
+        .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: "direct-token" }), { status: 200 }));
+      global.fetch = fetchMock;
+
+      const { getProvider } = await import("../../src/lib/oauth/providers.js");
+      const provider = getProvider("codex");
+      const proxyFetchSpy = vi.spyOn(globalThis, "fetch");
+      const tokens = await provider.exchangeToken(
+        provider.config,
+        "code",
+        "http://localhost:1455/auth/callback",
+        "verifier",
+        "state",
+        {},
+        null,
+      );
+
+      expect(tokens.access_token).toBe("direct-token");
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(proxyFetchSpy.mock.calls[1][1].proxyOptions).toEqual({ disableEnvProxy: true });
+    });
+  });
+
   describe("CodexExecutor credential lifecycle", () => {
+    it("forwards selected chat proxy options through Codex token refresh", async () => {
+      const proxyOptions = {
+        connectionProxyEnabled: true,
+        connectionProxyUrl: "http://proxy.test:8080",
+        connectionNoProxy: "localhost",
+        vercelRelayUrl: "",
+        strictProxy: true,
+      };
+
+      const { CodexExecutor } = await import("../../open-sse/executors/codex.js");
+      const fetchMock = mockFetchWithJson({
+        access_token: "new-access",
+        refresh_token: "rotated-refresh-token",
+        expires_in: 3600,
+      });
+      const executor = new CodexExecutor();
+      await executor.refreshCredentials({
+        connectionId: "codex-proxied-refresh",
+        refreshToken: "proxied-refresh-token",
+      }, null, proxyOptions);
+
+      expect(fetchMock.mock.calls[0][1].proxyOptions).toBe(proxyOptions);
+    });
+
+    it("disables ambient env proxy when chat refresh has no selected proxy", async () => {
+      const proxyOptions = {
+        connectionProxyEnabled: false,
+        connectionProxyUrl: "",
+        connectionNoProxy: "",
+        vercelRelayUrl: "",
+        strictProxy: false,
+      };
+
+      const { CodexExecutor } = await import("../../open-sse/executors/codex.js");
+      const fetchMock = mockFetchWithJson({
+        access_token: "new-access",
+        refresh_token: "rotated-refresh-token",
+        expires_in: 3600,
+      });
+      const executor = new CodexExecutor();
+      await executor.refreshCredentials({
+        connectionId: "codex-direct-refresh",
+        refreshToken: "direct-refresh-token",
+      }, null, proxyOptions);
+
+      expect(fetchMock.mock.calls[0][1].proxyOptions).toEqual({ disableEnvProxy: true });
+    });
+
     it("should refresh Codex credentials and preserve omitted id_token", async () => {
       mockFetchWithJson({
           access_token: "new-access",

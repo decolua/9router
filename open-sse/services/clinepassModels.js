@@ -24,7 +24,7 @@ function buildModelListHeaders(token, isApiKey) {
  * @param {object} credentials - Connection credentials ({ accessToken, apiKey })
  * @returns {Promise<{ models: { id: string, name: string }[] } | null>}
  */
-export async function resolveClinepassModels(credentials) {
+export async function resolveClinepassModels(credentials, options = {}) {
   const isApiKey = Boolean(credentials?.apiKey);
   const token = isApiKey ? credentials.apiKey : credentials?.accessToken;
   if (!token) return null;
@@ -39,6 +39,7 @@ export async function resolveClinepassModels(credentials) {
       method: "GET",
       headers,
       signal: controller.signal,
+      proxyOptions: options.proxyOptions,
     });
 
     if (!response.ok) return null;

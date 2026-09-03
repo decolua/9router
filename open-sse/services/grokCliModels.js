@@ -7,6 +7,7 @@ import {
 } from "../config/grokCli.js";
 import { refreshProviderCredentials } from "./oauthCredentialManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { sanitizeOAuthError } from "../utils/oauthError.js";
 
 const MODELS_URL = `${GROK_CLI_BASE_URL}/models`;
 
@@ -103,17 +104,16 @@ export async function resolveGrokCliModels(credentials, options = {}) {
         try {
           await onCredentialsRefreshed?.(refreshed);
         } catch (error) {
-          log?.warn?.("Grok CLI credential persistence failed", error);
+          log?.warn?.("Grok CLI credential persistence failed", sanitizeOAuthError(error));
         }
         response = await request(accessToken);
       }
     }
 
     if (!response.ok) {
-      const detail = await response.text().catch(() => "");
       return {
         models: [],
-        warning: `Grok CLI model discovery failed (${response.status})${detail ? `: ${detail.slice(0, 160)}` : ""}`,
+        warning: `Grok CLI model discovery failed (${response.status})`,
       };
     }
 
@@ -122,6 +122,6 @@ export async function resolveGrokCliModels(credentials, options = {}) {
       ? { models }
       : { models: [], warning: "Grok CLI returned no selectable models." };
   } catch (error) {
-    return { models: [], warning: `Grok CLI model discovery failed: ${error.message}` };
+    return { models: [], warning: `Grok CLI model discovery failed: ${sanitizeOAuthError(error)}` };
   }
 }

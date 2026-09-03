@@ -1,10 +1,19 @@
 import { defineConfig } from "vitest/config";
 import { resolve } from "path";
 import { fileURLToPath } from "url";
+import { transformWithOxc } from "vite";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 export default defineConfig({
+  plugins: [{
+    name: "test-jsx-in-js",
+    enforce: "pre",
+    transform(code, id) {
+      if (!/\/src\/(?:shared\/components\/.*|app\/.*\/page)\.js$/.test(id)) return null;
+      return transformWithOxc(code, id, { lang: "jsx", jsx: { runtime: "automatic" } });
+    },
+  }],
   test: {
     environment: "node",
     globals: true,

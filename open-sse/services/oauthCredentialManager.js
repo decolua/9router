@@ -4,11 +4,10 @@ import {
   refreshTokenByProvider,
 } from "./tokenRefresh.js";
 import { PROVIDER_OAUTH } from "../providers/index.js";
+import { normalizeExplicitProxyOptions } from "../utils/proxyFetch.js";
 
 // Single source: codex.oauth.maxRefreshAgeMs (8 days) — proactive refresh window
 export const CODEX_MAX_REFRESH_AGE_MS = PROVIDER_OAUTH["codex"]?.maxRefreshAgeMs;
-
-const refreshLocks = new Map();
 
 function parseTimeMs(value) {
   if (value === undefined || value === null || value === "") return null;
@@ -120,37 +119,35 @@ export function mergeRefreshedCredentials(provider, currentCredentials, refreshe
   return next;
 }
 
-function getRefreshLockKey(provider, credentials) {
-  const stableId =
-    credentials?.connectionId ||
-    credentials?.id ||
-    credentials?.email ||
-    credentials?.name ||
-    credentials?.refreshToken?.slice?.(-16) ||
-    "default";
-  return `${provider}:${stableId}`;
+export function resolveRefreshProxyOptions(credentials, proxyOptions = null) {
+  const psd = credentials?.providerSpecificData || {};
+  const resolved = proxyOptions || {
+    connectionProxyEnabled: psd.connectionProxyEnabled === true,
+    connectionProxyUrl: psd.connectionProxyUrl || "",
+    connectionNoProxy: psd.connectionNoProxy || "",
+    vercelRelayUrl: psd.vercelRelayUrl || "",
+    strictProxy: psd.strictProxy === true,
+    disableEnvProxy: psd.disableEnvProxy === true,
+    ...(psd.proxyUnavailable === true
+      ? {
+          proxyUnavailable: true,
+          proxyPoolId: psd.connectionProxyPoolId || psd.proxyPoolId || null,
+        }
+      : {}),
+  };
+
+  if (resolved.proxyUnavailable === true || resolved.source === "unavailable") {
+    const poolId = resolved.proxyPoolId || resolved.connectionProxyPoolId || "selected";
+    throw new Error(`Proxy pool ${poolId} is unavailable`);
+  }
+
+  return normalizeExplicitProxyOptions(resolved);
 }
 
-export async function withCredentialRefreshLock(provider, credentials, refreshFn) {
-  const key = getRefreshLockKey(provider, credentials);
-  const existing = refreshLocks.get(key);
-  if (existing) return existing;
-
-  const pending = Promise.resolve()
-    .then(refreshFn)
-    .finally(() => {
-      refreshLocks.delete(key);
-    });
-
-  refreshLocks.set(key, pending);
-  return pending;
-}
-
-export async function refreshProviderCredentials(provider, credentials, log) {
+export async function refreshProviderCredentials(provider, credentials, log, proxyOptions = null) {
   if (!credentials) return null;
+  const effectiveProxyOptions = resolveRefreshProxyOptions(credentials, proxyOptions);
 
-  return withCredentialRefreshLock(provider, credentials, async () => {
-    const refreshed = await refreshTokenByProvider(provider, credentials, log);
-    return mergeRefreshedCredentials(provider, credentials, refreshed);
-  });
+  const refreshed = await refreshTokenByProvider(provider, credentials, log, effectiveProxyOptions);
+  return mergeRefreshedCredentials(provider, credentials, refreshed);
 }

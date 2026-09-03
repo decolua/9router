@@ -1,5 +1,5 @@
 // Black Forest Labs (FLUX) — async submit + polling_url
-import { sleep, nowSec, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } from "./_base.js";
+import { fetchRemoteJson, readBoundedJsonResponse, sleep, nowSec, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } from "./_base.js";
 import { PROVIDER_MEDIA } from "../../providers/index.js";
 
 const BASE_URL = PROVIDER_MEDIA["black-forest-labs"]?.imageConfig?.baseUrl;
@@ -21,16 +21,20 @@ export default {
     if (body.image) req.image_prompt = body.image;
     return req;
   },
-  async parseResponse(response, { headers }) {
-    const data = await response.json();
+  async parseResponse(response, { headers, proxyOptions, url }) {
+    const data = await readBoundedJsonResponse(response);
     const pollingUrl = data.polling_url;
     if (!pollingUrl) throw new Error("BFL: no polling_url returned");
+    const expectedOrigin = new URL(url || BASE_URL).origin;
+    if (new URL(pollingUrl).origin !== expectedOrigin) throw new Error("BFL polling URL origin is not allowed");
     const deadline = Date.now() + POLL_TIMEOUT_MS;
     while (Date.now() < deadline) {
       await sleep(POLL_INTERVAL_MS);
-      const r = await fetch(pollingUrl, { headers: { "x-key": headers["x-key"], "Accept": "application/json" } });
-      if (!r.ok) throw new Error(`BFL status ${r.status}`);
-      const s = await r.json();
+      const s = await fetchRemoteJson(pollingUrl, {
+        expectedOrigin,
+        headers: { "x-key": headers["x-key"], "Accept": "application/json" },
+        proxyOptions,
+      });
       if (s.status === "Ready") return s;
       if (s.status === "Error" || s.status === "Failed") throw new Error(s.error || "BFL generation failed");
     }

@@ -18,47 +18,49 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { sanitizeOAuthError } from "open-sse/utils/oauthError.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
 // Adding a provider here makes /v1/models prefer the live catalog for it.
 const LIVE_MODEL_RESOLVERS = {
-  kiro: async (conn) => {
+  kiro: async (conn, proxyOptions) => {
     const result = await resolveKiroModels({
       accessToken: conn.accessToken,
       refreshToken: conn.refreshToken,
       providerSpecificData: conn.providerSpecificData || {}
-    }, { log: console });
+    }, { log: console, proxyOptions });
     return result?.models?.length ? { models: result.models } : null;
   },
-  qoder: async (conn) => {
+  qoder: async (conn, proxyOptions) => {
     const result = await resolveQoderModels({
       accessToken: conn.accessToken,
       refreshToken: conn.refreshToken,
       email: conn.email,
       displayName: conn.displayName,
       providerSpecificData: conn.providerSpecificData || {}
-    });
+    }, { proxyOptions });
     if (!result?.models?.length) return null;
     return {
       models: result.models.map((m) => ({ id: m.id, name: m.name })),
     };
   },
-  kimchi: async (conn) => {
+  kimchi: async (conn, proxyOptions) => {
     const result = await resolveKimchiModels({
       accessToken: conn.accessToken,
       apiKey: conn.apiKey,
       providerSpecificData: conn.providerSpecificData || {}
-    }, { log: console });
+    }, { log: console, proxyOptions });
     return result?.models?.length ? { models: result.models } : null;
   },
-  github: async (conn) => {
+  github: async (conn, proxyOptions) => {
     const result = await resolveCopilotModels({
       accessToken: conn.accessToken,
       refreshToken: conn.refreshToken,
       providerSpecificData: conn.providerSpecificData || {}
     }, {
       log: console,
+      proxyOptions,
       onCredentialsRefreshed: async (refreshed) => {
         await updateProviderCredentials(conn.id, {
           copilotToken: refreshed.copilotToken,
@@ -69,27 +71,20 @@ const LIVE_MODEL_RESOLVERS = {
     });
     return result?.models?.length ? { models: result.models } : null;
   },
-  clinepass: async (conn) => {
+  clinepass: async (conn, proxyOptions) => {
     const result = await resolveClinepassModels({
       accessToken: conn.accessToken,
       apiKey: conn.apiKey,
-    });
+    }, { proxyOptions });
     return result?.models?.length ? { models: result.models } : null;
   },
-  "grok-cli": async (conn) => {
-    const proxy = await resolveConnectionProxyConfig(conn.providerSpecificData || {});
+  "grok-cli": async (conn, proxyOptions) => {
     const result = await resolveGrokCliModels({
       ...conn,
       connectionId: conn.id,
     }, {
       log: console,
-      proxyOptions: {
-        connectionProxyEnabled: proxy.connectionProxyEnabled === true,
-        connectionProxyUrl: proxy.connectionProxyUrl || "",
-        connectionNoProxy: proxy.connectionNoProxy || "",
-        vercelRelayUrl: proxy.vercelRelayUrl || "",
-        strictProxy: proxy.strictProxy === true,
-      },
+      proxyOptions,
       onCredentialsRefreshed: async (refreshed) => {
         await updateProviderCredentials(conn.id, {
           ...refreshed,
@@ -163,7 +158,7 @@ function inferKindFromUnknownModelId(modelId) {
   return LLM_KIND;
 }
 
-async function fetchCompatibleModelIds(connection) {
+async function fetchCompatibleModelIds(connection, proxyOptions) {
   if (!connection?.apiKey) return [];
 
   const baseUrl = typeof connection?.providerSpecificData?.baseUrl === "string"
@@ -200,6 +195,7 @@ async function fetchCompatibleModelIds(connection) {
       headers: { ...headers, [INTERNAL_MODELS_FETCH_HEADER]: "1" },
       cache: "no-store",
       signal: controller.signal,
+      proxyOptions,
     });
     clearTimeout(timeoutId);
 
@@ -375,17 +371,24 @@ export async function buildModelsList(kindFilter, options = {}) {
           )
         : providerModels.map((model) => model.id);
 
-      if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
-        rawModelIds = await fetchCompatibleModelIds(conn);
-      }
-
       // Config-driven live catalog override (e.g. Kiro returns dynamic
       // -thinking/-agentic variants per account). On failure, fall back to
       // whatever rawModelIds already holds.
       const liveResolver = LIVE_MODEL_RESOLVERS[providerId];
-      if (liveResolver && !hasExplicitEnabledModels) {
+      let proxyOptions = null;
+      let proxyAvailable = true;
+      if ((liveResolver || isCompatibleProvider) && !hasExplicitEnabledModels) {
+        proxyOptions = await resolveConnectionProxyConfig(conn.providerSpecificData || {});
+        proxyAvailable = proxyOptions?.proxyUnavailable !== true && proxyOptions?.source !== "unavailable";
+      }
+
+      if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch && proxyAvailable) {
+        rawModelIds = await fetchCompatibleModelIds(conn, proxyOptions);
+      }
+
+      if (liveResolver && !hasExplicitEnabledModels && proxyAvailable) {
         try {
-          const live = await liveResolver(conn);
+          const live = await liveResolver(conn, proxyOptions);
           if (live?.models?.length) {
             rawModelIds = live.models.map((m) => m.id);
             liveModelKindById = new Map(
@@ -400,7 +403,7 @@ export async function buildModelsList(kindFilter, options = {}) {
             );
           }
         } catch (err) {
-          console.log(`Live model fetch failed for ${providerId}: ${err?.message || err}`);
+          console.log(`Live model fetch failed for ${providerId}: ${sanitizeOAuthError(err)}`);
         }
       }
 
@@ -567,9 +570,10 @@ export async function GET(request) {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
   } catch (error) {
-    console.log("Error fetching models:", error);
+    const publicError = sanitizeOAuthError(error);
+    console.log("Error fetching models:", publicError);
     return Response.json(
-      { error: { message: error.message, type: "server_error" } },
+      { error: { message: publicError, type: "server_error" } },
       { status: 500 }
     );
   }

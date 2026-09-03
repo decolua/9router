@@ -5,7 +5,7 @@ import { decodeXaiIdTokenEmail, extractEmailFromAccessToken } from "../providerH
 const grokCli = {
   config: GROK_CLI_CONFIG,
   flowType: "device_code",
-  requestDeviceCode: async (config) => {
+  requestDeviceCode: async (config, _redirectUri, _meta, proxyOptions) => {
     const body = new URLSearchParams({
       client_id: config.clientId,
       scope: config.scope,
@@ -21,6 +21,7 @@ const grokCli = {
         "User-Agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)",
       },
       body,
+      proxyOptions,
     });
 
     if (!response.ok) {
@@ -30,7 +31,7 @@ const grokCli = {
 
     return await response.json();
   },
-  pollToken: async (config, deviceCode) => {
+  pollToken: async (config, deviceCode, _codeVerifier, _extra, proxyOptions) => {
     const response = await fetch(config.tokenUrl, {
       method: "POST",
       headers: {
@@ -43,6 +44,7 @@ const grokCli = {
         device_code: deviceCode,
         client_id: config.clientId,
       }),
+      proxyOptions,
     });
 
     let data;
@@ -62,7 +64,7 @@ const grokCli = {
       data,
     };
   },
-  postExchange: async (tokens) => {
+  postExchange: async (tokens, proxyOptions) => {
     // Best-effort user profile from cli-chat-proxy (non-fatal)
     try {
       const res = await fetch("https://cli-chat-proxy.grok.com/v1/user", {
@@ -73,6 +75,7 @@ const grokCli = {
           "x-xai-token-auth": "xai-grok-cli",
           "x-grok-client-version": "0.2.93",
         },
+        proxyOptions,
       });
       if (res.ok) return { user: await res.json() };
     } catch {
