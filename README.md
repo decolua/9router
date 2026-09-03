@@ -273,8 +273,8 @@ Default URLs:
         <b>Droid</b>
       </td>
       <td align="center" width="120">
-        <img src="./public/providers/roo.png" width="60" alt="Roo"/><br/>
-        <b>Roo</b>
+        <a href="https://github.com/Zoo-Code-Org/Zoo-Code"><img src="./public/providers/zoocode.png" width="60" alt="Zoo Code"/></a><br/>
+        <b><a href="https://github.com/Zoo-Code-Org/Zoo-Code">Zoo Code</a></b>
       </td>
       <td align="center" width="120">
         <img src="./public/providers/copilot.png" width="60" alt="Copilot"/><br/>
