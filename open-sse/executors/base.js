@@ -5,6 +5,15 @@ import { dbg } from "../utils/debugLog.js";
 import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
 import { resolveOpenAICompatibleApiType } from "../services/provider.js";
 
+export function applyRequestIdHeader(headers, requestId) {
+  if (!requestId) return headers;
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === "x-request-id") delete headers[key];
+  }
+  headers["x-request-id"] = requestId;
+  return headers;
+}
+
 /**
  * BaseExecutor - Base class for provider executors
  */
@@ -97,7 +106,7 @@ export class BaseExecutor {
     return { status: response.status, message: bodyText || `HTTP ${response.status}` };
   }
 
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, requestId }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;
@@ -127,7 +136,7 @@ export class BaseExecutor {
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
       const url = this.buildUrl(model, stream, urlIndex, credentials);
       const transformedBody = this.transformRequest(model, body, stream, credentials);
-      const headers = this.buildHeaders(credentials, stream, url, model);
+      const headers = applyRequestIdHeader(this.buildHeaders(credentials, stream, url, model), requestId);
 
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 

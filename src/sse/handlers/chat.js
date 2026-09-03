@@ -90,6 +90,7 @@ export async function handleChat(request, clientRawRequest = null) {
   const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
   if (bypassResponse) return bypassResponse.response || bypassResponse;
 
+  const correlationId = globalThis.crypto.randomUUID();
   const requiredCapabilities = detectRequiredCapabilities(body);
 
   // Check if model is a combo (has multiple models with fallback)
@@ -113,7 +114,7 @@ export async function handleChat(request, clientRawRequest = null) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
             cleanRawReq = { ...clientRawRequest, body: cleanBody };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, correlationId);
         },
         log,
         comboName: modelStr,
@@ -128,7 +129,7 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: augmentedModels,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, correlationId),
         adapterAdded
       ),
       log,
@@ -148,7 +149,7 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: soloAugmented,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, correlationId),
         adapterAdded
       ),
       log,
@@ -157,13 +158,13 @@ export async function handleChat(request, clientRawRequest = null) {
     });
   }
 
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, correlationId);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, correlationId = globalThis.crypto.randomUUID()) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -190,7 +191,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, correlationId);
           },
           log,
           comboName: modelStr,
@@ -205,7 +206,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         body,
         models: augmentedModels,
         handleSingleModel: withCapacityAdapterStripping(
-          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, correlationId),
           adapterAdded
         ),
         log,
@@ -251,6 +252,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     // Account selection shown in the unified "▶" line (acc:...)
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+    const attemptId = globalThis.crypto.randomUUID();
 
     // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
     if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
@@ -291,6 +293,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
       onPxpipeEvent: appendPxpipeEvent,
       providerThinking,
+      correlationId,
+      attemptId,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
       onCredentialsRefreshed: async (newCreds) => {
