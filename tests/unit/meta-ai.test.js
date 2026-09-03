@@ -22,7 +22,7 @@ describe("meta registry", () => {
 });
 
 describe("meta capabilities", () => {
-  const models = ["muse-spark-1.1", "muse-spark-1.2", "muse-spark-1.2-contributor", "muse-spark-1.3"];
+  const models = ["muse-spark-1.1", "muse-spark-1.2", "muse-spark-1.2-contributor", "muse-spark-1.3", "muse-spark-1.3-contributor"];
 
   it.each(models)("%s reasons and cannot disable thinking", (model) => {
     const caps = getCapabilitiesForModel("meta", model);
