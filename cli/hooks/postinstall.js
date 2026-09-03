@@ -5,6 +5,12 @@
 // cli.js will retry at runtime if anything is missing.
 const { ensureSqliteRuntime } = require("./sqliteRuntime");
 const { ensureTrayRuntime } = require("./trayRuntime");
+const { isHomebrewManaged } = require("./packageManager");
+
+if (isHomebrewManaged()) {
+  console.log("[9router] Homebrew manages runtime dependencies; skipping npm runtime warm-up.");
+  process.exit(0);
+}
 
 try {
   ensureSqliteRuntime({ silent: false });

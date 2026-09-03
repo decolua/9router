@@ -5,6 +5,7 @@ const { execSync, spawnSync } = require("child_process");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { isHomebrewManaged } = require("./packageManager");
 
 // Gate the pinned version by Node major, mirroring src/lib/db/driver.js gating
 // style: 13.x is N-API and ships per-platform prebuilds inside the package, so
@@ -136,6 +137,10 @@ function isSqlJsWasmValid() {
 }
 
 function ensureSqliteRuntime({ silent = false } = {}) {
+  if (isHomebrewManaged()) {
+    return { betterSqlite: false, sqlJs: isSqlJsWasmValid(), skipped: true };
+  }
+
   ensureRuntimeDir();
 
   let sqlJsOk = isSqlJsWasmValid();
@@ -163,10 +168,11 @@ function ensureSqliteRuntime({ silent = false } = {}) {
 // Inject runtime + bundled node_modules into NODE_PATH so child Node processes
 // resolve sql.js (bundled in bin/app/node_modules) and better-sqlite3 (runtime).
 function buildEnvWithRuntime(baseEnv = process.env) {
-  const runtimeNm = getRuntimeNodeModules();
+  const runtimeNm = isHomebrewManaged(baseEnv) ? null : getRuntimeNodeModules();
+  const packageNm = path.join(__dirname, "..", "node_modules");
   const bundledNm = path.join(__dirname, "..", "app", "node_modules");
   const existing = baseEnv.NODE_PATH || "";
-  const NODE_PATH = [runtimeNm, bundledNm, existing].filter(Boolean).join(path.delimiter);
+  const NODE_PATH = [runtimeNm, packageNm, bundledNm, existing].filter(Boolean).join(path.delimiter);
   return { ...baseEnv, NODE_PATH };
 }
 

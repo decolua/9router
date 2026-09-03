@@ -1,6 +1,7 @@
 const { exec } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const { isHomebrewManaged } = require("../../../hooks/packageManager");
 
 let trayInstance = null;
 let isWinTray = false;
@@ -25,7 +26,11 @@ function getIconBase64() {
  * Check if system tray is supported on current OS
  * Supported: macOS, Windows, Linux (with GUI)
  */
-function isTraySupported() {
+function isTraySupported(env = process.env) {
+  if (isHomebrewManaged(env)) {
+    return false;
+  }
+
   const platform = process.platform;
   if (!["darwin", "win32", "linux"].includes(platform)) {
     return false;
@@ -147,7 +152,11 @@ function initWindowsTray(options) {
  * is not available, though that binary's Mach-O headers are rejected by
  * modern dyld and the icon will not appear.
  */
-function resolveSystray() {
+function resolveSystray(env = process.env) {
+  if (isHomebrewManaged(env)) {
+    return null;
+  }
+
   let runtimeDir = null;
   try {
     const { getRuntimeNodeModules } = require("../../../hooks/sqliteRuntime");
@@ -169,6 +178,10 @@ function resolveSystray() {
 }
 
 function chmodTrayBin(pkgName) {
+  if (isHomebrewManaged()) {
+    return;
+  }
+
   // systray2's npm tarball occasionally lands without +x on the bundled Go
   // binary (observed on macOS). spawn() then fails with EACCES. Best-effort
   // chmod on every init avoids a hard-to-diagnose silent tray failure.
@@ -318,5 +331,7 @@ function openBrowser(url) {
 
 module.exports = {
   initTray,
-  killTray
+  isTraySupported,
+  killTray,
+  resolveSystray
 };

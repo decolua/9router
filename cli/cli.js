@@ -65,6 +65,7 @@ function createSpinner(text) {
 const pkg = require("./package.json");
 const { ensureSqliteRuntime, buildEnvWithRuntime } = require("./hooks/sqliteRuntime");
 const { ensureTrayRuntime } = require("./hooks/trayRuntime");
+const { getUpdateCommand, isHomebrewManaged } = require("./hooks/packageManager");
 const args = process.argv.slice(2);
 
 // Subcommands (`9router xai video …`) run against an already-running gateway
@@ -80,17 +81,21 @@ if (args[0] === "xai" && args[1] === "video") {
   return;
 }
 
-// Self-heal SQLite runtime deps (sql.js + better-sqlite3) into ~/.9router/runtime
-// so the server can resolve them via NODE_PATH. Best-effort — sql.js is required,
-// better-sqlite3 is optional. Logs to stderr only on failure.
-try { ensureSqliteRuntime({ silent: true }); } catch {}
+const homebrewManaged = isHomebrewManaged();
 
-// Self-heal tray runtime (systray for macOS/Linux only). Windows skipped.
-try { ensureTrayRuntime({ silent: true }); } catch {}
+if (!homebrewManaged) {
+  // Self-heal SQLite runtime deps (sql.js + better-sqlite3) into ~/.9router/runtime
+  // so the server can resolve them via NODE_PATH. Best-effort — sql.js is required,
+  // better-sqlite3 is optional. Logs to stderr only on failure.
+  try { ensureSqliteRuntime({ silent: true }); } catch {}
+
+  // Self-heal tray runtime (systray for macOS/Linux only). Windows skipped.
+  try { ensureTrayRuntime({ silent: true }); } catch {}
+}
 
 // Configuration constants
 const APP_NAME = pkg.name; // Use from package.json
-const INSTALL_CMD_LATEST = `npm i -g ${APP_NAME}@latest --prefer-online`;
+const INSTALL_CMD_LATEST = getUpdateCommand(APP_NAME);
 
 const DEFAULT_PORT = 20128;
 const DEFAULT_HOST = "0.0.0.0";
@@ -148,7 +153,9 @@ Options:
   -H, --host <host>   Host to bind (default: ${DEFAULT_HOST})
   -n, --no-browser    Don't open browser automatically
   -l, --log           Show server logs (default: hidden)
-  -t, --tray          Run in system tray mode (background)
+  -t, --tray          ${homebrewManaged
+    ? "Run without the TUI (tray unavailable in Homebrew)"
+    : "Run in system tray mode (background)"}
   --skip-update       Skip auto-update check
   -h, --help          Show this help message
   -v, --version       Show version
@@ -689,6 +696,10 @@ function startServer(updatePromise) {
 
   // Initialize tray icon (runs alongside TUI)
   const initTrayIcon = () => {
+    if (homebrewManaged) {
+      return null;
+    }
+
     try {
       const { initTray } = require("./src/cli/tray/tray");
       initTray({
@@ -717,8 +728,13 @@ function startServer(updatePromise) {
 
     waitServerReady(port).then(() => {
       initTrayIcon();
-      console.log("\n💡 Router is now running in system tray. Close this terminal if you want.");
-      console.log("   Right-click tray icon to open dashboard or quit.\n");
+      if (homebrewManaged) {
+        console.log("\n💡 Router is running without a terminal interface.");
+        console.log("   Homebrew installations do not enable the unsigned x86-only tray helper.\n");
+      } else {
+        console.log("\n💡 Router is now running in system tray. Close this terminal if you want.");
+        console.log("   Right-click tray icon to open dashboard or quit.\n");
+      }
     });
 
     return;
