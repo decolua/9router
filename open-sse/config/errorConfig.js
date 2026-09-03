@@ -28,21 +28,33 @@ export const DEFAULT_ERROR_MESSAGES = {
   504: "Gateway timeout"
 };
 
-// Exponential backoff config for rate limits
+// Exponential backoff config for rate limits.
+// `max` is the blind ceiling used only when the provider reports no reset time. The
+// ladder needs ~9 consecutive failures to reach it, so it applies to accounts that are
+// genuinely spent, not to transient throttles. At the old 5 min an account out of
+// monthly quota was re-probed ~288 times a day, every day, forever.
 export const BACKOFF_CONFIG = {
   base: 2000,
-  max: 5 * 60 * 1000,
+  max: 30 * 60 * 1000,
   maxLevel: 15
 };
 
 // Default cooldown for transient/unknown errors
 export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
 
-// Hard cap for provider-reported rate limit cooldown (e.g. codex resets_at can be 5-6h)
-export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
+// Sanity ceiling for a provider-reported reset time (resetsAtMs), NOT a policy cap.
+// Providers report genuinely long resets: codex `resets_at` runs 5-6h out and
+// cloudcode-pa returns `quotaResetTimeStamp` up to ~150h out. Truncating those to
+// 30 min put the account straight back into rotation to fail again. This value exists
+// only to reject nonsense timestamps (some usage APIs return year 9999), so it sits
+// just past the longest legitimate window — a calendar month.
+export const MAX_RATE_LIMIT_COOLDOWN_MS = 31 * 24 * 60 * 60 * 1000;
 
 // Cooldown durations (ms)
 const COOLDOWN = {
+  // Provider says a calendar-month allowance is spent but reports no reset time
+  // (e.g. kiro 402 MONTHLY_REQUEST_COUNT). Re-probe a few times a day, not every 2 min.
+  monthly: 6 * 60 * 60 * 1000,
   long: 2 * 60 * 1000,
   short: 5 * 1000,
 };
@@ -58,6 +70,9 @@ const COOLDOWN = {
  */
 export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
+  // Monthly allowance spent — must be matched before the generic 402/429 rules.
+  { text: "monthly_request_count",    cooldownMs: COOLDOWN.monthly },
+  { text: "monthly limit",            cooldownMs: COOLDOWN.monthly },
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   { text: "improperly formed request", cooldownMs: COOLDOWN.long },
@@ -79,6 +94,7 @@ export const ERROR_RULES = [
 export const COOLDOWN_MS = {
   unauthorized: COOLDOWN.long,
   paymentRequired: COOLDOWN.long,
+  monthlyQuota: COOLDOWN.monthly,
   notFound: COOLDOWN.long,
   transient: TRANSIENT_COOLDOWN_MS,
   requestNotAllowed: COOLDOWN.short,
