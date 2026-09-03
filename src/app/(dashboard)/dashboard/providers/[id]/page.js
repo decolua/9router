@@ -14,6 +14,7 @@ import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
+import { mergeModelCatalogs } from "@/shared/utils/mergeModelCatalogs";
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
@@ -25,6 +26,18 @@ import BulkImportCodexModal from "./BulkImportCodexModal";
 import BulkImportGrokCliModal from "./BulkImportGrokCliModal";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
+
+// These providers use an account-specific catalog in /v1/models. Keep their
+// dashboard model controls on the same catalog so Disable All remains complete.
+const LIVE_CATALOG_PROVIDER_IDS = new Set([
+  "cursor",
+  "github",
+  "kiro",
+  "qoder",
+  "kimchi",
+  "clinepass",
+  "grok-cli",
+]);
 
 const AUTO_PING_SETTINGS_KEYS = {
   claude: "claudeAutoPing",
@@ -146,9 +159,11 @@ export default function ProviderDetailPage() {
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
   const staticModels = getModelsByProviderId(providerId);
-  const models = providerId === "cursor" && liveModels.length > 0
-    ? liveModels
-    : staticModels;
+  const models = providerId === "cursor"
+    ? (liveModels.length > 0 ? liveModels : staticModels)
+    : LIVE_CATALOG_PROVIDER_IDS.has(providerId)
+      ? mergeModelCatalogs(staticModels, liveModels)
+      : staticModels;
   const providerAlias = getProviderAlias(providerId);
   
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
@@ -460,11 +475,11 @@ export default function ProviderDetailPage() {
     fetchDisabledModels();
   }, [fetchConnections, fetchAliases, fetchCustomModels, fetchDisabledModels]);
 
-  // Cursor's model availability is account-specific and changes frequently.
-  // Load the active account's live catalog for the dashboard; the static
-  // registry remains the fallback while the request is pending or unavailable.
+  // Account-specific catalog providers can expose models outside the static
+  // registry. Fetch the same active-connection catalog used for discovery so
+  // model controls and Disable All can manage every exposed model.
   useEffect(() => {
-    if (providerId !== "cursor") {
+    if (!LIVE_CATALOG_PROVIDER_IDS.has(providerId)) {
       setLiveModels([]);
       return;
     }
@@ -1104,7 +1119,7 @@ export default function ProviderDetailPage() {
       customModels,
       modelAliases,
       providerAlias: providerStorageAlias,
-      builtInModels: models,
+      builtInModels: allModels,
       type: "llm",
     });
 
