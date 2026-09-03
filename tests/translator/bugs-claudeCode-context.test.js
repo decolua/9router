@@ -54,20 +54,25 @@ describe("Claude Code CLI context → OpenAI", () => {
     expect(JSON.stringify(out)).toContain("ENCRYPTED_BLOB");
   });
 
-  // claude-to-openai.js:155-173 — tool_result image block stringified into raw JSON
-  // KNOWN BUG
-  it.fails("tool_result image block is preserved", () => {
+  // claude-to-openai.js — tool_result image blocks used to be stringified into
+  // raw JSON (170KB+ base64 per screenshot), tripping upstream validators
+  // (opencode Console 400 on Muse Spark compaction). Now a short placeholder.
+  it("tool_result image block becomes a placeholder, not raw base64", () => {
     const out = T(FORMATS.CLAUDE, FORMATS.OPENAI, {
       messages: [
         { role: "assistant", content: [{ type: "tool_use", id: "call_1", name: "screenshot", input: {} }] },
         { role: "user", content: [
           { type: "tool_result", tool_use_id: "call_1", content: [
-            { type: "image", source: { type: "base64", media_type: "image/png", data: "IMG" } },
+            { type: "text", text: "saved to /tmp/shot.png" },
+            { type: "image", source: { type: "base64", media_type: "image/png", data: "IMG".repeat(1000) } },
           ] },
         ] },
       ],
     });
     const tool = out.messages.find((m) => m.role === "tool");
+    expect(tool?.content, "keeps surrounding text").toContain("saved to /tmp/shot.png");
+    expect(tool?.content, "no raw base64 leak").not.toContain("IMGIMG");
     expect(tool?.content, "image turned into raw JSON").not.toMatch(/^\[/);
+    expect(tool?.content, "placeholder names the media").toContain("Omitted image (image/png");
   });
 });
