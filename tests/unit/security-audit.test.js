@@ -48,14 +48,15 @@ describe("AUDIT-002: API key masking", () => {
     expect(livePath.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("byApiKey object keys should use masked key, not raw key", () => {
+  it("byApiKey object keys should use stable non-secret identity, not masked or raw keys", () => {
     const source = fs.readFileSync(
       path.resolve("src/lib/db/repos/usageRepo.js"),
       "utf-8"
     );
-    // The 24h path should use apiKeyMasked in the akKey template
-    expect(source).toContain("${apiKeyMasked}|${r.model}|${r.provider");
-    // Should NOT use raw r.apiKey in the key
+    expect(source).toContain("function apiKeyStatsIdentity");
+    expect(source).toContain("createHash(\"sha256\")");
+    expect(source).toContain("${apiKeyKey}|${r.model}|${r.provider");
+    expect(source).not.toContain("${apiKeyMasked}|${r.model}|${r.provider");
     expect(source).not.toContain("${r.apiKey}|${r.model}|${r.provider");
   });
 });
