@@ -45,6 +45,13 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     }
   }
 
+  // An unclassified 400 is request-specific (invalid tool history, schema,
+  // parameter, etc.). Retrying another credential cannot repair the payload,
+  // and locking the only account turns one bad request into a 30s outage.
+  if (status === 400) {
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
+
   // Default: transient cooldown for any unmatched error
   return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
 }
