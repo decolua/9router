@@ -214,6 +214,17 @@ function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
 }
 
 /**
+ * Resolve the outbound proxy for a target URL.
+ * Connection proxy pool wins; otherwise HTTP(S)_PROXY / ALL_PROXY from env
+ * (including 9Router Settings → Outbound Proxy).
+ */
+export function resolveOutboundProxyUrl(targetUrl, proxyOptions = null) {
+  const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
+  if (connectionProxyUrl) return connectionProxyUrl;
+  return normalizeProxyUrl(getEnvProxyUrl(targetUrl));
+}
+
+/**
  * Create proxy dispatcher lazily (undici-compatible)
  */
 async function getDispatcher(proxyUrl) {
@@ -306,9 +317,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     return originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
   }
 
-  const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
-  const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
-  const proxyUrl = connectionProxyUrl || envProxyUrl;
+  const proxyUrl = resolveOutboundProxyUrl(targetUrl, proxyOptions);
 
   // MITM DNS bypass: for known MITM-intercepted hosts, resolve real IP to avoid DNS spoof
   if (shouldBypassMitmDns(targetUrl)) {

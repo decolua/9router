@@ -100,10 +100,20 @@ const LIVE_MODEL_RESOLVERS = {
     return result?.models?.length ? { models: result.models } : null;
   },
   cursor: async (conn) => {
+    const proxy = await resolveConnectionProxyConfig(conn.providerSpecificData || {});
     const result = await resolveCursorModels({
       accessToken: conn.accessToken,
       providerSpecificData: conn.providerSpecificData || {},
-    }, { log: console });
+    }, {
+      log: console,
+      proxyOptions: {
+        enabled: proxy.connectionProxyEnabled === true,
+        connectionProxyEnabled: proxy.connectionProxyEnabled === true,
+        connectionProxyUrl: proxy.connectionProxyUrl || "",
+        connectionNoProxy: proxy.connectionNoProxy || "",
+        strictProxy: proxy.strictProxy === true,
+      },
+    });
     return result?.models?.length ? { models: result.models } : null;
   },
   zed: async (conn) => {
