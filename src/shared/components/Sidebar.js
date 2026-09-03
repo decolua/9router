@@ -8,9 +8,8 @@ import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG, UPDATER_CONFIG } from "@/shared/constants/config";
 import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
-import Button from "./Button";
-import { ConfirmModal } from "./Modal";
 import NineRemotePromoModal from "./NineRemotePromoModal";
+import UpdatePanel from "./UpdatePanel";
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
 const VISIBLE_MEDIA_KINDS = ["embedding", "image", "video", "tts", "stt"];
@@ -43,11 +42,8 @@ export default function Sidebar({ onClose }) {
   const pathname = usePathname();
   const [mediaOpen, setMediaOpen] = useState(false);
   const [showRemoteModal, setShowRemoteModal] = useState(false);
-  const [isDisconnected, setIsDisconnected] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
-  const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
   const { copied, copy } = useCopyToClipboard(2000);
 
@@ -74,37 +70,6 @@ export default function Sidebar({ onClose }) {
     }
     return pathname.startsWith(href);
   };
-
-  // Open manual update panel (no countdown yet — user must click Copy to trigger shutdown)
-  const handleUpdate = () => {
-    setShowUpdateModal(false);
-    setIsUpdating(true);
-  };
-
-  // Triggered by Copy button inside ManualUpdatePanel: copy + countdown + shutdown
-  const handleCopyAndShutdown = async () => {
-    try { await navigator.clipboard.writeText(INSTALL_CMD); } catch { /* clipboard blocked */ }
-    copy(INSTALL_CMD);
-    let remaining = UPDATER_CONFIG.shutdownCountdownSec;
-    setShutdownCountdown(remaining);
-    const timer = setInterval(() => {
-      remaining -= 1;
-      setShutdownCountdown(remaining);
-      if (remaining <= 0) {
-        clearInterval(timer);
-        fetch("/api/version/shutdown", { method: "POST" }).catch(() => {});
-        setIsDisconnected(true);
-      }
-    }, 1000);
-  };
-
-  const handleCancelUpdate = () => {
-    setIsUpdating(false);
-    setShutdownCountdown(0);
-  };
-
-  // Note: legacy updater poll removed. New flow: copy install cmd + shutdown server,
-  // user runs the command manually in another terminal.
 
 
   return (
@@ -137,7 +102,7 @@ export default function Sidebar({ onClose }) {
               </span>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setShowUpdateModal(true)}
+                  onClick={() => setIsUpdating(true)}
                   className="px-2 py-1 rounded bg-green-600 hover:bg-green-700 dark:bg-amber-500 dark:hover:bg-amber-600 text-white text-[11px] font-semibold transition-colors cursor-pointer"
                 >
                   Update now
@@ -351,43 +316,15 @@ export default function Sidebar({ onClose }) {
       {/* Remote Promo Modal */}
       <NineRemotePromoModal isOpen={showRemoteModal} onClose={() => setShowRemoteModal(false)} />
 
-      {/* Update Confirmation Modal */}
-      <ConfirmModal
-        isOpen={showUpdateModal}
-        onClose={() => setShowUpdateModal(false)}
-        onConfirm={handleUpdate}
-        title="Update 9Router"
-        message={`Show install command for v${updateInfo?.latestVersion || ""}? You can copy it and shutdown to install manually.`}
-        confirmText="Show Command"
-        cancelText="Cancel"
-        variant="primary"
-      />
-
-      {/* Disconnected / Updating Overlay */}
-      {(isDisconnected || isUpdating) && (
+      {/* One-click update overlay (auto install + manual fallback) */}
+      {isUpdating && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
-          {isUpdating ? (
-            <ManualUpdatePanel
-              latestVersion={updateInfo?.latestVersion}
-              installCmd={INSTALL_CMD}
-              copied={copied}
-              onCopyAndShutdown={handleCopyAndShutdown}
-              onCancel={handleCancelUpdate}
-              countdown={shutdownCountdown}
-              isDisconnected={isDisconnected}
-            />
-          ) : (
-            <div className="text-center p-8">
-              <div className="flex items-center justify-center size-16 rounded-full bg-red-500/20 text-red-500 mx-auto mb-4">
-                <span className="material-symbols-outlined text-[32px]">power_off</span>
-              </div>
-              <h2 className="text-xl font-semibold text-white mb-2">Server Disconnected</h2>
-              <p className="text-text-muted mb-6">The proxy server has been stopped.</p>
-              <Button variant="secondary" onClick={() => globalThis.location.reload()}>
-                Reload Page
-              </Button>
-            </div>
-          )}
+          <UpdatePanel
+            currentVersion={updateInfo?.currentVersion || APP_CONFIG.version}
+            latestVersion={updateInfo?.latestVersion}
+            installCmd={INSTALL_CMD}
+            onClose={() => setIsUpdating(false)}
+          />
         </div>
       )}
     </>
@@ -396,63 +333,4 @@ export default function Sidebar({ onClose }) {
 
 Sidebar.propTypes = {
   onClose: PropTypes.func,
-};
-
-function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdown, onCancel, countdown, isDisconnected }) {
-  const isCountingDown = countdown > 0;
-  return (
-    <div className="w-full max-w-lg rounded-xl bg-neutral-900/95 border border-white/10 p-6 text-white">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="flex items-center justify-center size-11 rounded-full bg-amber-500/20 text-amber-400">
-          <span className="material-symbols-outlined text-[24px]">content_copy</span>
-        </div>
-        <div>
-          <h2 className="text-lg font-semibold">Update 9Router{latestVersion ? ` to v${latestVersion}` : ""}</h2>
-          <p className="text-xs text-white/60">
-            {isDisconnected
-              ? "Server stopped. Paste the command into a terminal to install."
-              : isCountingDown
-                ? `Command copied. Server will stop in ${countdown}s...`
-                : "Click the button below to copy the install command and shutdown."}
-          </p>
-        </div>
-      </div>
-
-      <p className="text-sm text-white/80 mb-2">Install command:</p>
-      <div className="w-full px-3 py-2 rounded bg-white/5 mb-4">
-        <code className="text-xs font-mono text-amber-400 break-all">{installCmd}</code>
-      </div>
-
-      <ol className="text-xs text-white/70 space-y-1 list-decimal list-inside mb-4">
-        <li>Click <strong>Copy & Shutdown</strong> below.</li>
-        <li>Paste the command into your terminal and press Enter.</li>
-        <li>Run <code className="px-1 rounded bg-white/10 text-green-400">9router</code> again after install.</li>
-      </ol>
-
-      {isDisconnected ? (
-        <Button variant="secondary" fullWidth onClick={() => globalThis.location.reload()}>
-          Reload Page
-        </Button>
-      ) : (
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={onCancel} disabled={isCountingDown}>
-            Cancel
-          </Button>
-          <Button variant="primary" fullWidth onClick={onCopyAndShutdown} disabled={isCountingDown}>
-            {copied ? "✓ Copied — shutting down..." : isCountingDown ? `Shutting down in ${countdown}s` : "Copy & Shutdown"}
-          </Button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-ManualUpdatePanel.propTypes = {
-  latestVersion: PropTypes.string,
-  installCmd: PropTypes.string.isRequired,
-  copied: PropTypes.bool,
-  onCopyAndShutdown: PropTypes.func.isRequired,
-  onCancel: PropTypes.func.isRequired,
-  countdown: PropTypes.number,
-  isDisconnected: PropTypes.bool,
 };
