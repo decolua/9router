@@ -14,6 +14,8 @@ import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
+import { runModelBatchTest } from "@/shared/utils/modelBatchTester";
+import { useNotificationStore } from "@/store/notificationStore";
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
@@ -25,6 +27,7 @@ import BulkImportCodexModal from "./BulkImportCodexModal";
 import BulkImportGrokCliModal from "./BulkImportGrokCliModal";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
+const MODEL_SEARCH_PLACEHOLDER = "Search models...";
 
 const AUTO_PING_SETTINGS_KEYS = {
   claude: "claudeAutoPing",
@@ -80,6 +83,13 @@ export default function ProviderDetailPage() {
   const [oneByOneResults, setOneByOneResults] = useState({});
   const [oneByOneSummary, setOneByOneSummary] = useState(null);
   const stopOneByOneRef = useRef(false);
+  const [modelSearchQuery, setModelSearchQuery] = useState("");
+  const [batchTesting, setBatchTesting] = useState(false);
+  const [batchStopping, setBatchStopping] = useState(false);
+  const [batchResults, setBatchResults] = useState({});
+  const [batchSummary, setBatchSummary] = useState(null);
+  const stopBatchTestRef = useRef(false);
+  const notify = useNotificationStore();
   const [importingQoderModels, setImportingQoderModels] = useState(false);
   const { copied, copy } = useCopyToClipboard();
 
@@ -1072,6 +1082,102 @@ export default function ProviderDetailPage() {
     }
   };
 
+  // Batch-test the given models through the same /api/models/test probe, with a
+  // bounded concurrency pool. Per-model status is fed into the shared
+  // batchResults map; ModelRow shows it via the testStatus/isTesting props.
+  const handleTestModels = async (modelsToTest) => {
+    if (!modelsToTest.length || batchTesting) return;
+
+    const initial = {};
+    modelsToTest.forEach((m) => {
+      initial[m.id] = { state: "queued", latencyMs: null, error: null };
+    });
+
+    stopBatchTestRef.current = false;
+    setBatchTesting(true);
+    setBatchStopping(false);
+    setBatchResults(initial);
+    setBatchSummary(null);
+
+    try {
+      const finalSummary = await runModelBatchTest({
+        models: modelsToTest,
+        buildFullModel: (m) => `${providerStorageAlias}/${m.id}`,
+        onResult: (modelId, result) =>
+          setBatchResults((prev) => ({ ...prev, [modelId]: result })),
+        onSummary: setBatchSummary,
+        stopRef: stopBatchTestRef,
+      });
+
+      if (finalSummary.stopped) {
+        notify.warning(`Stopped: ${finalSummary.passed}/${finalSummary.completed} passed`);
+      } else if (finalSummary.failed === 0) {
+        notify.success(`All ${finalSummary.total} models passed`);
+      } else {
+        notify.warning(`${finalSummary.passed}/${finalSummary.total} passed, ${finalSummary.failed} failed`);
+      }
+    } catch (error) {
+      notify.error("Model batch test failed");
+      console.log("Error in batch model test:", error);
+    } finally {
+      setBatchTesting(false);
+      setBatchStopping(false);
+      stopBatchTestRef.current = false;
+    }
+  };
+
+  const handleStopTestModels = () => {
+    if (!batchTesting) return;
+    stopBatchTestRef.current = true;
+    setBatchStopping(true);
+  };
+
+  const canBatchTest = connections.length > 0 || isFreeNoAuth;
+  const batchRunning = batchTesting || batchStopping;
+
+  // Derived model lists for this provider (llm kind only). Shared by the
+  // "Available Models" header (search + batch-test controls) and the rows below.
+  const modelsSectionData = (() => {
+    if (isCompatible) return null;
+    const allModels = [
+      ...models,
+      ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
+    ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; });
+    const disabledSet = new Set(disabledModelIds);
+    const displayModels = allModels.filter((m) => !disabledSet.has(m.id));
+    const disabledDisplayModels = allModels.filter((m) => disabledSet.has(m.id));
+    const customModelRows = getProviderCustomModelRows({
+      customModels,
+      modelAliases,
+      providerAlias: providerStorageAlias,
+      builtInModels: models,
+      type: "llm",
+    });
+    const modelSearch = modelSearchQuery.trim().toLowerCase();
+    const matchesModelSearch = (model) =>
+      !modelSearch ||
+      (model.id || "").toLowerCase().includes(modelSearch) ||
+      (model.name || "").toLowerCase().includes(modelSearch) ||
+      (model.fullModel || "").toLowerCase().includes(modelSearch);
+    const filteredCustomRows = customModelRows.filter(matchesModelSearch);
+    const filteredDisplayModels = displayModels.filter(matchesModelSearch);
+    const batchTestTargets = [
+      ...filteredCustomRows,
+      ...filteredDisplayModels,
+    ].map((m) => ({ id: m.id, fullModel: `${providerStorageAlias}/${m.id}` }));
+    return {
+      allModels,
+      displayModels,
+      disabledDisplayModels,
+      customModelRows,
+      filteredCustomRows,
+      filteredDisplayModels,
+      batchTestTargets,
+      modelSearch,
+      shownCount: batchTestTargets.length,
+    };
+  })();
+
   const renderModelsSection = () => {
     if (isCompatible) {
       return (
@@ -1091,27 +1197,19 @@ export default function ProviderDetailPage() {
         />
       );
     }
-    // Combine hardcoded models with Kilo free models (deduplicated)
-    // Exclude non-llm models (embedding, tts, etc.) — they have dedicated pages under media-providers
-    const allModels = [
-      ...models,
-      ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
-    ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; });
-    const disabledSet = new Set(disabledModelIds);
-    const displayModels = allModels.filter((m) => !disabledSet.has(m.id));
-    const disabledDisplayModels = allModels.filter((m) => disabledSet.has(m.id));
-    const customModelRows = getProviderCustomModelRows({
-      customModels,
-      modelAliases,
-      providerAlias: providerStorageAlias,
-      builtInModels: models,
-      type: "llm",
-    });
+    const {
+      filteredCustomRows,
+      filteredDisplayModels,
+      disabledDisplayModels,
+      customModelRows,
+      modelSearch,
+      shownCount,
+    } = modelsSectionData;
 
     return (
       <div className="flex flex-wrap gap-3">
         {/* Custom models first */}
-        {customModelRows.map((model) => (
+        {filteredCustomRows.map((model) => (
           <ModelRow
             key={`${model.source}-${model.fullModel}`}
             model={{ id: model.id, name: model.name }}
@@ -1127,9 +1225,9 @@ export default function ProviderDetailPage() {
                 handleDeleteAlias(model.alias);
               }
             }}
-            testStatus={modelTestResults[model.id]}
+            testStatus={batchResults[model.id]?.state === "ok" ? "ok" : batchResults[model.id]?.state === "error" ? "error" : modelTestResults[model.id]}
             onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
-            isTesting={testingModelIds.has(model.id)}
+            isTesting={testingModelIds.has(model.id) || batchResults[model.id]?.state === "testing"}
             isCustom
             isFree={false}
             caps={getCaps(`${providerId}/${model.id}`)}
@@ -1137,7 +1235,7 @@ export default function ProviderDetailPage() {
           />
         ))}
 
-        {displayModels.map((model) => {
+        {filteredDisplayModels.map((model) => {
           const fullModel = `${providerStorageAlias}/${model.id}`;
           const oldFormatModel = `${providerId}/${model.id}`;
           const existingAlias = Object.entries(modelAliases).find(
@@ -1153,9 +1251,9 @@ export default function ProviderDetailPage() {
               onCopy={copy}
               onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
               onDeleteAlias={() => handleDeleteAlias(existingAlias)}
-              testStatus={modelTestResults[model.id]}
+              testStatus={batchResults[model.id]?.state === "ok" ? "ok" : batchResults[model.id]?.state === "error" ? "error" : modelTestResults[model.id]}
               onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
-              isTesting={testingModelIds.has(model.id)}
+              isTesting={testingModelIds.has(model.id) || batchResults[model.id]?.state === "testing"}
               isFree={model.isFree}
               onDisable={() => handleDisableModel(model.id)}
               caps={getCaps(`${providerId}/${model.id}`)}
@@ -1164,7 +1262,18 @@ export default function ProviderDetailPage() {
           );
         })}
 
+        {/* Empty state when the model search has no matches */}
+        {modelSearch && shownCount === 0 && (
+          <div className="flex w-full flex-col items-center gap-1 py-6 text-center">
+            <span className="material-symbols-outlined text-[28px] text-text-muted">
+              search_off
+            </span>
+            <p className="text-sm text-text-muted">No models match &quot;{modelSearch}&quot;</p>
+          </div>
+        )}
+
         {/* Add model button — inline, same style as model chips */}
+        {!modelSearch && (
         <button
           onClick={() => setShowAddCustomModel(true)}
           className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/40 px-3 py-2 text-xs text-primary transition-colors hover:border-primary hover:bg-primary/5 sm:w-auto"
@@ -1172,6 +1281,7 @@ export default function ProviderDetailPage() {
           <span className="material-symbols-outlined text-sm">add</span>
           Add Model
         </button>
+        )}
 
         {/* Import Qoder models button — only show for qoder provider */}
         {providerId === "qoder" && connections.some((conn) => conn.isActive !== false) && (
@@ -1675,11 +1785,7 @@ export default function ProviderDetailPage() {
             )}
           </div>
           {!isCompatible && (() => {
-            const allIds = [
-              ...models,
-              ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
-            ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id);
-            const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
+            const activeIds = modelsSectionData.displayModels.map((m) => m.id);
             return (
               <div className="flex gap-2">
                 {disabledModelIds.length > 0 && (
@@ -1696,6 +1802,55 @@ export default function ProviderDetailPage() {
             );
           })()}
         </div>
+        {!isCompatible && (
+          <div className="mb-4 flex flex-col gap-2 border-t border-black/[0.03] pt-3 dark:border-white/[0.03] lg:flex-row lg:items-center lg:justify-between">
+            <div className="relative w-full lg:max-w-xs">
+              <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted text-[16px] pointer-events-none">
+                search
+              </span>
+              <input
+                type="text"
+                value={modelSearchQuery}
+                onChange={(e) => setModelSearchQuery(e.target.value)}
+                placeholder={MODEL_SEARCH_PLACEHOLDER}
+                className="w-full h-9 pl-8 pr-7 rounded-lg border border-border bg-surface-2 text-sm focus:outline-none focus:border-primary/50 transition-colors"
+              />
+              {modelSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setModelSearchQuery("")}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main p-0.5 rounded"
+                  aria-label="Clear model search"
+                >
+                  <span className="material-symbols-outlined text-[16px]">close</span>
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {batchSummary && (
+                <span className="text-xs text-text-muted tabular-nums">
+                  {batchSummary.completed}/{batchSummary.total} · {batchSummary.passed} ok{batchSummary.failed > 0 ? ` · ${batchSummary.failed} fail` : ""}{batchSummary.avgLatencyMs != null ? ` · avg ${batchSummary.avgLatencyMs}ms` : ""}{batchSummary.stopped ? " · stopped" : ""}
+                </span>
+              )}
+              {batchRunning ? (
+                <Button size="sm" variant="ghost" icon="stop" onClick={handleStopTestModels} disabled={batchStopping}>
+                  {batchStopping ? "Stopping..." : "Stop"}
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon="science"
+                  onClick={() => handleTestModels(modelsSectionData.batchTestTargets)}
+                  disabled={!canBatchTest || modelsSectionData.shownCount === 0}
+                  title={canBatchTest ? `Test the ${modelsSectionData.shownCount} model(s) shown` : "Add a connection to test models"}
+                >
+                  Test {modelsSectionData.shownCount} Model{modelsSectionData.shownCount === 1 ? "" : "s"}
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
         {!!modelsTestError && (
           <p className="text-xs text-red-500 mb-3 break-words">{modelsTestError}</p>
         )}
