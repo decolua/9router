@@ -267,6 +267,96 @@ describe("Kiro conversation canonicalizer", () => {
     expect(JSON.stringify(specification.inputSchema.json)).not.toContain('"required":[]');
   });
 
+  it("flattens top-level schema combinators rejected by Kiro", () => {
+    const { specs } = normalizeKiroToolSpecs([tool("dynamic_tool", {
+      oneOf: [
+        {
+          type: "object",
+          properties: {
+            path: { type: "string" },
+            patch: { type: "string" },
+          },
+          required: ["path"],
+        },
+        {
+          type: "object",
+          properties: {
+            path: { type: "string" },
+            line: { type: "integer" },
+          },
+          required: ["path", "line"],
+        },
+      ],
+    })]);
+
+    expect(specs[0].toolSpecification.inputSchema.json).toEqual({
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        patch: { type: "string" },
+        line: { type: "integer" },
+      },
+      required: ["path"],
+    });
+  });
+
+  it("removes unsupported schema keywords at every nesting level", () => {
+    const { specs } = normalizeKiroToolSpecs([tool("dynamic_tool", {
+      type: "object",
+      $defs: { Filter: { type: "string" } },
+      properties: {
+        filter: {
+          description: "kept",
+          anyOf: [{ type: "string" }, { type: "null" }],
+          $ref: "#/$defs/Filter",
+        },
+        nested: {
+          type: "object",
+          properties: {
+            value: {
+              type: "string",
+              if: { const: "x" },
+              then: { minLength: 1 },
+              else: { maxLength: 10 },
+            },
+          },
+        },
+      },
+    })]);
+
+    const schema = specs[0].toolSpecification.inputSchema.json;
+    expect(schema.properties.filter.description).toBe("kept");
+    expect(JSON.stringify(schema)).not.toMatch(
+      /\"(?:anyOf|oneOf|allOf|not|\$schema|\$id|\$ref|\$defs|definitions|if|then|else|unevaluatedProperties|unevaluatedItems|contentEncoding|contentMediaType)\"/
+    );
+  });
+
+  it("preserves property names that equal unsupported schema keywords", () => {
+    const { specs } = normalizeKiroToolSpecs([tool("conditional_names", {
+      type: "object",
+      properties: {
+        if: { type: "string", description: "condition name" },
+        then: {
+          type: "object",
+          properties: { additionalProperties: { type: "boolean" } },
+        },
+      },
+      required: ["if", "then"],
+    })]);
+
+    expect(specs[0].toolSpecification.inputSchema.json).toEqual({
+      type: "object",
+      properties: {
+        if: { type: "string", description: "condition name" },
+        then: {
+          type: "object",
+          properties: { additionalProperties: { type: "boolean" } },
+        },
+      },
+      required: ["if", "then"],
+    });
+  });
+
   it("does not mutate the source conversation or tool definitions", () => {
     const sourceTools = [tool("first")];
     const sourceHistory = [
