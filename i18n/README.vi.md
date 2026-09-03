@@ -981,7 +981,7 @@ docker build -t 9router .
 # Chạy container (lệnh được sử dụng trong thiết lập hiện tại)
 docker run -d \
   --name 9router \
-  -p 20128:20128 \
+  -p 127.0.0.1:20128:20128 \
   --env-file /root/dev/9router/.env \
   -v 9router-data:/app/data \
   -v 9router-usage:/root/.9router \
@@ -993,7 +993,7 @@ Lệnh di động (nếu bạn đã ở gốc kho lưu trữ):
 ```bash
 docker run -d \
   --name 9router \
-  -p 20128:20128 \
+  -p 127.0.0.1:20128:20128 \
   --env-file ./.env \
   -v 9router-data:/app/data \
   -v 9router-usage:/root/.9router \
