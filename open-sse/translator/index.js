@@ -245,6 +245,7 @@ export function initState(sourceFormat) {
     return {
       ...base,
       seq: 0,
+      nextOutputIndex: 0,
       responseId: `resp_${Date.now()}`,
       created: Math.floor(Date.now() / 1000),
       started: false,
@@ -252,6 +253,7 @@ export function initState(sourceFormat) {
       msgItemAdded: {},
       msgContentAdded: {},
       msgItemDone: {},
+      msgOutputIndexes: {},
       reasoningId: "",
       reasoningIndex: -1,
       reasoningBuf: "",
@@ -264,6 +266,7 @@ export function initState(sourceFormat) {
       funcItemAdded: {},
       funcArgsDone: {},
       funcItemDone: {},
+      funcOutputIndexes: {},
       customToolNames: new Set(),
       completedSent: false
     };
