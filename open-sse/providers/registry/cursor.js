@@ -24,6 +24,14 @@ export default {
       "User-Agent": "connect-es/1.6.1",
     },
     clientVersion: "3.12.17",
+    // Individual/Pro dashboard usage (Connect RPC, same Bearer token as chat).
+    // team/enterprise pooled-limit accounts and the request-based
+    // legacy fallback (cursor.com/api/usage + CSV export) aren't covered —
+    // add those REST endpoints if reports come in from those account shapes.
+    usage: {
+      usageUrl: "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage",
+      planUrl: "https://api2.cursor.sh/aiserver.v1.DashboardService/GetPlanInfo",
+    },
   },
   models: [
     { id: "default", name: "Auto (Server Picks)" },
@@ -54,5 +62,8 @@ export default {
       accessToken: "cursorAuth/accessToken",
       machineId: "storage.serviceMachineId",
     },
+  },
+  features: {
+    usage: true,
   },
 };
