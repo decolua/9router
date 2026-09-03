@@ -9,9 +9,21 @@ import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModa
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { getComboCapsLimit } from "@/lib/comboCaps";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
+const COMBO_INPUT_CAPS = [
+  { key: "vision", label: "Images" },
+  { key: "pdf", label: "PDF" },
+  { key: "audioInput", label: "Audio" },
+  { key: "videoInput", label: "Video" },
+];
+const MODEL_CAPS = [
+  ...COMBO_INPUT_CAPS,
+  { key: "search", label: "Search" },
+  { key: "reasoning", label: "Reasoning" },
+];
 
 // Capacity adapter: global fallback pools of models per input-modality capability.
 // A request needing a capability the target model/combo lacks switches straight
@@ -261,6 +273,7 @@ export default function CombosPage() {
           onClose={() => setShowCreateModal(false)}
           onSave={handleCreate}
           activeProviders={activeProviders}
+          getCaps={getCaps}
         />
       )}
 
@@ -272,6 +285,7 @@ export default function CombosPage() {
           onClose={() => setEditingCombo(null)}
           onSave={(data) => handleUpdate(editingCombo.id, data)}
           activeProviders={activeProviders}
+          getCaps={getCaps}
         />
       )}
 
@@ -552,7 +566,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
   );
 }
 
-function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+function ModelItem({ id, index, model, caps, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -598,25 +612,44 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
       {/* Index badge */}
       <span className="text-[10px] font-medium text-text-muted w-3 text-center shrink-0">{index + 1}</span>
 
-      {/* Inline editable model value */}
-      {editing ? (
-        <input
-          autoFocus
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={handleKeyDown}
-          className="min-w-0 flex-1 rounded border border-primary/40 bg-white px-1.5 py-0.5 font-mono text-xs text-text-main outline-none dark:bg-black/20"
-        />
-      ) : (
-        <div
-          className="min-w-0 flex-1 cursor-text truncate rounded px-1.5 py-0.5 font-mono text-xs text-text-main hover:bg-black/5 dark:hover:bg-white/5"
-          onClick={() => setEditing(true)}
-          title="Click to edit"
-        >
-          {model}
+      <div className="min-w-0 flex-1">
+        {/* Inline editable model value */}
+        {editing ? (
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={handleKeyDown}
+            className="w-full min-w-0 rounded border border-primary/40 bg-white px-1.5 py-0.5 font-mono text-xs text-text-main outline-none dark:bg-black/20"
+          />
+        ) : (
+          <div
+            className="min-w-0 cursor-text truncate rounded px-1.5 py-0.5 font-mono text-xs text-text-main hover:bg-black/5 dark:hover:bg-white/5"
+            onClick={() => { setDraft(model); setEditing(true); }}
+            title="Click to edit"
+          >
+            {model}
+          </div>
+        )}
+        <div data-model-capabilities={model} className="mt-1 flex flex-wrap items-center gap-1 px-1.5 text-[10px]">
+          <span
+            aria-label={`Context window: ${caps?.contextWindow?.toLocaleString() || "unknown"} tokens`}
+            className="rounded bg-primary/10 px-1.5 py-0.5 font-medium text-primary"
+          >
+            Context {caps?.contextWindow?.toLocaleString() || "unknown"}
+          </span>
+          {MODEL_CAPS.map(({ key, label }) => (
+            <span
+              key={key}
+              aria-label={`${label}: ${caps?.[key] ? "supported" : "not supported"}`}
+              className={`rounded px-1.5 py-0.5 ${caps?.[key] ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-black/5 text-text-muted/50 line-through dark:bg-white/5"}`}
+            >
+              {label}
+            </span>
+          ))}
         </div>
-      )}
+      </div>
 
       {/* Priority arrows */}
       <div className="flex shrink-0 items-center gap-0.5">
@@ -650,10 +683,11 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
   );
 }
 
-function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }) {
+function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, getCaps, kindFilter = null }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
+  const [caps, setCaps] = useState(combo?.caps || {});
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
@@ -741,10 +775,28 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
     setModels(newModels);
   };
 
+  const capsLimit = getComboCapsLimit(models, getCaps);
+  const contextWindowValid = caps.contextWindow == null
+    || (Number.isSafeInteger(caps.contextWindow)
+      && caps.contextWindow > 0
+      && (!capsLimit || caps.contextWindow <= capsLimit.contextWindow));
+  const unsupportedInput = capsLimit
+    && COMBO_INPUT_CAPS.find(({ key }) => caps[key] === true && !capsLimit[key]);
+  const metadataValid = contextWindowValid && !unsupportedInput;
+
   const handleSave = async () => {
-    if (!validateName(name)) return;
+    if (!validateName(name) || !metadataValid) return;
     setSaving(true);
-    await onSave({ name: name.trim(), models });
+    await onSave({
+      name: name.trim(),
+      models,
+      caps: {
+        ...(Number.isSafeInteger(caps.contextWindow) && caps.contextWindow > 0
+          ? { contextWindow: caps.contextWindow }
+          : {}),
+        ...Object.fromEntries(COMBO_INPUT_CAPS.map(({ key }) => [key, caps[key] === true])),
+      },
+    });
     setSaving(false);
   };
 
@@ -756,6 +808,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
         isOpen={isOpen}
         onClose={onClose}
         title={isEdit ? "Edit Combo" : "Create Combo"}
+        size="full"
       >
         <div className="flex flex-col gap-3">
           {/* Name */}
@@ -772,6 +825,63 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
             </p>
           </div>
 
+          {/* Advertised model metadata */}
+          <div className="grid grid-cols-1 gap-3 rounded-lg border border-black/10 p-3 dark:border-white/10 sm:grid-cols-[1fr_2fr]">
+            <div>
+              <label htmlFor="combo-context-window" className="mb-1 block text-sm font-medium">Context Window</label>
+              <div className="flex gap-1.5">
+                <input
+                  id="combo-context-window"
+                  type="number"
+                  min="1"
+                  max={capsLimit?.contextWindow}
+                  step="1"
+                  value={caps.contextWindow || ""}
+                  aria-invalid={!contextWindowValid}
+                  aria-describedby="combo-context-window-help"
+                  onChange={(e) => {
+                    const value = e.target.value === "" ? undefined : Number(e.target.value);
+                    setCaps((current) => ({ ...current, contextWindow: value }));
+                  }}
+                  placeholder="e.g. 200000"
+                  className="min-w-0 flex-1 rounded border border-black/10 bg-white px-2 py-1.5 font-mono text-sm outline-none focus:border-primary dark:border-white/10 dark:bg-black/20"
+                />
+                <button
+                  type="button"
+                  disabled={!capsLimit}
+                  onClick={() => setCaps((current) => ({ ...current, contextWindow: capsLimit.contextWindow }))}
+                  title="Use the maximum context window shared by every model"
+                  className="rounded border border-primary/30 px-2.5 text-xs font-medium text-primary transition-colors hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Max
+                </button>
+              </div>
+              <p id="combo-context-window-help" role={contextWindowValid ? undefined : "alert"} className={`mt-0.5 text-[10px] ${contextWindowValid ? "text-text-muted" : "text-red-500"}`}>
+                {contextWindowValid
+                  ? `Tokens advertised by the combo${capsLimit ? ` (max ${capsLimit.contextWindow.toLocaleString()})` : ""}`
+                  : `Enter a positive whole number${capsLimit ? ` up to ${capsLimit.contextWindow.toLocaleString()}` : ""}`}
+              </p>
+            </div>
+            <fieldset>
+              <legend className="mb-1 text-sm font-medium">Input Capabilities</legend>
+              <div className="grid grid-cols-2 gap-2">
+                {COMBO_INPUT_CAPS.map(({ key, label }) => (
+                  <label key={key} className="flex cursor-pointer items-center gap-2 text-xs text-text-muted">
+                    <Toggle
+                      checked={caps[key] === true}
+                      onChange={(value) => setCaps((current) => ({ ...current, [key]: value }))}
+                      disabled={capsLimit ? !capsLimit[key] && caps[key] !== true : false}
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </div>
+              <p role={unsupportedInput ? "alert" : undefined} className={`mt-1 text-[10px] ${unsupportedInput ? "text-red-500" : "text-text-muted"}`}>
+                {unsupportedInput ? `${unsupportedInput.label} is not accepted by every fallback model` : "Only capabilities accepted by every fallback model can be enabled"}
+              </p>
+            </fieldset>
+          </div>
+
           {/* Models */}
           <div>
             <label className="text-sm font-medium mb-1.5 block">Models</label>
@@ -784,13 +894,14 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
             ) : (
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd} modifiers={[restrictToVerticalAxis, restrictToParentElement]}>
               <SortableContext items={modelItems.map((m) => m.uid)} strategy={verticalListSortingStrategy}>
-                <div className="flex max-h-[55vh] min-w-0 flex-col gap-1 overflow-y-auto sm:max-h-[350px]">
+                <div className="flex max-h-[55vh] min-w-0 flex-col gap-1.5 overflow-y-auto sm:max-h-[420px]">
                   {modelItems.map(({ uid, model }, index) => (
                     <ModelItem
                       key={uid}
                       id={uid}
                       index={index}
                       model={model}
+                      caps={getCaps(model)}
                       isFirst={index === 0}
                       isLast={index === modelItems.length - 1}
                       onEdit={(newVal) => {
@@ -827,7 +938,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
               onClick={handleSave}
               fullWidth
               size="sm"
-              disabled={!name.trim() || !!nameError || saving}
+              disabled={!name.trim() || !!nameError || !metadataValid || saving}
             >
               {saving ? "Saving..." : isEdit ? "Save" : "Create"}
             </Button>

@@ -39,7 +39,16 @@ export async function addCustomModel({ providerAlias, id, type = "llm", name, ca
     const row = db.get(`SELECT value FROM kv WHERE scope = 'customModels' AND key = ?`, [k]);
     if (row) {
       const prev = parseJson(row.value) || {};
-      const next = { ...prev, ...(name ? { name } : {}), ...(caps ? { caps } : {}) };
+      const next = { ...prev, ...(name ? { name } : {}) };
+      if (caps) {
+        const mergedCaps = { ...(prev.caps || {}) };
+        for (const [key, value] of Object.entries(caps)) {
+          if (value === null) delete mergedCaps[key];
+          else mergedCaps[key] = value;
+        }
+        if (Object.keys(mergedCaps).length) next.caps = mergedCaps;
+        else delete next.caps;
+      }
       db.run(`UPDATE kv SET value = ? WHERE scope = 'customModels' AND key = ?`, [stringifyJson(next), k]);
       return;
     }

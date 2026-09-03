@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getComboById, updateCombo, deleteCombo, getComboByName } from "@/lib/localDb";
+import { getComboById, updateCombo, deleteCombo, getComboByName, getCustomModels, getProviderConnections, getModelAliases } from "@/lib/localDb";
 import { resetComboRotation } from "open-sse/services/combo.js";
+import { createComboCapsResolver, validateComboCaps } from "@/lib/comboCaps";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -27,6 +28,21 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
+
+    const prev = await getComboById(id);
+    if (!prev) {
+      return NextResponse.json({ error: "Combo not found" }, { status: 404 });
+    }
+
+    const [customModels, connections, modelAliases] = await Promise.all([getCustomModels(), getProviderConnections(), getModelAliases()]);
+    const capsError = validateComboCaps(
+      body.caps === undefined ? prev.caps : body.caps,
+      body.models === undefined ? prev.models : body.models,
+      createComboCapsResolver(customModels, connections, modelAliases),
+    );
+    if (capsError) {
+      return NextResponse.json({ error: capsError }, { status: 400 });
+    }
     
     // Validate name format if provided
     if (body.name) {
@@ -41,8 +57,6 @@ export async function PUT(request, { params }) {
       }
     }
     
-    // Capture previous name to invalidate rotation state on rename
-    const prev = await getComboById(id);
     const combo = await updateCombo(id, body);
     
     if (!combo) {

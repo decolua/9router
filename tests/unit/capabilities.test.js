@@ -62,4 +62,10 @@ describe("getCapabilitiesForModel", () => {
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-luna-agentic")).toMatchObject(kiroGpt56Expected);
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-sol-thinking-agentic")).toMatchObject(kiroGpt56Expected);
   });
+
+  it("uses the documented 1M window for GLM 5.2 and 5.3 without changing older GLM", () => {
+    expect(getCapabilitiesForModel("glm", "glm-5.3").contextWindow).toBe(1000000);
+    expect(getCapabilitiesForModel("glm", "glm-5.2").contextWindow).toBe(1000000);
+    expect(getCapabilitiesForModel("glm", "glm-5.1").contextWindow).toBe(200000);
+  });
 });

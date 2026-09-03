@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels.js";
+import { findProviderModelMetadata, getProviderCustomModelRows } from "@/shared/utils/providerCustomModels.js";
 
 describe("provider custom model rows", () => {
+  it("finds canonical-ID metadata from an alias provider page", () => {
+    const metadata = { providerAlias: "codex", id: "gpt-5.6-sol", type: "llm", caps: { contextWindow: 131072 } };
+
+    expect(findProviderModelMetadata([metadata], "cx", "gpt-5.6-sol")).toBe(metadata);
+  });
+
   it("keeps identical model IDs separate per provider", () => {
     const customModels = [
       { providerAlias: "ollama", id: "minimax-m2.5", type: "llm", name: "MiniMax M2.5" },

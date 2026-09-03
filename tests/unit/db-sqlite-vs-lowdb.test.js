@@ -141,14 +141,21 @@ describe("DB SQLite layer — public API parity", () => {
   });
 
   it("combos: CRUD", async () => {
-    const c = await sqliteDb.createCombo({ name: "combo1", models: ["m1", "m2"], kind: "fallback" });
+    const caps = { contextWindow: 128000, vision: true, pdf: false, audioInput: false, videoInput: false };
+    const c = await sqliteDb.createCombo({ name: "combo1", models: ["m1", "m2"], kind: "fallback", caps });
     expect(c.id).toBeDefined();
     expect(c.models).toEqual(["m1", "m2"]);
+    expect(c.caps).toEqual(caps);
     const byName = await sqliteDb.getComboByName("combo1");
     expect(byName.id).toBe(c.id);
-    await sqliteDb.updateCombo(c.id, { models: ["m3"] });
+    expect(byName.caps).toEqual(caps);
+    await sqliteDb.updateCombo(c.id, { models: ["m3"], caps: { ...caps, contextWindow: 200000 } });
     const updated = await sqliteDb.getComboById(c.id);
     expect(updated.models).toEqual(["m3"]);
+    expect(updated.caps.contextWindow).toBe(200000);
+    const cleared = await sqliteDb.updateCombo(c.id, { caps: null });
+    expect(cleared.caps).toEqual({});
+    expect((await sqliteDb.getComboById(c.id)).caps).toEqual({});
     expect(await sqliteDb.deleteCombo(c.id)).toBe(true);
   });
 
@@ -172,6 +179,15 @@ describe("DB SQLite layer — public API parity", () => {
     await sqliteDb.deleteCustomModel({ providerAlias: "p1", id: "m1" });
     const after = await sqliteDb.getCustomModels();
     expect(after.find((m) => m.id === "m1")).toBeUndefined();
+  });
+
+  it("customModels: merges and clears one capability override without losing siblings", async () => {
+    await sqliteDb.addCustomModel({ providerAlias: "p1", id: "m2", caps: { vision: true } });
+    await sqliteDb.addCustomModel({ providerAlias: "p1", id: "m2", caps: { contextWindow: 262144 } });
+    expect((await sqliteDb.getCustomModels()).find((m) => m.id === "m2").caps).toEqual({ vision: true, contextWindow: 262144 });
+
+    await sqliteDb.addCustomModel({ providerAlias: "p1", id: "m2", caps: { contextWindow: null } });
+    expect((await sqliteDb.getCustomModels()).find((m) => m.id === "m2").caps).toEqual({ vision: true });
   });
 
   it("mitmAlias: get/set per tool", async () => {

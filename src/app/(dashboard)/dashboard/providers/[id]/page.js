@@ -13,7 +13,7 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
-import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
+import { findProviderModelMetadata, getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
@@ -61,6 +61,8 @@ export default function ProviderDetailPage() {
   const [modelsTestError, setModelsTestError] = useState("");
   const [testingModelIds, setTestingModelIds] = useState(() => new Set());
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
+  const [contextEditor, setContextEditor] = useState(null);
+  const [contextSaving, setContextSaving] = useState(false);
   const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
   const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
@@ -537,6 +539,7 @@ export default function ProviderDetailPage() {
       if (res.ok) {
         await fetchCustomModels();
         if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("customModelChanged"));
+        return true;
       } else {
         const data = await res.json();
         alert(data.error || "Failed to add custom model");
@@ -544,6 +547,40 @@ export default function ProviderDetailPage() {
     } catch (error) {
       console.log("Error adding custom model:", error);
     }
+    return false;
+  };
+
+  const openContextEditor = (modelId, caps) => {
+    const stored = findProviderModelMetadata(customModels, providerStorageAlias, modelId);
+    setContextEditor({
+      modelId,
+      providerAlias: stored?.providerAlias || providerStorageAlias,
+      value: String(caps?.contextWindow || ""),
+      hasOverride: Object.prototype.hasOwnProperty.call(stored?.caps || {}, "contextWindow"),
+      error: "",
+    });
+  };
+
+  const saveContextOverride = async (event) => {
+    event.preventDefault();
+    const contextWindow = Number(contextEditor.value);
+    if (!Number.isSafeInteger(contextWindow) || contextWindow <= 0) {
+      setContextEditor((current) => ({ ...current, error: "Enter a positive whole number." }));
+      return;
+    }
+    setContextSaving(true);
+    const saved = await handleAddCustomModel(contextEditor.modelId, "llm", contextEditor.providerAlias, { contextWindow });
+    setContextSaving(false);
+    if (saved) setContextEditor(null);
+    else setContextEditor((current) => ({ ...current, error: "Could not save the override. Try again." }));
+  };
+
+  const resetContextOverride = async () => {
+    setContextSaving(true);
+    const saved = await handleAddCustomModel(contextEditor.modelId, "llm", contextEditor.providerAlias, { contextWindow: null });
+    setContextSaving(false);
+    if (saved) setContextEditor(null);
+    else setContextEditor((current) => ({ ...current, error: "Could not reset the override. Try again." }));
   };
 
   const handleDeleteCustomModel = async (modelId, type = "llm", providerAliasOverride = providerStorageAlias) => {
@@ -1088,6 +1125,8 @@ export default function ProviderDetailPage() {
           onDeleteCustomModel={(modelId) => handleDeleteCustomModel(modelId, "llm", providerStorageAlias)}
           connections={connections}
           isAnthropic={isAnthropicCompatible}
+          getCaps={getCaps}
+          onEditContext={openContextEditor}
         />
       );
     }
@@ -1133,6 +1172,7 @@ export default function ProviderDetailPage() {
             isCustom
             isFree={false}
             caps={getCaps(`${providerId}/${model.id}`)}
+            onEditContext={() => openContextEditor(model.id, getCaps(`${providerId}/${model.id}`))}
             thinkingSuffix={resolveThinkingSuffix(model.id)}
           />
         ))}
@@ -1159,6 +1199,7 @@ export default function ProviderDetailPage() {
               isFree={model.isFree}
               onDisable={() => handleDisableModel(model.id)}
               caps={getCaps(`${providerId}/${model.id}`)}
+              onEditContext={() => openContextEditor(model.id, getCaps(`${providerId}/${model.id}`))}
               thinkingSuffix={resolveThinkingSuffix(model.id)}
             />
           );
@@ -1788,6 +1829,46 @@ export default function ProviderDetailPage() {
           onClose={() => setShowAddCustomModel(false)}
         />
       )}
+
+      <Modal
+        isOpen={!!contextEditor}
+        onClose={() => !contextSaving && setContextEditor(null)}
+        title="Override Context Window"
+      >
+        {contextEditor && (
+          <form className="space-y-4" onSubmit={saveContextOverride}>
+            <div className="rounded-lg border-l-2 border-primary/60 bg-sidebar/40 px-3 py-2">
+              <code className="break-all text-xs text-text-main">{providerDisplayAlias}/{contextEditor.modelId}</code>
+            </div>
+            <Input
+              label="Context window"
+              type="number"
+              min="1"
+              step="1"
+              value={contextEditor.value}
+              onChange={(event) => setContextEditor((current) => ({ ...current, value: event.target.value, error: "" }))}
+              error={contextEditor.error}
+              hint="This local value takes precedence over bundled provider metadata and controls Combo Max."
+              disabled={contextSaving}
+              autoFocus
+              data-context-override-input={contextEditor.modelId}
+            />
+            <div className="flex flex-wrap justify-end gap-2">
+              {contextEditor.hasOverride && (
+                <Button type="button" variant="ghost" onClick={resetContextOverride} disabled={contextSaving}>
+                  Use bundled value
+                </Button>
+              )}
+              <Button type="button" variant="secondary" onClick={() => setContextEditor(null)} disabled={contextSaving}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={contextSaving}>
+                {contextSaving ? "Saving..." : "Save override"}
+              </Button>
+            </div>
+          </form>
+        )}
+      </Modal>
 
       {providerId === "codex" && (
         <BulkImportCodexModal
