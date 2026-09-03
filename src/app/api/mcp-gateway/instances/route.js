@@ -12,8 +12,8 @@ const VALID_TRANSPORTS = new Set(["http", "sse", "stdio"]);
 
 function stripSecrets(inst) {
   if (!inst) return inst;
-  const { headers: _h, env: _e, oauthTokens: _o, ...out } = inst;
-  void _h; void _e;
+  const { oauthTokens: _o, ...out } = inst;
+  void _o;
   out.oauthStatus = deriveOauthStatus(!!inst.oauth, _o);
   out.oauthClientConfigured = !!(_o && _o.client && _o.client.clientId);
   return out;
