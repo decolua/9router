@@ -12,16 +12,87 @@ const CLAUDE_OAUTH_TOOL_PREFIX = "proxy_";
 
 // Sanitize tool call arguments to fix bad params from non-Anthropic models
 function sanitizeToolArgs(toolName, argsJson) {
+  const repairedJson = repairDuplicatedJsonArguments(argsJson);
   try {
-    const args = JSON.parse(argsJson);
+    const args = JSON.parse(repairedJson);
     const name = toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)
       ? toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length)
       : toolName;
     if (name === "Read") sanitizeReadArgs(args);
     return JSON.stringify(args);
   } catch {
-    return argsJson;
+    return repairedJson;
   }
+}
+
+// Repair duplicated / repeated JSON objects emitted by upstream proxies or cumulative streams
+function repairDuplicatedJsonArguments(raw) {
+  if (typeof raw !== "string" || raw.length < 4) return raw;
+  try {
+    JSON.parse(raw);
+    return raw;
+  } catch {}
+
+  const len = raw.length;
+  if (len % 2 === 0) {
+    const half = raw.slice(0, len / 2);
+    if (half === raw.slice(len / 2)) {
+      try {
+        JSON.parse(half);
+        return half;
+      } catch {}
+    }
+  }
+
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("{")) {
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    for (let i = 0; i < trimmed.length; i++) {
+      const ch = trimmed[i];
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escape = true;
+        continue;
+      }
+      if (ch === "\"") {
+        inString = !inString;
+        continue;
+      }
+      if (!inString) {
+        if (ch === "{") depth++;
+        else if (ch === "}") {
+          depth--;
+          if (depth === 0) {
+            const candidate = trimmed.slice(0, i + 1);
+            try {
+              JSON.parse(candidate);
+              const remainder = trimmed.slice(i + 1).trim();
+              if (remainder.startsWith("{")) {
+                return candidate;
+              }
+            } catch {
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return raw;
+}
+
+function appendToolArgs(current, incoming) {
+  if (!incoming) return current || "";
+  if (!current) return incoming;
+  if (incoming === current) return current;
+  if (incoming.startsWith(current)) return incoming;
+  return current + incoming;
 }
 
 function sanitizeReadArgs(args) {
@@ -215,7 +286,8 @@ export function openaiToClaudeResponse(chunk, state) {
         if (toolInfo) {
           // Buffer args instead of streaming — sanitize at finish to fix bad params
           if (!state.toolArgBuffers) state.toolArgBuffers = new Map();
-          state.toolArgBuffers.set(idx, (state.toolArgBuffers.get(idx) || "") + tc.function.arguments);
+          const current = state.toolArgBuffers.get(idx) || "";
+          state.toolArgBuffers.set(idx, appendToolArgs(current, tc.function.arguments));
         }
       }
     }
