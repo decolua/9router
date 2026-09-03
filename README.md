@@ -215,7 +215,13 @@ Default URLs:
       <b>🇻🇳 Tiếng Việt</b><br/>
       <sub>Hướng Dẫn Setup OpenClaw + 9Router: Tạo Bot Zalo AI Tự Động Từ A-Z<br/>by <a href="https://github.com/tuanminhhole">tuanminhhole</a></sub>
     </td>
-    <td align="center" width="320"></td>
+    <td align="center" width="320">
+      <a href="https://www.youtube.com/watch?v=YwogEX-G2Yw">
+        <img src="https://img.youtube.com/vi/YwogEX-G2Yw/maxresdefault.jpg" alt="9Router video by S. Hossein Mostafavi" width="300"/>
+      </a><br/>
+      <b>🇮🇷 Persian-فارسی</b><br/>
+      <sub dir="rtl">معرفی و آموزش 9Router<br/>by <a href="https://www.youtube.com/@S.HosseinMostafavi">S. Hossein Mostafavi</a></sub>
+    </td>
     <td align="center" width="320"></td>
     <td align="center" width="320"></td>
   </tr>
@@ -1285,7 +1291,7 @@ docker pull decolua/9router:latest   # update to latest
 ### Environment Variables
 
 | Variable                                             | Default                                  | Description                                                                         |
-| ---------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------- |
+| ----------------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------|
 | `JWT_SECRET`                                         | Auto-generated (`~/.9router/jwt-secret`) | JWT signing secret for dashboard auth cookie (override to share across instances)   |
 | `INITIAL_PASSWORD`                                   | `123456`                                 | First login password when no saved hash exists                                      |
 | `DATA_DIR`                                           | `~/.9router`                             | Main app data location (SQLite at `$DATA_DIR/db/data.sqlite`)                       |
