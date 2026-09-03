@@ -4,7 +4,7 @@
 // backend accepts them. Catalog and other passthrough requests retain the
 // client's current identity. Hardcoded MVP — toggle/version configurable later.
 
-const ANTIGRAVITY_IDE_VERSION = "1.23.2";
+const ANTIGRAVITY_IDE_VERSION = "2.11.0";
 const ANTIGRAVITY_IDE_VERSION_OVERRIDE_ENABLED = true;
 
 function shouldRewriteMetadata(metadata) {
