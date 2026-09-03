@@ -8,6 +8,7 @@ import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamH
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
+import { hasValidUsage, estimateUsage } from "../../utils/usageTracking.js";
 
 // Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
 // Gemini-family all map to ANTIGRAVITY decoder; unknown sources fall back to OPENAI.
@@ -22,7 +23,7 @@ const CODEX_SOURCE_TO_TARGET = {
 /**
  * Determine which SSE transform stream to use based on provider/format.
  */
-function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey }) {
+function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey, streamState }) {
   const isDroidCLI = userAgent?.toLowerCase().includes("droid") || userAgent?.toLowerCase().includes("codex-cli");
   // Responses-API providers (e.g. codex) emit Responses SSE → translate into client format
   const isResponsesProvider = PROVIDERS[provider]?.format === FORMATS.OPENAI_RESPONSES;
@@ -30,20 +31,20 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 
   if (needsCodexTranslation) {
     const codexTarget = CODEX_SOURCE_TO_TARGET[sourceFormat] || FORMATS.OPENAI;
-    return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames);
+    return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, streamState);
   }
 
   if (needsTranslation(targetFormat, sourceFormat)) {
-    return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames);
+    return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, streamState);
   }
 
-  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey);
+  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey, streamState);
 }
 
 /**
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
-export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, pxpipe, reqTag, log }) {
+export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, pxpipe, reqTag, log, streamState }) {
   if (onRequestSuccess) {
     Promise.resolve()
       .then(onRequestSuccess)
@@ -79,7 +80,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     };
   }
 
-  const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey });
+  const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey, streamState });
 
   // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event
   const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
@@ -109,11 +110,22 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 
 /**
  * Build onStreamComplete callback for streaming usage tracking.
+ * Also returns a mutable `streamState` object that the SSE transform stream
+ * populates on every chunk — used by onStreamAbandoned to recover partial usage.
  */
-export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, pxpipe, reqTag, log }) {
+export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, pxpipe, reqTag, log, sourceFormat }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+  let completed = false;
+
+  // Mutable state the transform stream populates on every chunk via syncState()
+  const streamState = { usage: null, content: "", thinking: "", ttftAt: null };
 
   const onStreamComplete = (contentObj, usage, ttftAt) => {
+    // Race guard: if the stream was already finalized by onStreamAbandoned
+    // (client disconnect that lost a race with a late upstream EOF), keep the
+    // interrupted row instead of double-writing usage.
+    if (completed) return;
+    completed = true;
     const latency = {
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime
@@ -140,5 +152,48 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency }));
   };
 
-  return { onStreamComplete, streamDetailId };
+  // Finalize the placeholder row when the stream ends without flush() ever running:
+  // client disconnect (cancel()), upstream stall timeout, or a mid-stream network
+  // reset. Without this, the row saved by handleStreamingResponse stays
+  // "[Streaming in progress...]" with tokens 0/0 and status "success" forever.
+  // Reuses streamDetailId so the ON CONFLICT(id) upsert overwrites the placeholder.
+  // Recovers partial usage accumulated in streamState by the transform stream.
+  const onStreamAbandoned = (reason) => {
+    if (completed) return;
+    completed = true;
+    const detail = `[Streaming interrupted: ${reason || "unknown"}]`;
+
+    // Use partial usage from the transform stream closure if available;
+    // fall back to an estimate so at least prompt tokens are recorded.
+    let partialUsage = streamState.usage;
+    if (!hasValidUsage(partialUsage) && streamState.content) {
+      partialUsage = estimateUsage(body, streamState.content.length, sourceFormat || "openai");
+    }
+    // Ensure completion tokens reflect only what was actually streamed, not the full estimate.
+    // estimateUsage sets completion from content length; if provider usage arrived, use it as-is.
+    const tokens = partialUsage
+      ? { ...partialUsage, completion_tokens: partialUsage.completion_tokens ?? partialUsage.output_tokens ?? 0 }
+      : { prompt_tokens: 0, completion_tokens: 0 };
+
+    saveRequestDetail(buildRequestDetail({
+      provider, model, connectionId,
+      latency: { ttft: streamState.ttftAt ? streamState.ttftAt - requestStartTime : 0, total: Date.now() - requestStartTime },
+      tokens,
+      request: extractRequestConfig(body, stream),
+      providerRequest: finalBody || translatedBody || null,
+      providerResponse: detail,
+      response: { content: detail, thinking: null, type: "streaming" },
+      pxpipe,
+      status: "cancelled"
+    }, { id: streamDetailId })).catch(err => {
+      console.error("[RequestDetail] Failed to finalize interrupted stream:", err.message);
+    });
+
+    // Write partial usage to usageHistory so accounting is not silently dropped.
+    if (hasValidUsage(tokens)) {
+      saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, label: "STREAM USAGE (interrupted)", silent: true });
+    }
+  };
+
+  return { onStreamComplete, onStreamAbandoned, streamDetailId, streamState };
 }

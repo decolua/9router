@@ -35,6 +35,9 @@ const STREAM_MODE = {
  * @param {object} options.body - Request body (for input token estimation)
  * @param {function} options.onStreamComplete - Callback when stream completes (content, usage)
  * @param {string} options.apiKey - API key for usage tracking
+ * @param {object} [options.streamState] - Mutable object {usage,content,thinking,ttftAt} shared with
+ *   the caller so an onStreamAbandoned path can read accumulated partial state on disconnect.
+ *   If provided, this function populates it during transform and flush.
  */
 export function createSSEStream(options = {}) {
   const {
@@ -49,7 +52,8 @@ export function createSSEStream(options = {}) {
     connectionId = null,
     body = null,
     onStreamComplete = null,
-    apiKey = null
+    apiKey = null,
+    streamState = null
   } = options;
 
   let buffer = "";
@@ -66,6 +70,15 @@ export function createSSEStream(options = {}) {
   let accumulatedContent = "";
   let accumulatedThinking = "";
   let ttftAt = null;
+
+  // Keep streamState in sync so onStreamAbandoned can read partial usage on disconnect
+  const syncState = () => {
+    if (!streamState) return;
+    streamState.content = accumulatedContent;
+    streamState.thinking = accumulatedThinking;
+    streamState.ttftAt = ttftAt;
+    streamState.usage = mode === STREAM_MODE.PASSTHROUGH ? usage : state?.usage ?? null;
+  };
   let sseLineCount = 0;
   let sseEmittedCount = 0;
   const eventTypeCounts = {};
@@ -197,6 +210,7 @@ export function createSSEStream(options = {}) {
               if (extracted) {
                 usage = mergeUsage(usage, extracted);
               }
+              syncState();
 
               responsesTerminal = isOpenAIResponsesTerminalEvent(currentOpenAIResponsesEvent, parsed);
 
@@ -318,6 +332,7 @@ export function createSSEStream(options = {}) {
         // Extract usage
         const extracted = extractUsage(parsed);
         if (extracted) state.usage = mergeUsage(state.usage, extracted); // Keep original usage for logging
+        syncState();
 
         // Responses same-format passthrough: re-emit with original event framing
         if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {
@@ -487,7 +502,7 @@ export function createSSEStream(options = {}) {
   });
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, streamState = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -500,11 +515,12 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    streamState
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, streamState = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
@@ -513,6 +529,7 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    streamState
   });
 }
