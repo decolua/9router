@@ -64,6 +64,7 @@ export default function ProviderDetailPage() {
   const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
   const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
+  const [bulkStatusAction, setBulkStatusAction] = useState(null);
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
@@ -819,6 +820,48 @@ export default function ProviderDetailPage() {
     }
   };
 
+  const handleBulkSetConnectionStatus = async (isActive) => {
+    const idsToUpdate = [...selectedConnectionIds];
+    if (idsToUpdate.length === 0) return;
+
+    setBulkStatusAction(isActive ? "on" : "off");
+    try {
+      const results = await Promise.all(
+        idsToUpdate.map(async (id) => {
+          try {
+            const res = await fetch(`/api/providers/${id}`, {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ isActive }),
+            });
+            return { id, ok: res.ok };
+          } catch (error) {
+            console.log("Error updating connection status:", error);
+            return { id, ok: false };
+          }
+        })
+      );
+
+      const successfulIds = results.filter((result) => result.ok).map((result) => result.id);
+      const failed = results.length - successfulIds.length;
+
+      if (successfulIds.length > 0) {
+        const successfulIdSet = new Set(successfulIds);
+        setConnections((prev) => prev.map((connection) => (
+          successfulIdSet.has(connection.id)
+            ? { ...connection, isActive }
+            : connection
+        )));
+      }
+
+      if (failed > 0) {
+        alert(`${isActive ? "Enabled" : "Disabled"} ${successfulIds.length} connection(s), ${failed} failed.`);
+      }
+    } finally {
+      setBulkStatusAction(null);
+    }
+  };
+
   const handleSwapPriority = async (index1, index2) => {
     // Optimistic update state
     const newConnections = [...connections];
@@ -845,6 +888,8 @@ export default function ProviderDetailPage() {
   };
 
   const selectedConnections = connections.filter((conn) => selectedConnectionIds.includes(conn.id));
+  const selectedActiveCount = selectedConnections.filter((conn) => conn.isActive !== false).length;
+  const selectedInactiveCount = selectedConnections.length - selectedActiveCount;
   const allSelected = connections.length > 0 && selectedConnectionIds.length === connections.length;
 
   const toggleSelectConnection = (connectionId) => {
@@ -1439,14 +1484,35 @@ export default function ProviderDetailPage() {
               {connections.length > 0 && (
                 <>
                   {selectedConnectionIds.length > 0 && (
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      icon="delete"
-                      onClick={handleBulkDelete}
-                    >
-                      Delete Selected ({selectedConnectionIds.length})
-                    </Button>
+                    <>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon="check_circle"
+                        onClick={() => handleBulkSetConnectionStatus(true)}
+                        disabled={bulkStatusAction !== null || selectedInactiveCount === 0}
+                      >
+                        {bulkStatusAction === "on" ? "Turning On..." : `On Selected (${selectedConnectionIds.length})`}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        icon="block"
+                        onClick={() => handleBulkSetConnectionStatus(false)}
+                        disabled={bulkStatusAction !== null || selectedActiveCount === 0}
+                      >
+                        {bulkStatusAction === "off" ? "Turning Off..." : `Off Selected (${selectedConnectionIds.length})`}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        icon="delete"
+                        onClick={handleBulkDelete}
+                        disabled={bulkStatusAction !== null}
+                      >
+                        Delete Selected ({selectedConnectionIds.length})
+                      </Button>
+                    </>
                   )}
                   <Button
                     size="sm"
