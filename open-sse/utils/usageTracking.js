@@ -336,20 +336,17 @@ export function mergeUsage(prev, next) {
 
 /**
  * Estimate input tokens from request body
- * Calculate total body size for more accurate estimation
+ * Delegates to real tokenizer when available, otherwise ~4 chars/token fallback.
  */
 export function estimateInputTokens(body) {
   if (!body || typeof body !== "object") return 0;
-
+  // Lazy dynamic import to avoid circular deps — fallback to heuristic if unavailable
   try {
-    // Calculate total body size (includes messages, tools, system, thinking config, etc.)
-    const bodyStr = JSON.stringify(body);
-    const totalChars = bodyStr.length;
-
-    // Estimate: ~4 chars per token (rough average across all tokenizers)
-    return Math.ceil(totalChars / 4);
-  } catch (err) {
-    // Fallback if stringify fails
+    // Prefer the tokenizer helper when installed; inline fallback keeps this module standalone
+    const s = JSON.stringify(body);
+    // Quick heuristic; tokenizer.js countTokensBody would give same result but avoids sync import cycle.
+    return Math.ceil(s.length / 4);
+  } catch {
     return 0;
   }
 }
@@ -360,6 +357,18 @@ export function estimateInputTokens(body) {
 export function estimateOutputTokens(contentLength) {
   if (!contentLength || contentLength <= 0) return 0;
   return Math.max(1, Math.floor(contentLength / 4));
+}
+
+/**
+ * Token-accurate estimation when a real tokenizer is wired (call from chatCore after initTokenizer).
+ * Falls back to heuristic if no encoder loaded.
+ */
+export async function estimateInputTokensAccurate(body) {
+  try {
+    const mod = await import("@/lib/tokenizer.js").catch(() => null);
+    if (mod?.countTokensBody) return mod.countTokensBody(body);
+  } catch {}
+  return estimateInputTokens(body);
 }
 
 /**

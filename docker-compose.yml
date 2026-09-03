@@ -1,12 +1,15 @@
 services:
   9router:
-    image: decolua/9router:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: 9router
-    restart: always
+    restart: unless-stopped
     ports:
       - "20128:20128"
     volumes:
       - 9router-data:/app/data
+      - 9router-data-home:/app/data-home
     env_file:
       - .env
     environment:
@@ -17,14 +20,32 @@ services:
       HEADROOM_URL: http://headroom:8787
     depends_on:
       - headroom
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:20128/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   headroom:
     image: ghcr.io/chopratejas/headroom:latest
     container_name: headroom
-    restart: always
+    restart: unless-stopped
     ports:
       - "8787:8787"
+    volumes:
+      - headroom-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8787/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   9router-data:
     name: 9router-data
+  9router-data-home:
+    name: 9router-data-home
+  headroom-data:
+    name: headroom-data

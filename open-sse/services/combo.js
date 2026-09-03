@@ -11,6 +11,60 @@ import { extractTextContent } from "../translator/formats/gemini.js";
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
 const HARD_CAPS = new Set(["vision", "pdf", "audioInput", "videoInput"]);
 
+// --- Weighted helpers for combo members ---
+function normalizeMembers(members, fallbackModels) {
+  if (Array.isArray(members) && members.length > 0) {
+    return members.map((m) => {
+      if (typeof m === "string") return { id: m, weight: 1 };
+      if (m && typeof m.id === "string") return { id: m.id, weight: Number.isFinite(m.weight) && m.weight > 0 ? m.weight : 1, retryOn: m.retryOn, skipOn: m.skipOn, timeoutMs: m.timeoutMs };
+      return null;
+    }).filter(Boolean);
+  }
+  if (Array.isArray(fallbackModels)) {
+    return fallbackModels.map((id) => ({ id, weight: 1 }));
+  }
+  return [];
+}
+
+function weightedShuffle(members) {
+  // Efraimidis-Spirakis: key = rand()^(1/weight) — sort descending; weight=1 gives uniform.
+  return members
+    .map((m) => ({ m, key: Math.pow(Math.random(), 1 / (m.weight || 1)) }))
+    .sort((a, b) => b.key - a.key)
+    .map((x) => x.m);
+}
+
+function shouldFallbackWithPolicy(status, errorText, policy, member) {
+  const lower = (errorText || "").toLowerCase();
+  // Member-level skipOn -> fatal (no fallback)
+  if (member?.skipOn) {
+    const s = member.skipOn;
+    if (Array.isArray(s.statuses) && s.statuses.includes(status)) return { shouldFallback: false, cooldownMs: 0 };
+    if (Array.isArray(s.texts) && s.texts.some((t) => lower.includes(String(t).toLowerCase()))) return { shouldFallback: false, cooldownMs: 0 };
+  }
+  if (member?.retryOn) {
+    const r = member.retryOn;
+    if (Array.isArray(r.statuses) && r.statuses.includes(status)) return checkFallbackError(status, errorText);
+    if (Array.isArray(r.texts) && r.texts.some((t) => lower.includes(String(t).toLowerCase()))) return checkFallbackError(status, errorText);
+    // If member defines retryOn but error doesn't match, treat as fatal
+    if ((r.statuses && r.statuses.length) || (r.texts && r.texts.length)) return { shouldFallback: false, cooldownMs: 0 };
+  }
+  // Combo-level policy
+  if (policy?.triggers) {
+    const t = policy.triggers;
+    if (t.fatal) {
+      if (Array.isArray(t.fatal.statuses) && t.fatal.statuses.includes(status)) return { shouldFallback: false, cooldownMs: 0 };
+      if (Array.isArray(t.fatal.texts) && t.fatal.texts.some((txt) => lower.includes(String(txt).toLowerCase()))) return { shouldFallback: false, cooldownMs: 0 };
+    }
+    if (t.retryable) {
+      if (Array.isArray(t.retryable.statuses) && t.retryable.statuses.includes(status)) return checkFallbackError(status, errorText);
+      if (Array.isArray(t.retryable.texts) && t.retryable.texts.some((txt) => lower.includes(String(txt).toLowerCase()))) return checkFallbackError(status, errorText);
+      if ((t.retryable.statuses && t.retryable.statuses.length) || (t.retryable.texts && t.retryable.texts.length)) return { shouldFallback: false, cooldownMs: 0 };
+    }
+  }
+  return checkFallbackError(status, errorText);
+}
+
 // Prefixes used when flattening tool turns into plain prose for panel models.
 const TOOL_CALL_PREFIX = "[Called tools: ";
 const TOOL_RESULT_PREFIX = "[Tool result: ";
@@ -201,11 +255,22 @@ function rotateModelsFromIndex(models, currentIndex) {
  * Get rotated model list based on strategy
  * @param {string[]} models - Array of model strings
  * @param {string} comboName - Name of the combo
- * @param {string} strategy - "fallback" or "round-robin"
+ * @param {string} strategy - "fallback" | "round-robin" | "weighted"
  * @param {number|string} [stickyLimit=1] - Requests per combo model before switching
+ * @param {Array} [members] - Optional weighted members [{id, weight}]
  * @returns {string[]} Rotated models array
  */
-export function getRotatedModels(models, comboName, strategy, stickyLimit = 1) {
+export function getRotatedModels(models, comboName, strategy, stickyLimit = 1, members = null) {
+  // Weighted strategy: shuffle by weight each request
+  if (strategy === "weighted" && Array.isArray(members) && members.length > 1) {
+    const shuffled = weightedShuffle(members);
+    return shuffled.map((m) => m.id);
+  }
+  if (strategy === "weighted" && models && models.length > 1) {
+    // Fallback weighted without member weights: uniform shuffle
+    const shuffled = [...models].sort(() => Math.random() - 0.5);
+    return shuffled;
+  }
   if (!models || models.length <= 1 || strategy !== "round-robin") {
     return models;
   }
@@ -270,16 +335,28 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {Object} options
  * @param {Object} options.body - Request body
  * @param {string[]} options.models - Array of model strings to try
+ * @param {Array} [options.members] - Weighted members [{id, weight, retryOn, skipOn, timeoutMs}]
+ * @param {Object} [options.policy] - Combo policy { triggers, maxHops, perHopCooldownMs, retryBudgetMs, sticky }
  * @param {Function} options.handleSingleModel - Function to handle single model: (body, modelStr) => Promise<Response>
  * @param {Object} options.log - Logger object
  * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
- * @param {string} [options.comboStrategy] - Strategy: "fallback" or "round-robin"
+ * @param {string} [options.comboStrategy] - Strategy: "fallback" | "round-robin" | "weighted" | "fusion"
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
+export async function handleComboChat({ body, models, members, policy, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
+  // Normalize members: if provided use them, else derive from models
+  const normMembers = normalizeMembers(members, models);
+  const effectiveModels = normMembers.length ? normMembers.map((m) => m.id) : models;
+  const sticky = policy?.sticky ?? comboStickyLimit;
   // Apply rotation strategy if enabled
-  let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+  let rotatedModels = getRotatedModels(effectiveModels, comboName, comboStrategy, sticky, normMembers.length ? normMembers : null);
+  // Keep member order aligned with rotatedModels for per-member policy lookup
+  let rotatedMembers = null;
+  if (normMembers.length) {
+    const idToMember = new Map(normMembers.map((m) => [m.id, m]));
+    rotatedMembers = rotatedModels.map((id) => idToMember.get(id)).filter(Boolean);
+  }
 
   // Auto-switch: float models that satisfy the request's required capabilities to the front.
   if (autoSwitch) {
@@ -331,8 +408,19 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
       }
 
-      // Check if should fallback to next model
-      const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
+      // Check if should fallback to next model (policy-aware: member > combo > global)
+      const currentMember = rotatedMembers ? rotatedMembers[i] : null;
+      // Honor per-member timeoutMs as cooldown hint for transient fallbacks
+      const { shouldFallback, cooldownMs: rawCooldownMs } = shouldFallbackWithPolicy(result.status, errorText, policy, currentMember);
+      let cooldownMs = rawCooldownMs;
+      if (policy?.perHopCooldownMs && Number.isFinite(policy.perHopCooldownMs)) {
+        cooldownMs = Math.min(cooldownMs, policy.perHopCooldownMs);
+      }
+      // Enforce maxHops if configured
+      if (policy?.maxHops && i + 1 >= policy.maxHops) {
+        log.warn("COMBO", `Model ${modelStr} failed - maxHops ${policy.maxHops} reached`, { status: result.status });
+        return result;
+      }
 
       if (!shouldFallback) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });

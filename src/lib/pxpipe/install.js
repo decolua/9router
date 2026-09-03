@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { spawn, execSync } from "child_process";
-import { DATA_DIR } from "@/lib/dataDir.js";
+import { DATA_DIR } from "../dataDir.js";
 
 export const PXPIPE_DIR = path.join(DATA_DIR, "pxpipe");
 export const PXPIPE_PACKAGE = "pxpipe-proxy";

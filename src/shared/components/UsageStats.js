@@ -276,16 +276,26 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       });
   }, [period]);
 
-  // SSE connection - real-time updates for activeRequests + recentRequests only
+  // SSE connection - real-time updates: merge full stats when available, fallback to lightweight fields
   useEffect(() => {
     const es = new EventSource("/api/usage/stream");
 
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
-        // Always merge only real-time fields, never overwrite full stats from REST
+        const isFullUpdate = data.byModel !== undefined || data.byProvider !== undefined || data.totalRequests !== undefined;
         setStats((prev) => {
-          if (!prev) return prev;
+          if (!prev) {
+            // First payload before REST resolved: accept it as initial stats if it looks complete
+            if (isFullUpdate) return data;
+            return prev;
+          }
+          if (isFullUpdate) {
+            // Full aggregated stats arrived via SSE - merge everything (totals, byModel, byProvider, etc.)
+            // Preserve pending/activeRequests from SSE if REST hasn't yet populated them
+            return { ...prev, ...data };
+          }
+          // Lightweight pending-only update
           return {
             ...prev,
             activeRequests: data.activeRequests,

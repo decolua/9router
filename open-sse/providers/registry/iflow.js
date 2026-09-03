@@ -37,6 +37,9 @@ export default {
     { id: "glm-4.7", name: "GLM 4.7" },
     { id: "iflow-rome-30ba3b", name: "iFlow ROME" },
   ],
+  features: {
+    usage: true,
+  },
   oauth: {
     clientId: "10009311001",
     clientSecret: "4Z3YjXycVsQvyGF1etiNlIBB4RsqSDtW",

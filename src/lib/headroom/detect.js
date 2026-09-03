@@ -55,6 +55,7 @@ export function findHeadroomBinary() {
       stdio: ["ignore", "pipe", "ignore"],
       windowsHide: true,
       env: { ...process.env, PATH: EXTENDED_PATH },
+      timeout: 3000,
     }).toString().trim();
     // Windows `where` may return multiple lines — take the first.
     return out ? out.split(/\r?\n/)[0].trim() : null;
@@ -96,6 +97,7 @@ export function findPython310() {
         stdio: ["ignore", "pipe", "ignore"],
         windowsHide: true,
         env: { ...process.env, PATH: EXTENDED_PATH },
+        timeout: HEADROOM_PIP_TIMEOUT_MS,
       }).toString().trim();
       const match = ver.match(/(\d+)\.(\d+)/);
       if (!match) continue;

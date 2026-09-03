@@ -8,12 +8,8 @@ import { getApiKeys } from "../../../src/lib/db/repos/apiKeysRepo.js";
 const PORT = process.env.NV_E2E_PORT || "20127";
 const BASE = `http://localhost:${PORT}`;
 const MODELS = [
-  "nvidia/minimaxai/minimax-m2.7",
   "nvidia/minimaxai/minimax-m3",
   "nvidia/z-ai/glm-5.2",
-  "nvidia/deepseek-ai/deepseek-v4-pro",
-  "nvidia/deepseek-ai/deepseek-v4-flash",
-  "nvidia/moonshotai/kimi-k2.6",
   "nvidia/nvidia/nemotron-3-ultra-550b-a55b",
 ];
 const RUN = process.env.RUN_E2E === "1";

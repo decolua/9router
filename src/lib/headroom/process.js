@@ -106,7 +106,31 @@ export async function startHeadroomProxy({ port = DEFAULT_PORT, codeAware = fals
   // Close parent's copy of the fd; child retains its own after unref.
   fs.closeSync(outFd);
 
-  return { pid: child.pid, alreadyRunning: false };
+  // Additional verification: ensure the proxy is actually serving HTTP
+  // This prevents considering the proxy "started" when the process is alive
+  // but not actually serving requests (e.g., failed to bind port, crashed after binding)
+  const verificationUrl = `http://localhost:${safePort}`;
+  for (let i = 0; i < 5; i++) {
+    try {
+      const res = await fetch(`${verificationUrl}/health`, {
+        signal: AbortSignal.timeout(1000),
+      });
+      if (res.ok) {
+        return { pid: child.pid, alreadyRunning: false };
+      }
+    } catch {
+      // Retry after short delay
+      await new Promise((res) => setTimeout(res, 500));
+    }
+  }
+
+  // If we get here, process is alive but not serving HTTP
+  // Kill it and treat as failure
+  try {
+    process.kill(child.pid);
+  } catch {}
+  clearPid();
+  throw new Error("headroom proxy started but not serving HTTP requests — see proxy.log");
 }
 
 export function stopHeadroomProxy() {

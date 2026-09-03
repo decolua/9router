@@ -9,7 +9,7 @@ import {
 } from "../services/auth.js";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
 import { getSettings } from "@/lib/localDb";
-import { getModelInfo, getComboModels } from "../services/model.js";
+import { getModelInfo, getComboModels, getComboConfig } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
@@ -30,7 +30,7 @@ import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
  * Format detection and translation handled by translator
  */
-export async function handleChat(request, clientRawRequest = null) {
+export async function handleChat(request, clientRawRequest = null, translationCache = null) {
   let body;
   try {
     body = await request.json();
@@ -90,19 +90,32 @@ export async function handleChat(request, clientRawRequest = null) {
   const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
   if (bypassResponse) return bypassResponse.response || bypassResponse;
 
+  // Per-request translation cache: evita re-translasi full body pada setiap retry fallback
+  if (!translationCache) translationCache = new Map();
   const requiredCapabilities = detectRequiredCapabilities(body);
 
   // Check if model is a combo (has multiple models with fallback)
-  const comboModels = await getComboModels(modelStr);
-  if (comboModels) {
-    // Check for combo-specific strategy first, fallback to global
+  const comboConfig = await getComboConfig(modelStr);
+  if (comboConfig && comboConfig.models.length > 0) {
+    const comboModels = comboConfig.models;
+    // Merge DB config policy with settings-level comboStrategies (settings wins for backward compat)
     const comboStrategies = settings.comboStrategies || {};
-    const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
-    const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
+    const dbPolicy = comboConfig.policy || {};
+    const settingsStrategy = comboStrategies[modelStr] || {};
+    // DB policy.strategy takes precedence if present, else settings fallbackStrategy
+    const comboStrategy = dbPolicy.strategy || settingsStrategy.fallbackStrategy || settings.comboStrategy || "fallback";
+    const policy = { ...dbPolicy, strategy: comboStrategy, sticky: dbPolicy.sticky ?? settings.comboStickyRoundRobinLimit ?? 1 };
+    // For weighted strategy, derive members from DB config; otherwise use models
+    const members = comboConfig.members || comboModels.map((id) => ({ id, weight: 1 }));
     const augmentedModels = augmentModelsWithCapacityAdapter(comboModels, requiredCapabilities, settings);
     const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m));
+    // Re-derive augmented members for weighted case
+    const augmentedMembers = comboStrategy === "weighted"
+      ? augmentModelsWithCapacityAdapter(members.map((m) => m.id), requiredCapabilities, settings).map((id) => members.find((m) => m.id === id) || { id, weight: 1 })
+      : null;
 
     if (comboStrategy === "fusion") {
+      const fusionCfg = comboConfig.fusion || settingsStrategy;
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
       return handleFusionChat({
         body,
@@ -113,22 +126,24 @@ export async function handleChat(request, clientRawRequest = null) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
             cleanRawReq = { ...clientRawRequest, body: cleanBody };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, translationCache);
         },
         log,
         comboName: modelStr,
-        judgeModel: comboStrategies[modelStr]?.judgeModel,
-        tuning: comboStrategies[modelStr]?.fusionTuning,
+        judgeModel: fusionCfg?.judgeModel || comboConfig.fusion?.judge,
+        tuning: fusionCfg?.fusionTuning || fusionCfg?.tuning || comboConfig.fusion?.tuning,
       });
     }
 
-    const comboStickyLimit = settings.comboStickyRoundRobinLimit;
+    const comboStickyLimit = policy.sticky ?? settings.comboStickyRoundRobinLimit;
     log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
       models: augmentedModels,
+      members: augmentedMembers || members,
+      policy,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, translationCache),
         adapterAdded
       ),
       log,
@@ -163,23 +178,30 @@ export async function handleChat(request, clientRawRequest = null) {
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, translationCache = null) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
-    const comboModels = await getComboModels(modelStr);
-    if (comboModels) {
+    const comboCfg = await getComboConfig(modelStr);
+    if (comboCfg && comboCfg.models.length > 0) {
+      const comboModels = comboCfg.models;
       const chatSettings = await getSettings();
-      // Check for combo-specific strategy first, fallback to global
       const comboStrategies = chatSettings.comboStrategies || {};
-      const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
-      const comboStrategy = comboSpecificStrategy || chatSettings.comboStrategy || "fallback";
+      const dbPolicy = comboCfg.policy || {};
+      const settingsStrategy = comboStrategies[modelStr] || {};
+      const comboStrategy = dbPolicy.strategy || settingsStrategy.fallbackStrategy || chatSettings.comboStrategy || "fallback";
+      const policy = { ...dbPolicy, strategy: comboStrategy, sticky: dbPolicy.sticky ?? chatSettings.comboStickyRoundRobinLimit ?? 1 };
+      const members = comboCfg.members || comboModels.map((id) => ({ id, weight: 1 }));
       const requiredCapabilities = detectRequiredCapabilities(body);
       const augmentedModels = augmentModelsWithCapacityAdapter(comboModels, requiredCapabilities, chatSettings);
       const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m));
+      const augmentedMembers = comboStrategy === "weighted"
+        ? augmentModelsWithCapacityAdapter(members.map((m) => m.id), requiredCapabilities, chatSettings).map((id) => members.find((m) => m.id === id) || { id, weight: 1 })
+        : null;
 
       if (comboStrategy === "fusion") {
+        const fusionCfg = comboCfg.fusion || settingsStrategy;
         log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
         return handleFusionChat({
           body,
@@ -190,22 +212,24 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, translationCache);
           },
           log,
           comboName: modelStr,
-          judgeModel: comboStrategies[modelStr]?.judgeModel,
-          tuning: comboStrategies[modelStr]?.fusionTuning,
+          judgeModel: fusionCfg?.judgeModel || comboCfg.fusion?.judge,
+          tuning: fusionCfg?.fusionTuning || fusionCfg?.tuning || comboCfg.fusion?.tuning,
         });
       }
 
-      const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
+      const comboStickyLimit = policy.sticky ?? chatSettings.comboStickyRoundRobinLimit;
       log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
       return handleComboChat({
         body,
         models: augmentedModels,
+        members: augmentedMembers || members,
+        policy,
         handleSingleModel: withCapacityAdapterStripping(
-          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, translationCache),
           adapterAdded
         ),
         log,
@@ -266,6 +290,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
     const result = await handleChatCore({
+      translationCache,
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
@@ -290,6 +315,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       // Lazily warms the in-process module on first use; null when not installed (fail-open)
       pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
       onPxpipeEvent: appendPxpipeEvent,
+      toolHistoryPruning: chatSettings.toolHistoryPruning || { enabled: false },
       providerThinking,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,

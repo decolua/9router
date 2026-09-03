@@ -1,24 +1,24 @@
 # syntax=docker/dockerfile:1.7
 ARG NODE_IMAGE=node:22-alpine
-FROM ${NODE_IMAGE} AS base
+ARG BUN_IMAGE=oven/bun:1.4-alpine
+FROM ${NODE_IMAGE} AS builder
 WORKDIR /app
-
-FROM base AS builder
 
 RUN apk --no-cache upgrade && apk --no-cache add python3 make g++ linux-headers
 
-COPY package.json ./
+COPY package.json bun.lock* package-lock.json* ./
+# Use npm for deterministic build (better-sqlite3 optional dep compiles reliably on Node)
 RUN --mount=type=cache,target=/root/.npm \
-  npm install
+    if [ -f bun.lock ]; then npm install --include=optional; else npm install; fi
 
 COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
+# Build with Node (webpack) - produces standalone output
 RUN npm run build
 
-FROM ${NODE_IMAGE} AS runner
+FROM ${BUN_IMAGE} AS runner
 WORKDIR /app
-
-LABEL org.opencontainers.image.title="9router"
+RUN apk --no-cache add su-exec wget
 
 ENV NODE_ENV=production
 ENV PORT=20128
@@ -31,28 +31,24 @@ COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/custom-server.js ./custom-server.js
 COPY --from=builder /app/open-sse ./open-sse
-# Next file tracing can omit sibling files; MITM runs server.js as a separate process.
 COPY --from=builder /app/src/mitm ./src/mitm
-# Standalone node_modules may omit deps only required by the MITM child process.
 COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
-# Ensure `next` is available at runtime in case tracing did not include it.
 COPY --from=builder /app/node_modules/next ./node_modules/next
-# sql.js loads dist/sql-wasm.wasm by path at runtime; tracing only follows JS imports,
-# so the last-resort DB driver would abort with ENOENT on the missing binary.
 COPY --from=builder /app/node_modules/sql.js ./node_modules/sql.js
 # node-machine-id is createRequire-loaded at runtime; tracing omits it.
 COPY --from=builder /app/node_modules/node-machine-id ./node_modules/node-machine-id
 
-RUN mkdir -p /app/data && chown -R node:node /app && \
-  mkdir -p /app/data-home && chown node:node /app/data-home && \
-  ln -sf /app/data-home /root/.9router 2>/dev/null || true
+# Install Bun deps for runtime (better-sqlite3 not needed - Bun uses bun:sqlite, but keep sql.js)
+# Ensure bun can run the standalone server (which is plain JS, no native deps needed)
+RUN mkdir -p /app/data /app/data-home && \
+    ln -sf /app/data-home /root/.9router 2>/dev/null || true && \
+    mkdir -p /app/data && chown -R 1000:1000 /app 2>/dev/null || true
 
-# Fix permissions at runtime (handles mounted volumes)
-RUN apk --no-cache upgrade && apk --no-cache add su-exec && \
-  printf '#!/bin/sh\nchown -R node:node /app/data /app/data-home 2>/dev/null\nexec su-exec node "$@"\n' > /entrypoint.sh && \
-  chmod +x /entrypoint.sh
+COPY docker-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 EXPOSE 20128
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["node", "custom-server.js"]
+# Bun is the mandatory runtime per migration task
+CMD ["bun", "custom-server.js"]

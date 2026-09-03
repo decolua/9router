@@ -25,6 +25,7 @@ import { injectPonytail } from "../rtk/ponytail.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { compressWithPxpipe } from "../rtk/pxpipe.js";
+import { pruneToolHistory, formatPrunerLog } from "../services/toolHistoryPruner.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
@@ -58,7 +59,7 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, toolHistoryPruning, translationCache, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -170,35 +171,65 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let translatedBody;
   let toolNameMap;
   let customToolNames;
-  if (passthrough) {
-    log?.debug?.("PASSTHROUGH", `${clientTool} → ${provider} | native lossless`);
-    translatedBody = { ...body, model: stripThinkingSuffix(upstreamModel) };
-    if (provider === "codex") {
-      const suffixThinking = {};
-      applyThinking(sourceFormat, upstreamModel, suffixThinking, provider);
-      if (suffixThinking.reasoning_effort) {
-        const reasoning = translatedBody.reasoning;
-        translatedBody.reasoning = {
-          ...(reasoning && typeof reasoning === "object" && !Array.isArray(reasoning) ? reasoning : {}),
-          effort: suffixThinking.reasoning_effort,
-        };
-        delete translatedBody.reasoning_effort;
+
+  // Translation cache: combo/account fallback hops re-send the SAME client body with
+  // only the model swapped. Reuse the fully-processed translated body to avoid
+  // re-running translateRequest + every token saver on each hop. Cache is
+  // per-request (the Map passed into this call). Key excludes model so identical
+  // client bodies across combo hops hit. Only the reusable (non-passthrough) path
+  // is cached; passthrough is skipped.
+  const usedPassthrough = passthrough;
+  let cacheFingerprint = null;
+  let cacheHit = false;
+  if (translationCache && !usedPassthrough && Array.isArray(body.messages)) {
+    try {
+      // Fingerprint client content WITHOUT the model field (model swaps per hop)
+      const { model: _m, ...contentOnly } = body;
+      cacheFingerprint = `${provider}|${targetFormat}|${JSON.stringify(contentOnly)}`;
+      const hit = translationCache.get(cacheFingerprint);
+      if (hit) {
+        log?.debug?.("CACHE", `translation hit for ${provider}/${model}`);
+        translatedBody = hit.translatedBody;
+        toolNameMap = hit.toolNameMap;
+        customToolNames = hit.customToolNames;
+        cacheHit = true;
+        // Model may differ per combo hop — swap only the model field.
+        translatedBody.model = stripThinkingSuffix(upstreamModel);
       }
+    } catch {}
+  }
+
+  if (!translatedBody) {
+    if (usedPassthrough) {
+      log?.debug?.("PASSTHROUGH", `${clientTool} → ${provider} | native lossless`);
+      translatedBody = { ...body, model: stripThinkingSuffix(upstreamModel) };
+      if (provider === "codex") {
+        const suffixThinking = {};
+        applyThinking(sourceFormat, upstreamModel, suffixThinking, provider);
+        if (suffixThinking.reasoning_effort) {
+          const reasoning = translatedBody.reasoning;
+          translatedBody.reasoning = {
+            ...(reasoning && typeof reasoning === "object" && !Array.isArray(reasoning) ? reasoning : {}),
+            effort: suffixThinking.reasoning_effort,
+          };
+          delete translatedBody.reasoning_effort;
+        }
+      }
+      // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
+      if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, translatedBody.model);
+    } else {
+      translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
+      if (!translatedBody) {
+        trackPendingRequest(model, provider, connectionId, false, true);
+        return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Failed to translate request for ${sourceFormat} → ${targetFormat}`);
+      }
+      toolNameMap = translatedBody._toolNameMap;
+      delete translatedBody._toolNameMap;
+      customToolNames = translatedBody._customToolNames;
+      delete translatedBody._customToolNames;
+      translatedBody.model = stripThinkingSuffix(upstreamModel);
+      stripContinuityFields(translatedBody);
     }
-    // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
-    if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, translatedBody.model);
-  } else {
-    translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
-    if (!translatedBody) {
-      trackPendingRequest(model, provider, connectionId, false, true);
-      return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Failed to translate request for ${sourceFormat} → ${targetFormat}`);
-    }
-    toolNameMap = translatedBody._toolNameMap;
-    delete translatedBody._toolNameMap;
-    customToolNames = translatedBody._customToolNames;
-    delete translatedBody._customToolNames;
-    translatedBody.model = stripThinkingSuffix(upstreamModel);
-    stripContinuityFields(translatedBody);
   }
 
   // Dedupe duplicate built-in tools when equivalent MCP tools are present (Claude clients only).
@@ -250,49 +281,66 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Per-request opt-out: client can bypass all token savers via header
   const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
 
-  // RTK: compress tool_result content
-  const rtkStats = compressMessages(translatedBody, tokenSaverEnabled && rtkEnabled);
-  const rtkLine = formatRtkLog(rtkStats);
-  if (rtkLine) console.log(rtkLine);
+  // On a translation-cache hit, the body already has all savers applied — skip
+  // re-running them to avoid double-injecting caveman/ponytail system prompts.
+  const fromCache = cacheHit && !!translatedBody;
 
-  // Headroom: optional external proxy compression; fail open if proxy is absent.
-  const headroomDiagnostics = {};
-  const headroomStats = await compressWithHeadroom(translatedBody, { enabled: tokenSaverEnabled && headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages, timeoutMs: headroomTimeoutMs, diagnostics: headroomDiagnostics });
-  const headroomLine = formatHeadroomLog(headroomStats);
-  const headroomSizeLine = formatHeadroomSizeLog(headroomDiagnostics);
-  if (headroomLine) {
-    log?.info?.("HEADROOM", `${headroomLine}${headroomSizeLine ? ` | ${headroomSizeLine}` : ""}`);
-    if (isHeadroomPhantomSavings(headroomStats, headroomDiagnostics)) {
-      log?.warn?.("HEADROOM", `reported token delta, but outbound JSON shrank <5%; provider may bill near-original payload | ${formatHeadroomSizeLog(headroomDiagnostics)}`);
-    }
-  } else if (tokenSaverEnabled && headroomEnabled) log?.warn?.("HEADROOM", `skipped: ${headroomDiagnostics.reason || "compression unavailable"}${headroomDiagnostics.endpoint ? ` (${headroomDiagnostics.endpoint})` : ""}`);
-
-  // Token-saver flags accumulator for the single "⚙" log line below.
+  let rtkLine = null;
+  let prunerLine = null;
+  let headroomLine = null;
+  let headroomDiagnostics = {};
+  let pxpipeSummary = null;
   const xf = [];
 
-  // Caveman: inject terse-style system prompt
-  if (tokenSaverEnabled && cavemanEnabled && cavemanLevel) {
-    injectCaveman(translatedBody, finalFormat, cavemanLevel);
-    xf.push(`CAVEMAN:${cavemanLevel}`);
-  }
+  if (!fromCache) {
+    // RTK: compress tool_result content
+    const rtkStats = compressMessages(translatedBody, tokenSaverEnabled && rtkEnabled);
+    rtkLine = formatRtkLog(rtkStats);
+    if (rtkLine) console.log(rtkLine);
 
-  // Ponytail: inject lazy-senior-dev system prompt
-  if (tokenSaverEnabled && ponytailEnabled && ponytailLevel) {
-    injectPonytail(translatedBody, finalFormat, ponytailLevel);
-    xf.push(`PONYTAIL:${ponytailLevel}`);
-  }
+    // Tool history pruner: cap tool turns / truncate oversized results (fail-open, in-place)
+    const prunerStats = tokenSaverEnabled ? pruneToolHistory(translatedBody, toolHistoryPruning) : null;
+    prunerLine = formatPrunerLog(prunerStats);
+    if (prunerLine) {
+      console.log(prunerLine);
+      log?.info?.("PRUNER", prunerLine);
+    }
 
-  // PXPIPE: image bulky context (Claude-format bodies only), last saver before dispatch
-  let pxpipeSummary = null;
-  if (pxpipeEnabled) {
-    const pxpipeResult = await compressWithPxpipe(translatedBody, {
-      enabled: true, format: finalFormat, model: upstreamModel,
-      minChars: pxpipeMinChars, timeoutMs: pxpipeTimeoutMs, transform: pxpipeTransform,
-    });
-    pxpipeSummary = pxpipeResult.summary;
-    if (pxpipeResult.body) translatedBody = pxpipeResult.body;
-    if (pxpipeSummary?.applied) xf.push(`PXPIPE:${pxpipeSummary.imageCount}img`);
-    try { onPxpipeEvent?.({ provider, model, ...pxpipeSummary }); } catch { /* stats must not break requests */ }
+    // Headroom: optional external proxy compression; fail open if proxy is absent.
+    headroomDiagnostics = {};
+    const headroomStats = await compressWithHeadroom(translatedBody, { enabled: tokenSaverEnabled && headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages, timeoutMs: headroomTimeoutMs, diagnostics: headroomDiagnostics });
+    headroomLine = formatHeadroomLog(headroomStats);
+    const headroomSizeLine = formatHeadroomSizeLog(headroomDiagnostics);
+    if (headroomLine) {
+      log?.info?.("HEADROOM", `${headroomLine}${headroomSizeLine ? ` | ${headroomSizeLine}` : ""}`);
+      if (isHeadroomPhantomSavings(headroomStats, headroomDiagnostics)) {
+        log?.warn?.("HEADROOM", `reported token delta, but outbound JSON shrank <5%; provider may bill near-original payload | ${formatHeadroomSizeLog(headroomDiagnostics)}`);
+      }
+    } else if (tokenSaverEnabled && headroomEnabled) log?.warn?.("HEADROOM", `skipped: ${headroomDiagnostics.reason || "compression unavailable"}${headroomDiagnostics.endpoint ? ` (${headroomDiagnostics.endpoint})` : ""}`);
+
+    // Caveman: inject terse-style system prompt
+    if (tokenSaverEnabled && cavemanEnabled && cavemanLevel) {
+      injectCaveman(translatedBody, finalFormat, cavemanLevel);
+      xf.push(`CAVEMAN:${cavemanLevel}`);
+    }
+
+    // Ponytail: inject lazy-senior-dev system prompt
+    if (tokenSaverEnabled && ponytailEnabled && ponytailLevel) {
+      injectPonytail(translatedBody, finalFormat, ponytailLevel);
+      xf.push(`PONYTAIL:${ponytailLevel}`);
+    }
+
+    // PXPIPE: image bulky context (Claude-format bodies only), last saver before dispatch
+    if (pxpipeEnabled) {
+      const pxpipeResult = await compressWithPxpipe(translatedBody, {
+        enabled: true, format: finalFormat, model: upstreamModel,
+        minChars: pxpipeMinChars, timeoutMs: pxpipeTimeoutMs, transform: pxpipeTransform,
+      });
+      pxpipeSummary = pxpipeResult.summary;
+      if (pxpipeResult.body) translatedBody = pxpipeResult.body;
+      if (pxpipeSummary?.applied) xf.push(`PXPIPE:${pxpipeSummary.imageCount}img`);
+      try { onPxpipeEvent?.({ provider, model, ...pxpipeSummary }); } catch { /* stats must not break requests */ }
+    }
   }
 
   if (xf.length && log?.line) log.line(reqTag, "⚙", xf.join(" · "));
@@ -300,6 +348,17 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Pin cache breakpoints to the final body — every saver above can reshape
   // system/tools/messages, and a stale anchor costs a full prefix rewrite.
   if (passthrough && clientTool === "claude") anchorClaudeCache(translatedBody);
+
+  // Store the fully-processed translated body into the per-request cache so
+  // combo/account fallback hops skip translation + all token savers. Only store
+  // when it's a safe (non-passthrough, homed) translation and not a cache hit.
+  if (translationCache && cacheFingerprint && !usedPassthrough) {
+    try {
+      if (!cacheHit) {
+        translationCache.set(cacheFingerprint, { translatedBody, toolNameMap, customToolNames });
+      }
+    } catch {}
+  }
 
   const executor = getExecutor(provider);
   trackPendingRequest(model, provider, connectionId, true);

@@ -534,15 +534,19 @@ export default function ProviderDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ providerAlias: providerAliasOverride, id: modelId, type, ...(caps ? { caps } : {}) }),
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
+        if (data.added === false) {
+          alert("Model already exists (duplicate). Check built-in or custom list.");
+        }
         await fetchCustomModels();
         if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("customModelChanged"));
       } else {
-        const data = await res.json();
         alert(data.error || "Failed to add custom model");
       }
     } catch (error) {
       console.log("Error adding custom model:", error);
+      alert(error.message || "Failed to add custom model");
     }
   };
 
