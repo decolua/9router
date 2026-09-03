@@ -67,8 +67,15 @@ export class DefaultExecutor extends BaseExecutor {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
-  transformRequest(model, body) {
+  transformRequest(model, body, stream) {
     const transformed = this.applyJsonSchemaFallback(body);
+
+    // Native OpenAI chat endpoint: streaming omits usage entirely unless
+    // stream_options.include_usage is set — without it every streamed request
+    // falls back to char/4 estimates with no cache breakdown.
+    if (this.provider === "openai" && stream === true && transformed && typeof transformed === "object") {
+      transformed.stream_options = { ...transformed.stream_options, include_usage: true };
+    }
 
     if (transformed && typeof transformed === "object") {
       // quirk: some openai-compatible providers reject Anthropic's client_metadata field
