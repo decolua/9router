@@ -8,6 +8,7 @@ import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
+import Toggle from "@/shared/components/Toggle";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
@@ -28,14 +29,16 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [zdrEnabled, setZdrEnabled] = useState(false);
 
   useEffect(() => {
-    if (connection) {
+    if (connection && isOpen) {
       setFormData({
         name: connection.name || "",
         priority: connection.priority || 1,
         apiKey: "",
       });
+      setZdrEnabled(connection.providerSpecificData?.zdrEnabled === true);
       // Load Azure-specific data if present
       if (connection.provider === "azure" && connection.providerSpecificData) {
         setAzureData({
@@ -57,11 +60,12 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       setTestResult(null);
       setValidationResult(null);
     }
-  }, [connection]);
+  }, [connection, isOpen]);
 
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
+  const isCommandCode = connection?.provider === "commandcode";
   const isCompatible = connection
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
@@ -99,6 +103,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         body: JSON.stringify({
           provider: connection.provider,
           apiKey: formData.apiKey,
+          ...(isCommandCode ? { providerSpecificData: { zdrEnabled } } : {}),
           ...(isAzure ? { providerSpecificData: azureData } : {}),
           ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
           ...(providerRegions ? { providerSpecificData: buildRegionSpecificData() } : {}),
@@ -134,6 +139,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
               body: JSON.stringify({
                 provider: connection.provider,
                 apiKey: formData.apiKey,
+                ...(isCommandCode ? { providerSpecificData: { zdrEnabled } } : {}),
                 ...(isAzure ? { providerSpecificData: azureData } : {}),
                 ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
                 ...(providerRegions ? { providerSpecificData: buildRegionSpecificData() } : {}),
@@ -171,7 +177,10 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (providerRegions && region) {
         updates.providerSpecificData = buildRegionSpecificData();
       }
-      
+      if (isCommandCode) {
+        updates.providerSpecificData = { zdrEnabled };
+      }
+
       await onSave(updates);
     } finally {
       setSaving(false);
@@ -226,6 +235,15 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
               </Badge>
             )}
           </>
+        )}
+
+        {isCommandCode && (
+          <Toggle
+            checked={zdrEnabled}
+            onChange={setZdrEnabled}
+            label="Require Zero Data Retention (ZDR)"
+            description="Sends x-cmd-zdr: 1 for this API key. Models without a ZDR upstream may be unavailable."
+          />
         )}
 
         {isAzure && (
