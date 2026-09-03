@@ -367,6 +367,70 @@ describe("normalizeMessages", () => {
     expect(result.messages).toEqual([]);
     expect(result.systemText).toBe("");
   });
+
+  it("preserves image_url blocks (http URL) instead of dropping them", () => {
+    const result = normalizeMessages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "describe" },
+          { type: "image_url", image_url: { url: "https://example.com/a.png" } },
+        ],
+      },
+    ]);
+    const content = result.messages[0].content;
+    expect(Array.isArray(content)).toBe(true);
+    expect(content).toContainEqual({ type: "text", text: "describe" });
+    expect(content).toContainEqual({ type: "image_url", image_url: { url: "https://example.com/a.png" } });
+  });
+
+  it("preserves base64 data: URI images (no OSS upload needed)", () => {
+    const dataUri = "data:image/png;base64,iVBORw0KGgo=";
+    const result = normalizeMessages([
+      {
+        role: "user",
+        content: [
+          { type: "image_url", image_url: { url: dataUri } },
+          { type: "text", text: "what color?" },
+        ],
+      },
+    ]);
+    const content = result.messages[0].content;
+    expect(Array.isArray(content)).toBe(true);
+    expect(content[0]).toEqual({ type: "image_url", image_url: { url: dataUri } });
+    expect(content.some((b) => b.type === "text" && b.text === "what color?")).toBe(true);
+  });
+
+  it("converts claude-style base64 image blocks to image_url data URIs", () => {
+    const result = normalizeMessages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "see this" },
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "AAAA" } },
+        ],
+      },
+    ]);
+    const content = result.messages[0].content;
+    expect(content).toContainEqual({
+      type: "image_url",
+      image_url: { url: "data:image/jpeg;base64,AAAA" },
+    });
+  });
+
+  it("drops image blocks with no usable url but keeps the text", () => {
+    const result = normalizeMessages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "hi" },
+          { type: "image_url", image_url: {} },
+          { type: "image", source: { type: "base64" } },
+        ],
+      },
+    ]);
+    expect(result.messages[0].content).toBe("hi");
+  });
 });
 
 describe("wrapQoderSSE", () => {
