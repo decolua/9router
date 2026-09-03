@@ -3,7 +3,7 @@
  */
 
 import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
-import { unavailableResponse } from "../utils/error.js";
+import { unavailableResponse, clientStatusForBreakerOpen } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
 
@@ -365,12 +365,17 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   // the request itself is invalid, but here the providers are simply unavailable
   // or have no active credentials. 503 is more accurate and retryable by clients.
   const allDisabled = lastError && lastError.toLowerCase().includes("no credentials");
-  const status = allDisabled ? 503 : (lastStatus || 503);
+  // Same one-status correction as the single-model path in chat.js: a non-model 404
+  // here is a cooldown the router set itself, not a missing model. Every other class
+  // is left exactly as it was. Note lastStatus is the FIRST member's status while
+  // lastError is the LAST member's text, so this pair can disagree — pre-existing,
+  // and the reason this only narrows a 404 rather than trusting the text further.
+  const status = allDisabled ? 503 : clientStatusForBreakerOpen(lastStatus || 503, lastError);
   const msg = lastError || "All combo models unavailable";
 
   if (earliestRetryAfter) {
     const retryHuman = formatRetryAfter(earliestRetryAfter);
-    log.warn("COMBO", `All models failed | ${msg} (${retryHuman})`);
+    log.warn("COMBO", `All models failed | ${status} | ${msg} (${retryHuman})`);
     return unavailableResponse(status, msg, earliestRetryAfter, retryHuman);
   }
 

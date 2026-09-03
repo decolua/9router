@@ -146,6 +146,45 @@ export function clientStatusForUpstream(upstreamStatus, errorText = null) {
 }
 
 /**
+ * Status for the breaker-open path: every account is in cooldown and we already
+ * know when the earliest one frees up.
+ *
+ * A lock is NOT proof the failure was transient. `checkFallbackError` cools an
+ * account down for 30s on ANY error it has no rule for, client-fault 400s
+ * included, so "all accounts locked" mixes genuinely self-clearing conditions
+ * with permanent ones. Remapping the whole path to 503 would resurrect the
+ * incident `.claude/rules/error-classification.md` forbids: a 400 "prompt is too
+ * long" would come back retryable, the client would wait and resend the same
+ * oversized prompt forever instead of compacting it.
+ *
+ * So exactly one status is remapped, the one that was reported broken:
+ *
+ *   A 404 whose text does NOT name a model problem. Nothing else produces it —
+ *   an unknown model is caught by isPermanentModelError and keeps its 404 — so
+ *   what is left is a gateway/routing hop returning a bodyless 404 that the
+ *   router itself decided to cool down for two minutes. Reporting that as 404
+ *   told clients "this will never work" about a state that cleared itself: the
+ *   model was in /v1/models the whole time and served the request once the
+ *   window closed, while clients that classify on status burned their retry
+ *   budget in six seconds against a two-minute breaker.
+ *
+ * Everything else keeps the class clientStatusForUpstream gives it, which is the
+ * function that rule names as the owner of this decision. In particular 401/402/
+ * 403 stay 4xx deliberately: a revoked or unpaid upstream account is not
+ * something the caller's retry can fix, so "try again later" would be a lie.
+ *
+ * @param {number|string|null} upstreamStatus - status of the error that caused the lock
+ * @param {string|null} errorText - stored upstream error text
+ * @returns {number}
+ */
+export function clientStatusForBreakerOpen(upstreamStatus, errorText = null) {
+  if (Number(upstreamStatus) === HTTP_STATUS.NOT_FOUND && !isPermanentModelError(errorText)) {
+    return HTTP_STATUS.SERVICE_UNAVAILABLE;
+  }
+  return clientStatusForUpstream(upstreamStatus, errorText);
+}
+
+/**
  * Create unavailable response when all accounts are rate limited
  * @param {number} statusCode - Original error status code
  * @param {string} message - Error message (without retry info)
