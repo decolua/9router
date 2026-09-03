@@ -276,7 +276,11 @@ function emitToolCall(state, emit, tc) {
   const newCallId = tc.id;
   const funcName = tc.function?.name;
 
-  if (funcName) state.funcNames[tcIdx] = funcName;
+  if (funcName) {
+    state.funcNames[tcIdx] = funcName;
+    const namespace = state.toolNamespaces?.get(funcName);
+    if (namespace) state.funcNamespaces[tcIdx] = namespace;
+  }
   if (newCallId) state.funcCallIds[tcIdx] = newCallId;
 
   // Some compatible providers split the call id and function name across
@@ -295,7 +299,8 @@ function emitToolCall(state, emit, tc) {
         type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
         ...(custom ? { input: "" } : { arguments: "" }),
         call_id: callId,
-        name: state.funcNames[tcIdx] || ""
+        name: state.funcNames[tcIdx] || "",
+        ...(state.funcNamespaces[tcIdx] && { namespace: state.funcNamespaces[tcIdx] })
       }
     });
   }
@@ -356,7 +361,8 @@ function closeToolCall(state, emit, idx) {
         type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
         ...(custom ? { input: extractCustomToolInput(args) } : { arguments: args }),
         call_id: callId,
-        name: state.funcNames[idx] || ""
+        name: state.funcNames[idx] || "",
+        ...(state.funcNamespaces[idx] && { namespace: state.funcNamespaces[idx] })
       }
     });
 

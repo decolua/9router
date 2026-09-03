@@ -14,6 +14,17 @@ export { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER };
 // sharedEncoder is stateless — safe to share across streams
 const sharedEncoder = new TextEncoder();
 
+function collectToolNamespaces(tools) {
+  const namespaces = new Map();
+  for (const namespaceTool of tools || []) {
+    if (namespaceTool?.type !== "namespace" || !namespaceTool.name || !Array.isArray(namespaceTool.tools)) continue;
+    for (const tool of namespaceTool.tools) {
+      if (tool?.type === "function" && tool.name) namespaces.set(tool.name, namespaceTool.name);
+    }
+  }
+  return namespaces;
+}
+
 /**
  * Stream modes
  */
@@ -59,7 +70,14 @@ export function createSSEStream(options = {}) {
   const decoder = new TextDecoder("utf-8", { fatal: false });
 
   const state = mode === STREAM_MODE.TRANSLATE
-    ? { ...initState(sourceFormat), provider, toolNameMap, customToolNames: new Set(customToolNames || []), model }
+    ? {
+        ...initState(sourceFormat),
+        provider,
+        toolNameMap,
+        toolNamespaces: collectToolNamespaces(body?.tools),
+        customToolNames: new Set(customToolNames || []),
+        model
+      }
     : null;
 
   let totalContentLength = 0;
