@@ -1,15 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, Button, Input, Select, Toggle } from "@/shared/components";
 import { AI_PROVIDERS, AUTH_METHODS } from "@/shared/constants/config";
-
-const providerOptions = Object.values(AI_PROVIDERS).map((p) => ({
-  value: p.id,
-  label: p.name,
-}));
+import {
+  OPENAI_COMPATIBLE_PREFIX,
+  ANTHROPIC_COMPATIBLE_PREFIX,
+} from "@/shared/constants/providers";
 
 const authMethodOptions = Object.values(AUTH_METHODS).map((m) => ({
   value: m.id,
@@ -19,6 +18,7 @@ const authMethodOptions = Object.values(AUTH_METHODS).map((m) => ({
 export default function NewProviderPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const [providerNodes, setProviderNodes] = useState([]);
   const [formData, setFormData] = useState({
     provider: "",
     authMethod: "api_key",
@@ -27,6 +27,31 @@ export default function NewProviderPage() {
     isActive: true,
   });
   const [errors, setErrors] = useState({});
+
+  useEffect(() => {
+    fetch("/api/provider-nodes")
+      .then((res) => res.json())
+      .then((data) => setProviderNodes(data.nodes || []))
+      .catch(() => {});
+  }, []);
+
+  // Merge built-in providers + custom provider nodes
+  const providerOptions = [
+    ...Object.values(AI_PROVIDERS).map((p) => ({
+      value: p.id,
+      label: p.name,
+    })),
+    ...providerNodes
+      .filter(
+        (node) =>
+          node.type === "openai-compatible" ||
+          node.type === "anthropic-compatible"
+      )
+      .map((node) => ({
+        value: node.id,
+        label: node.name || node.id,
+      })),
+  ];
 
   const handleChange = (field, value) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -71,6 +96,10 @@ export default function NewProviderPage() {
   };
 
   const selectedProvider = AI_PROVIDERS[formData.provider];
+  const selectedNode = providerNodes.find((n) => n.id === formData.provider);
+  const isCustomProvider =
+    formData.provider.startsWith(OPENAI_COMPATIBLE_PREFIX) ||
+    formData.provider.startsWith(ANTHROPIC_COMPATIBLE_PREFIX);
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -83,7 +112,9 @@ export default function NewProviderPage() {
           <span className="material-symbols-outlined text-lg">arrow_back</span>
           Back to Providers
         </Link>
-        <h1 className="text-3xl font-semibold tracking-tight">Add New Provider</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">
+          Add New Provider
+        </h1>
         <p className="text-text-muted mt-2">
           Configure a new AI provider to use with your applications.
         </p>
@@ -104,22 +135,24 @@ export default function NewProviderPage() {
           />
 
           {/* Provider Info */}
-          {selectedProvider && (
+          {(selectedProvider || selectedNode) && (
             <Card.Section className="flex items-center gap-3">
-              <div
-                className="size-10 rounded-lg flex items-center justify-center bg-bg border border-border"
-              >
+              <div className="size-10 rounded-lg flex items-center justify-center bg-bg border border-border">
                 <span
                   className="material-symbols-outlined text-xl"
-                  style={{ color: selectedProvider.color }}
+                  style={{
+                    color: selectedProvider?.color || "#10A37F",
+                  }}
                 >
-                  {selectedProvider.icon}
+                  {selectedProvider?.icon || "smart_toy"}
                 </span>
               </div>
               <div>
-                <p className="font-medium">{selectedProvider.name}</p>
+                <p className="font-medium">
+                  {selectedProvider?.name || selectedNode?.name}
+                </p>
                 <p className="text-sm text-text-muted">
-                  Selected provider
+                  {isCustomProvider ? "Custom provider" : "Selected provider"}
                 </p>
               </div>
             </Card.Section>
@@ -217,4 +250,3 @@ export default function NewProviderPage() {
     </div>
   );
 }
-
