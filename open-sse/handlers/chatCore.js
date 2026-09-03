@@ -454,8 +454,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 
-  // Provider forced streaming but client wants JSON
-  if (!clientRequestedStreaming && providerRequiresStreaming) {
+  // Provider forced streaming but client wants JSON. Responses-API calls also
+  // always stream upstream (the request translator hardcodes stream:true), so
+  // they must land here even when the provider has no forceStream flag —
+  // otherwise the Responses SSE is mis-parsed by the Chat Completions parser
+  // and the client gets an empty-content skeleton.
+  if (!clientRequestedStreaming && (providerRequiresStreaming || providerResponseFormat === FORMATS.OPENAI_RESPONSES)) {
     const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, customToolNames, trackDone, appendLog });
     if (result) { streamController.handleComplete(); return result; }
   }
