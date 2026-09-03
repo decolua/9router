@@ -8,6 +8,7 @@
 
 import { describe, it, expect } from "vitest";
 import { openaiToKiroRequest } from "../../open-sse/translator/request/openai-to-kiro.js";
+import { kiroToOpenAIResponse } from "../../open-sse/translator/response/kiro-to-openai.js";
 
 const contentOf = (result) =>
   result.conversationState.currentMessage.userInputMessage.content;
@@ -249,6 +250,48 @@ describe("openaiToKiroRequest", () => {
       const allJson = JSON.stringify(cs);
       expect(allJson).toContain("toolUses");
       expect(allJson).not.toContain("[Tool call:");
+    });
+
+    it("should retain reverse mappings for Kiro-sanitized tool names", () => {
+      const body = {
+        messages: [{ role: "user", content: "Send the update" }],
+        tools: [{
+          type: "function",
+          function: {
+            name: "codex_app__send_message_to_thread",
+            description: "Send input to one task",
+            parameters: { type: "object", properties: {} }
+          }
+        }]
+      };
+
+      const result = openaiToKiroRequest("claude-sonnet-4.6", body, true, {});
+      const tools = result.conversationState.currentMessage.userInputMessage.userInputMessageContext?.tools;
+
+      expect(tools[0].toolSpecification.name).toBe("codex_app_send_message_to_thread");
+      expect(result._toolNameMap).toEqual(new Map([
+        ["codex_app_send_message_to_thread", "codex_app__send_message_to_thread"]
+      ]));
+    });
+
+    it("should restore tool names in raw Kiro response translation", () => {
+      const state = {
+        toolNameMap: new Map([
+          ["codex_app_send_message_to_thread", "codex_app__send_message_to_thread"]
+        ])
+      };
+
+      const result = kiroToOpenAIResponse({
+        _eventType: "toolUseEvent",
+        toolUseEvent: {
+          toolUseId: "send-message",
+          name: "codex_app_send_message_to_thread",
+          input: { thread_id: "thread-1", message: "continue" }
+        }
+      }, state);
+
+      expect(result.choices[0].delta.tool_calls[0].function.name)
+        .toBe("codex_app__send_message_to_thread");
     });
 
     it("should salvage orphaned tool_result content as text instead of discarding it", () => {

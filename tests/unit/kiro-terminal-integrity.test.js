@@ -363,6 +363,25 @@ describe("Kiro terminal integrity recovery", () => {
     expect(body).toContain('"finish_reason":"tool_calls"');
   });
 
+  it("restores Kiro-sanitized tool names before emitting OpenAI SSE", async () => {
+    fetchMock.mockResolvedValueOnce(response([
+      frame("toolUseEvent", {
+        toolUseId: "send-message",
+        name: "codex_app_send_message_to_thread",
+        input: { thread_id: "thread-1", message: "continue" }
+      })
+    ]));
+
+    const body = await (await execute(new KiroExecutor(), {
+      toolNameMap: new Map([
+        ["codex_app_send_message_to_thread", "codex_app__send_message_to_thread"]
+      ])
+    })).response.text();
+
+    expect(body).toContain('"name":"codex_app__send_message_to_thread"');
+    expect(body).not.toContain('"name":"codex_app_send_message_to_thread"');
+  });
+
   it("maps max_tokens without treating it as a normal stop", async () => {
     fetchMock.mockResolvedValueOnce(response([
       frame("assistantResponseEvent", { content: "Limited answer." }),
@@ -703,7 +722,7 @@ describe("Kiro terminal integrity recovery", () => {
   it("surfaces retry HTTP failures as SSE after heartbeat commits headers", async () => {
     fetchMock
       .mockResolvedValueOnce(response([]))
-      .mockResolvedValueOnce(new Response("unauthorized", {
+      .mockResolvedValue(new Response("unauthorized", {
         status: 401,
         statusText: "Unauthorized"
       }));
@@ -719,7 +738,7 @@ describe("Kiro terminal integrity recovery", () => {
   it("bounds the retry HTTP error body", async () => {
     fetchMock
       .mockResolvedValueOnce(response([]))
-      .mockResolvedValueOnce(new Response(`error-start-${"x".repeat(10_000)}-error-tail`, {
+      .mockResolvedValue(new Response(`error-start-${"x".repeat(10_000)}-error-tail`, {
         status: 401,
         statusText: "Unauthorized"
       }));
