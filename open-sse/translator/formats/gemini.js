@@ -49,10 +49,12 @@ export function convertOpenAIContentToParts(content) {
   const parts = [];
 
   if (typeof content === "string") {
-    parts.push({ text: content });
+    if (content.trim() !== "") {
+      parts.push({ text: content });
+    }
   } else if (Array.isArray(content)) {
     for (const item of content) {
-      if (item.type === OPENAI_BLOCK.TEXT) {
+      if (item.type === OPENAI_BLOCK.TEXT && item.text && item.text.trim() !== "") {
         parts.push({ text: item.text });
       } else if (item.type === OPENAI_BLOCK.IMAGE_URL && item.image_url?.url?.startsWith("data:")) {
         const url = item.image_url.url;
