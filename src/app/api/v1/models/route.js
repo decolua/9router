@@ -1,4 +1,4 @@
-import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind } from "@/shared/constants/models";
+import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind, COMBO_ALIAS } from "@/shared/constants/models";
 import {
   AI_PROVIDERS,
   getProviderAlias,
@@ -295,6 +295,9 @@ export async function buildModelsList(kindFilter, options = {}) {
   // Combos first (filtered by kind). Web combos expose `kind` so AI knows search vs fetch.
   for (const combo of combos) {
     if (!comboMatchesKinds(combo, kindFilter)) continue;
+    // Combos are gated by the same disabled list as provider models, under the
+    // reserved "combo" alias, so blocking one actually removes it from here.
+    if (isDisabled(COMBO_ALIAS, combo.name)) continue;
     const entry = {
       id: combo.name,
       object: "model",

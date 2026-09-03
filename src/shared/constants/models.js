@@ -37,6 +37,10 @@ export const AI_MODELS = Object.entries(MODELS).flatMap(([alias, models]) =>
   models.map(m => ({ provider: alias, model: m.id, name: m.name }))
 );
 
+// Reserved alias combos are stored under in the disabled-models list, so a
+// combo can be blocked from /v1/models the same way a provider model is.
+export const COMBO_ALIAS = "combo";
+
 export const getModelKind = (m, fallback = null) => m?.kind || m?.type || fallback;
 
 // Capacity metadata for UI badges — icon + label + color per capability.

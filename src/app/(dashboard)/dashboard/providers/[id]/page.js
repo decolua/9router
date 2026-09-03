@@ -70,6 +70,8 @@ export default function ProviderDetailPage() {
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [liveModels, setLiveModels] = useState([]);
+  const [fetchingModels, setFetchingModels] = useState(false);
+  const [fetchModelsNote, setFetchModelsNote] = useState("");
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
@@ -146,7 +148,9 @@ export default function ProviderDetailPage() {
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
   const staticModels = getModelsByProviderId(providerId);
-  const models = providerId === "cursor" && liveModels.length > 0
+  // Live catalogs win over the static registry: cursor loads one automatically,
+  // and any provider can load one on demand via "Fetch Models".
+  const models = liveModels.length > 0
     ? liveModels
     : staticModels;
   const providerAlias = getProviderAlias(providerId);
@@ -494,6 +498,41 @@ export default function ProviderDetailPage() {
     if (!fetcher) return;
     fetchSuggestedModels(fetcher).then(setSuggestedModels);
   }, [providerId]);
+
+  // Pull the provider's own catalog using an active account's credentials, so the
+  // list reflects what that account can actually reach rather than the static
+  // registry. Leaves the current list untouched on failure.
+  const handleFetchProviderModels = async () => {
+    const connection = connections.find((item) => item.isActive !== false) || connections[0];
+    if (!connection?.id) {
+      setFetchModelsNote("Connect an account first.");
+      return;
+    }
+    setFetchingModels(true);
+    setFetchModelsNote("");
+    try {
+      const res = await fetch(`/api/providers/${connection.id}/models`, { cache: "no-store" });
+      const data = await res.json();
+      if (res.status === 404) {
+        // Provider exposes no live catalog (or its upstream list endpoint is
+        // gone). The built-in registry is still correct, so keep showing it.
+        setFetchModelsNote("This provider has no live model list — showing the built-in catalog.");
+        return;
+      }
+      if (!res.ok) throw new Error(data?.error || "Provider did not return a model list");
+      const list = Array.isArray(data.models) ? data.models.filter((m) => m?.id) : [];
+      if (!list.length) {
+        setFetchModelsNote("Provider returned no models.");
+        return;
+      }
+      setLiveModels(list);
+      setFetchModelsNote(`Fetched ${list.length} model${list.length === 1 ? "" : "s"} from provider.`);
+    } catch (e) {
+      setFetchModelsNote(e.message || "Failed to fetch models");
+    } finally {
+      setFetchingModels(false);
+    }
+  };
 
   const handleSetAlias = async (modelId, alias, providerAliasOverride = providerAlias) => {
     const fullModel = `${providerAliasOverride}/${modelId}`;
@@ -1681,7 +1720,20 @@ export default function ProviderDetailPage() {
             ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id);
             const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
             return (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="success">{activeIds.length} allowed</Badge>
+                {disabledModelIds.length > 0 && (
+                  <Badge variant="error">{disabledModelIds.length} blocked</Badge>
+                )}
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon="cloud_download"
+                  disabled={fetchingModels}
+                  onClick={handleFetchProviderModels}
+                >
+                  {fetchingModels ? "Fetching..." : "Fetch Models"}
+                </Button>
                 {disabledModelIds.length > 0 && (
                   <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
                     Active All
@@ -1698,6 +1750,9 @@ export default function ProviderDetailPage() {
         </div>
         {!!modelsTestError && (
           <p className="text-xs text-red-500 mb-3 break-words">{modelsTestError}</p>
+        )}
+        {!!fetchModelsNote && (
+          <p className="text-xs text-text-muted mb-3 break-words">{fetchModelsNote}</p>
         )}
         {renderModelsSection()}
       </Card>
