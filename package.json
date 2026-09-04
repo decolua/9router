@@ -4,6 +4,8 @@
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
+    "router": "node --env-file=.env .next/standalone/custom-server.js",
+    "router:rebuild": "port=$(node --env-file=.env -p 'process.env.PORT || 3000'); if command -v lsof >/dev/null 2>&1 && lsof -tiTCP:\"$port\" -sTCP:LISTEN >/dev/null 2>&1; then echo \"Port $port is already in use; stop the running process before rebuilding.\" >&2; exit 1; fi; rm -rf .next && npm run build && mkdir -p .next/standalone/.next && cp -R .next/static .next/standalone/.next/static && if [ -d public ]; then cp -R public .next/standalone/public; fi && npm run router",
     "dev": "next dev --port 20127",
     "dev:webpack": "next dev --webpack --port 20127",
     "build": "next build --webpack",
