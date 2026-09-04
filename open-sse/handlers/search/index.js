@@ -7,7 +7,7 @@
  *   provider.searchViaChat   → wrap chat-completions (chatSearch.js)
  */
 
-import { buildSearchRequest } from "./callers.js";
+import { buildSearchRequest, getProviderSetting } from "./callers.js";
 import { normalizeSearchResponse } from "./normalizers.js";
 import { handleChatSearch } from "./chatSearch.js";
 import { fetchPublic } from "../../../src/shared/utils/ssrfGuard.js";
@@ -86,6 +86,7 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
   };
 
   let url, init;
+  const requiresPublicUrl = Boolean(getProviderSetting(params, "baseUrl"));
   try {
     ({ url, init } = buildSearchRequest({ id: provider.id, ...providerConfig }, params));
   } catch (err) {
@@ -101,7 +102,10 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
   log?.info?.("SEARCH", `${provider.id} | "${params.query.slice(0, 80)}" | type=${params.searchType}`);
 
   try {
-    const resp = await fetchPublic(url, { ...init, headers: sanitizeHeaders(init.headers), signal: controller.signal });
+    // Request/account overrides remain SSRF-hardened. The provider config is
+    // administrator-controlled and may intentionally target an internal service.
+    const fetchEndpoint = requiresPublicUrl ? fetchPublic : fetch;
+    const resp = await fetchEndpoint(url, { ...init, headers: sanitizeHeaders(init.headers), signal: controller.signal });
     clearTimeout(timer);
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");
