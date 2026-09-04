@@ -1,9 +1,5 @@
 import { claudeToOpenAIRequest } from "../translator/request/claude-to-openai.js";
 import { openaiToClaudeRequest } from "../translator/request/openai-to-claude.js";
-import {
-  openaiResponsesToOpenAIRequest,
-  openaiToOpenAIResponsesRequest,
-} from "../translator/request/openai-responses.js";
 
 const configuredTimeoutRaw = process.env.HEADROOM_TIMEOUT_MS?.trim() || "";
 const configuredTimeoutMs = Number.parseInt(configuredTimeoutRaw, 10);
@@ -99,6 +95,38 @@ function hasUnsafeResponsesInputForCompression(body) {
     if (!item || typeof item !== "object" || Array.isArray(item)) return false;
     return typeof item.type === "string" && item.type !== "message";
   });
+}
+
+function collectResponsesHeadroomMessages(body) {
+  if (!Array.isArray(body?.input)) return null;
+
+  const messages = [];
+  const targets = [];
+  if (typeof body.instructions === "string") {
+    messages.push({ role: "system", content: body.instructions });
+    targets.push({ object: body, key: "instructions", contentType: null });
+  }
+
+  for (const item of body.input) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return null;
+    if (item.type && item.type !== "message") return null;
+    if (typeof item.role !== "string") return null;
+
+    if (typeof item.content === "string") {
+      messages.push({ role: item.role, content: item.content });
+      targets.push({ object: item, key: "content", contentType: null });
+      continue;
+    }
+
+    if (!Array.isArray(item.content) || item.content.length !== 1) return null;
+    const [part] = item.content;
+    if (!part || typeof part !== "object" || typeof part.text !== "string") return null;
+
+    messages.push({ role: item.role, content: part.text });
+    targets.push({ object: part, key: "text", contentType: null });
+  }
+
+  return messages.length > 0 ? { messages, targets } : null;
 }
 
 function collectKiroHeadroomMessages(body) {
@@ -216,6 +244,36 @@ function applyKiroHeadroomMessages(projection, compressedMessages, diagnostics) 
   return true;
 }
 
+function applyResponsesHeadroomMessages(projection, compressedMessages, diagnostics) {
+  if (!Array.isArray(compressedMessages) || compressedMessages.length !== projection.messages.length) {
+    setDiagnostic(diagnostics, "proxy response did not preserve Responses message count");
+    return false;
+  }
+
+  const updates = [];
+  for (let i = 0; i < projection.messages.length; i++) {
+    const expected = projection.messages[i];
+    const actual = compressedMessages[i];
+    if (!actual || actual.role !== expected.role) {
+      setDiagnostic(diagnostics, "proxy response did not preserve Responses message order");
+      return false;
+    }
+
+    const text = textFromHeadroomMessage(actual);
+    if (text === null) {
+      setDiagnostic(diagnostics, "proxy response missing Responses text content");
+      return false;
+    }
+    updates.push({ target: projection.targets[i], text });
+  }
+
+  for (const update of updates) {
+    const { target, text } = update;
+    target.object[target.key] = text;
+  }
+  return true;
+}
+
 // POST messages to Headroom /v1/compress; returns compressed messages + stats or null.
 async function callCompress(url, messages, model, timeoutMs, compressUserMessages, diagnostics) {
   const endpoint = buildCompressEndpoint(url);
@@ -284,29 +342,21 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
       return data;
     }
 
-    // OpenAI Responses shape (Codex): body.input holds Responses items, NOT OpenAI
-    // messages. Translate input -> OpenAI -> compress -> translate back to input so
-    // body.input keeps the Responses contract (the proxy only understands OpenAI). (#1998)
+    // Project text to Chat messages for Headroom, then write it back into the
+    // original Responses items. Rebuilding through Chat loses native item metadata.
     if (format === "openai-responses") {
       if (hasUnsafeResponsesInputForCompression(body)) {
         setDiagnostic(diagnostics, "skipped: openai-responses tool/reasoning input is not safe to compress");
         return null;
       }
-      const oai = openaiResponsesToOpenAIRequest(model, body, false);
-      if (!Array.isArray(oai?.messages)) {
-        setDiagnostic(diagnostics, "openai-responses request did not translate to messages[]");
+      const projection = collectResponsesHeadroomMessages(body);
+      if (!projection) {
+        setDiagnostic(diagnostics, "openai-responses request did not project to text messages[]");
         return null;
       }
-      const data = await callCompress(url, oai.messages, model, timeoutMs, compressUserMessages, diagnostics || {});
+      const data = await callCompress(url, projection.messages, model, timeoutMs, compressUserMessages, diagnostics || {});
       if (!data) return null;
-      // input: undefined so the translator rebuilds input from the compressed
-      // messages instead of returning the original input unchanged.
-      const responsesBody = openaiToOpenAIResponsesRequest(
-        model,
-        { ...oai, input: undefined, messages: data.messages },
-        false
-      );
-      if (Array.isArray(responsesBody?.input)) body.input = responsesBody.input;
+      if (!applyResponsesHeadroomMessages(projection, data.messages, diagnostics)) return null;
       if (diagnostics) diagnostics.after = captureSizeSnapshot(body);
       return data;
     }
