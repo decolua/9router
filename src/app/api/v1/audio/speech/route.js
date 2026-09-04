@@ -1,4 +1,5 @@
 import { handleTts } from "@/sse/handlers/tts.js";
+import { withScopeAuth } from "@/middleware/scopeAuth.js";
 
 export async function OPTIONS() {
   return new Response(null, {
@@ -12,5 +13,5 @@ export async function OPTIONS() {
 
 /** POST /v1/audio/speech - OpenAI-compatible TTS endpoint */
 export async function POST(request) {
-  return await handleTts(request);
+  return await withScopeAuth(handleTts)(request);
 }

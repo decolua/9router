@@ -1,4 +1,5 @@
 import { handleSearch } from "@/sse/handlers/search.js";
+import { withScopeAuth } from "@/middleware/scopeAuth.js";
 
 /**
  * Handle CORS preflight
@@ -17,5 +18,5 @@ export async function OPTIONS() {
  * POST /v1/search - Web search endpoint
  */
 export async function POST(request) {
-  return await handleSearch(request);
+  return await withScopeAuth(handleSearch, { bodyMode: "json-provider", pseudoModelId: "search" })(request);
 }

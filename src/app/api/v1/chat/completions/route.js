@@ -1,5 +1,6 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
+import { withScopeAuth } from "@/middleware/scopeAuth.js";
 
 let initialized = false;
 
@@ -29,7 +30,7 @@ export async function OPTIONS() {
 export async function POST(request) {  
   // Fallback to local handling
   await ensureInitialized();
-  
-  return await handleChat(request);
+
+  return await withScopeAuth(handleChat)(request);
 }
 
