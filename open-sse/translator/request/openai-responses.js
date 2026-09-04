@@ -238,7 +238,9 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   delete result.input;
   delete result.instructions;
   delete result.include;
-  delete result.prompt_cache_key;
+  // prompt_cache_key is intentionally kept: Chat Completions accepts it on
+  // api.openai.com/Azure and it seeds the stable Codex/Grok cache id. Providers
+  // that reject it are handled by the config-driven guard in translator/index.js.
   delete result.store;
   if (typeof result.reasoning?.effort === "string") {
     result.reasoning_effort = result.reasoning.effort;

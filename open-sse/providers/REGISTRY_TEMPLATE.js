@@ -49,7 +49,7 @@ export default {
     // headers: { "User-Agent": "..." },           // static fingerprint (anti-ban) lives here.
     // auth: { header: "x-api-key", scheme: "raw" },
     // forceStream: true, urlSuffix: "?beta=true",
-    // quirks: { dropOutputConfig: true },
+    // quirks: { dropOutputConfig: true, preservePromptCacheKey: true }, // latter: Chat Completions accepts prompt_cache_key on the Responses→Chat hop (default: stripped; currently openai, azure)
     // retry: { 429: { attempts: 6 }, 503: { attempts: 3 } },
     // usage: { url: "https://api.example.com/usage" }, // or { urls: [...] } for multi-call.
     // modelsFetcher: { url: "https://api.example.com/models", type: "openai" }, // dynamic model list.
