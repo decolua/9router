@@ -26,6 +26,8 @@ describe("OpenCode Go model catalog", () => {
       "deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp",
       "mimo-v2.5", "mimo-v2.5-pro",
       "minimax-m3", "minimax-m2.7", "minimax-m2.5",
+      "muse-spark-1.2-contributor",
+      "muse-spark-1.3-contributor",
       "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus",
     ]);
   });
