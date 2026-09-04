@@ -7,6 +7,7 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { cleanJSONSchemaForAntigravity } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
+import { sanitizeAntigravitySystemPrompt } from "../translator/request/openai-to-gemini.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
 function sanitizeFunctionName(name) {
@@ -247,13 +248,14 @@ export class AntigravityExecutor extends BaseExecutor {
     stripBlacklisted(requestWithoutTools);
     
     // Rewrite competing-client branding in system prompts (e.g. Zed's Claude prompt,
-    // OpenCode naming) so Antigravity doesn't flag the request with a 429 Quota Exhausted.
+    // OpenCode naming, Hermes Agent) so Antigravity doesn't flag the request with a 429 Quota Exhausted.
     if (requestWithoutTools.systemInstruction?.parts) {
       for (const part of requestWithoutTools.systemInstruction.parts) {
         if (typeof part.text !== "string") continue;
         for (const { from, to } of ANTIGRAVITY_PROMPT_REWRITES) {
           part.text = part.text.replaceAll(from, to);
         }
+        part.text = sanitizeAntigravitySystemPrompt(part.text);
       }
     }
 
