@@ -135,4 +135,43 @@ describe("openaiToClaudeResponse tool argument deduplication & repair", () => {
     expect(delta).toBe('{"query":"normal stream"}');
     expect(JSON.parse(delta)).toEqual({ query: "normal stream" });
   });
+
+  it("does not re-emit tool argument delta when multiple finish chunks arrive", () => {
+    const state = createState();
+    const argStr = JSON.stringify({ prompt: "test prompt", url: "https://example.com" });
+
+    // Chunk 1: open tool call
+    openaiToClaudeResponse({
+      id: "chatcmpl-multi-finish",
+      model: "cline-pass/glm-5.2",
+      choices: [{ delta: { tool_calls: [{ index: 0, id: "call_webfetch", function: { name: "WebFetch" } }] } }],
+    }, state);
+
+    // Chunk 2: stream arguments
+    openaiToClaudeResponse({
+      id: "chatcmpl-multi-finish",
+      model: "cline-pass/glm-5.2",
+      choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: argStr } }] } }],
+    }, state);
+
+    // Chunk 3: first finish chunk (e.g. finish_reason: "tool_calls")
+    const events1 = openaiToClaudeResponse({
+      id: "chatcmpl-multi-finish",
+      model: "cline-pass/glm-5.2",
+      choices: [{ delta: {}, finish_reason: "tool_calls" }],
+    }, state);
+
+    // Chunk 4: second finish chunk (e.g. finish_reason: "stop" with usage)
+    const events2 = openaiToClaudeResponse({
+      id: "chatcmpl-multi-finish",
+      model: "cline-pass/glm-5.2",
+      choices: [{ delta: {}, finish_reason: "stop" }],
+    }, state);
+
+    const delta1 = getInputJsonDelta(events1);
+    expect(delta1).toBe(argStr);
+
+    const delta2 = getInputJsonDelta(events2);
+    expect(delta2).toBeUndefined();
+  });
 });

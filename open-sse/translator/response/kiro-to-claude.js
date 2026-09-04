@@ -264,6 +264,8 @@ export function kiroToClaudeResponse(chunk, state) {
 
     if (state.toolCalls) {
       for (const [idx, toolInfo] of state.toolCalls) {
+        if (toolInfo.closed) continue;
+        toolInfo.closed = true;
         const buffered = state.toolArgBuffers?.get(idx);
         if (buffered) {
           results.push({
@@ -276,14 +278,17 @@ export function kiroToClaudeResponse(chunk, state) {
       }
     }
 
-    state.finishReason = choice.finish_reason;
-    const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
-    results.push({
-      type: "message_delta",
-      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
-      usage: finalUsage,
-    });
-    results.push({ type: "message_stop" });
+    if (!state.finishReasonSent) {
+      state.finishReasonSent = true;
+      state.finishReason = choice.finish_reason;
+      const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+      results.push({
+        type: "message_delta",
+        delta: { stop_reason: convertFinishReason(choice.finish_reason) },
+        usage: finalUsage,
+      });
+      results.push({ type: "message_stop" });
+    }
   }
 
   return results.length > 0 ? results : null;

@@ -298,34 +298,41 @@ export function openaiToClaudeResponse(chunk, state) {
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
 
-    for (const [idx, toolInfo] of state.toolCalls) {
-      // Emit buffered + sanitized args as single delta before stop
-      const buffered = state.toolArgBuffers?.get(idx);
-      if (buffered) {
-        const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
+    if (state.toolCalls) {
+      for (const [idx, toolInfo] of state.toolCalls) {
+        if (toolInfo.closed) continue;
+        toolInfo.closed = true;
+        // Emit buffered + sanitized args as single delta before stop
+        const buffered = state.toolArgBuffers?.get(idx);
+        if (buffered) {
+          const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
+          results.push({
+            type: "content_block_delta",
+            index: toolInfo.blockIndex,
+            delta: { type: "input_json_delta", partial_json: sanitized }
+          });
+        }
         results.push({
-          type: "content_block_delta",
-          index: toolInfo.blockIndex,
-          delta: { type: "input_json_delta", partial_json: sanitized }
+          type: "content_block_stop",
+          index: toolInfo.blockIndex
         });
       }
-      results.push({
-        type: "content_block_stop",
-        index: toolInfo.blockIndex
-      });
     }
 
-    // Mark finish for later usage injection in stream.js
-    state.finishReason = choice.finish_reason;
+    if (!state.finishReasonSent) {
+      state.finishReasonSent = true;
+      // Mark finish for later usage injection in stream.js
+      state.finishReason = choice.finish_reason;
 
-    // Use tracked usage (will be estimated in stream.js if not valid)
-    const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
-    results.push({
-      type: "message_delta",
-      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
-      usage: finalUsage
-    });
-    results.push({ type: "message_stop" });
+      // Use tracked usage (will be estimated in stream.js if not valid)
+      const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+      results.push({
+        type: "message_delta",
+        delta: { stop_reason: convertFinishReason(choice.finish_reason) },
+        usage: finalUsage
+      });
+      results.push({ type: "message_stop" });
+    }
   }
 
   return results.length > 0 ? results : null;
