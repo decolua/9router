@@ -2,3 +2,4 @@
 export * from "./providers.js";
 export * from "./appConstants.js";
 export * from "./runtimeConfig.js";
+export * from "./openAICompatible.js";

@@ -63,6 +63,19 @@ export async function parseUpstreamError(response, executor = null) {
     bodyText = "";
   }
 
+  const contentType = response.headers?.get?.("content-type")?.toLowerCase() || "";
+  const looksLikeHtml = contentType.includes("text/html") || /<!doctype\s+html|<html[\s>]/i.test(bodyText);
+  if (looksLikeHtml) {
+    const title = bodyText.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1]
+      ?.replace(/<[^>]*>/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    return {
+      statusCode: response.status,
+      message: title || `Upstream returned an HTML error page (${response.status})`
+    };
+  }
+
   // Let executor-specific parser extract provider-specific fields (e.g. codex resetsAtMs)
   if (executor && typeof executor.parseError === "function") {
     try {
@@ -93,16 +106,23 @@ export async function parseUpstreamError(response, executor = null) {
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
  * @param {number} [resetsAtMs] - Optional precise cooldown expiry (ms epoch) for provider-specific quota errors
- * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number }}
+ * @param {number} [accountStatus] - Original provider status used for account fallback classification
+ * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number, accountStatus?: number }}
  */
-export function createErrorResult(statusCode, message, resetsAtMs) {
+export function createErrorResult(statusCode, message, resetsAtMs, accountStatus = statusCode) {
   return {
     success: false,
     status: statusCode,
     error: message,
     resetsAtMs,
+    accountStatus,
     response: errorResponse(statusCode, message)
   };
+}
+
+/** Map nonstandard upstream statuses to broadly retryable client statuses. */
+export function getClientErrorStatus(statusCode) {
+  return statusCode === 400 || statusCode === 524 ? 502 : statusCode;
 }
 
 /**

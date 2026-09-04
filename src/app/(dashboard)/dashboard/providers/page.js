@@ -880,9 +880,11 @@ function ApiKeyProviderCard({
                     {getStatusDisplay(connected, error, errorCode)}
                     {isCompatible && (
                       <Badge variant="default" size="sm">
-                        {provider.apiType === "responses"
-                          ? "Responses"
-                          : "Chat"}
+                        {provider.apiType === "auto"
+                          ? "Match Client"
+                          : provider.apiType === "responses"
+                            ? "Responses"
+                            : "Chat"}
                       </Badge>
                     )}
                     {isAnthropicCompatible && (

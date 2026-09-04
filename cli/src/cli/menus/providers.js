@@ -4,6 +4,7 @@ const { clearScreen, showStatus, showHeader } = require("../utils/display");
 const { formatDate, getRelativeTime } = require("../utils/format");
 const { showMenuWithBack } = require("../utils/menuHelper");
 const { copyToClipboard } = require("../utils/clipboard");
+const { API_TYPE_OPTIONS: OPENAI_API_TYPE_OPTIONS, DEFAULT_API_TYPE: OPENAI_DEFAULT_API_TYPE } = require("../utils/openAICompatible");
 
 // ANSI colors for styling
 const COLORS = {
@@ -646,7 +647,6 @@ async function handleAddDeviceCodeConnection(providerId) {
 // ============================================================================
 
 const CUSTOM_NODE_TYPES = ["openai-compatible", "anthropic-compatible"];
-const OPENAI_API_TYPES = ["chat", "responses"];
 
 /**
  * Show custom providers section in main providers menu
@@ -810,11 +810,11 @@ async function handleAddCustomNode() {
   // Step 3: API type (OpenAI only)
   let apiType;
   if (type === "openai-compatible") {
-    const apiTypeChoices = OPENAI_API_TYPES.map((t, i) => `  ${i + 1}. ${t}`).join("\n");
+    const apiTypeChoices = OPENAI_API_TYPE_OPTIONS.map((option, i) => `  ${i + 1}. ${option.label}`).join("\n");
     console.log(`\nAPI Type:\n${apiTypeChoices}\n`);
-    const apiTypeInput = await prompt("API Type (1/2, default 1): ");
+    const apiTypeInput = await prompt("API Type (1/2/3, default 1): ");
     const apiTypeIdx = parseInt(apiTypeInput) - 1;
-    apiType = OPENAI_API_TYPES[apiTypeIdx] || "chat";
+    apiType = OPENAI_API_TYPE_OPTIONS[apiTypeIdx]?.value || OPENAI_DEFAULT_API_TYPE;
   }
 
   showStatus("Creating provider node...", "info");

@@ -8,7 +8,7 @@ import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelSupportedFormats, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
-import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
+import { createErrorResult, getClientErrorStatus, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
@@ -29,6 +29,7 @@ import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType } from "../translator/concerns/toolCall.js";
+import { stripUnsupportedResponsesContentFields } from "../translator/formats/responsesApi.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
 /**
@@ -96,7 +97,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // whose wire format has no supported transport (for example MiniMax-M3:
   // OpenAI clients should stay on /chat/completions; other clients can fall
   // back to its declared Claude target).
-  const targetFormat = useTransport?.format || modelTargetFormat || getTargetFormat(provider, credentials);
+  const targetFormat = useTransport?.format || modelTargetFormat || getTargetFormat(provider, credentials, sourceFormat);
+  if (credentials) credentials.runtimeFormat = targetFormat;
   if (useTransport && credentials) credentials.runtimeTransport = useTransport;
   const stripList = getModelStrip(alias, model);
   const upstreamModel = getModelUpstreamId(alias, model);
@@ -176,11 +178,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (provider === "codex") {
       const suffixThinking = {};
       applyThinking(sourceFormat, upstreamModel, suffixThinking, provider);
-      if (suffixThinking.reasoning_effort) {
+      const suffixEffort = suffixThinking.reasoning?.effort ?? suffixThinking.reasoning_effort;
+      if (suffixEffort) {
         const reasoning = translatedBody.reasoning;
         translatedBody.reasoning = {
           ...(reasoning && typeof reasoning === "object" && !Array.isArray(reasoning) ? reasoning : {}),
-          effort: suffixThinking.reasoning_effort,
+          effort: suffixEffort,
         };
         delete translatedBody.reasoning_effort;
       }
@@ -257,13 +260,20 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Headroom: optional external proxy compression; fail open if proxy is absent.
   const headroomDiagnostics = {};
+  const preHeadroomBody = tokenSaverEnabled && headroomEnabled ? structuredClone(translatedBody) : null;
   const headroomStats = await compressWithHeadroom(translatedBody, { enabled: tokenSaverEnabled && headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages, timeoutMs: headroomTimeoutMs, diagnostics: headroomDiagnostics });
+  let headroomFallbackBody = null;
   const headroomLine = formatHeadroomLog(headroomStats);
   const headroomSizeLine = formatHeadroomSizeLog(headroomDiagnostics);
   if (headroomLine) {
     log?.info?.("HEADROOM", `${headroomLine}${headroomSizeLine ? ` | ${headroomSizeLine}` : ""}`);
     if (isHeadroomPhantomSavings(headroomStats, headroomDiagnostics)) {
-      log?.warn?.("HEADROOM", `reported token delta, but outbound JSON shrank <5%; provider may bill near-original payload | ${formatHeadroomSizeLog(headroomDiagnostics)}`);
+      translatedBody = preHeadroomBody;
+      log?.warn?.("HEADROOM", `discarded rewrite because outbound JSON shrank <5%; preserving provider prompt cache | ${formatHeadroomSizeLog(headroomDiagnostics)}`);
+    } else if (finalFormat === FORMATS.OPENAI_RESPONSES
+      && preHeadroomBody
+      && JSON.stringify(translatedBody) !== JSON.stringify(preHeadroomBody)) {
+      headroomFallbackBody = preHeadroomBody;
     }
   } else if (tokenSaverEnabled && headroomEnabled) log?.warn?.("HEADROOM", `skipped: ${headroomDiagnostics.reason || "compression unavailable"}${headroomDiagnostics.endpoint ? ` (${headroomDiagnostics.endpoint})` : ""}`);
 
@@ -273,12 +283,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Caveman: inject terse-style system prompt
   if (tokenSaverEnabled && cavemanEnabled && cavemanLevel) {
     injectCaveman(translatedBody, finalFormat, cavemanLevel);
+    if (headroomFallbackBody) injectCaveman(headroomFallbackBody, finalFormat, cavemanLevel);
     xf.push(`CAVEMAN:${cavemanLevel}`);
   }
 
   // Ponytail: inject lazy-senior-dev system prompt
   if (tokenSaverEnabled && ponytailEnabled && ponytailLevel) {
     injectPonytail(translatedBody, finalFormat, ponytailLevel);
+    if (headroomFallbackBody) injectPonytail(headroomFallbackBody, finalFormat, ponytailLevel);
     xf.push(`PONYTAIL:${ponytailLevel}`);
   }
 
@@ -293,6 +305,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (pxpipeResult.body) translatedBody = pxpipeResult.body;
     if (pxpipeSummary?.applied) xf.push(`PXPIPE:${pxpipeSummary.imageCount}img`);
     try { onPxpipeEvent?.({ provider, model, ...pxpipeSummary }); } catch { /* stats must not break requests */ }
+  }
+
+  if (finalFormat === FORMATS.OPENAI_RESPONSES) {
+    stripUnsupportedResponsesContentFields(translatedBody);
+    if (headroomFallbackBody) stripUnsupportedResponsesContentFields(headroomFallbackBody);
   }
 
   if (xf.length && log?.line) log.line(reqTag, "⚙", xf.join(" · "));
@@ -363,6 +380,18 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     finalBody = result.transformedBody;
     providerResponseFormat = result.responseFormat || targetFormat;
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
+
+    if (providerResponse.status === HTTP_STATUS.BAD_REQUEST && headroomFallbackBody) {
+      log?.warn?.("HEADROOM", "upstream rejected compressed Responses payload with 400; retrying once without Headroom");
+      await providerResponse.body?.cancel?.();
+      const fallbackResult = await executor.execute({ model, body: headroomFallbackBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
+      providerResponse = fallbackResult.response;
+      providerUrl = fallbackResult.url;
+      providerHeaders = fallbackResult.headers;
+      finalBody = fallbackResult.transformedBody;
+      providerResponseFormat = fallbackResult.responseFormat || targetFormat;
+      reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
+    }
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false, true);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
@@ -447,7 +476,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       log.errorLine(reqTag, "✗", `ERROR ${statusCode} · ${provider}/${model} · ${Date.now() - requestStartTime}ms${urlStr}\n    ${errMsg}`);
     }
     reqLogger.logError(new Error(message), finalBody || translatedBody);
-    return createErrorResult(statusCode, errMsg, resetsAtMs);
+    // Provider request errors are retryable from Kilo's perspective after the
+    // router has exhausted its own retry. Keep the original status for logs
+    // and account classification, but expose 502 so the client retries.
+    const clientStatusCode = getClientErrorStatus(statusCode);
+    return createErrorResult(clientStatusCode, errMsg, resetsAtMs, statusCode);
   }
 
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };

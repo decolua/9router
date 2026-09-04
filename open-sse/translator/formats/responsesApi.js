@@ -24,6 +24,25 @@ export function normalizeResponsesInput(input) {
 }
 
 /**
+ * Remove client-only content-part metadata before sending a native Responses request.
+ * Kilo uses prompt_cache_breakpoint as an internal cache hint, but OpenAI-compatible
+ * Responses endpoints reject it as an unknown input content property.
+ */
+export function stripUnsupportedResponsesContentFields(body) {
+  if (!Array.isArray(body?.input)) return body;
+
+  for (const item of body.input) {
+    const isMessage = item?.type === RESPONSES_ITEM.MESSAGE || (!item?.type && item?.role);
+    if (!isMessage || !Array.isArray(item.content)) continue;
+    for (const part of item.content) {
+      if (part && typeof part === "object") delete part.prompt_cache_breakpoint;
+    }
+  }
+
+  return body;
+}
+
+/**
  * Convert OpenAI Responses API format to standard chat completions format
  * Responses API uses: { input: [...], instructions: "..." }
  * Chat API uses: { messages: [...] }
