@@ -54,9 +54,12 @@ export async function POST(request) {
     if (storedHash) {
       isValid = await bcrypt.compare(password, storedHash);
     } else {
-      // Use env var or default
+      // No stored hash: only allow the default/INITIAL password from the LOCAL
+      // machine, and the caller must still pass the mustChangePassword gate
+      // below (which withholds the session JWT for the default). Never accept
+      // the public default password from a remote/tunnel client.
       const initialPassword = process.env.INITIAL_PASSWORD || "123456";
-      isValid = password === initialPassword;
+      isValid = password === initialPassword && isLocalRequest(request);
     }
 
     if (isValid) {
