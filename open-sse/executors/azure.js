@@ -10,8 +10,8 @@ export class AzureExecutor extends DefaultExecutor {
 
   resolveDeployment(model, credentials = null) {
     return (
-      credentials?.providerSpecificData?.deployment ||
       model ||
+      credentials?.providerSpecificData?.deployment ||
       process.env.AZURE_DEPLOYMENT ||
       "gpt-4"
     );

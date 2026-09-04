@@ -4,7 +4,7 @@ import { AzureExecutor } from "../../open-sse/executors/azure.js";
 const executor = new AzureExecutor();
 
 describe("AzureExecutor", () => {
-  it("builds a generic Azure deployment URL", () => {
+  it("uses the requested model as the Azure deployment", () => {
     const credentials = {
       providerSpecificData: {
         azureEndpoint: "https://example-resource.openai.azure.com",
@@ -13,9 +13,15 @@ describe("AzureExecutor", () => {
       },
     };
 
-    expect(executor.buildUrl("gpt-5", true, 0, credentials)).toBe(
-      "https://example-resource.openai.azure.com/openai/deployments/gpt-5-chat-deployment/chat/completions?api-version=2025-04-01-preview"
+    expect(executor.buildUrl("requested-deployment", true, 0, credentials)).toBe(
+      "https://example-resource.openai.azure.com/openai/deployments/requested-deployment/chat/completions?api-version=2025-04-01-preview"
     );
+  });
+
+  it("uses the connection deployment only when no model is requested", () => {
+    expect(executor.resolveDeployment(null, {
+      providerSpecificData: { deployment: "gpt-5-chat-deployment" },
+    })).toBe("gpt-5-chat-deployment");
   });
 
   it("converts max_tokens without mutating the original GPT-5 request", () => {
