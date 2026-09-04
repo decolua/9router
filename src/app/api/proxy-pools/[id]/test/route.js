@@ -33,6 +33,35 @@ async function testVercelRelay(relayUrl, timeoutMs = 10000) {
   }
 }
 
+// Anonymity probe: a relay must not forward client-IP headers. Sends a canary
+// X-Forwarded-For through the relay to httpbin's header echo; if the canary
+// comes back, the relay leaks the origin IP and per-IP upstream rate limits
+// (e.g. OpenCode free-tier 429) survive relaying. Old Cloudflare/Deno relay
+// code forwards it; Vercel's edge strips it at the platform layer.
+async function testRelayIpLeak(relayUrl, timeoutMs = 10000) {
+  const canary = `9router-canary-${Date.now().toString(36)}`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await undiciFetch(relayUrl, {
+      method: "GET",
+      headers: {
+        "x-relay-target": "https://httpbin.org",
+        "x-relay-path": "/headers",
+        "x-forwarded-for": canary,
+      },
+      signal: controller.signal,
+    });
+    if (!res.ok) return { checked: false, leaked: null };
+    const text = await res.text();
+    return { checked: true, leaked: text.toLowerCase().includes(canary.toLowerCase()) };
+  } catch {
+    return { checked: false, leaked: null };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // POST /api/proxy-pools/[id]/test - Test proxy pool entry
 export async function POST(request, { params }) {
   try {
@@ -43,9 +72,17 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: "Proxy pool not found" }, { status: 404 });
     }
 
-    const result = proxyPool.type === "vercel" || proxyPool.type === "cloudflare" || proxyPool.type === "deno"
+    const isRelay = proxyPool.type === "vercel" || proxyPool.type === "cloudflare" || proxyPool.type === "deno";
+    const result = isRelay
       ? await testVercelRelay(proxyPool.proxyUrl)
       : await testProxyUrl({ proxyUrl: proxyPool.proxyUrl });
+    // Anonymity probe is informational only — it never flips liveness, so
+    // relays that still work for non-IP-sensitive providers stay active.
+    let ipLeak = null;
+    if (isRelay && result.ok) {
+      const leak = await testRelayIpLeak(proxyPool.proxyUrl);
+      if (leak.checked) ipLeak = leak.leaked;
+    }
     const now = new Date().toISOString();
 
     await updateProxyPool(id, {
@@ -62,6 +99,10 @@ export async function POST(request, { params }) {
       error: result.error || null,
       elapsedMs: result.elapsedMs || 0,
       testedAt: now,
+      ipLeak,
+      warning: ipLeak === true
+        ? "Relay forwards client-IP headers; per-IP upstream limits (e.g. OpenCode free 429) will persist. Redeploy the relay to pick up the anonymized forwarder."
+        : null,
     });
   } catch (error) {
     console.log("Error testing proxy pool:", error);

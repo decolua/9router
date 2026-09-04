@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createProxyPool } from "@/models";
+import { buildRelaySanitizeSnippet } from "@/lib/network/relayHeaders";
 
 const DENO_V2_API = "https://api.deno.com/v2";
 
@@ -16,9 +17,8 @@ const DENO_RELAY_CODE = `Deno.serve(async (request) => {
 
   const targetUrl = target.replace(/\\/$/, "") + relayPath;
   const newHeaders = new Headers(request.headers);
-  newHeaders.delete("x-relay-target");
-  newHeaders.delete("x-relay-path");
-  newHeaders.delete("host");
+${buildRelaySanitizeSnippet()}
+  sanitizeRelayHeaders(newHeaders);
 
   const init = {
     method: request.method,
