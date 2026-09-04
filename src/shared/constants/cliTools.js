@@ -199,7 +199,7 @@ export const CLI_TOOLS = {
     id: "cline",
     name: "Cline",
     image: "/providers/cline.png",
-    color: "#00D1B2",
+    color: "#5B9BD5",
     description: "Cline AI Coding Assistant",
     configType: "custom",
   },
