@@ -246,7 +246,12 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       if (canDisable) body.thinking = { type: "adaptive" };
       else delete body.thinking;
       const level = toLevel(eff);
-      body.output_config = { effort: level === "xhigh" || level === "auto" ? "high" : level };
+      // xhigh goes on the wire only where the model supports it natively
+      // (Opus 4.7/4.8/5, Sonnet 5, Fable 5 — per thinkingLevels overrides);
+      // older adaptive models (4.6 era) reject it, so keep clamping to high.
+      // "auto" is never a valid wire effort for claude-adaptive → always high.
+      const effort = level === "auto" || (level === "xhigh" && !supportedLevels?.includes("xhigh")) ? "high" : level;
+      body.output_config = { effort };
       break;
     }
     case "claude-budget": {
