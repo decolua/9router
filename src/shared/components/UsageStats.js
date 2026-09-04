@@ -191,12 +191,19 @@ const COMBO_COLUMNS = [
   { field: "lastUsed", label: "Last Used", align: "right" },
 ];
 
+const GROUP_COLUMNS = [
+  { field: "group", label: "Group" },
+  { field: "requests", label: "Requests", align: "right" },
+  { field: "lastUsed", label: "Last Used", align: "right" },
+];
+
 const TABLE_OPTIONS = [
   { value: "model", label: "Usage by Model" },
   { value: "account", label: "Usage by Account" },
   { value: "apiKey", label: "Usage by API Key" },
   { value: "endpoint", label: "Usage by Endpoint" },
   { value: "combo", label: "Usage by Combo" },
+  { value: "group", label: "Usage by Group" },
 ];
 
 const PERIODS = [
@@ -426,6 +433,29 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           renderDetailCells: (item) => (
             <>
               <td className={`px-6 py-3 font-medium transition-colors ${item.pending > 0 ? "text-primary" : ""}`}>{item.combo}</td>
+              <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
+              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
+            </>
+          ),
+        };
+      }
+      case "group": {
+        return {
+          columns: GROUP_COLUMNS,
+          groupedData: groupDataByKey(sortData(stats.byGroup, {}, sortBy, sortOrder), "group"),
+          storageKey: "usage-stats:expanded-groups",
+          emptyMessage: "No group usage recorded yet.",
+          renderSummaryCells: (grp) => (
+            <>
+              <td className="px-6 py-3 text-right">{fmt(grp.summary.requests)}</td>
+              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(grp.summary.lastUsed)}</td>
+            </>
+          ),
+          renderDetailCells: (item) => (
+            <>
+              <td className="px-6 py-3 font-medium">
+                <Badge variant="neutral" size="sm">{item.group}</Badge>
+              </td>
               <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
               <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
             </>

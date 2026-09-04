@@ -357,7 +357,11 @@ export async function getUsageStats(period = "all") {
   let allConnections = [];
   try { allConnections = await getProviderConnections(); } catch {}
   const connectionMap = {};
-  for (const c of allConnections) connectionMap[c.id] = c.name || c.email || c.id;
+  const connectionGroupMap = {};
+  for (const c of allConnections) {
+    connectionMap[c.id] = c.name || c.email || c.id;
+    connectionGroupMap[c.id] = (c.group || "").trim();
+  }
 
   const providerNodeNameMap = {};
   try {
@@ -397,7 +401,7 @@ export async function getUsageStats(period = "all") {
   const stats = {
     totalRequests: 0,
     totalPromptTokens: 0, totalCompletionTokens: 0, totalCachedTokens: 0, totalCost: 0,
-    byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {}, byCombo: {},
+    byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {}, byCombo: {}, byGroup: {},
     last10Minutes: [],
     pending: pendingRequests,
     activeRequests: [],
@@ -510,6 +514,15 @@ export async function getUsageStats(period = "all") {
         stats.byAccount[accountKey].cachedTokens += a.cachedTokens || 0;
         stats.byAccount[accountKey].cost += a.cost || 0;
         if (dateKey > (stats.byAccount[accountKey].lastUsed || "")) stats.byAccount[accountKey].lastUsed = dateKey;
+
+        const group = connectionGroupMap[connId] || "Ungrouped";
+        if (!stats.byGroup[group]) stats.byGroup[group] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, group, lastUsed: dateKey };
+        stats.byGroup[group].requests += a.requests || 0;
+        stats.byGroup[group].promptTokens += a.promptTokens || 0;
+        stats.byGroup[group].completionTokens += a.completionTokens || 0;
+        stats.byGroup[group].cachedTokens += a.cachedTokens || 0;
+        stats.byGroup[group].cost += a.cost || 0;
+        if (dateKey > (stats.byGroup[group].lastUsed || "")) stats.byGroup[group].lastUsed = dateKey;
       }
 
       for (const [akKey, ak] of Object.entries(day.byApiKey || {})) {
@@ -641,6 +654,12 @@ export async function getUsageStats(period = "all") {
         stats.byAccount[accountKey].cachedTokens += cachedTokens;
         stats.byAccount[accountKey].cost += entryCost;
         if (new Date(r.timestamp) > new Date(stats.byAccount[accountKey].lastUsed)) stats.byAccount[accountKey].lastUsed = r.timestamp;
+
+        const group = connectionGroupMap[r.connectionId] || "Ungrouped";
+        if (!stats.byGroup[group]) stats.byGroup[group] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, group, lastUsed: r.timestamp };
+        const ge = stats.byGroup[group];
+        ge.requests++; ge.promptTokens += promptTokens; ge.completionTokens += completionTokens; ge.cachedTokens += cachedTokens; ge.cost += entryCost;
+        if (new Date(r.timestamp) > new Date(ge.lastUsed)) ge.lastUsed = r.timestamp;
       }
 
       if (r.apiKey && typeof r.apiKey === "string") {

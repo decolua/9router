@@ -165,8 +165,20 @@ export default function CombosPage() {
     try {
       const updated = { ...comboStrategies };
       const next = { ...(updated[comboName] || {}), ...patch };
-      // Prune to keep settings clean: default fallback with no extras = no entry.
-      if (!next.fallbackStrategy || next.fallbackStrategy === "fallback") {
+      // Normalize accountFilters: drop empty per-provider entries and the key itself if empty.
+      if (next.accountFilters && typeof next.accountFilters === "object") {
+        const af = {};
+        for (const [k, v] of Object.entries(next.accountFilters)) {
+          const groups = Array.isArray(v?.groups) ? v.groups.filter(Boolean) : [];
+          const connectionIds = Array.isArray(v?.connectionIds) ? v.connectionIds.filter(Boolean) : [];
+          if (groups.length || connectionIds.length) af[k] = { groups, connectionIds };
+        }
+        if (Object.keys(af).length) next.accountFilters = af;
+        else delete next.accountFilters;
+      }
+      // Prune to keep settings clean: default fallback with nothing extra = no entry.
+      const hasExtras = next.judgeModel || next.fusionTuning || next.accountFilters;
+      if ((!next.fallbackStrategy || next.fallbackStrategy === "fallback") && !hasExtras) {
         delete updated[comboName];
       } else {
         updated[comboName] = next;
@@ -296,9 +308,12 @@ const STRATEGY_OPTIONS = [
 
 function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
+  const [showAccounts, setShowAccounts] = useState(false);
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
   const isFusion = current === "fusion";
+  const accountFilters = strategy.accountFilters || {};
+  const filteredProviderCount = Object.keys(accountFilters).length;
 
   return (
     <Card padding="sm" className="group">
@@ -362,7 +377,15 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-1 sm:flex">
+          <div className="grid grid-cols-4 gap-1 sm:flex">
+            <button
+              onClick={() => setShowAccounts(true)}
+              className={`flex flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${filteredProviderCount ? "text-primary" : "text-text-muted hover:text-primary"}`}
+              title="Restrict which accounts / groups this combo uses"
+            >
+              <span className="material-symbols-outlined text-[18px]">{filteredProviderCount ? "filter_alt" : "groups"}</span>
+              <span className="text-[10px] leading-tight">{filteredProviderCount ? `Keys (${filteredProviderCount})` : "Keys"}</span>
+            </button>
             <button
               onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
               className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
@@ -405,9 +428,131 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
           closeOnSelect={true}
         />
       )}
+
+      {showAccounts && (
+        <ComboAccountsModal
+          isOpen={showAccounts}
+          combo={combo}
+          connections={activeProviders}
+          accountFilters={accountFilters}
+          onClose={() => setShowAccounts(false)}
+          onSave={(next) => { onSetStrategy({ accountFilters: next }); setShowAccounts(false); }}
+        />
+      )}
     </Card>
   );
 }
+
+// Per-combo, per-provider account allow-list. A checked group pulls in every key
+// in it (the backend ORs groups + explicit keys). Empty for a provider = all.
+function ComboAccountsModal({ isOpen, combo, connections = [], accountFilters = {}, onClose, onSave }) {
+  const providers = [...new Set((combo.models || []).map((m) => (m.includes("/") ? m.slice(0, m.indexOf("/")) : m)))];
+
+  const [draft, setDraft] = useState(() => {
+    const d = {};
+    for (const p of providers) {
+      const f = accountFilters[p] || {};
+      d[p] = {
+        groups: new Set(Array.isArray(f.groups) ? f.groups : []),
+        connectionIds: new Set(Array.isArray(f.connectionIds) ? f.connectionIds : []),
+      };
+    }
+    return d;
+  });
+
+  const connsFor = (p) => connections.filter((c) => c.provider === p);
+  const groupsFor = (p) => [...new Set(connsFor(p).map((c) => (c.group || "").trim()).filter(Boolean))].sort();
+
+  const toggle = (p, kind, value) => {
+    setDraft((prev) => {
+      const set = new Set(prev[p][kind]);
+      set.has(value) ? set.delete(value) : set.add(value);
+      return { ...prev, [p]: { ...prev[p], [kind]: set } };
+    });
+  };
+  const setAll = (p) => setDraft((prev) => ({ ...prev, [p]: { groups: new Set(), connectionIds: new Set() } }));
+
+  const handleSave = () => {
+    const next = {};
+    for (const p of providers) {
+      const groups = [...draft[p].groups];
+      const covered = new Set(connsFor(p).filter((c) => groups.includes((c.group || "").trim())).map((c) => c.id));
+      const connectionIds = [...draft[p].connectionIds].filter((id) => !covered.has(id));
+      if (groups.length || connectionIds.length) next[p] = { groups, connectionIds };
+    }
+    onSave(next);
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={`Accounts for "${combo.name}"`}>
+      <div className="flex flex-col gap-4">
+        <p className="text-xs text-text-muted">
+          Pick which keys each provider in this combo may use. Leave a provider untouched to use <span className="font-medium text-text-main">all</span> its keys. A checked group includes every key in it.
+        </p>
+        {providers.map((p) => {
+          const groups = groupsFor(p);
+          const conns = connsFor(p);
+          const d = draft[p];
+          const restricted = d.groups.size > 0 || d.connectionIds.size > 0;
+          const coveredIds = new Set(conns.filter((c) => d.groups.has((c.group || "").trim())).map((c) => c.id));
+          return (
+            <div key={p} className="rounded-lg border border-black/10 p-3 dark:border-white/10">
+              <div className="mb-2 flex items-center justify-between">
+                <code className="font-mono text-sm font-medium">{p}</code>
+                <label className="flex items-center gap-1.5 text-xs text-text-muted">
+                  <input type="radio" checked={!restricted} onChange={() => setAll(p)} />
+                  All keys ({conns.length})
+                </label>
+              </div>
+              {conns.length === 0 && <p className="text-xs text-text-muted">No active connections for this provider.</p>}
+              {groups.length > 0 && (
+                <div className="mb-2">
+                  <p className="mb-1 text-[11px] uppercase tracking-wide text-text-muted">Groups</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {groups.map((g) => (
+                      <label key={g} className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs ${d.groups.has(g) ? "border-primary text-primary" : "border-black/10 text-text-muted dark:border-white/10"}`}>
+                        <input type="checkbox" className="hidden" checked={d.groups.has(g)} onChange={() => toggle(p, "groups", g)} />
+                        {g} <span className="opacity-60">({conns.filter((c) => (c.group || "").trim() === g).length})</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {conns.length > 0 && (
+                <div>
+                  <p className="mb-1 text-[11px] uppercase tracking-wide text-text-muted">Individual keys</p>
+                  <div className="flex max-h-44 flex-col gap-1 overflow-auto">
+                    {conns.map((c) => {
+                      const viaGroup = coveredIds.has(c.id);
+                      return (
+                        <label key={c.id} className={`flex items-center gap-2 text-xs ${viaGroup ? "opacity-50" : ""}`}>
+                          <input
+                            type="checkbox"
+                            checked={viaGroup || d.connectionIds.has(c.id)}
+                            disabled={viaGroup}
+                            onChange={() => toggle(p, "connectionIds", c.id)}
+                          />
+                          <span className="truncate">{c.name || c.email || c.id.slice(0, 8)}</span>
+                          {c.group && <span className="rounded bg-black/5 px-1 text-[10px] text-text-muted dark:bg-white/10">{c.group}</span>}
+                          {viaGroup && <span className="text-[10px] text-primary">via group</span>}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+        <div className="flex gap-2">
+          <Button onClick={handleSave} fullWidth>Save</Button>
+          <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 
 function CapacityAdapterSection({ capacityAdapter, onChange, activeProviders, getCaps }) {
   return (
