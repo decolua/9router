@@ -5,15 +5,16 @@ import {
   openaiToOpenAIResponsesRequest,
 } from "../translator/request/openai-responses.js";
 
-const configuredTimeoutMs = Number.parseInt(process.env.HEADROOM_TIMEOUT_MS || "", 10);
-const DEFAULT_TIMEOUT_MS = Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
-  ? configuredTimeoutMs
-  : 3000;
+const configuredTimeoutRaw = process.env.HEADROOM_TIMEOUT_MS?.trim() || "";
+const configuredTimeoutMs = Number.parseInt(configuredTimeoutRaw, 10);
+const hasConfiguredTimeout = configuredTimeoutRaw !== ""
+  && Number.isFinite(configuredTimeoutMs)
+  && configuredTimeoutMs >= 0;
+const DEFAULT_TIMEOUT_MS = hasConfiguredTimeout ? configuredTimeoutMs : 3000;
 
 function normalizeTimeout(value) {
-  return typeof value === "number" && Number.isFinite(value) && value > 0
-    ? value
-    : DEFAULT_TIMEOUT_MS;
+  if (hasConfiguredTimeout) return DEFAULT_TIMEOUT_MS;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : DEFAULT_TIMEOUT_MS;
 }
 
 function jsonBytes(value) {
@@ -223,12 +224,13 @@ async function callCompress(url, messages, model, timeoutMs, compressUserMessage
   if (compressUserMessages) payload.config = { compress_user_messages: true };
   let res;
   try {
-    res = await fetch(endpoint, {
+    const init = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    };
+    if (timeoutMs > 0) init.signal = AbortSignal.timeout(timeoutMs);
+    res = await fetch(endpoint, init);
   } catch (error) {
     setDiagnostic(diagnostics, `request failed: ${describeFetchError(error)}`);
     return null;

@@ -56,6 +56,10 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
   return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
 }
 
+export function shouldSkipAccountFallback(status, activeAccountCount) {
+  return Number(status) === 524 && activeAccountCount <= 1;
+}
+
 /**
  * Check if account is currently unavailable (cooldown not expired)
  */
