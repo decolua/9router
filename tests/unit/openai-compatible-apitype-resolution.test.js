@@ -9,6 +9,8 @@ import { describe, it, expect } from "vitest";
 import { resolveOpenAICompatibleApiType, resolveOpenAICompatibleFormat, getTargetFormat } from "../../open-sse/services/provider.js";
 import { DefaultExecutor } from "../../open-sse/executors/default.js";
 import { BaseExecutor } from "../../open-sse/executors/base.js";
+import { translateRequest } from "../../open-sse/translator/index.js";
+import { FORMATS } from "../../open-sse/translator/formats.js";
 
 const CHAT_ID = "openai-compatible-chat-3d8d3de8-1206-47ee-a42f-22113a5f2387";
 const RESPONSES_ID = "openai-compatible-responses-11111111-2222-3333-4444-555555555555";
@@ -62,6 +64,77 @@ describe("getTargetFormat", () => {
   it("keeps the ID-based fallback when credentials are absent", () => {
     expect(getTargetFormat(RESPONSES_ID)).toBe("openai-responses");
     expect(getTargetFormat(CHAT_ID)).toBe("openai");
+  });
+});
+
+describe("openai-responses request shape", () => {
+  it("keeps the native envelope when auto mode mirrors a Responses request", () => {
+    const body = {
+      model: TEST_MODEL,
+      stream: true,
+      input: [{ role: "user", content: "hello" }],
+      tools: [{ type: "function", name: "read_file", parameters: { type: "object", properties: {} } }],
+    };
+
+    const targetFormat = getTargetFormat(CHAT_ID, creds("auto"), FORMATS.OPENAI_RESPONSES);
+    const out = translateRequest(
+      FORMATS.OPENAI_RESPONSES,
+      targetFormat,
+      TEST_MODEL,
+      body,
+      true,
+      creds("auto"),
+      CHAT_ID,
+    );
+
+    expect(out.reasoning_effort).toBeUndefined();
+    expect(out.input).toEqual(body.input);
+    expect(out.tools).toEqual(body.tools);
+  });
+
+  it("strips Kilo cache breakpoints from native Responses content parts", () => {
+    const tools = [{ type: "function", name: "read_file", parameters: { type: "object", properties: {} } }];
+    const body = {
+      model: TEST_MODEL,
+      stream: true,
+      instructions: "Keep responses concise.",
+      metadata: { session: "test-session" },
+      prompt_cache_key: "session-cache-key",
+      input: [
+        {
+          role: "developer",
+          content: [{ type: "input_text", text: "system prompt", prompt_cache_breakpoint: true }],
+        },
+        {
+          role: "user",
+          content: [
+            { type: "input_text", text: "hello", prompt_cache_breakpoint: true },
+            { type: "input_text", text: "world" },
+          ],
+        },
+      ],
+      tools,
+    };
+
+    const out = translateRequest(
+      FORMATS.OPENAI_RESPONSES,
+      FORMATS.OPENAI_RESPONSES,
+      TEST_MODEL,
+      body,
+      true,
+      creds("auto"),
+      CHAT_ID,
+    );
+
+    expect(out.input[0].content[0]).toEqual({ type: "input_text", text: "system prompt" });
+    expect(out.input[1].content).toEqual([
+      { type: "input_text", text: "hello" },
+      { type: "input_text", text: "world" },
+    ]);
+    expect(out.prompt_cache_key).toBe("session-cache-key");
+    expect(out.instructions).toBe(body.instructions);
+    expect(out.metadata).toEqual(body.metadata);
+    expect(out.tools).toEqual(tools);
   });
 });
 

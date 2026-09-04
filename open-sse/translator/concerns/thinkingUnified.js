@@ -10,8 +10,8 @@ import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel }
 // Map a target wire-format to its native thinking format (when capability has none).
 const FORMAT_TO_NATIVE = {
   openai: "openai",
-  "openai-responses": "openai",
-  "openai-response": "openai",
+  "openai-responses": "openai-responses",
+  "openai-response": "openai-responses",
   codex: "openai",
   claude: "claude-budget",
   gemini: "gemini-budget",
@@ -119,6 +119,12 @@ export const captureThinking = extractThinking;
 const NATIVE_ONLY_FORMATS = new Set(["gemini-level", "gemini-budget", "claude-budget", "claude-adaptive", "kiro"]);
 
 function resolveFormat(targetFormat, model, provider) {
+  // Responses has a distinct reasoning wire shape (`reasoning.effort`). A
+  // provider's generic OpenAI thinkingFormat describes Chat Completions and
+  // must not turn it into the incompatible top-level `reasoning_effort` field.
+  if (targetFormat === "openai-responses" || targetFormat === "openai-response") {
+    return "openai-responses";
+  }
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   if (providerFmt) return providerFmt;
   const caps = getCapabilitiesForModel(provider, model);
@@ -254,6 +260,11 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       if (level) body.reasoning_effort = normalizeOpenAILevel(level, supportedLevels);
       break;
     }
+    case "openai-responses": {
+      const level = none && canDisable ? "none" : toLevel(eff);
+      if (level) body.reasoning = { effort: normalizeOpenAILevel(level, supportedLevels) };
+      break;
+    }
     case "claude-adaptive": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
       // Models that can disable thinking need the explicit adaptive switch.
@@ -383,10 +394,8 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   stripAll(body);
   applyFormat(fmt, body, cfg, caps, supportedLevels);
 
-  // Promote AI SDK wrapper options to the OpenAI-compatible wire shape. The
-  // chat API accepts standard levels (including max) as reasoning_effort,
-  // while newer levels such as ultra use the nested reasoning object.
-  if (hasProviderOptionEffort && fmt === "openai") {
+  // Promote AI SDK wrapper options to the selected OpenAI-compatible wire shape.
+  if (hasProviderOptionEffort && (fmt === "openai" || fmt === "openai-responses")) {
     const level = toLevel(cfg);
     if (level === "ultra") {
       delete body.reasoning_effort;

@@ -29,6 +29,7 @@ import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType } from "../translator/concerns/toolCall.js";
+import { stripUnsupportedResponsesContentFields } from "../translator/formats/responsesApi.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
 /**
@@ -177,11 +178,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (provider === "codex") {
       const suffixThinking = {};
       applyThinking(sourceFormat, upstreamModel, suffixThinking, provider);
-      if (suffixThinking.reasoning_effort) {
+      const suffixEffort = suffixThinking.reasoning?.effort ?? suffixThinking.reasoning_effort;
+      if (suffixEffort) {
         const reasoning = translatedBody.reasoning;
         translatedBody.reasoning = {
           ...(reasoning && typeof reasoning === "object" && !Array.isArray(reasoning) ? reasoning : {}),
-          effort: suffixThinking.reasoning_effort,
+          effort: suffixEffort,
         };
         delete translatedBody.reasoning_effort;
       }
@@ -296,6 +298,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (pxpipeResult.body) translatedBody = pxpipeResult.body;
     if (pxpipeSummary?.applied) xf.push(`PXPIPE:${pxpipeSummary.imageCount}img`);
     try { onPxpipeEvent?.({ provider, model, ...pxpipeSummary }); } catch { /* stats must not break requests */ }
+  }
+
+  if (finalFormat === FORMATS.OPENAI_RESPONSES) {
+    stripUnsupportedResponsesContentFields(translatedBody);
   }
 
   if (xf.length && log?.line) log.line(reqTag, "⚙", xf.join(" · "));
