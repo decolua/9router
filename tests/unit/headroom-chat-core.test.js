@@ -31,6 +31,7 @@ vi.mock("@/lib/usageDb.js", () => ({
   trackPendingRequest: vi.fn(),
   appendRequestLog: vi.fn(async () => {}),
   saveRequestDetail: vi.fn(async () => {}),
+  saveRequestUsage: vi.fn(async () => {}),
 }));
 
 const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
@@ -254,6 +255,75 @@ describe("handleChatCore Headroom diagnostics", () => {
         messages: [{ role: "user", content: original }],
       }),
     }));
+  });
+
+  it("retries a rejected compressed Responses request without Headroom", async () => {
+    const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
+    const original = "large original Responses context".repeat(100);
+    const compressed = "compressed context";
+
+    global.fetch = vi.fn(async (url) => {
+      if (String(url).includes("/v1/compress")) {
+        return new Response(JSON.stringify({
+          messages: [{ role: "user", content: compressed }],
+          tokens_before: 1000,
+          tokens_after: 100,
+          tokens_saved: 900,
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    executeMock
+      .mockResolvedValueOnce({
+        response: new Response(JSON.stringify({ error: { message: "Bad Request" } }), { status: 400 }),
+        url: "https://compatible.test/v1/responses",
+        headers: {},
+        transformedBody: null,
+      })
+      .mockResolvedValueOnce({
+        response: new Response(JSON.stringify({
+          id: "resp_test",
+          object: "response",
+          status: "completed",
+          output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "OK" }] }],
+          usage: { input_tokens: 10, output_tokens: 1, total_tokens: 11 },
+        }), { status: 200, headers: { "content-type": "application/json" } }),
+        url: "https://compatible.test/v1/responses",
+        headers: {},
+        transformedBody: null,
+      });
+
+    await handleChatCore({
+      body: {
+        model: "compatible/test-model",
+        stream: false,
+        input: [{ type: "message", role: "user", content: [{ type: "input_text", text: original }] }],
+      },
+      modelInfo: { provider: "openai-compatible-chat-test", model: "test-model" },
+      credentials: { apiKey: "test-key", providerSpecificData: { apiType: "auto", baseUrl: "https://compatible.test/v1" } },
+      log,
+      connectionId: "test-conn",
+      headroomEnabled: true,
+      headroomUrl: "http://localhost:8787",
+      headroomCompressUserMessages: true,
+      rtkEnabled: false,
+      cavemanEnabled: false,
+      ponytailEnabled: false,
+      sourceFormatOverride: "openai-responses",
+      clientRawRequest: {
+        endpoint: "/v1/responses",
+        body: {},
+        headers: { accept: "application/json" },
+      },
+    });
+
+    expect(executeMock).toHaveBeenCalledTimes(2);
+    expect(executeMock.mock.calls[0][0].body.input[0].content[0].text).toBe(compressed);
+    expect(executeMock.mock.calls[1][0].body.input[0].content[0].text).toBe(original);
+    expect(log.warn).toHaveBeenCalledWith(
+      "HEADROOM",
+      "upstream rejected compressed Responses payload with 400; retrying once without Headroom"
+    );
   });
 
   it("bypasses token savers when requested by the client", async () => {

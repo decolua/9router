@@ -262,6 +262,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const headroomDiagnostics = {};
   const preHeadroomBody = tokenSaverEnabled && headroomEnabled ? structuredClone(translatedBody) : null;
   const headroomStats = await compressWithHeadroom(translatedBody, { enabled: tokenSaverEnabled && headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages, timeoutMs: headroomTimeoutMs, diagnostics: headroomDiagnostics });
+  let headroomFallbackBody = null;
   const headroomLine = formatHeadroomLog(headroomStats);
   const headroomSizeLine = formatHeadroomSizeLog(headroomDiagnostics);
   if (headroomLine) {
@@ -269,6 +270,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (isHeadroomPhantomSavings(headroomStats, headroomDiagnostics)) {
       translatedBody = preHeadroomBody;
       log?.warn?.("HEADROOM", `discarded rewrite because outbound JSON shrank <5%; preserving provider prompt cache | ${formatHeadroomSizeLog(headroomDiagnostics)}`);
+    } else if (finalFormat === FORMATS.OPENAI_RESPONSES
+      && preHeadroomBody
+      && JSON.stringify(translatedBody) !== JSON.stringify(preHeadroomBody)) {
+      headroomFallbackBody = preHeadroomBody;
     }
   } else if (tokenSaverEnabled && headroomEnabled) log?.warn?.("HEADROOM", `skipped: ${headroomDiagnostics.reason || "compression unavailable"}${headroomDiagnostics.endpoint ? ` (${headroomDiagnostics.endpoint})` : ""}`);
 
@@ -278,12 +283,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Caveman: inject terse-style system prompt
   if (tokenSaverEnabled && cavemanEnabled && cavemanLevel) {
     injectCaveman(translatedBody, finalFormat, cavemanLevel);
+    if (headroomFallbackBody) injectCaveman(headroomFallbackBody, finalFormat, cavemanLevel);
     xf.push(`CAVEMAN:${cavemanLevel}`);
   }
 
   // Ponytail: inject lazy-senior-dev system prompt
   if (tokenSaverEnabled && ponytailEnabled && ponytailLevel) {
     injectPonytail(translatedBody, finalFormat, ponytailLevel);
+    if (headroomFallbackBody) injectPonytail(headroomFallbackBody, finalFormat, ponytailLevel);
     xf.push(`PONYTAIL:${ponytailLevel}`);
   }
 
@@ -302,6 +309,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   if (finalFormat === FORMATS.OPENAI_RESPONSES) {
     stripUnsupportedResponsesContentFields(translatedBody);
+    if (headroomFallbackBody) stripUnsupportedResponsesContentFields(headroomFallbackBody);
   }
 
   if (xf.length && log?.line) log.line(reqTag, "⚙", xf.join(" · "));
@@ -372,6 +380,18 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     finalBody = result.transformedBody;
     providerResponseFormat = result.responseFormat || targetFormat;
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
+
+    if (providerResponse.status === HTTP_STATUS.BAD_REQUEST && headroomFallbackBody) {
+      log?.warn?.("HEADROOM", "upstream rejected compressed Responses payload with 400; retrying once without Headroom");
+      await providerResponse.body?.cancel?.();
+      const fallbackResult = await executor.execute({ model, body: headroomFallbackBody, stream, credentials, signal: streamController.signal, log, proxyOptions });
+      providerResponse = fallbackResult.response;
+      providerUrl = fallbackResult.url;
+      providerHeaders = fallbackResult.headers;
+      finalBody = fallbackResult.transformedBody;
+      providerResponseFormat = fallbackResult.responseFormat || targetFormat;
+      reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
+    }
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false, true);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
