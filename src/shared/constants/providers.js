@@ -123,6 +123,25 @@ export function resolveProviderId(aliasOrId) {
   return provider?.id || aliasOrId;
 }
 
+/**
+ * Is this something the router could route to at all, as opposed to a name it has
+ * never heard of?
+ *
+ * Two things count. The registry, resolved through aliases so "cmc" is as valid as
+ * "commandcode". And the user-defined compatible nodes, whose ids carry a prefix
+ * and are deliberately absent from the registry — they reach account selection by
+ * exactly the same path, so a registry-only check would report a user's own node
+ * as an unknown provider the moment its connection went inactive.
+ *
+ * Says nothing about whether an account is connected. That is a separate question
+ * with a separate answer for the caller.
+ */
+export function isRoutableProvider(aliasOrId) {
+  if (!aliasOrId) return false;
+  if (getProviderByAlias(aliasOrId)) return true;
+  return isOpenAICompatibleProvider(aliasOrId) || isAnthropicCompatibleProvider(aliasOrId);
+}
+
 // Helper: Get alias from provider ID
 export function getProviderAlias(providerId) {
   const provider = AI_PROVIDERS[providerId];
