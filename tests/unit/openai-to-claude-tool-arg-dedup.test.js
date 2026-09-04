@@ -174,4 +174,37 @@ describe("openaiToClaudeResponse tool argument deduplication & repair", () => {
     const delta2 = getInputJsonDelta(events2);
     expect(delta2).toBeUndefined();
   });
+
+  it("forwards final usage from a later finish chunk via usage-only message_delta", () => {
+    const state = createState();
+
+    openaiToClaudeResponse({
+      id: "chatcmpl-late-usage",
+      model: "cline-pass/glm-5.2",
+      choices: [{ delta: { content: "answer" } }],
+    }, state);
+
+    // First finish chunk: no usage
+    const events1 = openaiToClaudeResponse({
+      id: "chatcmpl-late-usage",
+      model: "cline-pass/glm-5.2",
+      choices: [{ delta: {}, finish_reason: "stop" }],
+    }, state);
+    expect(events1.some(e => e.type === "message_stop")).toBe(true);
+
+    // Later finish chunk: carries final usage
+    const events2 = openaiToClaudeResponse({
+      id: "chatcmpl-late-usage",
+      model: "cline-pass/glm-5.2",
+      choices: [{ delta: {}, finish_reason: "stop" }],
+      usage: { prompt_tokens: 100, completion_tokens: 42 },
+    }, state);
+
+    const usageDelta = events2?.find(e => e.type === "message_delta");
+    expect(usageDelta).toBeTruthy();
+    expect(usageDelta.usage).toEqual({ input_tokens: 100, output_tokens: 42 });
+    // No duplicate message_stop, no re-opened content blocks
+    expect(events2.some(e => e.type === "message_stop")).toBe(false);
+    expect(events2.some(e => e.type === "content_block_start")).toBe(false);
+  });
 });

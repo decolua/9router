@@ -15,75 +15,7 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-
-function repairDuplicatedJsonArguments(raw) {
-  if (typeof raw !== "string" || raw.length < 4) return raw;
-  try {
-    JSON.parse(raw);
-    return raw;
-  } catch {}
-
-  const len = raw.length;
-  if (len % 2 === 0) {
-    const half = raw.slice(0, len / 2);
-    if (half === raw.slice(len / 2)) {
-      try {
-        JSON.parse(half);
-        return half;
-      } catch {}
-    }
-  }
-
-  const trimmed = raw.trim();
-  if (trimmed.startsWith("{")) {
-    let depth = 0;
-    let inString = false;
-    let escape = false;
-    for (let i = 0; i < trimmed.length; i++) {
-      const ch = trimmed[i];
-      if (escape) {
-        escape = false;
-        continue;
-      }
-      if (ch === "\\") {
-        escape = true;
-        continue;
-      }
-      if (ch === "\"") {
-        inString = !inString;
-        continue;
-      }
-      if (!inString) {
-        if (ch === "{") depth++;
-        else if (ch === "}") {
-          depth--;
-          if (depth === 0) {
-            const candidate = trimmed.slice(0, i + 1);
-            try {
-              JSON.parse(candidate);
-              const remainder = trimmed.slice(i + 1).trim();
-              if (remainder.startsWith("{")) {
-                return candidate;
-              }
-            } catch {
-              break;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  return raw;
-}
-
-function appendToolArgs(current, incoming) {
-  if (!incoming) return current || "";
-  if (!current) return incoming;
-  if (incoming === current) return current;
-  if (incoming.startsWith(current)) return incoming;
-  return current + incoming;
-}
+import { repairDuplicatedJsonArguments, appendToolArgs } from "../concerns/toolArgs.js";
 
 function stopThinkingBlock(state, results) {
   if (!state.thinkingBlockStarted) return;
@@ -288,6 +220,16 @@ export function kiroToClaudeResponse(chunk, state) {
         usage: finalUsage,
       });
       results.push({ type: "message_stop" });
+    } else if (state.usage && !state.messageStopSent) {
+      // Later finish chunk (commonly finish_reason:"stop" carrying usage).
+      // Tool blocks are already closed; emit a usage-only message_delta so the
+      // client still receives final usage without re-opening/duplicating blocks.
+      state.messageStopSent = true;
+      results.push({
+        type: "message_delta",
+        delta: { stop_reason: convertFinishReason(choice.finish_reason) },
+        usage: state.usage,
+      });
     }
   }
 
