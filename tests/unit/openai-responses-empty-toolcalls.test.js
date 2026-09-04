@@ -32,6 +32,20 @@ describe("OpenAI Chat stream → Responses: empty tool_calls arrays", () => {
     expect(textDeltas.map((e) => e.data.delta).join("")).toBe("codex-ok");
     // done must come after every delta
     expect(events.indexOf(textDone[0])).toBe(events.indexOf(textDeltas[textDeltas.length - 1]) + 1);
+
+    const created = events.find((e) => e.event === "response.created");
+    const completed = events.find((e) => e.event === "response.completed");
+    expect(created.data.response.model).toBe("unknown");
+    expect(completed.data.response).toMatchObject({
+      model: "unknown",
+      status: "completed",
+      incomplete_details: null,
+      usage: {
+        input_tokens: 0,
+        output_tokens: 0,
+        total_tokens: 0,
+      },
+    });
   });
 
   it("still closes the message before a real tool call", () => {
@@ -44,9 +58,45 @@ describe("OpenAI Chat stream → Responses: empty tool_calls arrays", () => {
 
     const events = chunks.flatMap((chunk) => openaiToOpenAIResponsesResponse(chunk, state));
     const added = events.find((e) => e.event === "response.output_item.added" && e.data.item?.type === "function_call");
+    const done = events.find((e) => e.event === "response.output_item.done" && e.data.item?.type === "function_call");
     const textDone = events.find((e) => e.event === "response.output_text.done");
 
     expect(added).toBeTruthy();
+    expect(done.data.item.status).toBe("completed");
     expect(textDone.data.text).toBe("Let me run that.");
+  });
+
+  it("maps Chat usage into the required Responses terminal shape", () => {
+    const state = initState(FORMATS.OPENAI_RESPONSES);
+    const events = [
+      { id: "cmb-test", model: "gpt-test", choices: [{ index: 0, delta: { content: "ok" }, finish_reason: null }] },
+      {
+        id: "cmb-test",
+        model: "gpt-test",
+        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+        usage: {
+          prompt_tokens: 100,
+          completion_tokens: 20,
+          total_tokens: 120,
+          prompt_tokens_details: { cached_tokens: 80 },
+          completion_tokens_details: { reasoning_tokens: 15 },
+        },
+      },
+    ].flatMap((chunk) => {
+      if (chunk.usage) state.usage = chunk.usage;
+      return openaiToOpenAIResponsesResponse(chunk, state);
+    });
+
+    const completed = events.find((e) => e.event === "response.completed");
+    expect(completed.data.response).toMatchObject({
+      model: "gpt-test",
+      usage: {
+        input_tokens: 100,
+        input_tokens_details: { cached_tokens: 80 },
+        output_tokens: 20,
+        output_tokens_details: { reasoning_tokens: 15 },
+        total_tokens: 120,
+      },
+    });
   });
 });
