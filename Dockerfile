@@ -7,6 +7,11 @@ FROM base AS builder
 
 RUN apk --no-cache upgrade && apk --no-cache add python3 make g++ linux-headers
 
+# node-gyp's default unofficial-builds.nodejs.org mirror is slow/flaky from
+# this build host and intermittently times out downloading headers for
+# better-sqlite3's native build. nodejs.org/dist is consistently fast here.
+ENV NODEJS_ORG_MIRROR=https://nodejs.org/dist
+
 COPY package.json ./
 RUN --mount=type=cache,target=/root/.npm \
   npm install
