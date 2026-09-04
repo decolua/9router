@@ -202,10 +202,13 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     };
 
     if (usage) {
+      const promptTokens =
+        (usage.promptTokenCount || 0) + (usage.thoughtsTokenCount || 0);
+      const completionTokens = usage.candidatesTokenCount || 0;
       result.usage = {
-        prompt_tokens: (usage.promptTokenCount || 0) + (usage.thoughtsTokenCount || 0),
-        completion_tokens: usage.candidatesTokenCount || 0,
-        total_tokens: usage.totalTokenCount || 0
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
+        total_tokens: usage.totalTokenCount || promptTokens + completionTokens
       };
       if (usage.thoughtsTokenCount > 0) {
         result.usage.completion_tokens_details = { reasoning_tokens: usage.thoughtsTokenCount };
