@@ -53,8 +53,11 @@ export function fromOpenAIFinish(reason, format) {
     case "claude":
       switch (reason) {
         case OPENAI_FINISH.STOP: return CLAUDE_STOP.END_TURN;
-        case OPENAI_FINISH.LENGTH: return CLAUDE_STOP.MAX_TOKENS;
-        case OPENAI_FINISH.TOOL_CALLS: return CLAUDE_STOP.TOOL_USE;
+        case OPENAI_FINISH.LENGTH:
+        case "max_tokens": return CLAUDE_STOP.MAX_TOKENS;
+        case OPENAI_FINISH.TOOL_CALLS:
+        case "tool_calls":
+        case "tool_use": return CLAUDE_STOP.TOOL_USE;
         default: return CLAUDE_STOP.END_TURN;
       }
     default:
