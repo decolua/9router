@@ -1,5 +1,11 @@
 import { PROVIDERS } from "../config/providers.js";
 import { OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
+import {
+  OPENAI_COMPATIBLE_API_TYPES,
+  OPENAI_COMPATIBLE_DEFAULT_API_TYPE,
+  isOpenAICompatibleApiType,
+} from "../config/openAICompatible.js";
+import { FORMATS } from "../translator/formats.js";
 
 const OPENAI_COMPATIBLE_PREFIX = "openai-compatible-";
 const OPENAI_COMPATIBLE_DEFAULTS = {
@@ -26,8 +32,25 @@ function isAnthropicCompatible(provider) {
 // embed the type: openai-compatible-<chat|responses>-<uuid>.
 export function resolveOpenAICompatibleApiType(provider, credentials = null) {
   const stored = credentials?.providerSpecificData?.apiType;
-  if (stored === "chat" || stored === "responses") return stored;
-  return typeof provider === "string" && provider.includes("responses") ? "responses" : "chat";
+  if (isOpenAICompatibleApiType(stored)) return stored;
+  return typeof provider === "string" && provider.includes(OPENAI_COMPATIBLE_API_TYPES.RESPONSES)
+    ? OPENAI_COMPATIBLE_API_TYPES.RESPONSES
+    : OPENAI_COMPATIBLE_DEFAULT_API_TYPE;
+}
+
+export function resolveOpenAICompatibleFormat(provider, credentials = null, sourceFormat = null) {
+  const apiType = resolveOpenAICompatibleApiType(provider, credentials);
+  if (apiType === OPENAI_COMPATIBLE_API_TYPES.AUTO) {
+    return sourceFormat === FORMATS.OPENAI_RESPONSES ? FORMATS.OPENAI_RESPONSES : FORMATS.OPENAI;
+  }
+  return apiType === OPENAI_COMPATIBLE_API_TYPES.RESPONSES ? FORMATS.OPENAI_RESPONSES : FORMATS.OPENAI;
+}
+
+export function buildOpenAICompatibleUrl(provider, credentials = null) {
+  const baseUrl = credentials?.providerSpecificData?.baseUrl || OPENAI_COMPATIBLE_DEFAULTS.baseUrl;
+  const format = resolveOpenAICompatibleFormat(provider, credentials, credentials?.runtimeFormat);
+  const path = format === FORMATS.OPENAI_RESPONSES ? "/responses" : "/chat/completions";
+  return `${baseUrl.replace(/\/$/, "")}${path}`;
 }
 
 // Detect request format from body structure
@@ -113,10 +136,9 @@ export function detectFormat(body) {
 // Get provider config (internal — no external runtime consumer)
 function getProviderConfig(provider, credentials = null) {
   if (isOpenAICompatible(provider)) {
-    const apiType = resolveOpenAICompatibleApiType(provider, credentials);
     return {
       ...PROVIDERS.openai,
-      format: apiType === "responses" ? "openai-responses" : "openai",
+      format: resolveOpenAICompatibleFormat(provider, credentials),
       baseUrl: OPENAI_COMPATIBLE_DEFAULTS.baseUrl,
     };
   }
@@ -131,15 +153,15 @@ function getProviderConfig(provider, credentials = null) {
 }
 
 // Get target format for provider
-export function getTargetFormat(provider, credentials = null) {
+export function getTargetFormat(provider, credentials = null, sourceFormat = null) {
   if (isOpenAICompatible(provider)) {
-    return resolveOpenAICompatibleApiType(provider, credentials) === "responses" ? "openai-responses" : "openai";
+    return resolveOpenAICompatibleFormat(provider, credentials, sourceFormat);
   }
   if (isAnthropicCompatible(provider)) {
-    return "claude";
+    return FORMATS.CLAUDE;
   }
   const config = getProviderConfig(provider, credentials);
-  return config.format || "openai";
+  return config.format || FORMATS.OPENAI;
 }
 
 // Resolve which transport to use for a provider given the client sourceFormat.

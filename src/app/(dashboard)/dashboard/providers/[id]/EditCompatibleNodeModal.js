@@ -3,12 +3,16 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
+import {
+  OPENAI_COMPATIBLE_API_TYPE_OPTIONS,
+  OPENAI_COMPATIBLE_DEFAULT_API_TYPE,
+} from "open-sse/config/openAICompatible.js";
 
 export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic }) {
   const [formData, setFormData] = useState({
     name: "",
     prefix: "",
-    apiType: "chat",
+    apiType: OPENAI_COMPATIBLE_DEFAULT_API_TYPE,
     baseUrl: "https://api.openai.com/v1",
   });
   const [saving, setSaving] = useState(false);
@@ -22,16 +26,11 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
       setFormData({
         name: node.name || "",
         prefix: node.prefix || "",
-        apiType: node.apiType || "chat",
+        apiType: node.apiType || OPENAI_COMPATIBLE_DEFAULT_API_TYPE,
         baseUrl: node.baseUrl || (isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"),
       });
     }
   }, [node, isAnthropic]);
-
-  const apiTypeOptions = [
-    { value: "chat", label: "Chat Completions" },
-    { value: "responses", label: "Responses API" },
-  ];
 
   const handleSubmit = async () => {
     if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
@@ -95,7 +94,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         {!isAnthropic && (
           <Select
             label="API Type"
-            options={apiTypeOptions}
+            options={OPENAI_COMPATIBLE_API_TYPE_OPTIONS}
             value={formData.apiType}
             onChange={(e) => setFormData({ ...formData, apiType: e.target.value })}
           />
