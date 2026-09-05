@@ -158,3 +158,15 @@ describe("OpenCodeExecutor — issue #1543 regression", () => {
     expect(assistant.reasoning_content).toBeDefined();
   });
 });
+
+describe("malformed messages guard (#3784)", () => {
+  it.each(["hi", 42, { role: "user" }, null])(
+    "passes non-array messages through untouched (%p)",
+    (messages) => {
+      const body = { messages };
+      expect(
+        injectReasoningContent({ provider: "deepseek", model: "deepseek-chat", body })
+      ).toBe(body);
+    }
+  );
+});
