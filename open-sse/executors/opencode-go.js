@@ -31,9 +31,12 @@ function normalizeResponsesTools(body) {
     const name = rawName.trim();
     if (!name) return false;
     const description = typeof tool.description === "string" ? tool.description : (typeof fn?.description === "string" ? fn.description : "");
-    const parameters = (tool.parameters && typeof tool.parameters === "object" && !Array.isArray(tool.parameters))
+    let parameters = (tool.parameters && typeof tool.parameters === "object" && !Array.isArray(tool.parameters))
       ? tool.parameters
       : (fn?.parameters && typeof fn.parameters === "object" && !Array.isArray(fn.parameters) ? fn.parameters : { type: "object", properties: {} });
+    // Mirror the request translator: {type:"object"} without properties is rejected
+    // by strict Responses backends, so fill in the empty properties map.
+    if (parameters.type === "object" && !parameters.properties) parameters = { ...parameters, properties: {} };
     for (const k of Object.keys(tool)) delete tool[k];
     tool.type = "function";
     tool.name = name.slice(0, MAX_TOOL_NAME_LEN);
