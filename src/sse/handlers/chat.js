@@ -14,7 +14,7 @@ import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
-import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
+import { errorResponse, unavailableResponse, clientStatusForUpstream, clientStatusForBreakerOpen } from "open-sse/utils/error.js";
 import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "open-sse/services/combo.js";
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
@@ -237,8 +237,14 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
-        const status = HTTP_STATUS.SERVICE_UNAVAILABLE;
-        log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
+        // Preserve the upstream class so 4xx still means stop and 5xx still means
+        // retry, EXCEPT for the one status that lied here: a non-model 404, which
+        // is a cooldown the router set itself (see clientStatusForBreakerOpen).
+        // credentials.lastErrorCode is only populated when the stored error provably
+        // belongs to THIS model (see auth.js), so a stale code from another request
+        // can no longer decide this status.
+        const status = clientStatusForBreakerOpen(lastStatus || Number(credentials.lastErrorCode), errorMsg);
+        log.warn("CHAT", `[${provider}/${model}] ${status} | ${errorMsg} (${credentials.retryAfterHuman})`);
         return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
       if (excludeConnectionIds.size === 0) {
@@ -246,7 +252,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
       }
       log.warn("CHAT", "No more accounts available", { provider });
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+      return errorResponse(clientStatusForUpstream(lastStatus, lastError), lastError || "All accounts unavailable");
     }
 
     // Account selection shown in the unified "▶" line (acc:...)
