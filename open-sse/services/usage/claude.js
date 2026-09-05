@@ -102,12 +102,32 @@ async function fetchClaudeUsageRaw(accessToken, proxyOptions = null) {
         quotas["weekly (7d)"] = createQuotaObject(data.seven_day);
       }
 
-      // Parse model-specific weekly windows (e.g. seven_day_sonnet, seven_day_opus)
+      // Parse model-specific weekly windows (e.g. seven_day_sonnet, seven_day_opus, seven_day_fable)
+      const MODEL_DISPLAY_NAMES = {
+        fable_5_1: "fable",
+        fable_5: "fable",
+      };
+
       for (const [key, value] of Object.entries(data)) {
         if (key.startsWith("seven_day_") && key !== "seven_day" && hasUtilization(value)) {
-          const modelName = key.replace("seven_day_", "");
+          const rawName = key.replace("seven_day_", "");
+          const modelName = MODEL_DISPLAY_NAMES[rawName] || rawName;
           quotas[`weekly ${modelName} (7d)`] = createQuotaObject(value);
+        } else if ((key === "fable" || key === "fable_5" || key === "fable_5_1") && hasUtilization(value)) {
+          quotas["weekly fable (7d)"] = createQuotaObject(value);
         }
+      }
+
+      // Fallback: surface Fable quota row if weekly window exists but Fable was not returned yet
+      if (!quotas["weekly fable (7d)"] && hasUtilization(data.seven_day)) {
+        quotas["weekly fable (7d)"] = {
+          used: 0,
+          total: 100,
+          remaining: 100,
+          remainingPercentage: 100,
+          resetAt: parseResetTime(data.seven_day.resets_at),
+          unlimited: false,
+        };
       }
 
       return {
