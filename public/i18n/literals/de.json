@@ -193,5 +193,8 @@
   "Click to add, click again to remove. Changes are saved automatically.": "Klicken zum Hinzufügen, erneut klicken zum Entfernen. Änderungen werden automatisch gespeichert.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Risikohinweis: Dieser Anbieter verwendet eine Abonnement-/OAuth-Sitzung, die nicht offiziell für die Proxy-/Router-Nutzung lizenziert ist. Das Konto kann eingeschränkt oder gesperrt werden. Nutzung auf eigene Gefahr.",
   "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM fängt HTTPS-Verkehr von IDE-Tools (Antigravity, GitHub Copilot, Kiro) über lokale CA ab, um Anfragen an Ihre Anbieter umzuleiten. Kann gegen ToS verstoßen → Risiko der Kontosperrung. Nutzung auf eigene Gefahr.",
-  "Endpoint is exposed without an API key.": "Der Endpunkt ist ohne API-Schlüssel offengelegt."
+  "Endpoint is exposed without an API key.": "Der Endpunkt ist ohne API-Schlüssel offengelegt.",
+  "Request details logging is turned off": "Die Anforderungsdetail-Aufzeichnung ist deaktiviert",
+  "Enable Observability in Settings to start recording every request here.": "Aktivieren Sie die Observability in den Einstellungen, um jede Anfrage hier aufzuzeichnen.",
+  "Open Settings": "Einstellungen öffnen"
 }

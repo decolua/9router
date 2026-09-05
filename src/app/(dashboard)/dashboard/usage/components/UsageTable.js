@@ -6,6 +6,10 @@ import Card from "@/shared/components/Card";
 import Badge from "@/shared/components/Badge";
 
 const fmt = (n) => new Intl.NumberFormat().format(n || 0);
+// Compact form (en-US: K/M/B) for wide token counts so values never overflow
+// narrow cards/tables; pair with title={fmt(n)} for the exact value.
+const _compactNf = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+const fmtCompact = (n) => ((n || 0) >= 100000 ? _compactNf.format(n) : fmt(n));
 const fmtCost = (n) => `$${(n || 0).toFixed(2)}`;
 
 function fmtTime(iso) {
@@ -252,4 +256,4 @@ UsageTable.propTypes = {
 };
 
 // Re-export utilities for use in UsageStats orchestrator
-export { fmt, fmtCost, fmtTime };
+export { fmt, fmtCompact, fmtCost, fmtTime };

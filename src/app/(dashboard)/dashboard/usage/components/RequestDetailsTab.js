@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import Card from "@/shared/components/Card";
 import Button from "@/shared/components/Button";
 import Drawer from "@/shared/components/Drawer";
 import Pagination from "@/shared/components/Pagination";
+import { translate, onLocaleChange } from "@/i18n/runtime";
 import { cn } from "@/shared/utils/cn";
 import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
 
@@ -112,6 +114,14 @@ export default function RequestDetailsTab() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [providers, setProviders] = useState([]);
   const [providerNameCache, setProviderNameCache] = useState(null);
+  // Observability off -> Details can never populate; surface a callout linking to Settings.
+  // Mirrors requestDetailsRepo.getObservabilityConfig() precedence: env ENABLE_REQUEST_LOGS
+  // (when defined) wins, else the enableObservability setting.
+  const [observabilityDisabled, setObservabilityDisabled] = useState(false);
+  // Re-render on locale switch so translate() picks up the new map. Without this,
+  // the callout text rendered in the previous language can't be re-keyed by the
+  // DOM-walker (its stored "original" is already-translated output).
+  const [, setI18nTick] = useState(0);
   const [filters, setFilters] = useState({
     provider: "",
     startDate: "",
@@ -128,6 +138,22 @@ export default function RequestDetailsTab() {
       setProviderNameCache(cache.providerNameCache);
     } catch (error) {
       console.error("Failed to fetch providers:", error);
+    }
+  }, []);
+
+  const fetchObservabilityFlag = useCallback(async () => {
+    try {
+      const res = await fetch("/api/settings");
+      const data = await res.json();
+      // Same precedence as requestDetailsRepo.getObservabilityConfig():
+      // env ENABLE_REQUEST_LOGS (when defined) wins, else the setting.
+      const disabled = data.enableRequestLogsDefined
+        ? data.enableRequestLogs !== true
+        : data.enableObservability !== true;
+      setObservabilityDisabled(disabled);
+    } catch {
+      // If settings are unreadable, don't show a misleading callout.
+      setObservabilityDisabled(false);
     }
   }, []);
 
@@ -156,7 +182,10 @@ export default function RequestDetailsTab() {
 
   useEffect(() => {
     fetchProviders();
-  }, [fetchProviders]);
+    fetchObservabilityFlag();
+  }, [fetchProviders, fetchObservabilityFlag]);
+
+  useEffect(() => onLocaleChange(() => setI18nTick((t) => t + 1)), []);
 
   useEffect(() => {
     fetchDetails();
@@ -274,11 +303,35 @@ export default function RequestDetailsTab() {
                   </td>
                 </tr>
               ) : details.length === 0 ? (
-                <tr>
-                  <td colSpan="7" className="p-8 text-center text-text-muted">
-                    No request details found
-                  </td>
-                </tr>
+                observabilityDisabled ? (
+                  <tr>
+                    <td colSpan="9" className="p-8">
+                      <div
+                        className="mx-auto flex max-w-md flex-col items-center gap-3 rounded-xl border border-warning/30 bg-warning/5 p-5 text-center"
+                        data-i18n-skip="true"
+                      >
+                        <span className="material-symbols-outlined text-[28px] text-warning">visibility_off</span>
+                        <p className="text-sm font-medium text-text-main">
+                          {translate("Request details logging is turned off")}
+                        </p>
+                        <p className="text-sm text-text-muted">
+                          {translate("Enable Observability in Settings to start recording every request here.")}
+                        </p>
+                        <Link href="/dashboard/profile" className="mt-1 inline-flex">
+                          <Button variant="primary" size="sm" icon="settings">
+                            {translate("Open Settings")}
+                          </Button>
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  <tr>
+                    <td colSpan="9" className="p-8 text-center text-text-muted">
+                      No request details found
+                    </td>
+                  </tr>
+                )
               ) : (
                 details.map((detail, index) => (
                   <tr
