@@ -9,6 +9,9 @@ import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLin
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
 
+const CLAUDE_PING_BYTES = new TextEncoder().encode("event: ping\ndata: {\"type\": \"ping\"}\n\n");
+const CLAUDE_PING_INTERVAL_MS = 15000;
+
 // Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
 // Gemini-family all map to ANTIGRAVITY decoder; unknown sources fall back to OPENAI.
 const CODEX_SOURCE_TO_TARGET = {
@@ -85,7 +88,8 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
   const onAbortTerminal = isResponsesPassthrough ? buildAbortedResponsesTerminalBytes : null;
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
-  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
+  const pingBytes = sourceFormat === FORMATS.CLAUDE ? CLAUDE_PING_BYTES : null;
+  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs, pingBytes, CLAUDE_PING_INTERVAL_MS);
 
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,

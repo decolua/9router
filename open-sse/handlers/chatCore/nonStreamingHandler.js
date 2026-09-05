@@ -10,6 +10,7 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { chatCompletionToClaudeMessage } from "./claudeResponseConverter.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -211,6 +212,9 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
         result.usage.completion_tokens_details = { reasoning_tokens: usage.thoughtsTokenCount };
       }
     }
+    if (sourceFormat === FORMATS.CLAUDE) {
+      return chatCompletionToClaudeMessage(result);
+    }
     return result;
   }
 
@@ -272,7 +276,11 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 
   // Ollama
   if (targetFormat === FORMATS.OLLAMA) {
-    return ollamaBodyToOpenAI(responseBody);
+    const res = ollamaBodyToOpenAI(responseBody);
+    if (sourceFormat === FORMATS.CLAUDE) {
+      return chatCompletionToClaudeMessage(res);
+    }
+    return res;
   }
 
   return responseBody;
