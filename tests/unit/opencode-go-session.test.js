@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const { fetchMock } = vi.hoisted(() => ({
   fetchMock: vi.fn(),
@@ -144,5 +146,21 @@ describe("OpenCode Go x-opencode-session", () => {
   it("does not add the header to unrelated default executors", () => {
     const headers = new DefaultExecutor("openai").buildHeaders({ apiKey: "test-key" }, false);
     expect(headers["x-opencode-session"]).toBeUndefined();
+  });
+});
+
+describe("chatCore provider session forwarding", () => {
+  it("passes the original provider session and client tool on initial and retry execution", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("../../open-sse/handlers/chatCore.js", import.meta.url)),
+      "utf8",
+    );
+    const calls = [...source.matchAll(/executor\.execute\(\{([\s\S]*?)\}\)/g)].map((match) => match[1]);
+
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      expect(call).toMatch(/providerSessionId:\s*sessionSeed/);
+      expect(call).toMatch(/\bclientTool\b/);
+    }
   });
 });
