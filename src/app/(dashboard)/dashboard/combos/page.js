@@ -1,4 +1,5 @@
 "use client";
+// VortexRouter dashboard — inline SVG icons, combos with CapacityBadges (vision/reasoning)
 
 import { useState, useEffect, useCallback } from "react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";

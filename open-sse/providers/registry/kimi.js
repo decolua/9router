@@ -1,48 +1,39 @@
 import { CLAUDE_API_HEADERS } from "../shared.js";
 
-// Dual auth (same pattern as xai): OAuth = Kimi Code subscription (device code),
-// API key = platform.moonshot / api.kimi.com. Transport is shared.
-// CLIProxyAPI parity: client_id, auth.kimi.com device+token, X-Msh-* headers, device_id.
 export default {
   id: "kimi",
   priority: 170,
+  hasFree: true,
   alias: "kimi",
-  // Legacy id + short alias from former kimi-coding registry entry
   aliases: ["kimi-coding", "kmc"],
   display: {
     name: "Kimi",
     icon: "psychology",
     color: "#1E3A8A",
     textIcon: "KM",
-    website: "https://kimi.moonshot.cn",
+    website: "https://platform.moonshot.cn",
     notice: {
-      apiKeyUrl: "https://platform.moonshot.ai/console/api-keys",
+      text: "Free tier: ¥15 (~$2) + $5 coupon trial (~¥35 total). 3 RPM free. Auto-discovered via modelsFetcher.",
+      apiKeyUrl: "https://platform.moonshot.cn/console/api-keys",
       signupUrl: "https://www.kimi.com/code",
     },
   },
-  category: "oauth",
+  category: "freeTier",
   authModes: ["oauth", "apikey"],
   hasOAuth: true,
   transport: {
-    baseUrl: "https://api.kimi.com/coding/v1/messages",
-    format: "claude",
-    urlSuffix: "?beta=true",
-    headers: { ...CLAUDE_API_HEADERS },
-    clientId: "17e5f671-d194-4dfb-9706-5516cb48c098",
-    tokenUrl: "https://auth.kimi.com/api/oauth/token",
-    refreshUrl: "https://auth.kimi.com/api/oauth/token",
-    auth: {
-      combined: true,
-      header: "x-api-key",
-      scheme: "raw",
-      hooks: ["kimiHeaders"],
-    },
+    baseUrl: "https://api.moonshot.cn/v1/chat/completions",
+    headers: {},
   },
-  // Multi-endpoint: pick the transport matching client sourceFormat to skip translation.
   transports: [
     {
       format: "openai",
-      baseUrl: "https://api.kimi.com/coding/v1/chat/completions",
+      baseUrl: "https://api.moonshot.cn/v1/chat/completions",
+      auth: { combined: true, header: "Authorization", scheme: "bearer", hooks: ["kimiHeaders"] },
+    },
+    {
+      format: "openai",
+      baseUrl: "https://api.moonshot.ai/v1/chat/completions",
       auth: { combined: true, header: "Authorization", scheme: "bearer", hooks: ["kimiHeaders"] },
     },
     {
@@ -54,20 +45,22 @@ export default {
     },
   ],
   models: [
-    // Flagship K3 — platform.kimi.ai id `kimi-k3`, Kimi Code OAuth id `k3` (up to 1M)
-    { id: "kimi-k3", name: "Kimi K3" },
-    { id: "k3", name: "Kimi K3 (Code)" },
-    // Kimi Code subscription stable ids (map to K2.7 Code backend)
-    { id: "kimi-for-coding", name: "Kimi for Coding" },
-    { id: "kimi-for-coding-highspeed", name: "Kimi for Coding Highspeed" },
-    // Pay-as-you-go platform ids
-    { id: "kimi-k2.7-code", name: "Kimi K2.7 Code" },
-    { id: "kimi-k2.7-code-highspeed", name: "Kimi K2.7 Code Highspeed" },
-    { id: "kimi-k2.6", name: "Kimi K2.6" },
-    { id: "kimi-k2.5", name: "Kimi K2.5" },
-    { id: "kimi-k2.5-thinking", name: "Kimi K2.5 Thinking" },
-    { id: "kimi-latest", name: "Kimi Latest" },
+    { id: "kimi-k3", name: "Kimi K3", free: true },
+    { id: "k3", name: "Kimi K3 (Code)", free: true },
+    { id: "kimi-for-coding", name: "Kimi for Coding", free: true },
+    { id: "kimi-for-coding-highspeed", name: "Kimi for Coding Highspeed", free: true },
+    { id: "kimi-k2.7-code", name: "Kimi K2.7 Code", free: true },
+    { id: "kimi-k2.7-code-highspeed", name: "Kimi K2.7 Code Highspeed", free: true },
+    { id: "kimi-k2.6", name: "Kimi K2.6", free: true },
+    { id: "kimi-k2.5", name: "Kimi K2.5", free: true },
+    { id: "kimi-k2.5-thinking", name: "Kimi K2.5 Thinking", free: true },
+    { id: "kimi-latest", name: "Kimi Latest", free: true },
+    { id: "moonshot-v1-8k", name: "Moonshot V1 8K", free: true },
+    { id: "moonshot-v1-32k", name: "Moonshot V1 32K", free: true },
+    { id: "moonshot-v1-128k", name: "Moonshot V1 128K", free: true },
   ],
+  modelsFetcher: { url: "https://api.moonshot.cn/v1/models", type: "openai" },
+  passthroughModels: true,
   serviceKinds: ["llm", "webSearch"],
   searchViaChat: {
     defaultModel: "kimi-k3",
@@ -79,14 +72,8 @@ export default {
     deviceCodeUrl: "https://auth.kimi.com/api/oauth/device_authorization",
     tokenUrl: "https://auth.kimi.com/api/oauth/token",
     refreshUrl: "https://auth.kimi.com/api/oauth/token",
-    // CLIProxyAPI refreshThresholdSeconds = 300
     refreshLeadMs: 300000,
     authorizeDeviceUrl: "https://www.kimi.com/code/authorize_device",
   },
-  features: {
-    usage: true,
-    // API-key connections also hit /v1/usages (x-api-key) — need usageApikey
-    // so isUsageEligible + /api/usage allow non-oauth authType.
-    usageApikey: true,
-  },
+  features: { usage: true, usageApikey: true },
 };
