@@ -67,7 +67,7 @@ export class DefaultExecutor extends BaseExecutor {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
-  transformRequest(model, body) {
+  transformRequest(model, body, stream) {
     const transformed = this.applyJsonSchemaFallback(body);
 
     if (transformed && typeof transformed === "object") {
@@ -76,6 +76,17 @@ export class DefaultExecutor extends BaseExecutor {
         delete transformed.client_metadata;
       }
       stripUnsupportedParams(this.provider, model, transformed);
+      // Ask OpenAI-compatible upstreams to include usage in the final stream
+      // chunk so /v1 streaming requests record real token counts instead of
+      // IN 0 · OUT 0 (issue #3017). Same approach as the iflow executor.
+      // Only inject when the body itself streams: the executor-level stream
+      // flag can be true while the body omits stream (Responses->chat path,
+      // Accept: text/event-stream clients), and strict upstreams (deepseek)
+      // 400 with "stream_options should be set along with stream = true".
+      const bodyStream = transformed.stream === true;
+      if (stream && bodyStream && transformed.messages && !transformed.stream_options) {
+        transformed.stream_options = { include_usage: true };
+      }
     }
 
     return injectReasoningContent({ provider: this.provider, model, body: transformed });
