@@ -471,7 +471,8 @@ async function fetchWithConnectionProxy(url, options = {}, effectiveProxy = null
   });
 }
 
-async function testApiKeyConnection(connection, effectiveProxy = null) {
+// Exported for unit tests.
+export async function testApiKeyConnection(connection, effectiveProxy = null) {
   if (isOpenAICompatibleProvider(connection.provider)) {
     const modelsBase = connection.providerSpecificData?.baseUrl;
     if (!modelsBase) return { valid: false, error: "Missing base URL" };
@@ -815,8 +816,40 @@ case "llm7": {
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key", refreshed: false };
       }
-      default:
+      default: {
+        // Generic config-driven fallback (mirrors /api/providers/validate's default branch)
+        // — closes the gap where a provider only declares transport.validateUrl/baseUrl in
+        // the registry but has no hand-written case here (e.g. Venice AI: "Provider test
+        // not supported" on re-test even though /api/providers/validate accepts it on add).
+        const cfg = PROVIDERS[connection.provider];
+        if (!cfg) return { valid: false, error: "Provider test not supported" };
+        if (cfg.noAuth) return { valid: true, error: null };
+
+        const headers = { "Content-Type": "application/json", ...(cfg.headers || {}) };
+        if (cfg.authHeader === "x-api-key") headers["x-api-key"] = connection.apiKey;
+        else headers["Authorization"] = `Bearer ${connection.apiKey}`;
+
+        if (cfg.validateUrl) {
+          const res = await fetchWithConnectionProxy(cfg.validateUrl, { headers }, effectiveProxy);
+          const valid = res.status !== 401 && res.status !== 403;
+          return { valid, error: valid ? null : "Invalid API key" };
+        }
+        if (cfg.format === "openai" && cfg.baseUrl) {
+          const modelsUrl = cfg.baseUrl.replace(/\/chat\/completions$/, "/models").replace(/\/chatbot$/, "/models");
+          const probeRes = await fetchWithConnectionProxy(modelsUrl, { headers }, effectiveProxy);
+          if (probeRes.status === 401 || probeRes.status === 403) return { valid: false, error: "Invalid API key" };
+          if (probeRes.ok) return { valid: true, error: null };
+          // /models absent or ambiguous — fall back to a minimal chat probe
+          const chatRes = await fetchWithConnectionProxy(cfg.baseUrl, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ model: getDefaultModel(connection.provider) || "test", messages: [{ role: "user", content: "ping" }], max_tokens: 1 }),
+          }, effectiveProxy);
+          const valid = chatRes.status !== 401 && chatRes.status !== 403;
+          return { valid, error: valid ? null : "Invalid API key" };
+        }
         return { valid: false, error: "Provider test not supported" };
+      }
     }
   } catch (err) {
     return { valid: false, error: err.message };
