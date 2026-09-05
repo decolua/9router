@@ -1,8 +1,14 @@
 import { ensureDirs, DATA_FILE } from "./paths.js";
+import { asDatabaseCorruptionError } from "./integrity.js";
 
 // Use global to survive Next.js dev hot-reload (module state resets on reload)
 if (!global._dbAdapter) global._dbAdapter = { instance: null, initPromise: null, logged: false };
 const state = global._dbAdapter;
+
+function stopOnCorruption(error) {
+  const corruption = asDatabaseCorruptionError(error, DATA_FILE);
+  if (corruption) throw corruption;
+}
 
 async function tryBunSqlite() {
   // Bun runtime only — built-in, no install needed
@@ -11,6 +17,7 @@ async function tryBunSqlite() {
     const { createBunSqliteAdapter } = await import("./adapters/bunSqliteAdapter.js");
     return await createBunSqliteAdapter(DATA_FILE);
   } catch (e) {
+    stopOnCorruption(e);
     console.warn(`[DB] bun:sqlite unavailable: ${e.message}`);
     return null;
   }
@@ -23,6 +30,7 @@ async function tryBetterSqlite() {
     const { createBetterSqliteAdapter } = await import("./adapters/betterSqliteAdapter.js");
     return createBetterSqliteAdapter(DATA_FILE);
   } catch (e) {
+    stopOnCorruption(e);
     console.warn(`[DB] better-sqlite3 unavailable: ${e.message}`);
     return null;
   }
@@ -37,6 +45,7 @@ async function tryNodeSqlite() {
     const { createNodeSqliteAdapter } = await import("./adapters/nodeSqliteAdapter.js");
     return await createNodeSqliteAdapter(DATA_FILE);
   } catch (e) {
+    stopOnCorruption(e);
     console.warn(`[DB] node:sqlite unavailable: ${e.message}`);
     return null;
   }
@@ -47,6 +56,7 @@ async function trySqlJs() {
     const { createSqlJsAdapter } = await import("./adapters/sqljsAdapter.js");
     return await createSqlJsAdapter(DATA_FILE);
   } catch (e) {
+    stopOnCorruption(e);
     console.warn(`[DB] sql.js unavailable: ${e.message}`);
     return null;
   }
