@@ -82,6 +82,16 @@ describe("applyThinking per provider format", () => {
     // Sonnet 5). Both fields together are the documented adaptive shape.
     expect(out.thinking).toEqual({ type: "adaptive" });
   });
+  it("claude adaptive thinking maps auto effort to a supported level", () => {
+    const out = apply("claude", "claude-opus-4.7", { thinking: { type: "adaptive" } }, "claude");
+    expect(out.output_config).toEqual({ effort: "high" });
+    expect(out.thinking).toEqual({ type: "adaptive" });
+  });
+  it("permanently adaptive Claude maps auto effort without adding a thinking switch", () => {
+    const out = apply("claude", "claude-fable-5-1", { thinking: { type: "adaptive" } }, "claude");
+    expect(out.output_config).toEqual({ effort: "high" });
+    expect(out.thinking).toBeUndefined();
+  });
   it("Fable 5.1 → effort without a redundant thinking switch", () => {
     const out = apply("claude", "claude-fable-5-1", { reasoning_effort: "high" }, "claude");
     expect(out.output_config).toEqual({ effort: "high" });
