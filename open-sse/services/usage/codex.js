@@ -21,6 +21,13 @@ function toIsoDate(value) {
   return Number.isFinite(time) ? date.toISOString() : null;
 }
 
+function errorMessage(value, fallback) {
+  if (!value) return fallback;
+  if (typeof value === "string") return value;
+  if (typeof value.message === "string") return value.message;
+  return JSON.stringify(value);
+}
+
 function getCodexAccountId(providerSpecificData) {
   return providerSpecificData?.workspaceId || providerSpecificData?.accountId || providerSpecificData?.chatgptAccountId || null;
 }
@@ -162,7 +169,7 @@ export async function getCodexRateLimitResetCredits(accessToken, proxyOptions = 
   }
 
   if (!response.ok) {
-    const message = data?.message || data?.error || data?.detail || `Codex reset credits API unavailable (${response.status}).`;
+    const message = errorMessage(data?.message || data?.error || data?.detail, `Codex reset credits API unavailable (${response.status}).`);
     throw new Error(message);
   }
 
