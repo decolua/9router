@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 3;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -96,6 +96,48 @@ export const TABLES = {
       updatedAt: "TEXT NOT NULL",
     },
     indexes: ["CREATE INDEX IF NOT EXISTS idx_combo_name ON combos(name)"],
+  },
+  mcpInstances: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      slug: "TEXT UNIQUE NOT NULL",
+      title: "TEXT",
+      kind: "TEXT NOT NULL",
+      transport: "TEXT NOT NULL",
+      url: "TEXT",
+      command: "TEXT",
+      args: "TEXT",
+      env: "TEXT",
+      headers: "TEXT",
+      oauth: "INTEGER DEFAULT 0",
+      oauthTokens: "TEXT",
+      enabled: "INTEGER DEFAULT 1",
+      createdAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_mcp_inst_slug ON mcpInstances(slug)",
+      "CREATE INDEX IF NOT EXISTS idx_mcp_inst_enabled ON mcpInstances(enabled)",
+    ],
+  },
+  mcpGatewayKeys: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      name: "TEXT",
+      key: "TEXT UNIQUE NOT NULL",
+      machineId: "TEXT",
+      isActive: "INTEGER DEFAULT 1",
+      createdAt: "TEXT NOT NULL",
+    },
+    indexes: ["CREATE INDEX IF NOT EXISTS idx_mcp_gwkey ON mcpGatewayKeys(key)"],
+  },
+  mcpKeyGrants: {
+    columns: {
+      keyId: "TEXT NOT NULL",
+      instanceId: "TEXT NOT NULL",
+      toolAllowlist: "TEXT",
+    },
+    primaryKey: "PRIMARY KEY (keyId, instanceId)",
+    indexes: ["CREATE INDEX IF NOT EXISTS idx_mcp_grant_key ON mcpKeyGrants(keyId)"],
   },
   kv: {
     columns: {

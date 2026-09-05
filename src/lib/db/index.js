@@ -38,6 +38,16 @@ export {
   createCombo, updateCombo, deleteCombo,
 } from "./repos/combosRepo.js";
 
+// MCP gateway: upstream instances, gateway API keys, per-key grants
+export {
+  getInstances, getInstanceById, getInstanceBySlug, getEnabledInstancesByIds,
+  createInstance, updateInstance, deleteInstance,
+} from "./repos/mcpInstancesRepo.js";
+export {
+  getGatewayKeys, getGatewayKeyById, createGatewayKey, deleteGatewayKey,
+  validateGatewayKey, getGrantsForKey, getGrantsForKeyDetailed, setGrants,
+} from "./repos/mcpGatewayRepo.js";
+
 // Aliases (model + custom + mitm)
 export {
   getModelAliases, setModelAlias, deleteModelAlias,

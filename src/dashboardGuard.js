@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSettings, validateApiKey } from "@/lib/localDb";
+import { getSettings, validateApiKey, validateGatewayKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
@@ -152,6 +152,12 @@ async function hasValidApiKey(request) {
   return await validateApiKey(apiKey);
 }
 
+async function hasValidGatewayKey(request) {
+  const apiKey = extractApiKey(request);
+  if (!apiKey) return false;
+  return !!(await validateGatewayKey(apiKey));
+}
+
 async function canAccessPublicLlmApi(request) {
   if (isLocalRequest(request)) return true;
   if (await hasValidCliToken(request)) return true;
@@ -219,6 +225,21 @@ export async function proxy(request) {
   if (isPublicLlmApi(pathname)) {
     if (await canAccessPublicLlmApi(request)) return NextResponse.next();
     return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
+  }
+
+  // MCP gateway: dedicated branch — only the exact MCP protocol surfaces
+  // (`/api/mcp-gateway`, `/sse`, `/message`) accept a gateway API key.
+  // CRUD subpaths (`/instances/*`, `/keys/*`) fall through to the standard
+  // JWT/CLI auth below.
+  const isGatewayProtocolSurface =
+    pathname === "/api/mcp-gateway" ||
+    pathname === "/api/mcp-gateway/sse" ||
+    pathname === "/api/mcp-gateway/message";
+  if (isGatewayProtocolSurface) {
+    if (isLocalRequest(request)) return NextResponse.next();
+    if (await hasValidCliToken(request)) return NextResponse.next();
+    if (await hasValidGatewayKey(request)) return NextResponse.next();
+    return NextResponse.json({ error: "gateway key required" }, { status: 401 });
   }
 
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
