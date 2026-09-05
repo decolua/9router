@@ -26,6 +26,7 @@ export default {
   transport: {
     baseUrl: "https://api.openai.com/v1/chat/completions",
     forceStream: true,
+    quirks: { preservePromptCacheKey: true },
   },
   models: [
     { id: "gpt-5.4", name: "GPT-5.4" },

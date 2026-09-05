@@ -1,7 +1,20 @@
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
+import { PROVIDERS } from "../../providers/index.js";
 
 // Strip request params a given provider/model rejects upstream (e.g. HTTP 400).
 // Config-driven: add a rule instead of scattering `delete body.x` across executors.
+
+// OpenAI Chat Completions extension params that strict OpenAI-compatible endpoints
+// reject as unknown fields — e.g. Groq 400 "property 'prompt_cache_key' is unsupported",
+// Cerebras 422 (zed-industries/zed#36215). Default is to drop; a provider opts back in
+// by declaring the named quirk in providers/registry/{id}.js (openai, azure).
+// Applied only on the Responses→Chat hop (see translator/index.js);
+// Responses API bodies carry these natively and are never touched.
+// GitHub Copilot Chat Completions support is unverified and left to a follow-up;
+// Codex and grok-cli are Responses-native so this Chat-only guard never consults them.
+const CHAT_EXTENSION_PARAMS = [
+  { key: "prompt_cache_key", preserveQuirk: "preservePromptCacheKey" },
+];
 
 // Each rule: optional provider, regex match on model, list of params to drop.
 // A param is removed only when it is present (!== undefined).
@@ -33,6 +46,22 @@ function clampNumber(body, key, ceiling) {
   if (typeof body[key] === "number" && Number.isFinite(body[key]) && body[key] > ceiling) {
     body[key] = ceiling;
   }
+}
+
+// Drop Chat Completions extension params for providers that do not declare support.
+// Mutates body in place; fail-open (never throws); returns body.
+export function stripUnsupportedChatExtensions(provider, body) {
+  if (!body || typeof body !== "object") return body;
+  try {
+    const quirks = PROVIDERS[provider]?.quirks;
+    for (const { key, preserveQuirk } of CHAT_EXTENSION_PARAMS) {
+      if (quirks?.[preserveQuirk]) continue;
+      if (body[key] !== undefined) delete body[key];
+    }
+  } catch {
+    // fail-open: leave the body untouched
+  }
+  return body;
 }
 
 // Remove unsupported params from body in place; returns body.
