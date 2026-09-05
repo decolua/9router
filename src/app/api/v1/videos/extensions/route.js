@@ -1,4 +1,5 @@
 import { handleVideoCreate } from "@/sse/handlers/videoGeneration.js";
+import { withScopeAuth } from "@/middleware/scopeAuth.js";
 
 export async function OPTIONS() {
   return new Response(null, {
@@ -12,5 +13,5 @@ export async function OPTIONS() {
 
 /** POST /v1/videos/extensions - async video extension (xAI Grok Imagine) */
 export async function POST(request) {
-  return await handleVideoCreate(request, "extensions");
+  return await withScopeAuth((req) => handleVideoCreate(req, "extensions"))(request);
 }

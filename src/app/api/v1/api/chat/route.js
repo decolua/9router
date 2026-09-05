@@ -1,6 +1,7 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
 import { transformToOllama } from "open-sse/utils/ollamaTransform.js";
+import { withScopeAuth } from "@/middleware/scopeAuth.js";
 
 let initialized = false;
 
@@ -31,7 +32,7 @@ export async function POST(request) {
     modelName = body.model || "llama3.2";
   } catch {}
 
-  const response = await handleChat(request);
+  const response = await withScopeAuth(handleChat)(request);
   return transformToOllama(response, modelName);
 }
 
