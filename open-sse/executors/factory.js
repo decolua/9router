@@ -15,6 +15,35 @@ export const FACTORY_CLIENT_VERSION = "0.213.0";
 export const FACTORY_OPENAI_PLATFORM_ORG = "org-bHuLtG1fGmYk5YaOihAAXFBw";
 export const ANTHROPIC_VERSION = "2023-06-01";
 export const ANTHROPIC_BETAS = "interleaved-thinking-2025-05-14,fine-grained-tool-streaming-2025-05-14";
+export const ANTHROPIC_EFFORT_BETA = "effort-2025-11-24";
+
+// Server-generated item ID prefixes from OpenAI Responses that cause 404 with store=false
+const SERVER_ID_PATTERN = /^(rs|fc|resp|msg)_/;
+
+
+
+export function embeddedToolCallFromName(name) {
+  if (typeof name !== "string" || !name.trimStart().startsWith("{")) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(name);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed) || typeof parsed.name !== "string" || parsed.name.length === 0) {
+      return null;
+    }
+    let args = parsed.arguments ?? {};
+    if (typeof args === "string") {
+      try {
+        args = JSON.parse(args);
+      } catch {
+        // keep string
+      }
+    }
+    return { name: parsed.name, arguments: args };
+  } catch {
+    return null;
+  }
+}
 
 export function resolveTargetGateway(modelId) {
   const m = String(modelId || "").toLowerCase();
@@ -50,6 +79,58 @@ export function resolveFactoryApiBase(credentials = null) {
     return custom.trim().replace(/\/+$/, "");
   }
   return "https://api.factory.ai";
+}
+
+export function resolveClaudeThinking(modelId, requestedEffort) {
+  const m = String(modelId || "").toLowerCase();
+  const effort = requestedEffort || "high";
+
+  // Adaptive models
+  if (
+    m.startsWith("claude-fable-5.1") ||
+    m.startsWith("claude-fable-5") ||
+    m.startsWith("claude-opus-5") ||
+    m.startsWith("claude-opus-4-8")
+  ) {
+    return {
+      thinking: { type: "adaptive", display: "summarized" },
+      outputConfig: { effort },
+      requiresEffortBeta: true,
+    };
+  }
+
+  // Sonnet 4.6
+  if (m.startsWith("claude-sonnet-4-6")) {
+    return {
+      thinking: { type: "adaptive" },
+      outputConfig: { effort },
+      requiresEffortBeta: true,
+    };
+  }
+
+  // Opus 4.5
+  if (m.startsWith("claude-opus-4-5-20251101") || m.startsWith("claude-opus-4-5")) {
+    return {
+      thinking: { type: "enabled", budget_tokens: 24576 },
+      outputConfig: { effort },
+      requiresEffortBeta: true,
+    };
+  }
+
+  // MiniMax
+  if (m.startsWith("minimax-")) {
+    return {
+      thinking: { type: "enabled" },
+      outputConfig: undefined,
+      requiresEffortBeta: false,
+    };
+  }
+
+  return {
+    thinking: undefined,
+    outputConfig: undefined,
+    requiresEffortBeta: false,
+  };
 }
 
 export class FactoryExecutor extends BaseExecutor {
@@ -96,7 +177,12 @@ export class FactoryExecutor extends BaseExecutor {
 
     if (gateway === "anthropic") {
       headers["anthropic-version"] = ANTHROPIC_VERSION;
-      headers["anthropic-beta"] = ANTHROPIC_BETAS;
+      const thinkingMeta = resolveClaudeThinking(model, credentials?._requestedEffort);
+      if (thinkingMeta.requiresEffortBeta) {
+        headers["anthropic-beta"] = `${ANTHROPIC_BETAS},${ANTHROPIC_EFFORT_BETA}`;
+      } else {
+        headers["anthropic-beta"] = ANTHROPIC_BETAS;
+      }
     } else if (gateway === "openai-responses") {
       headers["OpenAI-Platform"] = FACTORY_OPENAI_PLATFORM_ORG;
     }
@@ -121,9 +207,59 @@ export class FactoryExecutor extends BaseExecutor {
     cloned.stream = !!stream;
 
     const gateway = resolveTargetGateway(model);
+    const m = String(model || "").toLowerCase();
 
-    // 1. Inject Droid System Prompt Attestation prefix & strip competing CLI identities
-    // Factory WAF explicitly blocks prompts containing "You are Claude Code..." with HTTP 403 Forbidden.
+    if (Array.isArray(cloned.tools) && cloned.tools.length > 0) {
+      if (gateway === "anthropic") {
+        // Claude tool shape: { name, description, input_schema }
+        cloned.tools = cloned.tools.map((t) => {
+          if (!t || typeof t !== "object") return t;
+          const name = t.name || t.function?.name || "";
+          const desc = t.description || t.function?.description || "";
+          const schema = t.input_schema || t.parameters || t.function?.parameters || { type: "object" };
+          return {
+            name,
+            description: desc,
+            input_schema: schema,
+          };
+        });
+      } else if (gateway === "openai-responses") {
+        // OpenAI Responses flat shape: { type: "function", name, description, parameters }
+        cloned.tools = cloned.tools.map((t) => {
+          if (!t || typeof t !== "object") return t;
+          const rawName = t.name || t.function?.name || "";
+          const desc = t.description || t.function?.description || "";
+          const params = t.parameters || t.function?.parameters || { type: "object", properties: {} };
+          return {
+            type: "function",
+            name: rawName,
+            description: desc,
+            parameters: params,
+            ...(t.strict || t.function?.strict ? { strict: true } : {}),
+          };
+        });
+        cloned.tool_choice = "auto";
+        cloned.parallel_tool_calls = true;
+      } else {
+        // OpenAI Chat shape: { type: "function", function: { name, description, parameters } }
+        cloned.tools = cloned.tools.map((t) => {
+          if (!t || typeof t !== "object") return t;
+          if (t.function && typeof t.function === "object") {
+            return t;
+          }
+          if (typeof t.name === "string") {
+            return {
+              type: "function",
+              function: { name: t.name, description: t.description || "", parameters: t.parameters || {} },
+            };
+          }
+          return t;
+        });
+        cloned.tool_choice = "auto";
+      }
+    }
+
+    // 2. Inject Droid System Prompt Attestation prefix & strip competing CLI identities
     const DROID_PROMPT_PREFIX = "You are Droid, an AI software engineering agent built by Factory";
 
     const stripCompeting = (str) => {
@@ -135,6 +271,17 @@ export class FactoryExecutor extends BaseExecutor {
       // Claude Messages format requires max_tokens
       if (!cloned.max_tokens) {
         cloned.max_tokens = 4096;
+      }
+
+      // Thinking & Effort configuration
+      const thinkingConfig = resolveClaudeThinking(model, cloned.reasoning_effort || cloned.thinking?.effort);
+      if (thinkingConfig.thinking) {
+        cloned.thinking = thinkingConfig.thinking;
+      }
+      if (thinkingConfig.outputConfig) {
+        cloned.output_config = thinkingConfig.outputConfig;
+      } else {
+        delete cloned.output_config;
       }
 
       if (typeof cloned.system === "string") {
@@ -154,10 +301,12 @@ export class FactoryExecutor extends BaseExecutor {
         }
         cloned.system = cleaned;
       } else {
-        cloned.system = FACTORY_DROID_SYSTEM_PROMPT;
+        cloned.system = [{ type: "text", text: FACTORY_DROID_SYSTEM_PROMPT }];
       }
     } else if (gateway === "openai-responses") {
       // OpenAI Responses format requires system prompt in top-level `instructions`
+      cloned.store = false;
+
       if (typeof cloned.instructions === "string") {
         const clean = stripCompeting(cloned.instructions);
         cloned.instructions = clean.includes(DROID_PROMPT_PREFIX)
@@ -176,8 +325,20 @@ export class FactoryExecutor extends BaseExecutor {
       } else {
         cloned.instructions = FACTORY_DROID_SYSTEM_PROMPT;
       }
+
+      // Strip server-generated IDs to prevent 404
+      if (Array.isArray(cloned.input)) {
+        cloned.input = cloned.input.filter((item) => {
+          if (typeof item === "string" && SERVER_ID_PATTERN.test(item)) return false;
+          if (item && typeof item === "object" && !Array.isArray(item)) {
+            if (item.type === "item_reference") return false;
+            if (typeof item.id === "string" && SERVER_ID_PATTERN.test(item.id)) delete item.id;
+          }
+          return true;
+        });
+      }
     } else {
-      // OpenAI Chat Completions format
+      // OpenAI Chat Completions format (Factory Core / Fireworks gateway)
       if (Array.isArray(cloned.messages)) {
         const msgs = cloned.messages.map((m) => ({ ...m }));
         const sysIndex = msgs.findIndex((m) => m.role === "system");
@@ -201,14 +362,45 @@ export class FactoryExecutor extends BaseExecutor {
         } else {
           msgs.unshift({ role: "system", content: FACTORY_DROID_SYSTEM_PROMPT });
         }
+
+        // 3. Fireworks / Factory Core requirements for assistant tool turns and tool results
+        const isDeepseek = m.startsWith("deepseek-");
+        const isKimi = m.startsWith("kimi-");
+        const isGlm = m.startsWith("glm-");
+
+        for (const msg of msgs) {
+          if (msg.role === "assistant" && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
+            // requiresAssistantContentForToolCalls
+            if (msg.content === undefined || msg.content === null) {
+              msg.content = "";
+            }
+            // requiresReasoningContentForToolCalls
+            if (msg.reasoning_content === undefined || msg.reasoning_content === null) {
+              msg.reasoning_content = isDeepseek ? "" : (isKimi || isGlm ? "." : "");
+            }
+          }
+          // requiresToolResultName for Kimi
+          if (msg.role === "tool" && isKimi && !msg.name) {
+            // Attempt to resolve name from tool_call_id
+            const matchedAssistant = msgs.find((a) =>
+              a.role === "assistant" && Array.isArray(a.tool_calls) && a.tool_calls.some((tc) => tc.id === msg.tool_call_id),
+            );
+            const matchedTc = matchedAssistant?.tool_calls?.find((tc) => tc.id === msg.tool_call_id);
+            if (matchedTc?.function?.name) {
+              msg.name = matchedTc.function.name;
+            }
+          }
+        }
+
         cloned.messages = msgs;
       }
 
-      // 2. Extra completions params: reasoning_history
-      const isDeepseek = String(model || "").toLowerCase().startsWith("deepseek-");
+      // 4. Reasoning history for completions gateway
+      const isDeepseek = m.startsWith("deepseek-");
       cloned.reasoning_history = isDeepseek ? "interleaved" : "preserved";
     }
 
     return cloned;
   }
 }
+

@@ -56,6 +56,10 @@ const REFRESH_PROFILES = {
     dedupKey: "kimi",
     extraHeaders: (creds) => buildKimiHeaders(creds?.providerSpecificData?.deviceId),
   },
+  factory: {
+    includeClientSecret: false,
+    dedupKey: "factory",
+  },
 };
 
 function resolveRefreshUrl(provider, config, profile) {
