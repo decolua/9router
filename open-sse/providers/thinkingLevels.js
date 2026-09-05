@@ -39,10 +39,15 @@ const PATTERN_THINKING = [
   { provider: "codex", pattern: "*gpt-5.6-terra*", levels: [...CODEX_GPT_5_6_LEVELS, "ultra"] },
   { provider: "codex", pattern: "*gpt-5.6-luna*", levels: CODEX_GPT_5_6_LEVELS },
   { pattern: "*codex*", levels: ["low", "medium", "high", "xhigh"] }, // codex cannot disable thinking
-  // codebuddy-cn per-model effort sets — read off the client picker (server-
-  // delivered supportedEfforts), 2026-08-30. Gateway uses thinkingFormat "openai"
-  // but rejects levels outside each model's set.
+  // codebuddy-cn per-model effort sets — the server's product-config payload
+  // publishes `reasoning.supportedEfforts` per model. NOTE: the chat endpoint
+  // accepts any level you send (probed none/minimal/low/medium/high/xhigh/max
+  // → all 200), but values outside a model's supportedEfforts are silently
+  // clamped, so the declared set stays authoritative for the picker. Models
+  // that publish no supportedEfforts (glm-5.1 / glm-5v-turbo / kimi-k2.x /
+  // kimi-k3-1 / minimax-m3) fall through to the openai format default.
   { provider: "codebuddy-cn", pattern: "glm-5.3*",     levels: ["low", "high", "max"] },
+  { provider: "codebuddy-cn", pattern: "glm-5.2",      levels: ["high", "xhigh"] },
   { provider: "codebuddy-cn", pattern: "deepseek-v4*", levels: ["low", "high", "xhigh"] },
   { provider: "codebuddy-cn", pattern: "hy3*",         levels: ["low", "high"] },
   { provider: "codebuddy-cn", pattern: "hy4*",         levels: ["high"] },
