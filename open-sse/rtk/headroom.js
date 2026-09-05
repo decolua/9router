@@ -6,11 +6,7 @@ import {
 } from "../translator/request/openai-responses.js";
 
 const DEFAULT_TIMEOUT_MS = 3000;
-// Skip compression for oversized payloads (fail-open): proxy compress time grows
-// non-linearly with size — measured 87KB → 0.010s but 744KB → >30s, which always
-// exceeds DEFAULT_TIMEOUT_MS and burns proxy CPU on doomed requests. 256KB keeps
-// a wide margin over the known-fast point while cutting off the pathological range.
-const MAX_COMPRESS_BODY_BYTES = 256 * 1024;
+const MAX_COMPRESS_BODY_BYTES = 2 * 1024 * 1024; // 2MB
 
 function normalizeTimeout(value) {
   return typeof value === "number" && Number.isFinite(value) && value > 0
