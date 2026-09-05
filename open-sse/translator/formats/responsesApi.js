@@ -26,8 +26,13 @@ export function normalizeResponsesInput(input) {
 // Strict Responses upstreams reject overlong call_ids with InputValidationError (#393).
 export const MAX_RESPONSES_CALL_ID_LEN = 64;
 
+// Fallback ids share one Date.now() when a batch of items is sanitized in a tight
+// loop — a per-process sequence keeps same-millisecond ids unique so
+// function_call ↔ function_call_output correlation never collides.
+let responsesCallIdSeq = 0;
+
 export function clampResponsesCallId(id) {
-  if (typeof id !== "string" || !id) return `call_${Date.now()}`;
+  if (typeof id !== "string" || !id) return `call_${Date.now()}_${(responsesCallIdSeq += 1)}`;
   return id.length > MAX_RESPONSES_CALL_ID_LEN ? id.substring(0, MAX_RESPONSES_CALL_ID_LEN) : id;
 }
 
@@ -55,7 +60,15 @@ export function coerceResponsesArguments(value) {
 export function coerceResponsesOutput(value) {
   if (typeof value === "string") return value;
   if (value === undefined || value === null) return "";
-  if (Array.isArray(value)) return value.map((c) => c?.text ?? JSON.stringify(c)).join("");
+  if (Array.isArray(value)) {
+    return value.map((c) => {
+      try {
+        return c?.text ?? JSON.stringify(c);
+      } catch {
+        return String(c);
+      }
+    }).join("");
+  }
   try {
     return JSON.stringify(value);
   } catch {

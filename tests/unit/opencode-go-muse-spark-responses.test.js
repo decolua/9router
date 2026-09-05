@@ -105,6 +105,21 @@ describe("OpenCodeGoExecutor routing + sanitization", () => {
     expect(JSON.parse(outputs[0].output)).toEqual({ ok: true, text: "héllo \"w\"" });
     expect(outputs[1].output).toBe("");
   });
+
+  it("fills in properties for object tool schemas missing them", () => {
+    const ex = new OpenCodeGoExecutor();
+    const body = {
+      model: MODEL,
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] }],
+      tools: [
+        { type: "function", function: { name: "bare", parameters: { type: "object" } } },
+        { type: "function", function: { name: "full", parameters: { type: "object", properties: { a: { type: "string" } } } } },
+      ],
+    };
+    const out = ex.transformRequest(MODEL, body, true, {});
+    expect(out.tools.find((t) => t.name === "bare").parameters).toEqual({ type: "object", properties: {} });
+    expect(out.tools.find((t) => t.name === "full").parameters).toEqual({ type: "object", properties: { a: { type: "string" } } });
+  });
 });
 
 describe("chat/claude clients translate to Responses without breaking tools", () => {
