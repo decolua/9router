@@ -25,6 +25,7 @@ const PUBLIC_API_PATHS = [
   "/api/init",
   "/api/locale",
   "/api/auth/login",
+  "/api/auth/set-password",
   "/api/auth/logout",
   "/api/auth/status",
   "/api/auth/oidc",
