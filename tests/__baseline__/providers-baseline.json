@@ -437,6 +437,9 @@
   "groq": {
     "baseUrl": "https://api.groq.com/openai/v1/chat/completions",
     "validateUrl": "https://api.groq.com/openai/v1/models",
+    "usage": {
+      "url": "https://api.groq.com/openai/v1/models"
+    },
     "format": "openai"
   },
   "hyperbolic": {
@@ -1008,5 +1011,54 @@
       "preserveCacheControl": true
     },
     "format": "openai"
+  },
+  "factory": {
+    "baseUrl": "https://api.factory.ai/api/llm/o/v1/chat/completions",
+    "format": "openai",
+    "forceStream": true,
+    "headers": {
+      "X-Factory-Client": "cli",
+      "X-Client-Version": "0.213.0",
+      "User-Agent": "factory-cli/0.213.0"
+    },
+    "usage": {
+      "url": "https://api.factory.ai/api/billing/limits"
+    },
+    "auth": {
+      "combined": true,
+      "header": "Authorization",
+      "scheme": "bearer"
+    },
+    "clientId": "client_01HNM792M5G5G1A2THWPXKFMXB",
+    "tokenUrl": "https://api.workos.com/user_management/authenticate",
+    "transports": [
+      {
+        "format": "claude",
+        "baseUrl": "https://api.factory.ai/api/llm/a/v1/messages",
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer"
+        }
+      },
+      {
+        "format": "openai-responses",
+        "baseUrl": "https://api.factory.ai/api/llm/o/v1/responses",
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer"
+        }
+      },
+      {
+        "format": "openai",
+        "baseUrl": "https://api.factory.ai/api/llm/o/v1/chat/completions",
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer"
+        }
+      }
+    ]
   }
 }
