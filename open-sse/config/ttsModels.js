@@ -48,6 +48,12 @@ const MIMO_VOICES = [
   { id: "Dean",          name: "Dean" },
 ].map((v) => ({ type: "tts", ...v }));
 
+// Alibaba Token Plan voices for qwen-audio-3.0-tts-plus (voice travels in input.voice).
+const QWEN_TOKEN_PLAN_VOICES = [
+  { id: "longanlingxin", name: "Longanlingxin" },
+  { id: "longanlufeng",  name: "Longanlufeng" },
+].map((v) => ({ type: "tts", ...v }));
+
 // ── TTS Config (config-driven, single source of truth) ─────────────────────
 export const TTS_MODELS_CONFIG = {
   openai: {
@@ -128,6 +134,14 @@ export const TTS_MODELS_CONFIG = {
     ],
     voices: {
       "mimo-v2.5-tts": MIMO_VOICES,
+    },
+  },
+  "alitp-intl": {
+    models: [
+      { id: "qwen-audio-3.0-tts-plus", name: "Qwen Audio 3.0 TTS Plus", type: "tts" },
+    ],
+    voices: {
+      "qwen-audio-3.0-tts-plus": QWEN_TOKEN_PLAN_VOICES,
     },
   },
 };

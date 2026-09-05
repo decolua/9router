@@ -38,3 +38,29 @@ describe("applyThinking (openai): clamp max effort to xhigh", () => {
     expect(out.reasoning_effort).toBe("xhigh");
   });
 });
+
+describe("provider-specific thinking rules", () => {
+  it("keeps minimal effort unchanged for non-Alibaba codex models", () => {
+    const body = { reasoning_effort: "minimal" };
+    const out = applyThinking(FORMATS.OPENAI, "gpt-5.3-codex", body, "github");
+    expect(out.reasoning_effort).toBe("minimal");
+  });
+
+  it("keeps sub-1024 budgets unchanged for non-Alibaba Claude models", () => {
+    const body = {};
+    const out = applyThinking(
+      FORMATS.CLAUDE,
+      "claude-opus-4-5",
+      body,
+      "anthropic",
+      { mode: "budget", budget: 512 },
+    );
+    expect(out.thinking).toEqual({ type: "enabled", budget_tokens: 512 });
+  });
+
+  it("keeps the minimal clamp for other cannot-disable openai-format models", () => {
+    const body = {};
+    applyThinking(FORMATS.OPENAI, "minimaxai/minimax-m3", body, "nvidia", { mode: "none" });
+    expect(body.reasoning_effort).toBe("minimal");
+  });
+});

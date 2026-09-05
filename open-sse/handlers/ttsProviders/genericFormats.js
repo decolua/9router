@@ -3,6 +3,9 @@
 import { responseToBase64, throwUpstreamError } from "./_base.js";
 import minimaxTts from "./minimax.js";
 
+// Flagship Token Plan voice for qwen-audio-3.0-tts-plus.
+const DASHSCOPE_DEFAULT_VOICE = "longanlingxin";
+
 // Hyperbolic: POST { text } → { audio: base64 }
 async function hyperbolic({ baseUrl, apiKey, text }) {
   const res = await fetch(baseUrl, {
@@ -172,6 +175,33 @@ async function openaiCompat({ baseUrl, apiKey, text, modelId, voiceId }) {
   return responseToBase64(res, "mp3");
 }
 
+// Alibaba Token Plan: DashScope SpeechSynthesizer → JSON with an expiring URL
+// (output.audio.data stays empty on non-streaming calls).
+async function dashscopeTts({ baseUrl, apiKey, text, modelId, voiceId }) {
+  const res = await fetch(baseUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: modelId,
+      input: { text, voice: voiceId || DASHSCOPE_DEFAULT_VOICE },
+      parameters: { format: "mp3", sample_rate: 24000 },
+    }),
+  });
+  if (!res.ok) await throwUpstreamError(res);
+
+  const data = await res.json();
+  if (data?.code) throw new Error(data.message || data.code);
+
+  const inline = data?.output?.audio?.data;
+  if (inline) return { base64: inline, format: "mp3" };
+
+  const url = data?.output?.audio?.url;
+  if (!url) throw new Error("DashScope TTS returned no audio");
+  const audio = await fetch(url);
+  if (!audio.ok) await throwUpstreamError(audio);
+  return responseToBase64(audio, "mp3");
+}
+
 // format → handler dispatcher
 export const FORMAT_HANDLERS = {
   hyperbolic,
@@ -186,4 +216,5 @@ export const FORMAT_HANDLERS = {
   openai: openaiCompat,
   "minimax-tts": minimaxTts,
   "fish-audio": fishAudio,
+  "dashscope-tts": dashscopeTts,
 };

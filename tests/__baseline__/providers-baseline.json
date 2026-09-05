@@ -1003,10 +1003,33 @@
   },
   "alitp-intl": {
     "baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/chat/completions",
+    "validateUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/models",
     "headers": {},
     "quirks": {
       "preserveCacheControl": true
     },
-    "format": "openai"
+    "format": "openai",
+    "transports": [
+      {
+        "format": "openai-responses",
+        "baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1/responses",
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer"
+        }
+      },
+      {
+        "format": "claude",
+        "baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/apps/anthropic/v1/messages",
+        "auth": {
+          "combined": true,
+          "header": "x-api-key",
+          "scheme": "raw",
+          "anthropicVersion": true
+        },
+        "thinkingFormat": "claude-budget"
+      }
+    ]
   }
 }

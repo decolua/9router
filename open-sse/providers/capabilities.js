@@ -248,6 +248,23 @@ export const PROVIDER_CAPABILITIES = {
     "laguna-s-2.1":  { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 32000 },
     "laguna-xs-2.1": { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 },
   },
+  // Thinking: reasoning_effort enums probed per model (see thinkingLevels.js);
+  // deepseek-v4-pro cannot disable thinking.
+  "alitp-intl": {
+    "qwen3.8-max":             { vision: true, videoInput: true, pdf: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 131072 },
+    "qwen3.8-max-preview":     { vision: true, videoInput: true, pdf: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 131072 },
+    "qwen3.8-flash":           { vision: true, videoInput: true, pdf: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 131072 },
+    "qwen3.7-max":             { reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 131072 },
+    "qwen3.7-plus":            { vision: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 131072 },
+    "qwen3.6-flash":           { vision: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 65536 },
+    "glm-5.2":                 { reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
+    "deepseek-v4-pro":         { reasoning: true, search: true, thinkingCanDisable: false, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 393216 },
+    "deepseek-v4-pro-0813":    { reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 393216 },
+    "deepseek-v4-flash-0731":  { reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 393216 },
+    "wan2.7-image":            { imageOutput: true, tools: false },
+    "wan2.7-image-pro":        { imageOutput: true, tools: false },
+    "qwen-audio-3.0-tts-plus": { audioOutput: true, tools: false },
+  },
 };
 
 /**

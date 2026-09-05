@@ -3,7 +3,7 @@
 // never hardcoded per-model here. See .docs/thinking/plan.md MATRIX VI-A.
 
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
-import { getThinkingLevels } from "../../providers/thinkingLevels.js";
+import { getThinkingLevels, raiseLevelToFloor } from "../../providers/thinkingLevels.js";
 import { PROVIDERS } from "../../providers/index.js";
 import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
 
@@ -107,7 +107,13 @@ export const captureThinking = extractThinking;
 
 const NATIVE_ONLY_FORMATS = new Set(["gemini-level", "gemini-budget", "claude-budget", "claude-adaptive", "kiro"]);
 
-function resolveFormat(targetFormat, model, provider) {
+// Runtime transport override > provider override > capability > target format.
+// Multi-transport providers accept a different thinking shape per surface.
+// A capability's native-only format is skipped on an OpenAI wire, so a Gemini
+// model served by an OpenAI-compatible provider still gets reasoning_effort.
+function resolveFormat(targetFormat, model, provider, credentials = null) {
+  const transportFmt = credentials?.runtimeTransport?.thinkingFormat;
+  if (transportFmt) return transportFmt;
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   if (providerFmt) return providerFmt;
   const caps = getCapabilitiesForModel(provider, model);
@@ -226,7 +232,7 @@ function stripAll(body) {
 }
 
 // Apply unified thinking config to body in the resolved provider-native format.
-function applyFormat(fmt, body, cfg, caps, supportedLevels) {
+function applyFormat(fmt, body, cfg, caps, supportedLevels, provider) {
   const none = cfg.mode === "none";
   const canDisable = caps.thinkingCanDisable !== false;
   // Model cannot disable thinking → clamp "none" to minimal effort instead.
@@ -235,8 +241,14 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
   switch (fmt) {
     case "openai": {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
-      const level = toLevel(eff);
-      if (level) body.reasoning_effort = normalizeOpenAILevel(level, supportedLevels);
+      // Cannot disable → send the model's lowest selectable effort. That is
+      // "minimal" for most models and "low" where upstream rejects minimal
+      // (alitp-intl/deepseek-v4-pro; see thinkingLevels.js).
+      const level = none ? (supportedLevels?.[0] || "minimal") : toLevel(eff);
+      if (level) {
+        const floored = raiseLevelToFloor(provider, level, supportedLevels);
+        body.reasoning_effort = normalizeOpenAILevel(floored, supportedLevels);
+      }
       break;
     }
     case "claude-adaptive": {
@@ -342,10 +354,8 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
 }
 
 // Public entry: normalize thinking for the resolved target format.
-// Mutates and returns body. No-op when model has no reasoning capability.
-// `intent` is a pre-captured config (from captureThinking on the original body);
-// falls back to extracting from the current body when omitted.
-export function applyThinking(targetFormat, model, body, provider = null, intent = undefined) {
+// `credentials.runtimeTransport` selects the per-transport thinking format.
+export function applyThinking(targetFormat, model, body, provider = null, intent = undefined, credentials = null) {
   if (!body || typeof body !== "object") return body;
 
   const { cleanModel, override } = parseSuffix(model);
@@ -359,9 +369,9 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   }
   if (!cfg) return body;
 
-  const fmt = resolveFormat(targetFormat, cleanModel, provider);
+  const fmt = resolveFormat(targetFormat, cleanModel, provider, credentials);
   const supportedLevels = getThinkingLevels(provider, cleanModel);
   stripAll(body);
-  applyFormat(fmt, body, cfg, caps, supportedLevels);
+  applyFormat(fmt, body, cfg, caps, supportedLevels, provider);
   return body;
 }
