@@ -1,4 +1,5 @@
 "use client";
+// VortexRouter dashboard — inline SVG icons (no material-symbols font)
 
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
