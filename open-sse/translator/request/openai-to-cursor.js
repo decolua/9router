@@ -34,12 +34,13 @@ function escapeXml(text) {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function buildToolResultBlock(toolName, toolCallId, resultText) {
+function buildToolResultBlock(toolName, toolCallId, resultText, isError = false) {
   const cleanResult = sanitizeToolResultText(resultText || "");
   return [
     "<tool_result>",
     `<tool_name>${escapeXml(toolName || "tool")}</tool_name>`,
     `<tool_call_id>${escapeXml(toolCallId || "")}</tool_call_id>`,
+    ...(isError ? ["<is_error>true</is_error>"] : []),
     `<result>${escapeXml(cleanResult)}</result>`,
     "</tool_result>"
   ].join("\n");
@@ -96,7 +97,12 @@ function convertMessages(messages) {
       const toolName = msg.name || toolMeta.name || "tool";
       result.push({
         role: ROLE.USER,
-        content: buildToolResultBlock(toolName, toolCallId, toolContent)
+        content: buildToolResultBlock(
+          toolName,
+          toolCallId,
+          toolContent,
+          msg.is_error === true || msg.status === "error"
+        )
       });
       continue;
     }
@@ -119,7 +125,7 @@ function convertMessages(messages) {
               toolCallMetaMap.get(normalizeToolCallId(toolCallId));
             const toolName = toolMeta?.name || "tool";
             const toolContent = extractContent(block.content);
-            parts.push(buildToolResultBlock(toolName, toolCallId, toolContent));
+            parts.push(buildToolResultBlock(toolName, toolCallId, toolContent, block.is_error === true));
           }
         }
         const joined = parts.filter(Boolean).join("\n");

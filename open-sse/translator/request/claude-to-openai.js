@@ -205,7 +205,8 @@ function convertClaudeMessage(msg) {
           toolResults.push({
             role: ROLE.TOOL,
             tool_call_id: block.tool_use_id,
-            content: resultContent
+            content: resultContent,
+            ...(block.is_error ? { is_error: true, status: "error" } : {})
           });
           break;
       }

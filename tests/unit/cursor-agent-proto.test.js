@@ -15,6 +15,10 @@ import {
   isAgentCapableRequest,
   buildAgentRunFrame,
 } from "../../open-sse/executors/cursor.js";
+import { openaiToCursorRequest } from "../../open-sse/translator/request/openai-to-cursor.js";
+import { claudeToOpenAIRequest } from "../../open-sse/translator/request/claude-to-openai.js";
+import { buildCursorHeaders } from "../../open-sse/utils/cursorChecksum.js";
+import { PROVIDERS } from "../../open-sse/config/providers.js";
 
 // AgentService (agent.v1) codec tests — validate the production implementation
 // in cursorProtobuf.js + the executor's frame builders. Pure round-trip, no network.
@@ -48,6 +52,12 @@ describe("Cursor AgentService codec (cursorProtobuf.js)", () => {
         expect(decodeAgentValue(encodeAgentValue(value))).toEqual(value);
       });
     }
+
+    it("encodes doubles as protobuf little-endian fixed64", () => {
+      expect(Buffer.from(encodeAgentValue(3.14))).toEqual(
+        Buffer.from([0x11, 0x1f, 0x85, 0xeb, 0x51, 0xb8, 0x1e, 0x09, 0x40])
+      );
+    });
   });
 
   describe("McpToolDefinition", () => {
@@ -198,6 +208,13 @@ describe("Cursor AgentService codec (cursorProtobuf.js)", () => {
 });
 
 describe("Cursor AgentService executor helpers (cursor.js)", () => {
+  it("uses headers from the current supported Cursor client", () => {
+    const headers = buildCursorHeaders("test-token", "a".repeat(64));
+    expect(headers["x-cursor-client-version"]).toBe("3.13.25");
+    expect(headers["x-cursor-client-commit"]).toBe("d5c0e77a0214208f36b56d42e8e787de88d02ea4");
+    expect(PROVIDERS.cursor.clientVersion).toBe(headers["x-cursor-client-version"]);
+  });
+
   describe("isAgentCapableRequest", () => {
     it("accepts plain text content", () => {
       expect(isAgentCapableRequest({ messages: [{ role: "user", content: "hi" }] })).toBe(true);
@@ -248,6 +265,40 @@ describe("Cursor AgentService executor helpers (cursor.js)", () => {
       expect(run.has(9)).toBe(true); // requested_model
     });
 
+    it("encodes a canonical model and catalog-selected parameters", () => {
+      const frame = unwrap(buildAgentRunFrame(
+        [{ role: "user", content: "hi" }],
+        "cursor-grok-4.5-high",
+        [],
+        {
+          modelId: "grok-4.5",
+          parameters: [
+            { id: "effort", value: "high" },
+            { id: "fast", value: "false" },
+          ],
+          builtInModel: true,
+          isVariantStringRepresentation: false,
+        },
+      ));
+      const run = decodeMessage(decodeMessage(frame).get(1)[0].value);
+      const requested = decodeMessage(run.get(9)[0].value);
+
+      expect(Buffer.from(requested.get(1)[0].value).toString("utf8")).toBe("grok-4.5");
+      expect(requested.get(3)).toHaveLength(2);
+      expect(requested.get(3).map(({ value }) => {
+        const parameter = decodeMessage(value);
+        return [
+          Buffer.from(parameter.get(1)[0].value).toString("utf8"),
+          Buffer.from(parameter.get(2)[0].value).toString("utf8"),
+        ];
+      })).toEqual([
+        ["effort", "high"],
+        ["fast", "false"],
+      ]);
+      expect(requested.get(7)[0].value).toBe(1);
+      expect(requested.has(8)).toBe(false);
+    });
+
     it("encodes mcp_tools (field 4) when tools are provided", () => {
       const tools = [{ function: { name: "get_weather", description: "weather", parameters: { type: "object", properties: { city: { type: "string" } } } } }];
       const frame = unwrap(buildAgentRunFrame([{ role: "user", content: "weather?" }], "gpt-5.2", tools));
@@ -278,5 +329,28 @@ describe("Cursor AgentService executor helpers (cursor.js)", () => {
       const history = decodeMessage(userAction.get(7)[0].value);
       expect(history.get(1).length).toBeGreaterThanOrEqual(2); // prior turns
     });
+  });
+});
+
+describe("Cursor tool-result translation", () => {
+  it("preserves OpenAI tool error status for AgentService continuation", () => {
+    const translated = openaiToCursorRequest("gpt-5.2", {
+      messages: [
+        { role: "assistant", content: null, tool_calls: [{ id: "call_1", type: "function", function: { name: "failing_tool", arguments: "{}" } }] },
+        { role: "tool", tool_call_id: "call_1", content: "failed", status: "error" },
+      ],
+    });
+    expect(translated.messages[1].content).toContain("<is_error>true</is_error>");
+  });
+
+  it("preserves Claude tool-result error status", () => {
+    const openai = claudeToOpenAIRequest("gpt-5.2", {
+      messages: [
+        { role: "assistant", content: [{ type: "tool_use", id: "call_1", name: "failing_tool", input: {} }] },
+        { role: "user", content: [{ type: "tool_result", tool_use_id: "call_1", content: "failed", is_error: true }] },
+      ],
+    }, false);
+    const translated = openaiToCursorRequest("gpt-5.2", openai, false);
+    expect(translated.messages[1].content).toContain("<is_error>true</is_error>");
   });
 });

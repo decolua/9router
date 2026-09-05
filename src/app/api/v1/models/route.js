@@ -13,7 +13,7 @@ import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
 import { resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
-import { resolveCursorModels } from "open-sse/services/cursorModels.js";
+import { expandCursorModelAliases, resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
@@ -104,7 +104,7 @@ const LIVE_MODEL_RESOLVERS = {
       accessToken: conn.accessToken,
       providerSpecificData: conn.providerSpecificData || {},
     }, { log: console });
-    return result?.models?.length ? { models: result.models } : null;
+    return result?.models?.length ? { models: expandCursorModelAliases(result.models) } : null;
   },
   zed: async (conn) => {
     const result = await resolveZedModels({
