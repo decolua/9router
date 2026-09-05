@@ -1,10 +1,9 @@
 export default {
   id: "vertex",
   priority: 40,
+  hasFree: true,
   alias: "vertex",
-  aliases: [
-    "vx",
-  ],
+  aliases: ["vx"],
   uiAlias: "vx",
   display: {
     name: "Vertex AI",
@@ -13,20 +12,25 @@ export default {
     textIcon: "VX",
     website: "https://cloud.google.com/vertex-ai",
     notice: {
-      text: "New Google Cloud accounts get $300 free credits. Requires GCP project + Service Account with Vertex AI API enabled.",
+      text: "Free tier: $300 / 90 days new GCP account + Always Free tier. Gemini 2.5 Flash ~1500 req/day free via AI Studio.",
       apiKeyUrl: "https://console.cloud.google.com/iam-admin/serviceaccounts",
     },
   },
   category: "freeTier",
+  hasFree: true,
   transport: {
-    baseUrl: "https://aiplatform.googleapis.com",
+    baseUrl: "https://aiplatform.googleapis.com/v1",
     format: "vertex",
   },
   models: [
-    { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview" },
-    { id: "gemini-3.1-flash-lite-preview", name: "Gemini 3.1 Flash Lite Preview" },
-    { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },
-    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+    { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview", free: true },
+    { id: "gemini-3.1-flash-lite-preview", name: "Gemini 3.1 Flash Lite Preview", free: true },
+    { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview", free: true },
+    { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", free: true },
+    { id: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash Lite", free: true },
+    { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", free: true },
   ],
+  modelsFetcher: { url: "https://aiplatform.googleapis.com/v1/models", type: "vertex" },
+  passthroughModels: true,
   serviceKinds: ["llm","imageToText"],
 };

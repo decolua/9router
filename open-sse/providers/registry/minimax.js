@@ -3,42 +3,26 @@ import { CLAUDE_API_HEADERS } from "../shared.js";
 export default {
   id: "minimax",
   priority: 90,
+  hasFree: true,
   alias: "minimax",
   display: {
-    name: "Minimax Coding",
+    name: "MiniMax",
     icon: "memory",
     color: "#7C3AED",
     textIcon: "MM",
-    website: "https://www.minimaxi.com",
+    website: "https://platform.minimax.io",
     notice: {
-      apiKeyUrl: "https://platform.minimaxi.com/user-center/basic-information/interface-key",
+      text: "Free trial credits on signup (phone verification, promo-dependent). Also via OpenRouter :free. Auto-discovered via modelsFetcher.",
+      apiKeyUrl: "https://platform.minimax.io/user-center/basic-information/interface-key",
     },
   },
-  category: "apikey",
+  category: "freeTier",
+  hasFree: true,
   transport: {
-    baseUrl: "https://api.minimax.io/anthropic/v1/messages",
-    format: "claude",
-    urlSuffix: "?beta=true",
-    headers: { ...CLAUDE_API_HEADERS },
-    quirks: {
-      dropOutputConfig: true,
-    },
-    reasoningInject: {
-      scope: "all",
-    },
-    auth: {
-      combined: true,
-      header: "x-api-key",
-      scheme: "raw",
-    },
-    usage: {
-      urls: [
-        "https://www.minimax.io/v1/token_plan/remains",
-        "https://api.minimax.io/v1/api/openplatform/coding_plan/remains",
-      ],
-    },
+    baseUrl: "https://api.minimax.io/v1/chat/completions",
+    validateUrl: "https://api.minimax.io/v1/models",
+    headers: {},
   },
-  // Multi-endpoint: pick the transport matching client sourceFormat to skip translation.
   transports: [
     {
       format: "openai",
@@ -54,10 +38,12 @@ export default {
     },
   ],
   models: [
-    { id: "MiniMax-M3", name: "MiniMax M3", targetFormat: "claude" },
-    { id: "MiniMax-M2.7", name: "MiniMax M2.7" },
-    { id: "MiniMax-M2.5", name: "MiniMax M2.5" },
-    { id: "MiniMax-M2.1", name: "MiniMax M2.1" },
+    { id: "MiniMax-M3", name: "MiniMax M3", targetFormat: "claude", free: true },
+    { id: "MiniMax-M2.7", name: "MiniMax M2.7", free: true },
+    { id: "MiniMax-M2.5", name: "MiniMax M2.5", free: true },
+    { id: "MiniMax-M2.1", name: "MiniMax M2.1", free: true },
+    { id: "minimax-m3", name: "MiniMax M3 (lowercase)", free: true },
+    { id: "minimax-m2.7", name: "MiniMax M2.7 (lowercase)", free: true },
     { id: "minimax-image-01", name: "MiniMax Image 01", params: ["n","size","response_format"], kind: "image" },
     { id: "speech-2.8-hd", name: "Speech 2.8 HD", kind: "tts" },
     { id: "speech-2.8-turbo", name: "Speech 2.8 Turbo", kind: "tts" },
@@ -68,6 +54,8 @@ export default {
     { id: "speech-01-hd", name: "Speech 01 HD", kind: "tts" },
     { id: "speech-01-turbo", name: "Speech 01 Turbo", kind: "tts" },
   ],
+  modelsFetcher: { url: "https://api.minimax.io/v1/models", type: "openai" },
+  passthroughModels: true,
   serviceKinds: ["llm","image","imageToText","webSearch","tts"],
   ttsConfig: { baseUrl: "https://api.minimax.io/v1/t2a_v2", authType: "apikey", authHeader: "bearer", format: "minimax-tts" },
   imageConfig: { baseUrl: "https://api.minimaxi.com/v1/images/generations" },
@@ -76,8 +64,5 @@ export default {
     endpoint: "https://api.minimaxi.com/v1/text/chatcompletion_v2",
     pricingUrl: "https://www.minimaxi.com/document/price",
   },
-  features: {
-    usage: true,
-    usageApikey: true,
-  },
+  features: { usage: true, usageApikey: true },
 };

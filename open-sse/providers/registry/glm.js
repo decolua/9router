@@ -3,6 +3,7 @@ import { CLAUDE_API_HEADERS } from "../shared.js";
 export default {
   id: "glm",
   priority: 140,
+  hasFree: true,
   alias: "glm",
   display: {
     name: "GLM Coding",
@@ -11,26 +12,26 @@ export default {
     textIcon: "GL",
     website: "https://open.bigmodel.cn",
     notice: {
+      text: "GLM-4.7-Flash permanent free (unlimited, ~1 req/s) + GLM-5.3-Flash promo free 200 req/day. Auto-discovered via modelsFetcher.",
       apiKeyUrl: "https://open.bigmodel.cn/usercenter/apikeys",
     },
   },
-  category: "apikey",
+  category: "freeTier",
+  hasFree: true,
   transport: {
-    baseUrl: "https://api.z.ai/api/anthropic/v1/messages",
-    format: "claude",
-    urlSuffix: "?beta=true",
-    headers: { ...CLAUDE_API_HEADERS },
-    auth: {
-      combined: true,
-      header: "x-api-key",
-      scheme: "raw",
-    },
+    baseUrl: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+    validateUrl: "https://open.bigmodel.cn/api/paas/v4/models",
+    headers: {},
     usage: {
-      url: "https://api.z.ai/api/monitor/usage/quota/limit",
+      url: "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
     },
   },
-  // Multi-endpoint: pick the transport matching client sourceFormat to skip translation.
   transports: [
+    {
+      format: "openai",
+      baseUrl: "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+      auth: { combined: true, header: "Authorization", scheme: "bearer" },
+    },
     {
       format: "openai",
       baseUrl: "https://api.z.ai/api/coding/paas/v4/chat/completions",
@@ -45,16 +46,20 @@ export default {
     },
   ],
   models: [
+    { id: "glm-4.7-flash", name: "GLM 4.7 Flash (Permanent Free)", free: true },
+    { id: "glm-5.3-flash", name: "GLM 5.3 Flash (Promo Free 200/day)", free: true },
+    { id: "glm-4.5-flash", name: "GLM 4.5 Flash (Free)", free: true },
+    { id: "glm-4.6v-flash", name: "GLM 4.6V Flash (Free)", free: true },
     { id: "glm-5.3", name: "GLM 5.3" },
-    { id: "glm-5.3-flash", name: "GLM 5.3 Flash (Vision)" },
     { id: "glm-5.2", name: "GLM 5.2" },
     { id: "glm-5.1", name: "GLM 5.1" },
     { id: "glm-5", name: "GLM 5" },
     { id: "glm-4.7", name: "GLM 4.7" },
     { id: "glm-4.6v", name: "GLM 4.6V (Vision)" },
   ],
+  modelsFetcher: { url: "https://open.bigmodel.cn/api/paas/v4/models", type: "openai" },
+  passthroughModels: true,
   serviceKinds: ["llm", "webSearch"],
-  // Coding plan bundles web search on the same API key as chat.
   searchConfig: {
     baseUrl: "https://api.z.ai/api/mcp/web_search_prime/mcp",
     method: "POST",

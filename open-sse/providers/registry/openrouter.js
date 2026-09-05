@@ -10,7 +10,7 @@ export default {
     textIcon: "OR",
     website: "https://openrouter.ai",
     notice: {
-      text: "Free tier: 27+ free models, no credit card needed, 200 req/day. After  0 credit: 1,000 req/day.",
+      text: "Free tier: 19 :free models pricing=0, auto-discovered via modelsFetcher. 50 req/day (no credits) / 1000 req/day (with $10 credits).",
       apiKeyUrl: "https://openrouter.ai/settings/keys",
     },
   },
@@ -19,6 +19,7 @@ export default {
   authModes: ["apikey"],
   transport: {
     baseUrl: "https://openrouter.ai/api/v1/chat/completions",
+    baseUrls: ["https://openrouter.ai/api/v1"],
     thinkingFormat: "openai",
     headers: {
       "HTTP-Referer": "https://endpoint-proxy.local",
@@ -32,7 +33,7 @@ export default {
     { id: "qwen/qwen3-embedding-8b", name: "Qwen3 Embedding 8B", kind: "embedding" },
     { id: "perplexity/pplx-embed-v1-4b", name: "Perplexity Embed V1 4B", kind: "embedding" },
     { id: "perplexity/pplx-embed-v1-0.6b", name: "Perplexity Embed V1 0.6B", kind: "embedding" },
-    { id: "nvidia/llama-nemotron-embed-vl-1b-v2:free", name: "NVIDIA Nemotron Embed VL 1B V2 (Free)", kind: "embedding" },
+    { id: "nvidia/llama-nemotron-embed-vl-1b-v2:free", name: "NVIDIA Nemotron Embed VL 1B V2 (Free)", kind: "embedding", free: true },
     { id: "openai/gpt-4o-mini-tts", name: "GPT-4o Mini TTS", kind: "tts" },
     { id: "openai/tts-1-hd", name: "TTS-1 HD", kind: "tts" },
     { id: "openai/tts-1", name: "TTS-1", kind: "tts" },

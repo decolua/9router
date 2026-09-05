@@ -118,6 +118,21 @@ export const MODEL_PRICING = {
   "glm-4.7":                      { input: 0.75,  output: 3.00,  cached: 0.375, reasoning: 4.50,   cache_creation: 0.75  },
   "glm-5":                        { input: 1.00,  output: 4.00,  cached: 0.50,  reasoning: 6.00,   cache_creation: 1.00  },
 
+
+  // === Free tier: OpenCode Zen 7 free (-free suffix) ===
+  "deepseek-v4-flash-free":       { input: 0, output: 0, cached: 0, reasoning: 0, cache_creation: 0 },
+  "muse-spark-1.2-contributor-free": { input: 0, output: 0, cached: 0, reasoning: 0, cache_creation: 0 },
+  "muse-spark-1.3-contributor-free": { input: 0, output: 0, cached: 0, reasoning: 0, cache_creation: 0 },
+  "mimo-v2.5-free":               { input: 0, output: 0, cached: 0, reasoning: 0, cache_creation: 0 },
+  "ling-3.0-flash-fin-free":      { input: 0, output: 0, cached: 0, reasoning: 0, cache_creation: 0 },
+  "nemotron-3-ultra-free":        { input: 0, output: 0, cached: 0, reasoning: 0, cache_creation: 0 },
+  "nemotron-3.5-lightning-free":  { input: 0, output: 0, cached: 0, reasoning: 0, cache_creation: 0 },
+  "big-pickle":                   { input: 0, output: 0, cached: 0, reasoning: 0, cache_creation: 0 },
+  // === Free tier: GLM permanent/promo free ===
+  "glm-4.7-flash":                { input: 0, output: 0, cached: 0, reasoning: 0, cache_creation: 0 },
+  "glm-5.3-flash":                { input: 0, output: 0, cached: 0, reasoning: 0, cache_creation: 0 },
+  "glm-4.5-flash":                { input: 0, output: 0, cached: 0, reasoning: 0, cache_creation: 0 },
+  "glm-4.6v-flash":               { input: 0, output: 0, cached: 0, reasoning: 0, cache_creation: 0 },
   // === MiniMax ===
   "MiniMax-M3":                   { input: 0.30,  output: 1.20,  cached: 0.06,  reasoning: 1.80,   cache_creation: 0.30  },
   "MiniMax-M2.1":                 { input: 0.50,  output: 2.00,  cached: 0.25,  reasoning: 3.00,   cache_creation: 0.50  },

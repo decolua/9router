@@ -1,3 +1,5 @@
+// VortexRouter free models auto-available: OpenCode 7 free, GLM 4.7-flash permanent free + 5.3-flash 200/day, OpenRouter 19 :free
+// Auto-discovery via modelsFetcher, hasFree flags, BaseURLs (opencode.ai/zen/v1, open.bigmodel.cn/api/paas/v4, openrouter.ai/api/v1)
 import { PROVIDERS } from "./providers.js";
 import REGISTRY from "../providers/registry/index.js";
 // PROVIDER_MODELS now built from providers/registry (transport + models co-located)
