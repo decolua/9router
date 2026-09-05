@@ -27,6 +27,7 @@ describe("OpenCode Go model catalog", () => {
       "mimo-v2.5", "mimo-v2.5-pro",
       "minimax-m3", "minimax-m2.7", "minimax-m2.5",
       "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus",
+      "muse-spark-1.3-contributor",
     ]);
   });
 });

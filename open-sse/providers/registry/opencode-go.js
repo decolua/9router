@@ -47,5 +47,8 @@ export default {
     { id: "qwen3.7-max", name: "Qwen 3.7 Max", supportedFormats: ["openai", "claude"] },
     { id: "qwen3.7-plus", name: "Qwen 3.7 Plus", supportedFormats: ["openai", "claude"] },
     { id: "qwen3.6-plus", name: "Qwen 3.6 Plus", supportedFormats: ["openai", "claude"] },
+    // Muse Spark is served by /zen/go/v1/responses only — responses-only entry forces
+    // chatCore past the sourceFormat-matched transports into translation (see chatCore guard).
+    { id: "muse-spark-1.3-contributor", name: "Muse Spark 1.3 Contributor", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
   ],
 };
