@@ -25,6 +25,20 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 
+// Per-combo account allow-list: settings.comboStrategies[combo].accountFilters is
+// keyed by an exact "provider/model" entry OR by bare provider. A value of
+// { groups: [...], connectionIds: [...] }; empty/absent = all accounts.
+function resolveComboAccountFilter(accountFilters, modelStr) {
+  if (!accountFilters || typeof accountFilters !== "object") return null;
+  const provider = modelStr.includes("/") ? modelStr.slice(0, modelStr.indexOf("/")) : modelStr;
+  const f = accountFilters[modelStr] || accountFilters[provider];
+  if (!f || typeof f !== "object") return null;
+  const groups = Array.isArray(f.groups) ? f.groups.filter(Boolean) : [];
+  const connectionIds = Array.isArray(f.connectionIds) ? f.connectionIds.filter(Boolean) : [];
+  if (groups.length === 0 && connectionIds.length === 0) return null;
+  return { groups, connectionIds };
+}
+
 /**
  * Handle chat completion request
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
@@ -108,12 +122,12 @@ export async function handleChat(request, clientRawRequest = null) {
         body,
         models: comboModels,
         handleSingleModel: (b, m, isPanel) => {
-          let cleanRawReq = clientRawRequest;
+          let cleanRawReq = clientRawRequest ? { ...clientRawRequest, combo: modelStr } : clientRawRequest;
           if (isPanel && clientRawRequest) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
-            cleanRawReq = { ...clientRawRequest, body: cleanBody };
+            cleanRawReq = { ...clientRawRequest, body: cleanBody, combo: modelStr };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, resolveComboAccountFilter(comboStrategies[modelStr]?.accountFilters, m));
         },
         log,
         comboName: modelStr,
@@ -122,13 +136,15 @@ export async function handleChat(request, clientRawRequest = null) {
       });
     }
 
+    const comboAccountFilters = comboStrategies[modelStr]?.accountFilters || null;
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
+    const comboRawRequest = clientRawRequest ? { ...clientRawRequest, combo: modelStr } : clientRawRequest;
     log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
       models: augmentedModels,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        (b, m) => handleSingleModelChat(b, m, comboRawRequest, request, apiKey, resolveComboAccountFilter(comboAccountFilters, m)),
         adapterAdded
       ),
       log,
@@ -144,11 +160,12 @@ export async function handleChat(request, clientRawRequest = null) {
   if (soloAugmented.length > 1) {
     const adapterAdded = soloAugmented.filter((m) => m !== modelStr);
     log.info("CHAT", `Capacity adapter for [${[...requiredCapabilities].join(",")}] on "${modelStr}" → trying ${soloAugmented.join(", ")}`);
+    const adapterRawRequest = clientRawRequest ? { ...clientRawRequest, combo: modelStr } : clientRawRequest;
     return handleComboChat({
       body,
       models: soloAugmented,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        (b, m) => handleSingleModelChat(b, m, adapterRawRequest, request, apiKey),
         adapterAdded
       ),
       log,
@@ -163,7 +180,7 @@ export async function handleChat(request, clientRawRequest = null) {
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, accountFilter = null) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -190,7 +207,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, resolveComboAccountFilter(comboStrategies[modelStr]?.accountFilters, m));
           },
           log,
           comboName: modelStr,
@@ -199,13 +216,14 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         });
       }
 
+      const comboAccountFilters = comboStrategies[modelStr]?.accountFilters || null;
       const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
       log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
       return handleComboChat({
         body,
         models: augmentedModels,
         handleSingleModel: withCapacityAdapterStripping(
-          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, resolveComboAccountFilter(comboAccountFilters, m)),
           adapterAdded
         ),
         log,
@@ -231,7 +249,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
+      allowGroups: accountFilter?.groups,
+      allowConnectionIds: accountFilter?.connectionIds,
+    });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {

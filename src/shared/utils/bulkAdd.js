@@ -18,10 +18,16 @@
 // "skip-if-exists" flag on POST /api/providers if single-add ever needs it.
 
 /**
- * Parse one pipe-separated bulk line into { baseName, apiKey, providerSpecificData? }.
+ * Parse one pipe-separated bulk line.
+ *   name|apiKey|group   → { baseName, apiKey, group }   (group = last field)
+ *   name|apiKey         → { baseName, apiKey, group:"" }
+ *   apiKey              → { baseName:"Key", apiKey, group:"" }
+ *   (cloudflare-ai)     → name|apiKey|accountId, group not supported
+ * Caveat: with the 3-field form the last "|" segment is the group, so an API
+ * key that literally contains "|" must use the 2-field form.
  * @param {string} line
  * @param {{isCloudflareAi?: boolean}} [opts]
- * @returns {{baseName: string, apiKey: string, providerSpecificData?: object}|null}
+ * @returns {{baseName: string, apiKey: string, group?: string, providerSpecificData?: object}|null}
  */
 function parseLine(line, opts = {}) {
   const { isCloudflareAi = false } = opts;
@@ -39,16 +45,24 @@ function parseLine(line, opts = {}) {
     };
   }
 
-  if (parts.length >= 2) {
-    // name|apiKey  (apiKey may itself contain pipes)
+  if (parts.length >= 3) {
+    // name|apiKey|group  (apiKey may itself contain pipes; group is the last field)
     const baseName = parts[0].trim();
-    const apiKey = parts.slice(1).join("|").trim();
-    return { baseName: baseName || "Key", apiKey };
+    const group = parts[parts.length - 1].trim();
+    const apiKey = parts.slice(1, -1).join("|").trim();
+    return { baseName: baseName || "Key", apiKey, group };
   }
 
-  // apiKey only — auto-named "Key N"
+  if (parts.length === 2) {
+    // name|apiKey  → group empty
+    const baseName = parts[0].trim();
+    const apiKey = parts[1].trim();
+    return { baseName: baseName || "Key", apiKey, group: "" };
+  }
+
+  // apiKey only — auto-named "Key N", no group
   const apiKey = parts[0].trim();
-  return { baseName: "Key", apiKey };
+  return { baseName: "Key", apiKey, group: "" };
 }
 
 /**
@@ -86,7 +100,7 @@ export function planBulkAdd(lines, existingNames, opts = {}) {
     }
     used.add(name.toLowerCase());
 
-    const entry = { name, apiKey: parsed.apiKey, skipped: false };
+    const entry = { name, apiKey: parsed.apiKey, group: parsed.group || "", skipped: false };
     if (parsed.providerSpecificData) entry.providerSpecificData = parsed.providerSpecificData;
     out.push(entry);
   }

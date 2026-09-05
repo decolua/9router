@@ -98,6 +98,7 @@ export async function PUT(request, { params }) {
       testStatus,
       lastError,
       lastErrorAt,
+      group,
       providerSpecificData
     } = body;
 
@@ -126,6 +127,7 @@ export async function PUT(request, { params }) {
     if (testStatus !== undefined) updateData.testStatus = testStatus;
     if (lastError !== undefined) updateData.lastError = lastError;
     if (lastErrorAt !== undefined) updateData.lastErrorAt = lastErrorAt;
+    if (group !== undefined) updateData.group = typeof group === "string" ? group.trim() : "";
 
     if (
       shouldMergeProviderSpecificData(

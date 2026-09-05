@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -105,12 +105,16 @@ export default function CombosPage() {
 
   const handleCreate = async (data) => {
     try {
+      const { accountFilters, ...comboData } = data;
       const res = await fetch("/api/combos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(comboData),
       });
       if (res.ok) {
+        if (accountFilters && Object.keys(accountFilters).length) {
+          await handleSetComboStrategy(comboData.name, { accountFilters });
+        }
         await fetchData();
         setShowCreateModal(false);
       } else {
@@ -124,12 +128,17 @@ export default function CombosPage() {
 
   const handleUpdate = async (id, data) => {
     try {
+      const { accountFilters, ...comboData } = data;
       const res = await fetch(`/api/combos/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(comboData),
       });
       if (res.ok) {
+        // Keys step lives in the same form now, so always sync it (including clearing it out).
+        if (accountFilters !== undefined) {
+          await handleSetComboStrategy(comboData.name, { accountFilters });
+        }
         await fetchData();
         setEditingCombo(null);
       } else {
@@ -165,8 +174,20 @@ export default function CombosPage() {
     try {
       const updated = { ...comboStrategies };
       const next = { ...(updated[comboName] || {}), ...patch };
-      // Prune to keep settings clean: default fallback with no extras = no entry.
-      if (!next.fallbackStrategy || next.fallbackStrategy === "fallback") {
+      // Normalize accountFilters: drop empty per-provider entries and the key itself if empty.
+      if (next.accountFilters && typeof next.accountFilters === "object") {
+        const af = {};
+        for (const [k, v] of Object.entries(next.accountFilters)) {
+          const groups = Array.isArray(v?.groups) ? v.groups.filter(Boolean) : [];
+          const connectionIds = Array.isArray(v?.connectionIds) ? v.connectionIds.filter(Boolean) : [];
+          if (groups.length || connectionIds.length) af[k] = { groups, connectionIds };
+        }
+        if (Object.keys(af).length) next.accountFilters = af;
+        else delete next.accountFilters;
+      }
+      // Prune to keep settings clean: default fallback with nothing extra = no entry.
+      const hasExtras = next.judgeModel || next.fusionTuning || next.accountFilters;
+      if ((!next.fallbackStrategy || next.fallbackStrategy === "fallback") && !hasExtras) {
         delete updated[comboName];
       } else {
         updated[comboName] = next;
@@ -272,6 +293,7 @@ export default function CombosPage() {
           onClose={() => setEditingCombo(null)}
           onSave={(data) => handleUpdate(editingCombo.id, data)}
           activeProviders={activeProviders}
+          initialAccountFilters={comboStrategies[editingCombo.name]?.accountFilters || {}}
         />
       )}
 
@@ -296,9 +318,12 @@ const STRATEGY_OPTIONS = [
 
 function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
+  const [showAccounts, setShowAccounts] = useState(false);
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
   const isFusion = current === "fusion";
+  const accountFilters = strategy.accountFilters || {};
+  const filteredProviderCount = Object.keys(accountFilters).length;
 
   return (
     <Card padding="sm" className="group">
@@ -362,7 +387,15 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-1 sm:flex">
+          <div className="grid grid-cols-4 gap-1 sm:flex">
+            <button
+              onClick={() => setShowAccounts(true)}
+              className={`flex flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${filteredProviderCount ? "text-primary" : "text-text-muted hover:text-primary"}`}
+              title="Restrict which accounts / groups this combo uses"
+            >
+              <span className="material-symbols-outlined text-[18px]">{filteredProviderCount ? "filter_alt" : "groups"}</span>
+              <span className="text-[10px] leading-tight">{filteredProviderCount ? `Keys (${filteredProviderCount})` : "Keys"}</span>
+            </button>
             <button
               onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
               className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
@@ -405,9 +438,150 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
           closeOnSelect={true}
         />
       )}
+
+      {showAccounts && (
+        <ComboAccountsModal
+          isOpen={showAccounts}
+          combo={combo}
+          connections={activeProviders}
+          accountFilters={accountFilters}
+          onClose={() => setShowAccounts(false)}
+          onSave={(next) => { onSetStrategy({ accountFilters: next }); setShowAccounts(false); }}
+        />
+      )}
     </Card>
   );
 }
+
+// One provider's key-restriction fieldset: "All keys" checkbox + group checkboxes +
+// individual-key checkboxes. Shared between the standalone Keys modal (ComboAccountsModal)
+// and the inline Keys step inside ComboFormModal's create/edit flow.
+function ProviderKeysField({ provider, connections, draft, onToggle, onSetAll }) {
+  const conns = connections.filter((c) => c.provider === provider);
+  const groups = [...new Set(conns.map((c) => (c.group || "").trim()).filter(Boolean))].sort();
+  const d = draft || { groups: new Set(), connectionIds: new Set() };
+  const restricted = d.groups.size > 0 || d.connectionIds.size > 0;
+  const coveredIds = new Set(conns.filter((c) => d.groups.has((c.group || "").trim())).map((c) => c.id));
+
+  return (
+    <div className="rounded-lg border border-black/10 p-3 dark:border-white/10">
+      <div className="mb-2 flex items-center justify-between">
+        <code className="font-mono text-sm font-medium">{provider}</code>
+        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-text-muted select-none">
+          <input type="checkbox" checked={!restricted} onChange={() => { if (restricted) onSetAll(); }} />
+          All keys ({conns.length})
+        </label>
+      </div>
+      {conns.length === 0 && <p className="text-xs text-text-muted">No active connections for this provider.</p>}
+      {groups.length > 0 && (
+        <div className="mb-2">
+          <p className="mb-1 text-[11px] uppercase tracking-wide text-text-muted">Groups</p>
+          <div className="flex flex-wrap gap-1.5">
+            {groups.map((g) => (
+              <label key={g} className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs ${d.groups.has(g) ? "border-primary text-primary" : "border-black/10 text-text-muted dark:border-white/10"}`}>
+                <input type="checkbox" className="hidden" checked={d.groups.has(g)} onChange={() => onToggle("groups", g)} />
+                {g} <span className="opacity-60">({conns.filter((c) => (c.group || "").trim() === g).length})</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+      {conns.length > 0 && (
+        <div>
+          <p className="mb-1 text-[11px] uppercase tracking-wide text-text-muted">Individual keys</p>
+          <div className="flex max-h-44 flex-col gap-1 overflow-auto">
+            {conns.map((c) => {
+              const viaGroup = coveredIds.has(c.id);
+              return (
+                <label key={c.id} className={`flex items-center gap-2 text-xs ${viaGroup ? "opacity-50" : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={viaGroup || d.connectionIds.has(c.id)}
+                    disabled={viaGroup}
+                    onChange={() => onToggle("connectionIds", c.id)}
+                  />
+                  <span className="truncate">{c.name || c.email || c.id.slice(0, 8)}</span>
+                  {c.group && <span className="rounded bg-black/5 px-1 text-[10px] text-text-muted dark:bg-white/10">{c.group}</span>}
+                  {viaGroup && <span className="text-[10px] text-primary">via group</span>}
+                </label>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Builds the {[provider]: {groups, connectionIds}} save payload from a draft map,
+// dropping individual keys already covered by a checked group and empty entries.
+function buildAccountFiltersPayload(providers, draft, connections) {
+  const next = {};
+  for (const p of providers) {
+    const d = draft[p] || { groups: new Set(), connectionIds: new Set() };
+    const groups = [...d.groups];
+    const conns = connections.filter((c) => c.provider === p);
+    const covered = new Set(conns.filter((c) => groups.includes((c.group || "").trim())).map((c) => c.id));
+    const connectionIds = [...d.connectionIds].filter((id) => !covered.has(id));
+    if (groups.length || connectionIds.length) next[p] = { groups, connectionIds };
+  }
+  return next;
+}
+
+// Standalone "Keys" modal, opened from the combo card for a quick edit without
+// reopening the full Create/Edit Combo form.
+function ComboAccountsModal({ isOpen, combo, connections = [], accountFilters = {}, onClose, onSave }) {
+  const providers = [...new Set((combo.models || []).map((m) => (m.includes("/") ? m.slice(0, m.indexOf("/")) : m)))];
+
+  const [draft, setDraft] = useState(() => {
+    const d = {};
+    for (const p of providers) {
+      const f = accountFilters[p] || {};
+      d[p] = {
+        groups: new Set(Array.isArray(f.groups) ? f.groups : []),
+        connectionIds: new Set(Array.isArray(f.connectionIds) ? f.connectionIds : []),
+      };
+    }
+    return d;
+  });
+
+  const toggle = (p, kind, value) => {
+    setDraft((prev) => {
+      const cur = prev[p] || { groups: new Set(), connectionIds: new Set() };
+      const set = new Set(cur[kind]);
+      set.has(value) ? set.delete(value) : set.add(value);
+      return { ...prev, [p]: { ...cur, [kind]: set } };
+    });
+  };
+  const setAll = (p) => setDraft((prev) => ({ ...prev, [p]: { groups: new Set(), connectionIds: new Set() } }));
+
+  const handleSave = () => onSave(buildAccountFiltersPayload(providers, draft, connections));
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={`Accounts for "${combo.name}"`}>
+      <div className="flex flex-col gap-4">
+        <p className="text-xs text-text-muted">
+          Pick which keys each provider in this combo may use. Leave a provider untouched to use <span className="font-medium text-text-main">all</span> its keys. A checked group includes every key in it.
+        </p>
+        {providers.map((p) => (
+          <ProviderKeysField
+            key={p}
+            provider={p}
+            connections={connections}
+            draft={draft[p]}
+            onToggle={(kind, value) => toggle(p, kind, value)}
+            onSetAll={() => setAll(p)}
+          />
+        ))}
+        <div className="flex gap-2">
+          <Button onClick={handleSave} fullWidth>Save</Button>
+          <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 
 function CapacityAdapterSection({ capacityAdapter, onChange, activeProviders, getCaps }) {
   return (
@@ -446,9 +620,19 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
 
   const patch = (p) => onChange({ ...entry, ...p });
 
+  // `entry` is a prop, so it stays stale across synchronous calls in the same batch
+  // (e.g. the select-all checkbox looping onSelect). Mirror it in a ref — synced
+  // post-render via effect, since refs must not be written during render — and
+  // mutate that ref directly inside handleAdd so each call accumulates onto the
+  // previous one instead of clobbering it; the last patch() call carries the full list.
+  const modelsRef = useRef(models);
+  useEffect(() => { modelsRef.current = models; }, [models]);
+
   const handleAdd = (model) => {
-    if (models.includes(model.value)) return;
-    patch({ models: [...models, model.value] });
+    if (modelsRef.current.includes(model.value)) return;
+    const next = [...modelsRef.current, model.value];
+    modelsRef.current = next;
+    patch({ models: next });
   };
 
   const handleRemove = (index) => {
@@ -650,7 +834,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
   );
 }
 
-function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }) {
+function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null, initialAccountFilters = {} }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
@@ -659,6 +843,29 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
 
+  // Keys step (per-provider account allow-list) — draft keyed by provider,
+  // seeded from the combo's saved accountFilters when editing.
+  const [accountDraft, setAccountDraft] = useState(() => {
+    const d = {};
+    for (const p of new Set((combo?.models || []).map((m) => (m.includes("/") ? m.slice(0, m.indexOf("/")) : m)))) {
+      const f = initialAccountFilters[p] || {};
+      d[p] = {
+        groups: new Set(Array.isArray(f.groups) ? f.groups : []),
+        connectionIds: new Set(Array.isArray(f.connectionIds) ? f.connectionIds : []),
+      };
+    }
+    return d;
+  });
+  const toggleAccount = (p, kind, value) => {
+    setAccountDraft((prev) => {
+      const cur = prev[p] || { groups: new Set(), connectionIds: new Set() };
+      const set = new Set(cur[kind]);
+      set.has(value) ? set.delete(value) : set.add(value);
+      return { ...prev, [p]: { ...cur, [kind]: set } };
+    });
+  };
+  const setAllAccounts = (p) => setAccountDraft((prev) => ({ ...prev, [p]: { groups: new Set(), connectionIds: new Set() } }));
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
@@ -666,6 +873,13 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
 
   // Use stable index-based IDs so duplicates and similar names are handled correctly
   const modelItems = models.map((model, i) => ({ uid: `item-${i}`, model }));
+
+  // Providers currently in this combo — drives which Keys fieldsets to show.
+  // Recomputed live as models are added/removed (accountDraft entries are created lazily).
+  const providers = useMemo(
+    () => [...new Set(models.map((m) => (m.includes("/") ? m.slice(0, m.indexOf("/")) : m)))],
+    [models]
+  );
 
   const handleDragEnd = (event) => {
     const { active, over } = event;
@@ -713,14 +927,15 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
     else setNameError("");
   };
 
+  // Functional updates — required so the select-all checkbox (which fires several
+  // onSelect calls synchronously in one loop) accumulates correctly instead of each
+  // call reading the same stale `models` closure and clobbering the previous one.
   const handleAddModel = (model) => {
-    if (!models.includes(model.value)) {
-      setModels([...models, model.value]);
-    }
+    setModels((prev) => (prev.includes(model.value) ? prev : [...prev, model.value]));
   };
 
   const handleDeselectModel = (model) => {
-    setModels(models.filter((m) => m !== model.value));
+    setModels((prev) => prev.filter((m) => m !== model.value));
   };
 
   const handleRemoveModel = (index) => {
@@ -744,7 +959,11 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const handleSave = async () => {
     if (!validateName(name)) return;
     setSaving(true);
-    await onSave({ name: name.trim(), models });
+    await onSave({
+      name: name.trim(),
+      models,
+      accountFilters: buildAccountFiltersPayload(providers, accountDraft, activeProviders),
+    });
     setSaving(false);
   };
 
@@ -817,6 +1036,34 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
               Add Model
             </button>
           </div>
+
+          {/* Keys — per-provider account allow-list (LLM combos only) */}
+          {!kindFilter && (
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Keys</label>
+              <p className="text-[10px] text-text-muted mb-2">
+                Optional: restrict which keys each provider above may use. Leave a provider untouched to use all its keys.
+              </p>
+              {providers.length === 0 ? (
+                <div className="text-center py-4 border border-dashed border-black/10 dark:border-white/10 rounded-lg bg-black/[0.01] dark:bg-white/[0.01]">
+                  <p className="text-xs text-text-muted">Add a model first to configure keys</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  {providers.map((p) => (
+                    <ProviderKeysField
+                      key={p}
+                      provider={p}
+                      connections={activeProviders}
+                      draft={accountDraft[p]}
+                      onToggle={(kind, value) => toggleAccount(p, kind, value)}
+                      onSetAll={() => setAllAccounts(p)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Actions */}
           <div className="flex flex-col gap-2 pt-1 sm:flex-row">

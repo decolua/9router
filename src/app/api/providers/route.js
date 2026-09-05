@@ -88,7 +88,7 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const provider = normalizeProviderId(body.provider);
-    const { apiKey, name, displayName, priority, globalPriority, defaultModel, testStatus } = body;
+    const { apiKey, name, displayName, priority, globalPriority, defaultModel, testStatus, group, skipIfExists } = body;
     const proxyConfig = normalizeProxyConfig(body);
     if (proxyConfig.error) {
       return NextResponse.json({ error: proxyConfig.error }, { status: 400 });
@@ -183,11 +183,17 @@ export async function POST(request) {
       providerSpecificData: mergedProviderSpecificData,
       isActive: true,
       testStatus: testStatus || "unknown",
-    });
+      group: typeof group === "string" ? group : "",
+    }, { skipIfExists: skipIfExists === true });
 
     // Hide sensitive fields
     const result = { ...newConnection };
     delete result.apiKey;
+
+    // skipIfExists matched a pre-existing key — not an error, report it as such.
+    if (newConnection?.skipped) {
+      return NextResponse.json({ connection: result, skipped: true }, { status: 200 });
+    }
 
     return NextResponse.json({ connection: result }, { status: 201 });
   } catch (error) {
