@@ -154,6 +154,7 @@ export const PROVIDER_CAPABILITIES = {
     "deepseek-ai/deepseek-v4-flash": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 65536 },
   },
   "codex": {
+    "gpt-6-astra":               { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 },
     "gpt-5.6-sol":               CODEX_GPT_56_SOL_CAPS,
     "gpt-5.6-sol-review":        CODEX_GPT_56_SOL_CAPS,
     "gpt-5.6-terra":             CODEX_GPT_56_DEFAULT_CAPS,
@@ -282,6 +283,9 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*gemini*",        caps: { vision: true, search: true, contextWindow: 1048576 } },
   { pattern: "*gemma*",         caps: { vision: true, contextWindow: 128000 } },
   { pattern: "*nanobanana*",    caps: { vision: true, imageOutput: true } },
+
+  // ── OpenAI GPT-6.x (vision + thinking + web search) ──────────────
+  { pattern: "*gpt-6*",         caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 } },
 
   // ── OpenAI GPT-5.x (vision + thinking + web search) ──────────────
   { pattern: "*gpt-5*image*",   caps: { imageOutput: true } },

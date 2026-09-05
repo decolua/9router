@@ -45,6 +45,7 @@ export default {
     },
   },
   models: [
+    { id: "gpt-6-astra", name: "GPT 6.0 Astra" },
     { id: "gpt-5.6-sol", name: "GPT 5.6 Sol" },
     { id: "gpt-5.6-sol-review", name: "GPT 5.6 Sol Review", upstreamModelId: "gpt-5.6-sol", quotaFamily: "review" },
     { id: "gpt-5.6-terra", name: "GPT 5.6 Terra" },
