@@ -139,11 +139,22 @@ const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true,
 // (lower than OpenAI API's 1.05M). Sol differs from Terra/Luna. #2720
 const CODEX_GPT_56_SOL_CAPS  = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 372000, maxOutput: 128000 };
 const CODEX_GPT_56_DEFAULT_CAPS = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
+const XIAOMI_TOKENPLAN_TEXT_CAPS = { vision: false, audioInput: false, videoInput: false, contextWindow: 1048576, maxOutput: 131072 };
+const XIAOMI_TOKENPLAN_CAPABILITIES = {
+  "mimo-v2.5-pro": XIAOMI_TOKENPLAN_TEXT_CAPS,
+  "mimo-v2.5-pro-claude": XIAOMI_TOKENPLAN_TEXT_CAPS,
+  "mimo-v2.5": XIAOMI_TOKENPLAN_TEXT_CAPS,
+};
 
 /**
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
 export const PROVIDER_CAPABILITIES = {
+  // Token Plan exposes text-only V2.5 chat models under the same IDs that the
+  // standard MiMo API uses for a multimodal family. Keep both the canonical ID
+  // and the routed model alias because combo/capacity checks receive either.
+  "xiaomi-tokenplan": XIAOMI_TOKENPLAN_CAPABILITIES,
+  "xmtp": XIAOMI_TOKENPLAN_CAPABILITIES,
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue
   "nvidia": {
