@@ -6,6 +6,7 @@
 import { describe, expect, it } from "vitest";
 import "../translator/registerAll.js";
 import { openaiResponsesToOpenAIResponse } from "../../open-sse/translator/response/openai-responses.js";
+import { clampResponsesCallId, MAX_RESPONSES_CALL_ID_LEN } from "../../open-sse/translator/formats/responsesApi.js";
 import { initState, translateResponse } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 
@@ -136,5 +137,17 @@ describe("responses → claude end-to-end keeps parallel tool_use blocks separat
       "/docs/ROADMAP.md",
       "/docs/openapi.custom.yaml",
     ]);
+  });
+});
+
+describe("fallback call_ids stay unique within a batch", () => {
+  it("same-millisecond fallbacks never collide", () => {
+    const ids = new Set(Array.from({ length: 50 }, () => clampResponsesCallId(undefined)));
+    expect(ids.size).toBe(50);
+    for (const id of ids) {
+      expect(id.startsWith("call_")).toBe(true);
+      expect(id.length).toBeLessThanOrEqual(MAX_RESPONSES_CALL_ID_LEN);
+    }
+    expect(new Set([clampResponsesCallId(""), clampResponsesCallId(null)]).size).toBe(2);
   });
 });
