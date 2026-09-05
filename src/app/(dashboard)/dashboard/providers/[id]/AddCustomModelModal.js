@@ -2,21 +2,19 @@
 
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
-import { Button, Modal, Toggle } from "@/shared/components";
-import { CAPACITY_META } from "@/shared/constants/models";
-
-const defaultCaps = () => Object.fromEntries(Object.keys(CAPACITY_META).map((key) => [key, false]));
+import { Button, Modal } from "@/shared/components";
+import { CUSTOM_MODEL_CAP_OPTIONS, EMPTY_CUSTOM_MODEL_CAPS } from "@/shared/constants/customModelCaps";
 
 export default function AddCustomModelModal({ isOpen, providerAlias, providerDisplayAlias, onSave, onClose }) {
   const [modelId, setModelId] = useState("");
-  const [caps, setCaps] = useState(defaultCaps);
   const [testStatus, setTestStatus] = useState(null); // null | "testing" | "ok" | "error"
   const [testError, setTestError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [caps, setCaps] = useState(() => ({ ...EMPTY_CUSTOM_MODEL_CAPS }));
 
   // Reset state when modal opens
   useEffect(() => {
-    if (isOpen) { setModelId(""); setCaps(defaultCaps()); setTestStatus(null); setTestError(""); }
+    if (isOpen) { setModelId(""); setTestStatus(null); setTestError(""); setCaps({ ...EMPTY_CUSTOM_MODEL_CAPS }); }
   }, [isOpen]);
 
   // Strip provider's own alias prefix (e.g. "cc/model" -> "model" for cc provider)
@@ -50,7 +48,7 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
     if (!cleanId || saving) return;
     setSaving(true);
     try {
-      await onSave(cleanId, caps);
+      await onSave(cleanId, { ...caps });
     } finally {
       setSaving(false);
     }
@@ -90,22 +88,6 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
           </p>
         </div>
 
-        <div>
-          <label className="text-sm font-medium mb-1.5 block">Capabilities</label>
-          <div className="flex flex-wrap gap-4">
-            {Object.entries(CAPACITY_META).map(([key, meta]) => (
-              <Toggle
-                key={key}
-                checked={!!caps[key]}
-                onChange={(v) => setCaps((prev) => ({ ...prev, [key]: v }))}
-                label={meta.label}
-                description={meta.desc}
-                size="sm"
-              />
-            ))}
-          </div>
-        </div>
-
         {/* Test result */}
         {testStatus === "ok" && (
           <div className="flex items-center gap-2 text-sm text-green-600">
@@ -119,6 +101,29 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
             <span>{testError || "Model not reachable"}</span>
           </div>
         )}
+
+        {/* Capabilities — tell 9Router what this custom model can read/emit so the
+            runtime resolver lifts it above the text-only default. */}
+        <div>
+          <label className="text-sm font-medium mb-1.5 block">Capabilities</label>
+          <div className="grid grid-cols-2 gap-2">
+            {CUSTOM_MODEL_CAP_OPTIONS.map((opt) => (
+              <label key={opt.key} className="flex items-center gap-2 text-sm cursor-pointer select-none" title={opt.desc}>
+                <input
+                  type="checkbox"
+                  checked={!!caps[opt.key]}
+                  onChange={(e) => setCaps((prev) => ({ ...prev, [opt.key]: e.target.checked }))}
+                  className="w-4 h-4 accent-primary"
+                />
+                <span className="material-symbols-outlined text-base text-text-muted">{opt.icon}</span>
+                {opt.label}
+              </label>
+            ))}
+          </div>
+          <p className="text-xs text-text-muted mt-1">
+            Leave unchecked for a plain text model. Enable the modalities/features your model actually supports.
+          </p>
+        </div>
 
         <div className="flex gap-2 pt-1">
           <Button onClick={onClose} variant="ghost" fullWidth size="sm">Cancel</Button>

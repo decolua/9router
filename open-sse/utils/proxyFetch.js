@@ -1,4 +1,5 @@
 import { Readable } from "stream";
+import { readFileSync } from "fs";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
 
@@ -214,6 +215,63 @@ function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
 }
 
 /**
+ * Custom CA / TLS trust for proxied upstream calls.
+ *
+ * undici's ProxyAgent does NOT honor NODE_EXTRA_CA_CERTS — that env only
+ * reaches Node's built-in tls/https, not undici's dispatcher. So when the
+ * proxy re-signs upstream responses with a self-signed root CA (MITM
+ * inspection: mitmproxy / Burp / Zscaler / corporate), the CA must be fed
+ * explicitly via ProxyAgent's `requestTls.ca` (TLS leg to the upstream) and
+ * `proxyTls.ca` (TLS leg to the proxy itself, for https:// proxies).
+ *
+ *   PROXY_CA_CERT     — path to a PEM file containing the trusted root CA(s)
+ *   PROXY_TLS_INSECURE — "1"/"true" to disable cert verification entirely
+ *                        (dev/local only — drops all validation on proxied calls)
+ */
+let _proxyCaCache; // undefined = not loaded, null = none/failed, Buffer = loaded
+
+function loadProxyCa() {
+  if (_proxyCaCache !== undefined) return _proxyCaCache;
+  const caPath = normalizeString(process.env.PROXY_CA_CERT || process.env.proxy_ca_cert);
+  if (!caPath) {
+    _proxyCaCache = null;
+    return _proxyCaCache;
+  }
+  try {
+    _proxyCaCache = readFileSync(caPath);
+    dbg("TLS", `loaded proxy CA from ${caPath}`);
+  } catch (e) {
+    console.warn(`[ProxyFetch] Failed to read PROXY_CA_CERT (${caPath}): ${e.message}`);
+    _proxyCaCache = null;
+  }
+  return _proxyCaCache;
+}
+
+function isProxyTlsInsecure() {
+  const v = normalizeString(process.env.PROXY_TLS_INSECURE || process.env.proxy_tls_insecure).toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+/**
+ * Build ProxyAgent options with optional custom-CA / insecure TLS trust.
+ * Applied to both TLS legs: proxyTls (client→proxy) and requestTls (proxy→upstream).
+ */
+function buildProxyAgentOptions(uri) {
+  const options = { uri };
+  const insecure = isProxyTlsInsecure();
+  const ca = insecure ? null : loadProxyCa();
+
+  if (insecure) {
+    options.proxyTls = { rejectUnauthorized: false };
+    options.requestTls = { rejectUnauthorized: false };
+  } else if (ca) {
+    options.proxyTls = { ca };
+    options.requestTls = { ca };
+  }
+  return options;
+}
+
+/**
  * Create proxy dispatcher lazily (undici-compatible)
  */
 async function getDispatcher(proxyUrl) {
@@ -226,7 +284,7 @@ async function getDispatcher(proxyUrl) {
       proxyDispatchers.delete(proxyDispatchers.keys().next().value);
     }
     const { ProxyAgent } = await import("undici");
-    proxyDispatchers.set(normalized, new ProxyAgent({ uri: normalized }));
+    proxyDispatchers.set(normalized, new ProxyAgent(buildProxyAgentOptions(normalized)));
   }
 
   return proxyDispatchers.get(normalized);

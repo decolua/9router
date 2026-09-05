@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
+import {
+  registerCustomModelCaps,
+  getCustomModelCapsOverride,
+  _clearCustomModelCaps,
+} from "../../open-sse/providers/customModelCaps.js";
 
 describe("getCapabilitiesForModel", () => {
   const claudeSonnet5Expected = {
@@ -61,5 +66,52 @@ describe("getCapabilitiesForModel", () => {
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-terra-thinking")).toMatchObject(kiroGpt56Expected);
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-luna-agentic")).toMatchObject(kiroGpt56Expected);
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-sol-thinking-agentic")).toMatchObject(kiroGpt56Expected);
+  });
+});
+
+describe("custom-model capability overrides", () => {
+  it("floors an unknown custom model to text-only (no vision/reasoning) by default", () => {
+    const caps = getCapabilitiesForModel("myprovider", "some-random-model");
+    expect(caps.vision).toBe(false);
+    expect(caps.reasoning).toBe(false);
+  });
+
+  it("honors explicit overrides passed as the 3rd argument", () => {
+    const caps = getCapabilitiesForModel("myprovider", "some-random-model", { vision: true, reasoning: true });
+    expect(caps.vision).toBe(true);
+    expect(caps.reasoning).toBe(true);
+    // reasoning:true with no format defaults to the openai reasoning_effort channel
+    expect(caps.thinkingFormat).toBe("openai");
+  });
+
+  it("lets a vision-only override keep reasoning off", () => {
+    const caps = getCapabilitiesForModel("myprovider", "some-random-model", { vision: true });
+    expect(caps.vision).toBe(true);
+    expect(caps.reasoning).toBe(false);
+  });
+
+  it("overrides win over a matched registry pattern (force-disable vision on a known vision model)", () => {
+    // gpt-4o matches a vision:true pattern; an explicit override must be able to turn it off.
+    const caps = getCapabilitiesForModel("openai", "gpt-4o", { vision: false });
+    expect(caps.vision).toBe(false);
+  });
+
+  it("applies registry-registered caps when no explicit override is passed (deep call sites)", () => {
+    _clearCustomModelCaps();
+    registerCustomModelCaps("myprovider", "my-vision-model", { vision: true, reasoning: true });
+    // no 3rd arg — simulates thinkingUnified/thinkingLevels deep calls
+    const caps = getCapabilitiesForModel("myprovider", "my-vision-model");
+    expect(caps.vision).toBe(true);
+    expect(caps.reasoning).toBe(true);
+    expect(caps.thinkingFormat).toBe("openai");
+    _clearCustomModelCaps();
+  });
+
+  it("registry lookup resolves both prefixed and base model ids", () => {
+    _clearCustomModelCaps();
+    registerCustomModelCaps("myprovider", "vendor/my-model", { vision: true });
+    expect(getCustomModelCapsOverride("myprovider", "vendor/my-model")).toMatchObject({ vision: true });
+    expect(getCustomModelCapsOverride("myprovider", "my-model")).toMatchObject({ vision: true });
+    _clearCustomModelCaps();
   });
 });

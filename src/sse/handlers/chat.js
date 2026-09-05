@@ -7,9 +7,11 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
+import { getSettings, getApiKeyByKey, isModelAllowedForKey } from "@/lib/localDb";
+import { getCustomModelCaps, getCustomModels, findProviderNode } from "@/models";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
-import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
+import { registerCustomModelCaps } from "open-sse/providers/customModelCaps.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
@@ -24,6 +26,39 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
+
+// Combo routing (reorderByCapabilities / capacity-adapter) decides member ORDER by
+// calling getCapabilitiesForModel BEFORE any member reaches chatCore — where custom
+// caps normally get registered. On a cold registry that makes a custom vision/reasoning
+// model look text-only, so it wouldn't be floated for an image/thinking request. Warm
+// the engine-side caps registry from the DB up front so those decisions see user caps.
+// Short TTL cache: cheap kv scan, refreshed lazily; fail-open (never blocks a request).
+let _customCapsWarmedAt = 0;
+const CUSTOM_CAPS_WARM_TTL_MS = 5000;
+async function warmCustomModelCaps() {
+  if (Date.now() - _customCapsWarmedAt < CUSTOM_CAPS_WARM_TTL_MS) return;
+  _customCapsWarmedAt = Date.now();
+  try {
+    const models = await getCustomModels();
+    for (const m of models) {
+      if (!m?.providerAlias || !m?.id || !m?.caps) continue;
+      // Compatible-provider rows are stored under the generated node id, but model
+      // strings use the display prefix. registerCustomModelCaps keys by an exact
+      // provider string, so register under BOTH the node id AND (when different)
+      // the prefix so lookups that pass either one (chatCore passes the id; combo
+      // string keys pass the prefix) both find the declared caps.
+      const node = await findProviderNode(m.providerAlias);
+      const keys = [m.providerAlias];
+      if (node) {
+        keys.push(node.id);
+        if (node.prefix && node.prefix !== node.id) keys.push(node.prefix);
+      }
+      for (const k of keys) registerCustomModelCaps(k, m.id, m.caps);
+    }
+  } catch {
+    // fail-open: cold registry just means caps warm up on first routed request
+  }
+}
 
 /**
  * Handle chat completion request
@@ -85,10 +120,28 @@ export async function handleChat(request, clientRawRequest = null) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   }
 
+  // Per-key model allow-list (only when a key was presented; local mode is unrestricted)
+  if (apiKey) {
+    try {
+      const keyRow = await getApiKeyByKey(apiKey);
+      if (keyRow && !isModelAllowedForKey(keyRow, modelStr)) {
+        log.warn("AUTH", `Model "${modelStr}" not allowed for this API key`);
+        return errorResponse(HTTP_STATUS.FORBIDDEN, `Model "${modelStr}" is not allowed for this API key`);
+      }
+    } catch (e) {
+      // fail-open: never block on lookup errors
+      log.warn("AUTH", `Model allow-list check failed: ${e.message}`);
+    }
+  }
+
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
   const userAgent = request?.headers?.get("user-agent") || "";
   const bypassResponse = handleBypassRequest(body, modelStr, userAgent, !!settings.ccFilterNaming);
   if (bypassResponse) return bypassResponse.response || bypassResponse;
+
+  // Ensure custom-model caps are in the engine registry before combo/capacity-adapter
+  // routing consults getCapabilitiesForModel (otherwise cold-start custom models look text-only).
+  await warmCustomModelCaps();
 
   const requiredCapabilities = detectRequiredCapabilities(body);
 
@@ -265,9 +318,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Use shared chatCore
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+    // Custom models carry user-declared vision/reasoning caps; look them up by the
+    // provider alias the user registered under (fail-open: null when not a custom model).
+    const customCaps = await getCustomModelCaps(modelInfo.providerAlias, model);
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
-      modelInfo: { provider, model },
+      modelInfo: { provider, model, customCaps },
       credentials: refreshedCredentials,
       log,
       clientRawRequest,

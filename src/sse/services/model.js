@@ -45,24 +45,25 @@ export async function getModelInfo(modelStr) {
       const openaiNodes = await getProviderNodes({ type: "openai-compatible" });
       const matchedOpenAI = openaiNodes.find((node) => node.prefix === parsed.providerAlias);
       if (matchedOpenAI) {
-        return { provider: matchedOpenAI.id, model: parsed.model };
+        return { provider: matchedOpenAI.id, model: parsed.model, providerAlias: parsed.providerAlias };
       }
 
       const anthropicNodes = await getProviderNodes({ type: "anthropic-compatible" });
       const matchedAnthropic = anthropicNodes.find((node) => node.prefix === parsed.providerAlias);
       if (matchedAnthropic) {
-        return { provider: matchedAnthropic.id, model: parsed.model };
+        return { provider: matchedAnthropic.id, model: parsed.model, providerAlias: parsed.providerAlias };
       }
 
       const embeddingNodes = await getProviderNodes({ type: "custom-embedding" });
       const matchedEmbedding = embeddingNodes.find((node) => node.prefix === parsed.providerAlias);
       if (matchedEmbedding) {
-        return { provider: matchedEmbedding.id, model: parsed.model };
+        return { provider: matchedEmbedding.id, model: parsed.model, providerAlias: parsed.providerAlias };
       }
     }
     return {
       provider: parsed.provider,
-      model: parsed.model
+      model: parsed.model,
+      providerAlias: parsed.providerAlias
     };
   }
 

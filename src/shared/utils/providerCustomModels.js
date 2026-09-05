@@ -29,6 +29,7 @@ export function getProviderCustomModelRows({
       fullModel,
       source: "custom",
       type: rowType,
+      caps: model.caps && typeof model.caps === "object" ? model.caps : null,
     });
   }
 

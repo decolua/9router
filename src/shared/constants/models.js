@@ -40,8 +40,14 @@ export const AI_MODELS = Object.entries(MODELS).flatMap(([alias, models]) =>
 export const getModelKind = (m, fallback = null) => m?.kind || m?.type || fallback;
 
 // Capacity metadata for UI badges — icon + label + color per capability.
+// Keys mirror open-sse capability flags; only flags set true render a badge.
 export const CAPACITY_META = {
   vision: { icon: "visibility", label: "Vision", desc: "Supports image input", color: "text-blue-500" },
-  // search: temporarily hidden (feature not wired yet)
+  pdf: { icon: "picture_as_pdf", label: "PDF", desc: "Supports PDF / document input", color: "text-rose-500" },
+  audioInput: { icon: "graphic_eq", label: "Audio in", desc: "Supports audio input", color: "text-cyan-500" },
+  videoInput: { icon: "movie", label: "Video in", desc: "Supports video input", color: "text-purple-500" },
+  imageOutput: { icon: "wallpaper", label: "Image out", desc: "Can generate images", color: "text-pink-500" },
+  audioOutput: { icon: "volume_up", label: "Audio out", desc: "Can generate audio", color: "text-teal-500" },
+  search: { icon: "travel_explore", label: "Search", desc: "Built-in web search / grounding", color: "text-green-500" },
   reasoning: { icon: "neurology", label: "Reasoning", desc: "Supports reasoning / thinking", color: "text-amber-500" },
 };

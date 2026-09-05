@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { deleteProviderConnectionsByProvider, deleteProviderNode, getProviderConnections, getProviderNodeById, updateProviderConnection, updateProviderNode } from "@/models";
+import { normalizeCustomHeaders } from "@/lib/customHeaders.js";
 
 // PUT /api/provider-nodes/[id] - Update provider node
 export async function PUT(request, { params }) {
@@ -30,6 +31,11 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: "Base URL is required" }, { status: 400 });
     }
 
+    const { headers: customHeaders, error: headerError } = normalizeCustomHeaders(body.customHeaders);
+    if (headerError) {
+      return NextResponse.json({ error: headerError }, { status: 400 });
+    }
+
     let sanitizedBaseUrl = baseUrl.trim();
     
     // Sanitize Base URL for Anthropic Compatible
@@ -52,6 +58,7 @@ export async function PUT(request, { params }) {
       name: name.trim(),
       prefix: prefix.trim(),
       baseUrl: sanitizedBaseUrl,
+      customHeaders,
     };
 
     if (node.type === "openai-compatible") {
@@ -69,6 +76,7 @@ export async function PUT(request, { params }) {
           apiType: node.type === "openai-compatible" ? apiType : undefined,
           baseUrl: sanitizedBaseUrl,
           nodeName: updated.name,
+          customHeaders,
         }
       })
     )));

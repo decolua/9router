@@ -1,9 +1,17 @@
 import { NextResponse } from "next/server";
-import { getModelAliases, setModelAlias, getCustomModels } from "@/models";
+import { getModelAliases, setModelAlias, getCustomModels, getProviderNodes } from "@/models";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { AI_MODELS } from "@/shared/constants/config";
-import { getProviderAlias } from "@/shared/constants/providers";
+import { getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+
+// True when the provider key is a user-defined compatible node (not a built-in
+// registry alias like "openrouter" / "cx", which custom rows may also use).
+function isCompatibleNodeId(providerId) {
+  return isOpenAICompatibleProvider(providerId)
+    || isAnthropicCompatibleProvider(providerId)
+    || isCustomEmbeddingProvider(providerId);
+}
 
 // GET /api/models - Get models with aliases
 export async function GET() {
@@ -37,17 +45,29 @@ export async function GET() {
         };
       });
 
-    // Custom models ride along; their stored caps override the name heuristic
+    // Custom models ride along; their stored caps override the name heuristic.
+    // Rows registered under a compatible node whose node row no longer exists
+    // (node deleted) are orphans — drop them so deleted providers' models stop
+    // reappearing in pickers. Rows for valid nodes are enriched with the node's
+    // display name + prefix and addressed via the prefix.
+    const nodes = await getProviderNodes();
+    const nodeById = new Map(nodes.map((n) => [n.id, n]));
     const seenFull = new Set(models.map((m) => m.fullModel));
     const customModels = (await getCustomModels()).filter((m) => {
       if (!m?.id || (m.kind || m.type || "llm") !== "llm") return false;
+      if (isCompatibleNodeId(m.providerAlias) && !nodeById.has(m.providerAlias)) return false;
       return !seenFull.has(`${m.providerAlias}/${m.id}`);
     });
     for (const m of customModels) {
-      const fullModel = `${m.providerAlias}/${m.id}`;
-      const c = getCapabilitiesForModel(m.providerAlias, m.id);
+      const node = nodeById.get(m.providerAlias);
+      const provider = node ? node.prefix || node.id : m.providerAlias;
+      const capsProvider = node ? node.id : m.providerAlias;
+      const fullModel = `${provider}/${m.id}`;
+      const c = getCapabilitiesForModel(capsProvider, m.id);
       models.push({
-        provider: m.providerAlias,
+        provider,
+        providerNodeId: node ? node.id : null,
+        providerName: node ? (node.name || node.prefix || node.id) : null,
         model: m.id,
         name: m.name || m.id,
         fullModel,

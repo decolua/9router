@@ -84,8 +84,8 @@ graphify-out/*
 .repo/
 .script/
 .codegraph/
+.playwright-mcp/
+.superpowers/
+.vscode/
 .PR/
 .next-analyze/*
-
-# Kiro local workspace state
-.kiro/

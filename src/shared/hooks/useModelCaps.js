@@ -7,7 +7,25 @@ import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 let cache = null; // { byFull, byId } | null
 let inflight = null;
 
-function buildMaps(models) {
+// Compatible providers are stored under a generated node id (e.g.
+// "openai-compatible-chat-<uuid>") but are addressed by a user-defined display
+// prefix (e.g. "unl-jembatanai"). Custom-model caps must be indexed by BOTH so a
+// prefix-keyed model string ("unl-jembatanai/claude-sonnet-5") matches the row that
+// /api/models/custom returns keyed by the node id.
+function buildNodePrefixMap(nodes) {
+  const byId = {};
+  const idToPrefix = {};
+  for (const n of nodes || []) {
+    if (!n?.id) continue;
+    byId[n.id] = n;
+    idToPrefix[n.id] = n.prefix || n.id;
+    if (n.prefix) byId[n.prefix] = n;
+  }
+  return { byId, idToPrefix };
+}
+
+function buildMaps(models, customModels, nodes) {
+  const { byId: nodeById } = buildNodePrefixMap(nodes);
   const byFull = {};
   const byId = {};
   for (const m of models || []) {
@@ -16,34 +34,57 @@ function buildMaps(models) {
     if (m.routedModel) byFull[m.routedModel] = m.caps;
     if (m.model) byId[m.model] = m.caps;
   }
-  return { byFull, byId };
+  // User-added custom models carry their own declared caps (vision/reasoning/…).
+  // /api/models only lists built-ins, so without this a custom combo member
+  // resolves to registry-default caps and its badges are wrong/empty.
+  for (const m of customModels || []) {
+    if (!m?.caps || !m?.providerAlias || !m?.id) continue;
+    const node = nodeById[m.providerAlias];
+    const display = node?.prefix || m.providerAlias;
+    byFull[`${m.providerAlias}/${m.id}`] = m.caps;
+    if (display && display !== m.providerAlias) byFull[`${display}/${m.id}`] = m.caps;
+    if (!byId[m.id]) byId[m.id] = m.caps;
+  }
+  // Map display prefix -> node id so the pattern fallback guard applies for
+  // prefix-keyed model strings (the provider string the combo stores).
+  const providerResolver = (prefix) => {
+    if (!prefix) return null;
+    const node = nodeById[prefix];
+    return node ? node.id : prefix;
+  };
+  return { byFull, byId, providerResolver };
 }
 
 function loadModelCaps() {
   if (cache) return Promise.resolve(cache);
   if (inflight) return inflight;
-  inflight = fetch("/api/models")
-    .then(async (res) => {
-      if (!res.ok) throw new Error(`models ${res.status}`);
-      const data = await res.json();
-      cache = buildMaps(data.models);
+  inflight = Promise.all([
+    fetch("/api/models").then((r) => (r.ok ? r.json() : { models: [] })).catch(() => ({ models: [] })),
+    fetch("/api/models/custom", { cache: "no-store" }).then((r) => (r.ok ? r.json() : { models: [] })).catch(() => ({ models: [] })),
+    fetch("/api/provider-nodes", { cache: "no-store" }).then((r) => (r.ok ? r.json() : { nodes: [] })).catch(() => ({ nodes: [] })),
+  ])
+    .then(([data, customData, nodesData]) => {
+      cache = buildMaps(data.models, customData.models, nodesData.nodes);
       return cache;
     })
     .catch(() => {
       // Keep null so a later mount can retry
-      return { byFull: {}, byId: {} };
+      return { byFull: {}, byId: {}, providerResolver: (p) => p };
     })
     .finally(() => { inflight = null; });
   return inflight;
 }
 
 // Resolve caps from a "provider/model" string or a bare model id.
-function resolveCaps(byFull, byId, key) {
+// `resolveProvider` maps a user display prefix to its node id so the custom-node
+// guard in getCapabilitiesForModel applies (custom nodes must not inherit the
+// base-model pattern caps of a different provider).
+function resolveCaps(byFull, byId, key, resolveProvider) {
   if (!key) return null;
   if (byFull[key]) return byFull[key];
   const bare = key.includes("/") ? key.slice(key.indexOf("/") + 1) : key;
   if (byId[bare]) return byId[bare];
-  const provider = key.includes("/") ? key.slice(0, key.indexOf("/")) : null;
+  const provider = resolveProvider(key.includes("/") ? key.slice(0, key.indexOf("/")) : null);
   const c = getCapabilitiesForModel(provider, bare);
   return {
     vision: c.vision,
@@ -57,32 +98,34 @@ function resolveCaps(byFull, byId, key) {
 export function useModelCaps() {
   const [byFull, setByFull] = useState(() => cache?.byFull || {});
   const [byId, setById] = useState(() => cache?.byId || {});
+  const [resolveProvider, setResolveProvider] = useState(() => cache?.providerResolver || ((p) => p));
 
   useEffect(() => {
     let alive = true;
-    const sync = (maps) => {
-      if (alive) { setByFull(maps.byFull); setById(maps.byId); }
+    const load = () => {
+      loadModelCaps().then((maps) => {
+        if (alive) {
+          setByFull(maps.byFull);
+          setById(maps.byId);
+          setResolveProvider(() => maps.providerResolver || ((p) => p));
+        }
+      });
     };
-    if (cache) {
-      sync(cache);
-    } else {
-      loadModelCaps().then(sync);
-    }
-    // Custom models change at runtime — drop the shared cache and refetch
-    const invalidate = () => {
-      cache = null;
-      loadModelCaps().then(sync);
-    };
-    window.addEventListener("customModelChanged", invalidate);
+    // cache-hit is already seeded by the useState initializers; only fetch on miss
+    if (!cache) load();
+    // Adding/removing a custom model (with new caps) should refresh badges
+    // without a full reload — the providers page fires this on change.
+    const onCustomModelChanged = () => { cache = null; load(); };
+    if (typeof window !== "undefined") window.addEventListener("customModelChanged", onCustomModelChanged);
     return () => {
       alive = false;
-      window.removeEventListener("customModelChanged", invalidate);
+      if (typeof window !== "undefined") window.removeEventListener("customModelChanged", onCustomModelChanged);
     };
   }, []);
 
   const getCaps = useCallback(
-    (key) => resolveCaps(byFull, byId, key),
-    [byFull, byId],
+    (key) => resolveCaps(byFull, byId, key, resolveProvider),
+    [byFull, byId, resolveProvider],
   );
 
   return { getCaps };

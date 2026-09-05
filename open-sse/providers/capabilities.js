@@ -33,6 +33,7 @@
 // 2.0+, Grok, Perplexity). Verify with: curl -s https://models.dev/api.json
 
 import { matchPattern } from "./pricing.js";
+import { getCustomModelCapsOverride } from "./customModelCaps.js";
 import { looksLikeVisionModel } from "./visionPatterns.js";
 
 /**
@@ -76,6 +77,25 @@ const SERVICE_KIND_CAPABILITIES = {
 
 export function capabilitiesFromServiceKind(kind) {
   return SERVICE_KIND_CAPABILITIES[kind] || null;
+}
+
+// Per-model capability overrides carried by user-added custom models. Only the
+// boolean input/output/feature flags a user can meaningfully toggle are honored;
+// unknown keys are ignored so a malformed record can never widen the schema.
+// Returns {} when there is nothing to apply (so callers can spread safely).
+export const OVERRIDABLE_CAPABILITY_KEYS = ["vision", "pdf", "audioInput", "videoInput", "imageOutput", "audioOutput", "search", "reasoning"];
+export function normalizeCapabilityOverrides(overrides) {
+  if (!overrides || typeof overrides !== "object") return {};
+  const out = {};
+  for (const key of OVERRIDABLE_CAPABILITY_KEYS) {
+    if (typeof overrides[key] === "boolean") out[key] = overrides[key];
+  }
+  // When a custom model is flagged reasoning:true but carries no wire format,
+  // default to the OpenAI-style reasoning_effort channel (the widest-compatible
+  // format for generic OpenAI-compatible custom providers).
+  if (out.reasoning === true && !overrides.thinkingFormat) out.thinkingFormat = "openai";
+  else if (typeof overrides.thinkingFormat === "string") out.thinkingFormat = overrides.thinkingFormat;
+  return out;
 }
 
 /**
@@ -359,6 +379,19 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*ling-*",         caps: { reasoning: true, contextWindow: 128000 } },
 ];
 
+// A custom compatible node is addressed either by its generated id
+// ("openai-compatible-chat-<uuid>") or by the user's chosen display prefix
+// ("unl-jembatanai"). Neither has a registry entry, so the base-model pattern
+// tables (e.g. "*claude*sonnet*" → vision) describe a DIFFERENT provider's model
+// and must NOT apply — the caps come only from what the user declared. Detect
+// node ids by their generated prefix; the raw provider string failing the
+// resolve step below covers the display-prefix form without special-casing.
+const CUSTOM_NODE_ID_PREFIXES = ["openai-compatible-", "anthropic-compatible-", "custom-embedding-"];
+export function isCustomNodeProviderId(provider) {
+  if (!provider || typeof provider !== "string") return false;
+  return CUSTOM_NODE_ID_PREFIXES.some((p) => provider.startsWith(p));
+}
+
 /**
  * Resolve capabilities for a model using the 4-step fallback chain,
  * merged over DEFAULT_CAPABILITIES so the result is always complete.
@@ -381,11 +414,13 @@ export function setCatalogSource(source) {
   catalogSource = source;
 }
 
-// Apply the synced catalog + name heuristic on top of a table-resolved result.
-// Strictly additive: a capability already true stays true, and a false one only
-// flips when an outside source positively declares support.
-function refine(base, provider, model) {
-  const result = { ...DEFAULT_CAPABILITIES, ...base };
+// Apply the synced catalog + name heuristic on top of a table-resolved result,
+// then overlay user-declared custom-model overrides. Strictly additive for the
+// catalog: a capability already true stays true, and a false one only flips
+// when an outside source positively declares support. Overrides (ov) win over
+// everything because the user explicitly declared what their model supports.
+function refine(base, provider, model, ov) {
+  const result = { ...DEFAULT_CAPABILITIES, ...base, ...ov };
 
   if (catalogSource) {
     const modalities = catalogSource.getModalities(model);
@@ -407,8 +442,13 @@ function refine(base, provider, model) {
   return result;
 }
 
-export function getCapabilitiesForModel(provider, model) {
-  if (!model) return { ...DEFAULT_CAPABILITIES };
+export function getCapabilitiesForModel(provider, model, overrides = null) {
+  // User-set custom-model overrides win over registry-derived caps: the user has
+  // explicitly declared what their model supports, so apply them last (on top).
+  // When no explicit overrides are passed (most deep call sites), consult the
+  // process-wide custom-model registry so vision/reasoning apply pipeline-wide.
+  const ov = normalizeCapabilityOverrides(overrides || getCustomModelCapsOverride(provider, model));
+  if (!model) return { ...DEFAULT_CAPABILITIES, ...ov };
 
   // Canonical exact lookup strips vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7".
   const baseModel = model.includes("/") ? model.split("/").pop() : model;
@@ -416,21 +456,32 @@ export function getCapabilitiesForModel(provider, model) {
   // 1. Provider-specific override
   if (provider) {
     const providerCaps = PROVIDER_CAPABILITIES[provider];
-    if (providerCaps?.[model]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[model] };
-    if (providerCaps?.[baseModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] };
+    if (providerCaps?.[model]) return refine(providerCaps[model], provider, model, ov);
+    if (providerCaps?.[baseModel]) return refine(providerCaps[baseModel], provider, model, ov);
   }
 
-  // 2. Canonical exact
-  if (MODEL_CAPABILITIES[baseModel]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[baseModel] };
-  if (MODEL_CAPABILITIES[model]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[model] };
+  // 2. Canonical exact. Skipped for custom compatible nodes — the canonical table
+  //     describes BUILT-IN provider models (e.g. "claude-sonnet-5" = Anthropic's).
+  //     A same-named model on a custom node only has the caps the user declared.
+  const customNode = isCustomNodeProviderId(provider);
+  if (!customNode) {
+    if (MODEL_CAPABILITIES[baseModel]) return refine(MODEL_CAPABILITIES[baseModel], provider, model, ov);
+    if (MODEL_CAPABILITIES[model]) return refine(MODEL_CAPABILITIES[model], provider, model, ov);
+  }
 
-  // 3. Pattern match (first match wins), refined by catalog + name heuristic
-  for (const { pattern, caps } of PATTERN_CAPABILITIES) {
-    if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
-      return refine(caps, provider, model);
+  // 3. Pattern match (first match wins). Skipped for custom compatible nodes —
+  // their generated id / display prefix has no registry entry, so the pattern
+  // tables describe a DIFFERENT provider's model (e.g. a "claude-sonnet-5" on a
+  // custom node must NOT inherit Anthropic's vision/reasoning caps). Caps for
+  // custom models come ONLY from the user's declared overrides (ov above).
+  if (!customNode) {
+    for (const { pattern, caps } of PATTERN_CAPABILITIES) {
+      if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
+        return refine(caps, provider, model, ov);
+      }
     }
   }
 
-  // 4. Floor
-  return refine(null, provider, model);
+  // 4. Floor (custom/unknown model: only user overrides lift it above text-only)
+  return refine(null, provider, model, ov);
 }

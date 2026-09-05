@@ -7,6 +7,8 @@ import { buildClineHeaders } from "../shared/clineAuth.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
+import { resolveCustomHeaders, REMOVE_HEADER } from "../utils/headerTemplate.js";
+import { getOrResolvePersistent } from "../utils/headerCache.js";
 
 // Auth header descriptors — derived from registry transport.auth, fallback to hardcoded defaults.
 const BEARER = { combined: true, header: "Authorization", scheme: "bearer" };
@@ -192,6 +194,41 @@ export class DefaultExecutor extends BaseExecutor {
     }
 
     if (stream) headers["Accept"] = "text/event-stream";
+
+    // Custom request headers (compatible nodes): applied last, override any
+    // preset incl. auth/Accept, case-insensitive. Fail-open: a bad template
+    // must never break the request.
+    const customHeaders = credentials?.providerSpecificData?.customHeaders;
+    if (customHeaders) {
+      try {
+        const connId = credentials?.connectionId || credentials?.email || credentials?.id || "default";
+        // Map lower header name → ttlMinutes for O(1) lookup in the hook.
+        const ttlByName = new Map();
+        for (const h of customHeaders) {
+          if (h && typeof h.name === "string") ttlByName.set(h.name.trim().toLowerCase(), h.ttlMinutes);
+        }
+        const nowFn = credentials?._nowForTest;
+        const resolveValue = (name, rawValue, defaultResolve) => {
+          const ttl = ttlByName.get(name.toLowerCase());
+          // No caching when ttl is unset OR we have no real connection identity
+          // (connId === "default") — avoids sharing a persistent value across accounts.
+          if (ttl == null || connId === "default") return defaultResolve();
+          const key = connId + "\0" + name.toLowerCase() + "\0" + rawValue;
+          return getOrResolvePersistent(key, ttl, defaultResolve, nowFn ? nowFn() : undefined);
+        };
+        const resolved = resolveCustomHeaders(customHeaders, { resolveValue });
+        for (const [name, value] of Object.entries(resolved)) {
+          const existing = Object.keys(headers).find((k) => k.toLowerCase() === name.toLowerCase());
+          if (existing) delete headers[existing];
+          // {remove} directive: drop the preset header entirely, send nothing.
+          if (value === REMOVE_HEADER) continue;
+          headers[name] = value;
+        }
+      } catch {
+        /* fail-open */
+      }
+    }
+
     return headers;
   }
 

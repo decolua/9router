@@ -13,6 +13,7 @@ export default function Modal({
   footer,
   size = "md",
   closeOnOverlay = true,
+  disableEscape = false,
   showTrafficLights = true,
   className,
 }) {
@@ -34,12 +35,13 @@ export default function Modal({
   }, [isOpen]);
 
   useEffect(() => {
+    if (disableEscape) return;
     const handleEscape = (e) => {
       if (e.key === "Escape" && isOpen) onClose();
     };
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, disableEscape]);
 
   if (!isOpen) return null;
 

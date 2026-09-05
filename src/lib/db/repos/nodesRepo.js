@@ -52,6 +52,27 @@ export async function getProviderNodeById(id) {
   return rowToNode(db.get(`SELECT * FROM providerNodes WHERE id = ?`, [id]));
 }
 
+// Resolve a compatible-provider address (display prefix OR generated node id) to its
+// canonical node id, or return the input unchanged when it isn't a user-defined node.
+//
+// Compatible nodes are stored under a generated id (e.g. "openai-compatible-chat-<uuid>")
+// but users address them by a chosen prefix (e.g. "unl-jembatanai"). Model strings,
+// custom-model rows, and capability lookups must all agree on the SAME key so user-set
+// caps (vision/reasoning/...) match instead of falling back to pattern-matching the
+// base model name. Single source of truth for that mapping.
+export async function resolveNodeIdByPrefix(prefix) {
+  const node = await findProviderNode(prefix);
+  return node ? node.id : prefix;
+}
+
+// Find the provider node addressed by an id or a user-defined prefix. Returns null when
+// the argument is a built-in alias/provider (never overrides a registry provider).
+export async function findProviderNode(idOrPrefix) {
+  if (!idOrPrefix || typeof idOrPrefix !== "string") return null;
+  const nodes = await getProviderNodes();
+  return nodes.find((n) => n.id === idOrPrefix || n.prefix === idOrPrefix) || null;
+}
+
 export async function createProviderNode(data) {
   const db = await getAdapter();
   const now = new Date().toISOString();
@@ -62,6 +83,7 @@ export async function createProviderNode(data) {
     prefix: data.prefix,
     apiType: data.apiType,
     baseUrl: data.baseUrl,
+    ...(data.customHeaders !== undefined ? { customHeaders: data.customHeaders } : {}),
     createdAt: now,
     updatedAt: now,
   };

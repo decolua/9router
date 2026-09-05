@@ -527,7 +527,7 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const handleAddCustomModel = async (modelId, type = "llm", providerAliasOverride = providerStorageAlias, caps) => {
+  const handleAddCustomModel = async (modelId, type = "llm", providerAliasOverride = providerStorageAlias, caps = null) => {
     try {
       const res = await fetch("/api/models/custom", {
         method: "POST",
@@ -556,6 +556,45 @@ export default function ProviderDetailPage() {
       }
     } catch (error) {
       console.log("Error deleting custom model:", error);
+    }
+  };
+
+  const handleUpdateCustomModel = async (modelId, { newId, caps } = {}, type = "llm", providerAliasOverride = providerStorageAlias) => {
+    try {
+      const res = await fetch("/api/models/custom", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerAlias: providerAliasOverride, id: modelId, type, ...(newId ? { newId } : {}), ...(caps ? { caps } : {}) }),
+      });
+      if (res.ok) {
+        await fetchCustomModels();
+        if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("customModelChanged"));
+        return true;
+      }
+      const data = await res.json();
+      alert(data.error || "Failed to update custom model");
+      return false;
+    } catch (error) {
+      console.log("Error updating custom model:", error);
+      return false;
+    }
+  };
+
+  const handleClearCustomModels = async (type = "llm", providerAliasOverride = providerStorageAlias) => {
+    try {
+      const params = new URLSearchParams({ providerAlias: providerAliasOverride, all: "true", type });
+      const res = await fetch(`/api/models/custom?${params}`, { method: "DELETE" });
+      if (res.ok) {
+        await fetchCustomModels();
+        if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("customModelChanged"));
+        return true;
+      }
+      const data = await res.json();
+      alert(data.error || "Failed to clear custom models");
+      return false;
+    } catch (error) {
+      console.log("Error clearing custom models:", error);
+      return false;
     }
   };
 
@@ -943,7 +982,7 @@ export default function ProviderDetailPage() {
   const isSelected = (connectionId) => selectedConnectionIds.includes(connectionId);
 
   const connectionsList = (
-    <div className="flex min-w-0 flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03] max-h-[500px] overflow-y-auto pr-1">
+    <div className="flex min-w-0 flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
       {connections
         .map((conn, index) => (
           <div key={conn.id} className="flex min-w-0 items-stretch">
@@ -1084,8 +1123,10 @@ export default function ProviderDetailPage() {
           onCopy={copy}
           onSetAlias={handleSetAlias}
           onDeleteAlias={handleDeleteAlias}
-          onAddCustomModel={(modelId) => handleAddCustomModel(modelId, "llm", providerStorageAlias)}
+          onAddCustomModel={(modelId, caps = null) => handleAddCustomModel(modelId, "llm", providerStorageAlias, caps)}
           onDeleteCustomModel={(modelId) => handleDeleteCustomModel(modelId, "llm", providerStorageAlias)}
+          onUpdateCustomModel={(modelId, changes) => handleUpdateCustomModel(modelId, changes, "llm", providerStorageAlias)}
+          onClearCustomModels={() => handleClearCustomModels("llm", providerStorageAlias)}
           connections={connections}
           isAnthropic={isAnthropicCompatible}
         />

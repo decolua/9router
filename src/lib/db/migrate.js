@@ -142,10 +142,17 @@ function importLegacyMain(adapter, data) {
 
   importWithAssertion(adapter, "apiKeys", data.apiKeys || [], (k) => {
     adapter.run(
-      `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
-      [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, k.createdAt || new Date().toISOString()]
+      `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt, allowedModels, expiresAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
+      [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, k.createdAt || new Date().toISOString(), Array.isArray(k.allowedModels) ? stringifyJson(k.allowedModels) : null, k.expiresAt || null]
     );
   }, (k) => ({ id: k.id ?? null, name: k.name ?? null }));
+
+  importWithAssertion(adapter, "keyPresets", data.keyPresets || [], (p) => {
+    adapter.run(
+      `INSERT OR REPLACE INTO keyPresets(id, name, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?)`,
+      [p.id, p.name, stringifyJson(p.models || []), p.createdAt || new Date().toISOString(), p.updatedAt || new Date().toISOString()]
+    );
+  }, (p) => ({ id: p.id ?? null, name: p.name ?? null }));
 
   importWithAssertion(adapter, "combos", data.combos || [], (c) => {
     adapter.run(
