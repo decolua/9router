@@ -272,8 +272,14 @@ export class CodexExecutor extends BaseExecutor {
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
     const { attempts, delayMs } = resolveRetryEntry(retryConfig[503]);
     let attempt = 0;
+    let tierLogged = false;
     while (true) {
       const result = await super.execute(args);
+      if (!tierLogged) {
+        const effectiveTier = result.transformedBody?.service_tier || "default";
+        args.log?.info?.("TIER", `CODEX | ${args.model} | TIER:${effectiveTier}`);
+        tierLogged = true;
+      }
       const peek = await this._peekSseTransientError(result.response);
       if (!peek.matched) {
         // Replace body with re-assembled stream (prefix bytes already read + rest)
