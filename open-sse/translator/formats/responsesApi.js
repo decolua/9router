@@ -60,7 +60,15 @@ export function coerceResponsesArguments(value) {
 export function coerceResponsesOutput(value) {
   if (typeof value === "string") return value;
   if (value === undefined || value === null) return "";
-  if (Array.isArray(value)) return value.map((c) => c?.text ?? JSON.stringify(c)).join("");
+  if (Array.isArray(value)) {
+    return value.map((c) => {
+      try {
+        return c?.text ?? JSON.stringify(c);
+      } catch {
+        return String(c);
+      }
+    }).join("");
+  }
   try {
     return JSON.stringify(value);
   } catch {
