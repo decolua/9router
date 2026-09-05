@@ -397,8 +397,6 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
     conversationState: {
       chatTriggerType: "MANUAL",
       conversationId,
-      agentContinuationId: continuationId,
-      agentTaskType: "vibe",
       currentMessage: {
         userInputMessage: {
           content: replayCurrent.content || "",
@@ -414,7 +412,6 @@ export function openaiToKiroRequest(model, body, stream, credentials) {
       },
       history: canonical.history
     },
-    agentMode: "vibe",
   };
 
   if (profileArn) {
