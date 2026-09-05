@@ -815,6 +815,24 @@ case "llm7": {
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key", refreshed: false };
       }
+      case "factory": {
+        const token = connection.accessToken || connection.apiKey;
+        if (!token) return { valid: false, error: "Missing access token" };
+        const base = connection.providerSpecificData?.apiEndpoint?.trim() || "https://api.factory.ai";
+        const normalizedBase = base.replace(/\/+$/, "");
+        const res = await fetchWithConnectionProxy(`${normalizedBase}/api/cli/whoami`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            "X-Factory-Client": "cli",
+            "X-Client-Version": "0.213.0",
+            "User-Agent": "factory-cli/0.213.0",
+          },
+        }, effectiveProxy);
+        if (res.ok) return { valid: true, error: null };
+        return { valid: false, error: res.status === 401 ? "Unauthorized or expired token" : `Factory API error: HTTP ${res.status}` };
+      }
       default:
         return { valid: false, error: "Provider test not supported" };
     }

@@ -705,3 +705,52 @@ export async function refreshWindsurfToken(credentials, log) {
   );
   return null;
 }
+
+export async function refreshFactoryToken(refreshToken, credentials, log) {
+  if (!refreshToken) return null;
+  return dedupRefresh("factory", refreshToken, async () => {
+    const oauth = PROVIDER_OAUTH["factory"] || {};
+    const clientId = oauth.clientId || "client_01HNM792M5G5G1A2THWPXKFMXB";
+    const tokenUrl = oauth.tokenUrl || "https://api.workos.com/user_management/authenticate";
+    const orgId = credentials?.providerSpecificData?.orgId;
+
+    const params = new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      client_id: clientId,
+      ...(orgId ? { organization_id: orgId } : {}),
+    });
+
+    const response = await fetch(tokenUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json",
+      },
+      body: params,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      log?.error?.("TOKEN_REFRESH", "Failed to refresh Factory token", {
+        status: response.status,
+        error: errorText,
+      });
+      const err = classifyOAuthRefreshError(response.status, errorText);
+      return err || null;
+    }
+
+    const data = await response.json();
+    if (!data.access_token) {
+      log?.error?.("TOKEN_REFRESH", "Factory token refresh returned no access token", data);
+      return null;
+    }
+
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token || refreshToken,
+      expiresIn: data.expires_in,
+    };
+  }, log);
+}
+

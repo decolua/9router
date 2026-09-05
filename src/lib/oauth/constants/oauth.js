@@ -99,6 +99,9 @@ export const KIMI_CONFIG = {
 // Back-compat alias for any remaining KIMI_CODING_CONFIG imports
 export const KIMI_CODING_CONFIG = KIMI_CONFIG;
 
+// Factory (Droid) OAuth Configuration (Device Code Flow via WorkOS)
+export const FACTORY_CONFIG = { ...PROVIDER_OAUTH["factory"] };
+
 // KiloCode OAuth Configuration (Custom Device Auth Flow)
 export const KILOCODE_CONFIG = { ...PROVIDER_OAUTH["kilocode"] };
 
@@ -223,4 +226,5 @@ export const PROVIDERS = {
   TRAE: "trae",
   WINDSURF: "windsurf",
   ZED: "zed",
+  FACTORY: "factory",
 };
