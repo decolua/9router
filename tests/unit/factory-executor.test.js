@@ -154,11 +154,18 @@ describe("FactoryExecutor", () => {
       expect(config.requiresEffortBeta).toBe(true);
     });
 
-    it("configures enabled thinking without effort for MiniMax", () => {
-      const config = resolveClaudeThinking("minimax-m3", "high");
-      expect(config.thinking).toEqual({ type: "enabled" });
-      expect(config.outputConfig).toBeUndefined();
-      expect(config.requiresEffortBeta).toBe(false);
+    it("configures enabled thinking with budget_tokens and without effort for MiniMax", () => {
+      const configHigh = resolveClaudeThinking("minimax-m3", "high");
+      expect(configHigh.thinking).toEqual({ type: "enabled", budget_tokens: 4096 });
+      expect(configHigh.outputConfig).toBeUndefined();
+      expect(configHigh.requiresEffortBeta).toBe(false);
+
+      const configDefault = resolveClaudeThinking("minimax-m2.7");
+      expect(configDefault.thinking).toEqual({ type: "enabled", budget_tokens: 2048 });
+      expect(configDefault.outputConfig).toBeUndefined();
+
+      const configCustom = resolveClaudeThinking("minimax-m2.7", 3000);
+      expect(configCustom.thinking).toEqual({ type: "enabled", budget_tokens: 3000 });
     });
   });
 
@@ -379,6 +386,18 @@ describe("FactoryExecutor", () => {
       expect(transformed.thinking).toEqual({ type: "adaptive", display: "summarized" });
       expect(transformed.output_config).toEqual({ effort: "high" });
       expect(transformed.max_tokens).toBe(4096);
+    });
+
+    it("configures MiniMax with budget_tokens, no output_config, and raises max_tokens if needed", () => {
+      const body = {
+        messages: [{ role: "user", content: "Hello" }],
+        max_tokens: 1024,
+      };
+      const transformed = executor.transformRequest("minimax-m2.7", body, false);
+
+      expect(transformed.thinking).toEqual({ type: "enabled", budget_tokens: 2048 });
+      expect(transformed.output_config).toBeUndefined();
+      expect(transformed.max_tokens).toBe(3072); // 2048 + 1024
     });
 
     it("strips competing Claude Code identity from system prompt", () => {

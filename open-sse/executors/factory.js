@@ -119,8 +119,18 @@ export function resolveClaudeThinking(modelId, requestedEffort) {
 
   // MiniMax
   if (m.startsWith("minimax-")) {
+    let budget = 2048;
+    if (typeof requestedEffort === "number" && requestedEffort >= 1024) {
+      budget = requestedEffort;
+    } else if (requestedEffort === "low") {
+      budget = 1024;
+    } else if (requestedEffort === "medium") {
+      budget = 2048;
+    } else if (requestedEffort === "high" || requestedEffort === "xhigh" || requestedEffort === "max") {
+      budget = 4096;
+    }
     return {
-      thinking: { type: "enabled" },
+      thinking: { type: "enabled", budget_tokens: budget },
       outputConfig: undefined,
       requiresEffortBeta: false,
     };
@@ -274,7 +284,10 @@ export class FactoryExecutor extends BaseExecutor {
       }
 
       // Thinking & Effort configuration
-      const thinkingConfig = resolveClaudeThinking(model, cloned.reasoning_effort || cloned.thinking?.effort);
+      const thinkingConfig = resolveClaudeThinking(
+        model,
+        cloned.thinking?.budget_tokens || cloned.reasoning_effort || cloned.thinking?.effort,
+      );
       if (thinkingConfig.thinking) {
         cloned.thinking = thinkingConfig.thinking;
       }
@@ -282,6 +295,14 @@ export class FactoryExecutor extends BaseExecutor {
         cloned.output_config = thinkingConfig.outputConfig;
       } else {
         delete cloned.output_config;
+      }
+
+      // Ensure max_tokens > budget_tokens if thinking is enabled (Anthropic / Fireworks requirement)
+      if (cloned.thinking?.type === "enabled" && cloned.thinking.budget_tokens) {
+        const minRequired = cloned.thinking.budget_tokens + 1024;
+        if (cloned.max_tokens < minRequired) {
+          cloned.max_tokens = minRequired;
+        }
       }
 
       if (typeof cloned.system === "string") {
