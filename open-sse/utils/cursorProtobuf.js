@@ -5,6 +5,14 @@
 
 import { v4 as uuidv4 } from "uuid";
 import zlib from "zlib";
+import {
+  toCursorToolName,
+  fromCursorToolName,
+  toCursorToolArgs,
+  fromCursorToolArgs,
+  parseNativeToolCallsFromText,
+  getSupportedToolEnumsFromOpenAiTools,
+} from "./cursorToolMapping.js";
 
 const DEBUG = process.env.CURSOR_PROTOBUF_DEBUG === "1";
 const log = (tag, ...args) => DEBUG && console.log(`[PROTOBUF:${tag}]`, ...args);
@@ -347,8 +355,9 @@ function encodeClientSideToolV2Call(toolCallId, toolName, selectedTool, serverNa
  */
 export function encodeToolResult(toolResult) {
   const originalName = toolResult.tool_name || toolResult.name || "";
-  const toolName = formatToolName(originalName);
-  const rawArgs = toolResult.raw_args || "{}";
+  const cursorName = toCursorToolName(originalName);
+  const toolName = formatToolName(cursorName);
+  const rawArgs = toCursorToolArgs(originalName, toolResult.raw_args || "{}");
   const resultContent = toolResult.result_content || toolResult.result || "";
   const { toolCallId, modelCallId } = parseToolId(toolResult.tool_call_id || "");
   const toolIndex = toolResult.tool_index || toolResult.index || 1;
@@ -371,8 +380,11 @@ export function encodeToolResult(toolResult) {
   );
 }
 
-export function encodeMessage(content, role, messageId, chatModeEnum = null, isLast = false, hasTools = false, toolResults = [], serverBubbleId = null) {
+export function encodeMessage(content, role, messageId, chatModeEnum = null, isLast = false, hasTools = false, toolResults = [], serverBubbleId = null, supportedToolEnums = []) {
   const hasToolResults = toolResults.length > 0;
+  const msgSupportedTools = supportedToolEnums.length > 0
+    ? supportedToolEnums
+    : getSupportedToolEnumsFromOpenAiTools([]);
   return concatArrays(
     encodeField(FIELD.MSG_CONTENT, WIRE_TYPE.LEN, content),
     encodeField(FIELD.MSG_ROLE, WIRE_TYPE.VARINT, role),
@@ -384,7 +396,11 @@ export function encodeMessage(content, role, messageId, chatModeEnum = null, isL
     ) : []),
     encodeField(FIELD.MSG_IS_AGENTIC, WIRE_TYPE.VARINT, hasTools ? 1 : 0),
     encodeField(FIELD.MSG_UNIFIED_MODE, WIRE_TYPE.VARINT, hasTools ? UNIFIED_MODE.AGENT : UNIFIED_MODE.CHAT),
-    ...(isLast && hasTools ? [encodeField(FIELD.MSG_SUPPORTED_TOOLS, WIRE_TYPE.LEN, encodeVarint(1))] : [])
+    ...(isLast && hasTools
+      ? msgSupportedTools.map((toolEnum) =>
+          encodeField(FIELD.MSG_SUPPORTED_TOOLS, WIRE_TYPE.VARINT, toolEnum)
+        )
+      : [])
   );
 }
 
@@ -433,7 +449,8 @@ export function encodeMessageId(messageId, role, summaryId = null) {
 }
 
 export function encodeMcpTool(tool) {
-  const toolName = tool.function?.name || tool.name || "";
+  const rawToolName = tool.function?.name || tool.name || "";
+  const toolName = toCursorToolName(rawToolName);
   const toolDesc = tool.function?.description || tool.description || "";
   const inputSchema = tool.function?.parameters || tool.input_schema || {};
 
@@ -535,12 +552,14 @@ export function encodeRequest(messages, modelName, tools = [], reasoningEffort =
   if (reasoningEffort === "medium") thinkingLevel = THINKING_LEVEL.MEDIUM;
   else if (reasoningEffort === "high") thinkingLevel = THINKING_LEVEL.HIGH;
 
+  const supportedToolEnums = isAgentic ? getSupportedToolEnumsFromOpenAiTools(tools) : [];
+
   // Build request
   return concatArrays(
     // Messages
     ...formattedMessages.map(fm => 
       encodeField(FIELD.MESSAGES, WIRE_TYPE.LEN, 
-        encodeMessage(fm.content, fm.role, fm.messageId, null, fm.isLast, fm.hasTools, fm.toolResults)
+        encodeMessage(fm.content, fm.role, fm.messageId, null, fm.isLast, fm.hasTools, fm.toolResults, null, supportedToolEnums)
       )
     ),
     
@@ -558,7 +577,9 @@ export function encodeRequest(messages, modelName, tools = [], reasoningEffort =
 
     // Tool-related fields
     encodeField(FIELD.IS_AGENTIC, WIRE_TYPE.VARINT, isAgentic ? 1 : 0),
-    ...(isAgentic ? [encodeField(FIELD.SUPPORTED_TOOLS, WIRE_TYPE.LEN, encodeVarint(1))] : []),
+    ...supportedToolEnums.map((toolEnum) =>
+      encodeField(FIELD.SUPPORTED_TOOLS, WIRE_TYPE.VARINT, toolEnum)
+    ),
     
     // Message IDs
     ...messageIds.map(mid => 
@@ -602,11 +623,13 @@ export function buildToolResultRequest(toolResult) {
   // which is the name AFTER server prefix stripping (e.g. "custom_Write" -> name = "Write")
   // Actually cursor-api uses: name = tool_name.slice_unchecked(d+1..) → raw name without "custom_"
   // So selected_tool = raw tool name without any prefix
-  const selectedTool = rawName.startsWith("mcp_custom_")
-    ? rawName.slice("mcp_custom_".length)
-    : rawName.startsWith("mcp_")
-    ? rawName.slice(4)
-    : rawName;
+  const selectedTool = toCursorToolName(
+    rawName.startsWith("mcp_custom_")
+      ? rawName.slice("mcp_custom_".length)
+      : rawName.startsWith("mcp_")
+      ? rawName.slice(4)
+      : rawName
+  );
 
   // ClientSideToolV2Result per proto:
   //   field 1 (tool): varint = 19 (MCP)
@@ -802,12 +825,13 @@ function extractToolCall(toolCallData) {
   }
 
   if (toolCallId && toolName) {
+    const openAiName = fromCursorToolName(toolName);
     return {
       id: toolCallId,
       type: "function",
       function: {
-        name: toolName,
-        arguments: rawArgs || "{}"
+        name: openAiName,
+        arguments: fromCursorToolArgs(toolName, rawArgs || "{}")
       },
       isLast
     };
@@ -888,6 +912,10 @@ export function extractTextFromResponse(payload) {
 }
 
 // ==================== EXPORTS ====================
+
+export {
+  parseNativeToolCallsFromText,
+} from "./cursorToolMapping.js";
 
 export default {
   encodeVarint,
