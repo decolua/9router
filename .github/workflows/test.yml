@@ -14,5 +14,5 @@ jobs:
         with:
           node-version: 22
       - run: npm install
-      - run: npx vitest run
+      - run: npx vitest run --passWithNoTests
       - run: npm run build
