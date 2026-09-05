@@ -138,6 +138,95 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
   };
 }
 
+function textFromResponsesMessageItem(item) {
+  if (!item?.content || !Array.isArray(item.content)) return "";
+  const byType = item.content.find((c) => c.type === "output_text");
+  if (typeof byType?.text === "string") return byType.text;
+  const anyText = item.content.find((c) => typeof c.text === "string");
+  if (typeof anyText?.text === "string") return anyText.text;
+  return "";
+}
+
+function pickAssistantMessageForChatCompletion(output) {
+  if (!Array.isArray(output)) return { msgItem: null, textContent: null };
+  const messages = output.filter((item) => item?.type === "message");
+  if (messages.length === 0) return { msgItem: null, textContent: null };
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const text = textFromResponsesMessageItem(messages[i]);
+    if (text.length > 0) return { msgItem: messages[i], textContent: text };
+  }
+  const last = messages[messages.length - 1];
+  return { msgItem: last, textContent: textFromResponsesMessageItem(last) };
+}
+
+function openAIResponsesToCompletion(responseBody, fallbackModel = "unknown") {
+  if (!responseBody || typeof responseBody !== "object") return responseBody;
+  if (responseBody.choices) return responseBody;
+
+  const output = responseBody.output || [];
+  const { textContent } = pickAssistantMessageForChatCompletion(output);
+
+  const funcCallItems = output.filter(
+    (item) =>
+      item?.type === RESPONSES_ITEM.FUNCTION_CALL ||
+      item?.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL ||
+      item?.type === "function_call" ||
+      item?.type === "custom_tool_call"
+  );
+  const toolCalls = funcCallItems.map((item, idx) => {
+    let name = item.name;
+    let args = item.arguments;
+    if (typeof name === "string" && name.trimStart().startsWith("{")) {
+      try {
+        const parsed = JSON.parse(name);
+        if (parsed?.name) {
+          name = parsed.name;
+          if (parsed.arguments) {
+            args = typeof parsed.arguments === "string" ? parsed.arguments : JSON.stringify(parsed.arguments);
+          }
+        }
+      } catch {}
+    }
+    return {
+      id: item.call_id || item.id || `call_${name}_${Date.now()}_${idx}`,
+      type: "function",
+      function: {
+        name: name || "unknown",
+        arguments: typeof args === "string" ? args : JSON.stringify(args || {})
+      }
+    };
+  });
+
+  const hasToolCalls = toolCalls.length > 0;
+  const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
+  if (hasToolCalls) message.tool_calls = toolCalls;
+
+  const reasoningItem = output.find((item) => item?.type === RESPONSES_ITEM.REASONING || item?.type === "reasoning");
+  if (reasoningItem?.summary && Array.isArray(reasoningItem.summary)) {
+    const rText = reasoningItem.summary.map((s) => s?.text || "").filter(Boolean).join("\n");
+    if (rText) message.reasoning_content = rText;
+  }
+
+  const responseDone = responseBody.status === "completed" || responseBody.status === "done";
+  const finishReason = hasToolCalls ? "tool_calls" : (responseDone ? "stop" : (responseBody.status || "stop"));
+  const usage = responseBody.usage || {};
+  const inTokens = usage.input_tokens || usage.prompt_tokens || 0;
+  const outTokens = usage.output_tokens || usage.completion_tokens || 0;
+
+  return {
+    id: responseBody.id ? `chatcmpl-${String(responseBody.id).replace(/^resp_/, "")}` : `chatcmpl-${Date.now()}`,
+    object: "chat.completion",
+    created: responseBody.created_at || Math.floor(Date.now() / 1000),
+    model: responseBody.model || fallbackModel,
+    choices: [{ index: 0, message, finish_reason: finishReason }],
+    usage: {
+      prompt_tokens: inTokens,
+      completion_tokens: outTokens,
+      total_tokens: inTokens + outTokens
+    }
+  };
+}
+
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
  */
@@ -150,6 +239,15 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
   }
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
     return openAICompletionToClaudeMessage(responseBody);
+  }
+  // Provider responded in Responses API shape (e.g. Factory GPT/Grok, Codex)
+  // but client speaks OpenAI Chat Completions or Claude.
+  if (targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI) {
+    return openAIResponsesToCompletion(responseBody, responseBody.model);
+  }
+  if (targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.CLAUDE) {
+    const completion = openAIResponsesToCompletion(responseBody, responseBody.model);
+    return openAICompletionToClaudeMessage(completion);
   }
   if (targetFormat === FORMATS.OPENAI) return responseBody;
 
@@ -238,7 +336,14 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
         textContent += text;
       } else if (block.type === "thinking") thinkingContent += block.thinking || "";
       else if (block.type === "tool_use") {
-        toolCalls.push({ id: block.id, type: "function", function: { name: block.name, arguments: JSON.stringify(block.input || {}) } });
+        let rawName = block.name;
+        if (typeof rawName === "string" && rawName.trimStart().startsWith("{")) {
+          try {
+            const parsed = JSON.parse(rawName);
+            if (parsed?.name && typeof parsed.name === "string") rawName = parsed.name;
+          } catch {}
+        }
+        toolCalls.push({ id: block.id, type: "function", function: { name: rawName, arguments: JSON.stringify(block.input || {}) } });
       }
     }
 

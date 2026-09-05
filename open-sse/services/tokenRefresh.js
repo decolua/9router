@@ -17,6 +17,7 @@ import {
   refreshTraeToken,
   refreshZedToken,
   refreshWindsurfToken,
+  refreshFactoryToken,
   classifyOAuthRefreshError,
 } from "./tokenRefresh/providers.js";
 
@@ -37,6 +38,7 @@ export {
   refreshTraeToken,
   refreshZedToken,
   refreshWindsurfToken,
+  refreshFactoryToken,
   classifyOAuthRefreshError,
 };
 
@@ -154,7 +156,8 @@ const REFRESH_HANDLERS = {
   kimi: (c, log) => refreshKimiToken(c.refreshToken, c, log),
   "kimi-coding": (c, log) => refreshKimiToken(c.refreshToken, c, log),
   vertex: vertexRefreshHandler,
-  "vertex-partner": vertexRefreshHandler
+  "vertex-partner": vertexRefreshHandler,
+  factory: (c, log) => refreshFactoryToken(c.refreshToken, c, log),
 };
 
 export async function getAccessToken(provider, credentials, log) {
