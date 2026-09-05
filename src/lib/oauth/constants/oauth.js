@@ -100,7 +100,18 @@ export const KIMI_CONFIG = {
 export const KIMI_CODING_CONFIG = KIMI_CONFIG;
 
 // Factory (Droid) OAuth Configuration (Device Code Flow via WorkOS)
-export const FACTORY_CONFIG = { ...PROVIDER_OAUTH["factory"] };
+export const FACTORY_CONFIG = {
+  id: "factory",
+  name: "Factory (Droid)",
+  clientId: "client_01HNM792M5G5G1A2THWPXKFMXB",
+  deviceCodeUrl: "https://api.workos.com/user_management/authorize/device",
+  tokenUrl: "https://api.workos.com/user_management/authenticate",
+  refreshUrl: "https://api.workos.com/user_management/authenticate",
+  verificationUri: "https://auth.factory.ai/device",
+  usePkce: false,
+  allowCustomRedirectUri: false,
+  ...PROVIDER_OAUTH["factory"],
+};
 
 // KiloCode OAuth Configuration (Custom Device Auth Flow)
 export const KILOCODE_CONFIG = { ...PROVIDER_OAUTH["kilocode"] };
