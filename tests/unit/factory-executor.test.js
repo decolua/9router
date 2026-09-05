@@ -214,5 +214,66 @@ describe("FactoryExecutor", () => {
       const matches = transformed.system.match(/You are Droid, an AI software engineering agent built by Factory/g);
       expect(matches.length).toBe(1);
     });
+
+    it("strips competing 'You are Claude Code' prompt from Anthropic messages", () => {
+      const body = {
+        system: "You are Claude Code, Anthropic's official CLI for Claude.\n\nPlease help me refactor code.",
+      };
+      const transformed = executor.transformRequest("claude-fable-5.1", body, false);
+      expect(transformed.system).not.toContain("You are Claude Code");
+      expect(transformed.system).toContain("Please help me refactor code.");
+      expect(transformed.system).toContain(FACTORY_DROID_SYSTEM_PROMPT);
+      expect(transformed.max_tokens).toBe(4096);
+      expect(transformed.stream).toBe(false);
+    });
+
+    it("preserves existing max_tokens if already set on Anthropic messages", () => {
+      const body = {
+        system: "Hello",
+        max_tokens: 8192,
+      };
+      const transformed = executor.transformRequest("claude-fable-5.1", body, true);
+      expect(transformed.max_tokens).toBe(8192);
+      expect(transformed.stream).toBe(true);
+    });
+
+    it("strips competing prompt from OpenAI chat completions", () => {
+      const body = {
+        messages: [
+          { role: "system", content: "You are Claude Code, Anthropic's official CLI for Claude. Be helpful." },
+          { role: "user", content: "Ping" },
+        ],
+      };
+      const transformed = executor.transformRequest("kimi-k3", body, false);
+      const sysMsg = transformed.messages.find((m) => m.role === "system");
+      expect(sysMsg.content).not.toContain("You are Claude Code");
+      expect(sysMsg.content).toContain("Be helpful.");
+      expect(sysMsg.content).toContain(FACTORY_DROID_SYSTEM_PROMPT);
+    });
+
+    it("extracts system prompt to instructions and strips competing identity in OpenAI responses format", () => {
+      const body = {
+        input: [
+          { role: "system", content: "You are Claude Code, Anthropic's official CLI for Claude. Solve math." },
+          { role: "user", content: "2+2" },
+        ],
+      };
+      const transformed = executor.transformRequest("gpt-5.4", body, true);
+      expect(transformed.instructions).not.toContain("You are Claude Code");
+      expect(transformed.instructions).toContain("Solve math.");
+      expect(transformed.instructions).toContain(FACTORY_DROID_SYSTEM_PROMPT);
+      expect(transformed.input.length).toBe(1);
+      expect(transformed.input[0].role).toBe("user");
+      expect(transformed.stream).toBe(true);
+    });
+
+    it("sets Accept header application/json for non-streaming and text/event-stream for streaming", () => {
+      const creds = { accessToken: "test-token" };
+      const streamHeaders = executor.buildHeaders(creds, true, "", "kimi-k3");
+      expect(streamHeaders["Accept"]).toBe("text/event-stream");
+
+      const jsonHeaders = executor.buildHeaders(creds, false, "", "kimi-k3");
+      expect(jsonHeaders["Accept"]).toBe("application/json");
+    });
   });
 });

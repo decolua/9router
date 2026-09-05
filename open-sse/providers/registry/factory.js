@@ -23,7 +23,6 @@ export default {
   transport: {
     baseUrl: "https://api.factory.ai/api/llm/o/v1/chat/completions",
     format: "openai",
-    forceStream: true,
     headers: {
       "X-Factory-Client": "cli",
       "X-Client-Version": "0.213.0",
