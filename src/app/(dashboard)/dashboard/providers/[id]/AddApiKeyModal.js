@@ -102,6 +102,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     setSaving(true);
     try {
       let isValid = false;
+      let formatCapabilities = null;
       try {
         setValidating(true);
         setValidationResult(null);
@@ -112,6 +113,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         });
         const data = await res.json();
         isValid = !!data.valid;
+        formatCapabilities = data.formatCapabilities || null;
         setValidationResult(isValid ? "success" : "failed");
       } catch {
         setValidationResult("failed");
@@ -119,6 +121,8 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         setValidating(false);
       }
 
+      const psd = buildProviderSpecificData() || {};
+      if (formatCapabilities) psd.formatCapabilities = formatCapabilities;
       await onSave({
         name: formData.name || (isOllamaLocal ? "Ollama Local" : ""),
         apiKey: formData.apiKey,
@@ -126,7 +130,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         priority: formData.priority,
         proxyPoolId: formData.proxyPoolId === NONE_PROXY_POOL_VALUE ? null : formData.proxyPoolId,
         testStatus: isValid ? "active" : "unknown",
-        providerSpecificData: buildProviderSpecificData()
+        providerSpecificData: Object.keys(psd).length ? psd : undefined,
       });
     } finally {
       setSaving(false);
