@@ -286,7 +286,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   let pxpipeSummary = null;
   if (pxpipeEnabled) {
     const pxpipeResult = await compressWithPxpipe(translatedBody, {
-      enabled: true, format: finalFormat, model: upstreamModel,
+      enabled: tokenSaverEnabled, format: finalFormat, model: upstreamModel,
       minChars: pxpipeMinChars, timeoutMs: pxpipeTimeoutMs, transform: pxpipeTransform,
     });
     pxpipeSummary = pxpipeResult.summary;
