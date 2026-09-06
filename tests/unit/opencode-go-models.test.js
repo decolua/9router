@@ -71,6 +71,28 @@ describe("OpenCode Go multi-endpoint transports", () => {
   });
 });
 
+describe("Custom multi-protocol transports", () => {
+  const credentials = {
+    providerSpecificData: {
+      transports: [
+        { format: "openai", baseUrl: "https://multi.test/v1/chat/completions" },
+        { format: "claude", baseUrl: "https://multi.test/v1/messages" },
+      ],
+    },
+  };
+
+  it("resolves a custom transport matching the incoming format", () => {
+    expect(resolveTransport("openai-compatible-multi-test", "claude", credentials)).toEqual({
+      format: "claude",
+      baseUrl: "https://multi.test/v1/messages",
+    });
+  });
+
+  it("returns null when the custom provider has no matching endpoint", () => {
+    expect(resolveTransport("openai-compatible-multi-test", "openai-responses", credentials)).toBeNull();
+  });
+});
+
 describe("OpenCode Go per-model transport guard (chatCore logic)", () => {
   it("routes MiniMax/Qwen + claude-format client to /messages", () => {
     for (const m of CLAUDE_CAPABLE) {

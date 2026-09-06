@@ -133,9 +133,25 @@ export default function ProviderDetailPage() {
   const providerInfo = providerNode
     ? {
         id: providerNode.id,
-        name: providerNode.name || (providerNode.type === "anthropic-compatible" ? "Anthropic Compatible" : "OpenAI Compatible"),
-        color: providerNode.type === "anthropic-compatible" ? "#D97757" : "#10A37F",
-        textIcon: providerNode.type === "anthropic-compatible" ? "AC" : "OC",
+        name:
+          providerNode.name ||
+          (providerNode.type === "multi-compatible"
+            ? "Multi-protocol Compatible"
+            : providerNode.type === "anthropic-compatible"
+              ? "Anthropic Compatible"
+              : "OpenAI Compatible"),
+        color:
+          providerNode.type === "multi-compatible"
+            ? "#7C3AED"
+            : providerNode.type === "anthropic-compatible"
+              ? "#D97757"
+              : "#10A37F",
+        textIcon:
+          providerNode.type === "multi-compatible"
+            ? "MP"
+            : providerNode.type === "anthropic-compatible"
+              ? "AC"
+              : "OC",
         apiType: providerNode.apiType,
         baseUrl: providerNode.baseUrl,
         type: providerNode.type,
@@ -153,6 +169,7 @@ export default function ProviderDetailPage() {
   
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
   const isAnthropicCompatible = isAnthropicCompatibleProvider(providerId);
+  const isMultiCompatible = providerNode?.type === "multi-compatible";
   const isCompatible = isOpenAICompatible || isAnthropicCompatible;
   const hasDualAuthModes = !isCompatible && isOAuth && supportsApiKeyAuth;
   const oauthConnectionLabel =
@@ -1265,6 +1282,7 @@ export default function ProviderDetailPage() {
 
   // Determine icon path: OpenAI Compatible providers use specialized icons
   const getHeaderIconPath = () => {
+    if (isMultiCompatible) return null;
     if (isOpenAICompatible && providerInfo.apiType) {
       return providerInfo.apiType === "responses" ? "/providers/oai-r.png" : "/providers/oai-cc.png";
     }
@@ -1361,11 +1379,33 @@ export default function ProviderDetailPage() {
         <Card>
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <h2 className="text-lg font-semibold">{isAnthropicCompatible ? "Anthropic Compatible Details" : "OpenAI Compatible Details"}</h2>
-              <p className="break-all text-sm text-text-muted">
-                {isAnthropicCompatible ? "Messages API" : (providerNode.apiType === "responses" ? "Responses API" : "Chat Completions")} · {(providerNode.baseUrl || "").replace(/\/$/, "")}/
-                {isAnthropicCompatible ? "messages" : (providerNode.apiType === "responses" ? "responses" : "chat/completions")}
-              </p>
+              <h2 className="text-lg font-semibold">
+                {isMultiCompatible
+                  ? "Multi-protocol Compatible Details"
+                  : isAnthropicCompatible
+                    ? "Anthropic Compatible Details"
+                    : "OpenAI Compatible Details"}
+              </h2>
+              {isMultiCompatible ? (
+                <div className="flex flex-col gap-1 text-sm text-text-muted">
+                  {providerNode.transports?.map((transport) => (
+                    <p key={transport.format} className="break-all">
+                      {transport.format === "openai"
+                        ? "Chat Completions"
+                        : transport.format === "claude"
+                          ? "Anthropic Messages"
+                          : "OpenAI Responses"}
+                      {" · "}
+                      {transport.baseUrl}
+                    </p>
+                  ))}
+                </div>
+              ) : (
+                <p className="break-all text-sm text-text-muted">
+                  {isAnthropicCompatible ? "Messages API" : (providerNode.apiType === "responses" ? "Responses API" : "Chat Completions")} · {(providerNode.baseUrl || "").replace(/\/$/, "")}/
+                  {isAnthropicCompatible ? "messages" : (providerNode.apiType === "responses" ? "responses" : "chat/completions")}
+                </p>
+              )}
             </div>
             <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
               <Button
@@ -1395,7 +1435,7 @@ export default function ProviderDetailPage() {
                 onClick={async () => {
                   setConfirmState({
                     title: "Delete Compatible Node",
-                    message: `Delete this ${isAnthropicCompatible ? "Anthropic" : "OpenAI"} Compatible node?`,
+                    message: `Delete this ${isMultiCompatible ? "Multi-protocol" : isAnthropicCompatible ? "Anthropic" : "OpenAI"} Compatible node?`,
                     onConfirm: async () => {
                       setConfirmState(null);
                       try {
