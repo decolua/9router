@@ -10,8 +10,6 @@ const CHAT_ONLY = [
 ];
 // Models that also expose the Anthropic /messages endpoint
 const CLAUDE_CAPABLE = ["minimax-m3", "minimax-m2.7", "minimax-m2.5", "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus"];
-// Official OpenCode Go docs expose DeepSeek only through /chat/completions.
-const DEEPSEEK_CHAT_ONLY = ["deepseek-v4-pro", "deepseek-v4-flash"];
 
 // Mirror of chatCore's per-model transport guard: use the sourceFormat-matched
 // transport only when the model declares support for that sourceFormat.
@@ -26,11 +24,12 @@ describe("OpenCode Go model catalog", () => {
   it("matches the documented model IDs", () => {
     const ids = (PROVIDER_MODELS["opencode-go"] || []).map((m) => m.id);
     expect(ids).toEqual([
-      "glm-5.2", "glm-5.1", "kimi-k2.7-code", "kimi-k2.6",
-      "deepseek-v4-pro", "deepseek-v4-flash",
+      "glm-5.3-flash", "glm-5.2", "glm-5.1", "kimi-k2.7-code", "kimi-k2.6",
+      "deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp",
       "mimo-v2.5", "mimo-v2.5-pro",
       "minimax-m3", "minimax-m2.7", "minimax-m2.5",
       "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus",
+      "muse-spark-1.2-contributor", "muse-spark-1.3-contributor",
     ]);
   });
 });
@@ -48,14 +47,13 @@ describe("OpenCode Go per-model supportedFormats", () => {
     }
   });
 
-  it("declares [openai] only for DeepSeek until other endpoints are officially supported", () => {
-    for (const m of DEEPSEEK_CHAT_ONLY) {
-      expect(getModelSupportedFormats("opencode-go", m)).toEqual(["openai"]);
-    }
+  it("declares DeepSeek formats as upstream (multi-endpoint support)", () => {
+    expect(getModelSupportedFormats("opencode-go", "deepseek-v4-pro")).toEqual(["openai", "claude", "openai-responses"]);
+    expect(getModelSupportedFormats("opencode-go", "deepseek-v4-flash")).toEqual(["openai", "claude", "openai-responses"]);
   });
 
   it("treats thinking suffix (max) as the same model for metadata lookup", () => {
-    expect(getModelSupportedFormats("opencode-go", "deepseek-v4-flash(max)")).toEqual(["openai"]);
+    expect(getModelSupportedFormats("opencode-go", "deepseek-v4-flash(max)")).toEqual(["openai", "claude", "openai-responses"]);
     expect(getModelSupportedFormats("opencode-go", "glm-5.2(max)")).toEqual(["openai"]);
     expect(getModelSupportedFormats("opencode-go", "minimax-m3(max)")).toEqual(["openai", "claude"]);
   });
@@ -93,16 +91,16 @@ describe("OpenCode Go per-model transport guard (chatCore logic)", () => {
     }
   });
 
-  it("does NOT route DeepSeek to /messages or /responses", () => {
-    for (const m of DEEPSEEK_CHAT_ONLY) {
-      expect(pickTransport("opencode-go", "claude", "opencode-go", m)).toBeNull();
-      expect(pickTransport("opencode-go", "openai-responses", "opencode-go", m)).toBeNull();
+  it("routes DeepSeek + claude/responses clients to the matching endpoint (upstream multi-endpoint)", () => {
+    for (const m of ["deepseek-v4-pro", "deepseek-v4-flash"]) {
+      expect(pickTransport("opencode-go", "claude", "opencode-go", m)?.baseUrl).toBe("https://opencode.ai/zen/go/v1/messages");
+      expect(pickTransport("opencode-go", "openai-responses", "opencode-go", m)?.baseUrl).toBe("https://opencode.ai/zen/go/v1/responses");
     }
   });
 
-  it("does NOT route DeepSeek(max) to /messages or /responses", () => {
-    expect(pickTransport("opencode-go", "claude", "opencode-go", "deepseek-v4-flash(max)")).toBeNull();
-    expect(pickTransport("opencode-go", "openai-responses", "opencode-go", "deepseek-v4-flash(max)")).toBeNull();
+  it("suffix lookup preserves DeepSeek multi-endpoint routing", () => {
+    expect(pickTransport("opencode-go", "claude", "opencode-go", "deepseek-v4-flash(max)")?.baseUrl).toBe("https://opencode.ai/zen/go/v1/messages");
+    expect(pickTransport("opencode-go", "openai-responses", "opencode-go", "deepseek-v4-flash(max)")?.baseUrl).toBe("https://opencode.ai/zen/go/v1/responses");
   });
 
   it("does NOT route GLM(max) to /messages on a claude-format request", () => {
@@ -116,6 +114,21 @@ describe("OpenCode Go per-model transport guard (chatCore logic)", () => {
 
   it("does NOT route GLM/Kimi/MiniMax to /responses", () => {
     for (const m of [...CHAT_ONLY, ...CLAUDE_CAPABLE]) {
+      expect(pickTransport("opencode-go", "openai-responses", "opencode-go", m)).toBeNull();
+    }
+  });
+
+  it("routes Muse Spark (responses-only) to /responses, never to /messages", () => {
+    for (const m of ["muse-spark-1.2-contributor", "muse-spark-1.3-contributor"]) {
+      expect(getModelSupportedFormats("opencode-go", m)).toEqual(["openai-responses"]);
+      expect(pickTransport("opencode-go", "openai-responses", "opencode-go", m)?.baseUrl).toBe("https://opencode.ai/zen/go/v1/responses");
+      expect(pickTransport("opencode-go", "claude", "opencode-go", m)).toBeNull();
+      expect(pickTransport("opencode-go", "openai", "opencode-go", m)).toBeNull();
+    }
+  });
+
+  it("does NOT route MiniMax (no responses support) to /responses", () => {
+    for (const m of CLAUDE_CAPABLE) {
       expect(pickTransport("opencode-go", "openai-responses", "opencode-go", m)).toBeNull();
     }
   });
