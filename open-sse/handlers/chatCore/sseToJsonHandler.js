@@ -56,6 +56,12 @@ function chatCompletionToResponses(responseBody, customToolNames = null) {
   const message = choice.message || {};
   const output = [];
 
+  // The request translator exports the collected custom tool names as an array
+  // (translator/request/openai-responses.js) and chatCore.js forwards that value
+  // verbatim, while direct callers pass a Set. Accept either, without mutating
+  // the caller's collection.
+  const customToolNameSet = customToolNames instanceof Set ? customToolNames : new Set(customToolNames || []);
+
   const reasoning = message.reasoning_content || message.reasoning;
   if (typeof reasoning === "string" && reasoning.length > 0) {
     output.push({
@@ -75,7 +81,7 @@ function chatCompletionToResponses(responseBody, customToolNames = null) {
 
   for (const tc of message.tool_calls || []) {
     const fn = tc.function || {};
-    const custom = customToolNames?.has(fn.name);
+    const custom = customToolNameSet.has(fn.name);
     output.push({
       type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
       id: `${custom ? "ctc" : "fc"}_${tc.id || ""}`,
