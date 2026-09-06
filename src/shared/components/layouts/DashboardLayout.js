@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useNotificationStore } from "@/store/notificationStore";
 import Sidebar from "../Sidebar";
@@ -37,6 +37,42 @@ export default function DashboardLayout({ children }) {
   const notifications = useNotificationStore((state) => state.notifications);
   const removeNotification = useNotificationStore((state) => state.removeNotification);
 
+  const closeMobileSidebar = () => {
+    setSidebarOpen(false);
+    setTimeout(() => {
+      const menuTrigger = document.querySelector('[aria-controls="mobile-sidebar"]');
+      if (menuTrigger) menuTrigger.focus();
+    }, 0);
+  };
+
+  useEffect(() => {
+    if (sidebarOpen) {
+      setTimeout(() => {
+        const mobileDrawer = document.getElementById("mobile-sidebar");
+        if (mobileDrawer) {
+          const firstFocusable = mobileDrawer.querySelector(
+            'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          );
+          if (firstFocusable) {
+            firstFocusable.focus();
+          } else {
+            mobileDrawer.focus();
+          }
+        }
+      }, 300);
+    }
+  }, [sidebarOpen]);
+
+  useEffect(() => {
+    const handleEscape = (e) => {
+      if (e.key === "Escape" && sidebarOpen) {
+        closeMobileSidebar();
+      }
+    };
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [sidebarOpen]);
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-bg">
       <div className="fixed top-4 right-4 z-[80] flex w-[min(92vw,380px)] flex-col gap-2">
@@ -72,7 +108,7 @@ export default function DashboardLayout({ children }) {
       {sidebarOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/20 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
+          onClick={closeMobileSidebar}
         />
       )}
 
@@ -83,20 +119,23 @@ export default function DashboardLayout({ children }) {
 
       {/* Sidebar - Mobile */}
       <div
-        className={`fixed inset-y-0 left-0 z-50 transform lg:hidden transition-transform duration-300 ease-in-out ${
+        id="mobile-sidebar"
+        tabIndex="-1"
+        className={`fixed inset-y-0 left-0 z-50 lg:hidden transition-transform duration-300 ease-in-out outline-none ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
+        inert={sidebarOpen ? undefined : "true"}
       >
-        <Sidebar onClose={() => setSidebarOpen(false)} />
+        <Sidebar onClose={closeMobileSidebar} />
       </div>
 
       {/* Main content */}
       <main className="flex flex-col flex-1 h-full min-w-0 relative transition-colors duration-300 isolate">
         {/* Faint grid background */}
         <div className="landing-grid absolute inset-0 pointer-events-none -z-10" aria-hidden="true" />
-        <Header key={pathname} onMenuClick={() => setSidebarOpen(true)} />
-        <div className={`flex-1 overflow-y-auto custom-scrollbar ${pathname === "/dashboard/basic-chat" ? "" : "p-6 lg:p-10"} ${pathname === "/dashboard/basic-chat" ? "flex flex-col overflow-hidden" : ""}`}>
-          <div className={`${pathname === "/dashboard/basic-chat" ? "flex-1 w-full h-full flex flex-col" : "max-w-7xl mx-auto"}`}>{children}</div>
+        <Header key={pathname} onMenuClick={() => setSidebarOpen(true)} sidebarOpen={sidebarOpen} />
+        <div className={`flex-1 overflow-y-auto custom-scrollbar ${pathname === "/dashboard/playground" ? "" : "p-6 lg:p-10"} ${pathname === "/dashboard/playground" ? "flex flex-col overflow-hidden" : ""}`}>
+          <div className={`${pathname === "/dashboard/playground" ? "flex-1 w-full h-full flex flex-col" : "max-w-7xl mx-auto"}`}>{children}</div>
         </div>
       </main>
     </div>

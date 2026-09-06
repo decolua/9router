@@ -50,6 +50,7 @@
 # v0.5.59 (2026-08-29)
 
 ## Features
+- **Testing Studio**: filter Chat models by provider type and filter each Compare column independently; filter choices are temporary while selected-model persistence stays unchanged
 - **Search**: new web search providers — Antigravity (Google Search grounding
   on the existing OAuth account pool, citations keyed and merged by URL) and
   Xquik (X search with `x-api-key` auth, cursor pagination, credit-based
@@ -166,6 +167,7 @@
 # v0.5.55 (2026-08-14)
 
 ## Features
+- **Testing Studio**: add the protected `/dashboard/playground` workspace for streaming chats and up to four parallel model comparisons; `/dashboard/basic-chat` redirects there
 - **Auth**: native SAML 2.0 SSO alongside OIDC — AuthnRequest generation, ACS
   assertion handling, SP metadata export, admin config test, replay-protected
   via a `saml_state` cookie matched against `InResponseTo`
@@ -188,6 +190,8 @@
   tabs tripping 429; manual refresh (↻) sends `force=1` to bypass the cache
 
 ## Fixes
+- **Testing Studio**: Chat currently accepts text prompts only and does not attach or upload images
+
 - **Docker**: ship `sql.js` in the image so the pure-JS DB fallback can start —
   file tracing carried the package's JS without `dist/sql-wasm.wasm`, so a
   container with no native driver aborted with ENOENT and never got a database

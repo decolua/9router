@@ -4,6 +4,7 @@ import {
   clearAccountError,
   extractApiKey,
   isValidApiKey,
+  getApiKeyPolicyError,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
@@ -68,6 +69,11 @@ export async function handleEmbeddings(request) {
   if (!modelStr) {
     log.warn("EMBEDDINGS", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+  }
+
+  if (apiKey) {
+    const policyErr = await getApiKeyPolicyError(apiKey, modelStr);
+    if (policyErr) return errorResponse(policyErr.status, policyErr.message);
   }
 
   if (!body.input) {

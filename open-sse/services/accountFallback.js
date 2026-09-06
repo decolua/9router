@@ -1,5 +1,28 @@
 import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
 
+export { ADAPTIVE_FAILURE_ACTION, classifyAdaptiveFailure, sanitizeAdaptiveFailureReason } from "./adaptiveFailureClassifier.js";
+
+const QUOTA_EXHAUSTION_MARKERS = [
+  "quota exceeded",
+  "insufficient_quota",
+  "usage_limit_reached",
+  "usage limit reached",
+  "usage limit exceeded",
+  "payment required",
+  "spending-limit",
+  "resource_exhausted",
+  "free tier limit",
+  "out of credits"
+];
+
+export function isQuotaExhaustion(status, errorText) {
+  if (status === 402) return true;
+
+  const normalizedError = typeof errorText === "string" ? errorText.toLowerCase() : JSON.stringify(errorText || "").toLowerCase();
+  const hasQuotaMarker = QUOTA_EXHAUSTION_MARKERS.some(marker => normalizedError.includes(marker));
+  return hasQuotaMarker && (status === 403 || status === 429 || status === 400);
+}
+
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
  * Level 1: 1s, Level 2: 2s, Level 3: 4s... → max 4 min

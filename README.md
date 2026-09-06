@@ -1,113 +1,111 @@
-<div align="center">
-  <img src="./images/9router.png?1" alt="9Router Dashboard" width="800"/>
-  
-  # 9Router - FREE AI Router & Token Saver
-  
-  **Never stop coding. Save 20-40% tokens with RTK + auto-fallback to FREE & cheap AI models.**
-  
-  **Connect All AI Code Tools (Claude Code, Cursor, Antigravity, Copilot, Codex, Gemini, OpenCode, Cline, OpenClaw...) to 40+ AI Providers & 100+ Models.**
-  
-  [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
-  [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-  [![Docker Pulls](https://img.shields.io/docker/pulls/decolua/9router.svg?logo=docker&label=Docker%20pulls)](https://hub.docker.com/r/decolua/9router)
-  [![GHCR](https://img.shields.io/badge/GHCR-decolua%2F9router-blue?logo=github)](https://github.com/decolua/9router/pkgs/container/9router)
-  [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
+# 9Router Nulla Version
 
-<a href="https://trendshift.io/repositories/22628" target="_blank"><img src="https://trendshift.io/api/badge/repositories/22628" alt="decolua%2F9router | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+A local-first fork of [`decolua/9router`](https://github.com/decolua/9router) focused on practical self-hosted AI routing, API-key model policy, and combo account control.
 
-[🚀 Quick Start](#-quick-start) • [💡 Features](#-key-features) • [📖 Setup](#-setup-guide) • [🌐 Website](https://9router.com)
+This repository keeps the core 9Router dashboard and OpenAI-compatible gateway from upstream, while carrying fork-specific changes for stricter access control and easier fork maintenance.
 
 [🇧🇷 Português (Brasil)](./i18n/README.pt-BR.md) • [🇻🇳 Tiếng Việt](./i18n/README.vi.md) • [🇨🇳 中文](./i18n/README.zh-CN.md) • [🇯🇵 日本語](./i18n/README.ja-JP.md) • [🇷🇺 Русский](./i18n/README.ru.md) • [🇹🇭 ไทย](./i18n/README.th.md) • [🇮🇷 فارسی](./i18n/README.fa_IR.md) • [🇮🇩 Indonesia](./i18n/README.id-ID.md) • [🇪🇸 Español](./i18n/README.es.md) • [🇫🇷 Français](./i18n/README.fr.md)
 
-</div>
+## What This Fork Is
 
----
+9Router is an OpenAI-compatible routing gateway for AI coding tools and model providers. It sits between clients such as Claude Code, Codex, Cursor, OpenCode, Cline, Continue, Roo, and upstream providers such as Claude, Codex, Kiro, GLM, MiniMax, OpenRouter, and custom-compatible endpoints.
 
-## 🤔 Why 9Router?
+This fork is useful when you want:
 
-**Stop wasting money, tokens and hitting limits:**
+- One local/self-hosted gateway for multiple AI clients.
+- API keys that only expose the models they are allowed to use.
+- Combo fallback lists that can target specific provider accounts.
+- A fork workflow that tracks upstream releases without losing local changes.
 
-- ❌ Subscription quota expires unused every month
-- ❌ Rate limits stop you mid-coding
-- ❌ Tool outputs (git diff, grep, ls...) burn tokens fast
-- ❌ Expensive APIs ($20-50/month per provider)
-- ❌ Manual switching between providers
+## How This Fork Differs From Upstream
 
-**9Router solves this:**
+| Area | Upstream 9Router | This fork |
+| --- | --- | --- |
+| Project goal | Broad public gateway and dashboard | Local-first fork with stricter access control |
+| API keys | General endpoint keys | Keys can restrict visible and usable models |
+| Model listing | Broad model catalog by default | `/v1/models` can be filtered by key policy |
+| Combos | Ordered fallback model lists | Combo entries can bind to provider accounts with `connectionId` |
+| Release flow | Upstream release cadence | Fork releases use tags like `fork-v0.5.40` |
 
-- ✅ **RTK Token Saver** - Auto-compress tool_result content, save 20-40% tokens per request
-- ✅ **Maximize subscriptions** - Track quota, use every bit before reset
-- ✅ **Auto fallback** - Subscription → Cheap → Free, zero downtime
-- ✅ **Multi-account** - Round-robin between accounts per provider
-- ✅ **Universal** - Works with Claude Code, Codex, Cursor, Cline, any CLI tool
+## Current Base
 
----
+This fork is currently synced with upstream `decolua/9router` **v0.5.55**.
 
-## 🔄 How It Works
+Current fork release:
 
-```
-┌─────────────┐
-│  Your CLI   │  (Claude Code, Codex, OpenClaw, Cursor, Cline...)
-│   Tool      │
-└──────┬──────┘
-       │ http://localhost:20128/v1
-       ↓
-┌─────────────────────────────────────────────┐
-│           9Router (Smart Router)            │
-│  • RTK Token Saver (cut tool_result tokens) │
-│  • Format translation (OpenAI ↔ Claude)     │
-│  • Quota tracking                           │
-│  • Auto token refresh                       │
-└──────┬──────────────────────────────────────┘
-       │
-       ├─→ [Tier 1: SUBSCRIPTION] Claude Code, Codex, GitHub Copilot
-       │   ↓ quota exhausted
-       ├─→ [Tier 2: CHEAP] GLM ($0.6/1M), MiniMax ($0.2/1M)
-       │   ↓ budget limit
-       └─→ [Tier 3: FREE] Kiro, OpenCode Free, Vertex ($300 credits)
-
-Result: Never stop coding, minimal cost + 20-40% token savings via RTK
+```text
+fork-v0.5.55
 ```
 
----
+Fork releases use the upstream version as the base version, then prefix it with `fork-`.
 
-## ⚡ Quick Start
+## Features
 
-**1. Install globally:**
+Core 9Router features retained from upstream:
+
+- OpenAI-compatible `/v1/*` API.
+- Web dashboard for providers, aliases, combos, API keys, usage, pricing, and settings.
+- Provider routing across OAuth, API-key, free, cheap, subscription, and custom-compatible providers.
+- Ordered combo fallback, where one model name can try multiple provider models in sequence.
+- Format translation across OpenAI-compatible, Claude, Gemini, Cursor, Kiro, and related provider formats.
+- Token-saver support, including RTK-style tool output compression.
+- SQLite-backed local persistence under `DATA_DIR`.
+- Source and container-based self-hosting.
+
+Fork-specific additions:
+
+- API key `allowedModels` and `blockedModels` policy support.
+- Policy-gated `/v1/models` responses for restricted keys.
+- Combo-level access checks for restricted API keys.
+- Per-model account binding in combos through `connectionId`.
+- Repeatable fork sync and release naming conventions.
+- Testing Studio at `/dashboard/playground` for authenticated streaming chats and side-by-side model comparisons.
+
+## Testing Studio
+
+Open `/dashboard/playground` from the dashboard sidebar. It replaces the legacy Basic Chat route, which redirects to the studio.
+
+Testing Studio uses the authenticated dashboard chat endpoint and the models already available through your connected providers. It does not expose provider credentials to the browser. It currently accepts text prompts only; it does not attach or upload images.
+
+The studio keeps its draft, selected models, presets, and recent sessions in versioned browser localStorage keys. Chat has one provider-type filter, and each Compare column has its own independent provider-type filter. These filters use the provider ID from each model's provider metadata, not a configured account. Filter choices are ephemeral and are not persisted. Selected model persistence remains unchanged, so a selected model can still be restored when the studio is remounted. Before display or storage, client-visible data is sanitized: credential-shaped fields and values are redacted, and large or deeply nested values are bounded. Provider connection details and raw stream events remain transient. Browser storage can be unavailable or full; in that case, the current session remains usable but later changes stay in memory only.
+
+## Architecture at a Glance
+
+```text
+AI client / editor / agent
+        |
+        | OpenAI-compatible request
+        v
+9Router API and dashboard
+        |
+        | auth, model policy, combo resolution, account selection
+        v
+provider executor / translator
+        |
+        v
+upstream model provider
+```
+
+Key code areas:
+
+- `src/app/api/v1/*` and `src/app/api/v1beta/*` — OpenAI-compatible API routes.
+- `src/app/api/keys*` — API key lifecycle and policy data.
+- `src/app/api/combos*` — combo management.
+- `src/sse/handlers/chat.js` — request parsing, combo handling, and account selection.
+- `open-sse/` — provider execution, SSE streaming, and request/response translation.
+
+For deeper internals, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## Quick Start
+
+Install dependencies and run the development server:
 
 ```bash
-npm install -g 9router
-9router
-```
-
-🎉 Dashboard opens at `http://localhost:20128`
-
-**2. Connect a FREE provider (no signup needed):**
-
-Dashboard → Providers → Connect **Kiro AI** (~50 credits/month free: Claude 4.5 + GLM-5 + MiniMax) or **OpenCode Free** (no auth) → Done!
-
-**3. Use in your CLI tool:**
-
-```
-Claude Code/Codex/OpenClaw/Cursor/Cline Settings:
-  Endpoint: http://localhost:20128/v1
-  API Key: [copy from dashboard]
-  Model: kr/claude-sonnet-4.5
-```
-
-**That's it!** Start coding with FREE AI models.
-
-**Alternative: run from source (this repository):**
-
-This repository package is private (`9router-app`), so source/Docker execution is the expected local development path.
-
-```bash
-cp .env.example .env
 npm install
-PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
+npm run dev
 ```
 
-Production mode:
+Build and start a production build:
 
 ```bash
 npm run build
@@ -714,9 +712,9 @@ Seamless translation between formats:
 
 **9Router Billing Reality:**
 
-✅ **9Router software = FREE forever** (open source, never charges)  
-✅ **Dashboard "costs" = Display/tracking only** (not actual bills)  
-✅ **You pay providers directly** (subscriptions or API fees)  
+✅ **9Router software = FREE forever** (open source, never charges)
+✅ **Dashboard "costs" = Display/tracking only** (not actual bills)
+✅ **You pay providers directly** (subscriptions or API fees)
 ✅ **FREE providers stay FREE** (Kiro ~50 credits/mo, OpenCode Free, Vertex $300 credits = $0 within free-tier limits) — note iFlow/Qwen/Gemini CLI free tiers were discontinued in 2026
 ❌ **9Router never sends invoices** or charges your card
 
@@ -1228,299 +1226,128 @@ export MACHINE_ID_SALT="endpoint-proxy-salt"
 
 # Start
 npm run start
-
-# Or use PM2
-npm install -g pm2
-pm2 start npm --name 9router -- start
-pm2 save
-pm2 startup
 ```
 
-### Docker
+Useful package scripts:
 
-Published images (multi-platform `linux/amd64` + `linux/arm64`):
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the local Next.js dev server. |
+| `npm run build` | Build the production app. |
+| `npm run start` | Start the built app. |
+| `npm run cli:pack` | Build the CLI package. |
 
-- Docker Hub: [`decolua/9router`](https://hub.docker.com/r/decolua/9router)
-- GHCR: [`ghcr.io/decolua/9router`](https://github.com/decolua/9router/pkgs/container/9router)
+## API Key Model Policy
 
-**Quick start (use published image):**
+This fork supports model-scoped API keys. A key can be limited to specific models, providers, or combos, so sharing a key does not automatically expose every connected account.
+
+Example policy intent:
+
+- Allow one key to use only `kr/*` models.
+- Allow another key to use cheaper fallback providers such as `glm/*` or `minimax/*`.
+- Block subscription-backed models from shared keys.
+- Keep older unrestricted keys backward compatible.
+
+Policy-related fields include:
+
+- `allowedModels`
+- `blockedModels`
+- `allowedCombos`
+- scopes
+- expiration metadata
+- last-used metadata
+
+The same policy affects model discovery. When a restricted key calls `/v1/models`, the response should only include models that key is allowed to use.
+
+## Combo Account Binding
+
+Combos remain ordered fallback lists, but this fork can bind a combo entry to a specific provider connection through `connectionId`.
+
+That matters when the same provider has multiple connected accounts with different quotas, subscriptions, or trust levels. Instead of saying “use any account for this provider,” a combo can say “use this model through this exact connection.”
+
+Think of a combo as a route list, and `connectionId` as the specific lane that route should use.
+
+## Fork Sync and Release Flow
+
+This fork tracks upstream through explicit sync branches.
+
+Standard naming:
+
+| Purpose | Pattern | Example |
+| --- | --- | --- |
+| Sync branch | `sync/upstream-vX.Y.Z` | `sync/upstream-v0.5.40` |
+| Backup branch | `backup/master-before-sync-upstream-vX.Y.Z` | `backup/master-before-sync-upstream-v0.5.40` |
+| Fork release tag | `fork-vX.Y.Z` | `fork-v0.5.40` |
+| Fork release title | `Fork release vX.Y.Z` | `Fork release v0.5.40` |
+
+High-level process:
+
+1. Create a sync branch for the upstream version.
+2. Merge upstream into that branch.
+3. Build and test the branch.
+4. Open a PR into fork `master`.
+5. Create a backup branch from pre-merge `origin/master`.
+6. Merge the PR.
+7. Verify the deployed/runtime environment separately.
+8. Publish a fork release tag.
+9. Delete the merged sync branch, but keep the backup branch.
+
+## Configuration
+
+Important runtime settings:
+
+| Variable | Purpose |
+| --- | --- |
+| `DATA_DIR` | App data directory; SQLite lives under this path. |
+| `PORT` | App port. |
+| `HOSTNAME` | Bind address. |
+| `BASE_URL` | Server-side app URL. |
+| `NEXT_PUBLIC_BASE_URL` | Browser-visible app URL. |
+| `CLOUD_URL` | Cloud sync endpoint base URL. |
+| `NEXT_PUBLIC_CLOUD_URL` | Browser-visible cloud sync URL. |
+| `REQUIRE_API_KEY` | Require Bearer API keys for `/v1/*` routes. |
+| `AUTH_COOKIE_SECURE` | Use secure cookies behind HTTPS. |
+| `ENABLE_REQUEST_LOGS` | Enable request/translator logs. |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | Optional outbound proxy settings. |
+
+Do not commit `.env` files or secrets.
+
+## OpenAI-Compatible API
+
+Chat completions:
 
 ```bash
-docker run -d \
-  --name 9router \
-  -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" \
-  -e DATA_DIR=/app/data \
-  decolua/9router:latest
+curl http://localhost:20128/v1/chat/completions \
+  -H 'Authorization: Bearer your-9router-api-key' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "your-model-or-combo",
+    "messages": [{"role": "user", "content": "Hello"}],
+    "stream": true
+  }'
 ```
 
-→ Open http://localhost:20128
-
-**Build from source (dev):**
+List models visible to the provided key:
 
 ```bash
-git clone https://github.com/decolua/9router.git
-cd 9router/app
-docker build -t 9router .
-docker run -d --name 9router -p 20128:20128 \
-  -v "$HOME/.9router:/app/data" -e DATA_DIR=/app/data 9router
+curl http://localhost:20128/v1/models \
+  -H 'Authorization: Bearer your-9router-api-key'
 ```
 
-**Container defaults:**
+For restricted keys, the model list is intentionally filtered by policy.
 
-- `PORT=20128`
-- `HOSTNAME=0.0.0.0`
+## Documentation
 
-**Useful commands:**
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — request lifecycle, routing, combo fallback, OAuth/token refresh, cloud sync, and data model.
+- `docs/PRD-api-key-model-scope.md` — model policy design notes, if present in your checkout.
+- Upstream README and docs remain the best source for broad provider setup and public marketing details.
 
-```bash
-docker logs -f 9router
-docker restart 9router
-docker stop 9router && docker rm 9router
-docker pull decolua/9router:latest   # update to latest
-```
+## Upstream Credit
 
-**Data persistence:** `$HOME/.9router/db/data.sqlite` on host ↔ `/app/data/db/data.sqlite` in container.
+This fork is based on [`decolua/9router`](https://github.com/decolua/9router). Upstream provides the core dashboard, OpenAI-compatible router, provider integrations, token savers, combo routing, translations, and broad setup documentation.
 
-### Environment Variables
+Fork changes are maintained separately for local-first routing and access-control needs. When possible, upstream improvements are merged instead of reimplemented.
 
-| Variable                                             | Default                                  | Description                                                                         |
-| ---------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------- |
-| `JWT_SECRET`                                         | Auto-generated (`~/.9router/jwt-secret`) | JWT signing secret for dashboard auth cookie (override to share across instances)   |
-| `INITIAL_PASSWORD`                                   | `123456`                                 | First login password when no saved hash exists                                      |
-| `DATA_DIR`                                           | `~/.9router`                             | Main app data location (SQLite at `$DATA_DIR/db/data.sqlite`)                       |
-| `PORT`                                               | framework default                        | Service port (`20128` in examples)                                                  |
-| `HOSTNAME`                                           | framework default                        | Bind host (Docker defaults to `0.0.0.0`)                                            |
-| `NODE_ENV`                                           | runtime default                          | Set `production` for deploy                                                         |
-| `BASE_URL`                                           | `http://localhost:20128`                 | Server-side internal base URL used by cloud sync jobs                               |
-| `CLOUD_URL`                                          | `https://9router.com`                    | Server-side cloud sync endpoint base URL                                            |
-| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`                  | Backward-compatible/public base URL (prefer `BASE_URL` for server runtime)          |
-| `NEXT_PUBLIC_CLOUD_URL`                              | `https://9router.com`                    | Backward-compatible/public cloud URL (prefer `CLOUD_URL` for server runtime)        |
-| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`          | HMAC secret for generated API keys                                                  |
-| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                    | Salt for stable machine ID hashing                                                  |
-| `ENABLE_REQUEST_LOGS`                                | `false`                                  | Enables request/response logs under `logs/`                                         |
-| `AUTH_COOKIE_SECURE`                                 | `false`                                  | Force `Secure` auth cookie (set `true` behind HTTPS reverse proxy)                  |
-| `REQUIRE_API_KEY`                                    | `false`                                  | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys) |
-| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty                                    | Optional outbound proxy for upstream provider calls                                 |
-| `SEARXNG_URL`                                        | `http://localhost:8888/search`           | Endpoint for the built-in unauthenticated SearXNG web-search provider               |
+## License
 
-Notes:
-
-- Lowercase proxy variables are also supported: `http_proxy`, `https_proxy`, `all_proxy`, `no_proxy`.
-- `.env` is not baked into Docker image (`.dockerignore`); inject runtime config with `--env-file` or `-e`.
-- On Windows, `APPDATA` can be used for local storage path resolution.
-- `INSTANCE_NAME` appears in older docs/env templates, but is currently not used at runtime.
-
-### Runtime Files and Storage
-
-- Main app state: `${DATA_DIR}/db/data.sqlite` (SQLite — providers, combos, aliases, keys, settings, usage history)
-- Auto backups: `${DATA_DIR}/db/backups/`
-- Optional request/translator logs: `<repo>/logs/...` when `ENABLE_REQUEST_LOGS=true`
-- Both `${DATA_DIR}` and `~/.9router` resolve to the same location in a Docker container — the symlink `/root/.9router -> /app/data` is created at build time.
-
-</details>
-
----
-
-## 📊 Available Models
-
-<details>
-<summary><b>View all available models</b></summary>
-
-**Claude Code (`cc/`)** - Pro/Max:
-
-- `cc/claude-opus-4-7`
-- `cc/claude-opus-4-6`
-- `cc/claude-sonnet-4-6`
-- `cc/claude-sonnet-4-5-20250929`
-- `cc/claude-haiku-4-5-20251001`
-
-**Codex (`cx/`)** - Plus/Pro:
-
-- `cx/gpt-5.5`
-- `cx/gpt-5.4`
-- `cx/gpt-5.3-codex`
-- `cx/gpt-5.2-codex`
-- `cx/gpt-5.1-codex-max`
-
-**GitHub Copilot (`gh/`)**:
-
-- `gh/gpt-5.4`
-- `gh/claude-opus-4.7`
-- `gh/claude-sonnet-4.6`
-- `gh/gemini-3.1-pro-preview`
-- `gh/grok-code-fast-1`
-
-**Cursor (`cu/`)** - Subscription:
-
-- `cu/claude-4.6-opus-max`
-- `cu/claude-4.5-sonnet-thinking`
-- `cu/gpt-5.3-codex`
-- `cu/kimi-k2.5`
-
-**GLM (`glm/`)** - $0.6/1M:
-
-- `glm/glm-5.1`
-- `glm/glm-5`
-- `glm/glm-4.7`
-
-**MiniMax (`minimax/`)** - $0.2/1M:
-
-- `minimax/MiniMax-M2.7`
-- `minimax/MiniMax-M2.5`
-
-**Kimi (`kimi/`)** - $9/mo flat:
-
-- `kimi/kimi-k2.5`
-- `kimi/kimi-k2.5-thinking`
-
-**Kiro (`kr/`)** - Free (~50 credits/month, paid tiers above):
-
-- `kr/claude-sonnet-4.5`
-- `kr/claude-haiku-4.5`
-- `kr/glm-5`
-- `kr/MiniMax-M2.5`
-- `kr/qwen3-coder-next`
-- `kr/deepseek-3.2`
-
-**OpenCode Free (`oc/`)** - FREE no-auth:
-
-- Auto-fetched from `opencode.ai/zen/v1/models`
-
-**Vertex AI (`vertex/`)** - $300 free credits:
-
-- `vertex/gemini-3.1-pro-preview`
-- `vertex/gemini-3-flash-preview`
-- `vertex/gemini-2.5-flash`
-- `vertex-partner/glm-5-maas`
-- `vertex-partner/deepseek-v3.2-maas`
-
-</details>
-
----
-
-## 🐛 Troubleshooting
-
-**"Language model did not provide messages"**
-
-- Provider quota exhausted → Check dashboard quota tracker
-- Solution: Use combo fallback or switch to cheaper tier
-
-**Rate limiting**
-
-- Subscription quota out → Fallback to GLM/MiniMax
-- Add combo: `cc/claude-opus-4-7 → glm/glm-5.1 → kr/claude-sonnet-4.5`
-
-**OAuth token expired**
-
-- Auto-refreshed by 9Router
-- If issues persist: Dashboard → Provider → Reconnect
-
-**High costs**
-
-- Enable RTK in Dashboard → Endpoint settings (default ON, saves 20-40% tokens)
-- Check usage stats in Dashboard
-- Switch primary model to GLM/MiniMax
-- Use free tier (Kiro, OpenCode Free, Vertex) for non-critical tasks
-
-**Dashboard opens on wrong port**
-
-- Set `PORT=20128` and `NEXT_PUBLIC_BASE_URL=http://localhost:20128`
-
-**First login not working**
-
-- Check `INITIAL_PASSWORD` in `.env`
-- If unset, fallback password is `123456`
-
-**No request logs under `logs/`**
-
-- Set `ENABLE_REQUEST_LOGS=true`
-
----
-
-## 🛠️ Tech Stack
-
-- **Runtime**: Node.js 20+
-- **Framework**: Next.js 16
-- **UI**: React 19 + Tailwind CSS 4
-- **Database**: SQLite (better-sqlite3 / node:sqlite / sql.js fallback)
-- **Streaming**: Server-Sent Events (SSE)
-- **Auth**: OAuth 2.0 (PKCE) + JWT + API Keys
-
----
-
-## 📝 API Reference
-
-### Chat Completions
-
-```bash
-POST http://localhost:20128/v1/chat/completions
-Authorization: Bearer your-api-key
-Content-Type: application/json
-
-{
-  "model": "cc/claude-opus-4-6",
-  "messages": [
-    {"role": "user", "content": "Write a function to..."}
-  ],
-  "stream": true
-}
-```
-
-### List Models
-
-```bash
-GET http://localhost:20128/v1/models
-Authorization: Bearer your-api-key
-
-→ Returns all models + combos in OpenAI format
-```
-
-## 📧 Support
-
-- **Website**: [9router.com](https://9router.com)
-- **GitHub**: [github.com/decolua/9router](https://github.com/decolua/9router)
-- **Issues**: [github.com/decolua/9router/issues](https://github.com/decolua/9router/issues)
-
----
-
-## 👥 Contributors
-
-Thanks to all contributors who helped make 9Router better!
-
-[![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=150&columns=15&anon=1&v=20260309)](https://github.com/decolua/9router/graphs/contributors)
-
----
-
-## 📊 Star Chart
-
-[![Star Chart](https://starchart.cc/decolua/9router.svg?variant=adaptive)](https://starchart.cc/decolua/9router)
-
-## 🔀 Forks
-
-**[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** — A full-featured TypeScript fork of 9Router. Adds 36+ providers, 4-tier auto-fallback, multi-modal APIs (images, embeddings, audio, TTS), circuit breaker, semantic cache, LLM evaluations, and a polished dashboard. 368+ unit tests. Available via npm and Docker.
-
----
-
-## 🙏 Acknowledgments
-
-Built on the shoulders of giants:
-
-- **[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)** — original Go implementation that inspired this JavaScript port.
-- **[RTK](https://github.com/rtk-ai/rtk)** ![Stars](https://img.shields.io/github/stars/rtk-ai/rtk?style=flat&color=yellow) — Rust token-saver. 9Router ports its compression pipeline to JS → **−20-40% input tokens** on every request.
-- **[Caveman](https://github.com/JuliusBrussee/caveman)** ![Stars](https://img.shields.io/github/stars/JuliusBrussee/caveman?style=flat&color=yellow) by **[@JuliusBrussee](https://github.com/JuliusBrussee)** — viral _"why use many token when few token do trick"_. 9Router adapts its prompt → **−65% output tokens**.
-- **[Ponytail](https://github.com/DietrichGebert/ponytail)** ![Stars](https://img.shields.io/github/stars/DietrichGebert/ponytail?style=flat&color=yellow) by **[@DietrichGebert](https://github.com/DietrichGebert)** — _"lazy senior dev"_ skill. 9Router injects its YAGNI-first ladder → **fewer tokens, less code, shorter diffs**.
-
-Huge thanks to these authors — without their work, 9Router's token-saving features wouldn't exist. ⭐ them on GitHub!
-
----
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) for details.
-
----
-
-<div align="center">
-  <sub>Built with ❤️ for developers who code 24/7</sub>
-</div>
+MIT, following upstream 9Router. See [`LICENSE`](LICENSE).

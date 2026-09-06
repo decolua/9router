@@ -37,9 +37,10 @@ const { proxy, __test__ } = await import("../../src/dashboardGuard.js");
 
 const PEER_TOKEN = "peer-token-fixture";
 
-function request(pathname, headers = {}) {
+function request(pathname, headers = {}, method = "GET") {
   const normalizedHeaders = new Headers(headers);
   return {
+    method,
     nextUrl: { pathname, searchParams: new URL(`http://localhost${pathname}`).searchParams },
     headers: normalizedHeaders,
     cookies: { get: vi.fn(() => undefined) },
@@ -61,6 +62,7 @@ describe("dashboard guard public LLM API access", () => {
     mocks.validateApiKey.mockResolvedValue(false);
     mocks.getConsistentMachineId.mockResolvedValue("cli-token");
     mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+    __test__._resetCachedCliToken();
   });
 
   it("allows loopback public LLM API without API key", async () => {
@@ -78,6 +80,91 @@ describe("dashboard guard public LLM API access", () => {
 
     expect(response.status).toBe(401);
     expect(response.body.error).toBe("API key required for remote API access");
+  });
+
+  it.each([
+    "/v1/messages",
+    "/api/v1/chat/completions",
+    "/v1beta/models",
+  ])("allows remote OPTIONS %s without settings or API key validation", async (pathname) => {
+    const response = await proxy(request(pathname, { host: "router.example.com" }, "OPTIONS"));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.getSettings).not.toHaveBeenCalled();
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+
+  it("allows remote keyless POST when requireApiKey=false without validating a key", async () => {
+    mocks.getSettings.mockResolvedValue({ requireApiKey: false });
+
+    const response = await proxy(request("/v1/messages", { host: "router.example.com" }, "POST"));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+
+  it("allows remote keyless GET when requireApiKey=false", async () => {
+    mocks.getSettings.mockResolvedValue({ requireApiKey: false });
+
+    const response = await proxy(request("/v1/models", { host: "router.example.com" }));
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+
+  it("rejects remote actual POST without a key when requireApiKey=true", async () => {
+    const response = await proxy(request("/v1/messages", { host: "router.example.com" }, "POST"));
+
+    expect(response.status).toBe(401);
+  });
+
+  it.each([
+    ["x-api-key", "sk-invalid"],
+    ["authorization", "Bearer sk-invalid"],
+    ["x-goog-api-key", "sk-invalid"],
+  ])("rejects invalid %s even when requireApiKey=false", async (header, value) => {
+    mocks.getSettings.mockResolvedValue({ requireApiKey: false });
+
+    const response = await proxy(request("/v1/messages", {
+      host: "router.example.com",
+      [header]: value,
+    }, "POST"));
+
+    expect(response.status).toBe(401);
+    expect(mocks.validateApiKey).toHaveBeenCalledWith("sk-invalid");
+  });
+
+  it("rejects an invalid Gemini query key even when requireApiKey=false", async () => {
+    mocks.getSettings.mockResolvedValue({ requireApiKey: false });
+
+    const response = await proxy(request("/v1beta/models?key=sk-invalid", {
+      host: "router.example.com",
+    }, "POST"));
+
+    expect(response.status).toBe(401);
+    expect(mocks.validateApiKey).toHaveBeenCalledWith("sk-invalid");
+  });
+
+  it("fails closed when settings read rejects for a keyless actual request", async () => {
+    mocks.getSettings.mockRejectedValue(new Error("settings unavailable"));
+
+    const response = await proxy(request("/v1/messages", { host: "router.example.com" }, "POST"));
+
+    expect(response.status).toBe(401);
+  });
+
+  it("allows OPTIONS when settings read rejects", async () => {
+    mocks.getSettings.mockRejectedValue(new Error("settings unavailable"));
+
+    const response = await proxy(request("/v1/messages", { host: "router.example.com" }, "OPTIONS"));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.getSettings).not.toHaveBeenCalled();
+  });
+
+  it("allows loopback OPTIONS", async () => {
+    const response = await proxy(request("/v1/messages", { host: "localhost:20128" }, "OPTIONS"));
+
+    expect(response).toBe(mocks.nextResponse);
   });
 
   it("allows loopback peer IP regardless of Host", async () => {
@@ -214,9 +301,77 @@ describe("dashboard guard public LLM API access", () => {
     expect(response).toBe(mocks.nextResponse);
     expect(mocks.validateApiKey).toHaveBeenCalledWith("sk-valid");
   });
-});
+  });
 
-describe("dashboard guard local-only access", () => {
+  describe("dashboard guard proxy fitness access", () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
+      mocks.getSettings.mockResolvedValue({ requireLogin: true });
+      mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+      mocks.getConsistentMachineId.mockResolvedValue("mocked-cli-token");
+      __test__._resetCachedCliToken();
+    });
+
+    const fitnessPaths = [
+      "/api/proxy-pools/fitness",
+      "/api/proxy-pools/pool123/fitness/clear",
+      "/api/proxy-pools/fitness/clear-all"
+    ];
+
+    it("allows access with valid dashboard JWT", async () => {
+      mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+      for (const path of fitnessPaths) {
+        const req = request(path);
+        req.cookies.get.mockReturnValue({ value: "valid-jwt-token" });
+        const res = await proxy(req);
+
+        expect(mocks.verifyDashboardAuthToken).toHaveBeenCalledWith("valid-jwt-token");
+        expect(res, `Failed for ${path}`).toBe(mocks.nextResponse);
+      }
+    });
+
+    it("allows access with valid CLI token", async () => {
+      for (const path of fitnessPaths) {
+        mocks.getConsistentMachineId.mockResolvedValue("mocked-cli-token");
+        const req = request(path, { "x-9r-cli-token": "mocked-cli-token" });
+        const res = await proxy(req);
+        expect(res, `Failed for ${path}`).toBe(mocks.nextResponse);
+      }
+    });
+
+    it("allows access when requireLogin=false", async () => {
+      mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+      mocks.getSettings.mockResolvedValue({ requireLogin: false });
+      for (const path of fitnessPaths) {
+        const req = request(path);
+        const res = await proxy(req);
+        expect(res, `Failed for ${path}`).toBe(mocks.nextResponse);
+      }
+    });
+
+    it("rejects access when requireLogin=true and no JWT", async () => {
+      mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+      mocks.getSettings.mockResolvedValue({ requireLogin: true });
+      for (const path of fitnessPaths) {
+        const req = request(path);
+        const res = await proxy(req);
+        expect(res.status, `Failed for ${path}`).toBe(401);
+      }
+    });
+
+    it("fails closed (rejects access) when settings read rejects", async () => {
+      mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+      mocks.getSettings.mockRejectedValue(new Error("DB locked"));
+      for (const path of fitnessPaths) {
+        const req = request(path);
+        const res = await proxy(req);
+        expect(res.status, `Failed for ${path}`).toBe(401);
+      }
+    });
+  });
+
+  describe("dashboard guard local-only access", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
@@ -224,6 +379,7 @@ describe("dashboard guard local-only access", () => {
     mocks.validateApiKey.mockResolvedValue(false);
     mocks.getConsistentMachineId.mockResolvedValue("cli-token");
     mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+    __test__._resetCachedCliToken();
   });
 
   it("rejects local-only route from non-loopback host without CLI token", async () => {
@@ -278,6 +434,9 @@ describe("dashboard guard local-only access", () => {
   });
 
   it("allows local-only route with valid CLI token", async () => {
+    __test__._resetCachedCliToken();
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+
     const response = await proxy(request("/api/mcp/filesystem/sse", {
       host: "router.example.com",
       "x-9r-cli-token": "cli-token",

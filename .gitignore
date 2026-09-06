@@ -51,6 +51,8 @@ source/*
 .cursor/*
 docs/*
 !docs/ARCHITECTURE.md
+# Local-only deployment, recovery, and fork-maintenance notes.
+docs/ops/
 test/*
 open-sse/test/*
 RM.vn.md

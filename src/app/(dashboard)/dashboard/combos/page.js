@@ -8,7 +8,8 @@ import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifi
 import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { resolveProviderId } from "@/shared/constants/providers";
+import { getComboModelConnectionId, getComboModelValue, setComboModelConnectionId, setComboModelValue } from "@/shared/utils/comboModels";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -56,10 +57,6 @@ export default function CombosPage() {
   const [confirmState, setConfirmState] = useState(null);
   const { copied, copy } = useCopyToClipboard();
 
-  useEffect(() => {
-    fetchData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   const fetchData = async () => {
     try {
       const [combosRes, providersRes, settingsRes] = await Promise.all([
@@ -89,6 +86,10 @@ export default function CombosPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchData();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSetCapacityAdapter = async (next) => {
     setCapacityAdapter(next);
@@ -313,12 +314,14 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
               {combo.models.length === 0 ? (
                 <span className="text-xs text-text-muted italic">No models</span>
               ) : (
-                combo.models.slice(0, 3).map((model, index) => (
+                combo.models.slice(0, 3).map((entry, index) => {
+                  const model = getComboModelValue(entry);
+                  return (
                   <code key={index} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5">
                     <span>{model}</span>
                     <CapacityBadges caps={getCaps?.(model)} />
                   </code>
-                ))
+                );})
               )}
               {combo.models.length > 3 && (
                 <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
@@ -334,7 +337,7 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
                   title="Pick the model that fuses panel answers"
                 >
                   <span className="material-symbols-outlined text-[13px]">gavel</span>
-                  <span className="truncate">{judge || `Auto — ${combo.models[0] || "first model"}`}</span>
+                  <span className="truncate">{judge || `Auto — ${getComboModelValue(combo.models[0]) || "first model"}`}</span>
                 </button>
                 {judge && (
                   <button
@@ -409,6 +412,10 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
   );
 }
 
+function getProviderPrefix(model) {
+  return typeof model === "string" && model.includes("/") ? model.split("/")[0] : "";
+}
+
 function CapacityAdapterSection({ capacityAdapter, onChange, activeProviders, getCaps }) {
   return (
     <div className="flex flex-col gap-3">
@@ -419,8 +426,8 @@ function CapacityAdapterSection({ capacityAdapter, onChange, activeProviders, ge
             Your model can&apos;t read image/audio? Auto-switches to a model in the pool below.
           </p>
           <ul className="mt-1.5 text-[11px] text-text-muted flex flex-col gap-0.5">
-            <li><span className="font-medium text-text-main">Vision</span> — images (png, jpg, webp, …)</li>
-            <li><span className="font-medium text-text-main">Audio</span> — audio input</li>
+            <li><span className="font-medium text-text-main">Vision</span> - images (png, jpg, webp, .)</li>
+            <li><span className="font-medium text-text-main">Audio</span> - audio input</li>
           </ul>
         </div>
       </div>
@@ -449,6 +456,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
   const handleAdd = (model) => {
     if (models.includes(model.value)) return;
     patch({ models: [...models, model.value] });
+    setShowModelSelect(false);
   };
 
   const handleRemove = (index) => {
@@ -552,7 +560,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
   );
 }
 
-function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+function ModelItem({ id, index, entry, activeProviders, isFirst, isLast, onEdit, onConnectionChange, onMoveUp, onMoveDown, onRemove }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -561,7 +569,17 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
     zIndex: isDragging ? 999 : undefined,
   };
   const [editing, setEditing] = useState(false);
+  const model = getComboModelValue(entry);
+  const connectionId = getComboModelConnectionId(entry);
   const [draft, setDraft] = useState(model);
+  const providerPrefix = getProviderPrefix(model);
+  const providerId = resolveProviderId(providerPrefix);
+  const connections = activeProviders.filter((p) => (
+    p.provider === providerId ||
+    p.provider === providerPrefix ||
+    p.providerSpecificData?.prefix === providerPrefix
+  ));
+
   const commit = () => {
     const trimmed = draft.trim();
     if (trimmed && trimmed !== model) onEdit(trimmed);
@@ -578,14 +596,14 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
     <div
       ref={setNodeRef}
       style={style}
-      className={`group flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 bg-black/[0.02] hover:bg-black/[0.04] dark:bg-white/[0.02] dark:hover:bg-white/[0.04] transition-colors ${isDragging ? "shadow-md ring-1 ring-primary/30" : ""}`}
+      className={`group grid grid-cols-[auto_auto_1fr_auto_auto] gap-x-2 gap-y-0.5 rounded-md px-2 py-1 bg-black/[0.02] hover:bg-black/[0.04] dark:bg-white/[0.02] dark:hover:bg-white/[0.04] transition-colors ${isDragging ? "shadow-md ring-1 ring-primary/30" : ""}`}
     >
-      {/* Drag handle */}
+      {/* Col 1: Drag handle — spans both rows */}
       <button
         {...attributes}
         {...listeners}
         type="button"
-        className="cursor-grab touch-none p-0.5 rounded text-text-muted hover:text-primary active:cursor-grabbing shrink-0"
+        className="row-span-2 self-center cursor-grab touch-none p-0.5 rounded text-text-muted hover:text-primary active:cursor-grabbing shrink-0"
         title="Drag to reorder"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
@@ -595,31 +613,33 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
         </svg>
       </button>
 
-      {/* Index badge */}
-      <span className="text-[10px] font-medium text-text-muted w-3 text-center shrink-0">{index + 1}</span>
+      {/* Col 2: Index badge — spans both rows */}
+      <span className="row-span-2 self-center text-[10px] font-medium text-text-muted w-3 text-center shrink-0">{index + 1}</span>
 
-      {/* Inline editable model value */}
-      {editing ? (
-        <input
-          autoFocus
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={handleKeyDown}
-          className="min-w-0 flex-1 rounded border border-primary/40 bg-white px-1.5 py-0.5 font-mono text-xs text-text-main outline-none dark:bg-black/20"
-        />
-      ) : (
-        <div
-          className="min-w-0 flex-1 cursor-text truncate rounded px-1.5 py-0.5 font-mono text-xs text-text-main hover:bg-black/5 dark:hover:bg-white/5"
-          onClick={() => setEditing(true)}
-          title="Click to edit"
-        >
-          {model}
-        </div>
-      )}
+      {/* Col 3, Row 1: Inline editable model value */}
+      <div className="min-w-0">
+        {editing ? (
+          <input
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={handleKeyDown}
+            className="w-full rounded border border-primary/40 bg-white px-1.5 py-0.5 font-mono text-[11px] text-text-main outline-none dark:bg-black/20"
+          />
+        ) : (
+          <div
+            className="w-full cursor-text truncate rounded px-1.5 py-0.5 font-mono text-[11px] text-text-main hover:bg-black/5 dark:hover:bg-white/5"
+            onClick={() => setEditing(true)}
+            title="Click to edit"
+          >
+            {model}
+          </div>
+        )}
+      </div>
 
-      {/* Priority arrows */}
-      <div className="flex shrink-0 items-center gap-0.5">
+      {/* Col 4: Priority arrows — spans both rows */}
+      <div className="row-span-2 self-center flex shrink-0 items-center gap-0.5">
         <button
           onClick={onMoveUp}
           disabled={isFirst}
@@ -638,14 +658,38 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
         </button>
       </div>
 
-      {/* Remove */}
+      {/* Col 5: Remove button — spans both rows */}
       <button
         onClick={onRemove}
-        className="p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 transition-all"
+        className="row-span-2 self-center p-0.5 hover:bg-red-500/10 rounded text-text-muted hover:text-red-500 transition-all"
         title="Remove"
       >
         <span className="material-symbols-outlined text-[12px]">close</span>
       </button>
+
+      {/* Col 3, Row 2: Account selector */}
+      <div className="min-w-0 pr-2">
+        {connections.length > 0 ? (
+          <select
+            value={connectionId}
+            onChange={(e) => onConnectionChange(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            className="w-full rounded bg-black/5 dark:bg-white/5 px-1.5 py-0.5 text-[10px] text-text-muted outline-none hover:bg-black/10 dark:hover:bg-white/10"
+            title="Provider account for this combo model"
+          >
+            <option value="">Auto account</option>
+            {connections.map((connection) => (
+              <option key={connection.id} value={connection.id}>
+                Account: {connection.name || connection.email || connection.id.slice(0, 8)}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="px-1.5 py-0.5 text-[10px] text-text-muted/50 select-none block" title="No accounts configured for this provider">
+            Auto account
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -691,6 +735,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
 
   useEffect(() => {
     if (isOpen) fetchModalData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   const validateName = (value) => {
@@ -714,13 +759,13 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   };
 
   const handleAddModel = (model) => {
-    if (!models.includes(model.value)) {
+    if (!models.some((entry) => getComboModelValue(entry) === model.value)) {
       setModels([...models, model.value]);
     }
   };
 
   const handleDeselectModel = (model) => {
-    setModels(models.filter((m) => m !== model.value));
+    setModels(models.filter((entry) => getComboModelValue(entry) !== model.value));
   };
 
   const handleRemoveModel = (index) => {
@@ -790,12 +835,18 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
                       key={uid}
                       id={uid}
                       index={index}
-                      model={model}
+                      entry={model}
+                      activeProviders={activeProviders}
                       isFirst={index === 0}
                       isLast={index === modelItems.length - 1}
                       onEdit={(newVal) => {
                         const updated = [...models];
-                        updated[index] = newVal;
+                        updated[index] = setComboModelValue(updated[index], newVal);
+                        setModels(updated);
+                      }}
+                      onConnectionChange={(connectionId) => {
+                        const updated = [...models];
+                        updated[index] = setComboModelConnectionId(updated[index], connectionId);
                         setModels(updated);
                       }}
                       onMoveUp={() => handleMoveUp(index)}
@@ -846,7 +897,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
           modelAliases={modelAliases}
           title="Add Model to Combo"
           kindFilter={kindFilter}
-          addedModelValues={models}
+          addedModelValues={models.map(getComboModelValue)}
           closeOnSelect={false}
         />
       )}

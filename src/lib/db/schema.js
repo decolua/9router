@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 4;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -75,6 +75,23 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_pp_status ON proxyPools(testStatus)",
     ],
   },
+  proxyPoolFitness: {
+    columns: {
+      poolId: "TEXT NOT NULL",
+      scope: "TEXT NOT NULL",
+      until: "INTEGER NOT NULL",
+      reason: "TEXT",
+      version: "INTEGER NOT NULL DEFAULT 1",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    primaryKey: "PRIMARY KEY (poolId, scope)",
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_ppf_pool ON proxyPoolFitness(poolId)",
+      "CREATE INDEX IF NOT EXISTS idx_ppf_scope ON proxyPoolFitness(scope)",
+      "CREATE INDEX IF NOT EXISTS idx_ppf_until ON proxyPoolFitness(until)",
+    ],
+  },
   apiKeys: {
     columns: {
       id: "TEXT PRIMARY KEY",
@@ -83,6 +100,14 @@ export const TABLES = {
       machineId: "TEXT",
       isActive: "INTEGER DEFAULT 1",
       createdAt: "TEXT NOT NULL",
+      allowedModels: "TEXT",
+      blockedModels: "TEXT",
+      allowedCombos: "TEXT",
+      scopes: "TEXT",
+      expiresAt: "TEXT",
+      lastUsedAt: "TEXT",
+      maxRequestsPerDay: "INTEGER",
+      maxSpendUsdPerDay: "REAL",
     },
     indexes: ["CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)"],
   },

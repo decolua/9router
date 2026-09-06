@@ -58,9 +58,10 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, onResilienceEvent, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, ensureOpenAIDone, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
+  onResilienceEvent?.("DISPATCH_START", { provider, model, connectionId });
   // Stable per-session color so all lines of one CLI conversation share a tag
   const sessionSeed = (() => {
     try {
@@ -322,7 +323,19 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     connectionProxyUrl: credentials?.providerSpecificData?.connectionProxyUrl || "",
     connectionNoProxy: credentials?.providerSpecificData?.connectionNoProxy || "",
     vercelRelayUrl: credentials?.providerSpecificData?.vercelRelayUrl || "",
+    strictProxy: credentials?.providerSpecificData?.strictProxy === true || provider === "freebuff",
+    proxyPoolId: credentials?.providerSpecificData?.proxyPoolId || credentials?.providerSpecificData?.connectionProxyPoolId || null,
   };
+
+  if (provider === "freebuff" && credentials?.providerSpecificData?.noFitPool === true) {
+    trackPendingRequest(model, provider, connectionId, false, true);
+    return createErrorResult(503, `Freebuff has no healthy proxy pool for ${model}; all assigned pools are cooling down after limited-IP errors.`);
+  }
+
+  if (provider === "freebuff" && !proxyOptions.vercelRelayUrl && !(proxyOptions.connectionProxyEnabled && proxyOptions.connectionProxyUrl)) {
+    trackPendingRequest(model, provider, connectionId, false, true);
+    return createErrorResult(503, `Freebuff requires a configured proxy pool for ${model}; direct egress is disabled to prevent limited-IP rate limits.`);
+  }
 
   if (proxyOptions.vercelRelayUrl) {
     const connectionName = credentials?.connectionName || credentials?.connectionId || "unknown";
@@ -375,27 +388,41 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false, true);
-    appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
+    const upstreamStatus = Number.isInteger(error.status) && error.status >= 400 && error.status <= 599
+      ? error.status
+      : HTTP_STATUS.BAD_GATEWAY;
+    const resetAt = Number.isFinite(error.resetsAtMs) && error.resetsAtMs > 0
+      ? error.resetsAtMs
+      : undefined;
+    const isAborted = error.name === "AbortError";
+    const thrownOrigin = isAborted ? "client_abort"
+      : error?.poolScoped ? "proxy_pool"
+      : (error?.name === "TypeError" && !upstreamStatus) ? "local_router"
+      : "upstream_http";
+    onResilienceEvent?.("DISPATCH_FAILED", { provider, model, connectionId, status: isAborted ? 499 : upstreamStatus, origin: thrownOrigin });
+    appendRequestLog({ model, provider, connectionId, status: `FAILED ${isAborted ? 499 : upstreamStatus}` }).catch(() => { });
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
       latency: { ttft: 0, total: Date.now() - requestStartTime },
       tokens: { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
       providerRequest: translatedBody || null,
-      response: { error: error.message || String(error), status: error.name === "AbortError" ? 499 : 502, thinking: null },
+      response: { error: error.message || String(error), status: isAborted ? 499 : upstreamStatus, thinking: null },
       pxpipe: pxpipeSummary,
       status: "error"
     })).catch(() => { });
 
-    if (error.name === "AbortError") {
+    if (isAborted) {
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
     }
-    const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
+    const errMsg = formatProviderError(error, provider, model, upstreamStatus);
     if (log?.errorLine) {
-      log.errorLine(reqTag, "✗", `ERROR 502 · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${error.stack ? `\n    ${error.stack}` : ""}`);
+      log.errorLine(reqTag, "✗", `ERROR ${upstreamStatus} · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${error.stack ? `\n    ${error.stack}` : ""}`);
     }
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
+    const errorResult = createErrorResult(upstreamStatus, errMsg, resetAt);
+    if (error.poolScoped) errorResult.poolScoped = error.poolScoped;
+    return errorResult;
   }
 
   // Handle 401/403 - try token refresh (skip for noAuth providers)
@@ -467,29 +494,36 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       log.errorLine(reqTag, "✗", `ERROR ${statusCode} · ${provider}/${model} · ${Date.now() - requestStartTime}ms${urlStr}\n    ${errMsg}`);
     }
     reqLogger.logError(new Error(message), finalBody || translatedBody);
+    const nonOkOrigin = statusCode === 408 || statusCode >= 500 ? "upstream_http" : "local_router";
+    onResilienceEvent?.("DISPATCH_FAILED", { provider, model, connectionId, status: statusCode, origin: nonOkOrigin });
     return createErrorResult(statusCode, errMsg, resetsAtMs);
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
+  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, onResilienceEvent, pxpipe: pxpipeSummary, reqTag, log };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 
   // Provider forced streaming but client wants JSON
   if (!clientRequestedStreaming && providerRequiresStreaming) {
     const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, customToolNames, trackDone, appendLog });
-    if (result) { streamController.handleComplete(); return result; }
+    if (result) {
+      onResilienceEvent?.("NON_STREAM_COMPLETED", { provider, model, connectionId });
+      streamController.handleComplete();
+      return result;
+    }
   }
 
   // True non-streaming response
   if (!stream) {
     const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, reqLogger, toolNameMap, customToolNames, trackDone, appendLog });
+    onResilienceEvent?.("NON_STREAM_COMPLETED", { provider, model, connectionId });
     streamController.handleComplete();
     return result;
   }
 
   // Streaming response
   const { onStreamComplete, streamDetailId } = buildOnStreamComplete({ ...sharedCtx });
-  return handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, userAgent, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, credentials });
+  return handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, userAgent, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, ensureOpenAIDone, credentials });
 }
 
 export function isTokenExpiringSoon(expiresAt, bufferMs = 5 * 60 * 1000) {

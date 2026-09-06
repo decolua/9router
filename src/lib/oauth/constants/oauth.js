@@ -124,6 +124,8 @@ export const KIMCHI_CONFIG = { ...PROVIDER_OAUTH["kimchi"] };
 // Endpoint: cli-chat-proxy.grok.com — same client_id as xai, different flow + scopes
 export const GROK_CLI_CONFIG = { ...PROVIDER_OAUTH["grok-cli"] };
 
+export const FREEBUFF_CONFIG = { ...PROVIDER_OAUTH["freebuff"] };
+
 // Trae (ByteDance marscode) OAuth — authorization_code flow with local callback.
 //   1) POST GetLoginGuidance {loginTraceID} → {Result.LoginHost}
 //   2) Browser opens ${loginHost}/authorization?client_id=...&login_trace_id=...&auth_callback_url=${cb}
@@ -220,6 +222,7 @@ export const PROVIDERS = {
   CODEBUDDY_INTL: "codebuddy-intl",
   KIMCHI: "kimchi",
   GROK_CLI: "grok-cli",
+  FREEBUFF: "freebuff",
   TRAE: "trae",
   WINDSURF: "windsurf",
   ZED: "zed",

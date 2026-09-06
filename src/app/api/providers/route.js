@@ -9,6 +9,9 @@ import {
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { AI_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers";
 import { normalizeProviderId, normalizeProviderSpecificData } from "@/lib/providerNormalization";
+import { resolveConnectionProxyConfig, getProxyBucketIdentity } from "@/lib/network/connectionProxy";
+import { getCircuitSnapshot } from "open-sse/services/circuitBreaker.js";
+import { RESILIENCE_FEATURES } from "open-sse/config/resilienceConfig.js";
 
 export const dynamic = "force-dynamic";
 
@@ -61,7 +64,10 @@ export async function GET() {
     } catch { }
 
     // Hide sensitive fields, enrich name for compatible providers
-    const safeConnections = connections.map(c => {
+    const safeConnections = await Promise.all(connections.map(async (c) => {
+      const resolvedProxy = await resolveConnectionProxyConfig(c.providerSpecificData || {}, c.id);
+      const bucket = getProxyBucketIdentity(resolvedProxy);
+      const resilience = RESILIENCE_FEATURES.breaker && bucket ? getCircuitSnapshot(c.provider, bucket) : null;
       const isCompatible = isOpenAICompatibleProvider(c.provider) || isAnthropicCompatibleProvider(c.provider);
       const name = isCompatible
         ? (c.name || nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
@@ -73,8 +79,13 @@ export async function GET() {
         accessToken: undefined,
         refreshToken: undefined,
         idToken: undefined,
+        resilience: resilience ? {
+          state: resilience.state,
+          failureCount: resilience.failureCount,
+          retryAfterMs: resilience.retryAfterMs,
+        } : null,
       };
-    });
+    }));
 
     return NextResponse.json({ connections: safeConnections });
   } catch (error) {

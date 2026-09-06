@@ -3,9 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const dbMocks = vi.hoisted(() => ({
   getProviderConnections: vi.fn(),
   updateProviderConnection: vi.fn(),
+  extendConnectionModelLock: vi.fn(),
 }));
 
-vi.mock("@/lib/localDb", () => dbMocks);
+vi.mock("@/lib/localDb", () => ({
+  ...dbMocks,
+  extendConnectionModelLock: dbMocks.extendConnectionModelLock,
+  clearConnectionModelLockIfObserved: vi.fn(),
+  getObservedConnectionModelLock: vi.fn(),
+}));
 vi.mock("@/lib/network/connectionProxy", () => ({
   pickProxyPoolId: vi.fn(),
   resolveConnectionProxyConfig: vi.fn(),
@@ -42,17 +48,11 @@ describe("GitHub monthly usage exhaustion", () => {
         "claude-fable-5",
       );
 
-      expect(dbMocks.updateProviderConnection).toHaveBeenCalledWith(
+      expect(dbMocks.extendConnectionModelLock).toHaveBeenCalledWith(
         "github-a",
-        expect.objectContaining({
-          modelLock___all: "2026-09-01T00:00:00.000Z",
-          testStatus: "unavailable",
-          errorCode: 402,
-          backoffLevel: 0,
-        }),
+        null,
+        expect.objectContaining({ expiresAt: "2026-09-01T00:00:00.000Z" }),
       );
-      expect(dbMocks.updateProviderConnection.mock.calls[0][1])
-        .not.toHaveProperty("modelLock_claude-fable-5");
     } finally {
       vi.useRealTimers();
     }

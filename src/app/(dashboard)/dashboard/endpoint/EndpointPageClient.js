@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
+import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, ModelSelectModal, Badge, SegmentedControl } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import {
   TUNNEL_BENEFITS,
@@ -74,8 +74,21 @@ export default function APIPageClient({ machineId }) {
   const [tunnelEverReachable, setTunnelEverReachable] = useState(false);
   const [tsEverReachable, setTsEverReachable] = useState(false);
 
-  // API key visibility toggle state
   const [visibleKeys, setVisibleKeys] = useState(new Set());
+
+  const [editingKey, setEditingKey] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [activeProviders, setActiveProviders] = useState([]);
+  const [showAllowedModelSelect, setShowAllowedModelSelect] = useState(false);
+
+  const [viewingUsageKey, setViewingUsageKey] = useState(null);
+  const [usageDataCache, setUsageDataCache] = useState({});
+  const [usageLoading, setUsageLoading] = useState(false);
+  const [usageError, setUsageError] = useState(null);
+  const [usagePeriod, setUsagePeriod] = useState("7d");
+  const [lastUsageData, setLastUsageData] = useState(null);
+  
+  const currentUsageData = viewingUsageKey ? usageDataCache[`${viewingUsageKey.id}:${usagePeriod}`] || lastUsageData : null;
 
   // Client-side local/remote detection (UI hint only, not a security gate)
   const [isRemoteHost, setIsRemoteHost] = useState(false);
@@ -262,14 +275,25 @@ export default function APIPageClient({ machineId }) {
         return data.keys || [];
       };
 
-      let existing = await fetchKeys();
+      const [existingKeys, providersRes] = await Promise.all([
+        fetchKeys(),
+        fetch("/api/providers"),
+      ]);
+
+      let existing = existingKeys;
+
+      const providersData = await providersRes.json();
+      if (providersRes.ok) {
+        setActiveProviders(providersData.connections || []);
+      }
+
       // Auto-provision a default key for first-time users so the endpoint works out of the box.
       if (existing.length === 0) {
         try {
           const createRes = await fetch("/api/keys", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: "Default Key" }),
+            body: JSON.stringify({ name: "Default Key", type: "router", isAutoProvisioned: true }),
           });
           if (createRes.ok) existing = await fetchKeys();
         } catch { /* fall through to empty render */ }
@@ -682,6 +706,77 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+
+  const fetchUsageStats = async (keyId, period) => {
+    const cacheKey = `${keyId}:${period}`;
+    if (usageDataCache[cacheKey]) {
+      setLastUsageData(usageDataCache[cacheKey]);
+      return;
+    }
+
+    setUsageLoading(true);
+    setUsageError(null);
+    try {
+      const res = await fetch(`/api/keys/${keyId}/usage?period=${period}`);
+      if (res.ok) {
+        const data = await res.json();
+        setUsageDataCache((prev) => ({ ...prev, [cacheKey]: data.usage }));
+        setLastUsageData(data.usage);
+      } else {
+        const data = await res.json();
+        setUsageError(data.error || "Failed to load usage data");
+      }
+    } catch (err) {
+      setUsageError("Failed to fetch usage data");
+    } finally {
+      setUsageLoading(false);
+    }
+  };
+
+  const handleViewUsage = async (key) => {
+    setViewingUsageKey(key);
+    setUsageDataCache({});
+    setLastUsageData(null);
+    setUsagePeriod("7d");
+    await fetchUsageStats(key.id, "7d");
+  };
+
+  const handleUpdateKeyPolicy = async (id) => {
+    try {
+      const allowedModelsArray = Array.isArray(editForm.allowedModels)
+        ? editForm.allowedModels
+        : (editForm.allowedModels || "")
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
+
+      const payload = {
+        allowedModels: allowedModelsArray,
+        blockedModels: [], // Explicitly clear any legacy blocked models
+        expiresAt: editForm.expiresAt ? new Date(editForm.expiresAt).toISOString() : null,
+        maxRequestsPerDay: editForm.maxRequestsPerDay ? Number(editForm.maxRequestsPerDay) : null,
+        maxSpendUsdPerDay: editForm.maxSpendUsdPerDay ? Number(editForm.maxSpendUsdPerDay) : null,
+      };
+
+      const res = await fetch(`/api/keys/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.key) {
+        setKeys(prev => prev.map(k => k.id === id ? { ...k, ...data.key } : k));
+        setEditingKey(null);
+        setEditForm({});
+      } else {
+        console.log("Failed to update key policy", data);
+      }
+    } catch (error) {
+      console.log("Error updating key policy:", error);
+    }
+  };
+
   const maskKey = (fullKey) => {
     if (!fullKey || fullKey.length <= 10) return fullKey || "";
     return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
@@ -1010,31 +1105,58 @@ export default function APIPageClient({ machineId }) {
             {keys.map((key) => (
               <div
                 key={key.id}
-                className={`group flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
+                className={`group flex flex-col sm:flex-row sm:items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 gap-3 sm:gap-4 ${key.isActive === false ? "opacity-60" : ""}`}
               >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{key.name}</p>
-                  <div className="flex items-center gap-2 mt-1">
-                    <code className="text-xs text-text-muted font-mono">
+                <div className="flex-1 min-w-0 w-full sm:w-auto">
+                  <p className="text-sm font-medium flex items-center gap-2">
+                    {key.name}
+                    {Array.isArray(key.allowedModels) && key.allowedModels.length > 0 && (
+                      <Badge variant="warning" size="sm">Restricted</Badge>
+                    )}
+                    {(() => {
+                      const hasLimit = key.maxRequestsPerDay != null || key.maxSpendUsdPerDay != null;
+                      if (hasLimit) {
+                        const isSpend = key.maxSpendUsdPerDay != null;
+                        const limitVal = isSpend ? key.maxSpendUsdPerDay : key.maxRequestsPerDay;
+                        const usedVal = isSpend ? (key.dailySpendUsd || 0) : (key.dailyRequests || 0);
+                        const pct = limitVal ? Math.min(100, Math.round((usedVal / limitVal) * 100)) : 0;
+                        const label = isSpend
+                          ? `$${Number(usedVal).toFixed(2)} / $${Number(limitVal).toFixed(2)}`
+                          : `${usedVal} / ${limitVal} req`;
+                        const variant = pct >= 100 ? "error" : pct >= 80 ? "warning" : "success";
+
+                        return (
+                          <Badge variant={variant} size="sm">
+                            {label} limit
+                          </Badge>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2 mt-1">
+                    <code className="text-xs text-text-muted font-mono break-all">
                       {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
                     </code>
-                    <button
-                      onClick={() => toggleKeyVisibility(key.id)}
-                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
-                      title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
-                    >
-                      <span className="material-symbols-outlined text-[14px]">
-                        {visibleKeys.has(key.id) ? "visibility_off" : "visibility"}
-                      </span>
-                    </button>
-                    <button
-                      onClick={() => copy(key.key, key.id)}
-                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
-                    >
-                      <span className="material-symbols-outlined text-[14px]">
-                        {copied === key.id ? "check" : "content_copy"}
-                      </span>
-                    </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => toggleKeyVisibility(key.id)}
+                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                        title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
+                      >
+                        <span className="material-symbols-outlined text-[14px]">
+                          {visibleKeys.has(key.id) ? "visibility_off" : "visibility"}
+                        </span>
+                      </button>
+                      <button
+                        onClick={() => copy(key.key, key.id)}
+                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                      >
+                        <span className="material-symbols-outlined text-[14px]">
+                          {copied === key.id ? "check" : "content_copy"}
+                        </span>
+                      </button>
+                    </div>
                   </div>
                   <p className="text-xs text-text-muted mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
@@ -1043,32 +1165,69 @@ export default function APIPageClient({ machineId }) {
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
-                  <Toggle
-                    size="sm"
-                    checked={key.isActive ?? true}
-                    onChange={(checked) => {
-                      if (key.isActive && !checked) {
-                        setConfirmState({
-                          title: "Pause API Key",
-                          message: `Pause API key "${key.name}"?\n\nThis key will stop working immediately but can be resumed later.`,
-                          onConfirm: async () => {
-                            setConfirmState(null);
-                            handleToggleKey(key.id, checked);
-                          }
+
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4 mt-3 sm:mt-0 w-full sm:w-auto">
+                  <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:justify-end">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon="bar_chart"
+                      onClick={() => handleViewUsage(key)}
+                      className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                    >
+                      Usage
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon="settings"
+                      onClick={() => {
+                        setEditingKey(key.id);
+                        setEditForm({
+                          allowedModels: key.allowedModels || [],
+                          expiresAt: key.expiresAt ? new Date(key.expiresAt).toISOString().split('T')[0] : "",
+                          maxRequestsPerDay: key.maxRequestsPerDay ?? null,
+                          maxSpendUsdPerDay: key.maxSpendUsdPerDay ?? null
                         });
-                      } else {
-                        handleToggleKey(key.id, checked);
-                      }
-                    }}
-                    title={key.isActive ? "Pause key" : "Resume key"}
-                  />
-                  <button
-                    onClick={() => handleDeleteKey(key.id)}
-                    className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">delete</span>
-                  </button>
+                      }}
+                      className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                    >
+                      Configure
+                    </Button>
+                    <div className="flex flex-col items-end px-1 opacity-100 sm:opacity-85 transition-all text-right leading-none shrink-0">
+                      <span className="text-xs font-semibold tabular-nums text-text-main">
+                        {key.dailyRequests || 0} req
+                      </span>
+                      <span className="text-[10px] text-text-muted tabular-nums mt-0.5">
+                        ~${Number(key.dailySpendUsd || 0).toFixed(4)}
+                      </span>
+                    </div>
+                    <Toggle
+                      size="sm"
+                      checked={key.isActive ?? true}
+                      onChange={(checked) => {
+                        if (key.isActive && !checked) {
+                          setConfirmState({
+                            title: "Pause API Key",
+                            message: `Pause API key "${key.name}"?\n\nThis key will stop working immediately but can be resumed later.`,
+                            onConfirm: async () => {
+                              setConfirmState(null);
+                              handleToggleKey(key.id, checked);
+                            }
+                          });
+                        } else {
+                          handleToggleKey(key.id, checked);
+                        }
+                      }}
+                      title={key.isActive ? "Pause key" : "Resume key"}
+                    />
+                    <button
+                      onClick={() => handleDeleteKey(key.id)}
+                      className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">delete</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             ))}
@@ -1142,6 +1301,279 @@ export default function APIPageClient({ machineId }) {
           <Button onClick={() => setCreatedKey(null)} fullWidth>
             Done
           </Button>
+        </div>
+      </Modal>
+
+      {/* Edit Key Policy Modal */}
+      <Modal
+        isOpen={!!editingKey}
+        title="Configure API Key Policy"
+        onClose={() => {
+          setEditingKey(null);
+          setEditForm({});
+        }}
+      >
+        <div className="flex flex-col gap-4">
+          <div>
+            <label className="mb-1.5 block text-sm font-medium">Allowed Models</label>
+            {(editForm.allowedModels || []).length === 0 ? (
+              <div className="rounded-lg border border-dashed border-black/10 bg-black/[0.01] py-4 text-center dark:border-white/10 dark:bg-white/[0.01]">
+                <span className="material-symbols-outlined mb-1 text-xl text-text-muted">layers</span>
+                <p className="text-xs text-text-muted">All models are allowed</p>
+              </div>
+            ) : (
+              <div className="flex max-h-[350px] min-w-0 flex-col gap-1 overflow-y-auto">
+                {editForm.allowedModels.map((model, index) => (
+                  <div key={model} className="flex min-w-0 items-center gap-1.5 rounded-md bg-black/[0.02] px-2 py-1 dark:bg-white/[0.02]">
+                    <span className="w-3 shrink-0 text-center text-[10px] font-medium text-text-muted">{index + 1}</span>
+                    <code className="min-w-0 flex-1 truncate px-1.5 py-0.5 text-xs text-text-main">{model}</code>
+                    <button
+                      type="button"
+                      onClick={() => setEditForm({ ...editForm, allowedModels: editForm.allowedModels.filter((value) => value !== model) })}
+                      className="rounded p-0.5 text-text-muted transition-colors hover:bg-red-500/10 hover:text-red-500"
+                      title="Remove"
+                    >
+                      <span className="material-symbols-outlined text-[12px]">close</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowAllowedModelSelect(true)}
+              className="mt-2 flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-black/10 py-2 text-xs font-medium text-primary transition-colors hover:border-primary/50 dark:border-white/10"
+            >
+              <span className="material-symbols-outlined text-[16px]">add</span>
+              Add Model
+            </button>
+          </div>
+          <Input
+            label="Expiration Date"
+            type="date"
+            value={editForm.expiresAt || ""}
+            onChange={(e) => setEditForm({ ...editForm, expiresAt: e.target.value })}
+          />
+          <div className="flex flex-col gap-3 mt-4">
+            <div className="flex items-start justify-between gap-3">
+              <Toggle
+                size="sm"
+                label="Daily Limits"
+                description="Cap this key to a max requests or max spend per day"
+                checked={editForm.maxRequestsPerDay != null || editForm.maxSpendUsdPerDay != null}
+                onChange={(enabled) => {
+                  if (enabled) {
+                    setEditForm({ ...editForm, maxRequestsPerDay: "", maxSpendUsdPerDay: null });
+                  } else {
+                    setEditForm({ ...editForm, maxRequestsPerDay: null, maxSpendUsdPerDay: null });
+                  }
+                }}
+              />
+            </div>
+            
+            {(editForm.maxRequestsPerDay != null || editForm.maxSpendUsdPerDay != null) && (
+              <div className="flex flex-col w-full">
+                <SegmentedControl
+                  size="sm"
+                  className="w-full bg-surface-2 p-1 rounded-t-lg rounded-b-none border-b border-border/50"
+                  options={[
+                    { value: "requests", label: "Max Requests", icon: "tag" },
+                    { value: "spend", label: "Max Spend", icon: "attach_money" },
+                  ]}
+                  value={editForm.maxSpendUsdPerDay != null ? "spend" : "requests"}
+                  onChange={(mode) => {
+                    if (mode === "spend") {
+                      setEditForm({ ...editForm, maxSpendUsdPerDay: "", maxRequestsPerDay: null });
+                    } else {
+                      setEditForm({ ...editForm, maxRequestsPerDay: "", maxSpendUsdPerDay: null });
+                    }
+                  }}
+                />
+                <div className="flex items-center gap-0 w-full bg-surface-2 rounded-b-lg p-1.5 focus-within:ring-1 focus-within:ring-brand-500/50 transition-all">
+                  <div className="flex-1 min-w-0 bg-surface rounded-md border border-border-subtle flex items-center overflow-hidden relative">
+                    <input
+                      type="number"
+                      step={editForm.maxSpendUsdPerDay != null ? "0.01" : "1"}
+                      min="0"
+                      placeholder={editForm.maxSpendUsdPerDay != null ? "Amount in USD" : "Number of requests"}
+                      value={editForm.maxSpendUsdPerDay != null ? editForm.maxSpendUsdPerDay : editForm.maxRequestsPerDay}
+                      onChange={(e) => {
+                        if (editForm.maxSpendUsdPerDay != null) {
+                          setEditForm({ ...editForm, maxSpendUsdPerDay: e.target.value });
+                        } else {
+                          setEditForm({ ...editForm, maxRequestsPerDay: e.target.value });
+                        }
+                      }}
+                      className="w-full bg-transparent px-3 py-1.5 text-sm text-text-main outline-none placeholder:text-text-muted [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]"
+                    />
+                  </div>
+                  <span className="w-12 text-center shrink-0 text-sm font-medium text-text-muted select-none">
+                    {editForm.maxSpendUsdPerDay != null ? "usd" : "req"}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex gap-2 mt-4">
+            <Button onClick={() => handleUpdateKeyPolicy(editingKey)} fullWidth>
+              Save Policy
+            </Button>
+            <Button
+              onClick={() => {
+                setEditingKey(null);
+                setEditForm({});
+              }}
+              variant="ghost"
+              fullWidth
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <ModelSelectModal
+        isOpen={showAllowedModelSelect}
+        onClose={() => setShowAllowedModelSelect(false)}
+        onSelect={(model) => {
+          const current = editForm.allowedModels || [];
+          if (!current.includes(model.value)) {
+            setEditForm({ ...editForm, allowedModels: [...current, model.value] });
+          }
+        }}
+        onDeselect={(model) => {
+          const current = editForm.allowedModels || [];
+          setEditForm({ ...editForm, allowedModels: current.filter((value) => value !== model.value) });
+        }}
+        activeProviders={activeProviders}
+        title="Add Allowed Model to Policy"
+        addedModelValues={editForm.allowedModels || []}
+        closeOnSelect={false}
+      />
+
+      {/* Usage Modal */}
+      <Modal
+        isOpen={!!viewingUsageKey}
+        title={viewingUsageKey ? `Usage: ${viewingUsageKey.name}` : "Usage"}
+        onClose={() => {
+          setViewingUsageKey(null);
+          setUsageDataCache({});
+          setLastUsageData(null);
+        }}
+      >
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-4 gap-1 rounded-lg border border-border bg-bg-subtle p-1 overflow-x-auto min-w-max sm:min-w-0">
+            {[
+              { value: "1d", label: "Daily" },
+              { value: "7d", label: "Weekly" },
+              { value: "30d", label: "Monthly" },
+              { value: "all", label: "All time" }
+            ].map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                disabled={usageLoading}
+                onClick={() => {
+                  setUsagePeriod(option.value);
+                  fetchUsageStats(viewingUsageKey.id, option.value);
+                }}
+                className={`flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${usagePeriod === option.value ? "bg-primary text-white shadow-sm" : "text-text-muted hover:bg-bg-hover hover:text-text"}`}
+              >
+                {usageLoading && usagePeriod === option.value && (
+                  <span className="material-symbols-outlined text-[14px] animate-spin">progress_activity</span>
+                )}
+                {option.label}
+              </button>
+            ))}
+          </div>
+          {usageError ? (
+            <div className="p-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-lg text-sm">
+              {usageError}
+            </div>
+          ) : currentUsageData ? (
+            <div>
+              {/* Summary List */}
+              <div className="flex flex-col rounded-lg border border-border bg-surface-2 overflow-hidden">
+                <div className="flex items-center justify-between p-3 border-b border-border/50">
+                  <p className="text-sm text-text-muted">Total Requests</p>
+                  <p className="text-base font-semibold tabular-nums">{currentUsageData.totalRequests?.toLocaleString() || 0}</p>
+                </div>
+                <div className="flex items-center justify-between p-3 border-b border-border/50">
+                  <p className="text-sm text-text-muted">Total Cost</p>
+                  <p className="text-base font-semibold tabular-nums text-primary">
+                    ${Number(currentUsageData.totalCost || 0).toFixed(4)}
+                  </p>
+                </div>
+                <div className="flex items-center justify-between p-3 border-b border-border/50">
+                  <p className="text-sm text-text-muted">Prompt Tokens</p>
+                  <p className="text-base font-semibold tabular-nums">{currentUsageData.totalPromptTokens?.toLocaleString() || 0}</p>
+                </div>
+                <div className="flex items-center justify-between p-3">
+                  <p className="text-sm text-text-muted">Completion Tokens</p>
+                  <p className="text-base font-semibold tabular-nums">{currentUsageData.totalCompletionTokens?.toLocaleString() || 0}</p>
+                </div>
+              </div>
+
+              {/* Recent Requests Table */}
+              <div className="mt-2">
+                <h3 className="text-sm font-semibold mb-3">Recent Requests</h3>
+                {!currentUsageData.recentRequests || currentUsageData.recentRequests.length === 0 ? (
+                  <div className="text-center py-6 text-sm text-text-muted border border-dashed border-border rounded-lg">
+                    No requests found for this key in the selected period
+                  </div>
+                ) : (
+                  <div className="border border-border rounded-lg overflow-hidden bg-surface-1">
+                    <div className="max-h-[300px] overflow-x-auto overflow-y-auto">
+                      <table className="w-full text-left text-sm min-w-[400px]">
+                        <thead className="bg-surface-2 sticky top-0 border-b border-border text-xs text-text-muted uppercase">
+                          <tr>
+                            <th className="px-3 py-2 font-medium w-[150px]">Time</th>
+                            <th className="px-3 py-2 font-medium w-auto">Model</th>
+                            <th className="px-3 py-2 font-medium w-[120px] text-right">Tokens (In/Out)</th>
+                            <th className="px-3 py-2 font-medium w-[70px] text-right">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {currentUsageData.recentRequests.map((req, i) => (
+                            <tr key={req.id || i} className="hover:bg-surface-2/50">
+                              <td className="px-3 py-2 whitespace-nowrap text-xs text-text-muted tabular-nums">
+                                {new Date(req.createdAt || req.timestamp).toLocaleString()}
+                              </td>
+                              <td className="px-3 py-2">
+                                <div className="font-medium text-xs break-all">{req.model}</div>
+                                {req.provider && (
+                                  <div className="text-[10px] text-text-muted">{req.provider}</div>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-xs text-right tabular-nums whitespace-nowrap">
+                                {req.promptTokens?.toLocaleString() || 0} / {req.completionTokens?.toLocaleString() || 0}
+                              </td>
+                              <td className="px-3 py-2 text-right">
+                                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                  !req.status || typeof req.status === "number" && req.status >= 200 && req.status < 300 || typeof req.status === "string" && !req.status.toLowerCase().includes("fail") && !req.status.toLowerCase().includes("error") && !req.status.toLowerCase().includes("abort")
+                                    ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                                    : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+                                }`}>
+                                  {req.status || "ok"}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex justify-center py-8">
+              <div className="flex items-center gap-2 text-text-muted">
+                <span className="material-symbols-outlined animate-spin">progress_activity</span>
+                <span>Loading usage...</span>
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
 

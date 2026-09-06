@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import "./registerAll.js";
 import { translateRequest } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
+import { cleanJSONSchemaForAntigravity } from "../../open-sse/translator/formats/gemini.js";
 
 const O2G = (body) => translateRequest(FORMATS.OPENAI, FORMATS.GEMINI, "m", body, true, null, "gemini");
 const O2C = (body) => translateRequest(FORMATS.OPENAI, FORMATS.CURSOR, "m", body, true, null, "cursor");
@@ -20,6 +21,30 @@ describe("OpenAI → Gemini", () => {
       ],
     });
     expect(JSON.stringify(out.systemInstruction), "earlier system lost").toContain("RULE_ONE");
+  });
+});
+
+describe("Antigravity JSON Schema cleanup", () => {
+  it("infers type=object for properties children and items but not arbitrary nested values", () => {
+    const cleaned = cleanJSONSchemaForAntigravity({
+      properties: {
+        query: { type: "string" },
+        nested: {
+          properties: {
+            deep: { type: "string" },
+          },
+        },
+      },
+      items: {
+        properties: {
+          itemField: { type: "string" },
+        },
+      },
+    });
+
+    expect(cleaned.type).toBe("object");
+    expect(cleaned.properties.nested.type).toBe("object");
+    expect(cleaned.items.type).toBe("object");
   });
 });
 
