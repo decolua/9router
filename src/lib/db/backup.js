@@ -8,7 +8,7 @@
 // - Only the newest KEEP_BACKUPS are kept; older ones are pruned automatically.
 import fs from "node:fs";
 import path from "node:path";
-import { BACKUPS_DIR, ensureDirs } from "./paths.js";
+import { BACKUPS_DIR, ensureDirs, chmodQuiet, SECRET_DIR_MODE, SECRET_FILE_MODE } from "./paths.js";
 import { timestampSlug, getAppVersion } from "./version.js";
 
 const KEEP_BACKUPS = 3;
@@ -21,7 +21,7 @@ export function makeBackupDir(label) {
   const ver = getAppVersion();
   const slug = `${label}-${ver}-${timestampSlug()}`;
   const dir = path.join(BACKUPS_DIR, slug);
-  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(dir, { recursive: true, mode: SECRET_DIR_MODE });
   return dir;
 }
 
@@ -30,6 +30,7 @@ export function backupFile(srcPath, destDir, destName = null) {
   const name = destName || path.basename(srcPath);
   const dest = path.join(destDir, name);
   fs.copyFileSync(srcPath, dest);
+  chmodQuiet(dest, SECRET_FILE_MODE);
   return dest;
 }
 
@@ -59,6 +60,9 @@ export function backupDbLite(adapter, destDir, destName = "data.sqlite") {
   } finally {
     try { adapter.exec("DETACH DATABASE bak"); } catch {}
   }
+  // SQLite creates the attached file itself, so it lands at 0644 under the
+  // default umask even though it contains a full copy of the credential tables.
+  chmodQuiet(dest, SECRET_FILE_MODE);
   return dest;
 }
 

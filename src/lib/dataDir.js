@@ -23,7 +23,8 @@ export function getDataDir() {
   }
 
   try {
-    fs.mkdirSync(configured, { recursive: true });
+    // 0o700: this directory holds the credential DB and the secret files.
+    fs.mkdirSync(configured, { recursive: true, mode: 0o700 });
     return configured;
   } catch (e) {
     if (e?.code === "EACCES" || e?.code === "EPERM") {

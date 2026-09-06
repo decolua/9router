@@ -1,4 +1,4 @@
-import { ensureDirs, DATA_FILE } from "./paths.js";
+import { ensureDirs, hardenPermissions, DATA_FILE } from "./paths.js";
 
 // Use global to survive Next.js dev hot-reload (module state resets on reload)
 if (!global._dbAdapter) global._dbAdapter = { instance: null, initPromise: null, logged: false };
@@ -62,6 +62,10 @@ async function initAdapter() {
   if (!adapter) adapter = await tryNodeSqlite();
   if (!adapter) adapter = await trySqlJs();
   if (!adapter) throw new Error("[DB] No SQLite driver available (bun/better/node/sql.js all failed)");
+
+  // After the adapter has created data.sqlite (plus -wal/-shm), tighten modes
+  // so the credential store is not world-readable. Also repairs existing installs.
+  hardenPermissions();
 
   if (!state.logged) {
     console.log(`[DB] Driver: ${adapter.driver} | file: ${DATA_FILE}`);
