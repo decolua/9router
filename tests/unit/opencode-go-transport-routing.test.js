@@ -7,8 +7,9 @@
 // guard decision shows up as the wrong baseUrl here, same as it would on the wire.
 //
 // Cells:
-//   - DeepSeek × {bare, (max)}: OpenAI clients use /chat/completions; Claude/Responses
-//     transports are blocked because OpenCode Go does not officially support those endpoints.
+//   - DeepSeek × {bare, (max)}: routes to the sourceFormat-matched endpoint per the
+//     upstream multi-endpoint registry (merged PR keeps suffix lookup only; the
+//     OpenAI-only restriction was dropped for lack of current evidence).
 //   - glm/kimi (chat-only) + (max): the suffix must not bypass the per-model guard.
 //   - minimax + (max) + claude: the suffix must NOT block a genuinely declared format.
 import { describe, it, expect, vi, beforeEach } from "vitest";
@@ -139,10 +140,10 @@ describe("opencode-go DeepSeek routing contract (via real handleChatCore)", () =
       });
 
       for (const fmt of ["claude", "openai-responses"]) {
-        it(`blocks ${id} + ${fmt}-format transport`, async () => {
+        it(`routes ${id} + ${fmt}-format client to the matching endpoint`, async () => {
           const { result, runtimeTransport } = await route(id, fmt);
           expect(result.success).toBe(true);
-          expect(runtimeTransport).toBeNull();
+          expect(runtimeTransport?.baseUrl).toBe(ENDPOINTS[fmt]);
         });
       }
     }
