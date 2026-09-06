@@ -4,6 +4,9 @@
 
 import { FORMATS } from "../translator/formats.js";
 
+// Legacy per-chunk usage console line; off by default (superseded by "📊 done")
+const DEBUG_USAGE = process.env.LOG_USAGE_VERBOSE === "1";
+
 // ANSI color codes
 export const COLORS = {
   reset: "\x1b[0m",
@@ -187,7 +190,10 @@ export function canonicalizeUsage(usage) {
     prompt = prompt + cached + cacheCreation;
   } else {
     // OpenAI/Gemini path (or already-canonical input): prompt already includes cached_tokens.
-    cached = num(usage.cached_tokens);
+    // Mirror the cacheCreation fallback above: buildUsage() only ever emits the
+    // nested prompt_tokens_details.cached_tokens shape, so without this the
+    // cache-read count is silently dropped on every buildUsage()-derived usage.
+    cached = num(usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens);
   }
 
   const result = {
@@ -400,6 +406,10 @@ export function estimateUsage(body, contentLength, targetFormat = FORMATS.OPENAI
  */
 export function logUsage(provider, usage, model = null, connectionId = null, apiKey = null) {
   if (!usage || typeof usage !== "object") return;
+
+  // Console output moved to the unified "📊 done" line (streamingHandler). Kept as
+  // a no-op hook so callers stay unchanged; usage persistence happens via saveUsageStats.
+  if (!DEBUG_USAGE) return;
 
   const p = provider?.toUpperCase() || "UNKNOWN";
 

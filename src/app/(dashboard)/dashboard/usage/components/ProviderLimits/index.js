@@ -8,6 +8,9 @@ import Tooltip from "@/shared/components/Tooltip";
 import {
   parseQuotaData,
   calculatePercentage,
+  filterQuotasByVisibility,
+  getHiddenQuotaRows,
+  getQuotaVisibilityKey,
   getConnectionLabel,
   getConnectionQuotaRemaining,
   sortVisibleConnections,
@@ -146,6 +149,7 @@ export default function ProviderLimits() {
   const [providerOptions, setProviderOptions] = useState([]);
   const [accountFilter, setAccountFilter] = useState("all");
   const [quotaSortMode, setQuotaSortMode] = useState("default");
+  const [quotaVisibility, setQuotaVisibility] = useState({});
   const [expiringFirst, setExpiringFirst] = useState(false);
   const [providerMenuOpen, setProviderMenuOpen] = useState(false);
   const [bulkToggling, setBulkToggling] = useState(false);
@@ -212,7 +216,7 @@ export default function ProviderLimits() {
   );
 
   // Fetch quota for a specific connection
-  const fetchQuota = useCallback(async (connectionId, provider) => {
+  const fetchQuota = useCallback(async (connectionId, provider, { force = false } = {}) => {
     setLoading((prev) => ({ ...prev, [connectionId]: true }));
     setErrors((prev) => ({ ...prev, [connectionId]: null }));
 
@@ -220,7 +224,8 @@ export default function ProviderLimits() {
       console.log(
         `[ProviderLimits] Fetching quota for ${provider} (${connectionId})`,
       );
-      const response = await fetch(`/api/usage/${connectionId}`);
+      const url = `/api/usage/${connectionId}${force ? "?force=1" : ""}`;
+      const response = await fetch(url);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -291,7 +296,7 @@ export default function ProviderLimits() {
   // Refresh quota for a specific provider
   const refreshProvider = useCallback(
     async (connectionId, provider) => {
-      await fetchQuota(connectionId, provider);
+      await fetchQuota(connectionId, provider, { force: true });
       setLastUpdated(new Date());
     },
     [fetchQuota],
@@ -536,10 +541,13 @@ export default function ProviderLimits() {
   useEffect(() => {
     fetch("/api/settings", { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : {}))
-      .then((s) => setAutoPingMaps({
-        claude: s?.claudeAutoPing?.connections || {},
-        codex: s?.codexAutoPing?.connections || {},
-      }))
+      .then((s) => {
+        setAutoPingMaps({
+          claude: s?.claudeAutoPing?.connections || {},
+          codex: s?.codexAutoPing?.connections || {},
+        });
+        setQuotaVisibility(s?.quotaVisibility || {});
+      })
       .catch(() => {});
   }, []);
 
@@ -564,6 +572,79 @@ export default function ProviderLimits() {
       setAutoPingMaps(previous);
     }
   }, [autoPingMaps]);
+
+  const updateQuotaVisibility = useCallback(async (nextVisibility, previousVisibility) => {
+    setQuotaVisibility(nextVisibility);
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quotaVisibility: nextVisibility }),
+      });
+      if (!response.ok) throw new Error("Failed to update quota visibility");
+    } catch (error) {
+      console.error("Error updating quota visibility:", error);
+      setQuotaVisibility(previousVisibility);
+    }
+  }, []);
+
+  const handleHideQuota = useCallback((provider, quota) => {
+    const key = getQuotaVisibilityKey(quota);
+    if (!provider || !key) return;
+
+    const previous = quotaVisibility;
+    const providerVisibility = previous[provider] || {};
+    const hidden = new Set(providerVisibility.hidden || []);
+    hidden.add(key);
+    if (provider === "antigravity") {
+      if (key === "gemini") {
+        for (const k of hidden) {
+          if (k.startsWith("gemini-") && !k.includes("image")) hidden.delete(k);
+        }
+      } else if (key === "claude") {
+        for (const k of hidden) {
+          if (k.startsWith("claude-")) hidden.delete(k);
+        }
+      }
+    }
+    const next = {
+      ...previous,
+      [provider]: {
+        ...providerVisibility,
+        hidden: [...hidden],
+      },
+    };
+    updateQuotaVisibility(next, previous);
+  }, [quotaVisibility, updateQuotaVisibility]);
+
+  const handleShowQuota = useCallback((provider, quota) => {
+    const key = getQuotaVisibilityKey(quota);
+    if (!provider || !key) return;
+
+    const previous = quotaVisibility;
+    const providerVisibility = previous[provider] || {};
+    const hidden = new Set(providerVisibility.hidden || []);
+    hidden.delete(key);
+    if (provider === "antigravity") {
+      if (key === "gemini") {
+        for (const k of hidden) {
+          if (k.startsWith("gemini-") && !k.includes("image")) hidden.delete(k);
+        }
+      } else if (key === "claude") {
+        for (const k of hidden) {
+          if (k.startsWith("claude-")) hidden.delete(k);
+        }
+      }
+    }
+    const next = {
+      ...previous,
+      [provider]: {
+        ...providerVisibility,
+        hidden: [...hidden],
+      },
+    };
+    updateQuotaVisibility(next, previous);
+  }, [quotaVisibility, updateQuotaVisibility]);
 
   // Auto-refresh interval
   useEffect(() => {
@@ -973,6 +1054,9 @@ export default function ProviderLimits() {
           const resetCreditCount = getCodexResetCreditCount(quota);
           const isResettingLimit = resettingLimitId === conn.id;
           const rowBusy = deletingId === conn.id || togglingId === conn.id || isResettingLimit;
+          const rawQuotas = quota?.quotas || [];
+          const visibleQuotas = filterQuotasByVisibility(conn.provider, rawQuotas, quotaVisibility);
+          const hiddenQuotaRows = getHiddenQuotaRows(conn.provider, rawQuotas, quotaVisibility);
 
           return (
             <Card
@@ -1194,13 +1278,40 @@ export default function ProviderLimits() {
                   </div>
                 ) : (
                   <QuotaTable
-                    quotas={quota?.quotas}
+                    quotas={visibleQuotas}
                     compact
                     sortMode="default"
                     showSortLabel={
                       conn.provider === "codex" && quotaSortMode !== "default"
                     }
+                    onHideQuota={(quotaRow) => handleHideQuota(conn.provider, quotaRow)}
                   />
+                )}
+                {quota?.message && !error && !isLoading && (
+                  <p className="mt-2 px-1 text-[10px] leading-relaxed text-text-muted">
+                    {quota.message}
+                  </p>
+                )}
+                {hiddenQuotaRows.length > 0 && (
+                  <div className="mt-2 flex min-w-0 items-center gap-1 border-t border-black/5 pt-2 text-[10px] text-text-muted dark:border-white/5">
+                    <span className="material-symbols-outlined shrink-0 text-[14px]">
+                      visibility_off
+                    </span>
+                    <span className="shrink-0">Hidden:</span>
+                    <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto whitespace-nowrap pb-2">
+                      {hiddenQuotaRows.map((quotaRow) => (
+                        <button
+                          key={getQuotaVisibilityKey(quotaRow)}
+                          type="button"
+                          onClick={() => handleShowQuota(conn.provider, quotaRow)}
+                          className="shrink-0 rounded-md border border-black/10 px-1.5 py-0.5 transition-colors hover:bg-black/5 hover:text-text-primary dark:border-white/10 dark:hover:bg-white/5"
+                          title="Show this quota row"
+                        >
+                          {quotaRow.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
             </Card>

@@ -12,7 +12,6 @@ import {
   GEMINI_CONFIG,
   ANTIGRAVITY_CONFIG,
   KIRO_CONFIG,
-  QWEN_CONFIG,
   CLAUDE_CONFIG,
   CLINE_CONFIG,
   KILOCODE_CONFIG,
@@ -62,7 +61,6 @@ const OAUTH_TEST_CONFIG = {
     method: "GET",
     noAuth: true,
   },
-  qwen: { checkExpiry: true, refreshable: true },
   kiro: { checkExpiry: true, refreshable: true },
   qoder: {
     // Test by hitting Qoder's userinfo endpoint with the device token.
@@ -75,7 +73,8 @@ const OAUTH_TEST_CONFIG = {
     authPrefix: "Bearer ",
     refreshable: false,
   },
-  "kimi-coding": { checkExpiry: true, refreshable: false },
+  kimi: { checkExpiry: true, refreshable: true },
+  "kimi-coding": { checkExpiry: true, refreshable: true },
   cursor: { tokenExists: true },
   kilocode: {
     url: `${KILOCODE_CONFIG.apiBaseUrl}/api/profile`,
@@ -103,7 +102,60 @@ const OAUTH_TEST_CONFIG = {
     },
     refreshable: false,
   },
+  // Grok CLI / Grok Build — probe /v1/user (no inference quota). Headers mirror official CLI.
+  "grok-cli": {
+    url: PROVIDERS["grok-cli"]?.userUrl || "https://cli-chat-proxy.grok.com/v1/user",
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    extraHeaders: {
+      Accept: "application/json",
+      ...(PROVIDERS["grok-cli"]?.headers || {
+        "User-Agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)",
+        "x-xai-token-auth": "xai-grok-cli",
+        "x-grok-client-identifier": "grok-pager",
+        "x-grok-client-version": "0.2.93",
+      }),
+    },
+    refreshable: true,
+    // Subscription spending-limit is not an auth failure — token is fine, credits aren't.
+    // Accept 402 so the connection stays "active" with a warning (same idea as Codex 400).
+    acceptStatuses: [402],
+    softFailMessage: {
+      402: "Connected, but Grok Build credits are exhausted (spending limit). Add credits or upgrade SuperGrok.",
+    },
+  },
 };
+
+/**
+ * Classify an OAuth probe response as success / soft-success / hard-fail.
+ * Soft success (e.g. 402 spending-limit on Grok CLI) means auth works but the
+ * account cannot spend — keep connection active and surface a warning.
+ * Exported for unit tests.
+ */
+export function classifyOAuthProbeResult(res, config, bodyText = "") {
+  if (!res) return { valid: false, error: "No response", soft: false };
+  const status = res.status;
+  const accepted = res.ok || (config?.acceptStatuses && config.acceptStatuses.includes(status));
+  if (!accepted) {
+    if (status === 401) return { valid: false, error: "Token invalid or revoked", soft: false };
+    if (status === 403) return { valid: false, error: "Access denied", soft: false };
+    return { valid: false, error: `API returned ${status}`, soft: false };
+  }
+
+  // Soft success only when the provider configured an explicit message for this
+  // status (e.g. Grok CLI 402 spending-limit). Codex-style acceptStatuses:[400]
+  // stays silent success — 400 there only proves auth, not a user-facing warning.
+  if (!res.ok && config?.acceptStatuses?.includes(status)) {
+    const softMap = config.softFailMessage || {};
+    if (softMap[status]) {
+      return { valid: true, error: softMap[status], soft: true };
+    }
+    return { valid: true, error: null, soft: false };
+  }
+
+  return { valid: true, error: null, soft: false };
+}
 
 async function probeClineAccessToken(accessToken) {
   const res = await fetch("https://api.cline.bot/api/v1/users/me", {
@@ -186,7 +238,7 @@ async function refreshOAuthToken(connection) {
       return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
     }
 
-    if (provider === "codex") {
+    if (provider === "codex" || provider === "grok-cli" || provider === "xai") {
       return await refreshProviderCredentials(provider, connection, console);
     }
 
@@ -229,21 +281,6 @@ async function refreshOAuthToken(connection) {
       if (!response.ok) return null;
       const data = await response.json();
       return { accessToken: data.accessToken, expiresIn: data.expiresIn || 3600, refreshToken: data.refreshToken || refreshToken };
-    }
-
-    if (provider === "qwen") {
-      const response = await fetch(QWEN_CONFIG.tokenUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
-        body: new URLSearchParams({
-          grant_type: "refresh_token",
-          refresh_token: refreshToken,
-          client_id: QWEN_CONFIG.clientId,
-        }),
-      });
-      if (!response.ok) return null;
-      const data = await response.json();
-      return { accessToken: data.access_token, expiresIn: data.expires_in, refreshToken: data.refresh_token || refreshToken };
     }
 
     if (provider === "cline") {
@@ -362,9 +399,19 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
     const fetchOpts = { method: config.method, headers };
     if (config.body) fetchOpts.body = config.body;
     const res = await fetchWithConnectionProxy(testUrl, fetchOpts, effectiveProxy);
+    const bodyText = !res.ok ? await res.text().catch(() => "") : "";
 
-    const accepted = res.ok || (config.acceptStatuses && config.acceptStatuses.includes(res.status));
-    if (accepted) return { valid: true, error: null, refreshed, newTokens };
+    const classified = classifyOAuthProbeResult(res, config, bodyText);
+    if (classified.valid) {
+      return {
+        valid: true,
+        // soft success surfaces warning text without marking connection error
+        error: classified.soft ? classified.error : null,
+        warning: classified.soft ? classified.error : null,
+        refreshed,
+        newTokens,
+      };
+    }
 
     if (res.status === 401 && config.refreshable && !refreshed && connection.refreshToken) {
       const tokens = await refreshOAuthToken(connection);
@@ -376,21 +423,34 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
         const retryOpts = { method: config.method, headers: retryHeaders };
         if (config.body) retryOpts.body = config.body;
         const retryRes = await fetchWithConnectionProxy(retryUrl, retryOpts, effectiveProxy);
-        const retryAccepted = retryRes.ok || (config.acceptStatuses && config.acceptStatuses.includes(retryRes.status));
-        if (retryAccepted) return { valid: true, error: null, refreshed: true, newTokens: tokens };
+        const retryBody = !retryRes.ok ? await retryRes.text().catch(() => "") : "";
+        const retryClassified = classifyOAuthProbeResult(retryRes, config, retryBody);
+        if (retryClassified.valid) {
+          return {
+            valid: true,
+            error: retryClassified.soft ? retryClassified.error : null,
+            warning: retryClassified.soft ? retryClassified.error : null,
+            refreshed: true,
+            newTokens: tokens,
+          };
+        }
       }
       return { valid: false, error: "Token invalid or revoked", refreshed: false };
     }
 
-    if (res.status === 401) return { valid: false, error: "Token invalid or revoked", refreshed };
-    if (res.status === 403) return { valid: false, error: "Access denied", refreshed };
-    return { valid: false, error: `API returned ${res.status}`, refreshed };
+    return { valid: false, error: classified.error, refreshed };
   } catch (err) {
     return { valid: false, error: err.message, refreshed };
   }
 }
 
 async function fetchWithConnectionProxy(url, options = {}, effectiveProxy = null) {
+  // Add a 15-second timeout to prevent connection testing from hanging indefinitely
+  // and exhausting the browser/Node.js connection pools.
+  if (!options.signal) {
+    options.signal = AbortSignal.timeout(15000);
+  }
+
   // Vercel relay: forward via relay URL
   if (effectiveProxy?.vercelRelayUrl) {
     const { proxyAwareFetch } = await import("open-sse/utils/proxyFetch.js");
@@ -549,10 +609,13 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "alicode":
-      case "alicode-intl": {
-        // Aliyun Coding Plan uses OpenAI-compatible API
+      case "alicode-intl":
+      case "alims-intl": {
+        // Aliyun Coding Plan uses OpenAI-compatible API; alims-intl uses Model Studio compatible-mode
         const aliBaseUrl = connection.provider === "alicode-intl"
           ? "https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions"
+          : connection.provider === "alims-intl"
+          ? "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions"
           : "https://coding.dashscope.aliyuncs.com/v1/chat/completions";
         const res = await fetchWithConnectionProxy(aliBaseUrl, {
           method: "POST",
@@ -711,6 +774,47 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
+      case "qoder": {
+        // PAT (pt-...) exchange → job token. A successful exchange proves the PAT.
+        const raw = connection.apiKey || "";
+        const pat = raw.startsWith("pt-") ? raw : `pt-${raw}`;
+        const exRes = await fetchWithConnectionProxy(
+          "https://openapi.qoder.sh/api/v1/jobToken/exchange",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+              "Cosy-Version": "1.0.1",
+              "Cosy-ClientType": "5",
+            },
+            body: JSON.stringify({ personal_token: pat }),
+          },
+          effectiveProxy,
+        );
+        return { valid: exRes.ok, error: exRes.ok ? null : "Invalid Personal Access Token" };
+      }
+case "llm7": {
+        const baseUrl = connection.providerSpecificData?.baseUrl || "https://api.llm7.io/v1";
+        const res = await fetchWithConnectionProxy(`${baseUrl.replace(/\/$/, "")}/models`, {
+          headers: { Authorization: `Bearer ${connection.apiKey}` },
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
+      }
+      case "kimchi": {
+        // Dual-auth: same validation endpoint as the OAuth flow — the token (API key
+        // or OAuth access token) is sent as Authorization: Bearer.
+        const url = KIMCHI_CONFIG.validationUrl || "https://api.cast.ai/v1/llm/openai/supported-providers";
+        const res = await fetchWithConnectionProxy(url, {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${connection.apiKey}`,
+            "User-Agent": "kimchi/0.1.40",
+          },
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key", refreshed: false };
+      }
       default:
         return { valid: false, error: "Provider test not supported" };
     }
@@ -752,10 +856,18 @@ export async function testSingleConnection(id) {
 
   const latencyMs = Date.now() - start;
 
+  // Soft success (e.g. Grok CLI 402 spending-limit): credentials are good, account is
+  // out of credits. Keep testStatus active; surface the message as lastError so the
+  // dashboard can show a warning without marking the connection broken.
+  const softWarning = result.valid && (result.warning || result.error);
   const updateData = {
     testStatus: result.valid ? "active" : "error",
-    lastError: result.valid ? null : result.error,
-    lastErrorAt: result.valid ? null : new Date().toISOString(),
+    lastError: result.valid ? (softWarning || null) : result.error,
+    lastErrorAt: result.valid
+      ? softWarning
+        ? new Date().toISOString()
+        : null
+      : new Date().toISOString(),
   };
 
   if (result.refreshed && result.newTokens) {

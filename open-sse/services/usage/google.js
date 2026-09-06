@@ -2,15 +2,15 @@
  * Google usage handlers (Gemini CLI + Antigravity)
  */
 
-import { CLIENT_METADATA, getPlatformUserAgent } from "../../config/appConstants.js";
-import { ANTIGRAVITY_OAUTH_CLIENT } from "../../providers/shared.js";
+import { CLIENT_METADATA } from "../../config/appConstants.js";
+import { ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION, ANTIGRAVITY_OAUTH_CLIENT } from "../../providers/shared.js";
 import { U, parseResetTime, normalizeCloudCodeProjectId, fetchWithTimeout } from "./shared.js";
 
 // Antigravity API config (from Quotio) — urls from registry, oauth client + dynamic UA kept here
 const ANTIGRAVITY_CONFIG = {
   ...U("antigravity"),
   ...ANTIGRAVITY_OAUTH_CLIENT,
-  userAgent: getPlatformUserAgent(),
+  userAgent: ANTIGRAVITY_IDE_USER_AGENT,
 };
 
 /**
@@ -129,8 +129,7 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
         "Content-Type": "application/json",
         "X-Client-Name": "antigravity",
-        "X-Client-Version": "1.107.0",
-        "x-request-source": "local", // MITM bypass
+        "X-Client-Version": ANTIGRAVITY_IDE_VERSION,
       },
       body: JSON.stringify({
         ...(projectId ? { project: projectId } : {})
@@ -162,7 +161,15 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
     if (data.models) {
       // Filter only recommended/important models (must match PROVIDER_MODELS ag ids)
       const importantModels = [
-        'gemini-3-flash-agent',
+        'gemini-3.8-flash-high',
+        'gemini-3.8-flash-medium',
+        'gemini-3.8-flash-low',
+        'gemini-3.7-flash-high',
+        'gemini-3.7-flash-medium',
+        'gemini-3.7-flash-low',
+        'gemini-3.6-flash-high',
+        'gemini-3.6-flash-medium',
+        'gemini-3.6-flash-low',
         'gemini-3.5-flash-low',
         'gemini-3.5-flash-extra-low',
         'gemini-pro-agent',
@@ -170,10 +177,8 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         'claude-sonnet-4-6',
         'claude-opus-4-6-thinking',
         'gpt-oss-120b-medium',
-        'gemini-3-flash',
         // Image generation models
         'gemini-3.1-flash-image',
-        'gemini-3-pro-image',
       ];
 
       for (const [modelKey, info] of Object.entries(data.models)) {
@@ -229,7 +234,6 @@ async function getAntigravitySubscriptionInfo(accessToken, proxyOptions = null) 
         "Authorization": `Bearer ${accessToken}`,
         "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
         "Content-Type": "application/json",
-        "x-request-source": "local", // MITM bypass
       },
       body: JSON.stringify({ metadata: CLIENT_METADATA, mode: 1 }),
     }, 10000, proxyOptions);

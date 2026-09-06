@@ -77,3 +77,15 @@ gitbook/README.md
 open-sse.old/
 .graphifyignore
 graphify-out/*
+
+# Local-only working dirs (notes, vendored repos, scripts, skills)
+.claude/
+.docs/
+.repo/
+.script/
+.codegraph/
+.PR/
+.next-analyze/*
+
+# Kiro local workspace state
+.kiro/

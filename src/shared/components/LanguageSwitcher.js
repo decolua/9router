@@ -39,6 +39,7 @@ const getLocaleInfo = (locale) => {
     "tl": { name: "Tagalog", flag: "🇵🇭" },
     "id": { name: "Indonesia", flag: "🇮🇩" },
     "th": { name: "ไทย", flag: "🇹🇭" },
+    "km": { name: "ខ្មែរ", flag: "🇰🇭" },
     "hi": { name: "हिन्दी", flag: "🇮🇳" },
     "bn": { name: "বাংলা", flag: "🇧🇩" },
     "ur": { name: "اردو", flag: "🇵🇰" },
@@ -49,7 +50,8 @@ const getLocaleInfo = (locale) => {
     "hu": { name: "Magyar", flag: "🇭🇺" },
     "fi": { name: "Suomi", flag: "🇫🇮" },
     "da": { name: "Dansk", flag: "🇩🇰" },
-    "no": { name: "Norsk", flag: "🇳🇴" }
+    "no": { name: "Norsk", flag: "🇳🇴" },
+    "fa": { name: "فارسی", flag: "🇮🇷" }
   };
   return locales[locale] || { name: locale, flag: "🌐" };
 };
@@ -62,9 +64,9 @@ export default function LanguageSwitcher({ className = "", isOpen: controlledOpe
 
   const isControlled = typeof controlledOpen === "boolean";
   const isOpen = isControlled ? controlledOpen : internalOpen;
-  const setIsOpen = (value) => {
+  const setIsOpen = (value, nextLocale = locale) => {
     if (isControlled) {
-      if (!value && onClose) onClose(locale);
+      if (!value && onClose) onClose(nextLocale);
     } else {
       setInternalOpen(value);
     }
@@ -91,7 +93,6 @@ export default function LanguageSwitcher({ className = "", isOpen: controlledOpe
     if (nextLocale === locale || isPending) return;
 
     setIsPending(true);
-    setIsOpen(false);
     try {
       await fetch("/api/locale", {
         method: "POST",
@@ -102,6 +103,7 @@ export default function LanguageSwitcher({ className = "", isOpen: controlledOpe
       // Reload translations without full page reload
       await reloadTranslations();
       setLocale(nextLocale);
+      setIsOpen(false, nextLocale);
     } catch (err) {
       console.error("Failed to set locale:", err);
     } finally {

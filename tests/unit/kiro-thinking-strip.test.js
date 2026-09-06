@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { KiroExecutor } from "../../open-sse/executors/kiro.js";
+import "../translator/registerAll.js";
 
 function createMockFrame(eventType, payloadObj) {
   const payloadStr = JSON.stringify(payloadObj);
@@ -31,8 +32,21 @@ function createMockFrame(eventType, payloadObj) {
   offset += headerValueBytes.length;
 
   buffer.set(payloadBytes, offset);
-  
+
+  view.setUint32(8, crc32(buffer.subarray(0, 8)), false);
+  view.setUint32(totalLength - 4, crc32(buffer.subarray(0, totalLength - 4)), false);
   return buffer;
+}
+
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit++) {
+      crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
 }
 
 async function readAllSSE(stream) {
@@ -45,6 +59,13 @@ async function readAllSSE(stream) {
     result += decoder.decode(value, { stream: true });
   }
   return result;
+}
+
+async function readNextWithTimeout(reader) {
+  return Promise.race([
+    reader.read(),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("timed out waiting for SSE chunk")), 100)),
+  ]);
 }
 
 describe("KiroExecutor thinking tag stripping", () => {
@@ -120,5 +141,61 @@ describe("KiroExecutor thinking tag stripping", () => {
     // We shouldn't get an empty content chunk from f1 since it was entirely stripped and reasoning was present
     const contentChunks = objects.filter(obj => obj.choices[0].delta.content !== undefined);
     expect(contentChunks.length).toBe(0);
+  });
+
+  it("waits for clean EOF before emitting stop after messageStop", async () => {
+    const executor = new KiroExecutor();
+
+    const f1 = createMockFrame("assistantResponseEvent", { content: "OK" });
+    const f2 = createMockFrame("messageStopEvent", {});
+
+    let upstreamController;
+    const readableStream = new ReadableStream({
+      start(controller) {
+        upstreamController = controller;
+        controller.enqueue(f1);
+        controller.enqueue(f2);
+      }
+    });
+
+    const transformedResponse = executor.transformEventStreamToSSE({ body: readableStream }, "claude-test");
+    const reader = transformedResponse.body.getReader();
+    const decoder = new TextDecoder();
+    let output = "";
+    const { value } = await readNextWithTimeout(reader);
+    output += decoder.decode(value, { stream: true });
+    expect(output).not.toContain("\"finish_reason\":\"stop\"");
+
+    upstreamController.close();
+    while (!output.includes("\"finish_reason\":\"stop\"")) {
+      const { value: nextValue, done } = await readNextWithTimeout(reader);
+      if (done) break;
+      output += decoder.decode(nextValue, { stream: true });
+    }
+
+    expect(output).toContain("\"finish_reason\":\"stop\"");
+  });
+
+  it("uses tool_calls finish reason for tool streams without messageStop", async () => {
+    const executor = new KiroExecutor();
+
+    const f1 = createMockFrame("toolUseEvent", { toolUseId: "tool-1", name: "read_file", input: { path: "a.txt" } });
+
+    const readableStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(f1);
+        controller.close();
+      }
+    });
+
+    const transformedResponse = executor.transformEventStreamToSSE({ body: readableStream }, "claude-test");
+    const output = await readAllSSE(transformedResponse.body);
+    const objects = output
+      .split("\n")
+      .filter(line => line.startsWith("data: ") && !line.includes("[DONE]"))
+      .map(line => JSON.parse(line.slice(6)));
+
+    const finalChunk = objects.at(-1);
+    expect(finalChunk.choices[0].finish_reason).toBe("tool_calls");
   });
 });
