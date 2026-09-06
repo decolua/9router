@@ -300,6 +300,16 @@ export function createSSEStream(options = {}) {
           totalContentLength += parsed.choices[0].delta.reasoning_content.length;
           accumulatedThinking += parsed.choices[0].delta.reasoning_content;
         }
+        // OpenAI Responses format - content/reasoning deltas
+        if (typeof parsed.delta === "string" && typeof parsed.type === "string") {
+          if (parsed.type === "response.output_text.delta") {
+            totalContentLength += parsed.delta.length;
+            accumulatedContent += parsed.delta;
+          } else if (parsed.type === "response.reasoning_summary_text.delta" || parsed.type === "response.reasoning_text.delta") {
+            totalContentLength += parsed.delta.length;
+            accumulatedThinking += parsed.delta;
+          }
+        }
         
         // Gemini format
         if (parsed.candidates?.[0]?.content?.parts) {
