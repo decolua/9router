@@ -596,6 +596,17 @@ export default function ProviderLimits() {
     const providerVisibility = previous[provider] || {};
     const hidden = new Set(providerVisibility.hidden || []);
     hidden.add(key);
+    if (provider === "antigravity") {
+      if (key === "gemini") {
+        for (const k of hidden) {
+          if (k.startsWith("gemini-") && !k.includes("image")) hidden.delete(k);
+        }
+      } else if (key === "claude") {
+        for (const k of hidden) {
+          if (k.startsWith("claude-")) hidden.delete(k);
+        }
+      }
+    }
     const next = {
       ...previous,
       [provider]: {
@@ -614,6 +625,17 @@ export default function ProviderLimits() {
     const providerVisibility = previous[provider] || {};
     const hidden = new Set(providerVisibility.hidden || []);
     hidden.delete(key);
+    if (provider === "antigravity") {
+      if (key === "gemini") {
+        for (const k of hidden) {
+          if (k.startsWith("gemini-") && !k.includes("image")) hidden.delete(k);
+        }
+      } else if (key === "claude") {
+        for (const k of hidden) {
+          if (k.startsWith("claude-")) hidden.delete(k);
+        }
+      }
+    }
     const next = {
       ...previous,
       [provider]: {

@@ -17,6 +17,12 @@ export default {
   transport: {
     baseUrl: "https://api.groq.com/openai/v1/chat/completions",
     validateUrl: "https://api.groq.com/openai/v1/models",
+    // No dedicated quota endpoint; rate-limit info rides on x-ratelimit-*
+    // response headers, always included. Reuse the models list (already
+    // used as validateUrl) so reading usage never costs tokens.
+    usage: {
+      url: "https://api.groq.com/openai/v1/models",
+    },
   },
   models: [
     { id: "llama-3.3-70b-versatile", name: "Llama 3.3 70B" },
@@ -33,5 +39,9 @@ export default {
     authType: "apikey",
     authHeader: "bearer",
     format: "openai",
+  },
+  features: {
+    usage: true,
+    usageApikey: true,
   },
 };
