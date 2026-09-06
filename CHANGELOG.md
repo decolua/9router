@@ -166,6 +166,7 @@
 # v0.5.55 (2026-08-14)
 
 ## Features
+- **OpenCode Free**: add Ox Alpha Free (`oc/x-preview-f-free`) — Chat Completions via `https://opencode.ai/zen/v1/chat/completions` per Zen docs (`@ai-sdk/openai-compatible`)
 - **Auth**: native SAML 2.0 SSO alongside OIDC — AuthnRequest generation, ACS
   assertion handling, SP metadata export, admin config test, replay-protected
   via a `saml_state` cookie matched against `InResponseTo`
