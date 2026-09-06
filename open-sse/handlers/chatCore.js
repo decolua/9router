@@ -30,6 +30,7 @@ import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { applyMemoryEnhancements } from "../services/memory/index.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -58,7 +59,7 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, memorySettings }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -293,6 +294,27 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (pxpipeResult.body) translatedBody = pxpipeResult.body;
     if (pxpipeSummary?.applied) xf.push(`PXPIPE:${pxpipeSummary.imageCount}img`);
     try { onPxpipeEvent?.({ provider, model, ...pxpipeSummary }); } catch { /* stats must not break requests */ }
+  }
+
+  // Memory & Context Optimizer (Tool & Media Pruning, Compaction, Cache Anchoring, Handoffs)
+  if (tokenSaverEnabled && memorySettings) {
+    const memRes = await applyMemoryEnhancements(translatedBody, {
+      settings: memorySettings,
+      targetFormat: finalFormat,
+      log,
+    });
+    if (memRes.stats?.toolPruning?.applied) {
+      xf.push(`TOOL-PRUNE:~${Math.round(memRes.stats.toolPruning.savedChars / 4)}t`);
+    }
+    if (memRes.stats?.mediaPruning?.applied) {
+      xf.push(`MEDIA-PRUNE:${memRes.stats.mediaPruning.savedItems}`);
+    }
+    if (memRes.stats?.compaction?.applied) {
+      xf.push(`COMPACT:${memRes.stats.compaction.savedTokens}t`);
+    }
+    if (memRes.stats?.cacheAnchor?.applied) {
+      xf.push(`CACHE-ANCHOR`);
+    }
   }
 
   if (xf.length && log?.line) log.line(reqTag, "⚙", xf.join(" · "));

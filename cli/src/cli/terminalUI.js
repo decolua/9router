@@ -3,6 +3,7 @@ const { showMenuWithBack } = require("./utils/menuHelper");
 const { showProvidersMenu } = require("./menus/providers");
 const { showApiKeysMenu } = require("./menus/apiKeys");
 const { showCombosMenu } = require("./menus/combos");
+const { showMemoryMenu } = require("./menus/memory");
 const { showSettingsMenu } = require("./menus/settings");
 const { showCliToolsMenu } = require("./menus/cliTools");
 
@@ -96,6 +97,13 @@ async function startTerminalUI(port) {
         label: "Combos",
         action: async () => {
           await showCombosMenu([...basePath, "Combos"]);
+          return true;
+        }
+      },
+      {
+        label: "Memory & Context",
+        action: async () => {
+          await showMemoryMenu([...basePath, "Memory & Context"]);
           return true;
         }
       },
