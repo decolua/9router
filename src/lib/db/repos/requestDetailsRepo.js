@@ -10,32 +10,52 @@ const CONFIG_CACHE_TTL_MS = 5000;
 let cachedConfig = null;
 let cachedConfigTs = 0;
 
+/**
+ * Read an env flag that is only a signal when the operator actually set it.
+ * An unset or empty value returns null so the next source in the precedence
+ * chain decides, instead of being read as `false`.
+ */
+function explicitEnvFlag(env, name) {
+  const raw = env[name];
+  if (raw === undefined || raw.trim() === "") return null;
+  return raw.trim().toLowerCase() === "true";
+}
+
+/**
+ * Resolve whether request details are recorded, in precedence order:
+ *
+ *   1. OBSERVABILITY_ENABLED — the variable named after this feature, and the one
+ *      `.env.example` ships as `true`. It used to be unreachable: `getSettings()`
+ *      merges defaults, so `settings.enableObservability` is ALWAYS a boolean and
+ *      the `typeof … === "boolean"` guard below it never yielded to the env value.
+ *   2. ENABLE_REQUEST_LOGS — the older override, kept so existing deployments that
+ *      force it on keep working. It only decides when the variable above is unset;
+ *      it is documented for the `logs/` files, and `.env.example` ships it as
+ *      `false`, so letting it hard-disable the dashboard toggle meant a stock
+ *      `.env` silently defeated both documented ways of turning details on.
+ *   3. The dashboard toggle (`enableObservability`), which stays the default-off
+ *      answer when neither variable is set.
+ *
+ * @param {object} settings  merged settings row
+ * @param {object} env       process.env, injectable for tests
+ */
+export function resolveObservabilityEnabled(settings, env = process.env) {
+  const fromFeatureFlag = explicitEnvFlag(env, "OBSERVABILITY_ENABLED");
+  if (fromFeatureFlag !== null) return fromFeatureFlag;
+
+  const fromRequestLogs = explicitEnvFlag(env, "ENABLE_REQUEST_LOGS");
+  if (fromRequestLogs !== null) return fromRequestLogs;
+
+  return settings?.enableObservability === true;
+}
+
 async function getObservabilityConfig() {
   if (cachedConfig && (Date.now() - cachedConfigTs) < CONFIG_CACHE_TTL_MS) return cachedConfig;
   try {
     const { getSettings } = await import("./settingsRepo.js");
     const settings = await getSettings();
-    const envRequestLogs = process.env.ENABLE_REQUEST_LOGS;
-    if (envRequestLogs !== undefined) {
-      const enabled = envRequestLogs.toLowerCase() === "true";
-      cachedConfig = {
-        enabled,
-        maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
-        batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
-        flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
-        maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
-      };
-      cachedConfigTs = Date.now();
-      return cachedConfig;
-    }
-    const envFallback = process.env.OBSERVABILITY_ENABLED !== "false";
-    const uiFlag = typeof settings.enableObservability === "boolean";
-    const enabled = uiFlag
-      ? settings.enableObservability
-      : envFallback;
-
     cachedConfig = {
-      enabled,
+      enabled: resolveObservabilityEnabled(settings),
       maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
       batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
       flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
