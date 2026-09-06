@@ -20,6 +20,11 @@ export default {
   authModes: ["oauth"],
   transport: {
     baseUrl: "https://inference-api.nousresearch.com/v1/chat/completions",
+    // Aggregator of other vendors' models: every catalog model accepts OpenAI
+    // reasoning_effort and none accept native GLM/Kimi/DeepSeek thinking
+    // fields, so force the openai wire format regardless of what the
+    // capability tables resolve for the underlying model family.
+    thinkingFormat: "openai",
     // Hermes CLI traffic passes an OpenAI python-client fingerprint upstream
     headers: {
       "User-Agent": "OpenAI/Python 2.24.0",

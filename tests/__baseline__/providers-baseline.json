@@ -1017,6 +1017,7 @@
   },
   "nous-portal": {
     "baseUrl": "https://inference-api.nousresearch.com/v1/chat/completions",
+    "thinkingFormat": "openai",
     "headers": {
       "User-Agent": "OpenAI/Python 2.24.0",
       "X-Stainless-Arch": "x64",
