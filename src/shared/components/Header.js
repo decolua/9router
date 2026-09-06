@@ -253,52 +253,55 @@ export default function Header({ onMenuClick, showMenuButton = true, sidebarOpen
       {/* Page title with breadcrumbs */}
       <div className="flex flex-col min-w-0 flex-1">
         {breadcrumbs.length > 0 ? (
-          <div className="flex items-center gap-2">
-            {breadcrumbs.map((crumb, index) => (
-              <div
-                key={`${crumb.label}-${crumb.href || "current"}`}
-                className="flex items-center gap-2"
-              >
-                {index > 0 && (
-                  <span className="material-symbols-outlined text-text-muted text-base">
-                    chevron_right
-                  </span>
-                )}
-                {crumb.href ? (
-                  <Link
-                    href={crumb.href}
-                    className="text-text-muted hover:text-primary transition-colors"
-                  >
-                    {crumb.label}
-                  </Link>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    {crumb.image && (
-                      <ProviderIcon
-                        src={crumb.image}
-                        alt={crumb.label}
-                        size={28}
-                        className="object-contain rounded max-w-[28px] max-h-[28px]"
-                        fallbackText={crumb.label.slice(0, 2).toUpperCase()}
-                      />
-                    )}
-                    <h1 className="text-base lg:text-2xl font-semibold text-text-main tracking-tight truncate">
-                      {translate(crumb.label)}
-                    </h1>
-                  </div>
-                )}
-              </div>
-            ))}
+          <div className="flex items-center gap-2 min-w-0">
+            {breadcrumbs.map((crumb, index) => {
+              const isLast = index === breadcrumbs.length - 1;
+              return (
+                <div
+                  key={`${crumb.label}-${crumb.href || "current"}`}
+                  className={`flex items-center gap-2 min-w-0 ${isLast ? "flex-1" : "shrink-0"}`}
+                >
+                  {index > 0 && (
+                    <span className="material-symbols-outlined text-text-muted text-base shrink-0">
+                      chevron_right
+                    </span>
+                  )}
+                  {crumb.href ? (
+                    <Link
+                      href={crumb.href}
+                      className="text-text-muted hover:text-primary transition-colors truncate"
+                    >
+                      {crumb.label}
+                    </Link>
+                  ) : (
+                    <div className="flex items-center gap-2 min-w-0">
+                      {crumb.image && (
+                        <ProviderIcon
+                          src={crumb.image}
+                          alt={crumb.label}
+                          size={28}
+                          className="object-contain rounded max-w-[28px] max-h-[28px] shrink-0"
+                          fallbackText={crumb.label.slice(0, 2).toUpperCase()}
+                        />
+                      )}
+                      <h1 className="text-base lg:text-2xl font-semibold text-text-main tracking-tight truncate min-w-0">
+                        {translate(crumb.label)}
+                      </h1>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         ) : title ? (
-          <div>
-            <div className="flex items-center gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
               {icon && (
-                <span className="material-symbols-outlined text-primary text-xl lg:text-2xl">
+                <span className="material-symbols-outlined text-primary text-xl lg:text-2xl shrink-0">
                   {icon}
                 </span>
               )}
-              <h1 className="text-base lg:text-2xl font-semibold tracking-tight truncate">
+              <h1 className="text-base lg:text-2xl font-semibold tracking-tight truncate min-w-0">
                 {translate(title)}
               </h1>
             </div>
@@ -328,14 +331,16 @@ export default function Header({ onMenuClick, showMenuButton = true, sidebarOpen
         <HeaderSearch />
         <button
           onClick={() => setDonateOpen(true)}
-          className="flex items-center gap-1.5 px-3 h-8 rounded-lg border border-pink-500/30 bg-pink-500/10 text-pink-600 dark:text-pink-400 hover:bg-pink-500/20 transition-colors text-sm font-medium"
+          className="hidden sm:flex items-center gap-1.5 px-3 h-8 rounded-lg border border-pink-500/30 bg-pink-500/10 text-pink-600 dark:text-pink-400 hover:bg-pink-500/20 transition-colors text-sm font-medium"
           aria-label="Donate"
         >
           <span className="material-symbols-outlined text-[18px]">volunteer_activism</span>
-          <span className="hidden sm:inline">Donate</span>
+          <span className="hidden lg:inline">Donate</span>
         </button>
         <ThemeToggle />
-        <HeaderLanguage />
+        <div className="hidden sm:block">
+          <HeaderLanguage />
+        </div>
         <HeaderMenu onLogout={handleLogout} />
       </div>
       <DonateModal isOpen={donateOpen} onClose={() => setDonateOpen(false)} />
@@ -352,7 +357,7 @@ function HeaderSearch() {
   if (!visible) return null;
 
   return (
-    <div className="relative w-[160px] sm:w-[220px]">
+    <div className="relative w-[110px] sm:w-[220px]">
       <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-text-muted text-[16px] pointer-events-none">
         search
       </span>
