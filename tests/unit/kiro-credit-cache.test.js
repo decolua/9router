@@ -77,7 +77,8 @@ describe("native-credit cache calibration", () => {
     expect(cached(cache.prepare(keyReq))).toBe(0);
   });
 
-  it.each([["claude-opus-5", 5], ["gpt-5.6-terra", 30]])("uses %s sliding TTL (%i minutes)", (model, minutes) => {
+  it.each([["claude-opus-5", 5], ["claude-sonnet-6", 5], ["haiku-5", 5],
+    ["gpt-5.6-terra", 30], ["gpt-5.6-luna", 30], ["sol", 30]])("uses %s sliding TTL (%i minutes)", (model, minutes) => {
     let now = 0;
     const cache = new KiroCreditCache({ now: () => now });
     const req = request(model);
@@ -147,10 +148,11 @@ describe("native-credit cache calibration", () => {
     const req = request(); train(cache, req);
     const native = { ...usage, prompt_tokens_details: { cached_tokens: 10000 } };
     expect(cache.prepare(req).apply(native)).toEqual(native);
-    expect(cache.prepare(request("claude-sonnet-4.6"))).toBeNull();
+    expect(cache.prepare(request("unknown-model"))).toBeNull();
   });
 
-  it.each([["claude-opus-5", 5], ["gpt-5.6-terra", 30]])("failed %s observations do not slide TTL", (model, minutes) => {
+  it.each([["claude-opus-5", 5], ["claude-sonnet-6", 5], ["haiku-5", 5],
+    ["gpt-5.6-terra", 30], ["gpt-5.6-luna", 30], ["sol", 30]])("failed %s observations do not slide TTL", (model, minutes) => {
     let now = 0;
     const cache = new KiroCreditCache({ now: () => now });
     const req = request(model); train(cache, req);
@@ -190,4 +192,68 @@ describe("native-credit cache calibration", () => {
     expect(cache.prepare(r)).toBeNull();
     expect(cached(cache.prepare(request()))).toBe(8000);
   });
+});
+
+const familyModels = [
+  ...["claude-opus-5", "claude-sonnet-4.6", "claude-haiku-4.5", "claude-3-5-sonnet",
+    "claude-opus-9.2", "claude-future", "opus-5", "sonnet", "haiku-7",
+    " CLAUDE_OPUS_5 ", "Claude.Sonnet.6", "kiro/claude-haiku-5", "kr/opus-5",
+    "anthropic.claude-sonnet-4-6", "claude-sonnet-5-thinking-agentic"
+  ].map(model => [model, 5, false]),
+  ...["gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-7.2", "gpt-next",
+    "terra", "luna", "sol", " TERRA ", "GPT_5_6_LUNA", "GPT.7.2",
+    "kr/gpt-6", "kiro/luna", "openai/gpt-7", "gpt-5.6-sol-thinking-agentic",
+    "luna-thinking-agentic"
+  ].map(model => [model, 30, true]),
+];
+
+describe("Kiro cache family policies", () => {
+  it.each(familyModels)("%s calibrates with a %i minute window (conversation scoped: %s)", (model, minutes, scoped) => {
+    let now = 0;
+    const cache = new KiroCreditCache({ now: () => now });
+    const req = request(model);
+    const eligible = cache.prepare(req);
+    expect(eligible).not.toBeNull();
+    eligible.complete(null, false);
+    const short = request(model);
+    short.body.conversationState.currentMessage.userInputMessage.content = "x".repeat(5000);
+    const shortPlan = cache.prepare(short);
+    expect(shortPlan !== null).toBe(scoped); // GPT minimum 1,024; Claude minimum 4,096.
+    shortPlan?.complete(null, false);
+    const tracker = new KiroCreditCache({ now: () => now });
+    train(tracker, req);
+    const probe = r => {
+      const p = tracker.prepare(r);
+      const read = cached(p);
+      p?.complete(null, false);
+      return read;
+    };
+    const warm = probe(req);
+    // Existing conservative floor can lose one token through floating-point arithmetic.
+    expect(warm).toBeGreaterThanOrEqual(7999);
+    expect(warm).toBeLessThanOrEqual(8000);
+    expect(probe(request(model, "other"))).toBe(scoped ? 0 : warm);
+    const missing = request(model); delete missing.body.conversationState.conversationId;
+    expect(probe(missing)).toBe(scoped ? 0 : warm);
+    now = minutes * MINUTE - 1;
+    expect(probe(req)).toBe(warm);
+    now++;
+    expect(probe(req)).toBe(0);
+  });
+
+  it.each([undefined, null, 5, {}, "", "auto", "unknown-model", "not-claude-opus-5",
+    "claudette", "gptish", "my-gpt-5", "lunar", "terra-unknown", "claude-gpt-5",
+    "gpt-claude-5", "openai/claude-opus-5", "anthropic/gpt-5", "unknown/claude-5"])(
+    "disables unknown or ambiguous model %s without allocating state", model => {
+      const cache = new KiroCreditCache();
+      const req = request(); req.body.conversationState.currentMessage.userInputMessage.modelId = model;
+      expect(cache.prepare(req)).toBeNull();
+      expect(cache.scopes.size).toBe(0);
+    });
+
+  it.each([["claude-sonnet-5", "claude-haiku-5"], ["gpt-5.6-luna", "gpt-5.6-sol"]])(
+    "keeps %s calibration isolated from another model in its family (%s)", (model, other) => {
+      const cache = new KiroCreditCache(); train(cache, request(model));
+      expect(cached(cache.prepare(request(other)))).toBe(0);
+    });
 });

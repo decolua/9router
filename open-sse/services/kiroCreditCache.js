@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { KIRO_CACHE_MODELS, KIRO_CACHE_LIMITS as LIMIT } from "../config/kiroConstants.js";
+import { resolveKiroCachePolicy, KIRO_CACHE_LIMITS as LIMIT } from "../config/kiroConstants.js";
 
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -54,7 +54,7 @@ export class KiroCreditCache {
   prepare({ body, credentials, endpoint }) {
     const state = body?.conversationState;
     const model = state?.currentMessage?.userInputMessage?.modelId;
-    const policy = KIRO_CACHE_MODELS[model];
+    const policy = resolveKiroCachePolicy(model);
     if (!policy || !endpoint || (policy.conversationScoped && !state.conversationId)) return null;
     const data = credentials?.providerSpecificData || {};
     const apiKey = data.authMethod === "api_key" ? (credentials.apiKey || credentials.accessToken) : null;

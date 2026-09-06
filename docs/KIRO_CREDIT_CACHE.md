@@ -14,7 +14,7 @@ of the source gateway, administration, deployment, or fixed-ratio simulation.
 | Canonical prefix ladder | `open-sse/services/kiroCreditCache.js`: hash ordered outbound tools and messages; normalize current/history wrappers; retain continuation and model-visible configuration |
 | Native-credit calibration | Same module: compare cold/warm credits for a matching prefix, inference configuration and output count; require two pairs; use the lower envelope of the last eight pairs |
 | Account/endpoint/model scope | Hash connection identity (credential identity if absent), API key, principal/profile, endpoint, native model and inference configuration |
-| Model windows | `open-sse/config/kiroConstants.js`: Opus 5, five minutes; GPT-5.6 Terra, thirty minutes plus conversation ID |
+| Family windows | `open-sse/config/kiroConstants.js`: Claude family, five minutes; GPT family, thirty minutes plus conversation ID |
 | Commit only successful observations | `kiroCacheDelivery.js`, `chatCore.js`, outer `src/sse/handlers/chat.js`, and `custom-server.js`: select the final response, then commit on successful HTTP finish; discard on errors/close |
 | Native stream integrity | Reuse KiroExecutor's CRC, framing, EOF, terminal and tool validation; exclude malformed/dropped events and truncation from learning without discarding otherwise usable output |
 | Fallback and side-generation isolation | Freeze before fetch; exclude HTTP/transport retries, token-refresh retries and integrity repair; only the response selected by the outer router can commit |
@@ -53,13 +53,26 @@ enters response JSON, SSE, headers or usage logs. Existing `kiro_credits` and
 
 ## Limits and verification
 
-- Only native `claude-opus-5` and `gpt-5.6-terra` are eligible, matching the pinned
-  reference; aliases resolving to them work. Sol, Luna and other models do not learn.
+- Family policies extend the pinned reference beyond its exact model allowlist.
+  Claude IDs (including Opus/Sonnet/Haiku forms) use a five-minute sliding window
+  and 4,096-token minimum prefix. GPT IDs and the registry's Sol/Terra/Luna
+  codenames use thirty minutes, a 1,024-token minimum, and require conversation ID;
+  a different conversation starts cold. Both retain the same credit calibration rules.
+- Classification accepts case/whitespace, dot/underscore/hyphen separators, optional
+  `kiro/` or `kr/`, and matching `anthropic`/`openai` namespaces. Future versions
+  with clear family names are eligible; unknown or conflicting families are disabled.
+  Thinking/agentic variants retain their family policy.
+- The registry maps full `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna` IDs
+  (and synthetic thinking/agentic variants). It does not define bare codename
+  routing aliases to a particular version. Recognizing their family adds no routing
+  mapping. User-defined aliases are resolved before the estimator sees the native ID.
+  Policy normalization never rewrites that ID: distinct native model strings keep
+  separate scopes and calibration, even within one family.
 - Estimates are process-local and reset on restart. They are not provider-reported
   cache measurements, guaranteed retention, or a distributed cache tracker.
 - Prefix weights use 9router's existing approximate character/token convention.
   Canonical strings, images, tool arguments and ordering remain significant.
-- Conversation ID alone does not isolate Opus. Changing continuation, time context,
+- Conversation ID alone does not isolate Claude-family requests. Changing continuation, time context,
   tools, model-visible configuration or text can still make its prefix cold. Nothing
   strips model-visible text to manufacture reuse across sessions.
 - Learning requires the `custom-server.js` HTTP delivery hook (`npm start` and the

@@ -28,10 +28,32 @@ export const KIRO_CODEWHISPERER_TARGET =
 export const KIRO_ENDPOINT_FALLBACK_STATUSES = new Set([401, 403, 404]);
 
 // Estimator policy, not a guarantee of provider cache retention or pricing.
-export const KIRO_CACHE_MODELS = Object.freeze({
-  "claude-opus-5": { ttlMs: 5 * 60_000, minTokens: 4096 },
-  "gpt-5.6-terra": { ttlMs: 30 * 60_000, minTokens: 1024, conversationScoped: true }
+export const KIRO_CACHE_FAMILIES = Object.freeze({
+  claude: Object.freeze({ ttlMs: 5 * 60_000, minTokens: 4096 }),
+  gpt: Object.freeze({ ttlMs: 30 * 60_000, minTokens: 1024, conversationScoped: true })
 });
+
+/** Classify policy only; never rewrite the outbound model or its cache scope. */
+export function resolveKiroCachePolicy(model) {
+  if (typeof model !== "string") return null;
+  let id = model.trim().toLowerCase().replace(/^(?:kiro|kr)\//, "");
+  const namespace = id.match(/^(anthropic|openai)[/.]/)?.[1];
+  if (namespace) id = id.slice(namespace.length + 1);
+  id = id.replace(/[._\s]+/g, "-");
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)) return null;
+  const claude = /^(?:claude|opus|sonnet|haiku)(?:-|$)/.test(id);
+  // The Kiro registry identifies Sol, Terra and Luna as GPT variants. Bare
+  // codenames establish family, not a canonical version/routing alias.
+  const gpt = /^gpt(?:-|$)/.test(id) ||
+    /^(?:sol|terra|luna)(?:-thinking)?(?:-agentic)?$/.test(id);
+  if (claude && namespace !== "openai" && !/(?:^|-)(?:gpt|sol|terra|luna)(?:-|$)/.test(id)) {
+    return KIRO_CACHE_FAMILIES.claude;
+  }
+  if (gpt && namespace !== "anthropic" && !/(?:^|-)(?:claude|opus|sonnet|haiku)(?:-|$)/.test(id)) {
+    return KIRO_CACHE_FAMILIES.gpt;
+  }
+  return null;
+}
 export const KIRO_CACHE_LIMITS = Object.freeze({
   scopes: 1024, accountScopes: 32, prefixes: 256, samples: 64, pairs: 8,
   minPairs: 2, maxSavings: 0.9, calibrationTtlMs: 30 * 60_000
