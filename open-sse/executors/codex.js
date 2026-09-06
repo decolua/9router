@@ -97,11 +97,16 @@ function normalizeCodexTools(body) {
     const parameters = (tool.parameters && typeof tool.parameters === "object" && !Array.isArray(tool.parameters))
       ? tool.parameters
       : (fn?.parameters && typeof fn.parameters === "object" && !Array.isArray(fn.parameters) ? fn.parameters : { type: "object", properties: {} });
+    const strict = typeof tool.strict === "boolean" ? tool.strict
+      : (fn && typeof fn.strict === "boolean" ? fn.strict : undefined);
     for (const k of Object.keys(tool)) delete tool[k];
     tool.type = "function";
     tool.name = name.slice(0, 128);
     if (description) tool.description = description;
     tool.parameters = parameters;
+    // Preserve explicit strict; leave omitted absent so native Responses
+    // semantics (per-tool auto-normalize) stay untouched upstream.
+    if (typeof strict === "boolean") tool.strict = strict;
     validNames.add(name);
     return true;
   });
