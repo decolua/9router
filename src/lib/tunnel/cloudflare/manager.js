@@ -87,14 +87,21 @@ export async function enableTunnel(localPort = 20128) {
     await updateSettings({ tunnelEnabled: true, tunnelUrl });
     console.log(`[Tunnel] registered shortId=${shortId} publicUrl=${publicUrl}`);
 
-    // Verify publicUrl first (worker route is reliable; direct *.trycloudflare.com DNS may lag)
-    await waitForHealth(publicUrl, token);
-    console.log("[Tunnel] public URL healthy");
-    // Direct tunnel probe is best-effort: DNS for *.trycloudflare.com can be slow/blocked
-    if (!(await probeUrlAlive(tunnelUrl))) {
-      console.warn("[Tunnel] direct URL not reachable yet, continuing via publicUrl");
+    // Prefer the relay (its worker route is usually the first to answer), but accept
+    // the direct *.trycloudflare.com URL too: whichever answers first proves the
+    // tunnel is up. Requiring the relay alone failed the whole enable whenever its
+    // registration lagged past the 60 s budget, even with the tunnel already serving.
+    const healthyUrl = await waitForHealth([publicUrl, tunnelUrl], token);
+    if (healthyUrl === publicUrl) {
+      console.log("[Tunnel] public URL healthy");
+      // Direct tunnel probe is best-effort: DNS for *.trycloudflare.com can be slow/blocked
+      if (!(await probeUrlAlive(tunnelUrl))) {
+        console.warn("[Tunnel] direct URL not reachable yet, continuing via publicUrl");
+      } else {
+        console.log("[Tunnel] direct URL healthy");
+      }
     } else {
-      console.log("[Tunnel] direct URL healthy");
+      console.warn(`[Tunnel] relay not answering yet, continuing via direct URL: ${healthyUrl}`);
     }
 
     console.log("[Tunnel] enable success");
