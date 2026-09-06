@@ -111,9 +111,29 @@ export function extractTextContent(content, separator = "") {
   return "";
 }
 
-// Try parse JSON safely (null fallback on parse error; re-export keeps legacy API)
+// Sanitize parsed JSON keys for Gemini function response
+// Gemini rejects keys starting with $, #, /, or definitions because they get parsed as protobuf schema references
+export function sanitizeFunctionResponseResult(val) {
+  if (val && typeof val === "object") {
+    if (Array.isArray(val)) {
+      return val.map(sanitizeFunctionResponseResult);
+    }
+    const out = {};
+    for (let [k, v] of Object.entries(val)) {
+      if (k.startsWith("$") || k === "definitions" || k.includes("/") || k.includes("#")) {
+        k = k.replace(/^[$#\/]+/, "_").replace(/[\/#$]/g, "_");
+      }
+      out[k] = sanitizeFunctionResponseResult(v);
+    }
+    return out;
+  }
+  return val;
+}
+
+// Try parse JSON safely and sanitize keys for Gemini compatibility
 export function tryParseJSON(str) {
-  return safeParseJSON(str, null);
+  const res = safeParseJSON(str, null);
+  return res ? sanitizeFunctionResponseResult(res) : res;
 }
 
 // Generate request ID
