@@ -554,6 +554,9 @@ export async function OPTIONS() {
   });
 }
 
+const modelsCache = new Map();
+const MODELS_CACHE_TTL_MS = 30_000;
+
 /**
  * GET /v1/models - OpenAI compatible models list (LLM/chat models only by default).
  * For other capabilities use /v1/models/{kind} (image, tts, stt, embedding, image-to-text, web).
@@ -562,9 +565,25 @@ export async function GET(request) {
   try {
     // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
+    const cacheKey = skipDynamicFetch ? "skip_dynamic" : "all";
+    const cached = modelsCache.get(cacheKey);
+    if (cached && Date.now() < cached.expiresAt) {
+      return Response.json({ object: "list", data: cached.data }, {
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Cache-Control": "public, max-age=30, stale-while-revalidate=60",
+        },
+      });
+    }
+
     const data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+    modelsCache.set(cacheKey, { data, expiresAt: Date.now() + MODELS_CACHE_TTL_MS });
+
     return Response.json({ object: "list", data }, {
-      headers: { "Access-Control-Allow-Origin": "*" },
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "public, max-age=30, stale-while-revalidate=60",
+      },
     });
   } catch (error) {
     console.log("Error fetching models:", error);

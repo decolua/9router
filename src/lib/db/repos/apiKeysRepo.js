@@ -13,6 +13,12 @@ function rowToKey(row) {
   };
 }
 
+const apiKeyCache = new Map();
+
+export function invalidateApiKeyCache() {
+  apiKeyCache.clear();
+}
+
 export async function getApiKeys() {
   const db = await getAdapter();
   const rows = db.all(`SELECT * FROM apiKeys ORDER BY createdAt ASC`);
@@ -42,6 +48,7 @@ export async function createApiKey(name, machineId) {
     `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
     [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.createdAt]
   );
+  apiKeyCache.set(apiKey.key, true);
   return apiKey;
 }
 
@@ -58,18 +65,25 @@ export async function updateApiKey(id, data) {
     );
     result = merged;
   });
+  invalidateApiKeyCache();
   return result;
 }
 
 export async function deleteApiKey(id) {
   const db = await getAdapter();
   const res = db.run(`DELETE FROM apiKeys WHERE id = ?`, [id]);
+  invalidateApiKeyCache();
   return (res?.changes ?? 0) > 0;
 }
 
 export async function validateApiKey(key) {
+  if (!key) return false;
+  if (apiKeyCache.has(key)) {
+    return apiKeyCache.get(key);
+  }
   const db = await getAdapter();
   const row = db.get(`SELECT isActive FROM apiKeys WHERE key = ?`, [key]);
-  if (!row) return false;
-  return row.isActive === 1 || row.isActive === true;
+  const isValid = !!(row && (row.isActive === 1 || row.isActive === true));
+  apiKeyCache.set(key, isValid);
+  return isValid;
 }

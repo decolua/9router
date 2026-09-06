@@ -6,8 +6,24 @@ import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.
 import { getAntigravityQuotaCache } from "./antigravityQuota.js";
 import * as log from "../utils/logger.js";
 
-// Mutex to prevent race conditions during account selection
-let selectionMutex = Promise.resolve();
+// Mutex map to prevent race conditions during account selection per provider without blocking others
+const providerMutexes = new Map();
+
+function acquireProviderLock(providerId) {
+  const currentMutex = providerMutexes.get(providerId) || Promise.resolve();
+  let resolveMutex;
+  const nextMutex = new Promise(resolve => { resolveMutex = resolve; });
+  providerMutexes.set(providerId, nextMutex);
+  return {
+    wait: currentMutex,
+    release: () => {
+      resolveMutex();
+      if (providerMutexes.get(providerId) === nextMutex) {
+        providerMutexes.delete(providerId);
+      }
+    }
+  };
+}
 
 const GITHUB_MONTHLY_USAGE_LIMIT = "you've reached your additional usage limit for your plan";
 
@@ -31,16 +47,13 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
-  // Acquire mutex to prevent race conditions
-  const currentMutex = selectionMutex;
-  let resolveMutex;
-  selectionMutex = new Promise(resolve => { resolveMutex = resolve; });
+  // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
+  const providerId = resolveProviderId(provider);
+  // Acquire per-provider mutex to prevent race conditions during account selection for this provider
+  const lock = acquireProviderLock(providerId);
 
   try {
-    await currentMutex;
-
-    // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
-    const providerId = resolveProviderId(provider);
+    await lock.wait;
 
     // Inject a virtual connection for no-auth free providers (with optional proxy pool from settings)
     if (FREE_PROVIDERS[providerId]?.noAuth) {
@@ -222,7 +235,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       _connection: connection
     };
   } finally {
-    if (resolveMutex) resolveMutex();
+    lock.release();
   }
 }
 

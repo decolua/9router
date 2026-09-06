@@ -64,8 +64,8 @@ export function createSSEStream(options = {}) {
     : null;
 
   let totalContentLength = 0;
-  let accumulatedContent = "";
-  let accumulatedThinking = "";
+  const contentChunks = [];
+  const thinkingChunks = [];
   let ttftAt = null;
   let sseLineCount = 0;
   let sseEmittedCount = 0;
@@ -100,8 +100,8 @@ export function createSSEStream(options = {}) {
 
     if (onStreamComplete) {
       onStreamComplete({
-        content: accumulatedContent,
-        thinking: accumulatedThinking
+        content: contentChunks.join(""),
+        thinking: thinkingChunks.join("")
       }, finalUsage, ttftAt);
     }
   };
@@ -113,8 +113,14 @@ export function createSSEStream(options = {}) {
       buffer += text;
       reqLogger?.appendProviderChunk?.(text);
 
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
+      const lines = [];
+      let lineStart = 0;
+      let newlinePos;
+      while ((newlinePos = buffer.indexOf("\n", lineStart)) !== -1) {
+        lines.push(buffer.slice(lineStart, newlinePos));
+        lineStart = newlinePos + 1;
+      }
+      buffer = buffer.slice(lineStart);
 
       for (const line of lines) {
         const trimmed = line.trim();
@@ -187,11 +193,11 @@ export function createSSEStream(options = {}) {
               const reasoning = delta?.reasoning_content;
               if (content && typeof content === "string") {
                 totalContentLength += content.length;
-                accumulatedContent += content;
+                contentChunks.push(content);
               }
               if (reasoning && typeof reasoning === "string") {
                 totalContentLength += reasoning.length;
-                accumulatedThinking += reasoning;
+                thinkingChunks.push(reasoning);
               }
 
               const extracted = extractUsage(parsed);
@@ -282,23 +288,23 @@ export function createSSEStream(options = {}) {
         // Claude format - content
         if (parsed.delta?.text) {
           totalContentLength += parsed.delta.text.length;
-          accumulatedContent += parsed.delta.text;
+          contentChunks.push(parsed.delta.text);
         }
         // Claude format - thinking
         if (parsed.delta?.thinking) {
           totalContentLength += parsed.delta.thinking.length;
-          accumulatedThinking += parsed.delta.thinking;
+          thinkingChunks.push(parsed.delta.thinking);
         }
         
         // OpenAI format - content
         if (parsed.choices?.[0]?.delta?.content) {
           totalContentLength += parsed.choices[0].delta.content.length;
-          accumulatedContent += parsed.choices[0].delta.content;
+          contentChunks.push(parsed.choices[0].delta.content);
         }
         // OpenAI format - reasoning
         if (parsed.choices?.[0]?.delta?.reasoning_content) {
           totalContentLength += parsed.choices[0].delta.reasoning_content.length;
-          accumulatedThinking += parsed.choices[0].delta.reasoning_content;
+          thinkingChunks.push(parsed.choices[0].delta.reasoning_content);
         }
         
         // Gemini format
@@ -308,9 +314,9 @@ export function createSSEStream(options = {}) {
               totalContentLength += part.text.length;
               // Check if this is thinking content
               if (part.thought === true) {
-                accumulatedThinking += part.text;
+                thinkingChunks.push(part.text);
               } else {
-                accumulatedContent += part.text;
+                contentChunks.push(part.text);
               }
             }
           }

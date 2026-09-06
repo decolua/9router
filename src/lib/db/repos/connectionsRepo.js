@@ -67,7 +67,23 @@ function deriveConnectionName(data, fallbackName) {
   return fallbackName;
 }
 
+const connectionCache = new Map();
+
+export function invalidateConnectionCache() {
+  connectionCache.clear();
+}
+
+function getFilterKey(filter = {}) {
+  const p = filter.provider || "*";
+  const a = filter.isActive === undefined ? "*" : (filter.isActive ? "1" : "0");
+  return `${p}:${a}`;
+}
+
 export async function getProviderConnections(filter = {}) {
+  const cacheKey = getFilterKey(filter);
+  if (connectionCache.has(cacheKey)) {
+    return connectionCache.get(cacheKey);
+  }
   const db = await getAdapter();
   const where = [];
   const params = [];
@@ -77,6 +93,7 @@ export async function getProviderConnections(filter = {}) {
   const rows = db.all(sql, params);
   const list = rows.map(rowToConn);
   list.sort((a, b) => (a.priority || 999) - (b.priority || 999));
+  connectionCache.set(cacheKey, list);
   return list;
 }
 
@@ -184,7 +201,7 @@ export async function createProviderConnection(data) {
     reorderInTx(db, data.provider);
     result = conn;
   });
-
+  invalidateConnectionCache();
   return result;
 }
 
@@ -201,6 +218,7 @@ export async function updateProviderConnection(id, data) {
     if (data.priority !== undefined) reorderInTx(db, existing.provider);
     result = merged;
   });
+  invalidateConnectionCache();
   return result;
 }
 
@@ -214,6 +232,7 @@ export async function deleteProviderConnection(id) {
     reorderInTx(db, row.provider);
     ok = true;
   });
+  if (ok) invalidateConnectionCache();
   return ok;
 }
 
@@ -221,12 +240,14 @@ export async function deleteProviderConnectionsByProvider(providerId) {
   const db = await getAdapter();
   const before = db.get(`SELECT COUNT(*) AS n FROM providerConnections WHERE provider = ?`, [providerId]);
   db.run(`DELETE FROM providerConnections WHERE provider = ?`, [providerId]);
+  invalidateConnectionCache();
   return before?.n || 0;
 }
 
 export async function reorderProviderConnections(providerId) {
   const db = await getAdapter();
   db.transaction(() => reorderInTx(db, providerId));
+  invalidateConnectionCache();
 }
 
 export async function cleanupProviderConnections() {
@@ -257,5 +278,6 @@ export async function cleanupProviderConnections() {
       if (dirty) upsert(db, conn);
     }
   });
+  if (cleaned > 0) invalidateConnectionCache();
   return cleaned;
 }
