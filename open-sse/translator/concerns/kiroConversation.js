@@ -47,21 +47,31 @@ function uniqueName(rawName, index, usedNames) {
   return candidate;
 }
 
+const STRIPPED_SCHEMA_KEYS = new Set([
+  "additionalProperties",
+  "$schema",
+  "$id",
+  "examples",
+  "default",
+  "title",
+]);
+
+const TOP_LEVEL_COMBINATORS = ["allOf", "anyOf", "oneOf"];
+
 function cleanSchemaValue(value) {
   if (Array.isArray(value)) return value.map(cleanSchemaValue);
   if (!value || typeof value !== "object") return value;
 
   const cleaned = {};
   for (const [key, child] of Object.entries(value)) {
-    if (key === "additionalProperties") continue;
+    if (STRIPPED_SCHEMA_KEYS.has(key)) continue;
     if (key === "required" && Array.isArray(child) && child.length === 0) continue;
     cleaned[key] = cleanSchemaValue(child);
   }
   return cleaned;
 }
 
-function normalizeRootSchema(schema) {
-  const cleaned = cleanSchemaValue(schema && typeof schema === "object" ? clone(schema) : {});
+function finishRootSchema(cleaned) {
   cleaned.type = "object";
   if (!cleaned.properties || typeof cleaned.properties !== "object" || Array.isArray(cleaned.properties)) {
     cleaned.properties = {};
@@ -72,6 +82,59 @@ function normalizeRootSchema(schema) {
     ))];
     if (cleaned.required.length === 0) delete cleaned.required;
   }
+  return cleaned;
+}
+
+// Kiro rejects top-level oneOf/allOf/anyOf on tool input schemas: consume the
+// combinator keys, merge every branch's properties into the root (first writer
+// wins) and keep only the required entries that survive the merge. Combinators
+// at nested levels are preserved — only the root is flattened.
+function normalizeRootSchema(schema) {
+  const source = schema && typeof schema === "object" && !Array.isArray(schema) ? clone(schema) : {};
+  const branches = [];
+  for (const key of TOP_LEVEL_COMBINATORS) {
+    const list = source[key];
+    if (!Array.isArray(list)) continue;
+    for (const branch of list) {
+      if (branch && typeof branch === "object" && !Array.isArray(branch)) {
+        branches.push({ fromAllOf: key === "allOf", schema: branch });
+      }
+    }
+  }
+  if (branches.length === 0) {
+    return finishRootSchema(cleanSchemaValue(source));
+  }
+
+  const rest = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (TOP_LEVEL_COMBINATORS.includes(key)) continue;
+    rest[key] = value;
+  }
+  const cleaned = cleanSchemaValue(rest);
+  const properties = (cleaned.properties && typeof cleaned.properties === "object" && !Array.isArray(cleaned.properties))
+    ? cleaned.properties
+    : {};
+  const requiredNames = new Set(
+    Array.isArray(cleaned.required) ? cleaned.required.filter((name) => typeof name === "string") : []
+  );
+  for (const { fromAllOf, schema: branch } of branches) {
+    const cleanedBranch = cleanSchemaValue(branch);
+    if (cleanedBranch.properties && typeof cleanedBranch.properties === "object" && !Array.isArray(cleanedBranch.properties)) {
+      for (const [name, prop] of Object.entries(cleanedBranch.properties)) {
+        if (!Object.hasOwn(properties, name)) properties[name] = prop;
+      }
+    }
+    if (fromAllOf && Array.isArray(cleanedBranch.required)) {
+      for (const name of cleanedBranch.required) {
+        if (typeof name === "string") requiredNames.add(name);
+      }
+    }
+  }
+  cleaned.type = "object";
+  cleaned.properties = properties;
+  const filtered = [...requiredNames].filter((name) => Object.hasOwn(properties, name));
+  if (filtered.length > 0) cleaned.required = filtered;
+  else delete cleaned.required;
   return cleaned;
 }
 
