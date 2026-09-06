@@ -21,9 +21,37 @@ function sanitizeToolId(id) {
   return sanitized.length > 0 ? sanitized : null;
 }
 
+// Resolve the id a tool result should carry.
+//
+// A missing id cannot be sanitized into existence, and Anthropic rejects the
+// whole request when one is absent ("tool_result.tool_use_id: Field required").
+// Pair it instead with the oldest tool call from the preceding assistant turn
+// that nothing has answered yet — that is the id upstream is expecting, and
+// OpenAI-format clients that drop tool_call_id on a turn are the reason this
+// path exists (#3362). Only if there is nothing to pair with do we generate an
+// id, which at least keeps the request well-formed.
+function resolveToolResultId(rawId, unanswered, makeFallbackId) {
+  const usable =
+    typeof rawId === "string" && rawId
+      ? (TOOL_ID_PATTERN.test(rawId) ? rawId : sanitizeToolId(rawId))
+      : null;
+
+  if (usable) {
+    const at = unanswered.indexOf(usable);
+    if (at >= 0) unanswered.splice(at, 1);
+    return usable;
+  }
+
+  return unanswered.shift() || makeFallbackId();
+}
+
 // Ensure all tool_calls have valid id field and arguments is string (some providers require it)
 export function ensureToolCallIds(body) {
   if (!body.messages || !Array.isArray(body.messages)) return body;
+
+  // Tool call ids from the most recent assistant turn that no result has
+  // claimed yet, oldest first.
+  let unanswered = [];
 
   for (let i = 0; i < body.messages.length; i++) {
     const msg = body.messages[i];
@@ -45,13 +73,8 @@ export function ensureToolCallIds(body) {
       }
     }
 
-    // Validate tool_call_id in tool messages (role: "tool")
-    if (msg.role === "tool" && msg.tool_call_id && !TOOL_ID_PATTERN.test(msg.tool_call_id)) {
-      const sanitized = sanitizeToolId(msg.tool_call_id);
-      msg.tool_call_id = sanitized || generateToolCallId(i, 0);
-    }
-
-    // Also validate tool_use blocks in content (Claude format)
+    // Validate tool_use blocks in content (Claude format) before the ids are
+    // read back out below.
     if (Array.isArray(msg.content)) {
       for (let k = 0; k < msg.content.length; k++) {
         const block = msg.content[k];
@@ -59,10 +82,27 @@ export function ensureToolCallIds(body) {
           const sanitized = sanitizeToolId(block.id);
           block.id = sanitized || generateToolCallId(i, k, block.name);
         }
-        // Validate tool_use_id in tool_result blocks
-        if (block.type === "tool_result" && block.tool_use_id && !TOOL_ID_PATTERN.test(block.tool_use_id)) {
-          const sanitized = sanitizeToolId(block.tool_use_id);
-          block.tool_use_id = sanitized || generateToolCallId(i, k);
+      }
+    }
+
+    // An assistant turn opens a new set of tool calls waiting for results, and
+    // ends whatever the previous one left open.
+    if (msg.role === "assistant") {
+      unanswered = getToolCallIds(msg);
+      continue;
+    }
+
+    // Tool result, OpenAI shape (role: "tool")
+    if (msg.role === "tool") {
+      msg.tool_call_id = resolveToolResultId(msg.tool_call_id, unanswered, () => generateToolCallId(i, 0));
+    }
+
+    // Tool result, Claude shape (tool_result block in user content)
+    if (Array.isArray(msg.content)) {
+      for (let k = 0; k < msg.content.length; k++) {
+        const block = msg.content[k];
+        if (block.type === "tool_result") {
+          block.tool_use_id = resolveToolResultId(block.tool_use_id, unanswered, () => generateToolCallId(i, k));
         }
       }
     }
