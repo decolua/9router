@@ -31,6 +31,28 @@ const codexBody = (tool) => ({
   stream: true,
 });
 
+// Nested object schema with mixed optional/required fields and explicit
+// additionalProperties at both levels. Neither the Chat->Responses hop nor
+// Codex native flatten rewrites nested schemas, so the whole structure must
+// survive by value.
+const nestedParams = () => ({
+  type: "object",
+  properties: {
+    name: { type: "string" },
+    config: {
+      type: "object",
+      properties: {
+        mode: { type: "string" },
+        retries: { type: "integer" },
+      },
+      required: ["mode"],
+      additionalProperties: false,
+    },
+  },
+  required: ["name"],
+  additionalProperties: false,
+});
+
 describe("codex responses strict optional tools", () => {
   it("defaults missing strict to false on Chat->Responses, keeps schema optional", () => {
     const out = openaiToOpenAIResponsesRequest("m", chatBody(), true, {});
@@ -75,6 +97,53 @@ describe("codex responses strict optional tools", () => {
     });
     ex.transformRequest("gpt-5.5", bOmit, true, creds);
     expect(bOmit.tools[0]).not.toHaveProperty("strict");
+  });
+
+  it("preserves nested required/optional and additionalProperties through Chat->Responses", () => {
+    const body = chatBody();
+    body.tools[0].function.parameters = nestedParams();
+    const out = openaiToOpenAIResponsesRequest("m", body, true, {});
+    expect(out.tools[0].strict).toBe(false);
+    // Top level: required stays ["name"], "config" remains optional.
+    expect(out.tools[0].parameters.required).toEqual(["name"]);
+    expect(out.tools[0].parameters.additionalProperties).toBe(false);
+    // Nested object: required stays ["mode"], "retries" remains optional,
+    // nested additionalProperties preserved.
+    const nested = out.tools[0].parameters.properties.config;
+    expect(nested.required).toEqual(["mode"]);
+    expect(nested.additionalProperties).toBe(false);
+    expect(Object.keys(nested.properties).sort()).toEqual(["mode", "retries"]);
+  });
+
+  it("preserves explicit strict true with nested schema on Chat->Responses", () => {
+    const body = chatBody({ strict: true });
+    body.tools[0].function.parameters = nestedParams();
+    const out = openaiToOpenAIResponsesRequest("m", body, true, {});
+    expect(out.tools[0].strict).toBe(true);
+    expect(out.tools[0].parameters.required).toEqual(["name"]);
+    expect(out.tools[0].parameters.properties.config.required).toEqual(["mode"]);
+  });
+
+  it("preserves nested required/additionalProperties through Codex native flatten", () => {
+    const ex = new CodexExecutor();
+    const creds = { connectionId: "t", providerSpecificData: {} };
+    const mk = (extra) => {
+      const b = codexBody({
+        type: "function", name: "EnterWorktree", description: "d",
+        parameters: nestedParams(), ...extra,
+      });
+      ex.transformRequest("gpt-5.5", b, true, creds);
+      return b.tools[0];
+    };
+    // Omitted strict stays absent; nested schema preserved by value.
+    const omitted = mk({});
+    expect(omitted).not.toHaveProperty("strict");
+    expect(omitted.parameters.required).toEqual(["name"]);
+    expect(omitted.parameters.properties.config.required).toEqual(["mode"]);
+    expect(omitted.parameters.properties.config.additionalProperties).toBe(false);
+    // Explicit strict preserved in both shapes.
+    expect(mk({ strict: true }).strict).toBe(true);
+    expect(mk({ strict: false }).strict).toBe(false);
   });
 
   it("keeps Codex tool_choice validation and native/custom tools intact", () => {
