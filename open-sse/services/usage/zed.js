@@ -6,7 +6,10 @@
  * and subscription_period.ended_at for billing-cycle reset.
  */
 
-import { fetchZedAuthenticatedUser } from "../../shared/zedAuth.js";
+import {
+  fetchZedAuthenticatedUser,
+  summarizeZedPlan,
+} from "../../shared/zedAuth.js";
 import { parseResetTime, toFiniteNumber } from "./shared.js";
 
 /** Map plan_v3 ids to dashboard labels (CodexBar-compatible). */
@@ -117,6 +120,7 @@ export function parseZedAuthenticatedUserUsage(userInfo) {
   const plan = userInfo?.plan || {};
   const planId =
     plan.plan_v3 || plan.plan_v2 || plan.plan || userInfo?.plan_v3 || null;
+  const planSummary = summarizeZedPlan(userInfo);
   const resetAt =
     parseResetTime(plan.subscription_period?.ended_at) ||
     parseResetTime(plan.subscriptionPeriod?.endedAt) ||
@@ -169,6 +173,8 @@ export function parseZedAuthenticatedUserUsage(userInfo) {
   let message = tokenBillingNote;
   if (plan.has_overdue_invoices || plan.hasOverdueInvoices) {
     message = "This Zed account has overdue invoices. Usage may be blocked until billing is resolved.";
+  } else if (planSummary?.blocksHostedModels && Object.keys(quotas).length === 0) {
+    message = planSummary.message;
   }
 
   return {

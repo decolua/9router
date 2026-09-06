@@ -112,6 +112,8 @@ export async function generateAuthData(providerName, redirectUri, meta) {
     flowType: provider.flowType,
     fixedPort: provider.fixedPort,
     callbackPath: provider.callbackPath || "/callback",
+    // Zed: systemId was bound into native_app_signin; keep it for exchange/headers.
+    ...(config.systemId ? { systemId: config.systemId } : {}),
   };
 }
 
@@ -121,7 +123,8 @@ export async function generateAuthData(providerName, redirectUri, meta) {
  */
 export async function exchangeTokens(providerName, code, redirectUri, codeVerifier, state, meta) {
   const provider = getProvider(providerName);
-  const config = provider.prepareConfig
+  // Zed (and similar): prepareConfig mints ephemeral secrets — skip on exchange.
+  const config = provider.prepareConfig && !provider.skipPrepareOnExchange
     ? await provider.prepareConfig(provider.config, meta || {})
     : provider.config;
 

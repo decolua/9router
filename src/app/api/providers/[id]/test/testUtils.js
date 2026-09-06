@@ -16,6 +16,7 @@ import {
   CLINE_CONFIG,
   KILOCODE_CONFIG,
   KIMCHI_CONFIG,
+  ZED_HOSTED_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
 
@@ -124,6 +125,23 @@ const OAUTH_TEST_CONFIG = {
     softFailMessage: {
       402: "Connected, but Grok Build credits are exhausted (spending limit). Add credits or upgrade SuperGrok.",
     },
+  },
+  // Zed Hosted AI — probe /client/users/me with "userId accessToken" user auth
+  // (same scheme as open-sse/shared/zedAuth.buildZedUserAuthHeader). LLM bearer
+  // tokens are minted on demand and must not be stored as accessToken.
+  zed: {
+    url: `${(ZED_HOSTED_CONFIG.cloudBaseUrl || "https://cloud.zed.dev").replace(/\/$/, "")}/client/users/me`,
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "",
+    // buildAuth overrides the default `${prefix}${accessToken}` composition
+    buildAuth: (accessToken, connection) => {
+      const userId = connection?.providerSpecificData?.userId;
+      if (!userId || !accessToken) return null;
+      return `${userId} ${accessToken}`;
+    },
+    extraHeaders: { Accept: "application/json" },
+    refreshable: false,
   },
 };
 
@@ -393,9 +411,15 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
 
   try {
     const testUrl = config.buildUrl ? config.buildUrl(accessToken) : config.url;
+    const authValue = config.buildAuth
+      ? config.buildAuth(accessToken, connection)
+      : `${config.authPrefix}${accessToken}`;
+    if (config.buildAuth && !authValue) {
+      return { valid: false, error: "Zed credential is missing userId or accessToken", refreshed };
+    }
     const headers = config.noAuth
       ? { ...config.extraHeaders }
-      : { [config.authHeader]: `${config.authPrefix}${accessToken}`, ...config.extraHeaders };
+      : { [config.authHeader]: authValue, ...config.extraHeaders };
     const fetchOpts = { method: config.method, headers };
     if (config.body) fetchOpts.body = config.body;
     const res = await fetchWithConnectionProxy(testUrl, fetchOpts, effectiveProxy);
@@ -417,9 +441,12 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
       const tokens = await refreshOAuthToken(connection);
       if (tokens) {
         const retryUrl = config.buildUrl ? config.buildUrl(tokens.accessToken) : testUrl;
+        const retryAuth = config.buildAuth
+          ? config.buildAuth(tokens.accessToken, { ...connection, ...tokens, providerSpecificData: { ...(connection.providerSpecificData || {}), ...(tokens.providerSpecificData || {}) } })
+          : `${config.authPrefix}${tokens.accessToken}`;
         const retryHeaders = config.noAuth
           ? { ...config.extraHeaders }
-          : { [config.authHeader]: `${config.authPrefix}${tokens.accessToken}`, ...config.extraHeaders };
+          : { [config.authHeader]: retryAuth, ...config.extraHeaders };
         const retryOpts = { method: config.method, headers: retryHeaders };
         if (config.body) retryOpts.body = config.body;
         const retryRes = await fetchWithConnectionProxy(retryUrl, retryOpts, effectiveProxy);

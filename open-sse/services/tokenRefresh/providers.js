@@ -687,10 +687,14 @@ export async function refreshTraeToken(refreshToken, credentials, log) {
   }, log);
 }
 
-// Zed access_token is long-lived; auth flow returns no refresh_token.
-// No refresh possible — re-login required when token expires/revoked.
-// Mirrors cursor/kilocode null-refresh pattern.
-export function refreshZedToken() {
+// Zed user access_token is long-lived (RSA decrypt or CLI import).
+// Short-lived LLM bearer tokens are minted/cached inside open-sse/shared/zedAuth.js
+// (fetchZedLlmToken / zedLlmFetch) — no OAuth refresh_token grant exists.
+export async function refreshZedToken(credentials, log) {
+  log?.info?.(
+    "TOKEN_REFRESH",
+    "zed: user access_token is long-lived; LLM tokens refresh via zedAuth — skipping",
+  );
   return null;
 }
 

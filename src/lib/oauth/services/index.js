@@ -13,4 +13,5 @@ export { OpenAIService } from "./openai.js";
 export { GitHubService } from "./github.js";
 export { KiroService } from "./kiro.js";
 export { CursorService } from "./cursor.js";
+export { ZedService } from "./zed.js";
 

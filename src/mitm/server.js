@@ -31,6 +31,7 @@ const handlers = {
   copilot: require("./handlers/copilot"),
   kiro: require("./handlers/kiro"),
   cursor: require("./handlers/cursor"),
+  zed: require("./handlers/zed"),
 };
 
 // ── SSL / SNI ─────────────────────────────────────────────────

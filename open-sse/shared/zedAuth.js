@@ -11,25 +11,30 @@
 
 import crypto from "node:crypto";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import {
+  ZED_WEB_BASE_URL,
+  ZED_CLOUD_BASE_URL,
+  ZED_LLM_BASE_URL,
+  ZED_CLIENT_VERSION,
+  ZED_HEADERS,
+  ZED_LLM_TOKEN_TTL_MS,
+  ZED_MODEL_CACHE_TTL_MS,
+  ZED_PRIVATE_KEY_PREFIX,
+  ZED_FREE_PLAN_IDS,
+  buildZedHostedModelsBlockedMessage,
+  buildZedEmptyCatalogMessage,
+} from "../config/zedConstants.js";
 
-export const ZED_WEB_BASE_URL = "https://zed.dev";
-export const ZED_CLOUD_BASE_URL = "https://cloud.zed.dev";
-export const ZED_LLM_BASE_URL = "https://cloud.zed.dev";
-
-export const ZED_HEADERS = {
-  expiredToken: "x-zed-expired-token",
-  outdatedToken: "x-zed-outdated-token",
-  clientSupportsStatus: "x-zed-client-supports-status-messages",
-  clientSupportsStreamEnded:
-    "x-zed-client-supports-stream-ended-request-completion-status",
-  serverSupportsStatus: "x-zed-server-supports-status-messages",
-  clientSupportsXai: "x-zed-client-supports-x-ai",
-  systemId: "x-zed-system-id",
+export {
+  ZED_WEB_BASE_URL,
+  ZED_CLOUD_BASE_URL,
+  ZED_LLM_BASE_URL,
+  ZED_HEADERS,
 };
 
-const PRIVATE_KEY_PREFIX = "zed-rsa-pkcs1:";
-const LLM_TOKEN_TTL_MS = 50 * 60 * 1000;
-const MODEL_CACHE_TTL_MS = 60 * 60 * 1000;
+const PRIVATE_KEY_PREFIX = ZED_PRIVATE_KEY_PREFIX;
+const LLM_TOKEN_TTL_MS = ZED_LLM_TOKEN_TTL_MS;
+const MODEL_CACHE_TTL_MS = ZED_MODEL_CACHE_TTL_MS;
 
 const llmTokenCache = new Map();
 const modelCache = new Map();
@@ -107,12 +112,26 @@ export function parseZedCallbackPayload(input) {
   try {
     data = JSON.parse(raw);
   } catch {
-    let url;
+    let url = null;
+    // Absolute URL
     try {
       url = new URL(raw);
     } catch {
+      /* continue */
+    }
+    // Path + query from the local proxy: "/?user_id=…&access_token=…" or "/callback?…"
+    if (!url && raw.startsWith("/")) {
       try {
-        url = new URL(`http://127.0.0.1/?${raw.replace(/^\?/, "")}`);
+        url = new URL(raw, "http://127.0.0.1");
+      } catch {
+        /* continue */
+      }
+    }
+    // Bare query: "?user_id=…" or "user_id=…"
+    if (!url) {
+      try {
+        const q = raw.startsWith("?") ? raw : `?${raw}`;
+        url = new URL(`http://127.0.0.1/${q}`);
       } catch {
         throw new Error("Invalid Zed callback URL");
       }
@@ -371,6 +390,7 @@ export async function resolveZedModels(credentials, options = {}) {
         headers: {
           Accept: "application/json",
           [ZED_HEADERS.clientSupportsXai]: "true",
+          [ZED_HEADERS.version]: ZED_CLIENT_VERSION,
         },
       },
     });
@@ -389,6 +409,23 @@ export async function resolveZedModels(credentials, options = {}) {
       const id = normalizeZedModelId(raw?.id);
       if (id) rawById.set(id, raw);
     }
+
+    let planInfo = null;
+    let warning = null;
+    if (models.length === 0) {
+      // Empty catalog is usually a plan gate (Zed Free has no hosted models), not a parse bug.
+      try {
+        const userInfo = await fetchZedAuthenticatedUser(credentials, options);
+        const webBaseUrl = options.config?.webBaseUrl || ZED_WEB_BASE_URL;
+        planInfo = summarizeZedPlan(userInfo, { webBaseUrl });
+        warning = planInfo?.blocksHostedModels
+          ? planInfo.message
+          : buildZedEmptyCatalogMessage();
+      } catch {
+        warning = buildZedEmptyCatalogMessage();
+      }
+    }
+
     const entry = {
       expiresAt: Date.now() + MODEL_CACHE_TTL_MS,
       models,
@@ -399,6 +436,8 @@ export async function resolveZedModels(credentials, options = {}) {
       recommendedModels: (data?.recommended_models || data?.recommendedModels || [])
         .map(normalizeZedModelId)
         .filter(Boolean),
+      planInfo,
+      warning,
     };
     modelCache.set(key, entry);
     return entry;
@@ -410,6 +449,39 @@ export async function resolveZedModels(credentials, options = {}) {
   } finally {
     if (modelInflight.get(key) === promise) modelInflight.delete(key);
   }
+}
+
+/**
+ * Explain why Zed's /models catalog is empty (plan/trial/quota).
+ * Token-based plans (student/pro) may report model_requests.limit=0 while still
+ * listing models — that alone is NOT "free plan blocked".
+ */
+export function summarizeZedPlan(userInfo, options = {}) {
+  const plan = userInfo?.plan || {};
+  const planId = plan.plan_v3 || plan.plan_v2 || plan.plan || null;
+  const limit = plan.usage?.model_requests?.limit;
+  const modelLimit =
+    typeof limit?.limited === "number"
+      ? limit.limited
+      : typeof limit?.Limited === "number"
+        ? limit.Limited
+        : limit === "unlimited" || limit?.unlimited
+          ? Infinity
+          : null;
+  const trialStarted = !!plan.trial_started_at;
+  const isFree = !planId || ZED_FREE_PLAN_IDS.has(String(planId));
+  // Only treat classic free plans as hard-blocked for catalog purposes.
+  const blocksHostedModels = isFree;
+  const webBaseUrl = options.webBaseUrl || ZED_WEB_BASE_URL;
+
+  return {
+    planId,
+    modelRequestLimit: modelLimit,
+    trialStarted,
+    isFree,
+    blocksHostedModels,
+    message: blocksHostedModels ? buildZedHostedModelsBlockedMessage(webBaseUrl) : null,
+  };
 }
 
 export function clearZedCaches() {
