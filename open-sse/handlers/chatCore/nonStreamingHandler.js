@@ -304,6 +304,12 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     }
   }
 
+  // Some OpenAI-compatible gateways (e.g. api.cline.bot) wrap the whole completion
+  // in { data: {…}, success: true }. Unwrap so the client sees a top-level `choices`.
+  if (responseBody && !Array.isArray(responseBody.choices) && Array.isArray(responseBody?.data?.choices)) {
+    responseBody = responseBody.data;
+  }
+
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
   if (onRequestSuccess) {
     Promise.resolve()
