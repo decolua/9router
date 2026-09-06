@@ -437,6 +437,9 @@
   "groq": {
     "baseUrl": "https://api.groq.com/openai/v1/chat/completions",
     "validateUrl": "https://api.groq.com/openai/v1/models",
+    "usage": {
+      "url": "https://api.groq.com/openai/v1/models"
+    },
     "format": "openai"
   },
   "hyperbolic": {
@@ -708,6 +711,9 @@
   "opencode-go": {
     "baseUrl": "https://opencode.ai/zen/go/v1/chat/completions",
     "headers": {},
+    "usage": {
+      "url": "https://opencode.ai/zen/go/v1/usage"
+    },
     "format": "openai",
     "transports": [
       {
@@ -1008,5 +1014,23 @@
       "preserveCacheControl": true
     },
     "format": "openai"
+  },
+  "nous-portal": {
+    "baseUrl": "https://inference-api.nousresearch.com/v1/chat/completions",
+    "headers": {
+      "User-Agent": "OpenAI/Python 2.24.0",
+      "X-Stainless-Arch": "x64",
+      "X-Stainless-Async": "false",
+      "X-Stainless-Lang": "python",
+      "X-Stainless-Os": "Linux",
+      "X-Stainless-Package-Version": "2.24.0",
+      "X-Stainless-Read-Timeout": "30.0",
+      "X-Stainless-Retry-Count": "0",
+      "X-Stainless-Runtime": "CPython",
+      "X-Stainless-Runtime-Version": "3.11.15"
+    },
+    "format": "openai",
+    "clientId": "hermes-cli",
+    "tokenUrl": "https://portal.nousresearch.com/api/oauth/token"
   }
 }

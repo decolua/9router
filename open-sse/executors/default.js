@@ -229,7 +229,8 @@ export class DefaultExecutor extends BaseExecutor {
       clinepass: () => this.refreshCline(credentials.refreshToken, proxyOptions),
       kimi: () => this.refreshKimi(credentials, proxyOptions),
       "kimi-coding": () => this.refreshKimi(credentials, proxyOptions),
-      kilocode: () => this.refreshKilocode(credentials.refreshToken, proxyOptions)
+      kilocode: () => this.refreshKilocode(credentials.refreshToken, proxyOptions),
+      "nous-portal": () => this.refreshNousPortal(credentials, proxyOptions)
     };
 
     const refresher = refreshers[this.provider];
@@ -306,6 +307,25 @@ export class DefaultExecutor extends BaseExecutor {
       accessToken = `workos:${accessToken}`;
     }
     return { accessToken, refreshToken: data?.refreshToken || refreshToken, expiresIn };
+  }
+
+  // Nous Portal: refresh token carried in X-Nous-Refresh-Token header (not body).
+  async refreshNousPortal(credentials, proxyOptions = null) {
+    const refreshToken = credentials.refreshToken;
+    const cfg = PROVIDER_OAUTH["nous-portal"];
+    if (!cfg?.refreshUrl && !cfg?.tokenUrl) return null;
+    const response = await proxyAwareFetch(cfg.refreshUrl || cfg.tokenUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
+        "X-Nous-Refresh-Token": refreshToken
+      },
+      body: new URLSearchParams({ grant_type: "refresh_token", client_id: cfg.clientId })
+    }, proxyOptions);
+    if (!response.ok) return null;
+    const tokens = await response.json();
+    return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || refreshToken, expiresIn: tokens.expires_in };
   }
 
   // CLIProxyAPI DeviceFlowClient.RefreshToken — form body + X-Msh-* headers + stable device_id

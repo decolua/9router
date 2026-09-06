@@ -1107,11 +1107,15 @@ export default function ProviderDetailPage() {
       builtInModels: models,
       type: "llm",
     });
+    // Custom models participate in the shared disabled-models store — hide
+    // disabled ones from Available Models and surface them in Disabled models.
+    const activeCustomRows = customModelRows.filter((model) => !disabledSet.has(model.id));
+    const disabledCustomRows = customModelRows.filter((model) => disabledSet.has(model.id));
 
     return (
       <div className="flex flex-wrap gap-3">
         {/* Custom models first */}
-        {customModelRows.map((model) => (
+        {activeCustomRows.map((model) => (
           <ModelRow
             key={`${model.source}-${model.fullModel}`}
             model={{ id: model.id, name: model.name }}
@@ -1220,12 +1224,12 @@ export default function ProviderDetailPage() {
           );
         })()}
 
-        {/* Disabled models — restorable */}
-        {disabledDisplayModels.length > 0 && (
+        {/* Disabled models — restorable (built-in + custom) */}
+        {[...disabledDisplayModels, ...disabledCustomRows].length > 0 && (
           <div className="w-full mt-2">
-            <p className="text-xs text-text-muted mb-2">Disabled models ({disabledDisplayModels.length}):</p>
+            <p className="text-xs text-text-muted mb-2">Disabled models ({disabledDisplayModels.length + disabledCustomRows.length}):</p>
             <div className="flex flex-wrap gap-2">
-              {disabledDisplayModels.map((m) => (
+              {[...disabledDisplayModels, ...disabledCustomRows].map((m) => (
                 <button
                   key={m.id}
                   onClick={() => handleEnableModel(m.id)}
@@ -1675,10 +1679,19 @@ export default function ProviderDetailPage() {
             )}
           </div>
           {!isCompatible && (() => {
+            // Custom models (suggested :free adds, legacy aliases) disable like built-ins
+            const customIds = getProviderCustomModelRows({
+              customModels,
+              modelAliases,
+              providerAlias: providerStorageAlias,
+              builtInModels: models,
+              type: "llm",
+            }).map((m) => m.id);
             const allIds = [
               ...models,
               ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
-            ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id);
+            ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id)
+              .concat(customIds);
             const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
             return (
               <div className="flex gap-2">

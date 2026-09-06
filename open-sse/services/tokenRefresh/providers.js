@@ -694,6 +694,60 @@ export function refreshZedToken() {
   return null;
 }
 
+// Nous Portal (Hermes CLI): refresh token rides in the X-Nous-Refresh-Token
+// header, not the request body — body is just grant_type + client_id.
+export async function refreshNousPortalToken(refreshToken, log) {
+  if (!refreshToken) return null;
+  const oauth = PROVIDER_OAUTH["nous-portal"] || {};
+  const url = oauth.refreshUrl || oauth.tokenUrl;
+  if (!url || !oauth.clientId) {
+    log?.warn?.("TOKEN_REFRESH", "No Nous Portal refresh URL configured");
+    return null;
+  }
+
+  return dedupRefresh("nous-portal", refreshToken, async () => {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/json",
+          "X-Nous-Refresh-Token": refreshToken,
+        },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          client_id: oauth.clientId,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        log?.error?.("TOKEN_REFRESH", "Failed to refresh Nous Portal token", {
+          status: response.status,
+          error: errorText,
+        });
+        return null;
+      }
+
+      const tokens = await response.json();
+      log?.info?.("TOKEN_REFRESH", "Successfully refreshed Nous Portal token", {
+        hasNewAccessToken: !!tokens.access_token,
+        hasNewRefreshToken: !!tokens.refresh_token,
+        expiresIn: tokens.expires_in,
+      });
+
+      return {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token || refreshToken,
+        expiresIn: tokens.expires_in,
+      };
+    } catch (error) {
+      log?.error?.("TOKEN_REFRESH", `Error refreshing Nous Portal token: ${error.message}`);
+      return null;
+    }
+  }, log);
+}
+
 // Windsurf apiKey is the long-lived terminal credential (no OAuth2 refresh_token
 // grant yields a fresh apiKey). Refresh handled out-of-band by the caller.
 // TODO(firebase): if short-lived Firebase JWT credentials must be refreshed,
