@@ -19,6 +19,8 @@ import {
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
 
+const HUGGINGFACE_WHOAMI_URL = "https://huggingface.co/api/whoami-v2";
+
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
   claude: { checkExpiry: true, refreshable: true },
@@ -471,6 +473,19 @@ async function fetchWithConnectionProxy(url, options = {}, effectiveProxy = null
   });
 }
 
+async function testHuggingFaceToken(apiKey, effectiveProxy = null) {
+  const res = await fetchWithConnectionProxy(HUGGINGFACE_WHOAMI_URL, {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  }, effectiveProxy);
+
+  if (res.ok) return { valid: true, error: null };
+  if (res.status === 401 || res.status === 403) return { valid: false, error: "Invalid API key" };
+
+  // HuggingFace fine-grained Inference Provider tokens can be valid even when
+  // task/model endpoints are unavailable. Only auth failures should invalidate.
+  return { valid: false, error: `HuggingFace token check returned ${res.status}` };
+}
+
 async function testApiKeyConnection(connection, effectiveProxy = null) {
   if (isOpenAICompatibleProvider(connection.provider)) {
     const modelsBase = connection.providerSpecificData?.baseUrl;
@@ -712,6 +727,9 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy("https://api.fal.ai/v1/models?limit=1", { headers: { Authorization: `Key ${connection.apiKey}` } }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key" };
+      }
+      case "huggingface": {
+        return await testHuggingFaceToken(connection.apiKey, effectiveProxy);
       }
       case "chutes": {
         const res = await fetchWithConnectionProxy("https://llm.chutes.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
