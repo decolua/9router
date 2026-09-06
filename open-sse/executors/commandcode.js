@@ -42,7 +42,37 @@ export class CommandCodeExecutor extends BaseExecutor {
   async execute(opts) {
     const result = await super.execute(opts);
     if (!result?.response?.ok || !result.response.body) return result;
-    result.response = await inspectAndWrapCommandCodeResponse(result.response, opts.model);
+    // CommandCode returns HTTP 200 with an embedded error event when the
+    // service is unavailable (e.g. {"type":"error","error":{"type":"server_error",
+    // "statusCode":503,"isRetryable":true,...}}). Peek the first NDJSON line: if
+    // it is a server error, fail the request with the embedded status instead of
+    // streaming it as chat content — this lets chatCore mark the connection
+    // unavailable so combo/account fallback picks the next model.
+    const peek = await peekFirstCommandCodeFrame(result.response);
+    if (peek?.isError) {
+      await result.response.body?.cancel?.().catch?.(() => {});
+      return {
+        ...result,
+        response: new Response(
+          JSON.stringify({
+            error: {
+              message: peek.message,
+              code: peek.status || "commandcode_error",
+              type: "server_error",
+            },
+          }),
+          {
+            status: peek.status,
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+          }
+        ),
+      };
+    }
+    // Hand the peeked bytes + reader to the wrapper — the body stream has
+    // already been partially consumed, so the wrapper must seed from
+    // `peek.consumed` and keep reading from the SAME reader (a body stream is
+    // single-consumer; `pipeThrough` on it again would fail).
+    result.response = await wrapNdjsonAsOpenAISse(opts.model, peek.consumed, peek.reader);
     return result;
   }
 
@@ -123,157 +153,100 @@ export function parseCommandCodeError(event) {
   return { statusCode, message, type };
 }
 
-export async function inspectAndWrapCommandCodeResponse(originalResponse, model) {
-  const reader = originalResponse.body.getReader();
+/**
+ * Scan the leading CommandCode stream (before any client-visible content) to
+ * detect an embedded error frame. Returns { isError, status, message, consumed,
+ * reader } — `consumed` is every byte read so far and `reader` is the same
+ * single-consumer reader, both passed on to the normal wrapper so nothing is
+ * dropped from the stream.
+ *
+ * Only errors that appear BEFORE any content-producing frame (text-delta,
+ * tool-input-*, tool-call) are treated as request-level failures — by then the
+ * client has seen no output, so failing the request lets combo/account fallback
+ * pick the next model. An error after content has started is returned as
+ * `isError:false`; the translator maps it to a graceful mid-stream note.
+ */
+async function peekFirstCommandCodeFrame(response) {
+  const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  let buffer = "";
-  const bufferedLines = [];
-  let detectedError = null;
+  let consumed = "";
 
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) {
-        const trimmed = buffer.trim();
-        if (trimmed) {
-          try {
-            const jsonStr = trimmed.startsWith("data:") ? trimmed.slice(5).trim() : trimmed;
-            const parsed = JSON.parse(jsonStr);
-            if (parsed?.type === "error") {
-              detectedError = parsed;
-            } else {
-              bufferedLines.push(trimmed);
-            }
-          } catch {
-            bufferedLines.push(trimmed);
-          }
-        }
-        break;
-      }
+  const CONTENT_TYPES = new Set([
+    "text-delta",
+    "reasoning-delta",
+    "tool-input-start",
+    "tool-input-delta",
+    "tool-call",
+    "finish-step",
+    "finish",
+  ]);
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-
-      let stopLoop = false;
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        const jsonStr = trimmed.startsWith("data:") ? trimmed.slice(5).trim() : trimmed;
-        if (!jsonStr || jsonStr === "[DONE]") {
-          bufferedLines.push(trimmed);
-          stopLoop = true;
-          break;
-        }
-
-        let event;
-        try {
-          event = JSON.parse(jsonStr);
-        } catch {
-          bufferedLines.push(trimmed);
-          continue;
-        }
-
-        if (event?.type === "error") {
-          detectedError = event;
-          stopLoop = true;
-          break;
-        }
-
-        bufferedLines.push(trimmed);
-
-        if (
-          event?.type === "text-delta" ||
-          event?.type === "reasoning-delta" ||
-          event?.type === "tool-input-start" ||
-          event?.type === "tool-call" ||
-          event?.type === "finish" ||
-          event?.type === "finish-step"
-        ) {
-          stopLoop = true;
-          break;
-        }
-      }
-
-      if (stopLoop) break;
+  const parseEvent = (json) => {
+    try {
+      return JSON.parse(json.startsWith("data:") ? json.slice(5).trim() : json);
+    } catch {
+      return null;
     }
-  } catch {
-    try { reader.releaseLock(); } catch { /* ignore */ }
-    return originalResponse;
-  }
+  };
 
-  if (detectedError) {
-    try { await reader.cancel(); } catch { /* ignore */ }
-    const { statusCode, message, type } = parseCommandCodeError(detectedError);
-    return new Response(
-      JSON.stringify({
-        error: {
-          message: `[CommandCode error: ${message}]`,
-          type,
-          code: statusCode,
-        },
-      }),
-      {
-        status: statusCode,
-        statusText: statusCode === 503 ? "Service Unavailable" : (statusCode === 429 ? "Too Many Requests" : "Bad Gateway"),
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) return { isError: false, consumed, reader };
+    consumed += decoder.decode(value, { stream: true });
+
+    // Pull every complete line available right now.
+    let nl;
+    while ((nl = consumed.indexOf("\n")) !== -1) {
+      const line = consumed.slice(0, nl).replace(/\r$/, "").trim();
+      if (!line) {
+        consumed = consumed.slice(nl + 1);
+        continue;
       }
-    );
-  }
+      const event = parseEvent(line);
+      if (!event || typeof event !== "object") {
+        consumed = consumed.slice(nl + 1);
+        continue;
+      }
 
-  const combinedStream = createReplayedStream(bufferedLines, buffer, reader);
-  return wrapNdjsonAsOpenAISse(combinedStream, model, originalResponse);
+      // Content-producing frame → stream is healthy. Leave this line IN
+      // `consumed` (don't strip it) so the wrapper re-processes it — nothing
+      // is dropped from the stream.
+      if (event.type && CONTENT_TYPES.has(event.type)) {
+        return { isError: false, consumed, reader };
+      }
+
+      // An error/status frame before any content → request-level failure.
+      const isErrorEvent = event.type === "error";
+      const errObj = isErrorEvent ? (event.error ?? event) : event;
+      const status = Number(errObj.statusCode) || 0;
+      const isServerError =
+        isErrorEvent || errObj.type === "server_error" || errObj.isRetryable === true;
+      if (isErrorEvent && (status >= 400 || isServerError)) {
+        const message =
+          typeof errObj.message === "string"
+            ? errObj.message
+            : `CommandCode upstream error (${status || "unknown"})`;
+        return { isError: true, status: status >= 400 ? status : 503, message, consumed, reader };
+      }
+      // Otherwise (start / start-step / reasoning-start / metadata…) this line
+      // carries no client-visible content — strip it and keep scanning.
+      consumed = consumed.slice(nl + 1);
+    }
+  }
 }
 
-function createReplayedStream(bufferedLines, remainingBuffer, reader) {
-  const encoder = new TextEncoder();
-  let replayed = false;
-
-  return new ReadableStream({
-    async pull(controller) {
-      if (!replayed) {
-        replayed = true;
-        let prefix = bufferedLines.join("\n");
-        if (prefix && remainingBuffer) {
-          prefix += "\n" + remainingBuffer;
-        } else if (remainingBuffer) {
-          prefix = remainingBuffer;
-        } else if (prefix) {
-          prefix += "\n";
-        }
-        if (prefix) {
-          controller.enqueue(encoder.encode(prefix));
-        }
-      }
-
-      try {
-        const { value, done } = await reader.read();
-        if (done) {
-          controller.close();
-        } else {
-          controller.enqueue(value);
-        }
-      } catch (err) {
-        controller.error(err);
-      }
-    },
-    async cancel(reason) {
-      try {
-        await reader.cancel(reason);
-      } catch {
-        /* ignore */
-      }
-    },
-  });
-}
-
-function wrapNdjsonAsOpenAISse(streamBody, model, originalResponse = null) {
+/**
+ * Wrap a CommandCode NDJSON body into OpenAI chat.completion.chunk SSE.
+ *
+ * @param {string} model - upstream model id
+ * @param {string} seedBuffer - bytes already pulled by the peek (first full line)
+ * @param {ReadableStreamDefaultReader} reader - the (single-consumer) reader
+ *   already attached to the upstream body; remaining bytes keep flowing through it.
+ */
+async function wrapNdjsonAsOpenAISse(model, seedBuffer = "", reader) {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
-  let buffer = "";
+  let buffer = seedBuffer || "";
   const state = { model };
 
   const emitChunks = (chunks, controller) => {
@@ -285,38 +258,62 @@ function wrapNdjsonAsOpenAISse(streamBody, model, originalResponse = null) {
     }
   };
 
-  const transform = new TransformStream({
-    transform(chunk, controller) {
-      buffer += decoder.decode(chunk, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || "";
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        emitChunks(commandCodeToOpenAIResponse(trimmed, state), controller);
-      }
-    },
-    flush(controller) {
-      const trimmed = buffer.trim();
-      if (trimmed) {
-        emitChunks(commandCodeToOpenAIResponse(trimmed, state), controller);
-      }
-      controller.enqueue(encoder.encode(SSE_DONE));
-    },
-  });
+  // Process a full line (no trailing newline) into OpenAI chunks.
+  const processLine = (line, controller) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    emitChunks(commandCodeToOpenAIResponse(trimmed, state), controller);
+  };
 
-  const newBody = streamBody.pipeThrough(transform);
-  return new Response(newBody, {
-    status: originalResponse?.status || 200,
-    statusText: originalResponse?.statusText || "OK",
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
-      ...(originalResponse?.headers ? Object.fromEntries(originalResponse.headers.entries()) : {}),
-      "content-type": "text/event-stream",
-    },
-  });
+  return new Response(
+    new ReadableStream({
+      // Use start()+loop (not pull): a pull that buffers a partial line without
+      // enqueueing would never be re-invoked, hanging consumers like .text().
+      async start(controller) {
+        try {
+          // Drain buffers that the peek already pulled off the socket.
+          let nl;
+          while ((nl = buffer.indexOf("\n")) !== -1) {
+            const line = buffer.slice(0, nl);
+            buffer = buffer.slice(nl + 1);
+            processLine(line, controller);
+          }
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+              buffer += decoder.decode();
+              if (buffer.length > 0) processLine(buffer, controller);
+              break;
+            }
+            buffer += decoder.decode(value, { stream: true });
+            while ((nl = buffer.indexOf("\n")) !== -1) {
+              const line = buffer.slice(0, nl);
+              buffer = buffer.slice(nl + 1);
+              processLine(line, controller);
+            }
+          }
+        } catch {
+          // fall through to terminal [DONE] + close
+        } finally {
+          controller.enqueue(encoder.encode(SSE_DONE));
+          try { controller.close(); } catch { /* already closed */ }
+          await reader.cancel().catch(() => {});
+        }
+      },
+      cancel() {
+        return reader.cancel().catch(() => {});
+      },
+    }),
+    {
+      status: 200,
+      statusText: "OK",
+      headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+    }
+  );
 }
 
 export default CommandCodeExecutor;
+
+// Test-only internals (mirrors the qoder executor's `__test__` convention). Do
+// not rely on these outside tests.
+export const __test__ = { peekFirstCommandCodeFrame, wrapNdjsonAsOpenAISse };
