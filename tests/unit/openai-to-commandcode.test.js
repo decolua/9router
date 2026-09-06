@@ -28,6 +28,32 @@ describe("openaiToCommandCodeRequest — basic envelope", () => {
   });
 });
 
+describe("openaiToCommandCodeRequest — thinking suffix stripping", () => {
+  it("strips a client thinking suffix from params.model (upstream rejects it)", () => {
+    const out = openaiToCommandCodeRequest("gpt-5.6-luna(max)", {
+      messages: [{ role: "user", content: "hi" }],
+    }, true);
+
+    expect(out.params.model).toBe("gpt-5.6-luna");
+  });
+
+  it("strips the suffix from family-prefixed ids too", () => {
+    const out = openaiToCommandCodeRequest("deepseek/deepseek-v4-pro(max)", {
+      messages: [{ role: "user", content: "hi" }],
+    }, true);
+
+    expect(out.params.model).toBe("deepseek/deepseek-v4-pro");
+  });
+
+  it("leaves plain model ids untouched", () => {
+    const out = openaiToCommandCodeRequest("deepseek/deepseek-v4-pro", {
+      messages: [{ role: "user", content: "hi" }],
+    }, true);
+
+    expect(out.params.model).toBe("deepseek/deepseek-v4-pro");
+  });
+});
+
 describe("openaiToCommandCodeRequest — system handling", () => {
   it("hoists system messages to params.system (string), not messages[]", () => {
     const out = openaiToCommandCodeRequest(MODEL, {
