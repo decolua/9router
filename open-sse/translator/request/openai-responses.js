@@ -6,12 +6,15 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { normalizeResponsesInput } from "../formats/responsesApi.js";
+import {
+  normalizeResponsesInput,
+  clampResponsesCallId,
+  coerceResponsesArguments,
+  coerceResponsesOutput,
+} from "../formats/responsesApi.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
 
-// Responses API enforces max 64 chars on call_id (#393)
-const MAX_CALL_ID_LEN = 64;
-const clampCallId = (id) => (typeof id === "string" && id.length > MAX_CALL_ID_LEN ? id.substring(0, MAX_CALL_ID_LEN) : id);
+const MAX_TOOL_NAME_LEN = 128;
 
 /**
  * Convert OpenAI Responses API request to OpenAI Chat Completions format
@@ -250,6 +253,23 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
 }
 
 /**
+ * Extract plain text from a system/developer message for Responses instructions.
+ * Array content (text parts) is joined; anything else falls back to "" rather
+ * than leaking "[object Object]" upstream.
+ */
+function extractInstructionsText(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((c) => {
+      if (typeof c?.text === "string") return c.text;
+      if (typeof c?.content === "string") return c.content;
+      return "";
+    }).filter(Boolean).join("\n");
+  }
+  return "";
+}
+
+/**
  * Ensure object schema always has properties field (required by Codex Responses API)
  */
 function normalizeToolParameters(params) {
@@ -326,9 +346,10 @@ function resolveMaxOutputTokens(body) {
  * Convert OpenAI Chat Completions to OpenAI Responses API format
  */
 export function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
-  // Body already in Responses API format (e.g. Cursor CLI calling /chat/completions with input[]).
-  // Respect the caller's stream intent (undefined keeps the historical streaming default);
-  // normalize token fields and tool_choice without rebuilding/altering `input`.
+  // Body already in Responses API format (e.g. Cursor CLI calling /chat/completions
+  // with input[]). PR 3445 keeps unique: respect caller stream intent (upstream
+  // forces stream:true), explicit token precedence incl. max_output_tokens win,
+  // and tool_choice normalization without rebuilding `input`.
   if (body.input) {
     // Caller-resolved model always wins over any stale body.model (#3447 review).
     const passthrough = { ...body, model };
@@ -360,7 +381,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
       // Use the first instruction-bearing message as instructions.
       // OpenAI recommends role="developer" for GPT-5/Codex as the system-level prompt.
       if (!hasSystemMessage) {
-        result.instructions = typeof msg.content === "string" ? msg.content : "";
+        result.instructions = extractInstructionsText(msg.content);
         hasSystemMessage = true;
       }
       continue; // Skip instruction messages in input
@@ -411,26 +432,24 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     // Convert tool calls
     if (msg.role === ROLE.ASSISTANT && msg.tool_calls) {
       for (const tc of msg.tool_calls) {
+        // Skip nameless calls — strict Responses upstreams reject them (#444)
+        const name = typeof tc.function?.name === "string" ? tc.function.name.trim() : "";
+        if (!name) continue;
         result.input.push({
           type: RESPONSES_ITEM.FUNCTION_CALL,
-          call_id: clampCallId(tc.id),
-          name: tc.function?.name || "_unknown",
-          arguments: tc.function?.arguments || "{}"
+          call_id: clampResponsesCallId(tc.id),
+          name: name.slice(0, MAX_TOOL_NAME_LEN),
+          arguments: coerceResponsesArguments(tc.function?.arguments)
         });
       }
     }
 
     // Convert tool results - output must be a string for Responses API
     if (msg.role === ROLE.TOOL) {
-      const output = typeof msg.content === "string"
-        ? msg.content
-        : Array.isArray(msg.content)
-          ? msg.content.map(c => c.text || JSON.stringify(c)).join("")
-          : JSON.stringify(msg.content);
       result.input.push({
         type: RESPONSES_ITEM.FUNCTION_CALL_OUTPUT,
-        call_id: clampCallId(msg.tool_call_id),
-        output
+        call_id: clampResponsesCallId(msg.tool_call_id),
+        output: coerceResponsesOutput(msg.content)
       });
     }
   }
@@ -444,22 +463,26 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   if (body.tools && Array.isArray(body.tools)) {
     result.tools = body.tools.map(tool => {
       if (tool.type === OPENAI_BLOCK.FUNCTION) {
+        // Strict upstreams reject nameless/overlong tool declarations
+        const name = typeof tool.function?.name === "string" ? tool.function.name.trim() : "";
+        if (!name) return null;
         return {
           type: OPENAI_BLOCK.FUNCTION,
-          name: tool.function.name,
+          name: name.slice(0, MAX_TOOL_NAME_LEN),
           description: String(tool.function.description || ""),
           parameters: normalizeToolParameters(tool.function.parameters),
           strict: tool.function.strict
         };
       }
       return tool;
-    });
+    }).filter(Boolean);
   }
 
   // Pass through other relevant fields
   if (body.temperature !== undefined) result.temperature = body.temperature;
-  // Responses schema only knows max_output_tokens. Explicit precedence:
-  // max_output_tokens > max_completion_tokens > max_tokens (fresh object — no legacy leak).
+  // Responses schema only knows max_output_tokens. PR 3445 keeps unique explicit
+  // precedence max_output_tokens > max_completion_tokens > max_tokens plus
+  // tool_choice normalization (upstream drops tool_choice on this path).
   const maxOut = resolveMaxOutputTokens(body);
   if (maxOut !== undefined) result.max_output_tokens = maxOut;
   const toolChoice = normalizeToolChoice(body.tool_choice);
