@@ -53,7 +53,7 @@ export const DEFAULT_CAPABILITIES = {
   tools: true,          // function / tool calling
   reasoning: false,     // thinking / reasoning
   // thinking wire format (only meaningful when reasoning:true). null → derive from transport.format.
-  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|hunyuan|step
+  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|opencode|minimax|hunyuan|step
   thinkingFormat: null,
   thinkingCanDisable: true,  // false → model cannot turn thinking off (clamp to min instead of disable)
   thinkingRange: null,       // { min, max } for budget formats; null = no clamp
@@ -119,6 +119,16 @@ export const MODEL_CAPABILITIES = {
   // Qwen plain coder/text (no vision) — registry "vision-model" / "coder-model" aliases
   "vision-model":      { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 },
   "coder-model":       { reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 },
+
+  // OpenCode zen stealth/free originals — exact ids no pattern covers. Reasoning via
+  // the gateway's own reasoning_effort enum (none|low|medium|high|max), not the
+  // upstream vendor's (verified live: xhigh/minimal/auto rejected with 1210).
+  "x-preview-f-free":  { vision: true, videoInput: true, reasoning: true, thinkingFormat: "opencode", contextWindow: 1000000, maxOutput: 131072 },
+  "big-pickle":        { reasoning: true, thinkingFormat: "opencode", contextWindow: 200000, maxOutput: 32000 },
+  "muse-spark-1.2":    { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "opencode", contextWindow: 1048576, maxOutput: 131072 },
+  "muse-spark-1.2-contributor-free": { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "opencode", contextWindow: 1048576, maxOutput: 131072 },
+  // MiMo v2.5 free resurface — "*mimo*" patterns are non-reasoning; this one reasons.
+  "mimo-v2.5-free":    { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "opencode", contextWindow: 200000, maxOutput: 32000 },
 
   // Kimi flagship + coding (platform + Kimi Code ids) — vision/video native
   "kimi-k3":           { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 },
