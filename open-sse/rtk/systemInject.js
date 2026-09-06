@@ -149,6 +149,14 @@ function appendToChatMessage(msg, prompt) {
   } catch (_) {}
 }
 
+// A Responses input[] message item may omit `type`: the field defaults to
+// "message" and native clients leave it off. codex.js, grok-cli.js and
+// headroom.js already read an absent type as a message; this file did not, so a
+// system item written that way was skipped and a second one prepended beside it.
+function isMessageItem(item) {
+  return !!item && (!item.type || item.type === RESPONSES_ITEM.MESSAGE);
+}
+
 // ---- Responses input[] ----
 function injectResponsesInputSystem(body, prompt) {
   try {
@@ -156,10 +164,10 @@ function injectResponsesInputSystem(body, prompt) {
     if (!Array.isArray(arr)) return;
     // instructions already handled above
     if (containsPromptInResponsesInput(arr, prompt)) return;
-    // find system/developer message items only (type === message)
+    // find system/developer message items only (type absent or "message")
     let idx = -1;
     try {
-      idx = arr.findIndex(m => m && m.type === RESPONSES_ITEM.MESSAGE && (m.role === ROLE.SYSTEM || m.role === ROLE.DEVELOPER));
+      idx = arr.findIndex(m => isMessageItem(m) && (m.role === ROLE.SYSTEM || m.role === ROLE.DEVELOPER));
     } catch (_) { return; }
     if (idx >= 0) {
       appendToResponsesMessage(arr[idx], prompt);
@@ -173,7 +181,7 @@ function injectResponsesInputSystem(body, prompt) {
 function containsPromptInResponsesInput(arr, prompt) {
   try {
     for (const item of arr) {
-      if (!item || item.type !== RESPONSES_ITEM.MESSAGE) continue;
+      if (!isMessageItem(item)) continue;
       if (item.role !== ROLE.SYSTEM && item.role !== ROLE.DEVELOPER) continue;
       const c = item.content;
       if (typeof c === "string" && hasPrompt(c, prompt)) return true;
