@@ -234,7 +234,7 @@ export class AntigravityExecutor extends BaseExecutor {
         };
       }
       return c;
-    });
+    }).filter(c => c.parts?.length > 0);
 
     // Sanitize tool schemas and function names before sending to Antigravity.
     let tools = body.request?.tools;
