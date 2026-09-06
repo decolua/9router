@@ -8,8 +8,14 @@ export const MITM_TOOLS = {
     description: "Google Antigravity IDE with MITM",
     configType: "mitm",
     mitmDomain: "daily-cloudcode-pa.googleapis.com",
-    modelAliases: ["gemini-3.7-flash-high", "gemini-3.7-flash-medium", "gemini-3.7-flash-low", "gemini-3.6-flash-high", "gemini-3.6-flash-medium", "gemini-3.6-flash-low", "gemini-3.5-flash-low", "gemini-3-flash-agent", "gemini-3.5-flash-extra-low", "gemini-3.1-pro-low", "gemini-pro-agent", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium", "gemini-3-flash"],
+    modelAliases: ["gemini-3.8-flash-high", "gemini-3.8-flash-medium", "gemini-3.8-flash-low", "gemini-3.7-flash-high", "gemini-3.7-flash-medium", "gemini-3.7-flash-low", "gemini-3.6-flash-high", "gemini-3.6-flash-medium", "gemini-3.6-flash-low", "gemini-3.5-flash-low", "gemini-3-flash-agent", "gemini-3.5-flash-extra-low", "gemini-3.1-pro-low", "gemini-pro-agent", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium", "gemini-3-flash"],
     defaultModels: [
+      { id: "gemini-3.8-flash-high", name: "Gemini 3.8 Flash (High)", alias: "gemini-3.8-flash-high" },
+      { id: "gemini-3.8-flash-medium", name: "Gemini 3.8 Flash (Medium)", alias: "gemini-3.8-flash-medium" },
+      { id: "gemini-3.8-flash-low", name: "Gemini 3.8 Flash (Low)", alias: "gemini-3.8-flash-low" },
+      { id: "gemini-3.7-flash-high", name: "Gemini 3.7 Flash (High)", alias: "gemini-3.7-flash-high" },
+      { id: "gemini-3.7-flash-medium", name: "Gemini 3.7 Flash (Medium)", alias: "gemini-3.7-flash-medium" },
+      { id: "gemini-3.7-flash-low", name: "Gemini 3.7 Flash (Low)", alias: "gemini-3.7-flash-low" },
       { id: "gemini-3.6-flash-high", name: "Gemini 3.6 Flash (High)", alias: "gemini-3.6-flash-high" },
       { id: "gemini-3.6-flash-medium", name: "Gemini 3.6 Flash (Medium)", alias: "gemini-3.6-flash-medium" },
       { id: "gemini-3.6-flash-low", name: "Gemini 3.6 Flash (Low)", alias: "gemini-3.6-flash-low" },
@@ -22,32 +28,6 @@ export const MITM_TOOLS = {
       { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 (Thinking)", alias: "claude-opus-4-6-thinking" },
       { id: "gpt-oss-120b-medium", name: "GPT-OSS 120B (Medium)", alias: "gpt-oss-120b-medium" },
       { id: "gemini-3-flash", name: "Gemini 3 Flash (Command)", alias: "gemini-3-flash" },
-    ],
-  },
-  copilot: {
-    id: "copilot",
-    name: "GitHub Copilot",
-    image: "/providers/copilot.png",
-    color: "#1F6FEB",
-    description: "GitHub Copilot IDE with MITM",
-    configType: "mitm",
-    mitmDomain: "api.individual.githubcopilot.com",
-    modelAliases: ["gpt-5-mini", "gpt-5.4-nano", "claude-haiku-4.5", "gpt-4o", "gpt-4.1"],
-    defaultModels: [
-      // Verified via live MITM passthrough capture of the GitHub Copilot CLI: its model
-      // picker offers "GPT-5 mini" (default → wire id "gpt-5-mini"), "Claude Haiku 4.5"
-      // ("claude-haiku-4.5") and "Auto". "Auto" is NOT a wire id — Copilot dispatches
-      // concrete models dynamically (observed "gpt-5.4-nano" for light tasks and
-      // "claude-haiku-4.5"), so it needs no slot of its own. Without a slot for
-      // gpt-5-mini / gpt-5.4-nano, getMappedModel returns null and the /chat/completions
-      // call is passed through to GitHub Copilot instead of the configured provider —
-      // and gpt-5-mini is the CLI default, so the primary turn leaks (same class as the
-      // Kiro "auto" misrouting). gpt-4o / gpt-4.1 are kept for the VS Code Copilot Chat picker.
-      { id: "gpt-5-mini", name: "GPT-5 mini", alias: "gpt-5-mini" },
-      { id: "gpt-5.4-nano", name: "GPT-5.4 nano", alias: "gpt-5.4-nano" },
-      { id: "claude-haiku-4.5", name: "Claude Haiku 4.5", alias: "claude-haiku-4.5" },
-      { id: "gpt-4o", name: "GPT-4o", alias: "gpt-4o" },
-      { id: "gpt-4.1", name: "GPT-4.1", alias: "gpt-4.1" },
     ],
   },
   kiro: {
@@ -133,6 +113,34 @@ export const CLI_TOOLS = {
     color: "#10A37F",
     description: "OpenAI Codex CLI",
     configType: "custom",
+  },
+  copilot: {
+    id: "copilot",
+    name: "GitHub Copilot",
+    image: "/providers/copilot.png",
+    color: "#1F6FEB",
+    description: "GitHub Copilot in VS Code via 9Router extension",
+    configType: "guide",
+    docsUrl: "https://marketplace.visualstudio.com/items?itemName=hotrungnhan.9router-for-github-copilot",
+    guideSteps: [
+      {
+        step: 1,
+        title: "Install Extension",
+        desc: "In VS Code, open Extensions (Ctrl+Shift+X or Cmd+Shift+X), search for '9Router for Github Copilot' and click Install.",
+      },
+      {
+        step: 2,
+        title: "Configure Server",
+        desc: "Press Cmd+Shift+P (or Ctrl+Shift+P), run '9Router: Configure Server', then enter your Server URL and API Key:",
+        value: "{{baseUrl}}",
+        copyable: true,
+      },
+      {
+        step: 3,
+        title: "Select Model in Copilot Chat",
+        desc: "Open Copilot Chat, click the model picker at the bottom → 'Manage Models...' → check the 9Router models to use.",
+      },
+    ],
   },
   opencode: {
     id: "opencode",

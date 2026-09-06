@@ -12,6 +12,18 @@ import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
 const CACHE_CONTROL_5M = { type: "ephemeral" };
 const CACHE_CONTROL_1H = { type: "ephemeral", ttl: "1h" };
 
+// Anthropic rejects a tool carrying BOTH defer_loading:true and cache_control
+// ("Tools defer_loading cannot use prompt caching", #3567). MCP clients put
+// deferred tools at the tail, which is exactly where the cache anchor lands.
+// Anchor on the last tool that CAN be cached instead of dropping caching.
+export function lastCacheableToolIndex(tools) {
+  if (!Array.isArray(tools)) return -1;
+  for (let i = tools.length - 1; i >= 0; i--) {
+    if (tools[i]?.defer_loading !== true) return i;
+  }
+  return -1;
+}
+
 // Check if message has valid non-empty content
 export function hasValidContent(msg) {
   if (typeof msg.content === "string" && msg.content.trim()) return true;
@@ -108,11 +120,24 @@ function buildThinkingPlaceholder(provider) {
   return block;
 }
 
+// Anthropic validates server_tool_use ids against this pattern and rejects the
+// whole request with a 400 when one does not match. A combo that falls back to a
+// provider with its own built-in tools (z.ai/glm emits OpenAI-style `call_` ids for
+// its analyze_image tool) leaves such blocks in the history, so every later Claude
+// turn carries a poisoned id.
+const CLAUDE_SERVER_TOOL_USE_ID = /^srvtoolu_[a-zA-Z0-9_]+$/;
+
+function hasForeignServerToolUseId(block) {
+  return block?.type === CLAUDE_BLOCK.SERVER_TOOL_USE
+    && !CLAUDE_SERVER_TOOL_USE_ID.test(String(block.id ?? ""));
+}
+
 // Normalize a native Claude passthrough body to match Anthropic Messages API spec.
 // Newer Cowork/Claude Code clients emit beta-only shapes that OAuth endpoints reject:
 // 1. thinking.type "adaptive" → unsupported on Haiku
 // 2. output_config.effort → unsupported on Haiku
 // 3. role "system" messages (mid-conversation-system beta) → only top-level system is allowed
+// 4. server_tool_use blocks carrying a foreign (non-srvtoolu_) id → rejected outright
 export function normalizeClaudePassthrough(body, model = "") {
   if (!body || typeof body !== "object") return body;
 
@@ -164,6 +189,7 @@ export function normalizeClaudePassthrough(body, model = "") {
   // 3. Drop thinking blocks whose signature is not Claude's (combo mixes models,
   // so foreign signatures leak into history and Anthropic rejects them).
   const thinkingEnabled = body.thinking?.type === "enabled";
+  const droppedServerToolUseIds = new Set();
   if (Array.isArray(body.messages)) {
     for (const msg of body.messages) {
       if (msg.role !== ROLE.ASSISTANT || !Array.isArray(msg.content)) continue;
@@ -178,6 +204,10 @@ export function normalizeClaudePassthrough(body, model = "") {
           }
           continue;
         }
+        if (hasForeignServerToolUseId(block)) {
+          if (block.id != null) droppedServerToolUseIds.add(String(block.id));
+          continue;
+        }
         if (block.type === CLAUDE_BLOCK.TOOL_USE) hasToolUse = true;
         kept.push(block);
       }
@@ -186,6 +216,35 @@ export function normalizeClaudePassthrough(body, model = "") {
         msg.content.unshift(buildThinkingPlaceholder("claude"));
       }
     }
+  }
+
+  // A dropped server_tool_use leaves its result behind; Anthropic rejects a
+  // tool_result that references an id no block declares, so both halves must go.
+  if (droppedServerToolUseIds.size > 0 && Array.isArray(body.messages)) {
+    for (const msg of body.messages) {
+      if (!Array.isArray(msg.content)) continue;
+      const kept = msg.content.filter(block => !(
+        (block?.type === CLAUDE_BLOCK.TOOL_RESULT || block?.type === CLAUDE_BLOCK.WEB_SEARCH_TOOL_RESULT)
+        && droppedServerToolUseIds.has(String(block.tool_use_id ?? ""))
+      ));
+      if (kept.length !== msg.content.length) {
+        msg.content = kept;
+      }
+    }
+  }
+
+  // 5. Drop empty text blocks and any message left with no content at all.
+  // Anthropic rejects `messages.N.content` blocks with empty text (400
+  // "text content blocks must be non-empty"); a message whose blocks were all
+  // stripped above must be dropped, not padded with an empty placeholder.
+  if (Array.isArray(body.messages)) {
+    body.messages = body.messages.filter(msg => {
+      if (typeof msg.content === "string") return msg.content.trim().length > 0;
+      if (!Array.isArray(msg.content)) return true;
+      msg.content = msg.content.filter(block =>
+        !(block?.type === CLAUDE_BLOCK.TEXT && !String(block.text ?? "").trim()));
+      return msg.content.length > 0;
+    });
   }
 
   return body;
@@ -223,7 +282,7 @@ export function anchorClaudeCache(body) {
   }
 
   if (Array.isArray(body.tools)) {
-    const last = body.tools.length - 1;
+    const last = lastCacheableToolIndex(body.tools);
     body.tools.forEach((tool, i) => {
       if (i === last) tool.cache_control = { ...CACHE_CONTROL_1H };
       else delete tool.cache_control;
@@ -417,9 +476,10 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
         });
     }
 
+    const lastCacheable = lastCacheableToolIndex(body.tools);
     body.tools = body.tools.map((tool, i) => {
       const { cache_control, ...rest } = tool;
-      if (i === body.tools.length - 1) {
+      if (i === lastCacheable) {
         return { ...rest, cache_control: { type: "ephemeral", ttl: "1h" } };
       }
       return rest;
