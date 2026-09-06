@@ -56,6 +56,12 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: pickedId || "" });
       return {
         id: "noauth",
+        // Executors key their upstream session id on connectionId. Without it
+        // deriveSessionId() falls through to a fresh random id on every call, so
+        // each turn of one conversation reaches the provider as a new session and
+        // burns a free-tier slot. "noauth" is the sentinel markAccountUnavailable
+        // and clearAccountError already test for.
+        connectionId: "noauth",
         connectionName: "Public",
         isActive: true,
         accessToken: "public",
