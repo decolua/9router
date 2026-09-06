@@ -47,14 +47,16 @@ export function recordSuccess(ip) {
 }
 
 export function getClientIp(request) {
-  // Trusted only when custom-server.js proves it stamped the header from the TCP socket;
-  // otherwise a client could rotate the value to escape its own lockout bucket.
+  // Trusted ONLY when custom-server.js proves it stamped the header from the TCP socket;
+  // verified via per-process peer token that attacker cannot guess.
+  // Without the proof the header is just attacker-supplied input.
   if (hasTrustedPeerHeaders(request)) {
     const realIp = request.headers.get("x-9r-real-ip");
     if (realIp) return realIp;
   }
   // Behind a trusted reverse proxy that overwrites XFF with the real client IP.
-  if (process.env.TRUST_PROXY === "true") {
+  // Only trust XFF when custom-server.js validated the peer (via peer token).
+  if (process.env.TRUST_PROXY === "true" && hasTrustedPeerHeaders(request)) {
     const xff = request.headers.get("x-forwarded-for");
     if (xff) return xff.split(",")[0].trim();
   }
