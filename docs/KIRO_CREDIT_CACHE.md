@@ -1,91 +1,69 @@
 # Kiro native-credit cache estimates
 
-Design reference: `sub2api-kiro-enhanced` commit
-`68603603d603ae39f08d872b5db6699b75ce2d6c`, especially the README estimator
-scope/window policy, `backend/internal/service/kiro_dynamic_cache.go`,
-`kiro_cache_emulation*.go`, and the native translator/integrity paths.
-This is a JavaScript integration with 9router's existing pipeline, not an import
-of the source gateway, administration, deployment, or fixed-ratio simulation.
+Kiro cache simulation estimates cache reads from native-credit observations when
+Kiro does not report cache-token metrics. It does not assign a fixed cache ratio.
 
-## Feature mapping
+## Prefix reuse and calibration
 
-| Source feature | 9router implementation |
-| --- | --- |
-| Canonical prefix ladder | `open-sse/services/kiroCreditCache.js`: hash ordered outbound tools and messages; normalize current/history wrappers; retain continuation and model-visible configuration |
-| Native-credit calibration | Same module: compare cold/warm credits for a matching prefix, inference configuration and output count; require two pairs; use the lower envelope of the last eight pairs |
-| Account/endpoint/model scope | Hash connection identity (credential identity if absent), API key, principal/profile, endpoint, native model and inference configuration |
-| Family windows | `open-sse/config/kiroConstants.js`: Claude family, five minutes; GPT family, thirty minutes plus conversation ID |
-| Commit only successful observations | `kiroCacheDelivery.js`, `chatCore.js`, outer `src/sse/handlers/chat.js`, and `custom-server.js`: select the final response, then commit on successful HTTP finish; discard on errors/close |
-| Native stream integrity | Reuse KiroExecutor's CRC, framing, EOF, terminal and tool validation; exclude malformed/dropped events and truncation from learning without discarding otherwise usable output |
-| Fallback and side-generation isolation | Freeze before fetch; exclude HTTP/transport retries, token-refresh retries and integrity repair; only the response selected by the outer router can commit |
-| Protocol usage | Reuse existing usage names; nested OpenAI input is cache-inclusive, Anthropic input excludes cache. Preserve explicit native cache metrics (including zero) and existing public credit serialization |
+`open-sse/services/kiroCreditCache.js` canonicalizes the outbound request and hashes
+an ordered ladder of tools and message prefixes. Current and historical user
+wrappers share a canonical form, allowing append-only conversations to reuse an
+observed prefix. Text, images, tool arguments, ordering, continuation ID and other
+model-visible configuration remain significant; volatile text is not stripped to
+manufacture reuse. Prefix token weights approximate serialized characters / 4.
 
-Auth-surface ordering/profile routing, stable session/continuation resolution,
-session-start replay, account selection and the Responses request/tool adapters
-were already present and remain in use. Account selection has its existing sticky
-round-robin policy, not a new conversation-to-account affinity map. Actual account
-identity scopes every observation, so rotation cannot reuse another account's state.
-The necessary response gaps fixed here are Kiro JSON conversion to Messages and
-Responses, and missing Kiro Responses SSE usage. JSON parser errors no longer embed
-raw payload excerpts. Existing typed/sized native integrity diagnostics remain.
+A reuse index records successfully observed prefix fingerprints and their expiry.
+Calibration compares cold and warm native credits for matching prefixes, inference
+configuration and output-token counts. At least two comparable pairs are required.
+The estimate uses the lowest savings fraction among the last eight unexpired pairs,
+capped at 90%, weighted by the matched prefix's share of the request. Appended input
+and output costs remain in the warm bill, making this a conservative estimate.
+A zero-savings pair suppresses estimates until it expires or leaves that window.
 
-## Accounting and lifetime
+The estimate is frozen before the upstream request. A later successful observation
+can affect subsequent requests, but cannot change that request's frozen estimate.
+Positive estimates populate existing cache-read usage fields in Chat Completions,
+Responses and Messages, for JSON and SSE. Explicit native cache fields, including
+zero, take precedence. Cache creation is never invented from credits. OpenAI input
+counts include cached tokens; Messages input counts exclude them to avoid double
+counting. Existing public `kiro_credits` and `kiro_credit_unit` serialization is
+preserved; estimator and delivery metadata stay private.
 
-No cache savings are inferred without comparable successful observations. A credit
-reduction supplies a conservative savings fraction: appended uncached input and
-output cost remain in the warm bill. The 90% bound is a ceiling, not an assigned
-ratio. Two pairs are required before a later request uses the frozen estimate;
-adverse evidence affects subsequent requests. Cache creation is never invented
-from credits. Explicit native cache fields, including zero, override estimates.
+## Family policy and isolated state
 
-Sliding warmth is renewed only by successful observations and expires relative to
-request start, conservatively excluding very long generations. Calibration samples
-expire after thirty minutes. Overlapping requests can renew exact prefixes after
-successful delivery but cannot train cold/warm billing pairs. No asynchronous work
-occurs within tracker mutations. Each completion is idempotent.
+| Family | Sliding prefix window | Minimum prefix | Conversation isolation |
+| --- | --- | --- | --- |
+| Claude, including Opus/Sonnet/Haiku forms | 5 minutes | 4,096 tokens | No |
+| GPT, including Sol/Terra/Luna codenames | 30 minutes | 1,024 tokens | Required; a different conversation starts cold |
 
-Limits: 1,024 scopes globally, 32 per account, 256 prefixes and 64 cold samples per
-scope, eight recent pairs. New scopes are rejected at capacity rather than evicting
-another account's warmth. Stored state contains hashes, counts, credits and expiry
-times, not prompts or credentials. Calibration/fingerprint/delivery metadata never
-enters response JSON, SSE, headers or usage logs. Existing `kiro_credits` and
-`kiro_credit_unit` behavior is retained.
+`open-sse/config/kiroConstants.js` classifies clear family names across versions,
+case and supported separator/namespace forms. Unknown or conflicting families are
+disabled. Recognizing a codename's family does not create a model-routing alias.
 
-## Limits and verification
+Shared family policy does **not** mean shared calibration: state is isolated by the
+original native model ID, account or credential identity, API key, principal/profile,
+endpoint and inference configuration, with conversation ID added for GPT. Model ID
+normalization selects policy only; distinct native IDs retain separate state.
 
-- Family policies extend the pinned reference beyond its exact model allowlist.
-  Claude IDs (including Opus/Sonnet/Haiku forms) use a five-minute sliding window
-  and 4,096-token minimum prefix. GPT IDs and the registry's Sol/Terra/Luna
-  codenames use thirty minutes, a 1,024-token minimum, and require conversation ID;
-  a different conversation starts cold. Both retain the same credit calibration rules.
-- Classification accepts case/whitespace, dot/underscore/hyphen separators, optional
-  `kiro/` or `kr/`, and matching `anthropic`/`openai` namespaces. Future versions
-  with clear family names are eligible; unknown or conflicting families are disabled.
-  Thinking/agentic variants retain their family policy.
-- The registry maps full `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna` IDs
-  (and synthetic thinking/agentic variants). It does not define bare codename
-  routing aliases to a particular version. Recognizing their family adds no routing
-  mapping. User-defined aliases are resolved before the estimator sees the native ID.
-  Policy normalization never rewrites that ID: distinct native model strings keep
-  separate scopes and calibration, even within one family.
-- Estimates are process-local and reset on restart. They are not provider-reported
-  cache measurements, guaranteed retention, or a distributed cache tracker.
-- Prefix weights use 9router's existing approximate character/token convention.
-  Canonical strings, images, tool arguments and ordering remain significant.
-- Conversation ID alone does not isolate Claude-family requests. Changing continuation, time context,
-  tools, model-visible configuration or text can still make its prefix cold. Nothing
-  strips model-visible text to manufacture reuse across sessions.
-- Learning requires the `custom-server.js` HTTP delivery hook (`npm start` and the
-  standalone wrapper). Bare `next dev`, bare `next start`, or another host without
-  that hook retain normal usage but do not learn. HTTP finish confirms local writes,
-  not application-level acknowledgement by a remote client.
-- Discarded or synthesized response objects cannot commit; internal probes and
-  web-search/fusion generations cannot update the final response's observation.
-- No live Kiro/AWS requests were used for validation. Native EventStream fixtures
-  with valid CRCs exercise the real executor, translators and chatCore; local HTTP
-  socket tests verify successful finish, client disconnect, write error and HTTP error.
+## Successful delivery and limits
 
-Focused regression suites: `kiro-credit-cache.test.js`,
-`kiro-credit-delivery.test.js`, `kiro-credit-protocols.test.js`, and
-`kiro-credit-http.test.js`. Existing Kiro, cache accounting, Responses, base retry,
-session, custom-server and standalone tests provide compatibility coverage.
+Learning requires a complete successful native event stream, valid positive metering
+and successful HTTP delivery of the selected response. Parse/CRC/terminal failures,
+truncation, aborted or failed writes, retries, fallbacks and internal side generations
+cannot train calibration. Overlapping requests may renew exact prefixes after
+successful delivery, but cannot train billing pairs. Completion is idempotent.
+
+Prefix warmth expires relative to request start and is renewed only on success.
+Calibration samples and pairs expire after 30 minutes. State is process-local, resets
+on restart, and is bounded to 1,024 scopes globally, 32 per account, 256 prefixes and
+64 cold samples per scope, and eight recent pairs. Stored state contains hashes and
+numeric observations, not prompts or credentials.
+
+Learning requires the `custom-server.js` HTTP delivery hook used by `npm start` and
+the standalone wrapper. Hosts without that hook retain normal usage but do not
+learn. HTTP finish confirms local writes, not remote application acknowledgement.
+Estimates are not provider-reported measurements, guaranteed retention or a
+distributed cache tracker.
+
+Regression coverage is in `kiro-credit-cache.test.js`, `kiro-credit-delivery.test.js`,
+`kiro-credit-protocols.test.js` and `kiro-credit-http.test.js` under `tests/unit/`.
