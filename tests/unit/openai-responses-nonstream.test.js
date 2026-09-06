@@ -146,3 +146,37 @@ describe("forced-SSE JSON path for a Responses-API client behind a chat upstream
     expect(json.choices[0].message.tool_calls[0].function.name).toBe("shell");
   });
 });
+
+describe("forced-SSE Responses upstream truncated by max_output_tokens", () => {
+  const sseCtxTruncated = (sourceFormat) => {
+    const encoder = new TextEncoder();
+    const raw =
+      'event: response.output_item.done\n' +
+      'data: {"output_index":0,"item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"partial","annotations":[]}]}}\n\n' +
+      'event: response.completed\n' +
+      'data: {"type":"response.completed","response":{"id":"resp_trunc","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"usage":{"input_tokens":3,"output_tokens":7,"total_tokens":10}}}\n\n';
+    return {
+      providerResponse: new Response(new ReadableStream({
+        start(controller) { controller.enqueue(encoder.encode(raw)); controller.close(); }
+      }), { headers: { "content-type": "text/event-stream" } }),
+      sourceFormat,
+      targetFormat: FORMATS.OPENAI_RESPONSES,
+      provider: "codex",
+      model: "gpt-5",
+      body: { model: "gpt-5", messages: [] },
+      stream: false,
+      requestStartTime: Date.now(),
+      connectionId: "test-connection",
+      clientRawRequest: { endpoint: "/v1/chat/completions" },
+      trackDone: vi.fn(),
+      appendLog: vi.fn()
+    };
+  };
+
+  it("Chat client gets valid finish_reason length (not raw status incomplete)", async () => {
+    const result = await handleForcedSSEToJson(sseCtxTruncated(FORMATS.OPENAI));
+    expect(result.success).toBe(true);
+    const json = await result.response.json();
+    expect(json.choices[0].finish_reason).toBe("length");
+  });
+});

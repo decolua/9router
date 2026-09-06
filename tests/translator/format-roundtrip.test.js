@@ -74,3 +74,41 @@ describe("roundtrip: parallel tool calls keep distinct ids", () => {
     expect(toolMsgs.length).toBe(2);
   });
 });
+describe("roundtrip: Claude → openai-responses (Responses-only Muse Spark Free)", () => {
+  const freeBody = {
+    model: "muse-spark-1.2-contributor-free",
+    max_tokens: 16000,
+    system: "You are a weather bot.",
+    messages: [
+      { role: "user", content: "What is the weather in Hanoi?" },
+      { role: "assistant", content: [{ type: "tool_use", id: "toolu_01test", name: "get_weather", input: { city: "Hanoi" } }] },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_01test", content: "12C sunny" }] },
+      { role: "assistant", content: [{ type: "text", text: "It is 12C in Hanoi." }] },
+    ],
+    tools: [{ type: "custom", name: "get_weather", description: "Get current weather for a city", input_schema: { type: "object", properties: { city: { type: "string" } }, required: ["city"] } }],
+  };
+  const out = T(FORMATS.CLAUDE, FORMATS.OPENAI_RESPONSES, freeBody);
+
+  it("maps max_tokens → max_output_tokens (never the Responses-invalid max_tokens)", () => {
+    expect(out.max_tokens).toBeUndefined();
+    // adjustMaxTokens (maxTokens.js) auto-raises to DEFAULT_MIN_TOKENS=32000 when tools are present
+    expect(out.max_output_tokens).toBe(32000);
+  });
+
+  it("system → instructions, messages → input items, custom tool → function tool", () => {
+    expect(out.instructions).toContain("You are a weather bot.");
+    expect(out.input.map((i) => i.type)).toEqual(["message", "function_call", "function_call_output", "message"]);
+    expect(out.input[0].role).toBe("user");
+    expect(out.input[0].content[0].type).toBe("input_text");
+    expect(out.input[0].content[0].text).toBe("What is the weather in Hanoi?");
+    expect(out.input[1].name).toBe("get_weather");
+    expect(out.input[1].arguments).toContain("Hanoi");
+    expect(out.input[2].call_id).toBe("toolu_01test");
+    expect(out.input[2].output).toBe("12C sunny");
+    expect(out.input[3].role).toBe("assistant");
+    expect(out.input[3].content[0].type).toBe("output_text");
+    expect(out.tools).toHaveLength(1);
+    expect(out.tools[0].type).toBe("function");
+    expect(out.tools[0].name).toBe("get_weather");
+  });
+});

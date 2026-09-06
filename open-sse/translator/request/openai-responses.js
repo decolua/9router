@@ -315,26 +315,60 @@ function buildReasoningInputItem(msg) {
   return item;
 }
 
+// Normalize tool_choice to the Responses API shape.
+// - string "auto"|"none"|"required" pass through
+// - Claude {type:"any"} → "required"; Claude {type:"tool",name} → named function
+// - OpenAI Chat {type:"function",function:{name}} and Responses {type:"function",name}
+//   both normalize to the Responses-native {type:"function",name}
+// - unknown shapes (hosted tools like {type:"web_search"}) are preserved as-is
+function normalizeToolChoice(choice) {
+  if (choice === undefined || choice === null) return undefined;
+  if (typeof choice === "string") return choice;
+  if (typeof choice !== "object") return choice;
+  const name = choice.function?.name ?? choice.name;
+  if (choice.type === "any") return "required";
+  if ((choice.type === "function" || choice.type === "tool") && typeof name === "string" && name) {
+    return { type: OPENAI_BLOCK.FUNCTION, name };
+  }
+  return choice;
+}
+
+// Token limits: Responses API only knows max_output_tokens. Precedence:
+// max_output_tokens > max_completion_tokens > max_tokens.
+function resolveMaxOutputTokens(body) {
+  for (const key of ["max_output_tokens", "max_completion_tokens", "max_tokens"]) {
+    if (body[key] !== undefined) return body[key];
+  }
+  return undefined;
+}
+
 /**
  * Convert OpenAI Chat Completions to OpenAI Responses API format
  */
 export function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
-  // Body already in Responses API format (e.g. Cursor CLI calling /chat/completions with input[])
+  // Body already in Responses API format (e.g. Cursor CLI calling /chat/completions
+  // with input[]). PR 3445 keeps unique: respect caller stream intent (upstream
+  // forces stream:true), explicit token precedence incl. max_output_tokens win,
+  // and tool_choice normalization without rebuilding `input`.
   if (body.input) {
-    const out = { ...body, model, stream: true };
-    if (out.max_output_tokens === undefined) {
-      if (out.max_completion_tokens !== undefined) out.max_output_tokens = out.max_completion_tokens;
-      else if (out.max_tokens !== undefined) out.max_output_tokens = out.max_tokens;
+    // Caller-resolved model always wins over any stale body.model (#3447 review).
+    const passthrough = { ...body, model };
+    const maxOut = resolveMaxOutputTokens(body);
+    if (maxOut !== undefined) {
+      passthrough.max_output_tokens = maxOut;
+      delete passthrough.max_completion_tokens;
+      delete passthrough.max_tokens;
     }
-    delete out.max_tokens;
-    delete out.max_completion_tokens;
-    return out;
+    const toolChoice = normalizeToolChoice(body.tool_choice);
+    if (toolChoice !== undefined) passthrough.tool_choice = toolChoice;
+    passthrough.stream = stream !== false;
+    return passthrough;
   }
 
   const result = {
     model,
     input: [],
-    stream: true,
+    stream: stream !== false,
     store: false
   };
 
@@ -446,13 +480,13 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
 
   // Pass through other relevant fields
   if (body.temperature !== undefined) result.temperature = body.temperature;
-  if (body.max_output_tokens !== undefined) {
-    result.max_output_tokens = body.max_output_tokens;
-  } else if (body.max_completion_tokens !== undefined) {
-    result.max_output_tokens = body.max_completion_tokens;
-  } else if (body.max_tokens !== undefined) {
-    result.max_output_tokens = body.max_tokens;
-  }
+  // Responses schema only knows max_output_tokens. PR 3445 keeps unique explicit
+  // precedence max_output_tokens > max_completion_tokens > max_tokens plus
+  // tool_choice normalization (upstream drops tool_choice on this path).
+  const maxOut = resolveMaxOutputTokens(body);
+  if (maxOut !== undefined) result.max_output_tokens = maxOut;
+  const toolChoice = normalizeToolChoice(body.tool_choice);
+  if (toolChoice !== undefined) result.tool_choice = toolChoice;
   if (body.top_p !== undefined) result.top_p = body.top_p;
   if (body.reasoning !== undefined) result.reasoning = body.reasoning;
   if (body.reasoning_effort !== undefined) result.reasoning = { effort: body.reasoning_effort, summary: "auto" };

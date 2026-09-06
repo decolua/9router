@@ -6,10 +6,11 @@ import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTrackin
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
+import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
-import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { ROLE, RESPONSES_ITEM, OPENAI_FINISH, CLAUDE_STOP } from "../../translator/schema/index.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -139,10 +140,119 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
 }
 
 /**
+ * Convert an upstream Responses API JSON body ({object:"response", output:[...]})
+ * into an OpenAI Chat Completions body. Used when a Chat-format client is routed
+ * to a Responses-only upstream with stream:false.
+ */
+function responsesOutputToChatParts(output) {
+  let textContent = "", reasoningContent = "";
+  const toolCalls = [];
+  for (const item of output || []) {
+    if (item?.type === RESPONSES_ITEM.REASONING) {
+      for (const s of item.summary || []) {
+        if (typeof s?.text === "string") reasoningContent += s.text;
+      }
+    } else if (item?.type === RESPONSES_ITEM.MESSAGE) {
+      for (const c of item.content || []) {
+        if (typeof c?.text === "string") textContent += c.text;
+      }
+    } else if (item?.type === RESPONSES_ITEM.FUNCTION_CALL || item?.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL) {
+      const args = item?.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL
+        ? JSON.stringify({ input: typeof item.input === "string" ? item.input : JSON.stringify(item.input ?? "") })
+        : typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {});
+      toolCalls.push({
+        id: item.call_id || item.id || `call_${item.name}_${toolCalls.length}`,
+        type: "function",
+        function: { name: item.name || "", arguments: args },
+      });
+    }
+  }
+  return { textContent, reasoningContent, toolCalls };
+}
+
+// Map a Responses status to the OpenAI finish_reason / Claude stop_reason pair.
+// incomplete+max_output_tokens → length/max_tokens; otherwise stop/end_turn
+// (tool calls override to tool_calls/tool_use at the caller).
+function responsesStatusToFinish(status, details) {
+  if (status === "incomplete" && details?.reason === "max_output_tokens") {
+    return { finishReason: OPENAI_FINISH.LENGTH, stopReason: CLAUDE_STOP.MAX_TOKENS };
+  }
+  return { finishReason: OPENAI_FINISH.STOP, stopReason: CLAUDE_STOP.END_TURN };
+}
+
+function responsesToOpenAICompletion(responseBody) {
+  if (!Array.isArray(responseBody?.output)) return responseBody;
+  const { textContent, reasoningContent, toolCalls } = responsesOutputToChatParts(responseBody.output);
+
+  const message = { role: ROLE.ASSISTANT };
+  message.content = textContent || (toolCalls.length > 0 ? null : "");
+  if (reasoningContent) message.reasoning_content = reasoningContent;
+  if (toolCalls.length > 0) message.tool_calls = toolCalls;
+
+  const usage = responseBody.usage || {};
+  const mapped = responsesStatusToFinish(responseBody.status, responseBody.incomplete_details);
+  const finishReason = toolCalls.length > 0 ? OPENAI_FINISH.TOOL_CALLS : mapped.finishReason;
+
+  return {
+    id: responseBody.id || `chatcmpl-${Date.now()}`,
+    object: "chat.completion",
+    created: responseBody.created_at || Math.floor(Date.now() / 1000),
+    model: responseBody.model || "unknown",
+    choices: [{ index: 0, message, finish_reason: finishReason }],
+    usage: {
+      prompt_tokens: usage.input_tokens || 0,
+      completion_tokens: usage.output_tokens || 0,
+      total_tokens: usage.total_tokens || (usage.input_tokens || 0) + (usage.output_tokens || 0),
+    },
+  };
+}
+
+/**
+ * Convert an upstream Responses API JSON body into a Claude message body.
+ * Used when a Claude-format client is routed to a Responses-only upstream with stream:false.
+ */
+function responsesToClaudeMessage(responseBody) {
+  if (!Array.isArray(responseBody?.output)) return responseBody;
+  const { textContent, reasoningContent, toolCalls } = responsesOutputToChatParts(responseBody.output);
+
+  const content = [];
+  if (reasoningContent) content.push({ type: "thinking", thinking: reasoningContent });
+  if (textContent || content.length === 0) content.push({ type: "text", text: textContent });
+  for (const tc of toolCalls) {
+    content.push({ type: "tool_use", id: tc.id, name: tc.function.name, input: parseToolArguments(tc.function.arguments) });
+  }
+
+  const usage = responseBody.usage || {};
+  const mapped = responsesStatusToFinish(responseBody.status, responseBody.incomplete_details);
+  const stopReason = toolCalls.length > 0 ? CLAUDE_STOP.TOOL_USE : mapped.stopReason;
+
+  return {
+    id: responseBody.id || `msg_${Date.now()}`,
+    type: "message",
+    role: ROLE.ASSISTANT,
+    model: responseBody.model || "unknown",
+    content,
+    stop_reason: stopReason,
+    stop_sequence: null,
+    usage: {
+      input_tokens: usage.input_tokens || 0,
+      output_tokens: usage.output_tokens || 0,
+    },
+  };
+}
+
+/**
  * Translate non-streaming response body from provider format → OpenAI format.
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
   if (targetFormat === sourceFormat) return responseBody;
+  // Upstream spoke Responses API ({object:"response"} — targetFormat) but the
+  // client wants Chat Completions or Claude JSON — flatten the `output` items so
+  // no raw object:"response" body ever leaks to non-Responses clients.
+  if (targetFormat === FORMATS.OPENAI_RESPONSES && responseBody?.object === "response") {
+    if (sourceFormat === FORMATS.CLAUDE) return responsesToClaudeMessage(responseBody);
+    return responsesToOpenAICompletion(responseBody);
+  }
   // Provider responded in OpenAI Chat Completions shape but the client speaks
   // Responses API — convert so tool_calls/text surface as Responses `output`.
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {
@@ -287,13 +397,28 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   let responseBody;
 
   if (contentType.includes("text/event-stream")) {
-    const sseText = await providerResponse.text();
-    const parsed = parseSSEToOpenAIResponse(sseText, model);
-    if (!parsed) {
-      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+    // A Responses-API upstream may ignore stream:false and answer with SSE.
+    // Its chunks are Responses events (not Chat deltas), so parse them with the
+    // Responses stream→JSON converter instead of the Chat Completions one; the
+    // resulting object:"response" body then flows through the same translation
+    // below. Mirrors sseToJsonHandler's targetFormat-based branch.
+    if (targetFormat === FORMATS.OPENAI_RESPONSES) {
+      try {
+        responseBody = await convertResponsesStreamToJson(providerResponse.body);
+      } catch (err) {
+        console.error("[ChatCore] Responses API SSE→JSON failed:", err);
+        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
+      }
+    } else {
+      const sseText = await providerResponse.text();
+      const parsed = parseSSEToOpenAIResponse(sseText, model);
+      if (!parsed) {
+        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+      }
+      responseBody = parsed;
     }
-    responseBody = parsed;
   } else {
     try {
       responseBody = await providerResponse.json();

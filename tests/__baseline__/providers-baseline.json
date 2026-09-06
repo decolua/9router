@@ -746,7 +746,13 @@
       "x-opencode-client": "desktop"
     },
     "noAuth": true,
-    "format": "openai"
+    "format": "openai",
+    "transports": [
+      {
+        "format": "openai-responses",
+        "baseUrl": "https://opencode.ai/zen/v1/responses"
+      }
+    ]
   },
   "openrouter": {
     "baseUrl": "https://openrouter.ai/api/v1/chat/completions",

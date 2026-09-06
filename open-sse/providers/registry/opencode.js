@@ -27,4 +27,10 @@ export default {
   ],
   modelsFetcher: { url: "https://opencode.ai/zen/v1/models", type: "opencode-free" },
   passthroughModels: true,
+  // Responses-only endpoint for the free Muse Spark model. Auth is owned by
+  // OpenCodeExecutor.buildHeaders (Bearer public + opencode UA), so no auth
+  // descriptor is needed here.
+  transports: [
+    { format: "openai-responses", baseUrl: "https://opencode.ai/zen/v1/responses" },
+  ],
 };

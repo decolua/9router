@@ -269,8 +269,16 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       } else {
         const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
         if (hasToolCalls) message.tool_calls = toolCalls;
+        // Map the upstream Responses status to a VALID Chat Completions
+        // finish_reason. "incomplete" is not one — emit "length" when
+        // max_output_tokens truncated the output, else keep prior fallbacks.
         const responseDone = jsonResponse.status === "completed" || jsonResponse.status === "done";
-        const finishReason = hasToolCalls ? "tool_calls" : (responseDone ? "stop" : (jsonResponse.status || "stop"));
+        const truncatedByMaxTokens = jsonResponse.status === "incomplete"
+          && jsonResponse.incomplete_details?.reason === "max_output_tokens";
+        const finishReason = hasToolCalls ? "tool_calls"
+          : truncatedByMaxTokens ? "length"
+          : responseDone ? "stop"
+          : (jsonResponse.status || "stop");
         finalResp = {
           id: jsonResponse.id || `chatcmpl-${Date.now()}`,
           object: "chat.completion",
