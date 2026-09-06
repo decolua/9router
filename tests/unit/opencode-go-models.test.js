@@ -134,8 +134,7 @@ describe("OpenCode Go thinking-suffix metadata lookup (review: generic trailing 
     expect(getModelUpstreamId("opencode-go", "muse-spark-1.2-contributor(max)")).toBe("muse-spark-1.2-contributor(max)");
   });
 
-  it("free variant suffix still resolves Responses-only metadata on oc alias", () => {
-    expect(getModelSupportedFormats("oc", "muse-spark-1.2-contributor-free(max)")).toEqual(["openai-responses"]);
+  it("free variant suffix still resolves Responses target on oc alias (supportedFormats undeclared upstream)", () => {
     expect(getModelTargetFormat("oc", "muse-spark-1.2-contributor-free(max)")).toBe("openai-responses");
     expect(getModelUpstreamId("oc", "muse-spark-1.2-contributor-free(high)")).toBe("muse-spark-1.2-contributor-free(high)");
   });
@@ -155,10 +154,10 @@ describe("OpenCode Go thinking-suffix metadata lookup (review: generic trailing 
 describe("OpenCode Free (oc) registry — Responses-only Muse Spark Free", () => {
   const FREE_ID = "muse-spark-1.2-contributor-free";
 
-  it("declares the exact free model on the oc alias with openai-responses support", () => {
+  it("declares the free Muse models on the oc alias with openai-responses target", () => {
     const ids = (PROVIDER_MODELS.oc || []).map((m) => m.id);
-    expect(ids).toEqual([FREE_ID]);
-    expect(getModelSupportedFormats("oc", FREE_ID)).toEqual(["openai-responses"]);
+    expect(ids).toContain(FREE_ID);
+    expect(ids).toContain("muse-spark-1.3-contributor-free");
     expect(getModelTargetFormat("oc", FREE_ID)).toBe("openai-responses");
   });
 

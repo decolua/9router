@@ -111,8 +111,14 @@ describe("Muse Responses routing", () => {
     executeMock.mockRejectedValue(new Error("boom"));
   });
 
-  it("routes OpenCode Go Muse Spark (Responses-only) to /responses for Claude clients", async () => {
+  it("translates OpenCode Go Muse Spark (Responses-only) for Claude clients via targetFormat", async () => {
+    // Upstream master routes via targetFormat + executor buildUrl (isResponsesModel),
+    // not via runtimeTransport: Claude source has no matching transport for a
+    // responses-only model, so credentials.runtimeTransport stays unset while the
+    // translated body still reaches the Responses endpoint as `input`.
     const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
+    const { getModelTargetFormat } = await import("../../open-sse/config/providerModels.js");
+    expect(getModelTargetFormat("opencode-go", "muse-spark-1.2-contributor")).toBe("openai-responses");
     const credentials = { apiKey: "sk-test" };
     const body = {
       model: "ocg/muse-spark-1.2-contributor",
@@ -135,11 +141,10 @@ describe("Muse Responses routing", () => {
       log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     });
 
-    expect(credentials.runtimeTransport?.baseUrl).toBe("https://opencode.ai/zen/go/v1/responses");
     expect(executeMock.mock.calls[0][0].body).toHaveProperty("input");
   });
 
-  it("routes OpenCode Free Muse Spark Free to /zen/v1/responses for Claude clients (max_tokens→max_output_tokens)", async () => {
+  it("translates OpenCode Free Muse Spark Free for Claude clients (max_tokens→max_output_tokens)", async () => {
     const FREE_ID = "muse-spark-1.2-contributor-free";
     const FREE_URL = "https://opencode.ai/zen/v1/responses";
     executeMock.mockResolvedValueOnce({
@@ -162,7 +167,6 @@ describe("Muse Responses routing", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(credentials.runtimeTransport?.baseUrl).toBe(FREE_URL);
     const { body: sentBody } = executeMock.mock.calls.at(-1)[0];
     expect(sentBody.model).toBe(FREE_ID);
     expect(sentBody.input).toBeDefined();

@@ -90,8 +90,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // sourceFormat-matched transport if that format is declared (opencode-go models
   // differ — kimi/glm only do /chat/completions). Undeclared models keep the
   // upstream default (use the transport), preserving behavior for glm/deepseek/...
-  // Upstream master: source-matched transport wins (lossless). PR 3445 variant
-  // fell back to modelTargetFormat transport — superseded by MiniMax-M3 guard.
   const useTransport = (!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat)) ? runtimeTransport : null;
   // A source-format-matched endpoint keeps the request lossless. Prefer it
   // over a model-level targetFormat, which is only the fallback for clients
