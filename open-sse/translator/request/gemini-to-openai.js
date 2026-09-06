@@ -1,6 +1,6 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { adjustMaxTokens } from "../formats/maxTokens.js";
+import { adjustMaxTokens, requiresMaxCompletionTokens } from "../formats/maxTokens.js";
 import { encodeDataUri } from "../concerns/image.js";
 import { collapseTextParts } from "../concerns/message.js";
 import { ROLE, GEMINI_ROLE, OPENAI_BLOCK } from "../schema/index.js";
@@ -18,7 +18,8 @@ export function geminiToOpenAIRequest(model, body, stream) {
     const config = body.generationConfig;
     if (config.maxOutputTokens) {
       const tempBody = { max_tokens: config.maxOutputTokens, tools: body.tools };
-      result.max_tokens = adjustMaxTokens(tempBody);
+      const tokenParam = requiresMaxCompletionTokens(model) ? "max_completion_tokens" : "max_tokens";
+      result[tokenParam] = adjustMaxTokens(tempBody);
     }
     if (config.temperature !== undefined) {
       result.temperature = config.temperature;
