@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
+import { rememberEndpoint } from "./cliEndpointPresets";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 
@@ -41,11 +42,10 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
   }, [initialStatus]);
 
   useEffect(() => {
-    if (isExpanded && !status) {
-      checkStatus();
+    if (isExpanded) {
+      if (!status) checkStatus();
       fetchModelAliases();
     }
-    if (isExpanded) fetchModelAliases();
   }, [isExpanded]);
 
   // Sync models from existing config
@@ -94,6 +94,8 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
       console.log("Error saving models:", error);
     }
   };
+
+  const currentBaseUrl = status?.config?.provider?.["9router"]?.options?.baseURL || "";
 
   const getConfigStatus = () => {
     if (!status?.installed) return null;
@@ -146,6 +148,8 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
       });
       const data = await res.json();
       if (res.ok) {
+        // Remember the endpoint so it stays selectable next time
+        rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
         setMessage({ type: "success", text: "Settings applied successfully!" });
         checkStatus();
       } else {
@@ -222,7 +226,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
       <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
-            <Image src="/providers/opencode.png" alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
+            <Image src="/providers/opencode.png" alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} loading="lazy" decoding="async" />
           </div>
           <div className="min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -298,6 +302,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                     tunnelPublicUrl={tunnelPublicUrl}
                     tailscaleEnabled={tailscaleEnabled}
                     tailscaleUrl={tailscaleUrl}
+                    currentUrl={currentBaseUrl}
                   />
                 </div>
 
@@ -452,42 +457,46 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
         </div>
       )}
 
-      <ModelSelectModal
-        isOpen={modalOpen}
-        onClose={() => {
-          setModalOpen(false);
-          saveModels(selectedModelsRef.current);
-        }}
-        onSelect={(model) => {
-          if (!selectedModels.includes(model.value)) {
-            setSelectedModels([...selectedModels, model.value]);
-            if (!activeModel) setActiveModel(model.value);
-          }
-        }}
-        onDeselect={(model) => {
-          const remaining = selectedModels.filter(m => m !== model.value);
-          setSelectedModels(remaining);
-          if (activeModel === model.value) {
-            setActiveModel(remaining[0] || "");
-          }
-        }}
-        selectedModel={null}
-        activeProviders={activeProviders}
-        modelAliases={modelAliases}
-        addedModelValues={selectedModels}
-        closeOnSelect={false}
-        title="Add Model for OpenCode"
-      />
+      {modalOpen && (
+        <ModelSelectModal
+          isOpen={modalOpen}
+          onClose={() => {
+            setModalOpen(false);
+            saveModels(selectedModelsRef.current);
+          }}
+          onSelect={(model) => {
+            if (!selectedModels.includes(model.value)) {
+              setSelectedModels([...selectedModels, model.value]);
+              if (!activeModel) setActiveModel(model.value);
+            }
+          }}
+          onDeselect={(model) => {
+            const remaining = selectedModels.filter(m => m !== model.value);
+            setSelectedModels(remaining);
+            if (activeModel === model.value) {
+              setActiveModel(remaining[0] || "");
+            }
+          }}
+          selectedModel={null}
+          activeProviders={activeProviders}
+          modelAliases={modelAliases}
+          addedModelValues={selectedModels}
+          closeOnSelect={false}
+          title="Add Model for OpenCode"
+        />
+      )}
 
-      <ModelSelectModal
-        isOpen={subagentModalOpen}
-        onClose={() => setSubagentModalOpen(false)}
-        onSelect={(model) => { setSubagentModel(model.value); setSubagentModalOpen(false); }}
-        selectedModel={subagentModel}
-        activeProviders={activeProviders}
-        modelAliases={modelAliases}
-        title="Select Subagent Model for OpenCode"
-      />
+      {subagentModalOpen && (
+        <ModelSelectModal
+          isOpen={subagentModalOpen}
+          onClose={() => setSubagentModalOpen(false)}
+          onSelect={(model) => { setSubagentModel(model.value); setSubagentModalOpen(false); }}
+          selectedModel={subagentModel}
+          activeProviders={activeProviders}
+          modelAliases={modelAliases}
+          title="Select Subagent Model for OpenCode"
+        />
+      )}
 
       <ManualConfigModal
         isOpen={showManualConfigModal}

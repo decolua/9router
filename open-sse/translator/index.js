@@ -1,7 +1,7 @@
 import { FORMATS } from "./formats.js";
 import { ensureToolCallIds, fixMissingToolResponses } from "./concerns/toolCall.js";
 import { prepareClaudeRequest } from "./formats/claude.js";
-import { cloakClaudeTools } from "../utils/claudeCloaking.js";
+import { cloakClaudeTools, decloakStreamChunk } from "../utils/claudeCloaking.js";
 import { filterToOpenAIFormat } from "./formats/openai.js";
 import { normalizeThinkingConfig } from "../services/provider.js";
 import { applyThinking, captureThinking } from "./concerns/thinkingUnified.js";
@@ -62,8 +62,13 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // Always ensure tool_calls have id (some providers require it)
   ensureToolCallIds(result);
   
-  // Fix missing tool responses (insert empty tool_result if needed)
-  fixMissingToolResponses(result);
+  // Kiro performs stricter source-aware reconciliation after session replay.
+  // The generic helper inserts OpenAI `role: tool` messages, which a direct
+  // Claude→Kiro translator cannot consume and which cannot repair partial
+  // parallel tool results.
+  if (targetFormat !== FORMATS.KIRO) {
+    fixMissingToolResponses(result);
+  }
 
   // Capture thinking intent from the original (pre-translation) body, before any
   // format conversion strips/renames the fields. Applied after translation.
@@ -103,8 +108,16 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     }
   }
 
-  // Normalize thinking to the target provider-native format (config-driven, capability-aware)
-  applyThinking(targetFormat, model, result, provider, thinkingIntent);
+  // Normalize thinking to the target provider-native format (config-driven, capability-aware).
+  // Kiro's GenerateAssistantResponse request does not accept the generic top-level
+  // `thinking` field; its translators map thinking intent to KAS-compatible
+  // systemPrompt/additionalModelRequestFields instead.
+  const kiroThinkingMappedByTranslator =
+    targetFormat === FORMATS.KIRO &&
+    (sourceFormat === FORMATS.OPENAI || sourceFormat === FORMATS.CLAUDE);
+  if (!kiroThinkingMappedByTranslator) {
+    applyThinking(targetFormat, model, result, provider, thinkingIntent);
+  }
 
   // Always normalize to clean OpenAI format when target is OpenAI
   // This handles hybrid requests (e.g., OpenAI messages + Claude tools)
@@ -120,7 +133,7 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     result = prepareClaudeRequest(result, provider, apiKey, connectionId, credentials?.rawHeaders, clientSessionId);
   }
 
-  // Claude cloaking: rename client tools with _cc suffix (anti-ban)
+  // Claude cloaking: rename client tools with CLAUDE_TOOL_SUFFIX (anti-ban)
   // quirk: only providers flagged cloakToolsOnOAuth, and only with an OAuth token
   if (PROVIDERS[provider]?.quirks?.cloakToolsOnOAuth) {
     const apiKey = credentials?.accessToken || credentials?.apiKey || null;
@@ -148,9 +161,12 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
 // Translate response chunk: target -> openai -> source
 export function translateResponse(targetFormat, sourceFormat, chunk, state) {
   ensureInitialized();
-  // If same format, return as-is
+  // If same format, return as-is — except the tool name may still be cloaked:
+  // translateRequest() suffixes client tools for OAuth-cloaked Claude providers
+  // even when no format conversion is needed, so streamed tool_use blocks must
+  // be decloaked here or the client sees an unknown ("_ide"-suffixed) tool.
   if (sourceFormat === targetFormat) {
-    return [chunk];
+    return [decloakStreamChunk(chunk, state?.toolNameMap)];
   }
 
   let results = [chunk];
@@ -245,8 +261,10 @@ export function initState(sourceFormat) {
       funcArgsBuf: {},
       funcNames: {},
       funcCallIds: {},
+      funcItemAdded: {},
       funcArgsDone: {},
       funcItemDone: {},
+      customToolNames: new Set(),
       completedSent: false
     };
   }

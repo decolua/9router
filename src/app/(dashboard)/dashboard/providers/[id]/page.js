@@ -4,9 +4,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/providerIcon";
 import { Card, Button, Badge, Input, Modal, CardSkeleton, OAuthModal, KiroOAuthWrapper, CursorAuthModal, IFlowCookieModal, GitLabAuthModal, Toggle, Select, EditConnectionModal, NoAuthProxyCard, ConfirmModal } from "@/shared/components";
-import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS, THINKING_CONFIG } from "@/shared/constants/providers";
+import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, getProviderAlias, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
+import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { translate } from "@/i18n/runtime";
@@ -20,6 +22,7 @@ import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
+import BulkImportGrokCliModal from "./BulkImportGrokCliModal";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -46,6 +49,7 @@ export default function ProviderDetailPage() {
   const [showAddApiKeyModal, setShowAddApiKeyModal] = useState(false);
   const [addConnectionError, setAddConnectionError] = useState("");
   const [showBulkImportCodex, setShowBulkImportCodex] = useState(false);
+  const [showBulkImportGrokCli, setShowBulkImportGrokCli] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showEditNodeModal, setShowEditNodeModal] = useState(false);
   const [showBulkProxyModal, setShowBulkProxyModal] = useState(false);
@@ -65,6 +69,7 @@ export default function ProviderDetailPage() {
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const [suggestedModels, setSuggestedModels] = useState([]);
+  const [liveModels, setLiveModels] = useState([]);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
@@ -140,18 +145,53 @@ export default function ProviderDetailPage() {
   const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId] || authModes.includes("oauth");
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
-  const models = getModelsByProviderId(providerId);
+  const staticModels = getModelsByProviderId(providerId);
+  const models = providerId === "cursor" && liveModels.length > 0
+    ? liveModels
+    : staticModels;
   const providerAlias = getProviderAlias(providerId);
   
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
   const isAnthropicCompatible = isAnthropicCompatibleProvider(providerId);
   const isCompatible = isOpenAICompatible || isAnthropicCompatible;
   const hasDualAuthModes = !isCompatible && isOAuth && supportsApiKeyAuth;
-  const oauthConnectionLabel = providerId === "xai" ? "Grok Build OAuth" : "OAuth";
-  const apiKeyConnectionLabel = providerId === "xai" ? "xAI API Key" : "API Key";
-  const thinkingConfig = AI_PROVIDERS[providerId]?.thinkingConfig || THINKING_CONFIG.extended;
-  
+  const oauthConnectionLabel =
+    providerId === "xai" ? "Grok Build OAuth"
+    : providerId === "grok-cli" ? "Grok CLI Device Login"
+    : providerId === "kimi" ? "Kimi Coding OAuth"
+    : "OAuth";
+  const apiKeyConnectionLabel =
+    providerId === "xai" ? "xAI API Key"
+    : providerId === "kimi" ? "Kimi API Key"
+    : providerId === "qoder" ? "PAT"
+    : "API Key";
+  // Resolve suffix "(level)" for a model when a thinking level is picked and the model supports it.
+  const resolveThinkingSuffix = (modelId) => {
+    if (!thinkingMode || thinkingMode === "auto") return null;
+    const levels = getThinkingLevels(providerId, modelId);
+    return levels && levels.includes(thinkingMode) ? thinkingMode : null;
+  };
   const providerStorageAlias = isCompatible ? providerId : providerAlias;
+  // Union of levels across this provider's reasoning models — drives the level picker options.
+  // Include custom models too (e.g. manually added gpt-5.6-sol → max).
+  const providerThinkingLevels = (() => {
+    const set = new Set();
+    const seen = new Set();
+    const addLevels = (modelId) => {
+      if (!modelId || seen.has(modelId)) return;
+      seen.add(modelId);
+      const lv = getThinkingLevels(providerId, modelId);
+      if (lv) lv.forEach((l) => { if (l !== "none") set.add(l); });
+    };
+    for (const m of models) addLevels(m.id);
+    for (const m of kiloFreeModels) addLevels(m.id);
+    for (const entry of customModels) {
+      if (entry.providerAlias !== providerStorageAlias) continue;
+      if ((entry.kind || entry.type || "llm") !== "llm") continue;
+      addLevels(entry.id);
+    }
+    return set.size ? ["auto", ...[...set]] : null;
+  })();
   const providerDisplayAlias = isCompatible
     ? (providerNode?.prefix || providerId)
     : providerAlias;
@@ -420,6 +460,34 @@ export default function ProviderDetailPage() {
     fetchDisabledModels();
   }, [fetchConnections, fetchAliases, fetchCustomModels, fetchDisabledModels]);
 
+  // Cursor's model availability is account-specific and changes frequently.
+  // Load the active account's live catalog for the dashboard; the static
+  // registry remains the fallback while the request is pending or unavailable.
+  useEffect(() => {
+    if (providerId !== "cursor") {
+      setLiveModels([]);
+      return;
+    }
+
+    const connection = connections.find((item) => item.isActive !== false);
+    if (!connection?.id) {
+      setLiveModels([]);
+      return;
+    }
+
+    let cancelled = false;
+    fetch(`/api/providers/${connection.id}/models`, { cache: "no-store" })
+      .then(async (res) => ({ ok: res.ok, data: await res.json() }))
+      .then(({ ok, data }) => {
+        if (!cancelled && ok && Array.isArray(data.models) && data.models.length > 0) {
+          setLiveModels(data.models);
+        }
+      })
+      .catch(() => {});
+
+    return () => { cancelled = true; };
+  }, [providerId, connections]);
+
   // Fetch suggested models from provider's public API (if configured)
   useEffect(() => {
     const fetcher = (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId])?.modelsFetcher;
@@ -459,12 +527,12 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const handleAddCustomModel = async (modelId, type = "llm", providerAliasOverride = providerStorageAlias) => {
+  const handleAddCustomModel = async (modelId, type = "llm", providerAliasOverride = providerStorageAlias, caps) => {
     try {
       const res = await fetch("/api/models/custom", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerAlias: providerAliasOverride, id: modelId, type }),
+        body: JSON.stringify({ providerAlias: providerAliasOverride, id: modelId, type, ...(caps ? { caps } : {}) }),
       });
       if (res.ok) {
         await fetchCustomModels();
@@ -875,7 +943,7 @@ export default function ProviderDetailPage() {
   const isSelected = (connectionId) => selectedConnectionIds.includes(connectionId);
 
   const connectionsList = (
-    <div className="flex min-w-0 flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
+    <div className="flex min-w-0 flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03] max-h-[500px] overflow-y-auto pr-1">
       {connections
         .map((conn, index) => (
           <div key={conn.id} className="flex min-w-0 items-stretch">
@@ -1065,6 +1133,7 @@ export default function ProviderDetailPage() {
             isCustom
             isFree={false}
             caps={getCaps(`${providerId}/${model.id}`)}
+            thinkingSuffix={resolveThinkingSuffix(model.id)}
           />
         ))}
 
@@ -1090,6 +1159,7 @@ export default function ProviderDetailPage() {
               isFree={model.isFree}
               onDisable={() => handleDisableModel(model.id)}
               caps={getCaps(`${providerId}/${model.id}`)}
+              thinkingSuffix={resolveThinkingSuffix(model.id)}
             />
           );
         })}
@@ -1201,7 +1271,7 @@ export default function ProviderDetailPage() {
     if (isAnthropicCompatible) {
       return "/providers/anthropic-m.png";
     }
-    return `/providers/${providerInfo.id}.png`;
+    return getProviderIconSrc(providerInfo.id);
   };
 
   return (
@@ -1220,7 +1290,7 @@ export default function ProviderDetailPage() {
             className="flex size-12 shrink-0 items-center justify-center rounded-lg"
             style={{ backgroundColor: `${providerInfo.color}15` }}
           >
-            {headerImgError ? (
+            {headerImgError || !getHeaderIconPath() ? (
               <span className="text-sm font-bold" style={{ color: providerInfo.color }}>
                 {providerInfo.textIcon || providerInfo.id.slice(0, 2).toUpperCase()}
               </span>
@@ -1232,7 +1302,12 @@ export default function ProviderDetailPage() {
                 height={48}
                 className="max-h-12 max-w-12 rounded-lg object-contain"
                 sizes="48px"
-                onError={() => setHeaderImgError(true)}
+                onError={() => {
+                  markProviderIconMissing(providerInfo.id);
+                  setHeaderImgError(true);
+                }}
+              loading="lazy"
+              decoding="async"
               />
             )}
           </div>
@@ -1395,21 +1470,6 @@ export default function ProviderDetailPage() {
                   )}
                 </>
               )}
-              {/* Thinking config */}
-              {/* {thinkingConfig && (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-text-muted font-medium">Thinking</span>
-                  <select
-                    value={thinkingMode}
-                    onChange={(e) => handleThinkingModeChange(e.target.value)}
-                    className="text-xs px-2 py-1 border border-border rounded-md bg-background focus:outline-none focus:border-primary"
-                  >
-                    {thinkingConfig.options.map((opt) => (
-                      <option key={opt} value={opt}>{opt.charAt(0).toUpperCase() + opt.slice(1)}</option>
-                    ))}
-                  </select>
-                </div>
-              )} */}
               {/* Round Robin toggle */}
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-text-muted font-medium">Round Robin</span>
@@ -1468,6 +1528,11 @@ export default function ProviderDetailPage() {
                     )}
                     {providerId === "codex" && (
                       <Button size="sm" icon="playlist_add" variant="secondary" onClick={() => setShowBulkImportCodex(true)}>
+                        {translate("Bulk Add")}
+                      </Button>
+                    )}
+                    {providerId === "grok-cli" && (
+                      <Button size="sm" icon="playlist_add" variant="secondary" onClick={() => setShowBulkImportGrokCli(true)}>
                         {translate("Bulk Add")}
                       </Button>
                     )}
@@ -1540,6 +1605,18 @@ export default function ProviderDetailPage() {
                       {translate("Bulk Add")}
                     </Button>
                   )}
+                  {providerId === "grok-cli" && (
+                    <Button
+                      size="sm"
+                      icon="playlist_add"
+                      variant="secondary"
+                      onClick={() => setShowBulkImportGrokCli(true)}
+                      title={translate("Bulk import Grok CLI accounts from JSON")}
+                      className="w-full sm:w-auto"
+                    >
+                      {translate("Bulk Add")}
+                    </Button>
+                  )}
                   {hasDualAuthModes ? (
                     <>
                       <Button
@@ -1580,9 +1657,23 @@ export default function ProviderDetailPage() {
       {/* Models */}
       <Card>
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="text-lg font-semibold">
-            {"Available Models"}
-          </h2>
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold">
+              {"Available Models"}
+            </h2>
+            {providerThinkingLevels && (
+              <select
+                value={thinkingMode}
+                onChange={(e) => handleThinkingModeChange(e.target.value)}
+                title="Appends (level) suffix to copied model names"
+                className="rounded-md border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
+              >
+                {providerThinkingLevels.map((opt) => (
+                  <option key={opt} value={opt}>{`Thinking: ${opt.charAt(0).toUpperCase() + opt.slice(1)}`}</option>
+                ))}
+              </select>
+            )}
+          </div>
           {!isCompatible && (() => {
             const allIds = [
               ...models,
@@ -1661,6 +1752,7 @@ export default function ProviderDetailPage() {
         website={providerInfo?.website}
         proxyPools={proxyPools}
         error={addConnectionError}
+        existingNames={connections.map((c) => c.name).filter(Boolean)}
         onSave={handleSaveApiKey}
         onBulkDone={fetchConnections}
         onClose={() => {
@@ -1689,8 +1781,8 @@ export default function ProviderDetailPage() {
           isOpen={showAddCustomModel}
           providerAlias={providerStorageAlias}
           providerDisplayAlias={providerDisplayAlias}
-          onSave={async (modelId) => {
-            await handleAddCustomModel(modelId, "llm", providerStorageAlias);
+          onSave={async (modelId, caps) => {
+            await handleAddCustomModel(modelId, "llm", providerStorageAlias, caps);
             setShowAddCustomModel(false);
           }}
           onClose={() => setShowAddCustomModel(false)}
@@ -1701,6 +1793,14 @@ export default function ProviderDetailPage() {
         <BulkImportCodexModal
           isOpen={showBulkImportCodex}
           onClose={() => setShowBulkImportCodex(false)}
+          onSuccess={fetchConnections}
+        />
+      )}
+
+      {providerId === "grok-cli" && (
+        <BulkImportGrokCliModal
+          isOpen={showBulkImportGrokCli}
+          onClose={() => setShowBulkImportGrokCli(false)}
           onSuccess={fetchConnections}
         />
       )}

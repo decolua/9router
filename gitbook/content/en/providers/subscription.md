@@ -111,6 +111,27 @@ Model: cx/gpt-5.2-codex
 | `cx/gpt-5.2` | GPT 5.2 | General tasks |
 | `cx/gpt-5.1-codex` | GPT 5.1 Codex | Stable coding |
 
+### Image Generation
+
+The Codex image catalog includes `cx/gpt-5.6-sol-image`,
+`cx/gpt-5.6-terra-image`, and `cx/gpt-5.6-luna-image`, alongside the existing
+GPT 5.5, 5.4, and 5.3 image aliases. Select them under **Image → OpenAI Codex**
+in the dashboard, or discover them with `GET /v1/models/image` after connecting
+a Codex account.
+
+```bash
+curl http://localhost:20128/v1/images/generations \
+  -H "Authorization: Bearer $NINE_ROUTER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"cx/gpt-5.6-sol-image","prompt":"A blue square","size":"1024x1024"}'
+```
+
+These are 9Router aliases: the image adapter removes `-image` and sends the
+underlying model an `image_generation` tool through the Codex Responses API.
+The same endpoint accepts an `image` reference for edits. Image generation
+requires an eligible ChatGPT Plus or higher account; availability of each
+underlying model and its image tool depends on the connected account.
+
 ### Pro Tips
 
 - **5-hour rolling quota** - Fresh quota every 5 hours

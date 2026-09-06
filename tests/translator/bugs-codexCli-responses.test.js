@@ -20,9 +20,7 @@ describe("Codex CLI Responses → OpenAI", () => {
     expect(asst?.tool_calls?.length ?? 0, "empty tool_calls[] produced").toBeGreaterThan(0);
   });
 
-  // openai-responses.js:109-110 — arguments passed through without ensuring string type
-  // KNOWN BUG
-  it.fails("function_call arguments end up as a string", () => {
+  it("function_call arguments end up as a string", () => {
     const out = R2O({
       input: [{ type: "function_call", call_id: "c1", name: "f", arguments: { a: 1 } }],
     });
@@ -46,6 +44,20 @@ describe("Codex CLI Responses → OpenAI", () => {
 });
 
 describe("OpenAI → Codex Responses (reverse)", () => {
+  it("maps developer messages to Responses API instructions", () => {
+    const out = O2R({
+      messages: [
+        { role: "developer", content: "Follow the project rules." },
+        { role: "user", content: "Hello" },
+      ],
+    });
+
+    expect(out.instructions).toBe("Follow the project rules.");
+    expect(out.input).toEqual([
+      { type: "message", role: "user", content: [{ type: "input_text", text: "Hello" }] },
+    ]);
+  });
+
   // openai-responses.js:13 — clampCallId NOT applied on Responses→Chat; but here Chat→Responses must clamp
   it("call_id longer than 64 chars is clamped", () => {
     const longId = "call_" + "x".repeat(80);

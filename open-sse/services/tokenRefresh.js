@@ -3,30 +3,40 @@ import { OAUTH_ENDPOINTS, REFRESH_LEAD_MS } from "../config/appConstants.js";
 import {
   refreshXaiToken,
   refreshAccessToken,
+  refreshKimiToken,
+  refreshClineToken,
   refreshClaudeOAuthToken,
   refreshGoogleToken,
-  refreshQwenToken,
   refreshCodexToken,
   refreshKiroToken,
   refreshIflowToken,
   refreshGitHubToken,
   refreshCopilotToken,
   refreshCodebuddyToken,
+  refreshCodebuddyIntlToken,
+  refreshTraeToken,
+  refreshZedToken,
+  refreshWindsurfToken,
   classifyOAuthRefreshError,
 } from "./tokenRefresh/providers.js";
 
 // Re-export all provider refresh functions (preserves public API for all consumers)
 export {
   refreshAccessToken,
+  refreshKimiToken,
+  refreshClineToken,
   refreshClaudeOAuthToken,
   refreshGoogleToken,
-  refreshQwenToken,
   refreshCodexToken,
   refreshKiroToken,
   refreshIflowToken,
   refreshGitHubToken,
   refreshCopilotToken,
   refreshCodebuddyToken,
+  refreshCodebuddyIntlToken,
+  refreshTraeToken,
+  refreshZedToken,
+  refreshWindsurfToken,
   classifyOAuthRefreshError,
 };
 
@@ -44,7 +54,10 @@ export function isUnrecoverableRefreshError(result) {
 }
 
 export function getRefreshLeadMs(provider) {
-  return REFRESH_LEAD_MS[provider] || TOKEN_EXPIRY_BUFFER_MS;
+  if (REFRESH_LEAD_MS[provider]) return REFRESH_LEAD_MS[provider];
+  // Legacy id after kimi-coding → kimi merge
+  if (provider === "kimi-coding" && REFRESH_LEAD_MS.kimi) return REFRESH_LEAD_MS.kimi;
+  return TOKEN_EXPIRY_BUFFER_MS;
 }
 
 export function parseVertexSaJson(apiKey) {
@@ -124,12 +137,22 @@ const REFRESH_HANDLERS = {
   antigravity: (c, log) => refreshGoogleToken(c.refreshToken, PROVIDERS.antigravity.clientId, PROVIDERS.antigravity.clientSecret, log),
   claude: (c, log) => refreshClaudeOAuthToken(c.refreshToken, log),
   codex: (c, log) => refreshCodexToken(c.refreshToken, log),
-  qwen: (c, log) => refreshQwenToken(c.refreshToken, log),
   iflow: (c, log) => refreshIflowToken(c.refreshToken, log),
   github: (c, log) => refreshGitHubToken(c.refreshToken, log),
   kiro: (c, log) => refreshKiroToken(c.refreshToken, c.providerSpecificData, log),
   xai: (c, log) => refreshXaiToken(c.refreshToken, log),
+  // Grok CLI shares xAI OAuth client + token endpoint (device-code tokens refresh the same way)
+  "grok-cli": (c, log) => refreshXaiToken(c.refreshToken, log),
+  gcli: (c, log) => refreshXaiToken(c.refreshToken, log),
   "codebuddy-cn": (c, log) => refreshCodebuddyToken(c.refreshToken, log),
+  "codebuddy-intl": (c, log) => refreshCodebuddyIntlToken(c.refreshToken, log),
+  trae: (c, log) => refreshTraeToken(c.refreshToken, c, log),
+  cline: (c, log) => refreshClineToken(c.refreshToken, log),
+  zed: () => refreshZedToken(),
+  windsurf: (c, log) => refreshWindsurfToken(c, log),
+  // Kimi Code OAuth (merged into id `kimi`); legacy id still routes here
+  kimi: (c, log) => refreshKimiToken(c.refreshToken, c, log),
+  "kimi-coding": (c, log) => refreshKimiToken(c.refreshToken, c, log),
   vertex: vertexRefreshHandler,
   "vertex-partner": vertexRefreshHandler
 };
@@ -182,11 +205,11 @@ export function formatProviderCredentials(provider, credentials, log) {
       };
 
     case "codex":
-    case "qwen":
     case "iflow":
     case "openai":
     case "openrouter":
     case "xai":
+    case "grok-cli":
       return {
         apiKey: credentials.apiKey,
         accessToken: credentials.accessToken

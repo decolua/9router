@@ -8,8 +8,8 @@ import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/
 import {
   ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard,
   HermesToolCard, DefaultToolCard, OpenCodeToolCard, CoworkToolCard,
-  CopilotToolCard, ClineToolCard, KiloToolCard, DeepSeekTuiToolCard,
-  JcodeToolCard,
+  ClineToolCard, KiloToolCard, DeepSeekTuiToolCard,
+  JcodeToolCard, GrokBuildToolCard,
 } from "../components";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
@@ -81,6 +81,33 @@ export default function ToolDetailClient({ toolId, machineId }) {
           models.push({ value: modelValue, label: `${alias}/${m.id}`, provider: conn.provider, alias, connectionName: conn.name, modelId: m.id });
         }
       });
+
+      // openai/anthropic-compatible providers are registered with a random UUID (e.g.
+      // "openai-compatible-chat-<uuid>") that has no entry in the static PROVIDER_MODELS
+      // catalog, so `getModelsByProviderId` returns []. Routing still works because the
+      // request path uses the connection's own model config, but `hasActiveProviders`
+      // below would flip to false and disable the Apply button. Fall back to the
+      // connection's own models so these providers are usable from CLI tool pages.
+      if (providerModels.length === 0) {
+        const prefix = conn.providerSpecificData?.prefix || alias;
+        const fallbackModels = [];
+        if (conn.defaultModel) fallbackModels.push({ id: conn.defaultModel, name: conn.defaultModel });
+        (conn.providerSpecificData?.customModels || []).forEach(m => {
+          if (m?.id && !fallbackModels.some(f => f.id === m.id)) fallbackModels.push({ id: m.id, name: m.name || m.id });
+        });
+        if (fallbackModels.length === 0 && conn.testStatus === "active") {
+          // Provider is confirmed reachable but exposes no model info anywhere;
+          // still let the user apply so they aren't stuck on a permanently disabled button.
+          fallbackModels.push({ id: "model-id", name: `${prefix}/model-id` });
+        }
+        fallbackModels.forEach(m => {
+          const modelValue = `${prefix}/${m.id}`;
+          if (!seenModels.has(modelValue)) {
+            seenModels.add(modelValue);
+            models.push({ value: modelValue, label: `${prefix}/${m.id}`, provider: conn.provider, alias: prefix, connectionName: conn.name, modelId: m.id });
+          }
+        });
+      }
     });
     return models;
   };
@@ -129,8 +156,6 @@ export default function ToolDetailClient({ toolId, machineId }) {
         return <OpenClawToolCard {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} />;
       case "hermes":
         return <HermesToolCard {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} />;
-      case "copilot":
-        return <CopilotToolCard {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} />;
       case "cline":
         return <ClineToolCard {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} />;
       case "kilo":
@@ -139,6 +164,8 @@ export default function ToolDetailClient({ toolId, machineId }) {
         return <DeepSeekTuiToolCard {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} />;
       case "jcode":
         return <JcodeToolCard {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} />;
+      case "grok-build":
+        return <GrokBuildToolCard {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} />;
       default:
         return <DefaultToolCard toolId={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} tunnelEnabled={tunnelEnabled} />;
     }
