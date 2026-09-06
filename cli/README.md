@@ -88,6 +88,20 @@ That's it! Start coding with FREE AI models.
 
 **Dashboard**: `http://localhost:20128/dashboard`
 
+### Memory limit
+
+The server process starts with a 6 GB V8 heap cap. On a memory-limited host
+(systemd `MemoryMax`, `docker --memory`, k8s limits) lower it so the garbage
+collector feels the limit before the kernel does:
+
+```bash
+NINEROUTER_MAX_OLD_SPACE_SIZE=384 9router   # cap the heap at 384 MB
+NINEROUTER_MAX_OLD_SPACE_SIZE=0 9router     # no cap — let node size it
+```
+
+`NODE_OPTIONS=--max-old-space-size=…` is honored too, and takes effect only
+because 9Router stops passing its own default when you set one.
+
 ---
 
 ## 🛠️ Supported CLI Tools
