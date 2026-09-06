@@ -11,12 +11,18 @@ const ANTHROPIC_COMPATIBLE_DEFAULTS = {
   baseUrl: ANTHROPIC_COMPAT_BASE,
 };
 
+const CUSTOM_ADAPTER_PREFIX = "custom-adapter-";
+
 function isOpenAICompatible(provider) {
   return typeof provider === "string" && provider.startsWith(OPENAI_COMPATIBLE_PREFIX);
 }
 
 function isAnthropicCompatible(provider) {
   return typeof provider === "string" && provider.startsWith(ANTHROPIC_COMPATIBLE_PREFIX);
+}
+
+export function isCustomAdapter(provider) {
+  return typeof provider === "string" && provider.startsWith(CUSTOM_ADAPTER_PREFIX);
 }
 
 // Resolve the API type (chat vs responses) for an openai-compatible node.

@@ -1,0 +1,25 @@
+{
+  "id": "custom-example-declarative",
+  "name": "Declarative Example Provider",
+  "prefix": "demo-declarative",
+  "baseUrl": "https://api.example.com/v1/chat/completions",
+  "icon": "smart_toy",
+  "color": "#6366f1",
+  "category": "custom",
+  "authType": "bearer",
+  "headers": {
+    "Authorization": "Bearer {{apiKey}}",
+    "X-Source": "9router-custom-adapter"
+  },
+  "requestMapping": {
+    "modelParam": "model",
+    "messagesParam": "messages"
+  },
+  "responseMapping": {
+    "contentPath": "choices.0.message.content"
+  },
+  "models": [
+    { "id": "demo-model-1", "name": "Demo Model 1" },
+    { "id": "demo-model-2", "name": "Demo Model 2" }
+  ]
+}

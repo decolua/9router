@@ -25,6 +25,8 @@ import ZedExecutor from "./zed.js";
 import WindsurfExecutor from "./windsurf.js";
 import { DefaultExecutor } from "./default.js";
 import { DevinCliExecutor } from "./devin-cli.js";
+import { CustomAdapterExecutor } from "./customAdapter.js";
+import { getCustomAdapter } from "../custom-adapters/loader.js";
 
 const executors = {
   antigravity: new AntigravityExecutor(),
@@ -64,15 +66,21 @@ const defaultCache = new Map();
 
 export function getExecutor(provider) {
   if (executors[provider]) return executors[provider];
+  if (typeof provider === "string" && (provider.startsWith("custom-adapter-") || getCustomAdapter(provider))) {
+    return new CustomAdapterExecutor(provider);
+  }
   if (!defaultCache.has(provider)) defaultCache.set(provider, new DefaultExecutor(provider));
   return defaultCache.get(provider);
 }
 
 export function hasSpecializedExecutor(provider) {
-  return !!executors[provider];
+  if (executors[provider]) return true;
+  if (typeof provider === "string" && (provider.startsWith("custom-adapter-") || !!getCustomAdapter(provider))) return true;
+  return false;
 }
 
 export { BaseExecutor } from "./base.js";
+export { CustomAdapterExecutor } from "./customAdapter.js";
 export { AntigravityExecutor } from "./antigravity.js";
 export { AzureExecutor } from "./azure.js";
 export { GeminiCLIExecutor } from "./gemini-cli.js";
