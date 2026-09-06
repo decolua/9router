@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { createProviderConnection } from "@/models";
+import { assertValidAwsRegion } from "@/lib/oauth/constants/oauth";
 
 /**
  * POST /api/oauth/kiro/import
@@ -19,13 +20,21 @@ export async function POST(request) {
       );
     }
 
+    // Validate region if provided (SSRF prevention)
+    const safeRegion = region || "us-east-1";
+    try {
+      assertValidAwsRegion(safeRegion);
+    } catch (err) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+
     const kiroService = new KiroService();
     const isIdc = !!(clientId && clientSecret);
 
     // For IDC tokens, refresh via the regional OIDC endpoint with client credentials.
     // For social/builder-id tokens, use the standard social refresh endpoint.
     const providerSpecificData = isIdc
-      ? { clientId, clientSecret, region: region || "us-east-1", authMethod: "idc" }
+      ? { clientId, clientSecret, region: safeRegion, authMethod: "idc" }
       : {};
 
     const tokenData = await kiroService.refreshToken(refreshToken.trim(), providerSpecificData);

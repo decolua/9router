@@ -2,6 +2,13 @@ import { NextResponse } from "next/server";
 import { readFile, readdir } from "fs/promises";
 import { homedir } from "os";
 import { join } from "path";
+import { assertValidAwsRegion } from "@/lib/oauth/constants/oauth";
+import { hasValidCliToken, isAuthenticated } from "@/dashboardGuard";
+
+async function requireAuth(request) {
+  if (await hasValidCliToken(request) || await isAuthenticated(request)) return true;
+  return false;
+}
 
 /**
  * GET /api/oauth/kiro/auto-import
@@ -9,7 +16,10 @@ import { join } from "path";
  * For IDC (organization) tokens, also resolves clientId/clientSecret from the
  * linked client registration file so token refresh works.
  */
-export async function GET() {
+export async function GET(request) {
+  if (!(await requireAuth(request))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
     const cachePath = join(homedir(), ".aws/sso/cache");
 
@@ -112,13 +122,21 @@ export async function GET() {
       }
     }
 
+    // Validate region before returning (SSRF prevention)
+    let safeRegion = region || "us-east-1";
+    try {
+      assertValidAwsRegion(safeRegion);
+    } catch {
+      safeRegion = "us-east-1";
+    }
+
     return NextResponse.json({
       found: true,
       refreshToken,
       source: foundFile,
       clientId,
       clientSecret,
-      region,
+      region: safeRegion,
       authMethod,
       profileArn,
     });
