@@ -26,4 +26,12 @@ export const FILTERS = {
     (Array.isArray(models) ? models : [])
       .filter((m) => m.id?.startsWith("mimo") || m.name?.toLowerCase().includes("mimo"))
       .map((m) => ({ id: m.id, name: m.name || m.id })),
+
+  // Nous Portal mirrors OpenRouter's catalog shape; the picker section is
+  // "free models", and on Nous only ids suffixed ":free" are free.
+  "nous": (models) =>
+    (Array.isArray(models) ? models : [])
+      .filter((m) => m.id?.endsWith(":free"))
+      .map((m) => ({ id: m.id, name: m.name || m.id, contextLength: m.context_length }))
+      .sort((a, b) => (b.contextLength || 0) - (a.contextLength || 0)),
 };

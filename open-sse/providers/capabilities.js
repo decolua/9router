@@ -248,6 +248,37 @@ export const PROVIDER_CAPABILITIES = {
     "laguna-s-2.1":  { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 32000 },
     "laguna-xs-2.1": { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 },
   },
+  // Nous Portal — per-model values mirror the gateway's public /v1/models
+  // (context_length, top_provider.max_completion_tokens, architecture
+  // .input_modalities, reasoning.mandatory; fetched 2026-09-06). The gateway
+  // exposes no web_search parameter, and it accepts OpenAI reasoning_effort on
+  // every model while rejecting native vendor thinking fields — so
+  // thinkingFormat is "openai" everywhere (also forced at transport level).
+  // Exact entries are needed for the ~latest aliases and ids the generic
+  // pattern tables mis-window (e.g. *glm* says 200K; Nous serves 1.31M).
+  "nous-portal": {
+    "~anthropic/claude-opus-latest":      { vision: true, pdf: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 128000 },
+    "~anthropic/claude-sonnet-latest":    { vision: true, pdf: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 128000 },
+    "~openai/gpt-latest":                 { vision: true, pdf: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1050000, maxOutput: 128000 },
+    "~google/gemini-pro-latest":          { vision: true, pdf: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 },
+    "~google/gemini-flash-latest":        { vision: true, pdf: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 65536 },
+    "~z-ai/glm-latest":                   { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1310720, maxOutput: 235929 },
+    "~moonshotai/kimi-latest":            { vision: true, videoInput: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 943718 },
+    "~deepseek/deepseek-v4-flash-latest": { reasoning: true, thinkingFormat: "openai", contextWindow: 1310720, maxOutput: 943718 },
+    "~x-ai/grok-latest":                  { vision: true, pdf: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 500000, maxOutput: 450000 },
+    "openai/gpt-6-astra":                 { vision: true, pdf: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1050000, maxOutput: 128000 },
+    "openai/gpt-5.6-luna":                { vision: true, pdf: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1050000, maxOutput: 128000 },
+    "openai/gpt-5.6-terra":               { vision: true, pdf: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1050000, maxOutput: 128000 },
+    "openai/gpt-5.6-sol":                 { vision: true, pdf: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1050000, maxOutput: 128000 },
+    "z-ai/glm-5.3-flash":                 { vision: true, videoInput: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1310720, maxOutput: 943718 },
+    "qwen/qwen3.8-max-0902":              { vision: true, videoInput: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 131072 },
+    "qwen/qwen3.8-flash":                 { vision: true, videoInput: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 131072 },
+    "deepseek/deepseek-v4-pro":           { reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 384000 },
+    "tencent/hy4-preview":                { reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 64000 },
+    "minimax/minimax-m3":                 { vision: true, videoInput: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 235929 },
+    "meta/muse-spark-1.3":                { vision: true, pdf: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 943718 },
+    "thinkingmachines/inkling":           { vision: true, audioInput: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 262144 },
+  },
 };
 
 /**
