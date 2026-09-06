@@ -5,6 +5,7 @@ export const QUOTA_CACHE_KEY = "quotaCacheData";
 export const REFRESH_INTERVAL_MS = 60000;
 // Claude usage/quota endpoint rate-limits; poll it less often than other providers
 export const CLAUDE_REFRESH_INTERVAL_MS = 600000;
+export const COUNTDOWN_INTERVAL_MS = 1000;
 export const DEPLETED_QUOTA_THRESHOLD = 5;
 export const AUTO_REFRESH_STORAGE_KEY = "quotaAutoRefresh";
 export const CONNECTIONS_PAGE_SIZE = 20;
@@ -698,4 +699,75 @@ export function parseQuotaData(provider, data) {
   }
 
   return normalizedQuotas;
+}
+
+// ─── Auto-refresh timers ─────────────────────────────────────────────────────
+
+/**
+ * Owns the quota tracker's two intervals (data refresh + 1s countdown) and the
+ * Page Visibility subscription that pauses them while the tab is hidden.
+ *
+ * Both intervals live behind `startTimers`, which clears before it creates.
+ * That ordering is the point: a "visible" visibilitychange while the timers are
+ * already running used to plant a second pair and leave the first orphaned, so
+ * the countdown decremented twice per second and hit zero at double speed.
+ *
+ * @param {object} options
+ * @param {() => void} options.onRefresh   fires every `refreshIntervalMs`
+ * @param {() => void} options.onTick      fires every `tickIntervalMs`
+ * @param {Document} [options.doc]         injectable for tests
+ * @returns {{ start: () => void, stop: () => void, isRunning: () => boolean }}
+ */
+export function createQuotaAutoRefresh({
+  onRefresh,
+  onTick,
+  refreshIntervalMs = REFRESH_INTERVAL_MS,
+  tickIntervalMs = COUNTDOWN_INTERVAL_MS,
+  doc = typeof document === "undefined" ? null : document,
+} = {}) {
+  let refreshId = null;
+  let tickId = null;
+  let subscribed = false;
+
+  const clearTimers = () => {
+    if (refreshId !== null) {
+      clearInterval(refreshId);
+      refreshId = null;
+    }
+    if (tickId !== null) {
+      clearInterval(tickId);
+      tickId = null;
+    }
+  };
+
+  const startTimers = () => {
+    clearTimers();
+    refreshId = setInterval(() => onRefresh?.(), refreshIntervalMs);
+    tickId = setInterval(() => onTick?.(), tickIntervalMs);
+  };
+
+  const handleVisibilityChange = () => {
+    if (doc?.hidden) clearTimers();
+    else startTimers();
+  };
+
+  return {
+    start() {
+      if (!doc?.hidden) startTimers();
+      if (!subscribed) {
+        doc?.addEventListener?.("visibilitychange", handleVisibilityChange);
+        subscribed = true;
+      }
+    },
+    stop() {
+      clearTimers();
+      if (subscribed) {
+        doc?.removeEventListener?.("visibilitychange", handleVisibilityChange);
+        subscribed = false;
+      }
+    },
+    isRunning() {
+      return refreshId !== null;
+    },
+  };
 }
