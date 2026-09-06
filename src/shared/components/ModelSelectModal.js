@@ -50,6 +50,7 @@ export default function ModelSelectModal({
   const [customModels, setCustomModels] = useState([]);
   const [disabledModels, setDisabledModels] = useState({});
   const [cursorModels, setCursorModels] = useState([]);
+  const [liveModelsByProvider, setLiveModelsByProvider] = useState({});
 
   // Cursor exposes the usable catalog per account. Keep the static catalog only
   // as a fallback, since it quickly becomes stale and different accounts can
@@ -91,6 +92,44 @@ export default function ModelSelectModal({
 
     return () => { cancelled = true; };
   }, [isOpen, cursorConnectionIds]);
+
+  // Live catalogs for the other connected providers (nvidia, openrouter, kiro,
+  // ...). The provider detail page fetches the same endpoint, and the selector
+  // needs the union so newly released models can be picked into combos.
+  useEffect(() => {
+    if (!isOpen) return undefined;
+    const connections = activeProviders.filter((p) => p.provider !== "cursor" && p.id);
+    if (connections.length === 0) return undefined;
+
+    let cancelled = false;
+    Promise.all(connections.map(async (conn) => {
+      try {
+        const response = await fetch(`/api/providers/${conn.id}/models`, { cache: "no-store" });
+        if (!response.ok) return { provider: conn.provider, models: [] };
+        const data = await response.json();
+        return { provider: conn.provider, models: Array.isArray(data.models) ? data.models : [] };
+      } catch {
+        return { provider: conn.provider, models: [] };
+      }
+    }))
+      .then((results) => {
+        if (cancelled) return;
+        const byProvider = {};
+        for (const result of results) {
+          const existing = byProvider[result.provider] || [];
+          const seen = new Set(existing.map((m) => m.id));
+          for (const model of result.models) {
+            if (model?.id && !seen.has(model.id)) {
+              seen.add(model.id);
+              existing.push(model);
+            }
+          }
+          byProvider[result.provider] = existing;
+        }
+        setLiveModelsByProvider(byProvider);
+      });
+    return () => { cancelled = true; };
+  }, [isOpen, activeProviders]);
 
   const fetchCombos = async () => {
     try {
@@ -323,9 +362,10 @@ export default function ModelSelectModal({
           hasModels: mergedModels.length > 0,
         };
       } else {
-        const hardcodedModels = providerId === "cursor" && cursorModels.length > 0
+        const liveModels = liveModelsByProvider[providerId] || [];
+        const hardcodedModels = (providerId === "cursor" && cursorModels.length > 0)
           ? cursorModels
-          : getModelsByProviderId(providerId);
+          : [...liveModels, ...getModelsByProviderId(providerId)];
         const hardcodedIds = new Set(hardcodedModels.map((m) => m.id));
 
         // Custom models: if no hardcoded models (e.g. openrouter), show all aliases for this provider
@@ -394,7 +434,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders, cursorModels]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders, cursorModels, liveModelsByProvider]);
 
   // Filter combos by search query (and hide combos when kindFilter is set — combos are LLM-only by design)
   const filteredCombos = useMemo(() => {

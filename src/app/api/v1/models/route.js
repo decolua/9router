@@ -15,6 +15,7 @@ import { resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
+import { fetchProviderLiveModels } from "@/shared/utils/providerLiveModels";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
@@ -404,6 +405,34 @@ export async function buildModelsList(kindFilter, options = {}) {
         }
       }
 
+      // Generic live catalog for built-in API-key providers (nvidia, openrouter,
+      // groq, ...): fetch the provider's /models endpoint and UNION it with the
+      // static list so newly released models appear immediately. Skipped when the
+      // user configured an explicit model whitelist (enabledModels), for
+      // compatible nodes (they have their own /models fetch above), or for
+      // providers with a dedicated live resolver.
+      if (
+        !liveResolver &&
+        !isCompatibleProvider &&
+        !hasExplicitEnabledModels &&
+        !skipDynamicFetch &&
+        conn?.apiKey
+      ) {
+        try {
+          const live = await fetchProviderLiveModels(providerId, conn.apiKey);
+          if (live?.length) {
+            rawModelIds = Array.from(new Set([...live.map((m) => m.id), ...rawModelIds]));
+            liveModelKindById = new Map(
+              live.filter((m) => m?.id).map((m) => [m.id, modelKind(m)])
+            );
+            liveCapabilitiesById = new Map(
+              live.filter((m) => m?.id && m.capabilities).map((m) => [m.id, m.capabilities])
+            );
+          }
+        } catch (err) {
+          console.log(`Generic live model fetch failed for ${providerId}: ${err?.message || err}`);
+        }
+      }
       const modelIds = rawModelIds
         .map((modelId) => {
           if (modelId.startsWith(`${outputAlias}/`)) {

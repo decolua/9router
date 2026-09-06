@@ -71,6 +71,9 @@ export default function ProviderDetailPage() {
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [liveModels, setLiveModels] = useState([]);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
+  const [modelSearch, setModelSearch] = useState("");
+  const [modelFilter, setModelFilter] = useState("all"); // all | enabled | disabled
+  const [liveFetching, setLiveFetching] = useState(false);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
   const [showAgRiskModal, setShowAgRiskModal] = useState(false);
@@ -146,8 +149,8 @@ export default function ProviderDetailPage() {
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
   const staticModels = getModelsByProviderId(providerId);
-  const models = providerId === "cursor" && liveModels.length > 0
-    ? liveModels
+  const models = liveModels.length > 0
+    ? [...liveModels.filter((m) => !staticModels.some((s) => s.id === m.id)), ...staticModels]
     : staticModels;
   const providerAlias = getProviderAlias(providerId);
   
@@ -464,7 +467,10 @@ export default function ProviderDetailPage() {
   // Load the active account's live catalog for the dashboard; the static
   // registry remains the fallback while the request is pending or unavailable.
   useEffect(() => {
-    if (providerId !== "cursor") {
+    // Load the active connection live catalog for providers exposing a /models
+    // endpoint (nvidia, openrouter, cursor, ...). Compatible nodes are managed
+    // in their own section; the static registry stays as fallback.
+    if (isCompatible) {
       setLiveModels([]);
       return;
     }
@@ -481,12 +487,14 @@ export default function ProviderDetailPage() {
       .then(({ ok, data }) => {
         if (!cancelled && ok && Array.isArray(data.models) && data.models.length > 0) {
           setLiveModels(data.models);
+        } else if (!cancelled) {
+          setLiveModels([]);
         }
       })
       .catch(() => {});
 
     return () => { cancelled = true; };
-  }, [providerId, connections]);
+  }, [providerId, connections, isCompatible]);
 
   // Fetch suggested models from provider's public API (if configured)
   useEffect(() => {
@@ -1072,6 +1080,31 @@ export default function ProviderDetailPage() {
     }
   };
 
+  const handleFetchLiveModels = async () => {
+    const connection = connections.find((item) => item.isActive !== false);
+    if (!connection?.id) {
+      setModelsTestError(translate("Add an API key/connection before fetching models"));
+      return;
+    }
+    setLiveFetching(true);
+    try {
+      const res = await fetch(`/api/providers/${connection.id}/models?refresh=1`, { cache: "no-store" });
+      const data = await res.json();
+      if (res.ok && Array.isArray(data.models) && data.models.length > 0) {
+        setLiveModels(data.models);
+        setModelsTestError("");
+      } else {
+        setLiveModels([]);
+        setModelsTestError(data?.error ? `${translate("Failed to fetch models")}: ${data.error}` : translate("Failed to fetch models, please check the API key"));
+      }
+    } catch {
+      setLiveModels([]);
+      setModelsTestError(translate("Failed to fetch models: network error"));
+    } finally {
+      setLiveFetching(false);
+    }
+  };
+
   const renderModelsSection = () => {
     if (isCompatible) {
       return (
@@ -1098,8 +1131,17 @@ export default function ProviderDetailPage() {
       ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
     ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; });
     const disabledSet = new Set(disabledModelIds);
-    const displayModels = allModels.filter((m) => !disabledSet.has(m.id));
-    const disabledDisplayModels = allModels.filter((m) => disabledSet.has(m.id));
+    const lowerQuery = modelSearch.trim().toLowerCase();
+    const matchesQuery = (m) =>
+      !lowerQuery ||
+      m.id.toLowerCase().includes(lowerQuery) ||
+      String(m.name || "").toLowerCase().includes(lowerQuery);
+    const displayModels = allModels
+      .filter((m) => !disabledSet.has(m.id))
+      .filter(matchesQuery);
+    const disabledDisplayModels = allModels
+      .filter((m) => disabledSet.has(m.id))
+      .filter(matchesQuery);
     const customModelRows = getProviderCustomModelRows({
       customModels,
       modelAliases,
@@ -1109,7 +1151,47 @@ export default function ProviderDetailPage() {
     });
 
     return (
-      <div className="flex flex-wrap gap-3">
+      <div>
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            value={modelSearch}
+            onChange={(e) => setModelSearch(e.target.value)}
+            placeholder={translate("Search models...")}
+            className="w-64 py-2 px-3 text-sm text-text-main bg-surface-2 rounded-[10px] border border-transparent placeholder-text-muted/70 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40"
+          />
+          <div className="flex items-center gap-1">
+            {[
+              { key: "all", label: `All (${allModels.length})` },
+              { key: "enabled", label: `Enabled (${displayModels.length})` },
+              { key: "disabled", label: `Disabled (${disabledDisplayModels.length})` },
+            ].map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => setModelFilter(opt.key)}
+                className={
+                  modelFilter === opt.key
+                    ? "px-2.5 py-1.5 rounded-lg text-xs bg-brand-500/15 text-brand-600 dark:text-brand-400 border border-brand-500/30"
+                    : "px-2.5 py-1.5 rounded-lg text-xs text-text-muted border border-black/10 dark:border-white/10 hover:text-primary hover:border-primary/40"
+                }
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={handleFetchLiveModels}
+            disabled={liveFetching || connections.length === 0}
+            title={connections.length === 0 ? translate("Add an API key/connection first") : translate("Fetch live models for this provider")}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border border-primary/30 text-primary hover:bg-primary/5 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <span className="material-symbols-outlined text-[13px]" style={liveFetching ? { animation: "spin 1s linear infinite" } : undefined}>
+              {liveFetching ? "progress_activity" : "refresh"}
+            </span>
+            {liveFetching ? translate("Fetching...") : translate("Fetch Models")}
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-3 max-h-[480px] overflow-y-auto pr-1">
         {/* Custom models first */}
         {customModelRows.map((model) => (
           <ModelRow
@@ -1137,7 +1219,7 @@ export default function ProviderDetailPage() {
           />
         ))}
 
-        {displayModels.map((model) => {
+        {modelFilter !== "disabled" && displayModels.map((model) => {
           const fullModel = `${providerStorageAlias}/${model.id}`;
           const oldFormatModel = `${providerId}/${model.id}`;
           const existingAlias = Object.entries(modelAliases).find(
@@ -1221,7 +1303,7 @@ export default function ProviderDetailPage() {
         })()}
 
         {/* Disabled models — restorable */}
-        {disabledDisplayModels.length > 0 && (
+        {modelFilter !== "enabled" && disabledDisplayModels.length > 0 && (
           <div className="w-full mt-2">
             <p className="text-xs text-text-muted mb-2">Disabled models ({disabledDisplayModels.length}):</p>
             <div className="flex flex-wrap gap-2">
@@ -1239,6 +1321,7 @@ export default function ProviderDetailPage() {
             </div>
           </div>
         )}
+        </div>
       </div>
     );
   };
