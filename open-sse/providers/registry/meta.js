@@ -28,11 +28,14 @@ export default {
     thinkingFormat: "meta",
   },
   models: [
-    { id: "muse-spark-1.2-contributor", name: "Muse Spark 1.2 Contributor" },
-    { id: "muse-spark-1.3-contributor", name: "Muse Spark 1.3 Contributor" },
-    { id: "muse-spark-1.3", name: "Muse Spark 1.3" },
-    { id: "muse-spark-1.2", name: "Muse Spark 1.2" },
-    { id: "muse-spark-1.1", name: "Muse Spark 1.1" },
+    // Muse Spark models are served by /v1/responses (reasoning summary + encrypted
+    // replay); each declares the Responses target format so the gateway translates
+    // OpenAI Chat → Responses and back. Matches dispatch via openai-responses.
+    { id: "muse-spark-1.2-contributor", name: "Muse Spark 1.2 Contributor", targetFormat: "openai-responses" },
+    { id: "muse-spark-1.3-contributor", name: "Muse Spark 1.3 Contributor", targetFormat: "openai-responses" },
+    { id: "muse-spark-1.3", name: "Muse Spark 1.3", targetFormat: "openai-responses" },
+    { id: "muse-spark-1.2", name: "Muse Spark 1.2", targetFormat: "openai-responses" },
+    { id: "muse-spark-1.1", name: "Muse Spark 1.1", targetFormat: "openai-responses" },
   ],
   serviceKinds: ["llm"],
   modelsFetcher: { url: "https://api.meta.ai/v1/models", type: "openai" },

@@ -85,6 +85,40 @@ describe("non-stream Chat upstream for a Responses-API client (op-ericding bug)"
   });
 });
 
+describe("non-stream Responses upstream for a Chat Completions client", () => {
+  const RESPONSES_BODY = {
+    id: "resp_xyz",
+    object: "response",
+    created_at: 1700000000,
+    model: "muse-spark-1.3",
+    status: "completed",
+    output: [
+      { type: "reasoning", summary: [{ type: "summary_text", text: "reasoned through it" }] },
+      { type: "message", role: "assistant", content: [{ type: "output_text", text: "Here is the answer: 4", annotations: [] }] },
+      { type: "function_call", call_id: "call_1", name: "shell", arguments: "{\"cmd\":\"ls\"}" }
+    ],
+    usage: { input_tokens: 12, output_tokens: 8, total_tokens: 20 }
+  };
+
+  it("converts Responses output into chat.completion with text, reasoning and tool_calls", () => {
+    const out = translateNonStreamingResponse(RESPONSES_BODY, FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI);
+    expect(out.object).toBe("chat.completion");
+    expect(out.id).toBe("chatcmpl-xyz");
+    const msg = out.choices[0].message;
+    expect(msg.content).toBe("Here is the answer: 4");
+    expect(msg.reasoning_content).toBe("reasoned through it");
+    expect(msg.tool_calls[0].function.name).toBe("shell");
+    expect(msg.tool_calls[0].function.arguments).toBe("{\"cmd\":\"ls\"}");
+    expect(out.choices[0].finish_reason).toBe("tool_calls");
+    expect(out.usage.completion_tokens).toBe(8);
+  });
+
+  it("passes through an already-chat body untouched", () => {
+    const out = translateNonStreamingResponse(CHAT_TOOL_BODY, FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI);
+    expect(out.object).toBe("chat.completion");
+  });
+});
+
 describe("forced-SSE JSON path for a Responses-API client behind a chat upstream", () => {
   const sseCtx = (sourceFormat, targetFormat) => {
     const encoder = new TextEncoder();

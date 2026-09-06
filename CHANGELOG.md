@@ -1,7 +1,7 @@
 # Unreleased
 
 ## Features
-- **Providers**: add Meta AI (Muse Spark) via the Meta Model API — OpenAI-compatible `api.meta.ai` endpoint, always-on reasoning (`minimal`/`low`/`medium`/`high`/`xhigh`, no `max`) selectable through the `model(level)` model-id suffix, plus provider icon, pricing and capabilities
+- **Providers**: add Meta AI (Muse Spark) via the Meta Model API — OpenAI-compatible `api.meta.ai` endpoint, always-on reasoning (`minimal`/`low`/`medium`/`high`/`xhigh`, no `max`) selectable through the `model(level)` model-id suffix, plus provider icon, pricing and capabilities. Muse Spark routes through the `/v1/responses` Responses API (`reasoning.summary` + encrypted-content replay) so reasoning summaries surface as `reasoning_content` to Chat Completions clients; verified live against the Meta endpoint
 
 # v0.5.65 (2026-09-03)
 

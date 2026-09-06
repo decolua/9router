@@ -7,6 +7,8 @@ import { PROVIDERS } from "../../open-sse/config/providers.js";
 import { getModelTargetFormat } from "../../open-sse/config/providerModels.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 import { MetaExecutor, parseMetaSuffix } from "../../open-sse/executors/meta.js";
+import "../translator/registerAll.js";
+import { translateRequest } from "../../open-sse/translator/index.js";
 
 describe("meta registry", () => {
   it("is registered with the OpenAI-compatible base URL", () => {
@@ -15,9 +17,14 @@ describe("meta registry", () => {
     expect(PROVIDERS["meta"].thinkingFormat).toBe("meta");
   });
 
-  it("targets OpenAI chat completions (not Responses)", () => {
-    expect(getModelTargetFormat("meta", "muse-spark-1.3")).toBeNull();
-    expect(getModelTargetFormat("meta", "muse-spark-1.3-xhigh")).toBeNull();
+  it("targets Muse Spark to the Responses API (reasoning summary + replay)", () => {
+    expect(getModelTargetFormat("meta", "muse-spark-1.3")).toBe(FORMATS.OPENAI_RESPONSES);
+    expect(getModelTargetFormat("meta", "muse-spark-1.3-xhigh")).toBe(FORMATS.OPENAI_RESPONSES);
+    expect(getModelTargetFormat("meta", "muse-spark-9.0")).toBe(FORMATS.OPENAI_RESPONSES);
+  });
+
+  it("keeps non-Muse Spark Meta models on OpenAI chat completions", () => {
+    expect(getModelTargetFormat("meta", "llama-4-maverick")).toBeNull();
   });
 });
 
@@ -90,25 +97,70 @@ describe("meta model-id reasoning suffix", () => {
     expect(parseMetaSuffix("muse-spark-1.3(xhigh)")).toEqual({ base: "muse-spark-1.3", level: "xhigh" });
   });
 
-  it("sends the base model upstream and sets reasoning_effort from the dash suffix", () => {
+  it("routes Muse Spark to the Responses endpoint and non-Muse models to chat completions", () => {
+    const ex = new MetaExecutor();
+    expect(ex.buildUrl("muse-spark-1.3", true)).toBe("https://api.meta.ai/v1/responses");
+    expect(ex.buildUrl("muse-spark-1.3-xhigh", true)).toBe("https://api.meta.ai/v1/responses");
+    expect(ex.buildUrl("llama-4-maverick", true)).toBe("https://api.meta.ai/v1/chat/completions");
+  });
+
+  it("renders Responses reasoning+summary from the dash suffix", () => {
     const body = { model: "muse-spark-1.3-xhigh", messages: [{ role: "user", content: "hi" }], max_tokens: 4096 };
     const out = new MetaExecutor().transformRequest("muse-spark-1.3-xhigh", body, true, {});
     expect(out.model).toBe("muse-spark-1.3");
-    expect(out.reasoning_effort).toBe("xhigh");
-    expect(out.max_tokens).toBe(4096);
+    expect(out.reasoning).toEqual({ effort: "xhigh", summary: "auto" });
+    expect(out.max_output_tokens).toBe(4096);
+    expect(out.max_tokens).toBeUndefined();
+    expect(out.reasoning_effort).toBeUndefined();
   });
 
   it("clamps a (max) dash suffix to xhigh", () => {
     const body = { model: "muse-spark-1.3-max", messages: [] };
     const out = new MetaExecutor().transformRequest("muse-spark-1.3-max", body, true, {});
-    expect(out.reasoning_effort).toBe("xhigh");
+    expect(out.reasoning).toEqual({ effort: "xhigh", summary: "auto" });
     expect(out.model).toBe("muse-spark-1.3");
   });
 
-  it("leaves the base model and explicit body reasoning untouched", () => {
+  it("moves a body-level reasoning_effort into Responses reasoning (summary auto)", () => {
     const body = { model: "muse-spark-1.3", reasoning_effort: "high", messages: [] };
     const out = new MetaExecutor().transformRequest("muse-spark-1.3", body, true, {});
     expect(out.model).toBe("muse-spark-1.3");
-    expect(out.reasoning_effort).toBe("high");
+    expect(out.reasoning).toEqual({ effort: "high", summary: "auto" });
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+
+  it("omits reasoning entirely for a none effort (upstream rejects none)", () => {
+    const body = { model: "muse-spark-1.3", reasoning_effort: "none", messages: [] };
+    const out = new MetaExecutor().transformRequest("muse-spark-1.3", body, true, {});
+    expect(out.reasoning).toBeUndefined();
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+
+  it("translates a Chat Completions request into a Responses request end-to-end", () => {
+    const body = {
+      model: "meta/muse-spark-1.3",
+      messages: [{ role: "user", content: "Think, then answer: 2 + 2?" }],
+      reasoning_effort: "high",
+      max_tokens: 2048,
+    };
+
+    const translated = translateRequest(
+      FORMATS.OPENAI,
+      FORMATS.OPENAI_RESPONSES,
+      "muse-spark-1.3",
+      body,
+      true,
+      {},
+      "meta",
+    );
+    const out = new MetaExecutor().transformRequest("muse-spark-1.3", translated, true, {});
+
+    expect(out.model).toBe("muse-spark-1.3");
+    expect(Array.isArray(out.input)).toBe(true);
+    expect(out.reasoning).toEqual({ effort: "high", summary: "auto" });
+    expect(out.reasoning_effort).toBeUndefined();
+    expect(out.max_output_tokens).toBe(2048);
+    expect(out.max_tokens).toBeUndefined();
+    expect(out.instructions).toBeDefined();
   });
 });

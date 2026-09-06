@@ -50,7 +50,8 @@ export function findModelName(aliasOrId, modelId) {
 }
 
 export function getModelTargetFormat(aliasOrId, modelId) {
-  if ((!aliasOrId || aliasOrId === "oc" || aliasOrId === "opencode") && isMuseSparkModel(modelId)) {
+  if ((!aliasOrId || aliasOrId === "oc" || aliasOrId === "opencode" || aliasOrId === "meta" || aliasOrId === "meta-ai" || aliasOrId === "llama") && isMuseSparkModel(modelId)) {
+    // Muse Spark is served by the Responses API (reasoning summary + encrypted replay).
     return FORMATS.OPENAI_RESPONSES;
   }
   const models = PROVIDER_MODELS[aliasOrId];

@@ -139,10 +139,79 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
 }
 
 /**
+ * Translate a non-streaming OpenAI Responses API body into an OpenAI Chat
+ * Completions body. Used when a Chat Completions client is routed to a
+ * Responses API upstream with `stream:false` (the streaming path already emits
+ * Responses events). Converting this way keeps tool_calls/text/reasoning
+ * visible to the chat client instead of leaking the raw Responses JSON.
+ */
+function responsesToOpenAICompletion(responseBody) {
+  if (responseBody?.choices) return responseBody;
+
+  let text = "", reasoning = "";
+  const toolCalls = [];
+
+  for (const item of responseBody?.output || []) {
+    if (item?.type === RESPONSES_ITEM.REASONING) {
+      const summary = Array.isArray(item.summary)
+        ? item.summary.map((s) => s?.text || "").filter(Boolean).join("\n")
+        : "";
+      if (summary) reasoning = reasoning ? `${reasoning}\n${summary}` : summary;
+    } else if (item?.type === RESPONSES_ITEM.MESSAGE) {
+      for (const c of item.content || []) {
+        if (c?.type === RESPONSES_ITEM.OUTPUT_TEXT && typeof c.text === "string") {
+          text += c.text;
+        }
+      }
+    } else if (item?.type === RESPONSES_ITEM.FUNCTION_CALL || item?.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL) {
+      toolCalls.push({
+        id: item.call_id || item.id || `call_${toolCalls.length}`,
+        type: "function",
+        function: {
+          name: item.name || "",
+          arguments: item.type === RESPONSES_ITEM.FUNCTION_CALL
+            ? (typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {}))
+            : (typeof item.input === "string" ? item.input : JSON.stringify(item.input ?? "")),
+        },
+      });
+    }
+  }
+
+  const finishReason = toolCalls.length > 0 ? "tool_calls" : "stop";
+  const usage = responseBody?.usage || {};
+  const prompt = usage.input_tokens || usage.prompt_tokens || 0;
+  const completion = usage.output_tokens || usage.completion_tokens || 0;
+
+  const message = { role: ROLE.ASSISTANT };
+  if (reasoning) message.reasoning_content = reasoning;
+  if (text) message.content = text;
+  if (toolCalls.length > 0) message.tool_calls = toolCalls;
+  if (!message.content && !message.tool_calls) message.content = "";
+
+  return {
+    id: `chatcmpl-${String(responseBody?.id || "").replace(/^resp_/, "")}`,
+    object: "chat.completion",
+    created: responseBody?.created_at || Math.floor(Date.now() / 1000),
+    model: responseBody?.model || "unknown",
+    choices: [{ index: 0, message, finish_reason: finishReason }],
+    usage: {
+      prompt_tokens: prompt,
+      completion_tokens: completion,
+      total_tokens: usage.total_tokens || prompt + completion,
+    },
+  };
+}
+
+/**
  * Translate non-streaming response body from provider format → OpenAI format.
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
   if (targetFormat === sourceFormat) return responseBody;
+  // Provider responded in OpenAI Responses API shape but the client speaks Chat
+  // Completions — convert so text/reasoning/tool_calls surface as `choices`.
+  if (targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI) {
+    return responsesToOpenAICompletion(responseBody);
+  }
   // Provider responded in OpenAI Chat Completions shape but the client speaks
   // Responses API — convert so tool_calls/text surface as Responses `output`.
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {
