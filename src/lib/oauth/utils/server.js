@@ -1,6 +1,6 @@
 import http from "http";
 import { URL } from "url";
-import { CODEX_CONFIG, TRAE_CONFIG, WINDSURF_CONFIG, ZED_HOSTED_CONFIG } from "../constants/oauth.js";
+import { CODEX_CONFIG, OAUTH_TIMEOUT, TRAE_CONFIG, WINDSURF_CONFIG, ZED_HOSTED_CONFIG } from "../constants/oauth.js";
 
 // Loopback origin guard for local callback proxies.
 // Legit OAuth redirects are top-level navigations (no `Origin` header); a cross-site
@@ -93,6 +93,42 @@ export function startLocalServer(onCallback, fixedPort = null) {
         reject(err);
       }
     });
+  });
+}
+
+/**
+ * Poll until the OAuth callback has stored its params, or give up.
+ *
+ * Both timers are cleared on every exit. The hand-rolled copies of this loop
+ * cleared them only on the success branch, so a wait that timed out left a
+ * 100ms interval running for the life of the process.
+ *
+ * @param {Function} getParams - Returns the callback params once they arrive
+ * @param {number} timeoutMs - Deadline in milliseconds
+ * @param {number} pollMs - Poll period in milliseconds
+ * @returns {Promise<Object>} - Callback params
+ */
+export function waitForCallbackParams(getParams, timeoutMs = OAUTH_TIMEOUT, pollMs = 100) {
+  return new Promise((resolve, reject) => {
+    let interval = null;
+    let timeout = null;
+    const stop = () => {
+      if (interval) { clearInterval(interval); interval = null; }
+      if (timeout) { clearTimeout(timeout); timeout = null; }
+    };
+
+    timeout = setTimeout(() => {
+      stop();
+      reject(new Error("Authentication timeout (5 minutes)"));
+    }, timeoutMs);
+
+    interval = setInterval(() => {
+      const params = getParams();
+      if (params) {
+        stop();
+        resolve(params);
+      }
+    }, pollMs);
   });
 }
 
