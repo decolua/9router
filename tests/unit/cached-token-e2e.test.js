@@ -81,4 +81,22 @@ describe("cached-token end-to-end (persist + aggregate + cost)", () => {
     expect(hist[0].tokens.prompt_tokens).toBe(1000);
     expect(hist[0].tokens.cached_tokens).toBe(600);
   });
+
+  it("Today stats count input/output-shaped usage", async () => {
+    const before = await db.getUsageStats("today");
+
+    await db.saveRequestUsage({
+      provider: "anthropic",
+      model: "claude-sonnet-4-6",
+      connectionId: "c-input-output",
+      tokens: { input_tokens: 77, output_tokens: 23 },
+      endpoint: "/v1/messages",
+      status: "ok",
+    });
+
+    const after = await db.getUsageStats("today");
+    expect(after.totalRequests - before.totalRequests).toBe(1);
+    expect(after.totalPromptTokens - before.totalPromptTokens).toBe(77);
+    expect(after.totalCompletionTokens - before.totalCompletionTokens).toBe(23);
+  });
 });
