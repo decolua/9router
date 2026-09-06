@@ -27,6 +27,16 @@ export const KIRO_CODEWHISPERER_TARGET =
   "AmazonCodeWhispererStreamingService.GenerateAssistantResponse";
 export const KIRO_ENDPOINT_FALLBACK_STATUSES = new Set([401, 403, 404]);
 
+// Estimator policy, not a guarantee of provider cache retention or pricing.
+export const KIRO_CACHE_MODELS = Object.freeze({
+  "claude-opus-5": { ttlMs: 5 * 60_000, minTokens: 4096 },
+  "gpt-5.6-terra": { ttlMs: 30 * 60_000, minTokens: 1024, conversationScoped: true }
+});
+export const KIRO_CACHE_LIMITS = Object.freeze({
+  scopes: 1024, accountScopes: 32, prefixes: 256, samples: 64, pairs: 8,
+  minPairs: 2, maxSavings: 0.9, calibrationTtlMs: 30 * 60_000
+});
+
 // Public default CodeWhisperer profile ARNs (us-east-1), keyed by auth method.
 // Used when an account cannot resolve its own profileArn. Builder ID and social
 // (Google/GitHub) sign-ins map to different shared profiles.

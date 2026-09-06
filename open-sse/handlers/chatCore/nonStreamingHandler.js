@@ -10,6 +10,8 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { kiroToClaudeNonStreaming } from "../../translator/response/kiro-to-claude.js";
+import { kiroToResponsesUsage } from "../../translator/concerns/kiroUsage.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -143,6 +145,15 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
   if (targetFormat === sourceFormat) return responseBody;
+  if (targetFormat === FORMATS.KIRO) {
+    if (sourceFormat === FORMATS.CLAUDE) return kiroToClaudeNonStreaming(responseBody);
+    if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+      const response = openAICompletionToResponses(responseBody, customToolNames);
+      response.usage = kiroToResponsesUsage(responseBody.usage);
+      return response;
+    }
+    return responseBody;
+  }
   // Provider responded in OpenAI Chat Completions shape but the client speaks
   // Responses API — convert so tool_calls/text surface as Responses `output`.
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {
@@ -289,7 +300,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   if (contentType.includes("text/event-stream")) {
     const sseText = await providerResponse.text();
     const parsed = parseSSEToOpenAIResponse(sseText, model);
-    if (!parsed) {
+    if (!parsed || parsed.error) {
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
     }

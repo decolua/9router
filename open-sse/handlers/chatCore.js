@@ -30,6 +30,7 @@ import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { forwardKiroCacheDelivery, cancelKiroCacheDelivery } from "../services/kiroCacheDelivery.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -310,10 +311,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   const streamController = createStreamController({
     onDisconnect: (reason) => {
+      if (provider === "kiro") cancelKiroCacheDelivery(providerResponse);
       trackPendingRequest(model, provider, connectionId, false);
       if (onDisconnect) onDisconnect(reason);
     },
-    onError: () => trackPendingRequest(model, provider, connectionId, false),
+    onError: () => {
+      if (provider === "kiro") cancelKiroCacheDelivery(providerResponse);
+      trackPendingRequest(model, provider, connectionId, false);
+    },
     log, provider, model, reqTag
   });
 
@@ -430,6 +435,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
             signal: streamController.signal,
             log,
             proxyOptions,
+            observeCache: false,
           });
           if (retryResult.response.ok) {
             providerResponse = retryResult.response;
@@ -473,23 +479,27 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
+  const withDelivery = result => {
+    if (provider === "kiro" && result?.success) forwardKiroCacheDelivery(providerResponse, result.response);
+    return result;
+  };
 
   // Provider forced streaming but client wants JSON
   if (!clientRequestedStreaming && providerRequiresStreaming) {
     const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, customToolNames, trackDone, appendLog });
-    if (result) { streamController.handleComplete(); return result; }
+    if (result) { streamController.handleComplete(); return withDelivery(result); }
   }
 
   // True non-streaming response
   if (!stream) {
     const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, reqLogger, toolNameMap, customToolNames, trackDone, appendLog });
     streamController.handleComplete();
-    return result;
+    return withDelivery(result);
   }
 
   // Streaming response
   const { onStreamComplete, streamDetailId } = buildOnStreamComplete({ ...sharedCtx });
-  return handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, userAgent, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, credentials });
+  return withDelivery(await handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, userAgent, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, credentials }));
 }
 
 export function isTokenExpiringSoon(expiresAt, bufferMs = 5 * 60 * 1000) {

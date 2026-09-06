@@ -10,6 +10,7 @@ import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { prepareKiroCacheDelivery, bindKiroCacheDelivery } from "../services/kiroCacheDelivery.js";
 
 const KIRO_REPAIR_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
 const KIRO_REPAIR_HEARTBEAT_MS = 10_000;
@@ -342,12 +343,25 @@ export class KiroExecutor extends BaseExecutor {
    * classify the status, and trigger account fallback/cooldown.
    */
   async execute(args) {
-    const result = await super.execute(args);
-    if (result?.response?.ok) this.attachIntegrityGate(result, args);
-    return result;
+    // Freeze warmth before sending, not after headers: another request may finish
+    // while this fetch is in flight. Each fallback/retry is excluded from learning.
+    const endpoint = this.buildUrl(args.model, args.stream, 0, args.credentials);
+    const transaction = args.observeCache === false ? null : prepareKiroCacheDelivery({
+      body: args.body, endpoint, credentials: args.credentials, signal: args.signal
+    });
+    try {
+      const result = await super.execute(args);
+      const eligible = result.attemptCount === 1 && result.url === endpoint;
+      if (!eligible || !result?.response?.ok) transaction?.complete(false);
+      if (result?.response?.ok) this.attachIntegrityGate(result, args, eligible ? transaction : null);
+      return result;
+    } catch (error) {
+      transaction?.complete(false);
+      throw error;
+    }
   }
 
-  attachIntegrityGate(result, args) {
+  attachIntegrityGate(result, args, transaction = null) {
     const abortController = new AbortController();
     const maxBytes = envPositiveInt("KIRO_TOOL_CALL_REPAIR_BUFFER_MAX_BYTES", KIRO_REPAIR_BUFFER_MAX_BYTES);
     const legacyTimeout = envPositiveInt("KIRO_TOOL_CALL_REPAIR_TIMEOUT_MS", STREAM_FIRST_CHUNK_TIMEOUT_MS);
@@ -379,12 +393,14 @@ export class KiroExecutor extends BaseExecutor {
             maxBytes,
             ttftTimeoutMs,
             stallTimeoutMs,
-            repairEnabled
+            repairEnabled,
+            transaction
           });
           if (abortController.signal.aborted) throw makeAbortError(abortController.signal.reason);
           controller.enqueue(bytes);
           controller.close();
         } catch (error) {
+          transaction?.complete(false);
           if (open && error.name === "AbortError") {
             controller.error(error);
           } else if (open && error.name !== "AbortError") {
@@ -401,6 +417,7 @@ export class KiroExecutor extends BaseExecutor {
         }
       },
       cancel(reason) {
+        transaction?.complete(false);
         open = false;
         clearInterval(heartbeatTimer);
         abortController.abort(reason || "client cancelled");
@@ -412,6 +429,7 @@ export class KiroExecutor extends BaseExecutor {
       statusText: result.response.statusText,
       headers: { ...SSE_HEADERS }
     });
+    bindKiroCacheDelivery(result.response, transaction);
   }
 
   async runIntegrityRecovery(rawResponse, args, options) {
@@ -421,7 +439,12 @@ export class KiroExecutor extends BaseExecutor {
       options,
       "initial"
     );
-    if (first.kind === "complete") return first.bytes;
+    if (first.kind === "complete") {
+      if (options.transaction) options.transaction.observation = first.observation;
+      return first.bytes;
+    }
+    // A repaired/fallback generation must not calibrate the original request.
+    options.transaction?.complete(false);
     if (first.kind === "terminal_stop" || first.kind === "upstream_error") {
       return this.integrityFailureSSE(first);
     }
@@ -522,11 +545,14 @@ export class KiroExecutor extends BaseExecutor {
 
   async readIntegrityAttempt(rawResponse, model, options, attempt) {
     let diagnostics;
+    let observation;
     const transformed = this.transformEventStreamToSSE(rawResponse, model, {
       maxToolBytes: Math.max(1, Math.floor(options.maxBytes / 2)),
       onTerminalState: (value) => {
         diagnostics = value;
-      }
+      },
+      cachePlan: attempt === "initial" ? options.transaction?.plan : null,
+      onCacheObservation: value => { observation = value; }
     });
     const reader = transformed.body.getReader();
     const chunks = [];
@@ -603,7 +629,7 @@ export class KiroExecutor extends BaseExecutor {
         return { kind: "short_final", diagnostics: safeDiagnostics };
       }
     }
-    return { kind: "complete", bytes: concatChunks(chunks, totalBytes), diagnostics: safeDiagnostics };
+    return { kind: "complete", bytes: concatChunks(chunks, totalBytes), diagnostics: safeDiagnostics, observation };
   }
 
   transformEventStreamToSSE(response, model, options = {}) {
@@ -631,6 +657,8 @@ export class KiroExecutor extends BaseExecutor {
       contextUsagePercentage: 0,
       hasContextUsage: false,
       hasMetering: false,
+      credits: 0,
+      observationInvalid: false,
       usage: null,
       inThinking: false,
       toolValidationError: null,
@@ -712,7 +740,7 @@ export class KiroExecutor extends BaseExecutor {
         if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("not an object");
         return input;
       } catch (error) {
-        throw new Error(`Kiro tool input must be valid object JSON (${error.message})`);
+        throw new Error("Kiro tool input must be valid object JSON");
       }
     };
     const emitTools = (controller) => {
@@ -783,6 +811,13 @@ export class KiroExecutor extends BaseExecutor {
       }
 
       const eventType = event.headers[":event-type"] || "";
+      if (!event.payload || typeof event.payload !== "object" ||
+          (Array.isArray(event.payload) && eventType !== "toolUseEvent") || /error|exception/i.test(eventType)) {
+        state.observationInvalid = true;
+      }
+      if (["assistantResponseEvent", "codeEvent"].includes(eventType) && typeof event.payload?.content !== "string") {
+        state.observationInvalid = true;
+      }
       const eventCountKey = KIRO_EVENT_TYPES.has(eventType) ? eventType : "other";
       eventCounts[eventCountKey] = (eventCounts[eventCountKey] || 0) + 1;
       if (eventType === "assistantResponseEvent" && typeof event.payload?.content === "string") {
@@ -814,6 +849,7 @@ export class KiroExecutor extends BaseExecutor {
       } else if (eventType === "reasoningContentEvent") {
         const value = event.payload?.reasoningContentEvent || event.payload || {};
         const content = typeof value === "string" ? value : value.text || value.content || "";
+        if (typeof content !== "string") state.observationInvalid = true;
         if (content) {
           state.hasReasoning = true;
           state.totalContentLength += content.length;
@@ -868,36 +904,49 @@ export class KiroExecutor extends BaseExecutor {
         }
       } else if (eventType === "contextUsageEvent") {
         const percentage = Number(event.payload?.contextUsagePercentage);
-        if (Number.isFinite(percentage)) {
+        if (event.payload?.contextUsagePercentage != null && Number.isFinite(percentage) && percentage >= 0 && percentage <= 100) {
           state.contextUsagePercentage = percentage;
           state.hasContextUsage = true;
-        }
+        } else state.observationInvalid = true;
       } else if (eventType === "meteringEvent") {
         state.hasMetering = true;
         const metering = event.payload?.meteringEvent || event.payload || {};
-        const credits = Number(metering.usage);
-        if (Number.isFinite(credits)) {
-          state.usage = {
-            ...(state.usage || {}),
-            kiro_credits: credits,
-            kiro_credit_unit: typeof metering.unit === "string" ? metering.unit : "credit"
-          };
+        const credits = typeof metering.usage === "number" ? metering.usage
+          : typeof metering.usage === "string" && metering.usage.trim() ? Number(metering.usage) : NaN;
+        // Preserve the established public credit fields. Calibration uses a
+        // separate validated accumulator and never serializes its private state.
+        const publicCredits = Number(metering.usage);
+        if (Number.isFinite(publicCredits)) {
+          state.usage = { ...(state.usage || {}), kiro_credits: publicCredits,
+            kiro_credit_unit: typeof metering.unit === "string" ? metering.unit : "credit" };
         }
+        if (Number.isFinite(credits) && credits > 0 && (!metering.unit || metering.unit === "credit")) {
+          state.credits += credits;
+        } else state.observationInvalid = true;
       } else if (eventType === "metricsEvent") {
         const metrics = event.payload?.metricsEvent || event.payload || {};
+        const cacheReadValue = metrics.cacheReadInputTokens ?? metrics.cache_read_input_tokens;
+        const cacheCreateValue = metrics.cacheCreationInputTokens ?? metrics.cache_creation_input_tokens;
+        const hasCache = metrics.cacheReadInputTokens !== undefined || metrics.cache_read_input_tokens !== undefined ||
+          metrics.cacheCreationInputTokens !== undefined || metrics.cache_creation_input_tokens !== undefined;
+        const values = [metrics.inputTokens, metrics.outputTokens, cacheReadValue, cacheCreateValue];
+        if (values.some(value => value !== undefined &&
+            (value === null || !Number.isSafeInteger(Number(value)) || Number(value) < 0))) state.observationInvalid = true;
         const prompt = Number(metrics.inputTokens) || 0;
         const completion = Number(metrics.outputTokens) || 0;
-        if (prompt || completion) {
+        if (prompt || completion || hasCache) {
+          const cacheRead = Math.max(0, Number(cacheReadValue) || 0);
+          const cacheCreate = Math.max(0, Number(cacheCreateValue) || 0);
+          const input = prompt + cacheRead + cacheCreate;
           state.usage = {
             ...(state.usage || {}),
-            prompt_tokens: prompt,
+            prompt_tokens: input,
             completion_tokens: completion,
-            total_tokens: prompt + completion
+            total_tokens: input + completion
           };
-          const cacheRead = Number(metrics.cacheReadInputTokens || metrics.cache_read_input_tokens) || 0;
-          const cacheCreate = Number(metrics.cacheCreationInputTokens || metrics.cache_creation_input_tokens) || 0;
-          if (cacheRead) state.usage.cache_read_input_tokens = cacheRead;
-          if (cacheCreate) state.usage.cache_creation_input_tokens = cacheCreate;
+          if (hasCache) {
+            state.usage.prompt_tokens_details = { cached_tokens: cacheRead, cache_creation_tokens: cacheCreate };
+          }
         }
       }
       return true;
@@ -1091,6 +1140,15 @@ export class KiroExecutor extends BaseExecutor {
           total_tokens: prompt + completion
         };
       }
+      const observation = {
+        credits: state.credits,
+        outputTokens: state.usage?.completion_tokens,
+        complete: hasOutput && state.hasMetering && Number.isFinite(state.credits) && state.credits > 0 &&
+          !state.observationInvalid && !state.toolValidationError &&
+          !state.droppedTools && ["complete", "tool_use"].includes(disposition) && !truncatedAfterOutput
+      };
+      options.onCacheObservation?.(observation);
+      if (observation.complete && state.credits > 0) state.usage = options.cachePlan?.apply(state.usage) || state.usage;
       const finishReason = truncatedAfterOutput
         ? "length"
         : state.hasToolCalls
@@ -1270,12 +1328,13 @@ function parseEventFrame(data) {
 
   const payloadBytes = data.subarray(headerEnd, totalLength - 4);
   if (payloadBytes.byteLength === 0) return { headers, payload: null };
-  const payloadText = decoder.decode(payloadBytes);
-  if (!payloadText.trim()) return { headers, payload: null };
   try {
+    const payloadText = new TextDecoder("utf-8", { fatal: true }).decode(payloadBytes);
+    if (!payloadText.trim()) return { headers, payload: null };
     return { headers, payload: JSON.parse(payloadText) };
-  } catch (error) {
-    throw new Error(`AWS EventStream payload is not valid JSON (${error.message})`);
+  } catch {
+    // Parser errors may contain a raw prompt/tool/reasoning excerpt.
+    throw new Error("AWS EventStream payload is not valid UTF-8 JSON");
   }
 }
 
