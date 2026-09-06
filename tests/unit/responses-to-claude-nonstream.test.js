@@ -253,8 +253,6 @@ describe("translateNonStreamingResponse for Responses API upstream", () => {
     expect(claudeOut.usage.output_tokens).toBe(25);
     expect(claudeOut.usage.cache_read_input_tokens).toBe(40);
   });
-
-
 });
 
 describe("handleNonStreamingResponse with Responses API upstream returning SSE", () => {
@@ -397,6 +395,28 @@ describe("handleForcedSSEToJson with Claude client", () => {
   });
 });
 
+describe("extractTextFromResponsesOutput handling", () => {
+  it("extracts output_text, message refusal, top-level refusal, and loose text parts strictly, ignoring non-text parts", () => {
+    const output = [
+      {
+        type: "message",
+        role: "assistant",
+        content: [
+          { type: "output_text", text: "Part 1. " },
+          { type: "non_text_part", text: "Should be ignored" },
+          { type: "refusal", refusal: "Cannot fulfill request. " },
+          { type: "text", text: "Compatibility part. " },
+        ],
+      },
+      {
+        type: "refusal",
+        refusal: "Top level refusal.",
+      },
+    ];
+    const text = extractTextFromResponsesOutput(output);
+    expect(text).toBe("Part 1. Cannot fulfill request. Compatibility part. Top level refusal.");
+  });
+});
 
 describe("parseResponsesSSEToJSON parser robustness", () => {
   it("parses raw SSE string without event headers", () => {

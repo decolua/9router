@@ -128,18 +128,29 @@ export function openAICompletionToResponses(responseBody, customToolNames = null
   };
 }
 
+/**
+ * Extract assistant text from Responses API output.
+ * In the OpenAI Responses API:
+ * - Assistant message generation text has type: "output_text" (part.text)
+ * - Message-level refusal parts have type: "refusal" (part.refusal)
+ * - Top-level refusal output items have type: "refusal" (item.refusal)
+ * - Compatibility: some third-party bridges emit type: "text" (part.text)
+ * All other part types (images, audio, tool calls, annotations) are strictly ignored.
+ */
 export function extractTextFromResponsesOutput(output) {
   if (!Array.isArray(output)) return "";
   const texts = [];
   for (const item of output) {
     if (item?.type === "message" && Array.isArray(item.content)) {
       for (const part of item.content) {
-        if (part?.type === "output_text" && typeof part.text === "string") {
+        if ((part?.type === "output_text" || part?.type === "text") && typeof part.text === "string") {
           texts.push(part.text);
-        } else if (typeof part?.text === "string") {
-          texts.push(part.text);
+        } else if (part?.type === "refusal" && typeof part.refusal === "string") {
+          texts.push(part.refusal);
         }
       }
+    } else if (item?.type === "refusal" && typeof item.refusal === "string") {
+      texts.push(item.refusal);
     }
   }
   return texts.join("");
