@@ -48,15 +48,17 @@ describe("AUDIT-002: API key masking", () => {
     expect(livePath.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("byApiKey object keys should use masked key, not raw key", () => {
+  it("byApiKey object keys should never contain the raw key", () => {
     const source = fs.readFileSync(
       path.resolve("src/lib/db/repos/usageRepo.js"),
       "utf-8"
     );
-    // The 24h path should use apiKeyMasked in the akKey template
-    expect(source).toContain("${apiKeyMasked}|${r.model}|${r.provider");
-    // Should NOT use raw r.apiKey in the key
+    // Neither aggregation path may name a response bucket after the secret.
     expect(source).not.toContain("${r.apiKey}|${r.model}|${r.provider");
+    expect(source).not.toContain("${e.apiKey}|${e.model}|${e.provider");
+    // Both derive the bucket name through the shared non-secret identity.
+    expect(source).toContain("function apiKeyIdentity(");
+    expect((source.match(/apiKeyIdentity\(/g) || []).length).toBeGreaterThanOrEqual(4);
   });
 });
 
