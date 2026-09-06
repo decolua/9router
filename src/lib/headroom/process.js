@@ -42,17 +42,13 @@ export function getManagedPid() {
   return pid && isPidAlive(pid) ? pid : null;
 }
 
-// Build proxy CLI flags for the active compression extras. `[code]` (AST
-// compression) is off by default in headroom → pass --code-aware to turn it on;
-// `[ml]` (Kompress) is on by default → pass --disable-kompress to turn it off.
-function extrasProxyArgs({ codeAware, kompress } = {}) {
+// Build proxy CLI flags.
+function extrasProxyArgs() {
   const args = [];
-  if (codeAware) args.push("--code-aware");
-  if (kompress === false) args.push("--disable-kompress");
   return args;
 }
 
-export async function startHeadroomProxy({ port = DEFAULT_PORT, codeAware = false, kompress = true } = {}) {
+export async function startHeadroomProxy({ port = DEFAULT_PORT } = {}) {
   const safePort = Number(port) > 0 && Number(port) < 65536 ? Number(port) : DEFAULT_PORT;
   const binary = findHeadroomBinary();
   if (!binary) {
@@ -68,7 +64,7 @@ export async function startHeadroomProxy({ port = DEFAULT_PORT, codeAware = fals
   // spawn stdio requires fd numbers, not WriteStream objects.
   const outFd = fs.openSync(LOG_FILE, "a");
 
-  const args = ["proxy", "--port", String(safePort), ...extrasProxyArgs({ codeAware, kompress })];
+  const args = ["proxy", "--port", String(safePort)];
   const child = spawn(binary, args, {
     stdio: ["ignore", outFd, outFd],
     detached: true,
@@ -180,7 +176,8 @@ export async function installHeadroomExtras(extras = []) {
   // so it cannot be poisoned by caller input — the comma-list is a fixed
   // ['proxy', ...requested]. No shell interpolation.
   const extrasList = ["proxy", ...requested].join(",");
-  const spec = `headroom-ai[${extrasList}]`;
+  // Floor at the first version that ships the /v1/compress endpoint.
+  const spec = `headroom-ai[${extrasList}]>=0.5.21`;
   const args = ["-m", "pip", "install", "--upgrade", spec];
 
   ensureDir();

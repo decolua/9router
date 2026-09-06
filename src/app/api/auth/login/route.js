@@ -54,7 +54,11 @@ export async function POST(request) {
     if (storedHash) {
       isValid = await bcrypt.compare(password, storedHash);
     } else {
-      // Use env var or default
+      // No stored hash. Accept the default/INITIAL password so the
+      // mustChangePassword gate below can run. On a remote client this only
+      // unlocks the one-time set-password flow (no JWT is issued here); the
+      // JWT is minted by POST /api/auth/set-password after the new password
+      // is stored. On the local machine the default still finishes login.
       const initialPassword = process.env.INITIAL_PASSWORD || "123456";
       isValid = password === initialPassword;
     }

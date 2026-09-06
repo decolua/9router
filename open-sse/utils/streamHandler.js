@@ -1,5 +1,5 @@
 // Stream handler with disconnect detection - shared for all providers
-import { STREAM_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { STREAM_STALL_TIMEOUT_MS, STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 // Get HH:MM:SS timestamp
@@ -96,17 +96,26 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
  * for long periods while raw bytes still flow (e.g. Kiro EventStream
  * binary frames buffering, Claude reasoning streams).
  */
-export function createDisconnectAwareStream(transformStream, streamController, onAbortTerminal = null) {
+export function createDisconnectAwareStream(transformStream, streamController, onAbortTerminal = null, terminalTracker = null) {
   const reader = transformStream.readable.getReader();
   const writer = transformStream.writable.getWriter();
   let terminalEmitted = false;
 
-  // Emit a synthesized terminal payload (e.g. Responses response.failed + [DONE]) once
+  // Emit a synthesized terminal payload once.
+  //
+  // Falls back to the format tracker when no onAbortTerminal is configured: an
+  // abort, stall or network reset on an OpenAI/Claude stream used to close with
+  // nothing appended, leaving the client with a truncated body and no way to
+  // tell a dropped connection from a finished answer. Suppressed once a real
+  // terminal has already gone out, so a completed stream is never decorated.
   const emitTerminal = (controller) => {
-    if (terminalEmitted || !onAbortTerminal) return;
+    if (terminalEmitted) return;
+    const build = onAbortTerminal
+      || (terminalTracker && !terminalTracker.sawTerminal() ? () => terminalTracker.buildDrop() : null);
+    if (!build) return;
     terminalEmitted = true;
     try {
-      const bytes = onAbortTerminal();
+      const bytes = build();
       if (bytes) controller.enqueue(bytes);
     } catch { /* best-effort terminal */ }
   };
@@ -123,10 +132,25 @@ export function createDisconnectAwareStream(transformStream, streamController, o
         const { done, value } = await reader.read();
 
         if (done) {
-          streamController.handleComplete();
+          // Upstream EOF. Reaching here does NOT mean the response finished —
+          // a provider that dies mid-response also lands here, and closing
+          // silently left the client with a truncated body carrying no
+          // finish_reason and no error, so it waited for a terminal event that
+          // was never coming. Synthesize one instead. Only fires when the
+          // format has an unambiguous terminal marker AND none was seen.
+          if (terminalTracker && !terminalTracker.sawTerminal() && !terminalEmitted) {
+            terminalEmitted = true;
+            try {
+              controller.enqueue(terminalTracker.buildDrop());
+            } catch { /* downstream already gone */ }
+            streamController.handleError(new Error("upstream stream ended without a terminal event"));
+          } else {
+            streamController.handleComplete();
+          }
           controller.close();
           return;
         }
+        if (terminalTracker) terminalTracker.observe(value);
         controller.enqueue(value);
       } catch (error) {
         const wasConnected = streamController.isConnected();
@@ -153,9 +177,13 @@ export function createDisconnectAwareStream(transformStream, streamController, o
           code === "UND_ERR_SOCKET";
 
         // Graceful close on network/abort, or when a structured terminal is available
-        // (Responses passthrough prefers response.failed + [DONE] over a raw transport error)
+        // (Responses passthrough prefers response.failed + [DONE] over a raw transport error).
+        // The tracker fallback is gated on isNetworkClose so a genuine transform
+        // error on a tracked format still propagates via controller.error instead
+        // of being masked by a misleading DROP_MESSAGE frame.
         try {
-          if (!wasConnected || isNetworkClose || onAbortTerminal) {
+          const isTrackedNetworkClose = isNetworkClose && !!terminalTracker;
+          if (!wasConnected || onAbortTerminal || isTrackedNetworkClose) {
             emitTerminal(controller);
             controller.close();
           } else {
@@ -189,13 +217,29 @@ export function createDisconnectAwareStream(transformStream, streamController, o
  * @param {TransformStream} transformStream - Transform stream for SSE
  * @param {object} streamController - Stream controller from createStreamController
  */
-export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS) {
+export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, terminalTracker = null, ttftTimeoutMs = STREAM_FIRST_CHUNK_TIMEOUT_MS) {
   let stallTimer = null;
+  let firstChunkTimer = null;
   let chunkCount = 0;
   let totalBytes = 0;
   let lastChunkAt = Date.now();
   const t0 = Date.now();
   const tag = "STREAM";
+
+  // TTFT watchdog: if no upstream bytes arrive within the TTFT window, abort.
+  const clearFirstChunk = () => {
+    if (firstChunkTimer) { clearTimeout(firstChunkTimer); firstChunkTimer = null; }
+  };
+  const armFirstChunk = () => {
+    clearFirstChunk();
+    firstChunkTimer = setTimeout(() => {
+      firstChunkTimer = null;
+      dbg(tag, `TTFT TIMEOUT ${ttftTimeoutMs}ms`);
+      streamController.handleError?.(new Error(`stream ttft timeout (${ttftTimeoutMs}ms)`));
+      streamController.abort?.();
+    }, ttftTimeoutMs);
+  };
+
   const clearStall = () => {
     if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
   };
@@ -203,27 +247,25 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     clearStall();
     stallTimer = setTimeout(() => {
       stallTimer = null;
-      dbg(tag, `STALL TIMEOUT ${stallTimeoutMs}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`);
+      dbg(tag, `STALL TIMEOUT ${stallTimeoutMs}ms | sinceLast=${Date.now() - lastChunkAt}ms`);
       streamController.handleError?.(new Error("stream stall timeout"));
       streamController.abort?.();
     }, stallTimeoutMs);
   };
 
-  // Wrap controller so every termination path clears the stall timer.
-  // Without this, abort/cancel/downstream-error paths leave the timer armed
-  // and a stale abort could fire after the request has already ended.
   const wrappedController = {
     signal: streamController.signal,
     startTime: streamController.startTime,
     isConnected: () => streamController.isConnected(),
-    handleComplete: () => { dbg(tag, `complete | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleComplete(); },
-    handleError: (e) => { dbg(tag, `error: ${e?.message} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleError(e); },
-    handleDisconnect: (r) => { dbg(tag, `disconnect: ${r} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleDisconnect(r); },
-    abort: () => { clearStall(); streamController.abort(); }
+    handleComplete: () => { clearFirstChunk(); clearStall(); streamController.handleComplete(); },
+    handleError: (e) => { clearFirstChunk(); clearStall(); streamController.handleError(e); },
+    handleDisconnect: (r) => { clearFirstChunk(); clearStall(); streamController.handleDisconnect(r); },
+    abort: () => { clearFirstChunk(); clearStall(); streamController.abort(); }
   };
 
+  armFirstChunk();
   armStall();
-  dbg(tag, `pipe start | stallTimeout=${stallTimeoutMs}ms`);
+  dbg(tag, `pipe start | ttft=${ttftTimeoutMs}ms | stall=${stallTimeoutMs}ms`);
 
   const upstreamTap = new TransformStream({
     transform(chunk, controller) {
@@ -237,6 +279,7 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
         dbg(tag, `chunk #${chunkCount} | size=${sz}B | gap=${gap}ms | total=${totalBytes}B`);
       }
       armStall();
+      clearFirstChunk(); // TTFT watchdog satisfied
       controller.enqueue(chunk);
     },
     flush() { dbg(tag, `upstream EOF | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); }
@@ -249,7 +292,8 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   return createDisconnectAwareStream(
     { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
     wrappedController,
-    onAbortTerminal
+    onAbortTerminal,
+    terminalTracker
   );
 }
 

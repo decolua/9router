@@ -87,5 +87,10 @@ graphify-out/*
 .PR/
 .next-analyze/*
 
+# Local development artifacts
+.serena/
+apps/
+.worktrees/
+
 # Kiro local workspace state
 .kiro/

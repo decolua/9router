@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSettings, validateApiKey } from "@/lib/localDb";
+import { getSettings, validateApiKey, validateGatewayKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
@@ -13,7 +13,7 @@ async function getCliToken() {
   return cachedCliToken;
 }
 
-async function hasValidCliToken(request) {
+export async function hasValidCliToken(request) {
   const token = request.headers.get(CLI_TOKEN_HEADER);
   if (!token) return false;
   return token === await getCliToken();
@@ -25,6 +25,7 @@ const PUBLIC_API_PATHS = [
   "/api/init",
   "/api/locale",
   "/api/auth/login",
+  "/api/auth/set-password",
   "/api/auth/logout",
   "/api/auth/status",
   "/api/auth/oidc",
@@ -66,6 +67,7 @@ const PROTECTED_API_PATHS = [
   "/api/mcp",
   "/api/translator",
   "/api/tunnel",
+  "/api/headroom/proxy",
 ];
 
 // Routes that spawn child processes or read host secrets — restrict to localhost.
@@ -84,7 +86,6 @@ const LOCAL_ONLY_PATHS = [
   "/api/auth/reset-password",
   "/api/headroom/start",
   "/api/headroom/stop",
-  "/api/headroom/proxy",
 ];
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -152,6 +153,12 @@ async function hasValidApiKey(request) {
   return await validateApiKey(apiKey);
 }
 
+async function hasValidGatewayKey(request) {
+  const apiKey = extractApiKey(request);
+  if (!apiKey) return false;
+  return !!(await validateGatewayKey(apiKey));
+}
+
 async function canAccessPublicLlmApi(request) {
   if (isLocalRequest(request)) return true;
   if (await hasValidCliToken(request)) return true;
@@ -197,7 +204,19 @@ export const __test__ = {
   extractApiKey,
   canAccessPublicLlmApi,
   canAccessLocalOnlyRoute,
+  hasValidDashboardToken,
 };
+
+// Dashboard session gate for route handlers: mirrors middleware `isAuthenticated`
+// semantics so route handlers can reuse the same authorization rule. Returns
+// true when a valid JWT is present OR when the deployment is configured with
+// requireLogin=false (open dashboard).
+export async function hasValidDashboardToken(request) {
+  if (await hasValidToken(request)) return true;
+  const settings = await loadSettings();
+  if (settings && settings.requireLogin === false) return true;
+  return false;
+}
 
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
@@ -219,6 +238,29 @@ export async function proxy(request) {
   if (isPublicLlmApi(pathname)) {
     if (await canAccessPublicLlmApi(request)) return NextResponse.next();
     return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
+  }
+
+  // MCP gateway: dedicated branch — only the exact MCP protocol surfaces
+  // (`/api/mcp-gateway`, `/sse`, `/message`) accept a gateway API key.
+  // CRUD subpaths (`/instances/*`, `/keys/*`) fall through to the standard
+  // JWT/CLI auth below.
+  const isGatewayProtocolSurface =
+    pathname === "/api/mcp-gateway" ||
+    pathname === "/api/mcp-gateway/sse" ||
+    pathname === "/api/mcp-gateway/message";
+  if (isGatewayProtocolSurface) {
+    if (isLocalRequest(request)) return NextResponse.next();
+    if (await hasValidCliToken(request)) return NextResponse.next();
+    if (await hasValidGatewayKey(request)) return NextResponse.next();
+    return NextResponse.json({ error: "gateway key required" }, { status: 401 });
+  }
+
+  // CIMD client-metadata document is fetched server-to-server by the upstream
+  // OAuth authorization server (no dashboard session), so it must be public.
+  // Only the exact `.../client-metadata` leaf is exempt — authorize/callback/
+  // status stay behind the standard auth below.
+  if (pathname.startsWith("/api/mcp-gateway/oauth/") && pathname.endsWith("/client-metadata")) {
+    return NextResponse.next();
   }
 
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.

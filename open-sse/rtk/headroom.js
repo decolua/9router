@@ -6,6 +6,7 @@ import {
 } from "../translator/request/openai-responses.js";
 
 const DEFAULT_TIMEOUT_MS = 3000;
+const MAX_COMPRESS_BODY_BYTES = 2 * 1024 * 1024; // 2MB
 
 function normalizeTimeout(value) {
   return typeof value === "number" && Number.isFinite(value) && value > 0
@@ -212,6 +213,10 @@ function applyKiroHeadroomMessages(projection, compressedMessages, diagnostics) 
   return true;
 }
 
+// Warn once per process so a missing /v1/compress endpoint (headroom-ai < 0.5.21)
+// is not silently swallowed by the fail-open path.
+let warnedMissingCompressEndpoint = false;
+
 // POST messages to Headroom /v1/compress; returns compressed messages + stats or null.
 async function callCompress(url, messages, model, timeoutMs, compressUserMessages, diagnostics) {
   const endpoint = buildCompressEndpoint(url);
@@ -231,7 +236,20 @@ async function callCompress(url, messages, model, timeoutMs, compressUserMessage
     return null;
   }
   if (!res.ok) {
-    setDiagnostic(diagnostics, `proxy returned HTTP ${res.status}`);
+    if (res.status === 404) {
+      // Pre-0.5.21 proxies have no /v1/compress route. Surface the reason in
+      // diagnostics and warn once so the fail-open disable is visible.
+      setDiagnostic(
+        diagnostics,
+        "proxy missing /v1/compress — headroom-ai < 0.5.21 lacks the endpoint; re-run the install action or upgrade headroom-ai"
+      );
+      if (!warnedMissingCompressEndpoint) {
+        warnedMissingCompressEndpoint = true;
+        console.warn("Headroom /v1/compress returned 404 — install headroom-ai >= 0.5.21 (re-run the install action) to enable compression");
+      }
+    } else {
+      setDiagnostic(diagnostics, `proxy returned HTTP ${res.status}`);
+    }
     return null;
   }
   const data = await res.json();
@@ -261,7 +279,12 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
   }
 
   try {
-    if (diagnostics) diagnostics.before = captureSizeSnapshot(body);
+    const sizeSnapshot = captureSizeSnapshot(body);
+    if (diagnostics) diagnostics.before = sizeSnapshot;
+    if (sizeSnapshot.bodyBytes > MAX_COMPRESS_BODY_BYTES) {
+      setDiagnostic(diagnostics, `skipped: payload too large (${sizeSnapshot.bodyBytes}B > ${MAX_COMPRESS_BODY_BYTES}B limit)`);
+      return null;
+    }
 
     // Claude shape: translate → OpenAI → compress → translate back.
     if (format === "claude") {
