@@ -262,6 +262,9 @@ function isCustomTool(state, name) {
   return !!name && state.customToolNames?.has(name);
 }
 
+// NOTE: intentionally local (not imported from handlers/chatCore/responseFormats.js):
+// translator modules must not depend on handlers (dependency flows handlers → translator).
+// Non-string input returns "" here (streaming fragments are always strings at call sites).
 function extractCustomToolInput(argumentsText) {
   if (typeof argumentsText !== "string") return "";
   try {
