@@ -194,10 +194,21 @@ function convertClaudeMessage(msg) {
           if (typeof block.content === "string") {
             resultContent = block.content;
           } else if (Array.isArray(block.content)) {
-            resultContent = block.content
-              .filter(c => c.type === CLAUDE_BLOCK.TEXT)
-              .map(c => c.text)
-              .join("\n") || JSON.stringify(block.content);
+            // Text parts pass through; binary blocks (screenshots, PDFs) become
+            // short placeholders. Dumping raw base64 into a text output burns
+            // ~100KB+ tokens per screenshot and trips upstream validators
+            // (opencode Console 400s on giant embedded image blobs).
+            const parts = [];
+            for (const c of block.content) {
+              if (c?.type === CLAUDE_BLOCK.TEXT && typeof c.text === "string") {
+                parts.push(c.text);
+              } else if (c?.type === CLAUDE_BLOCK.IMAGE) {
+                parts.push(describeOmittedMedia(c.source?.media_type || "image", c.source?.data));
+              } else if (c && typeof c === "object" && c.type && c.type !== CLAUDE_BLOCK.TEXT) {
+                parts.push(`Omitted ${c.type} block from tool result to save context.`);
+              }
+            }
+            resultContent = parts.join("\n") || "[empty tool result]";
           } else if (block.content) {
             resultContent = JSON.stringify(block.content);
           }
@@ -244,6 +255,14 @@ function convertClaudeMessage(msg) {
   }
 
   return null;
+}
+
+// Short placeholder for a binary tool-result block (screenshot, PDF). Never
+// includes the raw payload — leans on the leading word so the output never
+// looks like a raw JSON array dump.
+function describeOmittedMedia(mediaType, data) {
+  const size = typeof data === "string" ? data.length : 0;
+  return `Omitted image (${mediaType}, ${size} chars base64) from tool result to save context.`;
 }
 
 // Convert tool choice
