@@ -59,7 +59,8 @@ function appendCodexQuotaWindows(quotas, prefix, snapshot) {
   let added = false;
 
   if (primary) {
-    quotas[prefix ? `${prefix}_session` : "session"] = formatCodexWindow(primary);
+    const windowType = toFiniteNumber(primary.limit_window_seconds, 0) >= 604800 ? "weekly" : "session";
+    quotas[prefix ? `${prefix}_${windowType}` : windowType] = formatCodexWindow(primary);
     added = true;
   }
   if (secondary) {
@@ -68,6 +69,27 @@ function appendCodexQuotaWindows(quotas, prefix, snapshot) {
   }
 
   return added;
+}
+
+export function normalizeCodexUsage(data) {
+  const normalRateLimit = data.rate_limit || data.rate_limits || data.rate_limits_by_limit_id?.codex || {};
+  const reviewRateLimit = getCodexReviewRateLimit(data);
+  const sparkRateLimit = getCodexSparkRateLimit(data);
+  const availableResetCredits = Math.max(0, toFiniteNumber(data.rate_limit_reset_credits?.available_count, 0));
+  const quotas = {};
+
+  appendCodexQuotaWindows(quotas, "", normalRateLimit);
+  appendCodexQuotaWindows(quotas, "review", reviewRateLimit);
+  appendCodexQuotaWindows(quotas, "spark", sparkRateLimit);
+
+  return {
+    plan: data.plan_type || data.summary?.plan || "unknown",
+    limitReached: getCodexRateLimitBody(normalRateLimit)?.limit_reached || false,
+    reviewLimitReached: getCodexRateLimitBody(reviewRateLimit)?.limit_reached || false,
+    sparkLimitReached: getCodexRateLimitBody(sparkRateLimit)?.limit_reached || false,
+    resetCredits: { availableCount: availableResetCredits },
+    quotas,
+  };
 }
 
 function getCodexReviewRateLimit(data) {
@@ -119,24 +141,7 @@ export async function getCodexUsage(accessToken, proxyOptions = null) {
     }
 
     const data = await response.json();
-    const normalRateLimit = data.rate_limit || data.rate_limits || data.rate_limits_by_limit_id?.codex || {};
-    const reviewRateLimit = getCodexReviewRateLimit(data);
-    const sparkRateLimit = getCodexSparkRateLimit(data);
-    const availableResetCredits = Math.max(0, toFiniteNumber(data.rate_limit_reset_credits?.available_count, 0));
-    const quotas = {};
-
-    appendCodexQuotaWindows(quotas, "", normalRateLimit);
-    appendCodexQuotaWindows(quotas, "review", reviewRateLimit);
-    appendCodexQuotaWindows(quotas, "spark", sparkRateLimit);
-
-    return {
-      plan: data.plan_type || data.summary?.plan || "unknown",
-      limitReached: getCodexRateLimitBody(normalRateLimit)?.limit_reached || false,
-      reviewLimitReached: getCodexRateLimitBody(reviewRateLimit)?.limit_reached || false,
-      sparkLimitReached: getCodexRateLimitBody(sparkRateLimit)?.limit_reached || false,
-      resetCredits: { availableCount: availableResetCredits },
-      quotas,
-    };
+    return normalizeCodexUsage(data);
   } catch (error) {
     throw new Error(`Failed to fetch Codex usage: ${error.message}`);
   }
