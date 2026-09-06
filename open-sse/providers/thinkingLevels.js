@@ -10,6 +10,7 @@ const L = {
   onOff: ["none", "thinking"],                                      // zai (binary), minimax (adaptive)
   openai: ["none", "minimal", "low", "medium", "high", "xhigh"],    // GPT-5.x / o-series (no "max")
   levelMax: ["none", "low", "medium", "high", "max"],               // claude-adaptive, kimi
+  claudeX: ["none", "low", "medium", "high", "xhigh", "max"],       // claude-adaptive w/ native xhigh
   budgetX: ["none", "low", "medium", "high", "xhigh", "max"],       // claude-budget
   gemini: ["minimal", "low", "medium", "high"],                     // gemini-3 thinkingLevel (no disable)
   hiMax: ["none", "high", "max"],                                   // deepseek (low/med→high, xhigh→max)
@@ -36,6 +37,16 @@ const CODEX_GPT_5_6_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh
 // Model-name pattern overrides (glob, first match wins) — more precise than format default.
 const PATTERN_THINKING = [
   { provider: "codex", pattern: "*gpt-6*", levels: CODEX_GPT_5_6_LEVELS },
+  // Claude adaptive models with native xhigh (verified against the upstream 400
+  // enum: "output_config.effort: Input should be 'low', 'medium', 'high', 'xhigh'
+  // or 'max'" on Opus 5; pi-ai catalog lists xhigh on Opus 4.7/4.8/5, Sonnet 5,
+  // Fable 5). Older adaptive models (4.6 era) top out at max and keep the
+  // xhigh→high clamp in thinkingUnified.
+  { provider: "claude", pattern: "claude-opus-5*", levels: L.claudeX },
+  { provider: "claude", pattern: "claude-opus-4-7*", levels: L.claudeX },
+  { provider: "claude", pattern: "claude-opus-4-8*", levels: L.claudeX },
+  { provider: "claude", pattern: "claude-sonnet-5*", levels: L.claudeX },
+  { provider: "claude", pattern: "claude-fable-5*", levels: L.claudeX },
   { provider: "codex", pattern: "*gpt-5.6-sol*", levels: [...CODEX_GPT_5_6_LEVELS, "ultra"] },
   { provider: "codex", pattern: "*gpt-5.6-terra*", levels: [...CODEX_GPT_5_6_LEVELS, "ultra"] },
   { provider: "codex", pattern: "*gpt-5.6-luna*", levels: CODEX_GPT_5_6_LEVELS },
