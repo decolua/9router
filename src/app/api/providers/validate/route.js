@@ -6,6 +6,8 @@ import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from
 import { openaiToCommandCodeRequest } from "open-sse/translator/request/openai-to-commandcode.js";
 import { resolveQoderCredentials, resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
+import { probeFormatCapabilities } from "@/lib/formatProbe";
+import { getSettings } from "@/lib/localDb";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).
@@ -108,9 +110,19 @@ export async function POST(request) {
           headers: { "Authorization": `Bearer ${apiKey}` },
         });
         isValid = res.ok;
+        const settings = await getSettings();
+        let formatCapabilities = null;
+        if (isValid && settings?.formatProbeEnabled) {
+          formatCapabilities = await probeFormatCapabilities({
+            provider,
+            apiKey,
+            providerSpecificData: { baseUrl: node.baseUrl?.replace(/\/$/, "") || "" },
+          });
+        }
         return NextResponse.json({
           valid: isValid,
           error: isValid ? null : "Invalid API key",
+          ...(formatCapabilities ? { formatCapabilities } : {}),
         });
       }
 
