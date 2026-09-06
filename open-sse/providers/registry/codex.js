@@ -42,6 +42,8 @@ export default {
       url: "https://chatgpt.com/backend-api/wham/usage",
       resetCreditsUrl: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits",
       resetCreditsConsumeUrl: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
+      accountsCheckUrl: "https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27",
+      subscriptionsUrl: "https://chatgpt.com/backend-api/subscriptions",
     },
   },
   models: [
