@@ -215,6 +215,45 @@ describe("translateNonStreamingResponse for Responses API upstream", () => {
     expect(out.stop_reason).toBe("end_turn");
   });
 
+  it("handles Responses API cached tokens without inflating input_tokens or total_tokens", () => {
+    const cachedBody = {
+      id: "resp_cache_test",
+      object: "response",
+      created_at: 1700000000,
+      model: "muse-spark-1.3-contributor",
+      status: "completed",
+      output: [
+        {
+          type: "message",
+          role: "assistant",
+          content: [{ type: "output_text", text: "Response with cache" }],
+        },
+      ],
+      usage: {
+        input_tokens: 100,
+        output_tokens: 25,
+        total_tokens: 125,
+        input_tokens_details: { cached_tokens: 40 },
+      },
+    };
+
+    // 1. Convert to OpenAI chat.completion:
+    // prompt_tokens must be 100 (not 140), total_tokens must be 125, cached_tokens in prompt_tokens_details
+    const openAIOut = responsesToOpenAICompletion(cachedBody);
+    expect(openAIOut.usage.prompt_tokens).toBe(100);
+    expect(openAIOut.usage.completion_tokens).toBe(25);
+    expect(openAIOut.usage.total_tokens).toBe(125);
+    expect(openAIOut.usage.prompt_tokens_details).toEqual({ cached_tokens: 40 });
+
+    // 2. Convert to Claude message:
+    // input_tokens must be 100, output_tokens 25, cache_read_input_tokens 40
+    const claudeOut = responsesToClaudeMessage(cachedBody);
+    expect(claudeOut.type).toBe("message");
+    expect(claudeOut.usage.input_tokens).toBe(100);
+    expect(claudeOut.usage.output_tokens).toBe(25);
+    expect(claudeOut.usage.cache_read_input_tokens).toBe(40);
+  });
+
 
 });
 

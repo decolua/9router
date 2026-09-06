@@ -210,10 +210,13 @@ export function responsesToOpenAICompletion(responseBody) {
   const finishReason = hasToolCalls ? "tool_calls" : (responseDone ? "stop" : (responseBody.status || "stop"));
 
   const usage = responseBody.usage || {};
-  const cacheRead = usage.cache_read_input_tokens || usage.cached_tokens || usage.input_tokens_details?.cached_tokens || 0;
-  const cacheCreate = usage.cache_creation_input_tokens || 0;
-  const inTokens = (usage.input_tokens || usage.prompt_tokens || 0) + cacheRead + cacheCreate;
+  // Per Responses API spec, input_tokens is already cache-inclusive.
+  // Cache info (cached_tokens) is reported in input_tokens_details as a subset breakdown,
+  // not an additive value.
+  const inTokens = usage.input_tokens || usage.prompt_tokens || 0;
   const outTokens = usage.output_tokens || usage.completion_tokens || 0;
+  const cacheRead = usage.cache_read_input_tokens || usage.cached_tokens || usage.input_tokens_details?.cached_tokens || 0;
+  const cacheCreate = usage.cache_creation_input_tokens || usage.input_tokens_details?.cache_creation_tokens || 0;
 
   const cacheDetails = (cacheRead > 0 || cacheCreate > 0)
     ? {

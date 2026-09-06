@@ -208,11 +208,8 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
       if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
-      // Same cache-inclusive total for the recorded detail, so the DB and the
-      // client-facing usage can never disagree.
-      const inTokensForLog = (usage.input_tokens || 0)
-        + (usage.cache_read_input_tokens || usage.cached_tokens || 0)
-        + (usage.cache_creation_input_tokens || 0);
+      // jsonResponse.usage comes from convertResponsesStreamToJson and is cache-inclusive.
+      const inTokensForLog = usage.input_tokens || usage.prompt_tokens || 0;
       const { msgItem, textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
       const totalLatency = Date.now() - requestStartTime;
 
@@ -230,15 +227,13 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       }
 
       // Build client-format response.
-      // input_tokens EXCLUDES cached tokens on cache-capable upstreams, so summing
-      // only input+output under-reports prompt_tokens — measured: 2012 reported
-      // where the real prompt was ~5344 with 5332 served from cache. Fold the cache
-      // counters in, and keep them visible in prompt_tokens_details so a client can
-      // tell a cache hit from a small prompt.
-      const cacheRead = usage.cache_read_input_tokens || usage.cached_tokens || 0;
-      const cacheCreate = usage.cache_creation_input_tokens || 0;
-      const inTokens = (usage.input_tokens || 0) + cacheRead + cacheCreate;
+      // Responses API usage.input_tokens is already cache-inclusive.
+      // Cache tokens ride in input_tokens_details.cached_tokens (or cache_read_input_tokens / cached_tokens).
+      const cacheRead = usage.cache_read_input_tokens || usage.cached_tokens || usage.input_tokens_details?.cached_tokens || 0;
+      const cacheCreate = usage.cache_creation_input_tokens || usage.input_tokens_details?.cache_creation_tokens || 0;
+      const inTokens = usage.input_tokens || usage.prompt_tokens || 0;
       const outTokens = usage.output_tokens || 0;
+      const totalTokens = usage.total_tokens || (inTokens + outTokens);
       const cacheDetails = (cacheRead > 0 || cacheCreate > 0)
         ? { prompt_tokens_details: {
               ...(cacheRead > 0 ? { cached_tokens: cacheRead } : {}),
@@ -262,7 +257,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         finalResp = {
           response: {
             candidates: [{ content: { role: "model", parts: [{ text: textContent || "" }] }, finishReason: "STOP", index: 0 }],
-            usageMetadata: { promptTokenCount: inTokens, candidatesTokenCount: outTokens, totalTokenCount: inTokens + outTokens },
+            usageMetadata: { promptTokenCount: inTokens, candidatesTokenCount: outTokens, totalTokenCount: totalTokens },
             modelVersion: model,
             responseId: jsonResponse.id || `resp_${Date.now()}`
           }
@@ -280,7 +275,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
           created: jsonResponse.created_at || Math.floor(Date.now() / 1000),
           model: jsonResponse.model || model,
           choices: [{ index: 0, message, finish_reason: finishReason }],
-          usage: { prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: inTokens + outTokens, ...cacheDetails }
+          usage: { prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: totalTokens, ...cacheDetails }
         };
       }
 
