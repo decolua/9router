@@ -98,7 +98,8 @@ export async function PUT(request, { params }) {
       testStatus,
       lastError,
       lastErrorAt,
-      providerSpecificData
+      providerSpecificData,
+      quotaPauseThresholds
     } = body;
 
     const existing = await getProviderConnectionById(id);
@@ -126,6 +127,19 @@ export async function PUT(request, { params }) {
     if (testStatus !== undefined) updateData.testStatus = testStatus;
     if (lastError !== undefined) updateData.lastError = lastError;
     if (lastErrorAt !== undefined) updateData.lastErrorAt = lastErrorAt;
+    // Per-account quota safety buffer: pause routing when a specific quota window's
+    // remaining % drops to/below its configured threshold. Map of windowKey -> %,
+    // 0/undefined disables that window. Stored in the connection's data blob.
+    if (quotaPauseThresholds !== undefined) {
+      const clean = {};
+      if (quotaPauseThresholds && typeof quotaPauseThresholds === "object") {
+        for (const [key, val] of Object.entries(quotaPauseThresholds)) {
+          const t = Number(val);
+          if (Number.isFinite(t) && t > 0 && t <= 100) clean[key] = t;
+        }
+      }
+      updateData.quotaPauseThresholds = clean;
+    }
 
     if (
       shouldMergeProviderSpecificData(
