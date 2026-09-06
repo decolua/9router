@@ -303,6 +303,45 @@ export async function buildModelsList(kindFilter, options = {}) {
     if (combo.kind === "webSearch" || combo.kind === "webFetch") {
       entry.kind = combo.kind;
     }
+    // For LLM combos, aggregate token limits across member models:
+    // contextWindow takes the minimum (pool bottleneck) and maxOutput takes the maximum.
+    if (!combo.kind || combo.kind === LLM_KIND) {
+      if (Array.isArray(combo.models) && combo.models.length > 0) {
+        let minContext = Infinity;
+        let maxOutput = -Infinity;
+        let hasContext = false;
+        let hasMaxOutput = false;
+
+        for (const rawModel of combo.models) {
+          if (!rawModel || typeof rawModel !== "string") continue;
+          const trimmed = rawModel.trim();
+          if (!trimmed) continue;
+          const slashIdx = trimmed.indexOf("/");
+          const provider = slashIdx !== -1 ? trimmed.slice(0, slashIdx) : "";
+          const modelId = slashIdx !== -1 ? trimmed.slice(slashIdx + 1) : trimmed;
+          if (!modelId) continue;
+
+          const caps = getCapabilitiesForModel(provider, modelId);
+          if (caps) {
+            if (Number.isFinite(caps.contextWindow)) {
+              minContext = Math.min(minContext, caps.contextWindow);
+              hasContext = true;
+            }
+            if (Number.isFinite(caps.maxOutput)) {
+              maxOutput = Math.max(maxOutput, caps.maxOutput);
+              hasMaxOutput = true;
+            }
+          }
+        }
+
+        if (hasContext && Number.isFinite(minContext)) {
+          entry.context_length = minContext;
+        }
+        if (hasMaxOutput && Number.isFinite(maxOutput)) {
+          entry.max_completion_tokens = maxOutput;
+        }
+      }
+    }
     models.push(entry);
   }
 
