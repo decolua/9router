@@ -168,6 +168,16 @@ describe("dashboard guard public LLM API access", () => {
     expect(mocks.validateApiKey).toHaveBeenCalledWith("sk-valid");
   });
 
+  it("allows internal model probes with a valid CLI token", async () => {
+    const response = await proxy(request("/api/v1/chat/completions", {
+      host: "router.example.com",
+      "x-9r-cli-token": "cli-token",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+
   it("allows remote public LLM API with valid x-api-key", async () => {
     mocks.validateApiKey.mockResolvedValue(true);
 
