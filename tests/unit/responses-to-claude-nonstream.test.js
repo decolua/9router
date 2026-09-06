@@ -305,6 +305,8 @@ describe("handleNonStreamingResponse with Responses API upstream returning SSE",
     expect(json.role).toBe("assistant");
     expect(json.content).toEqual([{ type: "text", text: "Hello from SSE muse-spark!" }]);
     expect(json.stop_reason).toBe("end_turn");
+    // Fixture declares input_tokens: 15; handleNonStreamingResponse adds the
+    // standard +2000 buffer via addBufferToUsage before returning.
     expect(json.usage).toEqual({ input_tokens: 2015, output_tokens: 8 });
   });
 
