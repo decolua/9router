@@ -1,9 +1,15 @@
 import { registerSession, unregisterSession, findPlugin } from "@/lib/mcp/stdioSseBridge";
+import { hasValidCliToken } from "@/dashboardGuard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request, { params }) {
+  // Require CLI token for MCP plugin SSE endpoint
+  if (!(await hasValidCliToken(request))) {
+    return new Response(`Unauthorized: CLI token required`, { status: 401 });
+  }
+
   const { plugin } = await params;
   if (!findPlugin(plugin)) {
     return new Response(`Unknown plugin: ${plugin}`, { status: 404 });
