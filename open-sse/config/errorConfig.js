@@ -45,6 +45,7 @@ export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 const COOLDOWN = {
   long: 2 * 60 * 1000,
   short: 5 * 1000,
+  quota: 30 * 24 * 60 * 60 * 1000, // 30 days
 };
 
 /**
@@ -58,14 +59,16 @@ const COOLDOWN = {
  */
 export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
-  { text: "no credentials",           cooldownMs: COOLDOWN.long },
-  { text: "request not allowed",      cooldownMs: COOLDOWN.short },
-  { text: "improperly formed request", cooldownMs: COOLDOWN.long },
-  { text: "rate limit",               backoff: true },
-  { text: "too many requests",        backoff: true },
-  { text: "quota exceeded",           backoff: true },
-  { text: "capacity",                 backoff: true },
-  { text: "overloaded",               backoff: true },
+  { text: "no credentials",                    cooldownMs: COOLDOWN.long },
+  { text: "request not allowed",               cooldownMs: COOLDOWN.short },
+  { text: "improperly formed request",          cooldownMs: COOLDOWN.long },
+  { text: "insufficient_g1_credits_balance",   cooldownMs: COOLDOWN.quota },
+  { text: "resource has been exhausted",        cooldownMs: COOLDOWN.quota },
+  { text: "rate limit",                        backoff: true },
+  { text: "too many requests",                 backoff: true },
+  { text: "quota exceeded",                    backoff: true },
+  { text: "capacity",                          backoff: true },
+  { text: "overloaded",                        backoff: true },
 
   // --- Status-based rules (fallback when text doesn't match) ---
   { status: 401, cooldownMs: COOLDOWN.long },
@@ -82,4 +85,5 @@ export const COOLDOWN_MS = {
   notFound: COOLDOWN.long,
   transient: TRANSIENT_COOLDOWN_MS,
   requestNotAllowed: COOLDOWN.short,
+  quota: COOLDOWN.quota,
 };
