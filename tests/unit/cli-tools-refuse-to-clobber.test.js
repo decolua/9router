@@ -8,10 +8,14 @@
  *     authData.OPENAI_API_KEY = apiKey;
  *     await fs.writeFile(authPath, JSON.stringify(authData, null, 2));
  *
- * For `~/.codex/auth.json` that discards the ChatGPT OAuth tokens the very next
- * comment promises to keep ("keep existing tokens untouched for ChatGPT login
- * reuse"); for `config.toml` it discards every provider, MCP server and approval
- * policy the user had. Only ENOENT means "start fresh".
+ * For `config.toml` that discards every provider, MCP server and approval policy
+ * the user had. Only ENOENT means "start fresh".
+ *
+ * The same pattern guarded `~/.codex/auth.json`, where it discarded the ChatGPT
+ * OAuth tokens. `master` has since dropped that write entirely — custom providers
+ * carry the key as a static header — so this covers the write paths that remain,
+ * and the helper is exercised on JSON as well as TOML because the next caller to
+ * need it may not be TOML.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import fs from "node:fs";
@@ -88,16 +92,17 @@ describe("copilot-settings keeps the user's other providers", () => {
   });
 });
 
-describe("codex-settings uses it on both write paths", () => {
-  it("no longer treats an unreadable config or auth file as empty", () => {
+describe("codex-settings uses it on the config write path", () => {
+  it("no longer treats an unreadable config as empty", () => {
     const src = fs.readFileSync(
       new URL("../../src/app/api/cli-tools/codex-settings/route.js", import.meta.url),
       "utf8"
     );
 
     expect(src).toContain("readExistingConfig(configPath");
-    expect(src).toContain("readExistingConfig(authPath, JSON.parse)");
     expect(src).not.toContain("catch { /* No existing config */ }");
+    // The auth.json write this once also guarded is gone from master; assert it
+    // stays gone rather than silently re-acquiring the empty-catch it had.
     expect(src).not.toContain("catch { /* No existing auth */ }");
   });
 });
