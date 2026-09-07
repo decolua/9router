@@ -1,3 +1,4 @@
+import { CODEX_CLIENT_VERSION, CODEX_USER_AGENT } from "../../config/codexConstants.js";
 import { withCodexReviewModels } from "../models/helpers.js";
 
 export default {
@@ -36,7 +37,8 @@ export default {
     forceStream: true,
     headers: {
       originator: "codex_cli_rs",
-      "User-Agent": "codex_cli_rs/0.136.0",
+      "User-Agent": CODEX_USER_AGENT,
+      version: CODEX_CLIENT_VERSION,
     },
     usage: {
       url: "https://chatgpt.com/backend-api/wham/usage",

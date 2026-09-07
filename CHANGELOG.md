@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixes
+- **Codex**: share the existing discovery client version across chat, image generation and connection probes, preventing GPT-5.6 requests from advertising an older client than the model catalog. Updating the gateway is required; upgrading a caller's local Codex CLI does not change these outbound headers.
+
 # v0.5.69 (2026-09-05)
 
 ## Features
