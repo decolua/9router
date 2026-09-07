@@ -146,7 +146,7 @@ export default function ProviderDetailPage() {
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
   const staticModels = getModelsByProviderId(providerId);
-  const models = providerId === "cursor" && liveModels.length > 0
+  const models = ["cursor", "devin"].includes(providerId) && liveModels.length > 0
     ? liveModels
     : staticModels;
   const providerAlias = getProviderAlias(providerId);
@@ -460,11 +460,11 @@ export default function ProviderDetailPage() {
     fetchDisabledModels();
   }, [fetchConnections, fetchAliases, fetchCustomModels, fetchDisabledModels]);
 
-  // Cursor's model availability is account-specific and changes frequently.
+  // Cursor and Devin model availability is account-specific and changes frequently.
   // Load the active account's live catalog for the dashboard; the static
   // registry remains the fallback while the request is pending or unavailable.
   useEffect(() => {
-    if (providerId !== "cursor") {
+    if (!["cursor", "devin"].includes(providerId)) {
       setLiveModels([]);
       return;
     }

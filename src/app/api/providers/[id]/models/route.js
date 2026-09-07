@@ -11,6 +11,7 @@ import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
+import { discoverDevinModels } from "open-sse/services/devinModels.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -272,6 +273,23 @@ const PROVIDER_MODELS_CONFIG = {
         warning: "Kimchi returned no live models; falling back to static catalog.",
       };
     }
+  },
+  devin: {
+    customResolver: async (connection) => {
+      try {
+        const models = await discoverDevinModels(connection.accessToken);
+        if (models.length) return { models };
+        return {
+          models: getStaticProviderModels("devin"),
+          warning: "Devin returned no enabled models; using the static catalog.",
+        };
+      } catch (error) {
+        return {
+          models: getStaticProviderModels("devin"),
+          warning: `Failed to fetch Devin models: ${error.message}`,
+        };
+      }
+    },
   },
   cursor: {
     customResolver: async (connection) => {

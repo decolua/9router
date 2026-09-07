@@ -113,6 +113,7 @@ import p110 from "./llm7.js";
 import p111 from "./sambanova.js";
 import p112 from "./tencent.js";
 import p113 from "./morph.js";
+import p122 from "./devin.js";
 // import p114 from "./devin-cli.js";
 // import p104 from "./windsurf.js";
 import p115 from "./poolside.js";
@@ -122,7 +123,7 @@ import p118 from "./selfhosted-tts.js";
 import p119 from "./selfhosted-embedding.js";
 import p120 from "./fish-audio.js";
 import p121 from "./alitp-intl.js";
-import p122 from "./xquik.js";
+import p124 from "./xquik.js";
 
 export default [
   p0,
@@ -237,6 +238,7 @@ export default [
   p111,
   p112,
   p113,
+  p122,
   // p114, // devin-cli — hidden, spawns local agent with shell/fs access
   // p104, // windsurf — hidden, no tool calling
   p115,
@@ -246,5 +248,5 @@ export default [
   p119,
   p120,
   p121,
-  p122,
+  p124,
 ];

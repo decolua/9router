@@ -990,6 +990,12 @@
     "validateUrl": "https://api.morphllm.com/v1/models",
     "format": "openai"
   },
+  "devin": {
+    "baseUrl": "https://server.codeium.com/exa.api_server_pb.ApiServerService/GetChatMessage",
+    "format": "openai",
+    "forceStream": true,
+    "tokenUrl": "https://api.devin.ai/auth/cli/token"
+  },
   "poolside": {
     "baseUrl": "https://inference.poolside.ai/v1/chat/completions",
     "validateUrl": "https://inference.poolside.ai/v1/models",
