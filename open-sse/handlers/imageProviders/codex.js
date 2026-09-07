@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { nowSec } from "./_base.js";
 import { PROVIDERS } from "../../config/providers.js";
-import { CODEX_CLIENT_VERSION } from "../../config/codexConstants.js";
+import { CODEX_CLIENT_VERSION, CODEX_USER_AGENT } from "../../config/codexConstants.js";
 
 const CODEX_RESPONSES_URL = PROVIDERS["codex"].baseUrl;
 const CODEX_ORIGINATOR = "codex_cli_rs";

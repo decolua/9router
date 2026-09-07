@@ -3,7 +3,7 @@ import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, refreshCodexToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
-import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
+import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -153,7 +153,7 @@ const PROVIDER_MODELS_CONFIG = {
           "Content-Type": "application/json",
           "Accept": "application/json",
           "Authorization": `Bearer ${token}`,
-          "originator": "codex_cli_rs"
+          ...PROVIDERS.codex.headers
         }
       }),
       parseFn: parseCodexModels,
