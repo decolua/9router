@@ -2,7 +2,11 @@
 import { randomUUID } from "node:crypto";
 import { nowSec } from "./_base.js";
 import { PROVIDERS } from "../../config/providers.js";
-import { CODEX_CLIENT_VERSION, CODEX_USER_AGENT } from "../../config/codexConstants.js";
+import {
+  CODEX_CLIENT_VERSION,
+  CODEX_IMAGE_ERROR_TEXT_LIMIT,
+  CODEX_IMAGE_NO_RESULT_ERROR,
+} from "../../config/codexConstants.js";
 
 const CODEX_RESPONSES_URL = PROVIDERS["codex"].baseUrl;
 const CODEX_ORIGINATOR = "codex_cli_rs";
@@ -49,6 +53,7 @@ async function parseStream(response, log, callbacks = {}) {
   const decoder = new TextDecoder();
   let buffer = "";
   let imageB64 = null;
+  let outputText = "";
   let lastEvent = null;
   let bytesReceived = 0;
   let lastProgressLogMs = 0;
@@ -72,6 +77,19 @@ async function parseStream(response, log, callbacks = {}) {
         else if (line.startsWith("data:")) dataStr += line.slice(5).trim();
       }
       if (!eventName) continue;
+      let data;
+      try { data = JSON.parse(dataStr); } catch { /* Ignore non-JSON SSE frames. */ }
+      // HTTP 200 can carry an upstream failure. Preserve its reason so callers
+      // can distinguish client-version, quota and content errors from no output.
+      const failed = eventName === "error" || eventName === "response.failed" ||
+        data?.response?.status === "failed" || data?.response?.status === "incomplete";
+      if (failed) {
+        const error = data?.response?.error || data?.error;
+        const message = error?.message || (typeof error === "string" ? error : null) ||
+          data?.message || data?.response?.incomplete_details?.reason || "Codex image response failed.";
+        await reader.cancel().catch(() => {});
+        throw new Error(message);
+      }
       if (eventName !== lastEvent) {
         log?.info?.("IMAGE", `codex progress: ${eventName}`);
         lastEvent = eventName;
@@ -85,7 +103,6 @@ async function parseStream(response, log, callbacks = {}) {
 
       if (eventName === "response.image_generation_call.partial_image" && dataStr) {
         try {
-          const data = JSON.parse(dataStr);
           if (callbacks.onPartialImage && data?.partial_image_b64) {
             callbacks.onPartialImage({ b64_json: data.partial_image_b64, index: data.partial_image_index });
           }
@@ -94,15 +111,19 @@ async function parseStream(response, log, callbacks = {}) {
 
       if (eventName === "response.output_item.done" && dataStr) {
         try {
-          const data = JSON.parse(dataStr);
           const item = data?.item;
           if (item?.type === "image_generation_call" && item.result) {
             imageB64 = item.result;
+          }
+          if (item?.type === "message" && Array.isArray(item.content)) {
+            outputText += item.content.map((part) => part.refusal || part.text || "").join(" ");
+            outputText = outputText.slice(0, CODEX_IMAGE_ERROR_TEXT_LIMIT);
           }
         } catch {}
       }
     }
   }
+  if (!imageB64 && outputText) throw new Error(`${CODEX_IMAGE_NO_RESULT_ERROR} ${outputText}`);
   return imageB64;
 }
 
@@ -120,7 +141,7 @@ function buildSseResponse(providerResponse, log, onSuccess) {
           onPartialImage: (info) => send("partial_image", info),
         });
         if (!b64) {
-          send("error", { message: "Codex did not return an image. Account may not be entitled (Plus/Pro required)." });
+          send("error", { message: CODEX_IMAGE_NO_RESULT_ERROR });
         } else {
           if (onSuccess) await onSuccess();
           send("done", { created: nowSec(), data: [{ b64_json: b64 }] });
@@ -190,7 +211,7 @@ export default {
     }
     const b64 = await parseStream(response, log);
     if (!b64) {
-      throw new Error("Codex did not return an image. Account may not be entitled (Plus/Pro required).");
+      throw new Error(CODEX_IMAGE_NO_RESULT_ERROR);
     }
     return { created: nowSec(), data: [{ b64_json: b64 }] };
   },
