@@ -13,7 +13,12 @@ export const FILTERS = {
           m.pricing?.completion === "0" &&
           m.context_length >= 200000
       )
-      .map((m) => ({ id: m.id, name: m.name, contextLength: m.context_length }))
+      .map((m) => ({
+        id: m.id,
+        name: m.name,
+        contextLength: m.context_length,
+        maxOutput: m.top_provider?.max_completion_tokens,
+      }))
       .sort((a, b) => b.contextLength - a.contextLength),
 
   "opencode-free": (models) =>

@@ -4,12 +4,19 @@ import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { AI_MODELS } from "@/shared/constants/config";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { applyModelLimitsToCaps, withoutModelLimits } from "@/shared/utils/modelTokenLimits";
 
 // GET /api/models - Get models with aliases
 export async function GET() {
   try {
     const modelAliases = await getModelAliases();
     const disabled = await getDisabledModels();
+    const allCustomModels = await getCustomModels();
+    const customByFullModel = new Map(
+      allCustomModels
+        .filter((m) => m?.providerAlias && m?.id && (m.kind || m.type || "llm") === "llm")
+        .map((m) => [`${m.providerAlias}/${m.id}`, m]),
+    );
 
     const models = AI_MODELS
       .filter((m) => {
@@ -22,24 +29,25 @@ export async function GET() {
         const providerAlias = getProviderAlias(m.provider) || m.provider;
         const routedModel = `${providerAlias}/${m.model}`;
         const c = getCapabilitiesForModel(m.provider, m.model);
+        const custom = customByFullModel.get(fullModel) || customByFullModel.get(routedModel);
         return {
           ...m,
           fullModel,
           routedModel,
           alias: modelAliases[fullModel] || m.model,
-          caps: {
+          caps: applyModelLimitsToCaps({
             vision: c.vision,
             search: c.search,
             reasoning: c.reasoning,
             contextWindow: c.contextWindow,
             maxOutput: c.maxOutput,
-          },
+          }, custom),
         };
       });
 
     // Custom models ride along; their stored caps override the name heuristic
     const seenFull = new Set(models.map((m) => m.fullModel));
-    const customModels = (await getCustomModels()).filter((m) => {
+    const customModels = allCustomModels.filter((m) => {
       if (!m?.id || (m.kind || m.type || "llm") !== "llm") return false;
       return !seenFull.has(`${m.providerAlias}/${m.id}`);
     });
@@ -53,14 +61,13 @@ export async function GET() {
         fullModel,
         routedModel: fullModel,
         alias: modelAliases[fullModel] || m.id,
-        caps: {
+        caps: applyModelLimitsToCaps({
+          ...withoutModelLimits(c),
           vision: c.vision,
           search: c.search,
           reasoning: c.reasoning,
-          contextWindow: c.contextWindow,
-          maxOutput: c.maxOutput,
           ...(m.caps || {}),
-        },
+        }, m),
       });
     }
 

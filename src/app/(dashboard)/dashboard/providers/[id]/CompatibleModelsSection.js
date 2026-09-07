@@ -4,7 +4,7 @@ import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button } from "@/shared/components";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
-function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
+function CompatibleModelRow({ modelId, fullModel, caps, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
@@ -59,6 +59,13 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
             </div>
           )}
         </div>
+        {(caps?.contextWindow || caps?.maxOutput) && (
+          <p className="mt-1 text-[10px] text-text-muted">
+            {caps.contextWindow ? `${caps.contextWindow.toLocaleString()} context` : ""}
+            {caps.contextWindow && caps.maxOutput ? " · " : ""}
+            {caps.maxOutput ? `${caps.maxOutput.toLocaleString()} max output` : ""}
+          </p>
+        )}
       </div>
       <button
         onClick={onDeleteAlias}
@@ -73,6 +80,8 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
 
 export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel, connections, isAnthropic }) {
   const [newModel, setNewModel] = useState("");
+  const [contextWindow, setContextWindow] = useState("");
+  const [maxOutput, setMaxOutput] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
   const [testingModelId, setTestingModelId] = useState(null);
@@ -113,8 +122,13 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
 
     setAdding(true);
     try {
-      await onAddCustomModel(modelId);
+      await onAddCustomModel(modelId, {
+        ...(contextWindow ? { contextWindow: Number(contextWindow) } : {}),
+        ...(maxOutput ? { maxOutput: Number(maxOutput) } : {}),
+      });
       setNewModel("");
+      setContextWindow("");
+      setMaxOutput("");
     } catch (error) {
       console.log("Error adding model:", error);
     } finally {
@@ -145,7 +159,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         const modelId = model.id || model.name || model.model;
         if (!modelId) continue;
         if (allModels.some((entry) => entry.id === modelId)) continue;
-        await onAddCustomModel(modelId);
+        await onAddCustomModel(modelId, model.caps);
         importedCount += 1;
       }
       if (importedCount === 0) {
@@ -187,6 +201,35 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         </Button>
       </div>
 
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label htmlFor="compatible-model-context-window" className="text-xs text-text-muted mb-1 block">Context window</label>
+          <input
+            id="compatible-model-context-window"
+            type="number"
+            min="1"
+            step="1"
+            value={contextWindow}
+            onChange={(event) => setContextWindow(event.target.value)}
+            placeholder="Optional, in tokens"
+            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+          />
+        </div>
+        <div>
+          <label htmlFor="compatible-model-max-output" className="text-xs text-text-muted mb-1 block">Maximum output</label>
+          <input
+            id="compatible-model-max-output"
+            type="number"
+            min="1"
+            step="1"
+            value={maxOutput}
+            onChange={(event) => setMaxOutput(event.target.value)}
+            placeholder="Optional, in tokens"
+            className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+          />
+        </div>
+      </div>
+
       {!canImport && (
         <p className="text-xs text-text-muted">
           Add a connection to enable importing models.
@@ -195,11 +238,12 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
 
       {allModels.length > 0 && (
         <div className="flex flex-col gap-3">
-          {allModels.map(({ id, alias, source }) => (
+          {allModels.map(({ id, alias, source, caps }) => (
             <CompatibleModelRow
               key={`${source}-${providerStorageAlias}/${id}`}
               modelId={id}
               fullModel={`${providerDisplayAlias}/${id}`}
+              caps={caps}
               copied={copied}
               onCopy={onCopy}
               onDeleteAlias={() => source === "custom" ? onDeleteCustomModel(id) : onDeleteAlias(alias)}

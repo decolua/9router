@@ -10,13 +10,22 @@ const defaultCaps = () => Object.fromEntries(Object.keys(CAPACITY_META).map((key
 export default function AddCustomModelModal({ isOpen, providerAlias, providerDisplayAlias, onSave, onClose }) {
   const [modelId, setModelId] = useState("");
   const [caps, setCaps] = useState(defaultCaps);
+  const [contextWindow, setContextWindow] = useState("");
+  const [maxOutput, setMaxOutput] = useState("");
   const [testStatus, setTestStatus] = useState(null); // null | "testing" | "ok" | "error"
   const [testError, setTestError] = useState("");
   const [saving, setSaving] = useState(false);
 
   // Reset state when modal opens
   useEffect(() => {
-    if (isOpen) { setModelId(""); setCaps(defaultCaps()); setTestStatus(null); setTestError(""); }
+    if (isOpen) {
+      setModelId("");
+      setCaps(defaultCaps());
+      setContextWindow("");
+      setMaxOutput("");
+      setTestStatus(null);
+      setTestError("");
+    }
   }, [isOpen]);
 
   // Strip provider's own alias prefix (e.g. "cc/model" -> "model" for cc provider)
@@ -50,7 +59,11 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
     if (!cleanId || saving) return;
     setSaving(true);
     try {
-      await onSave(cleanId, caps);
+      await onSave(cleanId, {
+        ...caps,
+        ...(contextWindow ? { contextWindow: Number(contextWindow) } : {}),
+        ...(maxOutput ? { maxOutput: Number(maxOutput) } : {}),
+      });
     } finally {
       setSaving(false);
     }
@@ -103,6 +116,33 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
                 size="sm"
               />
             ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Context window</label>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={contextWindow}
+              onChange={(e) => setContextWindow(e.target.value)}
+              placeholder="Optional, in tokens"
+              className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+            />
+          </div>
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Maximum output</label>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={maxOutput}
+              onChange={(e) => setMaxOutput(e.target.value)}
+              placeholder="Optional, in tokens"
+              className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+            />
           </div>
         </div>
 

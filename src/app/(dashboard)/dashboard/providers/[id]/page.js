@@ -596,7 +596,7 @@ export default function ProviderDetailPage() {
           continue;
         }
 
-        await handleAddCustomModel(cleanModelId, "llm", providerStorageAlias);
+        await handleAddCustomModel(cleanModelId, "llm", providerStorageAlias, model.caps);
         importedCount += 1;
       }
       
@@ -1084,7 +1084,7 @@ export default function ProviderDetailPage() {
           onCopy={copy}
           onSetAlias={handleSetAlias}
           onDeleteAlias={handleDeleteAlias}
-          onAddCustomModel={(modelId) => handleAddCustomModel(modelId, "llm", providerStorageAlias)}
+          onAddCustomModel={(modelId, caps) => handleAddCustomModel(modelId, "llm", providerStorageAlias, caps)}
           onDeleteCustomModel={(modelId) => handleDeleteCustomModel(modelId, "llm", providerStorageAlias)}
           connections={connections}
           isAnthropic={isAnthropicCompatible}
@@ -1132,7 +1132,7 @@ export default function ProviderDetailPage() {
             isTesting={testingModelIds.has(model.id)}
             isCustom
             isFree={false}
-            caps={getCaps(`${providerId}/${model.id}`)}
+            caps={model.caps || getCaps(`${providerStorageAlias}/${model.id}`)}
             thinkingSuffix={resolveThinkingSuffix(model.id)}
           />
         ))}
@@ -1206,10 +1206,10 @@ export default function ProviderDetailPage() {
                   <button
                     key={m.id}
                     onClick={async () => {
-                      await handleAddCustomModel(m.id, "llm", providerStorageAlias);
+                      await handleAddCustomModel(m.id, "llm", providerStorageAlias, m.caps);
                     }}
                     className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
-                    title={`${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx`}
+                    title={m.contextLength ? `${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx` : m.name}
                   >
                     <span className="material-symbols-outlined text-[13px]">add</span>
                     {m.id.split("/").pop()}

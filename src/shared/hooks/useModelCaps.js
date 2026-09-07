@@ -7,7 +7,7 @@ import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 let cache = null; // { byFull, byId } | null
 let inflight = null;
 
-function buildMaps(models) {
+export function buildMaps(models) {
   const byFull = {};
   const byId = {};
   for (const m of models || []) {
@@ -38,12 +38,14 @@ function loadModelCaps() {
 }
 
 // Resolve caps from a "provider/model" string or a bare model id.
-function resolveCaps(byFull, byId, key) {
+export function resolveCaps(byFull, byId, key) {
   if (!key) return null;
   if (byFull[key]) return byFull[key];
-  const bare = key.includes("/") ? key.slice(key.indexOf("/") + 1) : key;
-  if (byId[bare]) return byId[bare];
-  const provider = key.includes("/") ? key.slice(0, key.indexOf("/")) : null;
+  const qualified = key.includes("/");
+  const bare = qualified ? key.slice(key.indexOf("/") + 1) : key;
+  // Do not leak custom limits from another provider with the same model ID.
+  if (!qualified && byId[bare]) return byId[bare];
+  const provider = qualified ? key.slice(0, key.indexOf("/")) : null;
   const c = getCapabilitiesForModel(provider, bare);
   return {
     vision: c.vision,

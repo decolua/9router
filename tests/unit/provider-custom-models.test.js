@@ -59,6 +59,28 @@ describe("provider custom model rows", () => {
     ]);
   });
 
+  it("keeps stored caps on provider-owned dashboard rows", () => {
+    expect(getProviderCustomModelRows({
+      customModels: [{
+        providerAlias: "provider-a",
+        id: "shared-id",
+        type: "llm",
+        caps: { contextWindow: 123456, maxOutput: 7890 },
+      }],
+      providerAlias: "provider-a",
+    })[0].caps).toEqual({ contextWindow: 123456, maxOutput: 7890 });
+
+    expect(getProviderCustomModelRows({
+      customModels: [{
+        providerAlias: "provider-a",
+        id: "shared-id",
+        type: "llm",
+        caps: { contextWindow: 123456 },
+      }],
+      providerAlias: "provider-b",
+    })).toEqual([]);
+  });
+
   it("filters built-in models and typed custom models", () => {
     const rows = getProviderCustomModelRows({
       customModels: [

@@ -39,7 +39,11 @@ export async function addCustomModel({ providerAlias, id, type = "llm", name, ca
     const row = db.get(`SELECT value FROM kv WHERE scope = 'customModels' AND key = ?`, [k]);
     if (row) {
       const prev = parseJson(row.value) || {};
-      const next = { ...prev, ...(name ? { name } : {}), ...(caps ? { caps } : {}) };
+      const next = {
+        ...prev,
+        ...(name ? { name } : {}),
+        ...(caps ? { caps: { ...(prev.caps || {}), ...caps } } : {}),
+      };
       db.run(`UPDATE kv SET value = ? WHERE scope = 'customModels' AND key = ?`, [stringifyJson(next), k]);
       return;
     }
