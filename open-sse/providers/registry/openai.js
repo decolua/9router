@@ -27,6 +27,16 @@ export default {
     baseUrl: "https://api.openai.com/v1/chat/completions",
     forceStream: true,
   },
+  // Multi-endpoint: OpenAI natively speaks the Responses wire format at
+  // /v1/responses. Declaring both transports lets resolveTransport() pick the
+  // sourceFormat-matched endpoint so Responses requests bypass translation
+  // (preserving reasoning continuity, previous_response_id, and cache shape).
+  // The Responses entry is only used when formatCapabilities confirms the
+  // upstream supports it (see chatCore gate).
+  transports: [
+    { format: "openai", baseUrl: "https://api.openai.com/v1/chat/completions", forceStream: true },
+    { format: "openai-responses", baseUrl: "https://api.openai.com/v1/responses" },
+  ],
   models: [
     { id: "gpt-5.4", name: "GPT-5.4" },
     { id: "gpt-5.4-mini", name: "GPT-5.4 Mini" },

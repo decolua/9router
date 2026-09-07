@@ -175,6 +175,12 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 Proxy
               </Badge>
             )}
+            {connection.providerSpecificData?.formatCapabilities?.chat && (
+              <Badge variant="default" size="sm">Chat</Badge>
+            )}
+            {connection.providerSpecificData?.formatCapabilities?.responses && (
+              <Badge variant="success" size="sm">Responses</Badge>
+            )}
             {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
             {connection.lastError && connection.isActive !== false && (
               <span className="max-w-full truncate text-xs text-red-500 sm:max-w-[300px]" title={connection.lastError}>

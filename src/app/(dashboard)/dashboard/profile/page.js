@@ -649,6 +649,21 @@ export default function ProfilePage() {
     }
   };
 
+  const updateFormatProbeEnabled = async (enabled) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ formatProbeEnabled: enabled }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, formatProbeEnabled: enabled }));
+      }
+    } catch (err) {
+      console.error("Failed to update formatProbeEnabled:", err);
+    }
+  };
+
   const reloadSettings = async () => {
     try {
       const res = await fetch("/api/settings");
@@ -857,6 +872,38 @@ export default function ProfilePage() {
             <span className="text-sm text-text-muted">Display language</span>
             <span className="text-2xl">{LOCALE_FLAGS[locale] || "🌐"}</span>
           </button>
+        </Card>
+
+        {/* LLM API */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500 shrink-0">
+              <span className="material-symbols-outlined text-[20px]">api</span>
+            </div>
+            <h3 className="text-base sm:text-lg font-semibold">LLM API</h3>
+          </div>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start sm:items-center justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Responses API capability detection</p>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  When ON, 9router tests each connected model against both the Responses
+                  (POST /v1/responses) and Chat Completions (POST /v1/chat/completions) wire
+                  formats, then routes/translates accordingly.
+                </p>
+                <p className="text-xs sm:text-sm text-text-muted mt-1">
+                  Enables Codex CLI compatibility and preserves native Responses benefits
+                  (reasoning continuity, previous_response_id, cache shape) where the upstream
+                  supports them. Uses a small number of tokens per model tested. Disabled by default.
+                </p>
+              </div>
+              <Toggle
+                checked={settings.formatProbeEnabled === true}
+                onChange={() => updateFormatProbeEnabled(!settings.formatProbeEnabled)}
+                disabled={loading}
+              />
+            </div>
+          </div>
         </Card>
 
         {/* Security */}

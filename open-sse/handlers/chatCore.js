@@ -86,11 +86,19 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // route kimi to /messages.
   const modelSupportedFormats = getModelSupportedFormats(alias, model);
   const runtimeTransport = resolveTransport(provider, sourceFormat);
-  // Per-model guard: when a model declares supportedFormats, only use the
-  // sourceFormat-matched transport if that format is declared (opencode-go models
-  // differ — kimi/glm only do /chat/completions). Undeclared models keep the
-  // upstream default (use the transport), preserving behavior for glm/deepseek/...
-  const useTransport = (!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat)) ? runtimeTransport : null;
+  
+  // Format capability gate: if provider capabilities are probed, enforce them.
+  const formatCaps = credentials?.providerSpecificData?.formatCapabilities;
+  const isResponsesRequested = sourceFormat === FORMATS.OPENAI_RESPONSES;
+  const canUseResponses = formatCaps?.responses === true;
+  
+  // When Responses is requested but upstream is Chat-only, skip Responses transport
+  // even if transport matching sourceFormat exists (this prevents broken native-routing).
+  const effectiveTransport = (isResponsesRequested && formatCaps && !canUseResponses) 
+    ? null 
+    : runtimeTransport;
+
+  const useTransport = (!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat)) ? effectiveTransport : null;
   // A source-format-matched endpoint keeps the request lossless. Prefer it
   // over a model-level targetFormat, which is only the fallback for clients
   // whose wire format has no supported transport (for example MiniMax-M3:
