@@ -42,6 +42,13 @@ const KNOWN_CODING_AGENTS = [
   "devin",
 ];
 
+const KNOWN_CODING_AGENTS_REGEX = new RegExp(
+  `(^|[^a-z0-9])(${KNOWN_CODING_AGENTS.map((a) => a.replace(/[-]/g, "\\$&")).join("|")})([^a-z0-9]|$)`,
+  "i"
+);
+
+const CODING_KEYWORD_REGEX = /(^|[^a-z0-9])(agent|coder|coding)([^a-z0-9]|$)/i;
+
 const GENERIC_UA_REGEX = /^(curl|wget|python-requests|requests|python-urllib|urllib|urllib3|aiohttp|httpx|axios|node-fetch|undici|got|superagent|okhttp|go-http-client|apache-httpclient|postmanruntime|insomnia|thunder[ -]?client|bun|rest-client|faraday|dart:io|java|req|wukong|fetch|openai|anthropic|langchain|llamaindex|litellm|google-genai|google-api|semantic-kernel|autogen|mozilla|chrome|safari|webkit|open-sse)($|[\s\/\(;_:,-])/i;
 
 function extractHeader(headers, headerName) {
@@ -57,21 +64,8 @@ function extractHeader(headers, headerName) {
 
 function isCodingAgentUserAgent(ua) {
   if (!ua || typeof ua !== "string") return false;
-  const lower = ua.toLowerCase();
-  for (const agent of KNOWN_CODING_AGENTS) {
-    if (lower.includes(agent)) return true;
-  }
-  return /\b(agent|coder|coding)\b/i.test(lower) ||
-         /-(agent|coder|coding)/i.test(lower) ||
-         /_(agent|coder|coding)/i.test(lower);
-}
-
-function isGenericUserAgent(ua) {
-  if (!ua || typeof ua !== "string") return true;
-  const trimmed = ua.trim();
-  if (!trimmed) return true;
-  if (isCodingAgentUserAgent(trimmed)) return false;
-  return GENERIC_UA_REGEX.test(trimmed);
+  if (GENERIC_UA_REGEX.test(ua)) return false;
+  return KNOWN_CODING_AGENTS_REGEX.test(ua) || CODING_KEYWORD_REGEX.test(ua);
 }
 
 function syntheticUserAgent(clientTool) {
@@ -90,10 +84,10 @@ function syntheticUserAgent(clientTool) {
 
 function resolveOpencodeGoUserAgent(headers, clientTool) {
   const downstreamUa = extractHeader(headers, "user-agent");
-  if (downstreamUa && !isGenericUserAgent(downstreamUa)) {
+  if (downstreamUa && isCodingAgentUserAgent(downstreamUa)) {
     return downstreamUa.slice(0, MAX_UA_LENGTH);
   }
-  return syntheticUserAgent(clientTool);
+  return syntheticUserAgent(clientTool).slice(0, MAX_UA_LENGTH);
 }
 
 const RESPONSES_BASE_URL = "https://opencode.ai/zen/go/v1/responses";

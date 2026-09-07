@@ -149,7 +149,7 @@ describe("OpenCode Go x-opencode-session", () => {
   it("does not add the header to unrelated default executors", () => {
     const headers = new DefaultExecutor("openai").buildHeaders({ apiKey: "test-key" }, false);
     expect(headers["x-opencode-session"]).toBeUndefined();
-    expect(headers["_opencodeGoUserAgent"]).toBeUndefined();
+    expect(headers["User-Agent"]).toBeUndefined();
   });
 });
 
@@ -178,6 +178,9 @@ describe("OpenCode Go User-Agent", () => {
       "my-coding-agent/1.0",
       "custom-build-agent/2.0",
       "team-coder/1.5",
+      "void/0.1.0",
+      "bolt/1.0",
+      "zed/0.120.0",
     ];
 
     for (const ua of agents) {
@@ -190,6 +193,37 @@ describe("OpenCode Go User-Agent", () => {
       expect(headers["User-Agent"]).toBe(ua);
       expect(headers["user-agent"]).toBeUndefined();
     }
+  });
+
+  it("does not match non-agent substrings like avoid or thunderbolt", () => {
+    const executor = getExecutor("opencode-go");
+    const falsePositives = [
+      "avoid/1.0",
+      "thunderbolt/2.0",
+      "analyzed/1.0",
+    ];
+
+    for (const ua of falsePositives) {
+      const { prepared } = prepare(executor, {
+        credentials: makeCredentials({ rawHeaders: { "user-agent": ua } }),
+        clientTool: null,
+      });
+      expect(prepared._opencodeGoUserAgent).toBe("9router-coding-agent/1.0");
+      const headers = executor.buildHeaders(prepared, true);
+      expect(headers["User-Agent"]).toBe("9router-coding-agent/1.0");
+    }
+  });
+
+  it("clamps synthetic user-agent to MAX_UA_LENGTH", () => {
+    const executor = getExecutor("opencode-go");
+    const longTool = "custom-agent-tool-".repeat(30);
+    const { prepared } = prepare(executor, {
+      credentials: makeCredentials({ rawHeaders: {} }),
+      clientTool: longTool,
+    });
+
+    expect(prepared._opencodeGoUserAgent.length).toBe(256);
+    expect(prepared._opencodeGoUserAgent.startsWith(`${longTool.toLowerCase()}-agent/1.0`.slice(0, 20))).toBe(true);
   });
 
   it("replaces generic HTTP libraries and SDKs with fallback when clientTool is null", () => {
