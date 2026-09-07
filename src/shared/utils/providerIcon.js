@@ -5,6 +5,7 @@ const ICON_ALIASES = {
   "perplexity-agent": "perplexity",
   "gitlab-duo": "gitlab",
   "vercel-ai-gateway": "vercel",
+  "ollama-search": "ollama",
 };
 
 const ICON_URLS = {

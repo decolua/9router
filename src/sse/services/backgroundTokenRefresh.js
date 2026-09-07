@@ -9,6 +9,7 @@ import { getCredentialExpiryMs } from "open-sse/services/oauthCredentialManager.
 export const BACKGROUND_REFRESH_LEAD_MS = 30 * 60 * 1000;
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000;
 const INITIAL_DELAY_MS = 10 * 1000;
+const SENSITIVE_PROVIDERS = new Set(["antigravity", "gemini-cli"]);
 
 let started = false;
 let intervalHandle = null;
@@ -87,47 +88,47 @@ async function refreshOne(connection) {
  * @param {{ loadConnections?: Function, refreshConnection?: Function }} [deps]
  */
 export async function runBackgroundTokenRefreshTick(deps = {}) {
-  if (tickRunning) {
-    log.debug("BG_TOKEN_REFRESH", "Tick already running, skip");
-    return;
-  }
+  if (tickRunning) return;
   tickRunning = true;
   try {
     const load = deps.loadConnections || loadActiveConnections;
     const refresh = deps.refreshConnection || refreshOne;
+    const sleep = deps.sleep || ((ms) => new Promise((res) => setTimeout(res, ms)));
 
     const connections = await load();
     const due = selectConnectionsNeedingRefresh(connections, Date.now());
 
-    if (due.length === 0) {
-      log.debug("BG_TOKEN_REFRESH", "No connections due for refresh", {
-        active: Array.isArray(connections) ? connections.length : 0,
-      });
-      return;
+    if (due.length === 0) return;
+
+    const baseSensitiveDelay = Number(process.env.BG_REFRESH_GOOGLE_DELAY_MS) || 12_000;
+    const baseNormalDelay = Number(process.env.BG_REFRESH_DELAY_MS) || 1_500;
+
+    for (let i = 0; i < due.length; i++) {
+      const conn = due[i];
+      try {
+        await refresh(conn);
+        log.info("BG_TOKEN_REFRESH", "Connection refresh finished", {
+          id: conn.id,
+          email: conn.email || conn.name || conn.id,
+          provider: conn.provider,
+        });
+      } catch (err) {
+        log.warn("BG_TOKEN_REFRESH", "Connection refresh failed (swallowed)", {
+          id: conn?.id,
+          email: conn?.email || conn?.name || conn?.id,
+          provider: conn?.provider,
+          error: err?.message ?? String(err),
+        });
+      }
+
+      // Sequential delay between accounts to prevent bursting upstream providers (especially Google Cloud)
+      if (i < due.length - 1) {
+        const isSensitive = SENSITIVE_PROVIDERS.has(conn.provider);
+        const baseDelay = isSensitive ? baseSensitiveDelay : baseNormalDelay;
+        const jitter = isSensitive ? Math.floor(Math.random() * 4000) : 200;
+        await sleep(baseDelay + jitter);
+      }
     }
-
-    log.info("BG_TOKEN_REFRESH", "Refreshing due OAuth connections", {
-      due: due.length,
-      ids: due.map((c) => c.id).filter(Boolean),
-    });
-
-    await Promise.allSettled(
-      due.map(async (conn) => {
-        try {
-          await refresh(conn);
-          log.info("BG_TOKEN_REFRESH", "Connection refresh finished", {
-            id: conn.id,
-            provider: conn.provider,
-          });
-        } catch (err) {
-          log.warn("BG_TOKEN_REFRESH", "Connection refresh failed (swallowed)", {
-            id: conn?.id,
-            provider: conn?.provider,
-            error: err?.message ?? String(err),
-          });
-        }
-      })
-    );
   } catch (err) {
     log.warn("BG_TOKEN_REFRESH", "Tick failed (swallowed)", {
       error: err?.message ?? String(err),
@@ -144,14 +145,8 @@ export async function runBackgroundTokenRefreshTick(deps = {}) {
  */
 export function startBackgroundTokenRefresh({ intervalMs } = {}) {
   if (started) return false;
-  if (isTruthyEnv(process.env.DISABLE_BACKGROUND_TOKEN_REFRESH)) {
-    log.info("BG_TOKEN_REFRESH", "Disabled via DISABLE_BACKGROUND_TOKEN_REFRESH");
-    return false;
-  }
-  if (isNonServerRuntime()) {
-    log.debug("BG_TOKEN_REFRESH", "Skip start outside long-running server runtime");
-    return false;
-  }
+  if (isTruthyEnv(process.env.DISABLE_BACKGROUND_TOKEN_REFRESH)) return false;
+  if (isNonServerRuntime()) return false;
 
   started = true;
   const period = Number.isFinite(intervalMs) && intervalMs > 0 ? intervalMs : DEFAULT_INTERVAL_MS;
@@ -171,11 +166,6 @@ export function startBackgroundTokenRefresh({ intervalMs } = {}) {
   intervalHandle = setInterval(safeTick, period);
   if (intervalHandle.unref) intervalHandle.unref();
 
-  log.info("BG_TOKEN_REFRESH", "Scheduler started", {
-    intervalMs: period,
-    initialDelayMs: INITIAL_DELAY_MS,
-    leadMs: BACKGROUND_REFRESH_LEAD_MS,
-  });
   return true;
 }
 
@@ -190,6 +180,5 @@ export function stopBackgroundTokenRefresh() {
   }
   if (started) {
     started = false;
-    log.info("BG_TOKEN_REFRESH", "Scheduler stopped");
   }
 }

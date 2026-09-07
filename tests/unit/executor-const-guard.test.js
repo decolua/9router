@@ -9,6 +9,7 @@ import { DEFAULT_MAX_TOKENS, DEFAULT_MIN_TOKENS } from "../../open-sse/config/ru
 import mimoFree from "../../open-sse/providers/registry/mimo-free.js";
 import opencode from "../../open-sse/providers/registry/opencode.js";
 import antigravity from "../../open-sse/providers/registry/antigravity.js";
+import { OpenCodeExecutor } from "../../open-sse/executors/opencode.js";
 
 describe("compat base URLs / version", () => {
   it("OPENAI_COMPAT_BASE", () => {
@@ -44,5 +45,43 @@ describe("antigravity retry (intentional change: 429=6, 503=3)", () => {
   });
   it("503 attempts = 3", () => {
     expect(antigravity.transport.retry["503"].attempts).toBe(3);
+  });
+});
+
+describe("OpenCode Free endpoint routing", () => {
+  const MUSE = "muse-spark-1.2-contributor-free";
+
+  it("declares the Responses format only on the Muse Spark model", () => {
+    expect(opencode.transport.format).toBeUndefined();
+    const muse = opencode.models.find((m) => m.id === MUSE);
+    expect(muse?.targetFormat).toBe("openai-responses");
+    const muse13 = opencode.models.find((m) => m.id === "muse-spark-1.3-contributor-free");
+    expect(muse13?.targetFormat).toBe("openai-responses");
+  });
+
+  it("routes Muse Spark to /responses and every other model to /chat/completions", () => {
+    const executor = new OpenCodeExecutor();
+    expect(executor.buildUrl(MUSE)).toBe("https://opencode.ai/zen/v1/responses");
+    expect(executor.buildUrl(`${MUSE}(xhigh)`)).toBe("https://opencode.ai/zen/v1/responses");
+    expect(executor.buildUrl("muse-spark-1.3-contributor-free")).toBe("https://opencode.ai/zen/v1/responses");
+    expect(executor.buildUrl("muse-spark-1.4-contributor-free")).toBe("https://opencode.ai/zen/v1/responses");
+    expect(executor.buildUrl("muse-spark-2.0-contributor-free(xhigh)")).toBe("https://opencode.ai/zen/v1/responses");
+    expect(executor.buildUrl("big-pickle")).toBe("https://opencode.ai/zen/v1/chat/completions");
+    expect(executor.buildUrl("hy3-free")).toBe("https://opencode.ai/zen/v1/chat/completions");
+  });
+
+  it("normalizes Chat token/thinking fields only for the Responses model", () => {
+    const executor = new OpenCodeExecutor();
+    const muse = { max_tokens: 4096, reasoning_effort: "high" };
+    executor.transformRequest(MUSE, muse, true, {});
+    expect(muse.max_output_tokens).toBe(4096);
+    expect(muse.max_tokens).toBeUndefined();
+    expect(muse.reasoning).toEqual({ effort: "high", summary: "auto" });
+
+    const chat = { max_tokens: 4096, reasoning_effort: "high" };
+    executor.transformRequest("big-pickle", chat, true, {});
+    expect(chat.max_tokens).toBe(4096);
+    expect(chat.max_output_tokens).toBeUndefined();
+    expect(chat.reasoning_effort).toBe("high");
   });
 });
