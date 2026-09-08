@@ -7,6 +7,7 @@ import BaseUrlSelect from "./BaseUrlSelect";
 import { rememberEndpoint } from "./cliEndpointPresets";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
+import { isClaudeFormatModel } from "@/shared/constants/providers";
 
 export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
   const [status, setStatus] = useState(initialStatus || null);
@@ -199,6 +200,14 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
       modelsObj[m] = { name: m, modalities: { input: ["text", "image"], output: ["text"] } };
     });
 
+    // Claude-format upstreams keep prompt caching only when reached over
+    // /v1/messages, so mirror them into an Anthropic-format provider entry.
+    const claudeFormatModels = modelsToShow.filter(isClaudeFormatModel);
+    const anthropicModelsObj = {};
+    claudeFormatModels.forEach(m => {
+      anthropicModelsObj[m] = { name: m, modalities: { input: ["text", "image"], output: ["text"] } };
+    });
+
     return [{
       filename: "~/.config/opencode/opencode.json",
       content: JSON.stringify({
@@ -208,6 +217,18 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
             options: { baseURL: getEffectiveBaseUrl(), apiKey: keyToUse },
             models: modelsObj,
           },
+          ...(claudeFormatModels.length > 0 ? {
+            "9router-anthropic": {
+              name: "9router anthropic",
+              npm: "@ai-sdk/anthropic",
+              options: {
+                baseURL: getEffectiveBaseUrl(),
+                apiKey: keyToUse,
+                headers: { Authorization: `Bearer ${keyToUse}` },
+              },
+              models: anthropicModelsObj,
+            },
+          } : {}),
         },
         model: `9router/${activeModelToShow}`,
         agent: {
