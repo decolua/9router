@@ -24,7 +24,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
         ? `Legacy: ${connection.providerSpecificData?.connectionProxyUrl}`
         : "";
   const autoPingTooltip = autoPing?.provider === "codex"
-    ? "Auto-starts the next 5h Codex window after reset by sending a tiny gpt-5.5 request. Consumes a small amount of quota."
+    ? "Auto-starts the next 5h Codex window after reset by sending a tiny request using the configured Codex auto-ping model. Consumes a small amount of quota."
     : "When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.";
 
   let maskedProxyUrl = "";
@@ -181,6 +181,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 {connection.lastError}
               </span>
             )}
+            {connection.lastModelError && connection.isActive !== false && (
+              <span className="max-w-full truncate text-xs text-amber-500 sm:max-w-[300px]" title={connection.lastModelError.message}>
+                Model unavailable: {connection.lastModelError.model}
+              </span>
+            )}
             <span className="text-xs text-text-muted">#{connection.priority}</span>
             {connection.globalPriority && (
               <span className="text-xs text-text-muted">Auto: {connection.globalPriority}</span>
@@ -287,6 +292,7 @@ ConnectionRow.propTypes = {
     testStatus: PropTypes.string,
     isActive: PropTypes.bool,
     lastError: PropTypes.string,
+    lastModelError: PropTypes.shape({ model: PropTypes.string, message: PropTypes.string }),
     priority: PropTypes.number,
     globalPriority: PropTypes.number,
   }).isRequired,

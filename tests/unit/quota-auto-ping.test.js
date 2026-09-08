@@ -16,37 +16,8 @@ vi.mock("@/app/api/usage/[connectionId]/route.js", () => ({
   refreshAndUpdateCredentials: vi.fn(),
 }));
 
-vi.mock("@/shared/constants/config", () => ({
-  QUOTA_AUTOPING_CONFIG: {
-    tickIntervalMs: 60000,
-    pingLeadMs: 5000,
-    refreshAheadMs: 300000,
-    failureCooldownMs: 900000,
-    providers: {
-      claude: {
-        settingsKey: "claudeAutoPing",
-        quotaKey: "session (5h)",
-        pingModel: "claude-haiku-4-5-20251001",
-        pingText: "hi",
-        pingMaxTokens: 1,
-      },
-      codex: {
-        settingsKey: "codexAutoPing",
-        quotaKey: "session",
-        pingWhenResetAtSlides: true,
-        resetAtDriftMs: 30000,
-        minPingIntervalMs: 600000,
-        skipWhenBlockingQuotaExhausted: true,
-        pingModel: "gpt-5.5",
-        pingText: "hi",
-        pingInstructions: "Reply with OK.",
-        pingReasoningEffort: "none",
-      },
-    },
-  },
-}));
-
-vi.mock("open-sse/providers/shared.js", () => ({
+vi.mock("open-sse/providers/shared.js", async (original) => ({
+  ...await original(),
   CLAUDE_CLI_SPOOF_HEADERS: { "anthropic-version": "2023-06-01" },
 }));
 
@@ -99,12 +70,12 @@ describe("quota auto-ping", () => {
       refreshAndUpdateCredentials: vi.fn(async (connection) => ({ connection, refreshed: false })),
       proxyAwareFetch: vi.fn().mockResolvedValue({ ok: true }),
       getExecutor: vi.fn(() => ({
-        execute: vi.fn().mockResolvedValue({ response: { ok: true, text: codexResponseText } }),
+        execute: vi.fn(async () => ({ response: new Response(await codexResponseText()) })),
       })),
     };
-    codexResponseText = vi.fn().mockResolvedValue("");
+    codexResponseText = vi.fn().mockResolvedValue('data: {"type":"response.completed","response":{"status":"completed"}}\n\n');
     getExecutor.mockReturnValue({
-      execute: vi.fn().mockResolvedValue({ response: { ok: true, text: codexResponseText } }),
+      execute: vi.fn(async () => ({ response: new Response(await codexResponseText()) })),
     });
     state = { running: false, resetCache: {}, failureCache: {} };
     vi.setSystemTime(new Date("2026-01-01T12:00:00.000Z"));
@@ -278,7 +249,7 @@ describe("quota auto-ping", () => {
     expect(deps.updateProviderConnection).not.toHaveBeenCalled();
   });
 
-  it("sends one tiny gpt-5.5 Codex request through the executor", async () => {
+  it("sends one tiny gpt-5.6-luna Codex request through the executor", async () => {
     deps.getSettings.mockResolvedValue({ codexAutoPing: { connections: { "codex-1": true } } });
     deps.getProviderConnections.mockImplementation(async ({ provider }) => (
       provider === "codex"
@@ -295,7 +266,7 @@ describe("quota auto-ping", () => {
     const executor = deps.getExecutor.mock.results[0].value;
     expect(deps.getExecutor).toHaveBeenCalledWith("codex");
     expect(executor.execute).toHaveBeenCalledWith(expect.objectContaining({
-      model: "gpt-5.5",
+      model: "gpt-5.6-luna",
       stream: true,
       credentials: expect.objectContaining({
         accessToken: "token",
@@ -303,14 +274,14 @@ describe("quota auto-ping", () => {
         providerSpecificData: { workspaceId: "ws-1" },
       }),
       body: {
-        model: "gpt-5.5",
+        model: "gpt-5.6-luna",
         input: [{
           type: "message",
           role: "user",
           content: [{ type: "input_text", text: "hi" }],
         }],
         instructions: "Reply with OK.",
-        reasoning: { effort: "none", summary: "auto" },
+        reasoning: { effort: "low", summary: "auto" },
         store: false,
         stream: true,
       },
@@ -319,6 +290,36 @@ describe("quota auto-ping", () => {
     expect(deps.updateProviderConnection).toHaveBeenCalledWith("codex-1", expect.objectContaining({
       lastPingedResetAt: "2026-01-01T17:01:00.000Z",
       lastPingedResetKey: "2026-01-01T17:01:00.000Z",
+    }));
+  });
+
+  it.each([
+    ["failed event", 'data: {"type":"response.failed","response":{"error":{"message":"model not available"}}}\n\n'],
+    ["incomplete event", 'event: response.incomplete\ndata: {"response":{"incomplete_details":{"reason":"max_output_tokens"}}}\n\n'],
+    ["truncated stream", 'data: {"type":"response.created"}\n\n'],
+  ])("does not record a completed ping for an HTTP 200 %s", async (_name, stream) => {
+    deps.getSettings.mockResolvedValue({ codexAutoPing: { connections: { "codex-1": true } } });
+    deps.getProviderConnections.mockResolvedValue([{ id: "codex-1", provider: "codex", authType: "oauth", accessToken: "token" }]);
+    state.resetCache["codex:codex-1"] = "2026-01-01T17:00:00.000Z";
+    getCodexUsage.mockResolvedValue({ quotas: { session: { remaining: 99, resetAt: "2026-01-01T17:01:00.000Z" } } });
+    codexResponseText.mockResolvedValue(stream);
+    await runQuotaAutoPingTick(deps, state);
+    expect(deps.updateProviderConnection).not.toHaveBeenCalled();
+    expect(state.failureCache["codex:codex-1"]).toBeTruthy();
+  });
+
+  it("honors an operator-selected auto-ping model without enabling other accounts", async () => {
+    deps.getSettings.mockResolvedValue({ codexAutoPing: { model: "gpt-5.6-sol", connections: { "codex-1": true } } });
+    deps.getProviderConnections.mockResolvedValue([
+      { id: "codex-1", provider: "codex", authType: "oauth", accessToken: "token" },
+      { id: "codex-2", provider: "codex", authType: "oauth", accessToken: "token" },
+    ]);
+    state.resetCache["codex:codex-1"] = "2026-01-01T17:00:00.000Z";
+    getCodexUsage.mockResolvedValue({ quotas: { session: { remaining: 99, resetAt: "2026-01-01T17:01:00.000Z" } } });
+    await runQuotaAutoPingTick(deps, state);
+    expect(deps.getExecutor).toHaveBeenCalledTimes(1);
+    expect(deps.getExecutor.mock.results[0].value.execute).toHaveBeenCalledWith(expect.objectContaining({
+      model: "gpt-5.6-sol", body: expect.objectContaining({ model: "gpt-5.6-sol" }),
     }));
   });
 

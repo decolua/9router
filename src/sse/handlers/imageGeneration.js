@@ -5,6 +5,7 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
+import { resolveCodexImageModel } from "open-sse/config/codexConstants.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleImageGenerationCore } from "open-sse/handlers/imageGenerationCore.js";
@@ -71,7 +72,14 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
-  const { provider, model } = modelInfo;
+  const { provider } = modelInfo;
+  let model = modelInfo.model;
+  try {
+    if (provider === "codex") model = resolveCodexImageModel(model);
+  } catch (error) {
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, error.message);
+  }
+  if (model !== modelInfo.model) log.info("IMAGE", `Configured model alias ${modelInfo.model} -> ${model}`);
 
   // noAuth providers — no credential needed
   if (NO_AUTH_PROVIDERS.has(provider)) {

@@ -1,3 +1,10 @@
+# Unreleased
+
+## Fixes
+- **Codex**: align discovery, chat, images and credential probes on one client identity; preserve image SSE errors and handle incremental/data-only frames.
+- **Codex**: keep model-access errors scoped to the affected account/model and stop account rotation for client-version failures.
+- **Codex**: make quota auto-ping model selectable (Luna by default), require a completed response before recording success, and support explicit opt-in image aliases. See [compatibility notes](docs/CODEX_COMPATIBILITY.md).
+
 # v0.5.69 (2026-09-05)
 
 ## Features

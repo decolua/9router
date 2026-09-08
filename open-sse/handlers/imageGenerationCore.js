@@ -183,7 +183,9 @@ export async function handleImageGenerationCore({
       parsed = await providerResponse.json();
     }
   } catch (parseError) {
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, parseError.message || `Invalid response from ${provider}`);
+    const status = Number.isInteger(parseError.statusCode) && parseError.statusCode >= 400 && parseError.statusCode <= 599
+      ? parseError.statusCode : HTTP_STATUS.BAD_GATEWAY;
+    return createErrorResult(status, parseError.message || `Invalid response from ${provider}`);
   }
 
   if (onRequestSuccess) await onRequestSuccess();

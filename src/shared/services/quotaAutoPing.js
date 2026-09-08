@@ -1,5 +1,6 @@
 // Quota auto-ping scheduler: warms 5h windows by sending tiny opt-in requests right after reset.
 import "open-sse/index.js";
+import { readCodexEvents, codexEventError } from "open-sse/utils/codexSse.js";
 
 import { getSettings, getProviderConnections, updateProviderConnection } from "@/lib/localDb";
 import { getClaudeUsage } from "open-sse/services/usage/claude.js";
@@ -128,25 +129,6 @@ function buildCodexPingInput(text) {
   }];
 }
 
-async function drainResponseBody(response) {
-  if (typeof response?.text === "function") {
-    await response.text();
-    return;
-  }
-
-  const reader = response?.body?.getReader?.();
-  if (!reader) return;
-
-  try {
-    while (true) {
-      const { done } = await reader.read();
-      if (done) return;
-    }
-  } finally {
-    reader.releaseLock?.();
-  }
-}
-
 async function sendCodexPing(connection, providerConfig, proxyOptions, deps) {
   const executor = deps.getExecutor("codex");
   const { response } = await executor.execute({
@@ -176,8 +158,12 @@ async function sendCodexPing(connection, providerConfig, proxyOptions, deps) {
   }
 
   // Codex only starts the 5h window after the streaming response completes.
-  await drainResponseBody(response);
-  return true;
+  let completed = false;
+  for await (const { event, data } of readCodexEvents(response)) {
+    if (codexEventError(event, data)) return false;
+    if (event === "response.completed" && data?.response?.status === "completed") completed = true;
+  }
+  return completed;
 }
 
 function shouldSkipAfterFailure(state, key, nowMs = Date.now()) {
@@ -264,7 +250,10 @@ export async function runQuotaAutoPingTick(deps = createDefaultDeps(), state = g
   try {
     const settings = await deps.getSettings();
 
-    for (const [provider, providerConfig] of Object.entries(C.providers)) {
+    for (const [provider, defaults] of Object.entries(C.providers)) {
+      const configuredModel = settings?.[defaults.settingsKey]?.model;
+      const providerConfig = provider === "codex" && typeof configuredModel === "string" && configuredModel.trim()
+        ? { ...defaults, pingModel: configuredModel.trim() } : defaults;
       const handler = providerHandlers[provider];
       if (!handler) continue;
 
