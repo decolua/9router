@@ -41,6 +41,18 @@ const nextConfig = {
     optimizePackageImports: ["@xyflow/react", "@dnd-kit/core", "@dnd-kit/sortable", "material-symbols", "marked"],
   },
   webpack: (config, { isServer }) => {
+    // Native modules that may not be installed (optional). serverExternalPackages
+    // above is the framework-level setting, but webpack may still try to resolve
+    // them through dynamic imports in server source files. Mark them as external
+    // so webpack leaves require() calls at runtime instead of bundling.
+    if (isServer) {
+      config.externals = [
+        ...(Array.isArray(config.externals) ? config.externals : [config.externals].filter(Boolean)),
+        "better-sqlite3",
+        "sql.js",
+        "bun:sqlite",
+      ];
+    }
     // Ignore fs/path modules in browser bundle
     if (!isServer) {
       config.resolve.fallback = {
