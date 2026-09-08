@@ -33,7 +33,13 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
     return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, credentials);
   }
 
-  if (needsTranslation(targetFormat, sourceFormat)) {
+  // Same-format streams must still decloak when the request was cloaked:
+  // translateRequest() suffixes client tools for OAuth-cloaked Claude providers
+  // even when no format conversion is needed (cloak runs after the same-format
+  // request shortcut), so a claude→claude stream carrying a toolNameMap has to
+  // go through the translate pipeline — its same-format branch applies
+  // decloakStreamChunk() and otherwise relays the parsed event untouched.
+  if (needsTranslation(targetFormat, sourceFormat) || toolNameMap?.size > 0) {
     return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, credentials);
   }
 
