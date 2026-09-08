@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { EventEmitter } from "events";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
@@ -7,6 +8,23 @@ function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
   if (key.length <= 8) return key.charAt(0) + "***";
   return key.slice(0, 8) + "***";
+}
+
+/**
+ * A stable, non-secret identity for one API key, used to bucket usage stats.
+ *
+ * The mask cannot serve: keys are minted as sk-{machineId}-{keyId}-{crc}, so
+ * every key on one install shares its first 8 characters and maskApiKey()
+ * folds all of them onto a single bucket (#3640). The key itself cannot serve
+ * either: these bucket names are returned to the dashboard, which is what
+ * AUDIT-002 forbids. The key's own id satisfies both; a deleted or unregistered
+ * key falls back to a digest, so it still gets its own bucket without the
+ * secret ever reaching the response.
+ */
+function apiKeyIdentity(apiKey, keyInfo) {
+  if (!apiKey || typeof apiKey !== "string") return "local-no-key";
+  if (keyInfo?.id) return keyInfo.id;
+  return "anon-" + createHash("sha256").update(apiKey).digest("hex").slice(0, 12);
 }
 
 const PENDING_TIMEOUT_MS = 60 * 1000;
@@ -500,7 +518,7 @@ export async function getUsageStats(period = "all") {
         if (dateKey > (stats.byAccount[accountKey].lastUsed || "")) stats.byAccount[accountKey].lastUsed = dateKey;
       }
 
-      for (const [akKey, ak] of Object.entries(day.byApiKey || {})) {
+      for (const [, ak] of Object.entries(day.byApiKey || {})) {
         const rawModel = ak.rawModel || "";
         const provider = ak.provider || "";
         const providerDisplayName = providerNodeNameMap[provider] || provider;
@@ -509,6 +527,10 @@ export async function getUsageStats(period = "all") {
         const keyName = keyInfo?.name || (apiKeyVal ? apiKeyVal.slice(0, 8) + "..." : "Local (No API Key)");
         const apiKeyMasked = maskApiKey(apiKeyVal);
         const apiKeyKey = apiKeyMasked || "local-no-key";
+        // The stored daily bucket is named by the raw key (aggregateEntryToDay
+        // writes `${apiKey}|${model}|${provider}`). Re-derive the response
+        // bucket so the secret stays in storage and never leaves in the payload.
+        const akKey = `${apiKeyIdentity(apiKeyVal, keyInfo)}|${rawModel}|${provider || "unknown"}`;
         if (!stats.byApiKey[akKey]) {
           stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey, lastUsed: dateKey };
         }
@@ -555,7 +577,7 @@ export async function getUsageStats(period = "all") {
       }
 
       const apiKeyKey = (e.apiKey && typeof e.apiKey === "string")
-        ? `${e.apiKey}|${e.model}|${e.provider || "unknown"}`
+        ? `${apiKeyIdentity(e.apiKey, apiKeyMap[e.apiKey])}|${e.model}|${e.provider || "unknown"}`
         : "local-no-key";
       if (stats.byApiKey[apiKeyKey] && new Date(ts) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) stats.byApiKey[apiKeyKey].lastUsed = ts;
 
@@ -627,7 +649,10 @@ export async function getUsageStats(period = "all") {
         const keyInfo = apiKeyMap[r.apiKey];
         const keyName = keyInfo?.name || r.apiKey.slice(0, 8) + "...";
         const apiKeyMasked = maskApiKey(r.apiKey);
-        const akKey = `${apiKeyMasked}|${r.model}|${r.provider || "unknown"}`;
+        // Not the mask: every key on one install shares its first 8 characters,
+        // so masking folded them all onto one bucket and the first key seen
+        // absorbed the rest of the install's requests, tokens and cost (#3640).
+        const akKey = `${apiKeyIdentity(r.apiKey, keyInfo)}|${r.model}|${r.provider || "unknown"}`;
         if (!stats.byApiKey[akKey]) {
           stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey: apiKeyMasked, lastUsed: r.timestamp };
         }

@@ -1,9 +1,9 @@
 /**
- * Misc usage handlers (iFlow, Ollama, GLM, Vercel AI Gateway, Qoder)
+ * Misc usage handlers (iFlow, Ollama, GLM, Vercel AI Gateway, Qoder, OpenCode Go)
  */
 
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
-import { U } from "./shared.js";
+import { U, parseResetTime } from "./shared.js";
 
 export { getGlmUsage } from "./glm.js";
 
@@ -252,5 +252,111 @@ export async function getQoderUsage(accessToken, proxyOptions = null) {
     };
   } catch (error) {
     return { message: `Qoder connected. Unable to fetch usage: ${error.message}` };
+  }
+}
+
+// OpenCode Go reports each window as a percentage consumed, not absolute counts,
+// so used is the percent and total is 100.
+//
+// Labels carry no duration on purpose: only the rolling window is a fixed span
+// (and its length is server-side plan config, absent from the payload). Weekly
+// resets on a calendar week boundary and monthly on the subscription
+// anniversary, so "7d"/"30d" would be wrong. Each row renders its own countdown
+// from resetAt anyway.
+const OPENCODE_GO_WINDOWS = [
+  { key: "rolling", label: "Rolling" },
+  { key: "weekly", label: "Weekly" },
+  { key: "monthly", label: "Monthly" },
+];
+
+// Errors come back as {type:"error", error:{type, message}} — surface the
+// message rather than echoing the raw JSON envelope at the user.
+async function readOpencodeGoError(response) {
+  const text = await response.text().catch(() => "");
+  if (!text) return "";
+  try {
+    const message = JSON.parse(text)?.error?.message;
+    if (typeof message === "string" && message.trim()) return message.trim();
+  } catch {
+    // not JSON — fall through to the raw text
+  }
+  return text.slice(0, 200);
+}
+
+/**
+ * OpenCode Go Usage
+ */
+export async function getOpencodeGoUsage(apiKey, proxyOptions = null) {
+  if (!apiKey) {
+    return { message: "OpenCode Go API key not available." };
+  }
+
+  const url = U("opencode-go").url;
+  if (!url) {
+    return { message: "OpenCode Go usage endpoint is not configured." };
+  }
+
+  try {
+    const response = await proxyAwareFetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+    }, proxyOptions);
+
+    if (response.status === 401) {
+      return { message: "OpenCode Go API key invalid or expired." };
+    }
+
+    // 403 is an entitlement error, not an auth error: upstream answers it when
+    // the key authenticates but the account carries no Go subscription. Calling
+    // that an invalid key would send the user off to reissue a working one.
+    if (response.status === 403) {
+      const detail = await readOpencodeGoError(response);
+      return {
+        plan: "OpenCode Go",
+        message: detail || "OpenCode Go subscription required for this account.",
+      };
+    }
+
+    if (!response.ok) {
+      const detail = await readOpencodeGoError(response);
+      return { message: `OpenCode Go usage API error (${response.status})${detail ? `: ${detail}` : ""}` };
+    }
+
+    const data = await response.json().catch(() => null);
+    if (!data || typeof data !== "object") {
+      return { message: "OpenCode Go usage response was not JSON." };
+    }
+
+    const usage = data?.usage || {};
+    const quotas = {};
+
+    for (const { key, label } of OPENCODE_GO_WINDOWS) {
+      const window = usage[key];
+      // Upstream emits all three windows today, but the payload shape has moved
+      // once already. Skip anything unrecognised instead of emitting a 0% bar
+      // that would read as "quota untouched".
+      if (!window || typeof window !== "object") continue;
+      const percent = Number(window.percent);
+      if (!Number.isFinite(percent)) continue;
+      const used = Math.min(100, Math.max(0, percent));
+      quotas[label] = {
+        used,
+        total: 100,
+        remainingPercentage: 100 - used,
+        resetAt: parseResetTime(window.resetsAt),
+        unlimited: false,
+      };
+    }
+
+    if (Object.keys(quotas).length === 0) {
+      return { plan: "OpenCode Go", message: "OpenCode Go connected. No quota windows reported.", quotas: {} };
+    }
+
+    return { plan: "OpenCode Go", quotas };
+  } catch (error) {
+    return { message: `OpenCode Go connected. Unable to fetch usage: ${error.message}` };
   }
 }

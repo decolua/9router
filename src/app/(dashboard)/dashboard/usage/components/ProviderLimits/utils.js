@@ -3,6 +3,9 @@ import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 // ─── Constants ───────────────────────────────────────────────────────────────
 export const QUOTA_CACHE_KEY = "quotaCacheData";
 export const REFRESH_INTERVAL_MS = 60000;
+// The countdown counts the same window down in seconds; derived so the two
+// cannot drift apart.
+export const COUNTDOWN_SECONDS = REFRESH_INTERVAL_MS / 1000;
 // Claude usage/quota endpoint rate-limits; poll it less often than other providers
 export const CLAUDE_REFRESH_INTERVAL_MS = 600000;
 export const DEPLETED_QUOTA_THRESHOLD = 5;
@@ -586,8 +589,13 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "opencode-go":
       case "deepseek":
-        // Credit balance — remainingPercentage only (no absolute remaining).
+        // Credit balance, and OpenCode Go's percent-per-window: forward
+        // remainingPercentage and never an absolute `remaining` (the UI reads
+        // `remaining` as a 0-100 percentage). For a used=percent/total=100 row
+        // the default branch happens to compute the same number, so this case
+        // is for intent and for staying correct if the shape ever changes.
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([name, quota]) => {
             normalizedQuotas.push({

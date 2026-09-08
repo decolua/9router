@@ -29,6 +29,7 @@ import {
   setQuotaCache,
   QUOTA_CACHE_KEY,
   REFRESH_INTERVAL_MS,
+  COUNTDOWN_SECONDS,
   CLAUDE_REFRESH_INTERVAL_MS,
   DEPLETED_QUOTA_THRESHOLD,
   AUTO_REFRESH_STORAGE_KEY,
@@ -38,6 +39,7 @@ import {
   ACCOUNT_FILTER_OPTIONS,
   QUOTA_SORT_OPTIONS,
 } from "./utils";
+import { createRefreshTimers, nextCountdown } from "./refreshTimers";
 import Card from "@/shared/components/Card";
 import { ConfirmModal, EditConnectionModal } from "@/shared/components";
 import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
@@ -135,7 +137,7 @@ export default function ProviderLimits() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [hasHydratedAutoRefresh, setHasHydratedAutoRefresh] = useState(false);
   const [refreshingAll, setRefreshingAll] = useState(false);
-  const [countdown, setCountdown] = useState(60);
+  const [countdown, setCountdown] = useState(COUNTDOWN_SECONDS);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
@@ -169,8 +171,6 @@ export default function ProviderLimits() {
     providerFilteredConnections: 0,
   });
 
-  const intervalRef = useRef(null);
-  const countdownRef = useRef(null);
   const tickCountRef = useRef(0);
 
   const fetchConnections = useCallback(
@@ -467,7 +467,7 @@ export default function ProviderLimits() {
     if (refreshingAll) return;
 
     setRefreshingAll(true);
-    setCountdown(60);
+    setCountdown(COUNTDOWN_SECONDS);
 
     // Throttle Claude: poll its quota every Nth auto-tick (manual force bypasses)
     const tick = (tickCountRef.current += 1);
@@ -646,65 +646,54 @@ export default function ProviderLimits() {
     updateQuotaVisibility(next, previous);
   }, [quotaVisibility, updateQuotaVisibility]);
 
-  // Auto-refresh interval
+  // One owner for both intervals. `refreshAll` is read through a ref so a new
+  // identity does not tear the timers down and restart the 60s window.
+  const refreshAllRef = useRef(refreshAll);
   useEffect(() => {
-    if (!hasHydratedAutoRefresh || !autoRefresh) {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-      if (countdownRef.current) {
-        clearInterval(countdownRef.current);
-        countdownRef.current = null;
-      }
+    refreshAllRef.current = refreshAll;
+  }, [refreshAll]);
+
+  const timers = useMemo(
+    () =>
+      createRefreshTimers({
+        onRefresh: () => refreshAllRef.current(),
+        onTick: () => setCountdown((prev) => nextCountdown(prev, COUNTDOWN_SECONDS)),
+        refreshIntervalMs: REFRESH_INTERVAL_MS,
+      }),
+    []
+  );
+
+  // Auto-refresh interval. Nothing starts while the tab is hidden — the
+  // visibilitychange handler below owns the resume.
+  useEffect(() => {
+    if (!hasHydratedAutoRefresh || !autoRefresh || document.hidden) {
+      timers.stop();
       return;
     }
-
-    // Main refresh interval
-    intervalRef.current = setInterval(() => {
-      refreshAll();
-    }, REFRESH_INTERVAL_MS);
-
-    // Countdown interval
-    countdownRef.current = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) return 60;
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      if (countdownRef.current) clearInterval(countdownRef.current);
-    };
-  }, [autoRefresh, refreshAll, hasHydratedAutoRefresh]);
+    timers.start();
+    return () => timers.stop();
+  }, [autoRefresh, hasHydratedAutoRefresh, timers]);
 
   // Pause auto-refresh when tab is hidden (Page Visibility API)
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current);
-          intervalRef.current = null;
-        }
-        if (countdownRef.current) {
-          clearInterval(countdownRef.current);
-          countdownRef.current = null;
-        }
+        timers.stop();
       } else if (autoRefresh && hasHydratedAutoRefresh) {
-        // Resume auto-refresh when tab becomes visible
-        intervalRef.current = setInterval(() => refreshAll(), REFRESH_INTERVAL_MS);
-        countdownRef.current = setInterval(() => {
-          setCountdown((prev) => (prev <= 1 ? 60 : prev - 1));
-        }, 1000);
+        // `start` clears first, so repeated visible events cannot stack.
+        timers.start();
       }
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+      // A tab hidden at mount takes the effect above through its early return,
+      // which leaves no cleanup behind — so unmounting after a resume would
+      // otherwise leave both intervals running.
+      timers.stop();
     };
-  }, [autoRefresh, refreshAll, hasHydratedAutoRefresh]);
+  }, [autoRefresh, hasHydratedAutoRefresh, timers]);
 
   const sortedConnections = useMemo(
     () =>
