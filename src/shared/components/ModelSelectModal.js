@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
+import Button from "./Button";
 import ProviderIcon from "./ProviderIcon";
 import CapacityBadges from "./CapacityBadges";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
@@ -33,6 +34,7 @@ export default function ModelSelectModal({
   capFilter = null,
   addedModelValues = [],
   closeOnSelect = true,
+  showDoneButtons = false,
 }) {
   // Filter activeProviders by serviceKinds when kindFilter set (e.g. "webSearch", "webFetch")
   const filteredActiveProviders = useMemo(() => {
@@ -467,12 +469,17 @@ export default function ModelSelectModal({
       title={title}
       size="md"
       className="p-4!"
-      footer={null}
+      footer={showDoneButtons ? (
+        <>
+          <Button onClick={onClose} variant="ghost">Cancel</Button>
+          <Button onClick={onClose}>Save</Button>
+        </>
+      ) : null}
     >
       {/* Info bar */}
       <div className="flex items-center gap-2 mb-3 px-2.5 py-2 bg-primary/8 border border-primary/20 rounded-lg text-xs text-text-muted">
         <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: "14px" }}>info</span>
-        <span>Click to add, click again to remove. Changes are saved automatically.</span>
+        <span>Click to add, click again to remove.{showDoneButtons ? "" : " Changes are saved automatically."}</span>
       </div>
 
       {/* Search - compact */}
@@ -530,7 +537,12 @@ export default function ModelSelectModal({
         )}
 
         {/* Provider models */}
-        {Object.entries(filteredGroups).map(([providerId, group]) => (
+        {Object.entries(filteredGroups).map(([providerId, group]) => {
+          // "Select all" is only meaningful in multi-add mode (modal stays open after a pick).
+          // Single-select pickers (e.g. CLI tool model mapping) don't pass closeOnSelect={false}.
+          const allAdded = group.models.length > 0 && group.models.every((m) => addedModelValues.includes(m.value));
+          const someAdded = !allAdded && group.models.some((m) => addedModelValues.includes(m.value));
+          return (
           <div key={providerId}>
             {/* Provider header */}
             <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
@@ -547,6 +559,27 @@ export default function ModelSelectModal({
               <span className="text-[10px] text-text-muted">
                 ({group.models.length})
               </span>
+              {closeOnSelect === false && group.models.length > 1 && (
+                <label
+                  className="ml-auto flex items-center gap-1 text-[10px] text-text-muted cursor-pointer select-none"
+                  title={`Select all ${group.name} models`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={allAdded}
+                    disabled={allAdded && !onDeselect}
+                    ref={(el) => { if (el) el.indeterminate = someAdded; }}
+                    onChange={() => {
+                      if (allAdded) {
+                        if (onDeselect) group.models.forEach((m) => onDeselect(m));
+                      } else {
+                        group.models.forEach((m) => { if (!addedModelValues.includes(m.value)) onSelect(m); });
+                      }
+                    }}
+                  />
+                  All
+                </label>
+              )}
             </div>
 
             <div className="flex flex-wrap gap-1.5">
@@ -597,7 +630,8 @@ export default function ModelSelectModal({
               })}
             </div>
           </div>
-        ))}
+          );
+        })}
 
         {Object.keys(filteredGroups).length === 0 && filteredCombos.length === 0 && (
           <div className="text-center py-4 text-text-muted">
@@ -628,4 +662,5 @@ ModelSelectModal.propTypes = {
   kindFilter: PropTypes.string,
   addedModelValues: PropTypes.arrayOf(PropTypes.string),
   closeOnSelect: PropTypes.bool,
+  showDoneButtons: PropTypes.bool,
 };

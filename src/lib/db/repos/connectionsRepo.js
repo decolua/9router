@@ -6,8 +6,9 @@ const OPTIONAL_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
   "accessToken", "refreshToken", "expiresAt", "tokenType",
   "scope", "projectId", "apiKey", "testStatus",
-  "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn", "errorCode",
+  "lastTested", "lastError", "lastErrorAt", "lastSuccessAt", "rateLimitedUntil", "expiresIn", "errorCode",
   "consecutiveUseCount", "idToken", "lastRefreshAt",
+  "rateLimits", // per-model { rpm, rpd, tpm, tpd } overrides; rateLimitState is internal-only, set via bumpRateLimitCounters
 ];
 
 function rowToConn(row) {
@@ -22,6 +23,7 @@ function rowToConn(row) {
     email: row.email,
     priority: row.priority,
     isActive: row.isActive === 1 || row.isActive === true,
+    group: typeof extra.group === "string" ? extra.group : "",
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -29,6 +31,7 @@ function rowToConn(row) {
 
 function connToRow(c) {
   const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
+  if (!rest.group) delete rest.group; // don't persist an empty group
   return {
     id,
     provider,
@@ -99,13 +102,30 @@ function reorderInTx(db, providerId) {
   });
 }
 
-export async function createProviderConnection(data) {
+export async function createProviderConnection(data, { skipIfExists = false } = {}) {
   const db = await getAdapter();
   const now = new Date().toISOString();
+  const group = typeof data.group === "string" ? data.group.trim() : "";
   let result;
 
   db.transaction(() => {
     const all = db.all(`SELECT * FROM providerConnections WHERE provider = ?`, [data.provider]).map(rowToConn);
+
+    // Dedup by API-key value (opt-in). Distinct from the name-based upsert below:
+    // a key that already exists is left untouched and reported as skipped.
+    if (skipIfExists && data.authType === "apikey" && data.apiKey) {
+      const dupe = all.find((c) => c.authType === "apikey" && c.apiKey && c.apiKey === data.apiKey);
+      if (dupe) {
+        // Still let an explicit group land on the pre-existing row.
+        if (data.group !== undefined && group !== (dupe.group || "")) {
+          upsert(db, { ...dupe, group, updatedAt: now });
+          result = { ...dupe, group, skipped: true };
+        } else {
+          result = { ...dupe, skipped: true };
+        }
+        return;
+      }
+    }
 
     let existing = null;
     if (data.authType === "oauth" && data.email) {
@@ -148,6 +168,7 @@ export async function createProviderConnection(data) {
 
     if (existing) {
       const merged = { ...existing, ...data, updatedAt: now };
+      if (data.group !== undefined) merged.group = group;
       upsert(db, merged);
       result = merged;
       return;
@@ -179,6 +200,7 @@ export async function createProviderConnection(data) {
       conn.providerSpecificData = data.providerSpecificData;
     }
     if (data.email !== undefined) conn.email = data.email;
+    if (group) conn.group = group;
 
     upsert(db, conn);
     reorderInTx(db, data.provider);
@@ -197,8 +219,36 @@ export async function updateProviderConnection(id, data) {
     if (!row) { result = null; return; }
     const existing = rowToConn(row);
     const merged = { ...existing, ...data, updatedAt: new Date().toISOString() };
+    if (data.group !== undefined) merged.group = typeof data.group === "string" ? data.group.trim() : "";
     upsert(db, merged);
     if (data.priority !== undefined) reorderInTx(db, existing.provider);
+    result = merged;
+  });
+  return result;
+}
+
+// Atomic per-model merge of rateLimitState — a plain updateProviderConnection()
+// call would work too, but its {...existing, ...data} merge is shallow, so
+// passing `rateLimitState: {[model]: patch}` would REPLACE the whole map and
+// lose every other model's counters. This reads the row fresh inside the
+// transaction, merges just `patch` into rateLimitState[model], and writes back —
+// concurrent calls for the same connection are safe because the driver's
+// db.transaction() body runs fully synchronously (no await inside it), so two
+// overlapping calls can never interleave their read and write; whichever runs
+// second simply reads the first one's already-committed result (same guarantee
+// usageRepo.saveRequestUsage relies on — see its comment there).
+export async function bumpRateLimitCounters(id, model, patch) {
+  if (!id || !model || !patch) return null;
+  const db = await getAdapter();
+  let result;
+  db.transaction(() => {
+    const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
+    if (!row) { result = null; return; }
+    const existing = rowToConn(row);
+    const state = { ...(existing.rateLimitState || {}) };
+    state[model] = { ...(state[model] || {}), ...patch };
+    const merged = { ...existing, rateLimitState: state, updatedAt: new Date().toISOString() };
+    upsert(db, merged);
     result = merged;
   });
   return result;

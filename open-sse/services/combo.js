@@ -87,6 +87,60 @@ export function reorderByCapabilities(models, required) {
  */
 const comboRotationState = new Map();
 
+/**
+ * Per-model health signal for the combo "adaptive" strategy — tracks the most
+ * recent success/error timestamp for each model string (e.g.
+ * "gemini/gemini-2.5-flash"), aggregated across whichever account ends up
+ * serving it on a given attempt. Mirrors auth.js's account-level adaptive
+ * strategy, just applied to MODEL ordering within a combo instead of ACCOUNT
+ * ordering within a provider — a different rotation layer entirely.
+ * In-memory only (same as comboRotationState above) — resets on restart, a
+ * soft ranking hint, not correctness-critical.
+ * @type {Map<string, { lastErrorAt?: number, lastSuccessAt?: number }>}
+ */
+const comboModelHealth = new Map();
+
+// In-flight count per model string — prevents a burst of concurrent requests
+// (arriving before any resolve) from all ranking the same "healthiest" model.
+const comboModelInFlight = new Map();
+
+function markComboModelStart(modelStr) {
+  comboModelInFlight.set(modelStr, (comboModelInFlight.get(modelStr) || 0) + 1);
+}
+
+function markComboModelEnd(modelStr) {
+  const current = comboModelInFlight.get(modelStr) || 0;
+  if (current <= 1) comboModelInFlight.delete(modelStr);
+  else comboModelInFlight.set(modelStr, current - 1);
+}
+
+function recordComboModelResult(modelStr, ok) {
+  const state = comboModelHealth.get(modelStr) || {};
+  if (ok) state.lastSuccessAt = Date.now();
+  else state.lastErrorAt = Date.now();
+  comboModelHealth.set(modelStr, state);
+}
+
+// Rank models the same way auth.js ranks accounts: healthy (last success at
+// least as recent as last error, or never errored) before unhealthy; healthy
+// ties broken by fewest in-flight requests; unhealthy ties broken by oldest
+// error first (closest to having recovered).
+function orderModelsAdaptively(models) {
+  const scored = models.map((m) => {
+    const h = comboModelHealth.get(m) || {};
+    const lastErrorMs = h.lastErrorAt || 0;
+    const lastSuccessMs = h.lastSuccessAt || 0;
+    return { m, healthy: lastSuccessMs >= lastErrorMs, lastErrorMs, inFlight: comboModelInFlight.get(m) || 0 };
+  });
+  scored.sort((a, b) => {
+    if (a.healthy !== b.healthy) return a.healthy ? -1 : 1;
+    if (a.healthy) return a.inFlight - b.inFlight;
+    if (a.lastErrorMs !== b.lastErrorMs) return a.lastErrorMs - b.lastErrorMs;
+    return a.inFlight - b.inFlight;
+  });
+  return scored.map((s) => s.m);
+}
+
 // Trailing run of items after the last assistant/model turn = the current user
 // turn. It may span several messages (e.g. text + image split across blocks),
 // so we return all of them. History media (older turns) must not pin the combo
@@ -206,9 +260,9 @@ function rotateModelsFromIndex(models, currentIndex) {
  * @returns {string[]} Rotated models array
  */
 export function getRotatedModels(models, comboName, strategy, stickyLimit = 1) {
-  if (!models || models.length <= 1 || strategy !== "round-robin") {
-    return models;
-  }
+  if (!models || models.length <= 1) return models;
+  if (strategy === "adaptive") return orderModelsAdaptively(models);
+  if (strategy !== "round-robin") return models;
 
   const rotationKey = comboName || "__default__";
   const normalizedStickyLimit = normalizeStickyLimit(stickyLimit);
@@ -301,11 +355,16 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     const modelStr = rotatedModels[i];
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
+    // In-flight + health tracking for the "adaptive" strategy (see top of file) —
+    // recorded regardless of the active strategy, since it's cheap and lets a
+    // combo switched to adaptive later immediately benefit from prior history.
+    markComboModelStart(modelStr);
     try {
       const result = await handleSingleModel(body, modelStr);
       
       // Success (2xx) - return response
       if (result.ok) {
+        recordComboModelResult(modelStr, true);
         log.info("COMBO", `Model ${modelStr} succeeded`);
         return result;
       }
@@ -335,6 +394,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
 
       if (!shouldFallback) {
+        recordComboModelResult(modelStr, false);
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
         return result;
       }
@@ -349,14 +409,18 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       }
 
       // Fallback to next model
+      recordComboModelResult(modelStr, false);
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
+      recordComboModelResult(modelStr, false);
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
+    } finally {
+      markComboModelEnd(modelStr);
     }
   }
 

@@ -6,9 +6,10 @@ import { Button, Badge, Input, Modal, Select } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { planBulkAdd } from "@/shared/utils/bulkAdd";
 
-const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
+const BULK_PLACEHOLDER = `key1|sk-aaa|key bulk\nkey2|sk-bbb|key bulk\nkey3|sk-ccc\nsk-key-only-auto-named`;
 
-export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, authType, authHint, website, proxyPools, error, existingNames, onSave, onBulkDone, onClose }) {
+export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, authType, authHint, website, proxyPools, error, existingNames, existingGroups = [], onSave, onBulkDone, onClose }) {
+  const GROUP_DATALIST_ID = "apikey-group-options";
   const NONE_PROXY_POOL_VALUE = "__none__";
   const isOllamaLocal = provider === "ollama-local";
   const isCookie = authType === "cookie";
@@ -30,6 +31,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     priority: 1,
     proxyPoolId: NONE_PROXY_POOL_VALUE,
     ollamaHostUrl: "",
+    group: "",
   });
   const [azureData, setAzureData] = useState({
     azureEndpoint: "",
@@ -50,7 +52,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
   const [mode, setMode] = useState("single"); // "single" | "bulk"
   const [bulkText, setBulkText] = useState("");
-  const [bulkResult, setBulkResult] = useState(null); // { success, failed }
+  const [bulkGroup, setBulkGroup] = useState(""); // fallback group for lines without one
+  const [bulkSkipExisting, setBulkSkipExisting] = useState(true);
+  const [bulkResult, setBulkResult] = useState(null); // { success, skipped, failed }
 
   const buildProviderSpecificData = () => {
     if (isOllamaLocal && formData.ollamaHostUrl.trim()) {
@@ -126,6 +130,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         priority: formData.priority,
         proxyPoolId: formData.proxyPoolId === NONE_PROXY_POOL_VALUE ? null : formData.proxyPoolId,
         testStatus: isValid ? "active" : "unknown",
+        group: formData.group.trim(),
         providerSpecificData: buildProviderSpecificData()
       });
     } finally {
@@ -144,7 +149,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     setSaving(true);
     setBulkResult(null);
     let success = 0;
+    let skipped = 0;
     let failed = 0;
+    const fallbackGroup = bulkGroup.trim();
     for (const entry of plan) {
       try {
         // Validate each key before saving so bulk-added connections get a
@@ -171,18 +178,23 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             name: entry.name,
             priority: 1,
             testStatus: isValid ? "active" : "unknown",
+            group: entry.group || fallbackGroup,
+            skipIfExists: bulkSkipExisting,
             ...(entry.providerSpecificData ? { providerSpecificData: entry.providerSpecificData } : {}),
           }),
         });
-        if (res.ok) success++;
-        else failed++;
+        if (res.ok) {
+          const j = await res.json().catch(() => ({}));
+          if (j.skipped) skipped++;
+          else success++;
+        } else failed++;
       } catch {
         failed++;
       }
     }
     setSaving(false);
-    setBulkResult({ success, failed });
-    if (success > 0 && onBulkDone) onBulkDone();
+    setBulkResult({ success, skipped, failed });
+    if ((success > 0 || skipped > 0) && onBulkDone) onBulkDone();
   };
 
   if (!provider) return null;
@@ -190,6 +202,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   return (
     <Modal isOpen={isOpen} title={`Add ${providerName || provider} ${credentialLabel}`} onClose={onClose}>
       <div className="flex flex-col gap-4">
+        <datalist id={GROUP_DATALIST_ID}>
+          {existingGroups.map((g) => <option key={g} value={g} />)}
+        </datalist>
         {/* Mode switcher */}
         <div className="flex gap-2">
           <Button size="sm" variant={mode === "single" ? "primary" : "ghost"} onClick={() => { setMode("single"); setBulkResult(null); }}>Single</Button>
@@ -202,8 +217,8 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
               {isCloudflareAi
                 ? <>One key per line. Format: <code>name|apiKey|accountId</code> or just <code>apiKey</code> (auto-named by index).</>
                 : provider === "qoder"
-                  ? <>One PAT per line. Format: <code>name|pt-...</code> or just <code>pt-...</code> (auto-named by index).</>
-                  : <>One key per line. Format: <code>name|apiKey</code> or just <code>apiKey</code> (auto-named by index).</>
+                  ? <>One PAT per line. Format: <code>name|pt-...</code>, <code>name|pt-...|group</code>, or just <code>pt-...</code> (auto-named).</>
+                  : <>One key per line. Format: <code>name|apiKey|group</code>, <code>name|apiKey</code>, or just <code>apiKey</code> (auto-named). The <code>group</code> field is optional.</>
               }
             </p>
             <textarea
@@ -212,9 +227,24 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
             />
+            {!isCloudflareAi && (
+              <Input
+                label="Group for lines without one (optional)"
+                value={bulkGroup}
+                onChange={(e) => setBulkGroup(e.target.value)}
+                placeholder="e.g. key bulk"
+                list={GROUP_DATALIST_ID}
+              />
+            )}
+            <label className="flex items-center gap-2 text-sm text-text-muted">
+              <input type="checkbox" checked={bulkSkipExisting} onChange={(e) => setBulkSkipExisting(e.target.checked)} />
+              Skip keys that already exist (dedup by API-key value)
+            </label>
             {bulkResult && (
               <div className={`text-sm font-medium ${bulkResult.failed > 0 ? "text-yellow-400" : "text-green-400"}`}>
-                ✓ {bulkResult.success} added{bulkResult.failed > 0 ? `, ✗ ${bulkResult.failed} failed` : ""}
+                ✓ {bulkResult.success} added
+                {bulkResult.skipped > 0 ? ` · ↷ ${bulkResult.skipped} skipped` : ""}
+                {bulkResult.failed > 0 ? ` · ✗ ${bulkResult.failed} failed` : ""}
               </div>
             )}
             <div className="flex gap-2">
@@ -365,6 +395,14 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         )}
 
         <Input
+          label="Group (optional)"
+          value={formData.group}
+          onChange={(e) => setFormData({ ...formData, group: e.target.value })}
+          placeholder="e.g. key bulk — pick an existing one or type a new name"
+          list={GROUP_DATALIST_ID}
+        />
+
+        <Input
           label="Priority"
           type="number"
           value={formData.priority}
@@ -421,6 +459,7 @@ AddApiKeyModal.propTypes = {
   })),
   error: PropTypes.string,
   existingNames: PropTypes.arrayOf(PropTypes.string),
+  existingGroups: PropTypes.arrayOf(PropTypes.string),
   onSave: PropTypes.func.isRequired,
   onBulkDone: PropTypes.func,
   onClose: PropTypes.func.isRequired,

@@ -6,7 +6,7 @@ import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onEditRateLimits, groupRateLimits = {}, onDelete, oneByOneStatus = null, autoPing = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null);
@@ -68,6 +68,13 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
       setShowProxyDropdown(false);
     }
   };
+
+  // Effective count: own overrides + models only covered via the connection's
+  // group default (already in effect via auth.js's resolveRateLimits fallback,
+  // even though nothing is stored on this connection itself).
+  const groupDefaultsForConn = groupRateLimits[(connection.group || "").trim()] || {};
+  const rateLimitModels = new Set([...Object.keys(connection.rateLimits || {}), ...Object.keys(groupDefaultsForConn)]);
+  const rateLimitCount = rateLimitModels.size;
 
   const rowAuthType = connection.authType || (isOAuth ? "oauth" : "apikey");
   const isOAuthConnection = rowAuthType === "oauth";
@@ -170,6 +177,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <Badge variant="default" size="sm">
               {authLabel}
             </Badge>
+            {connection.group && (
+              <Badge variant="info" size="sm">
+                {connection.group}
+              </Badge>
+            )}
             {hasAnyProxy && (
               <Badge variant={proxyBadgeVariant} size="sm">
                 Proxy
@@ -257,6 +269,16 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
               </button>
             </Tooltip>
           )}
+          {onEditRateLimits && (
+            <button
+              onClick={onEditRateLimits}
+              className={`flex flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${rateLimitCount ? "text-primary" : "text-text-muted hover:text-primary"}`}
+              title="Set per-model RPM/RPD/TPM/TPD caps"
+            >
+              <span className="material-symbols-outlined text-[18px]">{rateLimitCount ? "speed" : "avg_pace"}</span>
+              <span className="text-[10px] leading-tight">{rateLimitCount ? `Limits (${rateLimitCount})` : "Limits"}</span>
+            </button>
+          )}
           <button onClick={onEdit} className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5">
             <span className="material-symbols-outlined text-[18px]">edit</span>
             <span className="text-[10px] leading-tight">Edit</span>
@@ -289,6 +311,8 @@ ConnectionRow.propTypes = {
     lastError: PropTypes.string,
     priority: PropTypes.number,
     globalPriority: PropTypes.number,
+    group: PropTypes.string,
+    rateLimits: PropTypes.object,
   }).isRequired,
   proxyPools: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.string,
@@ -305,6 +329,8 @@ ConnectionRow.propTypes = {
   onToggleActive: PropTypes.func.isRequired,
   onUpdateProxy: PropTypes.func,
   onEdit: PropTypes.func.isRequired,
+  onEditRateLimits: PropTypes.func,
+  groupRateLimits: PropTypes.object,
   onDelete: PropTypes.func.isRequired,
   oneByOneStatus: PropTypes.shape({
     state: PropTypes.string,

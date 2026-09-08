@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Card, Button, Toggle, Input } from "@/shared/components";
+import { Card, Button, Toggle, Input, Select } from "@/shared/components";
 import Modal, { ConfirmModal } from "@/shared/components/Modal";
 import LanguageSwitcher from "@/shared/components/LanguageSwitcher";
 import { useTheme } from "@/shared/hooks/useTheme";
@@ -9,6 +9,18 @@ import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
 import { LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
 import { LOCALE_FLAGS } from "@/shared/constants/locales";
+
+const ACCOUNT_STRATEGY_OPTIONS = [
+  { value: "fill-first", label: "Fill First — always use top-priority account" },
+  { value: "round-robin", label: "Round Robin — cycle through accounts" },
+  { value: "adaptive", label: "Adaptive — self-healing, prefers recently-successful accounts" },
+];
+
+const COMBO_STRATEGY_OPTIONS = [
+  { value: "fallback", label: "Fallback — always start with first model" },
+  { value: "round-robin", label: "Round Robin — cycle through models" },
+  { value: "adaptive", label: "Adaptive — self-healing, prefers healthy models" },
+];
 
 function getLocaleFromCookie() {
   if (typeof document === "undefined") return "en";
@@ -1446,16 +1458,19 @@ export default function ProfilePage() {
           <div className="flex flex-col gap-4">
             <div className="flex items-start sm:items-center justify-between gap-4">
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm sm:text-base">Round Robin</p>
+                <p className="font-medium text-sm sm:text-base">Account Strategy</p>
                 <p className="text-xs sm:text-sm text-text-muted">
-                  Cycle through accounts to distribute load
+                  How to pick which account handles each request
                 </p>
               </div>
-              <Toggle
-                checked={settings.fallbackStrategy === "round-robin"}
-                onChange={() => updateFallbackStrategy(settings.fallbackStrategy === "round-robin" ? "fill-first" : "round-robin")}
-                disabled={loading}
-              />
+              <div className="w-full sm:w-[280px] shrink-0">
+                <Select
+                  options={ACCOUNT_STRATEGY_OPTIONS}
+                  value={settings.fallbackStrategy || "fill-first"}
+                  onChange={(e) => updateFallbackStrategy(e.target.value)}
+                  disabled={loading}
+                />
+              </div>
             </div>
 
             {/* Sticky Round Robin Limit */}
@@ -1479,19 +1494,22 @@ export default function ProfilePage() {
               </div>
             )}
 
-            {/* Combo Round Robin */}
+            {/* Combo Strategy */}
             <div className="flex items-start sm:items-center justify-between gap-4 pt-4 border-t border-border/50">
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm sm:text-base">Combo Round Robin</p>
+                <p className="font-medium text-sm sm:text-base">Combo Strategy</p>
                 <p className="text-xs sm:text-sm text-text-muted">
-                  Cycle through providers in combos instead of always starting with first
+                  How combos pick which model to try first (default for combos with no per-combo override)
                 </p>
               </div>
-              <Toggle
-                checked={settings.comboStrategy === "round-robin"}
-                onChange={() => updateComboStrategy(settings.comboStrategy === "round-robin" ? "fallback" : "round-robin")}
-                disabled={loading}
-              />
+              <div className="w-full sm:w-[280px] shrink-0">
+                <Select
+                  options={COMBO_STRATEGY_OPTIONS}
+                  value={settings.comboStrategy || "fallback"}
+                  onChange={(e) => updateComboStrategy(e.target.value)}
+                  disabled={loading}
+                />
+              </div>
             </div>
 
             {/* Combo Sticky Round Robin Limit */}
@@ -1518,9 +1536,13 @@ export default function ProfilePage() {
             <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
               {settings.fallbackStrategy === "round-robin"
                 ? `Currently distributing requests across all available accounts with ${settings.stickyRoundRobinLimit || 3} calls per account.`
+                : settings.fallbackStrategy === "adaptive"
+                ? "Currently preferring accounts whose last success is more recent than their last error, spreading concurrent load by fewest in-flight requests."
                 : "Currently using accounts in priority order (Fill First)."}
               {settings.comboStrategy === "round-robin"
                 ? ` Combos rotate after ${settings.comboStickyRoundRobinLimit || 1} call${(settings.comboStickyRoundRobinLimit || 1) === 1 ? "" : "s"} per model.`
+                : settings.comboStrategy === "adaptive"
+                ? " Combos prefer whichever model last succeeded more recently than it last errored."
                 : " Combos always start with their first model."}
             </p>
           </div>

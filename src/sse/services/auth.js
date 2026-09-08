@@ -1,13 +1,44 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
+import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools, bumpRateLimitCounters } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { getAntigravityQuotaCache } from "./antigravityQuota.js";
+import { isRateLimitBlocked, nextStateForRequest } from "@/lib/rateLimits.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
 let selectionMutex = Promise.resolve();
+
+// In-flight request counter, keyed by `${connectionId}:${model}`. Used only by
+// the "adaptive" strategy, to avoid piling concurrent requests onto whichever
+// single connection currently ranks best — its health signals (lastErrorAt/
+// lastSuccessAt) only change once a request RESOLVES, so without this, a burst
+// of concurrent selections arriving before any of them resolve would all read
+// the same ranking and all pick the same connection. In-memory only (mirrors
+// combo.js's comboRotationState) — resets on restart and isn't shared across
+// processes; that's fine, it's a soft load-spreading hint, not correctness-
+// critical state (the actual limits/locks are still enforced from the DB).
+const inFlightCounts = new Map();
+
+function getInFlightCount(connectionId, model) {
+  return inFlightCounts.get(`${connectionId}:${model || ""}`) || 0;
+}
+
+/** Call right after a connection is selected, before dispatching the request. */
+export function markRequestStart(connectionId, model) {
+  const key = `${connectionId}:${model || ""}`;
+  inFlightCounts.set(key, (inFlightCounts.get(key) || 0) + 1);
+  return key;
+}
+
+/** Call in a finally block once the request settles (success or failure). */
+export function markRequestEnd(key) {
+  if (!key) return;
+  const current = inFlightCounts.get(key) || 0;
+  if (current <= 1) inFlightCounts.delete(key);
+  else inFlightCounts.set(key, current - 1);
+}
 
 const GITHUB_MONTHLY_USAGE_LIMIT = "you've reached your additional usage limit for your plan";
 
@@ -69,7 +100,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       };
     }
 
-    const connections = await getProviderConnections({ provider: providerId, isActive: true });
+    let connections = await getProviderConnections({ provider: providerId, isActive: true });
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {
@@ -77,14 +108,37 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
+    // Optional account allow-list (e.g. a combo entry restricted to certain
+    // groups / specific connections). A group match pulls in every key in it.
+    const allowGroups = Array.isArray(options?.allowGroups) ? options.allowGroups.map((g) => String(g).trim()).filter(Boolean) : [];
+    const allowConnectionIds = Array.isArray(options?.allowConnectionIds) ? options.allowConnectionIds.filter(Boolean) : [];
+    if (allowGroups.length || allowConnectionIds.length) {
+      const gset = new Set(allowGroups);
+      const cset = new Set(allowConnectionIds);
+      const before = connections.length;
+      connections = connections.filter((c) => cset.has(c.id) || gset.has((c.group || "").trim()));
+      log.debug("AUTH", `${provider} | account filter → ${connections.length}/${before} (groups: ${allowGroups.join(",") || "-"}, keys: ${allowConnectionIds.length})`);
+      if (connections.length === 0) {
+        log.warn("AUTH", `${provider} | account filter matched no active connections`);
+        return null;
+      }
+    }
+
     // Antigravity quota cache is lazy: only populated after that account returns 409/429.
     const isAntigravity = providerId === "antigravity";
     const antigravityQuotaCache = isAntigravity && model ? getAntigravityQuotaCache() : null;
 
-    // Filter out model-locked, excluded, and Antigravity quota-exhausted connections.
+    // Fetched early (rather than after the filter, as before) — the RPM/RPD/TPM/TPD
+    // filter below needs settings.groupRateLimits to resolve each connection's
+    // effective limit before it can decide who to exclude.
+    const settings = await getSettings();
+    const groupRateLimits = (settings.groupRateLimits || {})[providerId] || {};
+
+    // Filter out model-locked, excluded, rate-limited, and Antigravity quota-exhausted connections.
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
+      if (model && isRateLimitBlocked(c, model, groupRateLimits)) return false;
       // Antigravity: skip if live quota exhausted for this model
       if (isAntigravity && model && antigravityQuotaCache) {
         const quota = antigravityQuotaCache.get(c.id)?.[model];
@@ -101,16 +155,31 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     connections.forEach(c => {
       const excluded = excludeSet.has(c.id);
       const locked = isModelLockActive(c, model);
-      if (excluded || locked) {
+      const rateLimited = !!model && isRateLimitBlocked(c, model, groupRateLimits);
+      if (excluded || locked || rateLimited) {
         const lockUntil = getEarliestModelLockUntil(c);
-        log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | ${excluded ? "excluded" : ""} ${locked ? `modelLocked(${model}) until ${lockUntil}` : ""}`);
+        log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | ${excluded ? "excluded" : ""} ${locked ? `modelLocked(${model}) until ${lockUntil}` : ""} ${rateLimited ? `rateLimited(${model})` : ""}`);
       }
     });
 
     if (availableConnections.length === 0) {
-      // Find earliest persistent lock or lazy Antigravity quota-cache reset for retry timing.
+      // Find earliest persistent lock, own rate-limit window, or lazy Antigravity
+      // quota-cache reset for retry timing.
       const lockedConns = connections.filter(c => isModelLockActive(c, model));
       const expiries = lockedConns.map(c => getEarliestModelLockUntil(c)).filter(Boolean);
+      if (model) {
+        for (const c of connections) {
+          const state = c.rateLimitState?.[model];
+          if (!state) continue;
+          // Whichever active window is furthest out is when this connection frees up.
+          for (const [startKey, ms] of [["rpmWindowStart", 60000], ["rpdWindowStart", 86400000], ["tpmWindowStart", 60000], ["tpdWindowStart", 86400000]]) {
+            const start = state[startKey];
+            if (!start) continue;
+            const resetAt = new Date(new Date(start).getTime() + ms).toISOString();
+            if (new Date(resetAt).getTime() > Date.now()) expiries.push(resetAt);
+          }
+        }
+      }
       if (isAntigravity && model && antigravityQuotaCache) {
         connections.forEach((c) => {
           const resetAt = antigravityQuotaCache.get(c.id)?.[model]?.resetAt;
@@ -133,7 +202,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    const settings = await getSettings();
+    // (settings already fetched above, for groupRateLimits)
     // Per-provider strategy overrides global setting
     const providerOverride = (settings.providerStrategies || {})[providerId] || {};
     const strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";
@@ -187,9 +256,58 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           consecutiveUseCount: 1
         });
       }
+    } else if (strategy === "adaptive") {
+      // Self-organizing, no explicit cooldown durations: a connection that just
+      // errored sinks behind every currently-healthy one automatically, and
+      // recovers on its own once other connections have "caught up" in recency
+      // (rather than waiting out a fixed backoff timer).
+      //
+      // "Healthy" = its last SUCCESS is at least as recent as its last error (or
+      // it has never errored). Among healthy connections, fewer in-flight
+      // requests wins, then least-recently-used (spreads load like round-robin).
+      // Among unhealthy ones, the OLDEST error wins (closest to having recovered),
+      // then fewer in-flight.
+      //
+      // The in-flight tiebreak (see markRequestStart/markRequestEnd below) is the
+      // part that actually prevents a race under concurrency: lastError/
+      // lastSuccessAt only change once a request RESOLVES, so without it, a burst
+      // of concurrent selections arriving before any of them resolve would all
+      // read the identical ranking and all pile onto the same "best" connection.
+      const scored = availableConnections.map((c) => {
+        const lastErrorMs = c.lastErrorAt ? new Date(c.lastErrorAt).getTime() : 0;
+        const lastSuccessMs = c.lastSuccessAt ? new Date(c.lastSuccessAt).getTime() : 0;
+        return {
+          c,
+          healthy: lastSuccessMs >= lastErrorMs,
+          lastErrorMs,
+          lastUsedMs: c.lastUsedAt ? new Date(c.lastUsedAt).getTime() : 0,
+          inFlight: getInFlightCount(c.id, model),
+        };
+      });
+      scored.sort((a, b) => {
+        if (a.healthy !== b.healthy) return a.healthy ? -1 : 1;
+        if (a.healthy) {
+          if (a.inFlight !== b.inFlight) return a.inFlight - b.inFlight;
+          return a.lastUsedMs - b.lastUsedMs;
+        }
+        if (a.lastErrorMs !== b.lastErrorMs) return a.lastErrorMs - b.lastErrorMs;
+        return a.inFlight - b.inFlight;
+      });
+      connection = scored[0].c;
+      await updateProviderConnection(connection.id, { lastUsedAt: new Date().toISOString() });
     } else {
       // Default: fill-first (already sorted by priority in getProviderConnections)
       connection = availableConnections[0];
+    }
+
+    // RPM/RPD is known the instant a connection is chosen — bump it now, still
+    // inside this function's mutex-protected section, so the count is committed
+    // before another concurrent selection can read it. (TPM/TPD can't be bumped
+    // here — the token count for this request doesn't exist yet; that happens
+    // post-hoc in usageRepo once the response finishes.)
+    if (model) {
+      const requestPatch = nextStateForRequest(connection, model, groupRateLimits);
+      if (requestPatch) await bumpRateLimitCounters(connection.id, model, requestPatch);
     }
 
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
@@ -301,7 +419,15 @@ export async function clearAccountError(connectionId, currentConnection, model =
   const now = Date.now();
   const allLockKeys = Object.keys(conn).filter(k => k.startsWith("modelLock_"));
 
-  if (!conn.testStatus && !conn.lastError && allLockKeys.length === 0) return;
+  // lastSuccessAt drives the "adaptive" strategy's health ranking (is the last
+  // success more recent than the last error?) — record it on every success, even
+  // when there's nothing else here to clear (the common, already-healthy case).
+  const nowIso = new Date().toISOString();
+
+  if (!conn.testStatus && !conn.lastError && allLockKeys.length === 0) {
+    await updateProviderConnection(connectionId, { lastSuccessAt: nowIso });
+    return;
+  }
 
   // Keys to clear: current model's lock + all expired locks
   const keysToClear = allLockKeys.filter(k => {
@@ -311,7 +437,10 @@ export async function clearAccountError(connectionId, currentConnection, model =
     return expiry && new Date(expiry).getTime() <= now;   // expired
   });
 
-  if (keysToClear.length === 0 && conn.testStatus !== "unavailable" && !conn.lastError) return;
+  if (keysToClear.length === 0 && conn.testStatus !== "unavailable" && !conn.lastError) {
+    await updateProviderConnection(connectionId, { lastSuccessAt: nowIso });
+    return;
+  }
 
   // Check if any active locks remain after clearing
   const remainingActiveLocks = allLockKeys.filter(k => {
@@ -321,6 +450,7 @@ export async function clearAccountError(connectionId, currentConnection, model =
   });
 
   const clearObj = Object.fromEntries(keysToClear.map(k => [k, null]));
+  clearObj.lastSuccessAt = nowIso;
 
   // Only reset error state if no active locks remain
   if (remainingActiveLocks.length === 0) {

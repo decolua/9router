@@ -89,3 +89,5 @@ graphify-out/*
 
 # Kiro local workspace state
 .kiro/
+# Local SQLite dev database
+/.data/
