@@ -7,7 +7,6 @@ import openai from "./openai.js";
 import openrouter from "./openrouter.js";
 import gemini, { fetchGeminiVoices } from "./gemini.js";
 import xiaomiMimo from "./xiaomi-mimo.js";
-import xiaomiMimo from "./xiaomi-mimo.js";
 import selfhostedTts from "./selfhostedTts.js";
 import { FORMAT_HANDLERS } from "./genericFormats.js";
 import { parseModelVoice } from "./_base.js";
