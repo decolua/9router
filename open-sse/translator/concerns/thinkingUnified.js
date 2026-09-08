@@ -333,6 +333,23 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       if (level) body.reasoning_effort = level;
       break;
     }
+    case "baseten": {
+      // Baseten Model APIs: default-on models read top-level reasoning_effort
+      // (validated per model — see PATTERN_THINKING level sets); opt-in models
+      // (caps.thinkingOptIn: GLM 4.7, GLM 5.2, Kimi K2.6/K2.7-Code, Nemotron
+      // Ultra) additionally need chat_template_args.enable_thinking:true.
+      // "none" never sends the flag: a missing flag leaves opt-in models off,
+      // and GLM 5.2 even rejects enable_thinking:false — reasoning_effort:"none"
+      // is the uniform, verified disable path across the catalog.
+      if (none && canDisable) { body.reasoning_effort = "none"; break; }
+      if (caps.thinkingOptIn) {
+        body.chat_template_args = { ...(body.chat_template_args || {}), enable_thinking: true };
+      }
+      // "auto" → model-default effort: enable the flag only, no effort field.
+      const level = toLevel(eff);
+      if (level && level !== "auto") body.reasoning_effort = normalizeOpenAILevel(level, supportedLevels);
+      break;
+    }
     case "kiro":
       // Kiro thinking handled via system-tag injection in openai-to-kiro.js; no body field here.
       break;

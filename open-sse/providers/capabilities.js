@@ -53,11 +53,12 @@ export const DEFAULT_CAPABILITIES = {
   tools: true,          // function / tool calling
   reasoning: false,     // thinking / reasoning
   // thinking wire format (only meaningful when reasoning:true). null → derive from transport.format.
-  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|hunyuan|step
+  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|hunyuan|step|baseten
   thinkingFormat: null,
   thinkingCanDisable: true,  // false → model cannot turn thinking off (clamp to min instead of disable)
   thinkingRange: null,       // { min, max } for budget formats; null = no clamp
   thinkingEffortSupported: false, // zai format only: model accepts a reasoning_effort level (GLM-5.2+; older GLM ignores it)
+  thinkingOptIn: false,      // baseten format only: thinking off by default — needs chat_template_args.enable_thinking to turn on
   // limits (tokens)
   contextWindow: 200000,
   maxOutput: 64000,
@@ -152,6 +153,30 @@ export const PROVIDER_CAPABILITIES = {
     "z-ai/glm-5.2": { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 128000 },
     "deepseek-ai/deepseek-v4-pro": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 65536 },
     "deepseek-ai/deepseek-v4-flash": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 65536 },
+  },
+  // Baseten Model APIs — per-model metadata from the docs supported-models
+  // table (context/maxOutput in tokens). All reasoning flows through the
+  // provider-wide "baseten" thinking format (registry transport.thinkingFormat);
+  // thinkingOptIn marks models whose thinking is OFF by default and needs
+  // chat_template_args.enable_thinking (GLM 4.7/5.2, Kimi K2.6/K2.7-Code,
+  // Nemotron Ultra). Wire behavior verified against the live surface.
+  "baseten": {
+    "GLM-5.3":                   { vision: true, reasoning: true, contextWindow: 1048576, maxOutput: 262144 },
+    "GLM-5.3-Fast":              { vision: true, reasoning: true, contextWindow: 1048576, maxOutput: 262144 },
+    "GLM-5.3-Flash":             { vision: true, reasoning: true, contextWindow: 1048576, maxOutput: 262144 },
+    "GLM-5.2":                   { vision: true, reasoning: true, thinkingOptIn: true, contextWindow: 1048576, maxOutput: 262144 },
+    "GLM-5.2-Fast":              { vision: true, reasoning: true, thinkingOptIn: true, contextWindow: 1048576, maxOutput: 262144 },
+    "GLM-4.7":                   { reasoning: true, thinkingOptIn: true, contextWindow: 200000, maxOutput: 200000 },
+    "DeepSeek-V4-Pro":           { reasoning: true, contextWindow: 1048576, maxOutput: 262144 },
+    "DeepSeek-V4-Pro-0813":      { reasoning: true, contextWindow: 1048576, maxOutput: 262144 },
+    "DeepSeek-V4-Flash-0731":    { reasoning: true, contextWindow: 1048576, maxOutput: 384000 },
+    "Kimi-K3":                   { vision: true, reasoning: true, contextWindow: 1048576, maxOutput: 262144 },
+    "Kimi-K2.6":                 { vision: true, reasoning: true, thinkingOptIn: true, contextWindow: 262144, maxOutput: 262144 },
+    "Kimi-K2.7-Code":            { vision: true, reasoning: true, thinkingOptIn: true, contextWindow: 262144, maxOutput: 262144 },
+    "gpt-oss-120b":              { reasoning: true, contextWindow: 131072, maxOutput: 131072 },
+    "NVIDIA-Nemotron-3-Ultra-550B-A55B": { reasoning: true, thinkingOptIn: true, contextWindow: 202000, maxOutput: 202000 },
+    "inkling":                   { vision: true, audioInput: true, reasoning: true, contextWindow: 1048576, maxOutput: 32768 },
+    "inkling-small":             { vision: true, audioInput: true, reasoning: true, contextWindow: 1048576, maxOutput: 32768 },
   },
   "codex": {
     "gpt-6-astra":               { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 },
