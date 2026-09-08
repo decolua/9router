@@ -5,7 +5,8 @@ import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.j
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
-import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
+import { parseSSEToOpenAIResponse, pickAssistantMessageForChatCompletion } from "./sseToJsonHandler.js";
+import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
 import { unwrapClineEnvelope } from "../../shared/clineEnvelope.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
@@ -288,13 +289,37 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   let responseBody;
 
   if (contentType.includes("text/event-stream")) {
-    const sseText = await providerResponse.text();
-    const parsed = parseSSEToOpenAIResponse(sseText, model);
-    if (!parsed) {
-      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+    // Responses-API upstream (e.g. opencode-go/muse) speaks Responses SSE,
+    // not Chat SSE. Parsing it as Chat chunks yields empty content — convert
+    // through the Responses assembler instead.
+    if (targetFormat === FORMATS.OPENAI_RESPONSES) {
+      const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
+      const { textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
+      const rUsage = jsonResponse.usage || {};
+      const rStatus = jsonResponse.status || "stop";
+      const done = rStatus === "completed" || rStatus === "done";
+      const finishReason = done ? "stop" : (rStatus === "incomplete" ? "length" : rStatus);
+      responseBody = {
+        id: jsonResponse.id || `chatcmpl-${Date.now()}`,
+        object: "chat.completion",
+        created: jsonResponse.created_at || Math.floor(Date.now() / 1000),
+        model: jsonResponse.model || model,
+        choices: [{ index: 0, message: { role: "assistant", content: textContent || "" }, finish_reason: finishReason }],
+        usage: {
+          prompt_tokens: rUsage.input_tokens || 0,
+          completion_tokens: rUsage.output_tokens || 0,
+          total_tokens: rUsage.total_tokens || (rUsage.input_tokens || 0) + (rUsage.output_tokens || 0)
+        }
+      };
+    } else {
+      const sseText = await providerResponse.text();
+      const parsed = parseSSEToOpenAIResponse(sseText, model);
+      if (!parsed) {
+        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+      }
+      responseBody = parsed;
     }
-    responseBody = parsed;
   } else {
     try {
       responseBody = await providerResponse.json();

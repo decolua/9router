@@ -5,6 +5,19 @@
  */
 
 /**
+ * Some providers skip per-item done events and ship the full output
+ * array on the terminal event. Harvest it (missing indices only) so
+ * delta-only streams still assemble. Never overwrites already-seen items.
+ */
+function harvestCompletedOutput(parsed, state) {
+  const out = parsed.response?.output;
+  if (!Array.isArray(out)) return;
+  for (let i = 0; i < out.length; i++) {
+    if (out[i] && !state.items.has(i)) state.items.set(i, out[i]);
+  }
+}
+
+/**
  * Process a single SSE message and update state accordingly.
  */
 function processSSEMessage(msg, state) {
@@ -12,9 +25,8 @@ function processSSEMessage(msg, state) {
 
   const eventMatch = msg.match(/^event:\s*(.+)$/m);
   const dataMatch = msg.match(/^data:\s*(.+)$/m);
-  if (!eventMatch || !dataMatch) return;
+  if (!dataMatch) return;
 
-  const eventType = eventMatch[1].trim();
   const dataStr = dataMatch[1].trim();
   if (dataStr === "[DONE]") return;
 
@@ -22,13 +34,24 @@ function processSSEMessage(msg, state) {
   try { parsed = JSON.parse(dataStr); }
   catch { return; }
 
+  // Some providers omit `event:` lines and send data-only SSE.
+  // Fall back to the payload's own type field (Responses API always sets one).
+  const eventType = (eventMatch?.[1]?.trim()) || (typeof parsed?.type === "string" ? parsed.type : null);
+  if (!eventType) return;
+
   if (eventType === "response.created") {
     state.responseId = parsed.response?.id || state.responseId;
     state.created = parsed.response?.created_at || state.created;
   } else if (eventType === "response.output_item.done") {
-    state.items.set(parsed.output_index ?? 0, parsed.item);
+    const idx = parsed.output_index ?? state.items.size;
+    state.items.set(idx, parsed.item);
   } else if (eventType === "response.completed" || eventType === "response.done") {
     state.status = "completed";
+    harvestCompletedOutput(parsed, state);
+  } else if (eventType === "response.incomplete") {
+    state.status = "incomplete";
+    harvestCompletedOutput(parsed, state);
+  } else if (eventType === "response.failed") {
     if (parsed.response?.usage) {
       state.usage.input_tokens = parsed.response.usage.input_tokens || 0;
       state.usage.output_tokens = parsed.response.usage.output_tokens || 0;
