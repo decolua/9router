@@ -67,6 +67,15 @@ function deriveConnectionName(data, fallbackName) {
   return fallbackName;
 }
 
+function mergeCodexReauthorization(existing, data, now) {
+  const merged = { ...existing, ...data, updatedAt: now, isActive: true, testStatus: "active" };
+  for (const field of ["lastError", "lastErrorAt", "errorCode", "backoffLevel"]) delete merged[field];
+  for (const field of Object.keys(merged)) {
+    if (field.startsWith("modelLock_")) delete merged[field];
+  }
+  return merged;
+}
+
 export async function getProviderConnections(filter = {}) {
   const db = await getAdapter();
   const where = [];
@@ -147,7 +156,9 @@ export async function createProviderConnection(data) {
     // access_token: never dedup — user manages duplicates manually
 
     if (existing) {
-      const merged = { ...existing, ...data, updatedAt: now };
+      const merged = data.provider === "codex" && data.authType === "oauth" && data.accessToken
+        ? mergeCodexReauthorization(existing, data, now)
+        : { ...existing, ...data, updatedAt: now };
       upsert(db, merged);
       result = merged;
       return;

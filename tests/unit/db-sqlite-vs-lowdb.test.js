@@ -114,6 +114,51 @@ describe("DB SQLite layer — public API parity", () => {
     expect(back.name).toBe("octocat");
   });
 
+  it("providerConnections: Codex reauthorization restores a quarantined profile", async () => {
+    const original = await sqliteDb.createProviderConnection({
+      provider: "codex",
+      authType: "oauth",
+      accessToken: "old-access",
+      refreshToken: "old-refresh",
+      email: "reauth@example.test",
+      providerSpecificData: { chatgptAccountId: "account-reauth" },
+    });
+    await sqliteDb.updateProviderConnection(original.id, {
+      isActive: false,
+      testStatus: "reauth_required",
+      lastError: "invalidated oauth token",
+      lastErrorAt: "2026-08-09T00:00:00.000Z",
+      errorCode: 401,
+      backoffLevel: 4,
+      "modelLock_gpt-5.6-sol": "2099-01-01T00:00:00.000Z",
+    });
+
+    const updated = await sqliteDb.createProviderConnection({
+      provider: "codex",
+      authType: "oauth",
+      accessToken: "new-access",
+      refreshToken: "new-refresh",
+      email: "reauth@example.test",
+      providerSpecificData: { chatgptAccountId: "account-reauth" },
+      testStatus: "active",
+    });
+
+    expect(updated).toMatchObject({
+      id: original.id,
+      isActive: true,
+      accessToken: "new-access",
+      refreshToken: "new-refresh",
+      testStatus: "active",
+    });
+    for (const field of [
+      "lastError",
+      "lastErrorAt",
+      "errorCode",
+      "backoffLevel",
+      "modelLock_gpt-5.6-sol",
+    ]) expect(updated).not.toHaveProperty(field);
+  });
+
   it("providerNodes: CRUD", async () => {
     const n = await sqliteDb.createProviderNode({ type: "openai", name: "Test", baseUrl: "https://api.test", apiType: "openai" });
     expect(n.id).toBeDefined();
