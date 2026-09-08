@@ -1218,7 +1218,7 @@
   "Turn on Available": "روشن کردن حساب‌های موجود",
   "Turn request detail recording on/off globally": "روشن/خاموش کردن ضبط جزئیات درخواست به صورت سراسری",
   "Twitter": "توییتر",
-  "URL → markdown / text / HTML via Firecrawl, Jina, Tavily, Exa.": "URL → مارک‌داون / متن / HTML از طریق Firecrawl، Jina، Tavily، Exa.",
+  "URL → markdown / text / HTML via String Web Access, Ollama Cloud, Firecrawl, Jina, Tavily, Exa.": "URL → مارک‌داون / متن / HTML از طریق String Web Access، Ollama Cloud، Firecrawl، Jina، Tavily، Exa.",
   "Unavailable": "ناموجود",
   "Under": "زیر",
   "Unified Endpoint": "نقطه پایانی یکپارچه",

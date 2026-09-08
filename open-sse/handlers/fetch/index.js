@@ -1,4 +1,4 @@
-// Web Fetch handler — dispatches to firecrawl, jina-reader, tavily, exa, ollama
+// Web Fetch handler — dispatches to firecrawl, jina-reader, tavily, exa, ollama, string-web-access
 // Returns normalized shape across all providers
 
 const DEFAULT_TIMEOUT_MS = 15000;
@@ -48,7 +48,7 @@ function truncate(text, max) {
   return text.length > max ? text.slice(0, max) : text;
 }
 
-function parseJinaTitle(text) {
+function parseMarkdownTitle(text) {
   const source = String(text || "");
   const metadataTitle = source.match(/^\s*Title:\s*(.+)$/mi);
   if (metadataTitle) return metadataTitle[1].trim();
@@ -129,6 +129,18 @@ export async function handleFetchCore({ url, format, maxCharacters, provider, pr
         baseUrl: providerConfig?.baseUrl,
       });
     }
+    if (provider === "string-web-access") {
+      return await runStringWebAccess({
+        url,
+        fmt,
+        timeoutMs,
+        apiKey,
+        maxCharacters,
+        costPerQuery,
+        startedAt,
+        baseUrl: providerConfig?.baseUrl,
+      });
+    }
     return { success: false, status: 400, error: `Unsupported provider: ${provider}` };
   } catch (err) {
     log?.("fetch handler error:", err?.message || err);
@@ -190,7 +202,7 @@ async function runJina({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuer
   return {
     success: true,
     data: buildData({
-      provider: "jina-reader", url, title: parseJinaTitle(body), format: fmt, text,
+      provider: "jina-reader", url, title: parseMarkdownTitle(body), format: fmt, text,
       costUsd: costPerQuery, responseMs: Date.now() - startedAt, upstreamMs
     })
   };
@@ -302,6 +314,56 @@ async function runOllama({
       format: fmt,
       text,
       links: json.links,
+      costUsd: costPerQuery,
+      responseMs: Date.now() - startedAt,
+      upstreamMs
+    })
+  };
+}
+
+async function runStringWebAccess({
+  url,
+  fmt,
+  timeoutMs,
+  apiKey,
+  maxCharacters,
+  costPerQuery,
+  startedAt,
+  baseUrl,
+}) {
+  const upstreamStart = Date.now();
+  const r = await tryFetch(baseUrl, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {})
+    },
+    body: JSON.stringify({ url, format: "markdown" })
+  }, timeoutMs);
+
+  if (!r.ok) {
+    return { success: false, status: r.timeout ? 504 : 502, error: r.error };
+  }
+  const upstreamMs = Date.now() - upstreamStart;
+  const { json, text: responseText } = await readJsonOrText(r.res);
+  if (!r.res.ok) {
+    const error = json?.error?.message
+      || (typeof json?.error === "string" ? json.error : null)
+      || json?.message
+      || responseText?.slice(0, 500)
+      || `String Web Access error: ${r.res.status}`;
+    return { success: false, status: r.res.status, error };
+  }
+
+  const text = truncate(responseText || "", maxCharacters);
+  return {
+    success: true,
+    data: buildData({
+      provider: "string-web-access",
+      url,
+      title: parseMarkdownTitle(text),
+      format: fmt,
+      text,
       costUsd: costPerQuery,
       responseMs: Date.now() - startedAt,
       upstreamMs

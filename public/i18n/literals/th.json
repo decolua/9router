@@ -1218,7 +1218,7 @@
   "Turn on Available": "เปิด Available",
   "Turn request detail recording on/off globally": "เปิด/ปิดการบันทึก request details ทั่วโลก",
   "Twitter": "Twitter",
-  "URL → markdown / text / HTML via Firecrawl, Jina, Tavily, Exa.": "URL → markdown / text / HTML ผ่าน Firecrawl, Jina, Tavily, Exa",
+  "URL → markdown / text / HTML via String Web Access, Ollama Cloud, Firecrawl, Jina, Tavily, Exa.": "URL → markdown / text / HTML ผ่าน String Web Access, Ollama Cloud, Firecrawl, Jina, Tavily, Exa",
   "Unavailable": "ไม่พร้อมใช้งาน",
   "Under": "ภายใต้",
   "Unified Endpoint": "Unified Endpoint",

@@ -63,7 +63,7 @@ export const SKILLS = [
   {
     id: "9router-web-fetch",
     name: "Web Fetch",
-    description: "URL → markdown / text / HTML via Firecrawl, Jina, Tavily, Exa.",
+    description: "URL → markdown / text / HTML via String Web Access, Ollama Cloud, Firecrawl, Jina, Tavily, Exa.",
     endpoint: "/v1/web/fetch",
     icon: "language",
   },

@@ -1,6 +1,6 @@
 ---
 name: 9router-web-fetch
-description: Fetch URL → markdown / text / HTML via 9Router /v1/web/fetch using Ollama Cloud / Firecrawl / Jina Reader / Tavily Extract / Exa Contents. Use when the user wants to scrape a webpage, extract URL content, read article, or convert a URL to markdown.
+description: Fetch URL → markdown / text / HTML via 9Router /v1/web/fetch using String Web Access / Ollama Cloud / Firecrawl / Jina Reader / Tavily Extract / Exa Contents. Use when the user wants to scrape a webpage, extract URL content, read article, or convert a URL to markdown.
 ---
 
 # 9Router — Web Fetch
@@ -52,6 +52,14 @@ curl -X POST $NINEROUTER_URL/v1/web/fetch \
   -H "Authorization: Bearer $NINEROUTER_KEY" \
   -H "Content-Type: application/json" \
   -d '{"model":"firecrawl","url":"https://example.com","format":"markdown","max_characters":0}'
+```
+
+### String Web Access
+```bash
+curl -X POST $NINEROUTER_URL/v1/web/fetch \
+  -H "Authorization: Bearer $NINEROUTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"string-web-access","url":"https://example.com","format":"markdown","max_characters":0}'
 ```
 
 ### Tavily
@@ -112,3 +120,4 @@ console.log(data.title, data.content.length);
 | `tavily` | Bearer | Bulk extract; returns `raw_content` |
 | `exa` | `x-api-key` | Pre-indexed pages; fast text extraction |
 | `ollama` | Bearer | Markdown plus page title and discovered links; uses the Ollama Cloud key |
+| `string-web-access` | Bearer | Markdown with automatic anti-bot handling, proxy rotation, and CAPTCHA solving |

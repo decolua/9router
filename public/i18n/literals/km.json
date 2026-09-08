@@ -1222,7 +1222,7 @@
   "Turn request detail recording on/off globally": "បើក/បិទការកត់ត្រាព័ត៌មានលម្អិតសំណើជាសកល",
   "Twitter": "Twitter",
   "Type": "ប្រភេទ",
-  "URL → markdown / text / HTML via Firecrawl, Jina, Tavily, Exa.": "URL → markdown / text / HTML តាម Firecrawl, Jina, Tavily, Exa។",
+  "URL → markdown / text / HTML via String Web Access, Ollama Cloud, Firecrawl, Jina, Tavily, Exa.": "URL → markdown / text / HTML តាម String Web Access, Ollama Cloud, Firecrawl, Jina, Tavily, Exa។",
   "Unavailable": "មិនមាន",
   "Under": "ក្រោម",
   "Unified Endpoint": "Endpoint រួម",

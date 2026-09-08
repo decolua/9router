@@ -1219,7 +1219,7 @@
   "Turn on Available": "开启可用账号",
   "Turn request detail recording on/off globally": "全局打开/关闭请求详细信息记录",
   "Twitter": "Twitter",
-  "URL → markdown / text / HTML via Firecrawl, Jina, Tavily, Exa.": "URL → 通过 Firecrawl、Jina、Tavily、Exa 转换为 markdown / text / HTML。",
+  "URL → markdown / text / HTML via String Web Access, Ollama Cloud, Firecrawl, Jina, Tavily, Exa.": "URL → 通过 String Web Access、Ollama Cloud、Firecrawl、Jina、Tavily、Exa 转换为 markdown / text / HTML。",
   "Unavailable": "不可用",
   "Under": "在",
   "Unified Endpoint": "统一端点",

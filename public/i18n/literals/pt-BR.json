@@ -1047,7 +1047,7 @@
   "Turn request detail recording on/off globally": "Ativar/desativar globalmente o registro de detalhes da solicitação",
   "Twitter": "Twitter",
   "Type": "Tipo",
-  "URL → markdown / text / HTML via Firecrawl, Jina, Tavily, Exa.": "URL → markdown / texto / HTML via Firecrawl, Jina, Tavily, Exa.",
+  "URL → markdown / text / HTML via String Web Access, Ollama Cloud, Firecrawl, Jina, Tavily, Exa.": "URL → markdown / texto / HTML via String Web Access, Ollama Cloud, Firecrawl, Jina, Tavily, Exa.",
   "Unavailable": "Indisponível",
   "Under": "Abaixo",
   "Undo": "Desfazer",

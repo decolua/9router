@@ -1218,7 +1218,7 @@
   "Turn on Available": "Aktifkan Tersedia",
   "Turn request detail recording on/off globally": "Aktifkan/nonaktifkan pencatatan detail permintaan secara global",
   "Twitter": "Twitter",
-  "URL → markdown / text / HTML via Firecrawl, Jina, Tavily, Exa.": "URL → markdown / text / HTML melalui Firecrawl, Jina, Tavily, Exa.",
+  "URL → markdown / text / HTML via String Web Access, Ollama Cloud, Firecrawl, Jina, Tavily, Exa.": "URL → markdown / text / HTML melalui String Web Access, Ollama Cloud, Firecrawl, Jina, Tavily, Exa.",
   "Unavailable": "Tidak Tersedia",
   "Under": "Di bawah",
   "Unified Endpoint": "Titik Akhir Terpadu",
