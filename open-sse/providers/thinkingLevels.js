@@ -13,6 +13,7 @@ const L = {
   budgetX: ["none", "low", "medium", "high", "xhigh", "max"],       // claude-budget
   gemini: ["minimal", "low", "medium", "high"],                     // gemini-3 thinkingLevel (no disable)
   hiMax: ["none", "high", "max"],                                   // deepseek (low/med→high, xhigh→max)
+  baseten: ["none", "minimal", "low", "medium", "high", "xhigh", "max"], // Baseten full effort set (per-model patterns narrow it)
 };
 
 // thinkingFormat → valid selectable levels (source of truth for UI options).
@@ -52,6 +53,21 @@ const PATTERN_THINKING = [
   { provider: "codebuddy-cn", pattern: "deepseek-v4*", levels: ["low", "high", "xhigh"] },
   { provider: "codebuddy-cn", pattern: "hy3*",         levels: ["low", "high"] },
   { provider: "codebuddy-cn", pattern: "hy4*",         levels: ["high"] },
+  // Baseten Model APIs — per-model reasoning_effort sets from the docs. Baseten
+  // validates top-level values (400 outside the set), so the picker must offer
+  // exactly the supported levels. Effort-blind opt-in models get on/off only
+  // ("high" = thinking on; the effort value is accepted but ignored upstream).
+  { provider: "baseten", pattern: "*DeepSeek-V4-Pro-0813*", levels: ["none", "low", "high", "max"] },
+  { provider: "baseten", pattern: "*DeepSeek-V4-Pro*",      levels: ["none", "minimal", "low", "medium", "high", "xhigh", "max"] },
+  { provider: "baseten", pattern: "*DeepSeek-V4-Flash*",    levels: ["none", "minimal", "low", "medium", "high", "xhigh", "max"] },
+  { provider: "baseten", pattern: "*GLM-5.2*",     levels: ["none", "high", "max"] },
+  { provider: "baseten", pattern: "*GLM-5.3*",     levels: ["none", "low", "high", "max"] },
+  { provider: "baseten", pattern: "*GLM-4.7*",     levels: ["none", "high"] },
+  { provider: "baseten", pattern: "*Kimi-K3*",     levels: ["none", "low", "high", "max"] },
+  { provider: "baseten", pattern: "*Kimi-K2*",     levels: ["none", "high"] },
+  { provider: "baseten", pattern: "*Nemotron*",    levels: ["none", "high"] },
+  { provider: "baseten", pattern: "*Inkling*",     levels: ["none", "minimal", "low", "medium", "high", "xhigh", "max"] },
+  { provider: "baseten", pattern: "*gpt-oss-120b*", levels: ["none", "minimal", "low", "medium", "high", "xhigh", "max"] },
 ];
 
 // Returns valid thinking levels for a model, or null when the model has no reasoning.
