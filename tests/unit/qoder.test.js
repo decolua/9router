@@ -367,6 +367,70 @@ describe("normalizeMessages", () => {
     expect(result.messages).toEqual([]);
     expect(result.systemText).toBe("");
   });
+
+  it("preserves image_url blocks (http URL) instead of dropping them", () => {
+    const result = normalizeMessages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "describe" },
+          { type: "image_url", image_url: { url: "https://example.com/a.png" } },
+        ],
+      },
+    ]);
+    const content = result.messages[0].content;
+    expect(Array.isArray(content)).toBe(true);
+    expect(content).toContainEqual({ type: "text", text: "describe" });
+    expect(content).toContainEqual({ type: "image_url", image_url: { url: "https://example.com/a.png" } });
+  });
+
+  it("preserves base64 data: URI images (no OSS upload needed)", () => {
+    const dataUri = "data:image/png;base64,iVBORw0KGgo=";
+    const result = normalizeMessages([
+      {
+        role: "user",
+        content: [
+          { type: "image_url", image_url: { url: dataUri } },
+          { type: "text", text: "what color?" },
+        ],
+      },
+    ]);
+    const content = result.messages[0].content;
+    expect(Array.isArray(content)).toBe(true);
+    expect(content[0]).toEqual({ type: "image_url", image_url: { url: dataUri } });
+    expect(content.some((b) => b.type === "text" && b.text === "what color?")).toBe(true);
+  });
+
+  it("converts claude-style base64 image blocks to image_url data URIs", () => {
+    const result = normalizeMessages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "see this" },
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "AAAA" } },
+        ],
+      },
+    ]);
+    const content = result.messages[0].content;
+    expect(content).toContainEqual({
+      type: "image_url",
+      image_url: { url: "data:image/jpeg;base64,AAAA" },
+    });
+  });
+
+  it("drops image blocks with no usable url but keeps the text", () => {
+    const result = normalizeMessages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "hi" },
+          { type: "image_url", image_url: {} },
+          { type: "image", source: { type: "base64" } },
+        ],
+      },
+    ]);
+    expect(result.messages[0].content).toBe("hi");
+  });
 });
 
 describe("wrapQoderSSE", () => {
@@ -401,7 +465,7 @@ describe("wrapQoderSSE", () => {
   it("forwards an OpenAI envelope chunk and emits [DONE] in flush", async () => {
     const inner = JSON.stringify({ choices: [{ delta: { content: "hi" } }] });
     const upstream = `data: ${JSON.stringify({ statusCodeValue: 200, body: inner })}\n\n`;
-    const wrapped = wrapQoderSSE(makeResponse([upstream]), "qoder/auto");
+    const wrapped = await wrapQoderSSE(makeResponse([upstream]), "qoder/auto");
     const out = await drain(wrapped);
     expect(out).toContain(`data: ${inner}\n\n`);
     expect(out).toContain("data: [DONE]\n\n");
@@ -413,7 +477,7 @@ describe("wrapQoderSSE", () => {
     const inner = JSON.stringify({ choices: [{ delta: { content: "tail" } }], finish_reason: "stop" });
     // Note: NO trailing \n on the final line.
     const upstream = `data: ${JSON.stringify({ statusCodeValue: 200, body: inner })}`;
-    const wrapped = wrapQoderSSE(makeResponse([upstream]), "qoder/auto");
+    const wrapped = await wrapQoderSSE(makeResponse([upstream]), "qoder/auto");
     const out = await drain(wrapped);
     expect(out).toContain(`data: ${inner}\n\n`);
   });
@@ -426,7 +490,7 @@ describe("wrapQoderSSE", () => {
     const errorEnv = JSON.stringify({ statusCodeValue: 500, body: "boom" });
     const validInner = JSON.stringify({ choices: [{ delta: { content: "leak" } }] });
     const validEnv = JSON.stringify({ statusCodeValue: 200, body: validInner });
-    const wrapped = wrapQoderSSE(
+    const wrapped = await wrapQoderSSE(
       makeResponse([`data: ${errorEnv}\n\ndata: ${validEnv}\n\n`]),
       "qoder/auto",
     );
@@ -443,7 +507,7 @@ describe("wrapQoderSSE", () => {
   it("strips embedded newlines from inner body before forwarding", async () => {
     const innerWithNewlines = '{"choices":[{"delta":{"content":"a\nb"}}]}';
     const env = JSON.stringify({ statusCodeValue: 200, body: innerWithNewlines });
-    const wrapped = wrapQoderSSE(makeResponse([`data: ${env}\n\n`]), "qoder/auto");
+    const wrapped = await wrapQoderSSE(makeResponse([`data: ${env}\n\n`]), "qoder/auto");
     const out = await drain(wrapped);
     // The forwarded data: line should be a single event terminated by \n\n
     // and contain no internal \n other than the trailing pair.
@@ -455,15 +519,15 @@ describe("wrapQoderSSE", () => {
 
   it("upstream error envelope produces an error chunk + [DONE]", async () => {
     const env = JSON.stringify({ statusCodeValue: 503, body: "service unavailable" });
-    const wrapped = wrapQoderSSE(makeResponse([`data: ${env}\n\n`]), "qoder/lite");
+    const wrapped = await wrapQoderSSE(makeResponse([`data: ${env}\n\n`]), "qoder/lite");
     const out = await drain(wrapped);
     expect(out).toContain("[qoder error 503");
     expect(out).toContain("data: [DONE]\n\n");
   });
 
-  it("non-ok responses are returned unchanged (no transform)", () => {
+  it("non-ok responses are returned unchanged (no transform)", async () => {
     const r = new Response("not ok", { status: 500 });
-    const wrapped = wrapQoderSSE(r, "qoder/auto");
+    const wrapped = await wrapQoderSSE(r, "qoder/auto");
     expect(wrapped).toBe(r);
   });
 });

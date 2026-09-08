@@ -1,6 +1,6 @@
 ---
 name: 9router-web-fetch
-description: Fetch URL → markdown / text / HTML via 9Router /v1/web/fetch using Firecrawl / Jina Reader / Tavily Extract / Exa Contents. Use when the user wants to scrape a webpage, extract URL content, read article, or convert a URL to markdown.
+description: Fetch URL → markdown / text / HTML via 9Router /v1/web/fetch using Ollama Cloud / Firecrawl / Jina Reader / Tavily Extract / Exa Contents. Use when the user wants to scrape a webpage, extract URL content, read article, or convert a URL to markdown.
 ---
 
 # 9Router — Web Fetch
@@ -62,6 +62,17 @@ curl -X POST $NINEROUTER_URL/v1/web/fetch \
   -d '{"model":"tavily","url":"https://example.com","format":"markdown","max_characters":0}'
 ```
 
+### Ollama Cloud
+
+Uses the API key from the existing `ollama` connection.
+
+```bash
+curl -X POST $NINEROUTER_URL/v1/web/fetch \
+  -H "Authorization: Bearer $NINEROUTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"ollama","url":"https://example.com","format":"markdown"}'
+```
+
 
 JS:
 
@@ -83,11 +94,14 @@ console.log(data.title, data.content.length);
   "url": "...",
   "title": "...",
   "content": { "format": "markdown", "text": "...", "length": 1234 },
+  "links": ["https://example.com/related"],
   "metadata": { "author": null, "published_at": null, "language": null },
   "usage": { "fetch_cost_usd": 0 },
   "metrics": { "response_time_ms": 850, "upstream_latency_ms": 700 }
 }
 ```
+
+`links` is included when the upstream provider returns discovered page links (currently Ollama Cloud).
 
 ## Provider quirks
 
@@ -97,3 +111,4 @@ console.log(data.title, data.content.length);
 | `jina-reader` | Bearer (optional) | Free tier (~1M chars/mo); fastest plain markdown |
 | `tavily` | Bearer | Bulk extract; returns `raw_content` |
 | `exa` | `x-api-key` | Pre-indexed pages; fast text extraction |
+| `ollama` | Bearer | Markdown plus page title and discovered links; uses the Ollama Cloud key |

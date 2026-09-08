@@ -6,7 +6,6 @@ export { OAuthService } from "./oauth.js";
 export { ClaudeService } from "./claude.js";
 export { CodexService } from "./codex.js";
 export { GeminiCLIService } from "./gemini.js";
-export { QwenService } from "./qwen.js";
 export { IFlowService } from "./iflow.js";
 export { QoderService } from "./qoder.js";
 export { AntigravityService } from "./antigravity.js";

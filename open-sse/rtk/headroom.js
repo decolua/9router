@@ -7,6 +7,12 @@ import {
 
 const DEFAULT_TIMEOUT_MS = 3000;
 
+function normalizeTimeout(value) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : DEFAULT_TIMEOUT_MS;
+}
+
 function jsonBytes(value) {
   try {
     return new TextEncoder().encode(JSON.stringify(value) || "").length;
@@ -25,9 +31,17 @@ function messagePayload(body) {
 
 function captureSizeSnapshot(body) {
   const messages = messagePayload(body);
+  const toolHistory = messages?.filter((message) =>
+    message?.role === "tool"
+    || message?.role === "function"
+    || message?.tool_calls?.length
+    || message?.content?.some?.((part) => part?.type === "tool_use" || part?.type === "tool_result")
+  ) || [];
   return {
     bodyBytes: jsonBytes(body),
     messageBytes: messages ? jsonBytes(messages) : 0,
+    toolSchemaBytes: jsonBytes(body?.tools || []),
+    toolHistoryBytes: jsonBytes(toolHistory),
   };
 }
 
@@ -232,6 +246,7 @@ async function callCompress(url, messages, model, timeoutMs, compressUserMessage
 // /v1/compress only understands OpenAI shape, so Claude bodies are translated
 // to OpenAI, compressed, then translated back using 9Router's own translators.
 export async function compressWithHeadroom(body, { enabled, url, model, format, compressUserMessages, timeoutMs = DEFAULT_TIMEOUT_MS, diagnostics = null } = {}) {
+  timeoutMs = normalizeTimeout(timeoutMs);
   if (!enabled) {
     setDiagnostic(diagnostics, "disabled");
     return null;
@@ -273,7 +288,10 @@ export async function compressWithHeadroom(body, { enabled, url, model, format, 
         return null;
       }
       const oai = openaiResponsesToOpenAIRequest(model, body, false);
-      if (!Array.isArray(oai?.messages)) return null;
+      if (!Array.isArray(oai?.messages)) {
+        setDiagnostic(diagnostics, "openai-responses request did not translate to messages[]");
+        return null;
+      }
       const data = await callCompress(url, oai.messages, model, timeoutMs, compressUserMessages, diagnostics || {});
       if (!data) return null;
       // input: undefined so the translator rebuilds input from the compressed
@@ -336,7 +354,10 @@ export function formatHeadroomSizeLog(diagnostics) {
   const before = diagnostics?.before;
   const after = diagnostics?.after;
   if (!before || !after) return "";
-  return `body=${before.bodyBytes}B→${after.bodyBytes}B messages=${before.messageBytes}B→${after.messageBytes}B`;
+  const effective = before.bodyBytes > 0
+    ? (((before.bodyBytes - after.bodyBytes) / before.bodyBytes) * 100).toFixed(1)
+    : "0.0";
+  return `body=${before.bodyBytes}B→${after.bodyBytes}B messages=${before.messageBytes}B→${after.messageBytes}B tools=${before.toolSchemaBytes || 0}B→${after.toolSchemaBytes || 0}B toolHistory=${before.toolHistoryBytes || 0}B→${after.toolHistoryBytes || 0}B effective=${effective}%`;
 }
 
 export function isHeadroomPhantomSavings(stats, diagnostics, minShrinkRatio = 0.05) {

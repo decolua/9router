@@ -32,17 +32,18 @@ import { SSE_DONE } from "../utils/sseConstants.js";
 import { FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import {
   QODER_CHAT_URL_ENCODED,
-  QODER_JOB_TOKEN_EXCHANGE_URL,
-  QODER_USERINFO_URL,
+  QODER_CHAT_BASE_ALT,
+  QODER_CHAT_SIG_PATH,
   QODER_MODEL_MAP,
-  QODER_IDE_VERSION,
-  QODER_CLIENT_TYPE,
 } from "../shared/qoder/constants.js";
-import { getQoderModelConfig, resolveQoderModels } from "../services/qoderModels.js";
+import { getQoderModelConfig, resolveQoderModels, isQoderPat, resolveQoderCredentials } from "../services/qoderModels.js";
+import { OPENAI_BLOCK, CLAUDE_BLOCK } from "../translator/schema/blocks.js";
+import { encodeDataUri } from "../translator/concerns/image.js";
 
 /**
  * Hoist role:"system" messages out of the messages array (Qoder rejects
- * system in messages) and flatten any multipart content arrays.
+ * system in messages) and flatten multipart content arrays — EXCEPT image
+ * blocks, which are preserved (see normalizeContent).
  */
 function normalizeMessages(messages) {
   if (!Array.isArray(messages) || messages.length === 0) {
@@ -52,16 +53,70 @@ function normalizeMessages(messages) {
   const out = [];
   for (const msg of messages) {
     if (!msg || typeof msg !== "object") continue;
-    const text = extractText(msg.content);
     if (msg.role === "system") {
+      const text = extractText(msg.content);
       if (text) systemParts.push(text);
       continue;
     }
     const cloned = { ...msg };
-    cloned.content = text;
+    cloned.content = normalizeContent(msg.content);
     out.push(cloned);
   }
   return { messages: out, systemText: systemParts.join("\n\n") };
+}
+
+/**
+ * Normalize one message's content for Qoder.
+ *
+ * Text-only content is flattened to a plain string (Qoder's historical
+ * shape). When images are present the content stays an array and image
+ * blocks are kept as OpenAI-style `image_url` parts — verified against the
+ * upstream: it accepts both http(s) URLs and inline base64 data: URIs
+ * directly, no pre-upload to the /image/upload OSS flow required (that is
+ * a qodercli client-side choice, not a protocol requirement). The legacy
+ * top-level `image_urls` / `chat_context.imageUrls` slots stay null —
+ * qodercli leaves them null too.
+ *
+ * Claude-style `{type:"image", source:{...}}` blocks are converted to
+ * `image_url` so claude-format clients also round-trip.
+ */
+function normalizeContent(content) {
+  if (typeof content === "string") return content;
+  if (content == null) return "";
+  if (!Array.isArray(content)) return String(content);
+
+  const blocks = [];
+  const textParts = [];
+  let hasImage = false;
+  for (const item of content) {
+    if (!item || typeof item !== "object") continue;
+    if (item.type === OPENAI_BLOCK.IMAGE_URL && typeof item.image_url?.url === "string" && item.image_url.url) {
+      blocks.push({ type: OPENAI_BLOCK.IMAGE_URL, image_url: { url: item.image_url.url } });
+      hasImage = true;
+    } else if (item.type === CLAUDE_BLOCK.IMAGE && item.source) {
+      // Claude base64/url image → OpenAI image_url equivalent.
+      const src = item.source;
+      const url = src.type === "base64" && src.data
+        ? encodeDataUri(src.media_type || "image/png", src.data)
+        : typeof src.url === "string" && src.url ? src.url : null;
+      if (url) {
+        blocks.push({ type: OPENAI_BLOCK.IMAGE_URL, image_url: { url } });
+        hasImage = true;
+      }
+    } else if (typeof item.text === "string" && item.text) {
+      if (hasImage || blocks.length) {
+        // Keep ordering faithful once images are in play.
+        blocks.push({ type: OPENAI_BLOCK.TEXT, text: item.text });
+      } else {
+        textParts.push(item.text);
+      }
+    }
+  }
+
+  if (!hasImage) return textParts.join("\n");
+  // Prepend any text collected before the first image block.
+  if (textParts.length) blocks.unshift({ type: OPENAI_BLOCK.TEXT, text: textParts.join("\n") });
+  return blocks;
 }
 
 function extractText(content) {
@@ -86,9 +141,9 @@ function extractText(content) {
 function lastUserText(messages) {
   for (let i = messages.length - 1; i >= 0; i--) {
     const m = messages[i];
-    if (m?.role === "user" && typeof m.content === "string") {
-      return m.content;
-    }
+    if (m?.role !== "user") continue;
+    if (typeof m.content === "string") return m.content;
+    if (Array.isArray(m.content)) return extractText(m.content);
   }
   return "";
 }
@@ -112,6 +167,11 @@ function stableChatRecordId(model, messages, tools, maxTokens) {
     if (m.role) { h.update("\0"); h.update(m.role); }
     if (typeof m.content === "string" && m.content) {
       h.update("\0"); h.update(m.content);
+    } else if (Array.isArray(m.content)) {
+      // Include image refs so the same prompt with a different image gets
+      // a distinct chat_record_id.
+      h.update("\0");
+      try { h.update(JSON.stringify(m.content)); } catch {}
     }
   }
   if (tools) {
@@ -218,6 +278,52 @@ async function buildQoderRequestBody({ model, body, credentials, log, proxyOptio
 }
 
 /**
+ * Check if a qoder error message indicates a billing/quota block.
+ * Signatures: code 112 (quota exhausted), code 10605 (queue throttle), pricingUrl field.
+ */
+function isBillingBlock(inner) {
+  if (!inner || typeof inner !== "string") return false;
+  const lowerMsg = inner.toLowerCase();
+  // Match: {"code":"112",...}, {"code":"10605",...}, or pricingUrl field
+  return /\"code\"\s*:\s*\"(112|10605)\"/.test(inner) || lowerMsg.includes("pricingurl");
+}
+
+/**
+ * Peek the first SSE frame to detect billing errors before piping.
+ * Returns { isBilling, statusVal, message, consumed } — `consumed` is every
+ * byte read so far (including the peeked line) so the caller can re-process
+ * it and nothing is dropped from the stream.
+ */
+async function peekFirstQoderFrame(reader, decoder) {
+  let consumed = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) return { isBilling: false, consumed, upstreamDone: true };
+
+    consumed += decoder.decode(value, { stream: true });
+    const nl = consumed.indexOf("\n");
+    if (nl === -1) continue; // need a full line first
+
+    const line = consumed.slice(0, nl).replace(/\r$/, "").trim();
+    if (!line.startsWith("data:")) continue;
+
+    const data = line.slice(5).trimStart();
+    if (data === "[DONE]") return { isBilling: false, consumed };
+
+    let envelope;
+    try { envelope = JSON.parse(data); } catch { return { isBilling: false, consumed }; }
+
+    const statusVal = typeof envelope.statusCodeValue === "number" ? envelope.statusCodeValue : 200;
+    const inner = typeof envelope.body === "string" ? envelope.body : "";
+
+    if (statusVal !== 200 && isBillingBlock(inner)) {
+      return { isBilling: true, statusVal, message: inner || `qoder billing block (${statusVal})` };
+    }
+    return { isBilling: false, consumed };
+  }
+}
+
+/**
  * Wrap the upstream's `{statusCodeValue, body}` SSE envelope into plain
  * OpenAI SSE chunks the rest of the chatCore pipeline understands.
  *
@@ -231,15 +337,33 @@ async function buildQoderRequestBody({ model, body, credentials, log, proxyOptio
  * [DONE]/error frame (agent keepalive). Non-streaming clients drain via
  * response.text() which hangs until the socket closes — so on terminal
  * events we cancel the upstream reader and close our stream immediately.
+ *
+ * NEW: Peek first frame to detect billing blocks (code 112/10605/pricingUrl).
+ * If detected, return 403 response so chatCore marks connection unavailable
+ * and triggers combo fallback instead of leaking error text into chat.
  */
-function wrapQoderSSE(response, model) {
+async function wrapQoderSSE(response, model) {
   if (!response.ok || !response.body) return response;
 
   const decoder = new TextDecoder();
-  const encoder = new TextEncoder();
-  let buffer = "";
-  let doneEmitted = false;
   const reader = response.body.getReader();
+
+  // Peek first frame to detect billing block
+  const peek = await peekFirstQoderFrame(reader, decoder);
+  if (peek?.isBilling) {
+    // Billing block detected — return 403 so chatCore fails this connection
+    await reader.cancel().catch(() => {});
+    return new Response(
+      JSON.stringify({ error: { message: peek.message, code: peek.statusVal } }),
+      { status: 403, headers: { "Content-Type": "application/json" } }
+    );
+  }
+
+  // Normal flow: re-process every byte the peek consumed, then continue.
+  let buffer = peek.consumed || "";
+  const upstreamDrained = peek.upstreamDone === true;
+  const encoder = new TextEncoder();
+  let doneEmitted = false;
 
   // Process one already-extracted SSE line (no trailing newline).
   const processLine = (line, controller) => {
@@ -289,7 +413,28 @@ function wrapQoderSSE(response, model) {
     // enqueueing would never be re-invoked, hanging consumers like .text().
     async start(controller) {
       try {
-        while (!doneEmitted) {
+        // Drain whatever the peek already pulled off the socket first.
+        let nlSeed;
+        while ((nlSeed = buffer.indexOf("\n")) !== -1) {
+          const line = buffer.slice(0, nlSeed);
+          buffer = buffer.slice(nlSeed + 1);
+          processLine(line, controller);
+          if (doneEmitted) {
+            await reader.cancel().catch(() => {});
+            controller.close();
+            return;
+          }
+        }
+        if (upstreamDrained) {
+          // Peek hit end-of-stream: flush any trailing partial line.
+          buffer += decoder.decode();
+          if (buffer.length > 0) {
+            processLine(buffer, controller);
+            buffer = "";
+          }
+        }
+
+        while (!doneEmitted && !upstreamDrained) {
           const { done, value } = await reader.read();
           if (done) {
             buffer += decoder.decode();
@@ -342,98 +487,18 @@ function wrapQoderSSE(response, model) {
   });
 }
 
-// ── PAT (Personal Access Token) → job-token exchange ───────────────────────
-// PATs (pt-...) cannot sign COSY requests directly. Exchange them for a
-// short-lived job token (jt-...) via /api/v1/jobToken/exchange (plain JSON,
-// not COSY-signed), then resolve the userId from userinfo. Mirrors the
-// official qodercli flow. Cached per-PAT until near-expiry.
-const PAT_PREFIX = "pt-";
-const PAT_REFRESH_BUFFER_MS = 5 * 60 * 1000;
-const patJobCache = new Map();
-
-export function isQoderPat(token) {
-  return typeof token === "string" && token.startsWith(PAT_PREFIX);
-}
-
-async function exchangeJobToken(pat, proxyOptions = null, signal = null) {
-  const res = await proxyAwareFetch(
-    QODER_JOB_TOKEN_EXCHANGE_URL,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "User-Agent": "qodercli/1.0.0",
-        "Cosy-Version": QODER_IDE_VERSION,
-        "Cosy-ClientType": QODER_CLIENT_TYPE,
-      },
-      body: JSON.stringify({ personal_token: pat }),
-      signal,
-    },
-    proxyOptions,
-  );
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`qoder PAT exchange failed: ${res.status} ${text.slice(0, 200)}`);
-  }
-  const data = await res.json();
-  if (!data.token) throw new Error("qoder PAT exchange returned no job token");
-
-  let expiresAt = Date.now() + 24 * 60 * 60 * 1000;
-  if (data.expires_at) {
-    const parsed = Date.parse(data.expires_at);
-    if (!Number.isNaN(parsed)) expiresAt = parsed;
-  } else if (typeof data.expires_in === "number" && data.expires_in > 0) {
-    expiresAt = Date.now() + data.expires_in;
-  }
-  return { jobToken: data.token, jobRefreshToken: data.refresh_token || "", expiresAt };
-}
-
-async function fetchUserIdForJobToken(jobToken, proxyOptions = null, signal = null) {
-  try {
-    const res = await proxyAwareFetch(
-      QODER_USERINFO_URL,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${jobToken}`,
-          Accept: "application/json",
-          "User-Agent": "qodercli/1.0.0",
-        },
-        signal,
-      },
-      proxyOptions,
-    );
-    if (!res.ok) return "";
-    const info = await res.json().catch(() => ({}));
-    return info.id || info.userId || info.user_id || "";
-  } catch {
-    return "";
-  }
-}
-
-/**
- * Exchange a PAT for a job token + userId, caching until near-expiry so repeat
- * chat requests don't re-exchange. Returns { accessToken, userId }.
- */
-async function resolvePatCredential(pat, proxyOptions = null, signal = null) {
-  const cached = patJobCache.get(pat);
-  if (cached && cached.expiresAt - Date.now() > PAT_REFRESH_BUFFER_MS) {
-    return cached;
-  }
-  const { jobToken, expiresAt } = await exchangeJobToken(pat, proxyOptions, signal);
-  const userId = await fetchUserIdForJobToken(jobToken, proxyOptions, signal);
-  const entry = { accessToken: jobToken, userId, expiresAt };
-  patJobCache.set(pat, entry);
-  return entry;
-}
-
 export class QoderExecutor extends BaseExecutor {
   constructor() {
     super("qoder", PROVIDERS.qoder);
   }
 
-  buildUrl() {
+  buildUrl(credentials) {
+    // Job-token (jt-...) traffic must hit api2.qoder.sh — api3 rejects jt-
+    // with "Login expired" (403). Device tokens (dt-...) stay on api3.
+    const raw = credentials?.apiKey || credentials?.accessToken;
+    if (typeof raw === "string" && !raw.startsWith("pt-") && (raw.startsWith("jt-") || (credentials?.accessToken || "").startsWith("jt-"))) {
+      return `${QODER_CHAT_BASE_ALT}/algo${QODER_CHAT_SIG_PATH}?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1`;
+    }
     return QODER_CHAT_URL_ENCODED;
   }
 
@@ -443,36 +508,24 @@ export class QoderExecutor extends BaseExecutor {
   //   - COSY headers built from the *encoded* body bytes
   //   - response stream re-wrapped from {statusCodeValue, body} to OpenAI SSE
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
-    const url = this.buildUrl();
-
     // PAT (pt-...) → exchange for short-lived job token + resolve userId so
     // downstream COSY signing + catalog fetch work. Device tokens (dt-...) and
     // job tokens (jt-...) skip this and are used directly.
     const rawToken = credentials?.apiKey || credentials?.accessToken;
     if (isQoderPat(rawToken)) {
       try {
-        const resolved = await resolvePatCredential(rawToken, proxyOptions, signal);
-        credentials = {
-          ...credentials,
-          accessToken: resolved.accessToken,
-          apiKey: undefined,
-          providerSpecificData: {
-            authMethod: "pat",
-            ...(credentials?.providerSpecificData || {}),
-            userId: resolved.userId || credentials?.providerSpecificData?.userId || "",
-            machineId: credentials?.providerSpecificData?.machineId || "",
-          },
-        };
+        credentials = await resolveQoderCredentials(credentials, proxyOptions, signal);
       } catch (err) {
         log?.error?.("QODER", `PAT exchange failed: ${err.message}`);
         const fakeResp = new Response(
           JSON.stringify({ error: { message: `qoder PAT exchange failed: ${err.message}` } }),
           { status: 401, headers: { "Content-Type": "application/json" } },
         );
-        return { response: fakeResp, url, headers: {}, transformedBody: body };
+        return { response: fakeResp, url: this.buildUrl(credentials), headers: {}, transformedBody: body };
       }
     }
 
+    const url = this.buildUrl(credentials);
     const psd = credentials?.providerSpecificData || {};
     if (!psd.userId) {
       // No user id → no way to sign. Surface a 401 so the dashboard nudges
@@ -566,7 +619,7 @@ export class QoderExecutor extends BaseExecutor {
       return { response, url, headers, transformedBody: payload };
     }
 
-    const wrapped = wrapQoderSSE(response, `qoder/${qoderKey}`);
+    const wrapped = await wrapQoderSSE(response, `qoder/${qoderKey}`);
     return { response: wrapped, url, headers, transformedBody: payload };
   }
 
@@ -590,6 +643,5 @@ export const __test__ = {
   normalizeMessages,
   wrapQoderSSE,
   buildQoderRequestBody,
-  isQoderPat,
-  resolvePatCredential,
+  isBillingBlock,
 };
