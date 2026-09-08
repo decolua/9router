@@ -24,6 +24,8 @@ import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
 import BulkImportGrokCliModal from "./BulkImportGrokCliModal";
 
+import { CODEX_AUTO_PING_MODEL } from "open-sse/config/codexConstants.js";
+
 const ONE_BY_ONE_DELAY_MS = 1000;
 
 const AUTO_PING_SETTINGS_KEYS = {
@@ -67,6 +69,7 @@ export default function ProviderDetailPage() {
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
+  const [autoPingError, setAutoPingError] = useState(null);
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [liveModels, setLiveModels] = useState([]);
@@ -320,7 +323,7 @@ export default function ProviderDetailPage() {
       setThinkingMode(thinkingCfg.mode || "auto");
       const autoPingSettingsKey = AUTO_PING_SETTINGS_KEYS[providerId];
       const apCfg = autoPingSettingsKey ? settingsData[autoPingSettingsKey] || {} : {};
-      setAutoPing({ enabled: apCfg.enabled === true, connections: apCfg.connections || {} });
+      setAutoPing({ ...apCfg, enabled: apCfg.enabled === true, connections: apCfg.connections || {} });
       if (nodesRes.ok) {
         let node = (nodesData.nodes || []).find((entry) => entry.id === providerId) || null;
 
@@ -437,15 +440,19 @@ export default function ProviderDetailPage() {
     const autoPingSettingsKey = AUTO_PING_SETTINGS_KEYS[providerId];
     if (!autoPingSettingsKey) return;
 
+    const previous = autoPing;
     setAutoPing(next);
+    setAutoPingError(null);
     try {
-      await fetch("/api/settings", {
+      const response = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ [autoPingSettingsKey]: next }),
       });
+      if (!response.ok) throw new Error("Could not save auto-ping settings");
     } catch (error) {
-      console.log("Error saving auto-ping config:", error);
+      setAutoPing(previous);
+      setAutoPingError(error.message);
     }
   };
 
@@ -692,6 +699,7 @@ export default function ProviderDetailPage() {
         }
       }
     } finally {
+      await fetchConnections();
       setOneByOneCurrentConnectionId(null);
       setOneByOneRunning(false);
       setOneByOneStopping(false);
@@ -1470,6 +1478,22 @@ export default function ProviderDetailPage() {
                   )}
                 </>
               )}
+              {providerId === "codex" && (
+                <label className="flex items-center gap-2 text-xs text-text-muted">
+                  Auto-ping model
+                  <select
+                    aria-label="Auto-ping model"
+                    value={autoPing.model || CODEX_AUTO_PING_MODEL}
+                    onChange={(event) => saveAutoPing({ ...autoPing, model: event.target.value })}
+                    className="max-w-48 rounded-md border border-border bg-background px-2 py-1 text-text-main"
+                  >
+                    {[...new Set([autoPing.model || CODEX_AUTO_PING_MODEL, ...models.filter((m) => !m.kind || m.kind === "llm").map((m) => m.id)])].map((id) => (
+                      <option key={id} value={id}>{id}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {autoPingError && <p role="alert" className="text-xs text-red-500">{autoPingError}</p>}
               {/* Round Robin toggle */}
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-text-muted font-medium">Round Robin</span>

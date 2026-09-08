@@ -1,3 +1,4 @@
+import { CODEX_AUTO_PING_MODEL } from "open-sse/config/codexConstants.js";
 import pkg from "../../../package.json" with { type: "json" };
 
 // App configuration
@@ -83,11 +84,11 @@ export const QUOTA_AUTOPING_CONFIG = {
       resetAtDriftMs: 30000,
       minPingIntervalMs: 600000,
       skipWhenBlockingQuotaExhausted: true,
-      // Free and Plus Codex accounts both expose gpt-5.5; avoid fallback probes that waste requests.
-      pingModel: "gpt-5.5",
+      // Operators can select an accessible model in codexAutoPing.model.
+      pingModel: CODEX_AUTO_PING_MODEL,
       pingText: "hi",
       pingInstructions: "Reply with OK.",
-      pingReasoningEffort: "none",
+      pingReasoningEffort: "low",
     },
   },
 };

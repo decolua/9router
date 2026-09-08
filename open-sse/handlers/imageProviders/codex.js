@@ -4,9 +4,12 @@ import { nowSec } from "./_base.js";
 import { PROVIDERS } from "../../config/providers.js";
 import {
   CODEX_CLIENT_VERSION,
+  CODEX_USER_AGENT,
   CODEX_IMAGE_ERROR_TEXT_LIMIT,
   CODEX_IMAGE_NO_RESULT_ERROR,
 } from "../../config/codexConstants.js";
+
+import { readCodexEvents, codexEventError } from "../../utils/codexSse.js";
 
 const CODEX_RESPONSES_URL = PROVIDERS["codex"].baseUrl;
 const CODEX_ORIGINATOR = "codex_cli_rs";
@@ -48,110 +51,72 @@ function buildContent(prompt, refs, detail = CODEX_REF_DETAIL) {
 }
 
 // Parse Codex SSE stream → final base64 image. Optional callbacks for client streaming.
-async function parseStream(response, log, callbacks = {}) {
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
+async function parseStream(response, log, callbacks = {}, signal) {
   let imageB64 = null;
   let outputText = "";
   let lastEvent = null;
-  let bytesReceived = 0;
   let lastProgressLogMs = 0;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    bytesReceived += value?.byteLength || 0;
-    buffer += decoder.decode(value, { stream: true });
-
-    let sepIdx;
-    while ((sepIdx = buffer.indexOf("\n\n")) !== -1) {
-      const block = buffer.slice(0, sepIdx);
-      buffer = buffer.slice(sepIdx + 2);
-
-      const lines = block.split("\n");
-      let eventName = null;
-      let dataStr = "";
-      for (const line of lines) {
-        if (line.startsWith("event:")) eventName = line.slice(6).trim();
-        else if (line.startsWith("data:")) dataStr += line.slice(5).trim();
-      }
-      if (!eventName) continue;
-      let data;
-      try { data = JSON.parse(dataStr); } catch { /* Ignore non-JSON SSE frames. */ }
-      // HTTP 200 can carry an upstream failure. Preserve its reason so callers
-      // can distinguish client-version, quota and content errors from no output.
-      const failed = eventName === "error" || eventName === "response.failed" ||
-        data?.response?.status === "failed" || data?.response?.status === "incomplete";
-      if (failed) {
-        const error = data?.response?.error || data?.error;
-        const message = error?.message || (typeof error === "string" ? error : null) ||
-          data?.message || data?.response?.incomplete_details?.reason || "Codex image response failed.";
-        await reader.cancel().catch(() => {});
-        throw new Error(message);
-      }
-      if (eventName !== lastEvent) {
-        log?.info?.("IMAGE", `codex progress: ${eventName}`);
-        lastEvent = eventName;
-      }
-
-      const now = Date.now();
-      if (callbacks.onProgress && now - lastProgressLogMs > 200) {
-        lastProgressLogMs = now;
-        callbacks.onProgress({ stage: eventName, bytesReceived });
-      }
-
-      if (eventName === "response.image_generation_call.partial_image" && dataStr) {
-        try {
-          if (callbacks.onPartialImage && data?.partial_image_b64) {
-            callbacks.onPartialImage({ b64_json: data.partial_image_b64, index: data.partial_image_index });
-          }
-        } catch {}
-      }
-
-      if (eventName === "response.output_item.done" && dataStr) {
-        try {
-          const item = data?.item;
-          if (item?.type === "image_generation_call" && item.result) {
-            imageB64 = item.result;
-          }
-          if (item?.type === "message" && Array.isArray(item.content)) {
-            outputText += item.content.map((part) => part.refusal || part.text || "").join(" ");
-            outputText = outputText.slice(0, CODEX_IMAGE_ERROR_TEXT_LIMIT);
-          }
-        } catch {}
+  for await (const { event, data, bytesReceived } of readCodexEvents(response, signal)) {
+    const error = codexEventError(event, data);
+    if (error) throw error;
+    if (event !== lastEvent) {
+      log?.info?.("IMAGE", `codex progress: ${event}`);
+      lastEvent = event;
+    }
+    const now = Date.now();
+    if (callbacks.onProgress && now - lastProgressLogMs > 200) {
+      lastProgressLogMs = now;
+      callbacks.onProgress({ stage: event, bytesReceived });
+    }
+    if (event === "response.image_generation_call.partial_image" && data?.partial_image_b64) {
+      callbacks.onPartialImage?.({ b64_json: data.partial_image_b64, index: data.partial_image_index });
+    }
+    const items = event === "response.output_item.done" ? [data?.item] :
+      event === "response.completed" ? data?.response?.output || [] : [];
+    for (const item of items) {
+      if (item?.type === "image_generation_call" && item.result) imageB64 = item.result;
+      if (item?.type === "message" && Array.isArray(item.content)) {
+        for (const part of item.content) {
+          const text = part.refusal || part.text;
+          if (typeof text === "string") outputText = (outputText + " " + text).slice(0, CODEX_IMAGE_ERROR_TEXT_LIMIT);
+        }
       }
     }
   }
-  if (!imageB64 && outputText) throw new Error(`${CODEX_IMAGE_NO_RESULT_ERROR} ${outputText}`);
+  if (!imageB64 && outputText) throw new Error(`${CODEX_IMAGE_NO_RESULT_ERROR} ${outputText.trim()}`);
   return imageB64;
 }
 
 // SSE Response that pipes codex progress + partial + done events to client
 function buildSseResponse(providerResponse, log, onSuccess) {
+  const abort = new AbortController();
+  let cancelled = false;
   const stream = new ReadableStream({
     async start(controller) {
       const enc = new TextEncoder();
       const send = (event, data) => {
+        if (cancelled) return;
         controller.enqueue(enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
       };
       try {
         const b64 = await parseStream(providerResponse, log, {
           onProgress: (info) => send("progress", info),
           onPartialImage: (info) => send("partial_image", info),
-        });
+        }, abort.signal);
+        if (cancelled) return;
         if (!b64) {
-          send("error", { message: CODEX_IMAGE_NO_RESULT_ERROR });
+          send("error", { message: CODEX_IMAGE_NO_RESULT_ERROR, status: 502 });
         } else {
           if (onSuccess) await onSuccess();
           send("done", { created: nowSec(), data: [{ b64_json: b64 }] });
         }
       } catch (err) {
-        send("error", { message: err?.message || "Stream failed" });
+        send("error", { message: err?.message || "Stream failed", status: err?.statusCode || 502, code: err?.code });
       } finally {
-        controller.close();
+        if (!cancelled) controller.close();
       }
     },
+    cancel() { cancelled = true; abort.abort(); },
   });
   return new Response(stream, {
     headers: {
@@ -176,7 +141,7 @@ export default {
       "content-type": "application/json",
       "originator": CODEX_ORIGINATOR,
       "session_id": randomUUID(),
-      "user-agent": `${CODEX_ORIGINATOR}/${CODEX_CLIENT_VERSION}`,
+      "user-agent": CODEX_USER_AGENT,
       "version": CODEX_CLIENT_VERSION,
       "x-client-request-id": randomUUID(),
     };

@@ -89,3 +89,5 @@ graphify-out/*
 
 # Kiro local workspace state
 .kiro/
+# Public Codex compatibility and verification guide
+!docs/CODEX_COMPATIBILITY.md
