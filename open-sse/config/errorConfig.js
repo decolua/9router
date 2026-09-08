@@ -50,17 +50,28 @@ const COOLDOWN = {
 /**
  * Unified error classification rules.
  * Checked top-to-bottom: text rules first (by order), then status rules.
- * Each rule: { text?, status?, cooldownMs?, backoff? }
+ * Each rule: { text?, status?, cooldownMs?, backoff?, fallback? }
  *   - text: substring match (case-insensitive) on error message
  *   - status: HTTP status code match
  *   - cooldownMs: fixed cooldown duration
  *   - backoff: true = use exponential backoff (rate limit)
+ *   - fallback: false = request-scoped error (#3875): the failing body is
+ *     deterministic, so it would fail identically on every account — no
+ *     cooldown is warranted. Callers decide how to consume it: the account
+ *     loop stops and surfaces the upstream error to the client; combos may
+ *     still try the next model (translators differ per model).
  */
 export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
-  { text: "improperly formed request", cooldownMs: COOLDOWN.long },
+  // Schema-validation rejections: same body fails on every account.
+  { text: "improperly formed request", fallback: false },
+  { text: "extra inputs are not permitted", fallback: false },
+  { text: "unknown parameter",        fallback: false },
+  { text: "unrecognized request argument", fallback: false },
+  { text: "unexpected field",         fallback: false },
+  { text: "unknown field",            fallback: false },
   { text: "rate limit",               backoff: true },
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },

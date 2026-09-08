@@ -28,6 +28,7 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
   for (const rule of ERROR_RULES) {
     // Text-based rule: match substring in error message
     if (rule.text && lowerError && lowerError.includes(rule.text)) {
+      if (rule.fallback === false) return { shouldFallback: false, cooldownMs: 0 };
       if (rule.backoff) {
         const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
         return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
@@ -37,6 +38,7 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
 
     // Status-based rule: match HTTP status code
     if (rule.status && rule.status === status) {
+      if (rule.fallback === false) return { shouldFallback: false, cooldownMs: 0 };
       if (rule.backoff) {
         const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
         return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
