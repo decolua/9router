@@ -389,13 +389,13 @@ export default function PrivacyClient() {
                 {result && (
                   <div className="text-xs">
                     {result.valid !== false ? (
-                      result.matches.length > 0 ? (
-                        <>
-                          <p className="text-success font-semibold">
-                            {result.matches.length} match{result.matches.length === 1 ? "" : "es"} — preview:
-                          </p>
-                          <pre className="mt-1 max-h-32 overflow-auto rounded bg-surface-2 p-2 text-[10px] leading-tight text-text-muted whitespace-pre-wrap font-mono">
-                            {result.preview.split("[PII-REDACTED]").map((part, j, arr) => (
+(result.matches || []).length > 0 ? (
+                          <>
+                            <p className="text-success font-semibold">
+                              {(result.matches || []).length} match{(result.matches || []).length === 1 ? "" : "es"} — preview:
+                            </p>
+                            <pre className="mt-1 max-h-32 overflow-auto rounded bg-surface-2 p-2 text-[10px] leading-tight text-text-muted whitespace-pre-wrap font-mono">
+                              {(result.preview || "").split("[PII-REDACTED]").map((part, j, arr) => (
                               <span key={j}>
                                 {part}
                                 {j < arr.length - 1 && (
