@@ -1,4 +1,9 @@
 import { KIRO_CONFIG, assertValidAwsRegion } from "../constants/oauth.js";
+import {
+  assertKiroRuntimeRegion,
+  KIRO_AUTO_REGION,
+  KIRO_RUNTIME_REGIONS,
+} from "open-sse/config/kiroRegions.js";
 
 /**
  * Kiro OAuth Service
@@ -10,6 +15,7 @@ import { KIRO_CONFIG, assertValidAwsRegion } from "../constants/oauth.js";
  */
 
 const KIRO_AUTH_SERVICE = "https://prod.us-east-1.auth.desktop.kiro.dev";
+const KIRO_API_KEY_VALIDATION_TIMEOUT_MS = 10_000;
 
 export class KiroService {
   /**
@@ -297,11 +303,12 @@ export class KiroService {
    * arbitrary key, so it is not proof that the key can run inference.
    */
   async listAvailableApiKeyModels(apiKey, region = "us-east-1") {
-    assertValidAwsRegion(region);
+    region = assertKiroRuntimeRegion(region);
     const params = new URLSearchParams({ origin: "AI_EDITOR" });
     const endpoint = `https://q.${region}.amazonaws.com/ListAvailableModels?${params}`;
     const response = await fetch(endpoint, {
       method: "GET",
+      signal: AbortSignal.timeout(KIRO_API_KEY_VALIDATION_TIMEOUT_MS),
       headers: {
         "Authorization": `Bearer ${apiKey}`,
         "TokenType": "API_KEY",
@@ -328,25 +335,36 @@ export class KiroService {
    * Validate an API-key credential through the same Amazon Q surface used for
    * inference. API keys are account-bound but do not require a profileArn.
    */
-  async validateApiKey(apiKey, region = "us-east-1") {
+  async validateApiKey(apiKey, region = KIRO_AUTO_REGION) {
     if (!apiKey || typeof apiKey !== "string" || !apiKey.trim()) {
       throw new Error("API key is required");
     }
     const trimmed = apiKey.trim();
 
-    try {
-      await this.listAvailableApiKeyModels(trimmed, region);
-    } catch (error) {
-      throw new Error(`API key validation failed: ${error.message}`);
-    }
+    const requestedRegion = String(region || KIRO_AUTO_REGION).trim().toLowerCase();
+    const regions = requestedRegion === KIRO_AUTO_REGION
+      ? KIRO_RUNTIME_REGIONS
+      : [assertKiroRuntimeRegion(requestedRegion)];
 
-    return {
-      accessToken: trimmed,
-      refreshToken: null,
-      profileArn: null,
-      region,
-      authMethod: "api_key",
-    };
+    let lastError;
+    for (const candidate of regions) {
+      try {
+        await this.listAvailableApiKeyModels(trimmed, candidate);
+        return {
+          accessToken: trimmed,
+          refreshToken: null,
+          profileArn: null,
+          region: candidate,
+          authMethod: "api_key",
+        };
+      } catch (error) {
+        lastError = error;
+        // Auto-detection has two bounded official endpoints; no arbitrary scan.
+      }
+    }
+    throw new Error(
+      `API key validation failed in supported Kiro regions: ${lastError?.message || "unknown error"}`
+    );
   }
 
   /**

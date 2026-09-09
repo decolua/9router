@@ -12,12 +12,14 @@ function credentials(authMethod, region = "us-east-1") {
 describe("Kiro auth-aware endpoint routing", () => {
   const executor = new KiroExecutor();
 
-  it("routes API-key inference through Amazon Q before other surfaces", () => {
+  it("routes API-key inference only through its regional Amazon Q surface", () => {
     expect(executor.getOrderedBaseUrls(credentials("api_key"))).toEqual([
       Q,
-      CODEWHISPERER,
-      RUNTIME,
     ]);
+    expect(executor.getOrderedBaseUrls(credentials("api_key", "eu-central-1"))).toEqual([
+      "https://q.eu-central-1.amazonaws.com/generateAssistantResponse",
+    ]);
+    expect(executor.getFallbackCount(credentials("api_key"))).toBe(1);
   });
 
   it("keeps Builder ID OAuth on the Kiro runtime surface", () => {
@@ -45,10 +47,10 @@ describe("Kiro auth-aware endpoint routing", () => {
   });
 
   it("retries only endpoint/auth-surface failures, not payload-invalid 400s", () => {
-    expect(executor.shouldRetry(400, 0)).toBe(false);
-    expect(executor.shouldRetry(401, 1)).toBe(true);
-    expect(executor.shouldRetry(403, 2)).toBe(false);
-    expect(executor.shouldRetry(422, 0)).toBe(false);
+    const apiKey = credentials("api_key");
+    expect(executor.shouldRetry(400, 0, apiKey)).toBe(false);
+    expect(executor.shouldRetry(401, 0, apiKey)).toBe(false);
+    expect(executor.shouldRetry(422, 0, apiKey)).toBe(false);
   });
 
   it("builds endpoint-specific headers", () => {
@@ -59,6 +61,10 @@ describe("Kiro auth-aware endpoint routing", () => {
 
     expect(qHeaders.TokenType).toBe("API_KEY");
     expect(qHeaders["X-Amz-Target"]).toBeUndefined();
+    expect(qHeaders["x-amzn-bedrock-cache-control"]).toBe("enable");
+    expect(qHeaders["anthropic-beta"]).toContain("prompt-caching");
+    expect(qHeaders["User-Agent"]).toMatch(/KiroIDE-[^-]+-[a-f0-9]{64}$/);
+    expect(qHeaders["User-Agent"]).not.toContain("test-key");
     expect(codeWhispererHeaders["X-Amz-Target"]).toBe(
       "AmazonCodeWhispererStreamingService.GenerateAssistantResponse"
     );

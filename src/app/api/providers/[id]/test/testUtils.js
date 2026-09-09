@@ -18,6 +18,7 @@ import {
   KIMCHI_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
+import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -517,6 +518,15 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
 
   try {
     switch (connection.provider) {
+      case "kiro": {
+        const result = await resolveKiroModels({
+          accessToken: connection.accessToken,
+          refreshToken: connection.refreshToken,
+          providerSpecificData: connection.providerSpecificData || {},
+        }, { forceRefresh: true, proxyOptions: effectiveProxy });
+        const valid = Array.isArray(result?.rawModels) && result.rawModels.length > 0;
+        return { valid, error: valid ? null : "Kiro Q model validation failed" };
+      }
       case "cloudflare-ai": {
         const psd = connection.providerSpecificData || {};
         const accountId = psd.accountId;
@@ -829,10 +839,11 @@ case "llm7": {
 export async function testSingleConnection(id) {
   const connection = await getProviderConnectionById(id);
   if (!connection) return { valid: false, error: "Connection not found", latencyMs: 0, testedAt: new Date().toISOString() };
+  const isKiroApiKey = connection.provider === "kiro" && connection.authType === "api_key";
 
   const effectiveProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
 
-  if (effectiveProxy.connectionProxyEnabled && effectiveProxy.connectionProxyUrl && !effectiveProxy.vercelRelayUrl) {
+  if (!isKiroApiKey && effectiveProxy.connectionProxyEnabled && effectiveProxy.connectionProxyUrl && !effectiveProxy.vercelRelayUrl) {
     const proxyResult = await testProxyUrl({ proxyUrl: effectiveProxy.connectionProxyUrl });
     if (!proxyResult.ok) {
       const proxyError = proxyResult.error || `Proxy test failed with status ${proxyResult.status}`;
@@ -848,7 +859,7 @@ export async function testSingleConnection(id) {
   const start = Date.now();
   let result;
 
-  if (connection.authType === "apikey" || connection.authType === "cookie") {
+  if (connection.authType === "apikey" || connection.authType === "cookie" || isKiroApiKey) {
     result = await testApiKeyConnection(connection, effectiveProxy);
   } else {
     result = await testOAuthConnection(connection, effectiveProxy);
@@ -870,6 +881,13 @@ export async function testSingleConnection(id) {
       : new Date().toISOString(),
   };
 
+  if (result.valid && isKiroApiKey) {
+    updateData.errorCode = null;
+    updateData.backoffLevel = 0;
+    for (const key of Object.keys(connection)) {
+      if (key.startsWith("modelLock_")) updateData[key] = null;
+    }
+  }
   if (result.refreshed && result.newTokens) {
     if (result.newTokens.accessToken) updateData.accessToken = result.newTokens.accessToken;
     if (result.newTokens.refreshToken) updateData.refreshToken = result.newTokens.refreshToken;

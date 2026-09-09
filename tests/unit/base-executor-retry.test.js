@@ -46,6 +46,17 @@ describe("BaseExecutor.execute — retry by status (config-driven)", () => {
 });
 
 describe("BaseExecutor.execute — baseUrls fallback", () => {
+  it("passes credentials to a provider-specific fallback count", async () => {
+    const ex = makeExec({ baseUrls: ["https://a/api", "https://b/api"] });
+    ex.getFallbackCount = vi.fn((credentials) => credentials === creds ? 1 : 2);
+    fetchMock.mockResolvedValueOnce(res(200));
+
+    await ex.execute({ model: "m", body: {}, stream: false, credentials: creds });
+
+    expect(ex.getFallbackCount).toHaveBeenCalledWith(creds);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("falls over to the next url on 429 (shouldRetry)", async () => {
     const ex = makeExec({ baseUrls: ["https://a/api", "https://b/api"], retry: { 429: { attempts: 0 } } });
     fetchMock

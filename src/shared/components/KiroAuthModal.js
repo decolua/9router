@@ -2,7 +2,11 @@
 
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
-import { Modal, Button, Input } from "@/shared/components";
+import { Modal, Button, Input, Select } from "@/shared/components";
+import {
+  KIRO_AUTO_REGION,
+  KIRO_RUNTIME_REGION_OPTIONS,
+} from "open-sse/config/kiroRegions.js";
 
 /**
  * Kiro Auth Method Selection Modal
@@ -15,7 +19,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
   const [refreshToken, setRefreshToken] = useState("");
   const [cliProxyJson, setCliProxyJson] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [apiKeyRegion, setApiKeyRegion] = useState("us-east-1");
+  const [apiKeyRegion, setApiKeyRegion] = useState(KIRO_AUTO_REGION);
   const [error, setError] = useState(null);
   const [importing, setImporting] = useState(false);
   const [autoDetecting, setAutoDetecting] = useState(false);
@@ -159,7 +163,7 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           apiKey: apiKey.trim(),
-          region: apiKeyRegion.trim() || "us-east-1",
+          region: apiKeyRegion,
         }),
       });
 
@@ -379,20 +383,12 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium mb-2">
-                AWS Region
-              </label>
-              <Input
-                value={apiKeyRegion}
-                onChange={(e) => setApiKeyRegion(e.target.value)}
-                placeholder="us-east-1"
-                className="font-mono text-sm"
-              />
-              <p className="text-xs text-text-muted mt-1">
-                AWS region for the key (default: us-east-1)
-              </p>
-            </div>
+            <Select
+              label="AWS Region"
+              value={apiKeyRegion}
+              onChange={(e) => setApiKeyRegion(e.target.value)}
+              options={KIRO_RUNTIME_REGION_OPTIONS}
+            />
 
             {error && (
               <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800">

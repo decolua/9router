@@ -24,7 +24,7 @@ export async function POST(request) {
     // Validate the key against the same Amazon Q surface used for inference.
     const credential = await kiroService.validateApiKey(
       apiKey,
-      region || "us-east-1"
+      region || "auto"
     );
 
     // Extract email from JWT if the key happens to be a JWT (optional display)

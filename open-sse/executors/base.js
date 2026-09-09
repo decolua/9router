@@ -23,7 +23,7 @@ export class BaseExecutor {
     return this.config.baseUrls || (this.config.baseUrl ? [this.config.baseUrl] : []);
   }
 
-  getFallbackCount() {
+  getFallbackCount(credentials = null) {
     return this.getBaseUrls().length || 1;
   }
 
@@ -80,8 +80,8 @@ export class BaseExecutor {
     return body;
   }
 
-  shouldRetry(status, urlIndex) {
-    return status === HTTP_STATUS.RATE_LIMITED && urlIndex + 1 < this.getFallbackCount();
+  shouldRetry(status, urlIndex, credentials = null) {
+    return status === HTTP_STATUS.RATE_LIMITED && urlIndex + 1 < this.getFallbackCount(credentials);
   }
 
   // Override in subclass for provider-specific refresh
@@ -98,7 +98,7 @@ export class BaseExecutor {
   }
 
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
-    const fallbackCount = this.getFallbackCount();
+    const fallbackCount = this.getFallbackCount(credentials);
     let lastError = null;
     let lastStatus = 0;
     const retryAttemptsByUrl = {};
@@ -154,7 +154,7 @@ export class BaseExecutor {
 
         if (await tryRetry(urlIndex, response.status, `status ${response.status}`, response)) { urlIndex--; continue; }
 
-        if (this.shouldRetry(response.status, urlIndex)) {
+        if (this.shouldRetry(response.status, urlIndex, credentials)) {
           log?.debug?.("RETRY", `${response.status} on ${url}, trying fallback ${urlIndex + 1}`);
           lastStatus = response.status;
           continue;
