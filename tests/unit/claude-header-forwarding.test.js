@@ -65,6 +65,15 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
     expect(betaFlags).not.toContain("effort-2025-11-24");
   });
 
+  it("includes the advisor-tool beta flag on every model, regardless of size (#2582)", () => {
+    const executor = new DefaultExecutor("claude");
+    for (const model of ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5-20251001", "claude-fable-5"]) {
+      const headers = executor.buildHeaders({ apiKey: "sk-test" }, true, undefined, model);
+      const betaFlags = headers["Anthropic-Beta"].split(",").map(s => s.trim());
+      expect(betaFlags, `model=${model}`).toContain("advisor-tool-2026-03-01");
+    }
+  });
+
   it("sets x-api-key auth when apiKey is provided", () => {
     const executor = new DefaultExecutor("claude");
     const headers = executor.buildHeaders({ apiKey: "sk-live-key" }, true);

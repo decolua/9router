@@ -58,6 +58,16 @@ const ANTHROPIC_BETA_BASE = [
   "fast-mode-2026-02-01",
   "redact-thinking-2026-02-12",
   "token-efficient-tools-2026-03-28",
+  // Claude Code sends this in its own client request whenever an advisor
+  // model is configured (`/advisor <model>`), and includes an
+  // `advisor_20260301` server tool in `tools` on every turn thereafter.
+  // selectAnthropicBeta() REPLACES (not merges with) the client's own
+  // Anthropic-Beta header, so without this flag here Anthropic rejects the
+  // passed-through tool definition with "Input tag 'advisor_20260301' ...
+  // does not match any of the expected tags" (see decolua/9router#2582).
+  // Anthropic ignores unrecognized beta flags, so always sending this is
+  // harmless for requests that don't use the advisor tool.
+  "advisor-tool-2026-03-01",
 ];
 const ANTHROPIC_BETA_HEAVY_AGENT = ["advanced-tool-use-2025-11-20", "effort-2025-11-24"];
 

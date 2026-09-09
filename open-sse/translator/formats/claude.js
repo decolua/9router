@@ -101,6 +101,24 @@ export function fixToolUseOrdering(messages) {
 // Models that reject thinking.type "adaptive" + output_config.effort (Opus 4.5+/Sonnet 4.6+ only)
 const ADAPTIVE_THINKING_UNSUPPORTED = /haiku/i;
 
+// 9router provider prefixes are valid for routing the top-level model, but
+// Anthropic server tools (Advisor, Task/subagent) expect an upstream model ID
+// in their nested `model` field — passing "cc/claude-fable-5" through as-is
+// gets rejected by Anthropic. normalizeClaudePassthrough only ever touched
+// the top-level model; this strips the same prefixes from tools[].model.
+const CLAUDE_PROVIDER_MODEL_PREFIXES = ["cc/", "claude/"];
+
+function normalizeClaudeServerToolModels(tools) {
+  if (!Array.isArray(tools)) return;
+
+  for (const tool of tools) {
+    if (!tool || typeof tool !== "object" || typeof tool.model !== "string") continue;
+
+    const prefix = CLAUDE_PROVIDER_MODEL_PREFIXES.find(candidate => tool.model.startsWith(candidate));
+    if (prefix) tool.model = tool.model.slice(prefix.length);
+  }
+}
+
 function handlesThinkingBlocks(provider) {
   return provider === "claude" || provider?.startsWith("anthropic-compatible") || provider === "deepseek";
 }
@@ -185,6 +203,10 @@ export function normalizeClaudePassthrough(body, model = "") {
     }
     body.messages = messages;
   }
+
+  // 3.5. Normalize nested server tool model IDs (Advisor, Task/subagent)
+  // without changing the top-level routing model.
+  normalizeClaudeServerToolModels(body.tools);
 
   // 3. Drop thinking blocks whose signature is not Claude's (combo mixes models,
   // so foreign signatures leak into history and Anthropic rejects them).
