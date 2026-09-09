@@ -43,6 +43,13 @@ export const QODER_MAX_PAYLOAD_BYTES = 6 * 1024 * 1024;
 // If OSS upload fails, keep tiny data-URIs; anything larger is stubbed.
 export const QODER_INLINE_FALLBACK_MAX_BYTES = 512 * 1024;
 
+// Context-window tier selection (see shared/qoder/contextTier.js). The IDE exposes the
+// model's context_config tiers (200K/400K/1M); we auto-escalate when the estimated prompt
+// (+ headroom, tokenizer variance) no longer fits the current max_input_tokens.
+export const QODER_CONTEXT_TIER_HEADROOM = 0.15;
+export const QODER_CONTEXT_TIER_ENV = "QODER_CONTEXT_TIER";
+export const QODER_CONTEXT_TIER_MODES = Object.freeze({ AUTO: "auto", MAX: "max", DEFAULT: "default" });
+
 /**
  * Job-token (jt-...) traffic must hit api2.qoder.sh — api3 rejects jt- with
  * "Login expired" (403). Device tokens (dt-...) stay on api3. PATs (pt-...)
