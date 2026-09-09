@@ -234,3 +234,24 @@ describe("dlp engine", () => {
     expect(wildcardToRegex("x+y")).toBe("x\\+y");
   });
 });
+
+describe("phone pattern regression", () => {
+  it("masks Brazilian phone numbers in common formats", () => {
+    expect(maskText("call +55 11 91234-5678 now", { mode: "redact", types: ["phone"] }).text)
+      .toBe("call [PII-REDACTED] now");
+    expect(maskText("call (11) 91234-5678 now", { mode: "redact", types: ["phone"] }).text)
+      .toBe("call [PII-REDACTED] now");
+    expect(maskText("call 11 91234-5678 now", { mode: "redact", types: ["phone"] }).text)
+      .toBe("call [PII-REDACTED] now");
+  });
+
+  it("does not mask numbers that are not phone-length (prices/prose)", () => {
+    const price = maskText("the price was 1.234.567,89 and it's 2026", { mode: "redact", types: ["phone"] });
+    expect(price.text).toBe("the price was 1.234.567,89 and it's 2026");
+    expect(price.matched).toBe(0);
+
+    const prose = maskText("911 make it stop 2.34 56", { mode: "redact", types: ["phone"] });
+    expect(prose.text).toBe("911 make it stop 2.34 56");
+    expect(prose.matched).toBe(0);
+  });
+});

@@ -253,6 +253,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // DLP: mask sensitive data before token savers and dispatch
   if (dlp?.enabled) {
+    // Mask the raw client body in place as well: the persisted request-details
+    // `request` field is built from `body` (extractRequestConfig) by every
+    // downstream handler (streaming/non-streaming/SSE-to-JSON + error paths).
+    if (body) maskSensitiveData(body, dlp);
     const dlpStats = maskSensitiveData(translatedBody, dlp);
     if (dlpStats) {
       const parts = Object.entries(dlpStats.byType)

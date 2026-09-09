@@ -374,6 +374,15 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     maskSensitiveData(translatedResponse, dlp);
   }
 
+  // When the translation produced a NEW object (Ollama / SSE-to-JSON / Claude /
+  // Gemini copy paths), the raw provider body above is a different object and is
+  // still unmasked — it would leak the provider's raw PII into the persisted
+  // request-details `providerResponse` field. When the translation was a no-op
+  // (translatedResponse === responseBody) the first mask already covered it.
+  if (dlp?.enabled && dlp.maskResponses !== false && responseBody && responseBody !== translatedResponse) {
+    maskSensitiveData(responseBody, dlp);
+  }
+
   reqLogger.logConvertedResponse(translatedResponse);
 
   const totalLatency = Date.now() - requestStartTime;

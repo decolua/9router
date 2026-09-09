@@ -5,7 +5,7 @@ import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
-import { maskSensitiveData } from "../../dlp/index.js";
+import { maskSensitiveData, maskText } from "../../dlp/index.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -213,7 +213,14 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       const inTokensForLog = (usage.input_tokens || 0)
         + (usage.cache_read_input_tokens || usage.cached_tokens || 0)
         + (usage.cache_creation_input_tokens || 0);
-      const { msgItem, textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
+      const { msgItem, textContent: rawTextContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
+      // DLP: mask the persisted response text so request-details logs never see
+      // PII. textContent is a primitive string copy (not the jsonResponse object
+      // the client-return masks below operate on), so masking here never double-masks.
+      let textContent = rawTextContent;
+      if (dlp?.enabled && dlp.maskResponses !== false && typeof textContent === "string") {
+        textContent = maskText(textContent, dlp).text;
+      }
       const totalLatency = Date.now() - requestStartTime;
 
       saveRequestDetail(buildRequestDetail({
@@ -315,6 +322,14 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     appendLog({ tokens: usage, status: "200 OK" });
     saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
+
+    // DLP: mask the parsed body so the persisted request-detail response text is
+    // masked too. The client-visible mask below re-walks this same object — for
+    // redact it is idempotent (masked labels match no pattern), for pseudo the
+    // placeholders match no pattern either, so no second mapping entries are made.
+    if (dlp?.enabled && dlp.maskResponses !== false) {
+      maskSensitiveData(parsed, dlp);
+    }
 
     const totalLatency = Date.now() - requestStartTime;
     saveRequestDetail(buildRequestDetail({
