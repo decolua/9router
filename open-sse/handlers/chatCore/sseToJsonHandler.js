@@ -214,9 +214,11 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         + (usage.cache_read_input_tokens || usage.cached_tokens || 0)
         + (usage.cache_creation_input_tokens || 0);
       const { msgItem, textContent: rawTextContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
-      // DLP: mask the persisted response text so request-details logs never see
-      // PII. textContent is a primitive string copy (not the jsonResponse object
-      // the client-return masks below operate on), so masking here never double-masks.
+      // DLP: mask before persisting so the request-detail log holds single-masked
+      // text. textContent is a primitive string copy — the client-return mask below
+      // still walks the raw jsonResponse, so this pass never double-masks simply
+      // because the values are disjoint (\uE000-guarded tokens only span one maskText
+      // pass; pseudonyms themselves DO re-match their source patterns).
       let textContent = rawTextContent;
       if (dlp?.enabled && dlp.maskResponses !== false && typeof textContent === "string") {
         textContent = maskText(textContent, dlp).text;
@@ -323,10 +325,12 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
-    // DLP: mask the parsed body so the persisted request-detail response text is
-    // masked too. The client-visible mask below re-walks this same object — for
-    // redact it is idempotent (masked labels match no pattern), for pseudo the
-    // placeholders match no pattern either, so no second mapping entries are made.
+    // DLP: mask before persisting so the request-detail log holds single-masked
+    // text. This mutates `parsed` in place and the client-visible mask below re-walks
+    // the same object: redact stays idempotent ([PII-REDACTED] matches no pattern),
+    // but pseudo pseudonyms DO re-match their source patterns — so a second,
+    // deterministic pseudonymization may apply and the client can see a second-level
+    // alias the log never held (leak-free, but not a no-op).
     if (dlp?.enabled && dlp.maskResponses !== false) {
       maskSensitiveData(parsed, dlp);
     }
