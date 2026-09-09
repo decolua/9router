@@ -15,4 +15,15 @@ describe("dlp pipeline integration (pure)", () => {
     expect(body.messages[0].content).toBe("call me on [PII-REDACTED]");
     expect(body.model).toBe("cc/claude-opus-5");
   });
+
+  it("maskSensitiveData handles a Responses-shaped response body", () => {
+    const body = {
+      id: "resp_1",
+      output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "cpf 529.982.247-25 found" }] }],
+    };
+    const stats = maskSensitiveData(body, { enabled: true, mode: "redact", types: ["cpf"], customPatterns: [] });
+    expect(stats).not.toBeNull();
+    expect(body.output[0].content[0].text).toBe("cpf [PII-REDACTED] found");
+    expect(body.id).toBe("resp_1");
+  });
 });
