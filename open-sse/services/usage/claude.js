@@ -102,32 +102,28 @@ async function fetchClaudeUsageRaw(accessToken, proxyOptions = null) {
         quotas["weekly (7d)"] = createQuotaObject(data.seven_day);
       }
 
-      // Parse model-specific weekly windows (e.g. seven_day_sonnet, seven_day_opus, seven_day_fable)
-      const MODEL_DISPLAY_NAMES = {
-        fable_5_1: "fable",
-        fable_5: "fable",
-      };
-
+      // Parse model-specific weekly windows (e.g. seven_day_sonnet, seven_day_opus)
       for (const [key, value] of Object.entries(data)) {
         if (key.startsWith("seven_day_") && key !== "seven_day" && hasUtilization(value)) {
-          const rawName = key.replace("seven_day_", "");
-          const modelName = MODEL_DISPLAY_NAMES[rawName] || rawName;
+          const modelName = key.replace("seven_day_", "");
           quotas[`weekly ${modelName} (7d)`] = createQuotaObject(value);
-        } else if ((key === "fable" || key === "fable_5" || key === "fable_5_1") && hasUtilization(value)) {
-          quotas["weekly fable (7d)"] = createQuotaObject(value);
         }
       }
 
-      // Fallback: surface Fable quota row if weekly window exists but Fable was not returned yet
-      if (!quotas["weekly fable (7d)"] && hasUtilization(data.seven_day)) {
-        quotas["weekly fable (7d)"] = {
-          used: 0,
-          total: 100,
-          remaining: 100,
-          remainingPercentage: 100,
-          resetAt: parseResetTime(data.seven_day.resets_at),
-          unlimited: false,
-        };
+      // Model-scoped weekly limits (e.g. Fable) arrive in limits[], not as
+      // seven_day_* keys: { kind: "weekly_scoped", percent, resets_at,
+      // scope: { model: { display_name: "Fable" } } }. No limits entry means
+      // the account has no such window — omit the row, never fabricate one.
+      if (Array.isArray(data.limits)) {
+        for (const limit of data.limits) {
+          if (limit?.kind !== "weekly_scoped") continue;
+          const modelName = String(limit?.scope?.model?.display_name || "").trim().toLowerCase();
+          if (!modelName || typeof limit.percent !== "number") continue;
+          quotas[`weekly ${modelName} (7d)`] = createQuotaObject({
+            utilization: Math.max(0, Math.min(100, limit.percent)),
+            resets_at: limit.resets_at,
+          });
+        }
       }
 
       return {
