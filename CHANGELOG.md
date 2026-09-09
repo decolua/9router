@@ -1,3 +1,13 @@
+# v0.5.70 (2026-09-09)
+
+## Features
+- **Privacy & DLP**: new System > Privacy & DLP page — global enable toggle, per-type PII
+  checkboxes with templates (Minimal / Standard / Financial / Brazilian / Full), custom
+  masking patterns (regex or wildcard) testable in the UI, pseudonymization (reversible,
+  in-memory mapping table) or anonymization (`[PII-REDACTED]`), and model-response masking.
+  Outbound requests, responses, and request-details logs are masked in the chat pipeline;
+  the engine fails open and is not bypassable per request.
+
 # v0.5.69 (2026-09-05)
 
 ## Features
