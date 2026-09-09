@@ -62,6 +62,11 @@ const DEFAULT_SETTINGS = {
   pxpipeAutoInstall: true,
   pxpipeMinChars: 25000,
   pxpipeTimeoutMs: 15000,
+  dlpEnabled: false,
+  dlpMode: "pseudo",
+  dlpTypes: ["email", "phone", "cpf", "cnpj", "creditCard", "ip", "apiKey"],
+  dlpCustomPatterns: [],
+  dlpMaskResponses: true,
 };
 
 async function readRaw() {
