@@ -5,7 +5,7 @@ import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBu
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
-import { maskSensitiveData } from "../dlp/index.js";
+import { maskSensitiveData, formatDlpLog, mergeDlpStats } from "../dlp/index.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
 
@@ -80,6 +80,10 @@ export function createSSEStream(options = {}) {
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
   let finalized = false;
 
+  // DLP response stats accumulator: every per-chunk mask merges into this so the
+  // finalizeStream() tail can emit one [DLP] response line per request.
+  const dlpResponseStats = { matched: 0, byType: {} };
+
   // Usage/logging tail, callable from transform() as well as flush(): a client that
   // closes right after the terminal event cancels the reader, and flush() never runs.
   const finalizeStream = () => {
@@ -108,7 +112,7 @@ export function createSSEStream(options = {}) {
     // untouched — re-masking would re-pseudonymize the masked values.
     if (!isPassthrough && dlp?.enabled && dlp.maskResponses !== false) {
       const logPayload = { content: accumulatedContent, thinking: accumulatedThinking };
-      maskSensitiveData(logPayload, dlp);
+      mergeDlpStats(dlpResponseStats, maskSensitiveData(logPayload, dlp));
       accumulatedContent = logPayload.content;
       accumulatedThinking = logPayload.thinking;
     }
@@ -119,6 +123,10 @@ export function createSSEStream(options = {}) {
         thinking: accumulatedThinking
       }, finalUsage, ttftAt);
     }
+
+    // One [DLP] response line per request — whatever got masked across chunks.
+    const dlpRespLine = formatDlpLog(dlpResponseStats, "response");
+    if (dlpRespLine) console.log(dlpRespLine);
   };
 
   return new TransformStream({
@@ -158,7 +166,7 @@ export function createSSEStream(options = {}) {
 
               // DLP: mask sensitive values in the chunk before it is forwarded/logged
               if (dlp?.enabled && dlp.maskResponses !== false && parsed) {
-                maskSensitiveData(parsed, { ...dlp, maskResponses: undefined });
+                mergeDlpStats(dlpResponseStats, maskSensitiveData(parsed, { ...dlp, maskResponses: undefined }));
               }
 
               const idFixed = fixInvalidId(parsed);
@@ -344,7 +352,7 @@ export function createSSEStream(options = {}) {
         if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {
           // DLP: mask sensitive values in the parsed chunk before it is re-emitted/logged
           if (dlp?.enabled && dlp.maskResponses !== false && parsed) {
-            maskSensitiveData(parsed, { ...dlp, maskResponses: undefined });
+            mergeDlpStats(dlpResponseStats, maskSensitiveData(parsed, { ...dlp, maskResponses: undefined }));
           }
           const output = formatSSE({ event: openAIResponsesEventName, data: parsed }, sourceFormat);
           reqLogger?.appendConvertedChunk?.(output);
@@ -366,7 +374,7 @@ export function createSSEStream(options = {}) {
           for (const item of translated._openaiIntermediate) {
             // DLP: mask sensitive values in the chunk before it is logged (logging only, never forwarded)
             if (dlp?.enabled && dlp.maskResponses !== false && item) {
-              maskSensitiveData(item, { ...dlp, maskResponses: undefined });
+              mergeDlpStats(dlpResponseStats, maskSensitiveData(item, { ...dlp, maskResponses: undefined }));
             }
             const openaiOutput = formatSSE(item, FORMATS.OPENAI);
             reqLogger?.appendOpenAIChunk?.(openaiOutput);
@@ -395,7 +403,7 @@ export function createSSEStream(options = {}) {
 
             // DLP: mask sensitive values in the chunk before it is forwarded/logged
             if (dlp?.enabled && dlp.maskResponses !== false && item) {
-              maskSensitiveData(item, { ...dlp, maskResponses: undefined });
+              mergeDlpStats(dlpResponseStats, maskSensitiveData(item, { ...dlp, maskResponses: undefined }));
             }
 
             const output = formatSSE(item, sourceFormat);
@@ -463,7 +471,7 @@ export function createSSEStream(options = {}) {
               for (const item of translated._openaiIntermediate) {
                 // DLP: mask sensitive values in the chunk before it is logged (logging only, never forwarded)
                 if (dlp?.enabled && dlp.maskResponses !== false && item) {
-                  maskSensitiveData(item, { ...dlp, maskResponses: undefined });
+                  mergeDlpStats(dlpResponseStats, maskSensitiveData(item, { ...dlp, maskResponses: undefined }));
                 }
                 const openaiOutput = formatSSE(item, FORMATS.OPENAI);
                 reqLogger?.appendOpenAIChunk?.(openaiOutput);
@@ -475,7 +483,7 @@ export function createSSEStream(options = {}) {
                 if (item === null || item === undefined) continue;
                 // DLP: mask sensitive values in the chunk before it is forwarded/logged
                 if (dlp?.enabled && dlp.maskResponses !== false && item) {
-                  maskSensitiveData(item, { ...dlp, maskResponses: undefined });
+                  mergeDlpStats(dlpResponseStats, maskSensitiveData(item, { ...dlp, maskResponses: undefined }));
                 }
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
@@ -491,7 +499,7 @@ export function createSSEStream(options = {}) {
           for (const item of flushed._openaiIntermediate) {
             // DLP: mask sensitive values in the chunk before it is logged (logging only, never forwarded)
             if (dlp?.enabled && dlp.maskResponses !== false && item) {
-              maskSensitiveData(item, { ...dlp, maskResponses: undefined });
+              mergeDlpStats(dlpResponseStats, maskSensitiveData(item, { ...dlp, maskResponses: undefined }));
             }
             const openaiOutput = formatSSE(item, FORMATS.OPENAI);
             reqLogger?.appendOpenAIChunk?.(openaiOutput);
@@ -503,7 +511,7 @@ export function createSSEStream(options = {}) {
             if (item === null || item === undefined) continue;
             // DLP: mask sensitive values in the chunk before it is forwarded/logged
             if (dlp?.enabled && dlp.maskResponses !== false && item) {
-              maskSensitiveData(item, { ...dlp, maskResponses: undefined });
+              mergeDlpStats(dlpResponseStats, maskSensitiveData(item, { ...dlp, maskResponses: undefined }));
             }
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);

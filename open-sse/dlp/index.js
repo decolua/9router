@@ -22,10 +22,10 @@ export function wildcardToRegex(pat) {
 function buildCustomRule(cp) {
   if (!cp || !cp.enabled || !cp.pattern) return null;
   if (cp.type === "wildcard") {
-    return { id: cp.id, name: cp.name, custom: true, regex: new RegExp(wildcardToRegex(cp.pattern), "g") };
+    return { id: cp.id, name: cp.name, pattern: cp.pattern, custom: true, regex: new RegExp(wildcardToRegex(cp.pattern), "g") };
   }
   const flags = cp.flags || "";
-  return { id: cp.id, name: cp.name, custom: true, regex: new RegExp(cp.pattern, flags.includes("g") ? flags : `${flags}g`) };
+  return { id: cp.id, name: cp.name, pattern: cp.pattern, custom: true, regex: new RegExp(cp.pattern, flags.includes("g") ? flags : `${flags}g`) };
 }
 
 export function buildRules(types, customPatterns) {
@@ -64,7 +64,10 @@ export function maskText(text, { mode = "redact", types, customPatterns } = {}) 
           const token = `\uE000${counter++}\uE001`;
           tokens.set(token, masked);
           made.matched += 1;
-          made.byType[rule.id] = (made.byType[rule.id] || 0) + 1;
+          const statsKey = rule.custom
+            ? (rule.name || `custom:${rule.pattern || rule.regex.source}`)
+            : rule.id;
+          made.byType[statsKey] = (made.byType[statsKey] || 0) + 1;
           return token;
         });
       } catch {
@@ -146,4 +149,27 @@ export function testMask({ type = "regex", pattern, flags = "", sampleText = "" 
   }
   result.preview = out;
   return result;
+}
+
+// One-line console summary for troubleshooting. Mirrors the [RTK] line style:
+// shows counts per category/pattern id, never the masked content itself.
+// Returns null when nothing was masked so callers can skip logging.
+export function formatDlpLog(stats, scope) {
+  if (!stats || !stats.matched) return null;
+  const parts = Object.entries(stats.byType || {})
+    .map(([k, v]) => `${k}=${v}`)
+    .join(", ");
+  const head = scope ? `[DLP] ${scope} masked` : "[DLP] masked";
+  return `${head} ${stats.matched} → [PII-REDACTED]: ${parts}`;
+}
+
+// Accumulate per-rule stats across multiple mask calls (e.g. streaming chunks).
+export function mergeDlpStats(target, source) {
+  const t = target || { matched: 0, byType: {} };
+  if (!source || !source.matched) return t;
+  t.matched += source.matched;
+  for (const [k, v] of Object.entries(source.byType || {})) {
+    t.byType[k] = (t.byType[k] || 0) + v;
+  }
+  return t;
 }

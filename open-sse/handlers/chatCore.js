@@ -30,7 +30,7 @@ import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
-import { maskSensitiveData } from "../dlp/index.js";
+import { maskSensitiveData, formatDlpLog, mergeDlpStats } from "../dlp/index.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -256,14 +256,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     // Mask the raw client body in place as well: the persisted request-details
     // `request` field is built from `body` (extractRequestConfig) by every
     // downstream handler (streaming/non-streaming/SSE-to-JSON + error paths).
-    if (body) maskSensitiveData(body, dlp);
-    const dlpStats = maskSensitiveData(translatedBody, dlp);
-    if (dlpStats) {
-      const parts = Object.entries(dlpStats.byType)
-        .map(([k, v]) => `${k}=${v}`)
-        .join(" ");
-      log?.debug?.("[DLP] masked " + dlpStats.matched + " values (" + parts + ")");
-    }
+    // For no-op translations translatedBody === body, so the second mask below
+    // is a no-op after the first one — merge stats from both either way.
+    let dlpStats = null;
+    if (body) dlpStats = mergeDlpStats(dlpStats, maskSensitiveData(body, dlp));
+    dlpStats = mergeDlpStats(dlpStats, maskSensitiveData(translatedBody, dlp));
+    const dlpLine = formatDlpLog(dlpStats);
+    if (dlpLine) console.log(dlpLine);
   }
 
   // RTK: compress tool_result content

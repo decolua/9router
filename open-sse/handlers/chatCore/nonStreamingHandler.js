@@ -10,7 +10,7 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
-import { maskSensitiveData } from "../../dlp/index.js";
+import { maskSensitiveData, formatDlpLog, mergeDlpStats } from "../../dlp/index.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -370,17 +370,21 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }
 
   // DLP: mask sensitive values in the final response body before it is logged
+  let dlpRespStats = null;
   if (dlp?.enabled && dlp.maskResponses !== false) {
-    maskSensitiveData(translatedResponse, dlp);
-  }
+    dlpRespStats = mergeDlpStats(dlpRespStats, maskSensitiveData(translatedResponse, dlp));
 
-  // When the translation produced a NEW object (Ollama / SSE-to-JSON / Claude /
-  // Gemini copy paths), the raw provider body above is a different object and is
-  // still unmasked — it would leak the provider's raw PII into the persisted
-  // request-details `providerResponse` field. When the translation was a no-op
-  // (translatedResponse === responseBody) the first mask already covered it.
-  if (dlp?.enabled && dlp.maskResponses !== false && responseBody && responseBody !== translatedResponse) {
-    maskSensitiveData(responseBody, dlp);
+    // When the translation produced a NEW object (Ollama / SSE-to-JSON / Claude /
+    // Gemini copy paths), the raw provider body above is a different object and is
+    // still unmasked — it would leak the provider's raw PII into the persisted
+    // request-details `providerResponse` field. When the translation was a no-op
+    // (translatedResponse === responseBody) the first mask already covered it.
+    if (responseBody && responseBody !== translatedResponse) {
+      dlpRespStats = mergeDlpStats(dlpRespStats, maskSensitiveData(responseBody, dlp));
+    }
+
+    const dlpLine = formatDlpLog(dlpRespStats, "response");
+    if (dlpLine) console.log(dlpLine);
   }
 
   reqLogger.logConvertedResponse(translatedResponse);

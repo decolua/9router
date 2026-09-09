@@ -21,6 +21,8 @@ import {
   maskSensitiveData,
   testMask,
   wildcardToRegex,
+  formatDlpLog,
+  mergeDlpStats,
 } from "../open-sse/dlp/index.js";
 
 const DIGITS = (s) => s.replace(/\D/g, "");
@@ -253,5 +255,71 @@ describe("phone pattern regression", () => {
     const prose = maskText("911 make it stop 2.34 56", { mode: "redact", types: ["phone"] });
     expect(prose.text).toBe("911 make it stop 2.34 56");
     expect(prose.matched).toBe(0);
+  });
+});
+
+describe("dlp stats logging", () => {
+  const CUSTOMS = [
+    { name: "CC docs", pattern: "CC-\\d{4}", type: "regex", enabled: true },
+    { name: "", pattern: "vault-*-secret", type: "wildcard", enabled: true },
+  ];
+
+  it("reports custom patterns by name in byType, built-ins by id", () => {
+    const made = maskText("email a@b.com CC-7788 CC-9912 vault-prod-secret", {
+      mode: "redact",
+      types: ["email"],
+      customPatterns: CUSTOMS,
+    });
+    expect(made.matched).toBe(4);
+    expect(made.byType).toEqual({
+      email: 1,
+      "CC docs": 2,
+      "custom:vault-*-secret": 1,
+    });
+  });
+
+  it("falls back to custom:<pattern> when the custom pattern has no name", () => {
+    const made = maskText("vault-prod-secret", {
+      mode: "redact",
+      types: [],
+      customPatterns: [{ pattern: "vault-*-secret", type: "wildcard", enabled: true }],
+    });
+    expect(made.matched).toBe(1);
+    expect(made.byType).toEqual({ "custom:vault-*-secret": 1 });
+  });
+
+  it("maskSensitiveData accumulates mixed built-in and custom stats", () => {
+    const body = { messages: [{ role: "user", content: "mail a@b.com +55 11 91234-5678 CC-7788" }] };
+    const stats = maskSensitiveData(body, {
+      enabled: true,
+      mode: "redact",
+      types: ["email", "phone"],
+      customPatterns: CUSTOMS,
+    });
+    expect(stats).not.toBeNull();
+    expect(stats.matched).toBe(3);
+    expect(stats.byType).toEqual({ email: 1, phone: 1, "CC docs": 1 });
+  });
+
+  it("formatDlpLog returns null when nothing was masked", () => {
+    expect(formatDlpLog(null)).toBeNull();
+    expect(formatDlpLog({ matched: 0, byType: {} })).toBeNull();
+  });
+
+  it("formatDlpLog renders the console line (request and response scopes)", () => {
+    expect(formatDlpLog({ matched: 3, byType: { email: 1, "CC docs": 2 } }))
+      .toBe("[DLP] masked 3 → [PII-REDACTED]: email=1, CC docs=2");
+    expect(formatDlpLog({ matched: 1, byType: { phone: 1 } }, "response"))
+      .toBe("[DLP] response masked 1 → [PII-REDACTED]: phone=1");
+  });
+
+  it("mergeDlpStats accumulates across calls without duplicating", () => {
+    const t = mergeDlpStats(null, { matched: 2, byType: { email: 1 } });
+    expect(t.matched).toBe(2);
+    const t2 = mergeDlpStats(t, { matched: 1, byType: { email: 1, phone: 2 } });
+    expect(t2.matched).toBe(3);
+    expect(t2.byType).toEqual({ email: 2, phone: 2 });
+    expect(mergeDlpStats({ matched: 1, byType: { x: 1 } }, null).matched).toBe(1);
+    expect(mergeDlpStats(null, null).matched).toBe(0);
   });
 });
