@@ -20,26 +20,26 @@ describe("Kiro auth-aware endpoint routing", () => {
     ]);
   });
 
-  it("keeps Builder ID OAuth on the Kiro runtime surface", () => {
+  it("routes Builder ID OAuth through Amazon Q first (runtime path deprecated)", () => {
     expect(executor.getOrderedBaseUrls(credentials("builder-id"))).toEqual([
-      RUNTIME,
-      CODEWHISPERER,
       Q,
+      CODEWHISPERER,
+      RUNTIME,
     ]);
   });
 
-  it("keeps external IdP on CodeWhisperer before Amazon Q", () => {
+  it("routes external IdP through Amazon Q first", () => {
     expect(executor.getOrderedBaseUrls(credentials("external_idp"))).toEqual([
-      CODEWHISPERER,
       Q,
+      CODEWHISPERER,
       RUNTIME,
     ]);
   });
 
-  it("regionalizes AWS endpoints for IDC without changing Kiro runtime", () => {
+  it("regionalizes AWS endpoints for IDC with Q first", () => {
     expect(executor.getOrderedBaseUrls(credentials("idc", "eu-west-1"))).toEqual([
-      "https://codewhisperer.eu-west-1.amazonaws.com/generateAssistantResponse",
       "https://q.eu-west-1.amazonaws.com/generateAssistantResponse",
+      "https://codewhisperer.eu-west-1.amazonaws.com/generateAssistantResponse",
       RUNTIME,
     ]);
   });
