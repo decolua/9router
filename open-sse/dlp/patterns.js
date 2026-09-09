@@ -68,7 +68,7 @@ export const PII_TYPES = [
     name: "Phone numbers",
     category: "contact",
     label: "Phone",
-    regex: /(?:\+?[1-9]\d{0,2}[\s.-]?)?(?:\(\d{2,3}\)[\s.-]?)?\d{4,5}[\s.-]?\d{4}/g,
+    regex: /(?:\+?[1-9]\d{0,2}[\s.-]?)?(?:\(\d{2,3}\)[\s.-]?|\d{2,3}[\s.-]?)?\d{4,5}[\s.-]?\d{4}/g,
     validate: (m) => DIGITS(m).length >= 10,
   },
   {

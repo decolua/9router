@@ -140,5 +140,14 @@ describe("SAML 2.0 Auth Engine Utilities", () => {
       expect(merged.samlAttributeEmail).toBe("email");
       expect(merged.samlAttributeName).toBe("name");
     });
+
+    it("mergeWithDefaults safely populates DLP defaults for existing installations", () => {
+      const merged = mergeWithDefaults({});
+      expect(merged.dlpEnabled).toBe(false);
+      expect(merged.dlpMode).toBe("pseudo");
+      expect(merged.dlpTypes).toEqual(["email", "phone", "cpf", "cnpj", "creditCard", "ip", "apiKey"]);
+      expect(merged.dlpCustomPatterns).toEqual([]);
+      expect(merged.dlpMaskResponses).toBe(true);
+    });
   });
 });
