@@ -236,6 +236,9 @@ const PROVIDER_MODELS_CONFIG = {
   "volcengine-ark": createOpenAIModelsConfig("https://ark.cn-beijing.volces.com/api/coding/v3/models"),
   byteplus: createOpenAIModelsConfig("https://ark.ap-southeast.bytepluses.com/api/coding/v3/models"),
 
+  // Subscription gateways with OpenAI-shaped /models (Bearer key)
+  "opencode-go": createOpenAIModelsConfig("https://opencode.ai/zen/go/v1/models"),
+  commandcode: createOpenAIModelsConfig("https://api.commandcode.ai/provider/v1/models"),
   // OpenAI-compatible API key providers
   deepseek: createOpenAIModelsConfig("https://api.deepseek.com/models"),
   groq: createOpenAIModelsConfig("https://api.groq.com/openai/v1/models"),

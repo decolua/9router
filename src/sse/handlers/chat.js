@@ -293,6 +293,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       providerThinking,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+      // Propagate client disconnects so aborted requests can't dangle forever
+      clientSignal: request?.signal || null,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           ...newCreds,
