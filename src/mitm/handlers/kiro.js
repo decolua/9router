@@ -1,8 +1,9 @@
-const { err } = require("../logger");
+const { err, log } = require("../logger");
 const { IS_DEV } = require("../config");
 const { fetchRouter, pipeTransformedEventStream } = require("./base");
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 
 // Debug trace log — written to data/logs/mitm/kiro-debug.log (dev only)
 const DEBUG_LOG = path.join(__dirname, "../../../data/logs/mitm/kiro-debug.log");
@@ -11,6 +12,152 @@ function dbg(msg) {
   try {
     fs.appendFileSync(DEBUG_LOG, `${new Date().toISOString()} ${msg}\n`);
   } catch {}
+}
+
+// ─── Duplicate-request guard (defensive stopgap, toggleable) ──────────────────
+// Kiro routed through the MITM sometimes silently resends a byte-identical chat
+// turn a few seconds apart, producing doubled/tripled replies. This guard drops
+// the near-duplicate resend and returns a cleanly-terminated EMPTY EventStream
+// so Kiro renders nothing extra and stops retrying. Toggle off via env when
+// hunting the real root cause.
+//
+// Lifecycle-aware:
+// 1. In-flight requests are tracked in inFlightRequests (Set). Any request with
+//    the same fingerprint arriving while another is in-flight is 100% a duplicate.
+// 2. Completed requests are tracked in completedRequests (Map: fp -> completionTs).
+//    - Default window = 0: Pure Content Dedup (no time limit). As long as the body
+//      is identical to a previously completed turn, it is suppressed.
+//    - When windowMs > 0: Window-based expiry measured from request completion.
+//
+// Debug logging: always-on (not gated by IS_DEV) so we can see guard decisions
+// in production/dev without needing NODE_ENV=development.
+// Controlled by MITM_KIRO_DEBUG env var (set to "1"/"true" to enable verbose logs).
+
+const DEDUP_MAX_ENTRIES = 500;
+
+// Set of fingerprints currently being processed upstream
+const inFlightRequests = new Set();
+
+// fingerprint (hex sha1 of raw body) → completed timestamp (ms)
+const completedRequests = new Map();
+
+/** Enabled by default; disabled only for explicit falsy env values. */
+function dedupEnabled() {
+  const v = (process.env.MITM_KIRO_DEDUP || "").trim().toLowerCase();
+  return !(v === "0" || v === "false" || v === "off" || v === "no");
+}
+
+/**
+ * Dedup window in ms.
+ * Default is 0 (Pure Content Dedup: no time limit, valid until overwritten in LRU).
+ * If a positive number is set, entries expire windowMs after stream completion.
+ */
+function dedupWindowMs() {
+  const raw = process.env.MITM_KIRO_DEDUP_WINDOW_MS;
+  if (raw == null || raw.trim() === "") return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+/** Drop entries older than the window (only if windowMs > 0), then cap map size. */
+function pruneCompletedCache(now, windowMs) {
+  if (windowMs > 0) {
+    for (const [fp, completedAt] of completedRequests) {
+      if (now - completedAt > windowMs) completedRequests.delete(fp);
+    }
+  }
+  if (completedRequests.size > DEDUP_MAX_ENTRIES) {
+    const overflow = completedRequests.size - DEDUP_MAX_ENTRIES;
+    let dropped = 0;
+    for (const fp of completedRequests.keys()) {
+      if (dropped >= overflow) break;
+      completedRequests.delete(fp);
+      dropped++;
+    }
+  }
+}
+
+/** sha1 hex fingerprint of the raw request body buffer. */
+function fingerprintRequest(bodyBuffer) {
+  return crypto.createHash("sha1").update(bodyBuffer).digest("hex");
+}
+
+function markInFlight(fp) {
+  inFlightRequests.add(fp);
+}
+
+function clearInFlight(fp) {
+  inFlightRequests.delete(fp);
+}
+
+function markCompleted(fp) {
+  const now = Date.now();
+  const windowMs = dedupWindowMs();
+  pruneCompletedCache(now, windowMs);
+  completedRequests.set(fp, now);
+}
+
+/**
+ * Check whether this body is a duplicate request:
+ * 1. If currently in-flight -> duplicate (isDup: true, reason: "in_flight")
+ * 2. If already completed:
+ *    - windowMs === 0: always duplicate (isDup: true, reason: "content_match")
+ *    - windowMs > 0: duplicate if now - completedAt <= windowMs
+ *
+ * For non-duplicate requests, automatically records in completedRequests
+ * so callers without explicit lifecycle hooks are also tracked.
+ */
+function isDuplicateRequest(bodyBuffer) {
+  const fp = fingerprintRequest(bodyBuffer);
+
+  // 1. In-flight check (request is currently active upstream)
+  if (inFlightRequests.has(fp)) {
+    return { isDup: true, fp, reason: "in_flight" };
+  }
+
+  // 2. Completed check
+  const now = Date.now();
+  const windowMs = dedupWindowMs();
+  pruneCompletedCache(now, windowMs);
+
+  if (completedRequests.has(fp)) {
+    if (windowMs === 0) {
+      return { isDup: true, fp, reason: "content_match" };
+    }
+    const completedAt = completedRequests.get(fp);
+    if (now - completedAt <= windowMs) {
+      completedRequests.set(fp, now); // refresh window
+      return { isDup: true, fp, reason: "window_match" };
+    }
+  }
+
+  // Record initial entry (will be updated on markCompleted)
+  completedRequests.set(fp, now);
+  return { isDup: false, fp, reason: null };
+}
+
+/**
+ * Write a cleanly-terminated EMPTY EventStream response so Kiro accepts the
+ * turn as complete and renders nothing extra. Frame builders are hoisted
+ * function declarations defined later in this file — safe to call at runtime.
+ */
+function writeSuppressedDuplicateResponse(res) {
+  res.writeHead(200, {
+    "Content-Type": "application/vnd.amazon.eventstream",
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+  });
+  res.write(Buffer.from(buildInitialResponseFrame("")));
+  res.write(Buffer.from(buildEventStreamFrame("metadataEvent", { stopReason: "END_TURN" })));
+  res.write(Buffer.from(buildEventStreamFrame("contextUsageEvent", { contextUsagePercentage: 0.0 })));
+  res.write(Buffer.from(buildEventStreamFrame("meteringEvent", { unit: "credit", unitPlural: "credits", usage: 0.0 })));
+  res.end();
+}
+
+/** Test-only hook: clear the dedup cache. */
+function _resetDedupCache() {
+  inFlightRequests.clear();
+  completedRequests.clear();
 }
 
 // ─── CRC32 (standard, polynomial 0xEDB88320 — same as AWS EventStream) ───────
@@ -376,7 +523,15 @@ function convertOpenAIToKiro(chunk, state) {
         modelId: state.modelId || "kiro-unknown"
       }));
     }
-    return withInitialFrame(state, buildEventStreamFrame("messageStopEvent", {}));
+    // Terminal frame carries an authoritative stopReason so Kiro accepts the
+    // turn as cleanly complete (native Kiro Runtime emits metadataEvent with UPPERCASE stopReason).
+    state.finishSent = true;
+    const stopReason = state.hasToolCalls ? "TOOL_USE" : "END_TURN";
+    return withInitialFrame(state, [
+      buildEventStreamFrame("metadataEvent", { stopReason }),
+      buildEventStreamFrame("contextUsageEvent", { contextUsagePercentage: 0.0 }),
+      buildEventStreamFrame("meteringEvent", { unit: "credit", unitPlural: "credits", usage: 0.0 })
+    ]);
   }
 
   const frames = [];
@@ -467,14 +622,26 @@ function convertOpenAIToKiro(chunk, state) {
 }
 
 /**
- * Emit termination frames. For tool-call responses, emits stop:true per tool.
- * For text-only responses, emits messageStopEvent.
+ * Emit termination frames.
+ *
+ * For tool-call responses, emits `stop:true` per tool FIRST, then a terminal
+ * `messageStopEvent` carrying `stopReason: "tool_use"`.
+ * For text-only responses, emits a terminal `messageStopEvent` carrying
+ * `stopReason: "end_turn"`.
+ *
+ * The terminal frame MUST carry an authoritative `stopReason` — a real Kiro
+ * Runtime stream ends with a `messageStopEvent`/`metadataEvent` bearing a
+ * `stopReason` (see `open-sse/executors/kiro.js`, which treats it as the
+ * explicit-stop signal). A bare `messageStopEvent {}` with no `stopReason`,
+ * followed by the invented (non-existent) `usageEvent` type, is what caused
+ * Kiro to treat the turn as incomplete and silently resend it.
  */
 function emitFinish(state) {
   const frames = [];
+  const stopReason = state.hasToolCalls ? "TOOL_USE" : "END_TURN";
 
   if (state.hasToolCalls) {
-    // Tool-call response: emit stop:true for each tool
+    // Tool-call response: emit stop:true for each tool FIRST
     for (const idx of Object.keys(state.toolCallInit).sort()) {
       const tc = state.toolCallInit[idx];
       frames.push(buildEventStreamFrame("toolUseEvent", {
@@ -483,19 +650,14 @@ function emitFinish(state) {
         toolUseId: tc.id
       }));
     }
-  } else {
-    // Text-only response: emit messageStopEvent
-    frames.push(buildEventStreamFrame("messageStopEvent", {}));
   }
-  state.finishSent = true;
 
-  // Emit usage if available
-  if (state.usage) {
-    frames.push(buildEventStreamFrame("usageEvent", {
-      inputTokens: state.usage.prompt_tokens || 0,
-      outputTokens: state.usage.completion_tokens || 0
-    }));
-  }
+  // Authoritative terminal frame carrying stopReason (END_TURN / TOOL_USE).
+  // Native AWS Kiro Runtime terminates with metadataEvent followed by contextUsageEvent and meteringEvent.
+  frames.push(buildEventStreamFrame("metadataEvent", { stopReason }));
+  frames.push(buildEventStreamFrame("contextUsageEvent", { contextUsagePercentage: 0.0 }));
+  frames.push(buildEventStreamFrame("meteringEvent", { unit: "credit", unitPlural: "credits", usage: 0.0 }));
+  state.finishSent = true;
 
   state.toolCallInit = {};
   return frames.length > 0 ? frames : null;
@@ -516,6 +678,8 @@ function emitFinish(state) {
  * @param {string} mappedModel - Model name after MITM alias mapping
  */
 async function intercept(req, res, bodyBuffer, mappedModel) {
+  let fp = null;
+  let inFlightMarked = false;
   try {
     // Detect and handle binary data (e.g., continuation requests with EventStream frames)
     if (isBinaryEventStream(bodyBuffer)) {
@@ -523,7 +687,20 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
       // that don't contain model info - pass them through directly to avoid JSON.parse crash
       throw new Error(`Binary EventStream format detected (${bodyBuffer.length}B) - request should use passthrough instead of intercept`);
     }
-    
+
+    // Defensive duplicate-request guard (toggleable). Drop a near-duplicate
+    // resend before it reaches 9router and return a clean empty EventStream.
+    if (dedupEnabled()) {
+      const dupCheck = isDuplicateRequest(bodyBuffer);
+      fp = dupCheck.fp;
+      if (dupCheck.isDup) {
+        log(`[Kiro MITM] Suppressed duplicate request (dedup guard, reason=${dupCheck.reason || "duplicate"})`);
+        return writeSuppressedDuplicateResponse(res);
+      }
+      markInFlight(fp);
+      inFlightMarked = true;
+    }
+
     const body = JSON.parse(bodyBuffer.toString());
 
     // 1 + 2: CodeWhisperer → OpenAI messages + tools
@@ -561,6 +738,11 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
         handler: "kiro"
       } 
     }));
+  } finally {
+    if (inFlightMarked && fp) {
+      clearInFlight(fp);
+      markCompleted(fp);
+    }
   }
 }
 
@@ -577,4 +759,19 @@ function isBinaryEventStream(buffer) {
   return totalLen > 12 && totalLen < 1000000 && headersLen < totalLen - 12;
 }
 
-module.exports = { intercept };
+module.exports = {
+  intercept,
+  convertOpenAIToKiro,
+  emitFinish,
+  initKiroState,
+  isBinaryEventStream,
+  isDuplicateRequest,
+  fingerprintRequest,
+  writeSuppressedDuplicateResponse,
+  dedupEnabled,
+  dedupWindowMs,
+  markInFlight,
+  clearInFlight,
+  markCompleted,
+  _resetDedupCache,
+};
