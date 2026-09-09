@@ -100,6 +100,19 @@ export function createSSEStream(options = {}) {
       appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
     }
 
+    // DLP: in translate mode the accumulator is built from the raw provider chunk
+    // (masking runs after translateResponse, on the SSE item), so the log payload
+    // here is still unmasked. Mask it once before it reaches onStreamComplete /
+    // request-detail persistence. Passthrough mode masks each chunk before
+    // accumulation, so its accumulated content is already masked and must stay
+    // untouched — re-masking would re-pseudonymize the masked values.
+    if (!isPassthrough && dlp?.enabled && dlp.maskResponses !== false) {
+      const logPayload = { content: accumulatedContent, thinking: accumulatedThinking };
+      maskSensitiveData(logPayload, dlp);
+      accumulatedContent = logPayload.content;
+      accumulatedThinking = logPayload.thinking;
+    }
+
     if (onStreamComplete) {
       onStreamComplete({
         content: accumulatedContent,
