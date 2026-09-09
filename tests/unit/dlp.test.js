@@ -16,6 +16,12 @@ import {
   normalizeRealKey,
   REDACT_LABEL,
 } from "../open-sse/dlp/pseudonyms.js";
+import {
+  maskText,
+  maskSensitiveData,
+  testMask,
+  wildcardToRegex,
+} from "../open-sse/dlp/index.js";
 
 const DIGITS = (s) => s.replace(/\D/g, "");
 
@@ -124,5 +130,107 @@ describe("pseudonyms", () => {
     expect(p1).toBe(p2);
     expect(p1).toMatch(/^\[PII-[0-9a-f]{6}\]$/);
     expect(REDACT_LABEL).toBe("[PII-REDACTED]");
+  });
+});
+
+describe("dlp engine", () => {
+  it("redacts emails and CPFs with the fixed label", () => {
+    const { text, matched } = maskText("mail me@x.co my CPF is 529.982.247-25 ok", {
+      mode: "redact",
+      types: ["email", "cpf"],
+    });
+    expect(text).toBe("mail [PII-REDACTED] my CPF is [PII-REDACTED] ok");
+    expect(matched).toBe(2);
+  });
+
+  it("pseudonymizes consistently across calls", () => {
+    const a = maskText("hi john@example.com", { mode: "pseudo", types: ["email"] });
+    const b = maskText("hi john@example.com", { mode: "pseudo", types: ["email"] });
+    expect(a.text).toBe(b.text);
+    expect(a.text).not.toContain("john@example.com");
+    expect(a.text).toMatch(/user[0-9a-f]{6}@example\.com/);
+  });
+
+  it("does not double-mask pseudonyms (tokens are inert)", () => {
+    const { text } = maskText("529.982.247-25", { mode: "redact", types: ["cpf", "phone"] });
+    expect(text).toBe("[PII-REDACTED]");
+  });
+
+  it("skips structural keys and base64-looking strings", () => {
+    const body = {
+      model: "cc/claude-opus-5",
+      id: "chatcmpl-12345",
+      messages: [
+        { role: "user", content: "email a@b.co", name: "a@b.co" },
+        { role: "tool", content: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" },
+      ],
+    };
+    const stats = maskSensitiveData(body, { mode: "redact", types: ["email"] });
+    expect(body.model).toBe("cc/claude-opus-5");
+    expect(body.id).toBe("chatcmpl-12345");
+    expect(body.messages[0].content).toBe("email [PII-REDACTED]");
+    expect(body.messages[0].name).toBe("a@b.co"); // denylisted key
+    expect(body.messages[1].content).toBe(body.messages[1].content); // base64 untouched
+    expect(stats.matched).toBe(1);
+  });
+
+  it("handles custom wildcard patterns across values", () => {
+    const { text } = maskText("connect to db-01.internal", {
+      mode: "redact",
+      types: [],
+      customPatterns: [{ id: "c1", name: "db hosts", type: "wildcard", pattern: "db-*.internal", flags: "", enabled: true }],
+    });
+    expect(text).toBe("connect to [PII-REDACTED]");
+  });
+
+  it("handles custom regex patterns with flags", () => {
+    const { text } = maskText("EMP-1234 and emp-9999", {
+      mode: "redact",
+      types: [],
+      customPatterns: [{ id: "c2", name: "employee id", type: "regex", pattern: "EMP-\\d{4}", flags: "gi", enabled: true }],
+    });
+    expect(text).toBe("[PII-REDACTED] and [PII-REDACTED]");
+  });
+
+  it("ignores disabled custom patterns and invalid regexes (fail-open)", () => {
+    const cfg = {
+      mode: "redact",
+      types: [],
+      customPatterns: [
+        { id: "off", name: "off", type: "regex", pattern: "X+", flags: "", enabled: false },
+        { id: "bad", name: "bad", type: "regex", pattern: "([unclosed", flags: "", enabled: true },
+      ],
+    };
+    const { text } = maskText("XXX", cfg);
+    expect(text).toBe("XXX");
+  });
+
+  it("maskSensitiveData fails open on weird bodies", () => {
+    expect(maskSensitiveData(null, { enabled: true })).toBeNull();
+    expect(maskSensitiveData({}, { enabled: true })).toBeNull();
+    expect(() => maskSensitiveData({ messages: [{ content: "a@b.co" }] }, { enabled: false })).not.toThrow();
+  });
+
+  it("testMask validates and previews regex and wildcard", () => {
+    const r = testMask({ type: "regex", pattern: "\\d{4}", flags: "g", sampleText: "ab 1234 cd" });
+    expect(r.valid).toBe(true);
+    expect(r.matches).toHaveLength(1);
+    expect(r.matches[0]).toMatchObject({ value: "1234", index: 3, length: 4 });
+    expect(r.preview).toBe("ab [PII-REDACTED] cd");
+
+    const w = testMask({ type: "wildcard", pattern: "*@acme.internal", flags: "", sampleText: "bob@acme.internal" });
+    expect(w.valid).toBe(true);
+    expect(w.matches).toHaveLength(1);
+    expect(w.preview).toBe("[PII-REDACTED]");
+
+    const bad = testMask({ type: "regex", pattern: "([", flags: "", sampleText: "x" });
+    expect(bad.valid).toBe(false);
+    expect(bad.error).toBeTruthy();
+  });
+
+  it("wildcardToRegex escapes metacharacters", () => {
+    expect(wildcardToRegex("a*b")).toBe("a.*b");
+    expect(wildcardToRegex("a?b")).toBe("a.b");
+    expect(wildcardToRegex("x+y")).toBe("x\\+y");
   });
 });
