@@ -33,6 +33,32 @@ export const QODER_CHAT_SIG_PATH = "/api/v2/service/pro/sse/agent_chat_generatio
 export const QODER_CHAT_URL = `${QODER_CHAT_BASE}/algo${QODER_CHAT_SIG_PATH}?FetchKeys=llm_model_result&AgentId=agent_common`;
 export const QODER_CHAT_URL_ENCODED = `${QODER_CHAT_URL}&Encode=1`;
 export const QODER_MODEL_LIST_URL = `${QODER_CHAT_BASE}/algo/api/v2/model/list`;
+// Official qodercli uploads images here (COSY-signed PUT multipart, field "file")
+// instead of inlining base64 into agent_chat_generation.
+export const QODER_IMAGE_UPLOAD_SIG_PATH = "/api/v2/image/upload";
+
+// Drop remaining inlined binaries if the Qoder JSON body would still exceed this.
+// 30MB+ payloads are what blow past Claude-Code's ~200k context on the wire.
+export const QODER_MAX_PAYLOAD_BYTES = 6 * 1024 * 1024;
+// If OSS upload fails, keep tiny data-URIs; anything larger is stubbed.
+export const QODER_INLINE_FALLBACK_MAX_BYTES = 512 * 1024;
+
+/**
+ * Job-token (jt-...) traffic must hit api2.qoder.sh — api3 rejects jt- with
+ * "Login expired" (403). Device tokens (dt-...) stay on api3. PATs (pt-...)
+ * are exchanged for jt- before this is consulted.
+ */
+export function qoderInferenceBase(credentials) {
+  const raw = credentials?.apiKey || credentials?.accessToken;
+  if (
+    typeof raw === "string" &&
+    !raw.startsWith("pt-") &&
+    (raw.startsWith("jt-") || (credentials?.accessToken || "").startsWith("jt-"))
+  ) {
+    return QODER_CHAT_BASE_ALT;
+  }
+  return QODER_CHAT_BASE;
+}
 
 // COSY header constants. These are not arbitrary — the upstream signature
 // validation matches them against the values used at signing time.
