@@ -1,8 +1,6 @@
 // Deterministic pseudonym generators and the in-memory real→fake mapping
 // table. In-memory only: nothing is persisted; a restart clears the table.
 
-import { isValidCnpj, isValidCpf, luhnValid } from "./patterns.js";
-
 export const REDACT_LABEL = "[PII-REDACTED]";
 
 const MAPPING_CAP = 10_000;
