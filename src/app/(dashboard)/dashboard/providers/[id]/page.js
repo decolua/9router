@@ -57,14 +57,14 @@ const AILE_JETONLARI = [
   ["llama", "Llama"],
 ];
 
-const AILE_SIRASI = ["Muse Spark", "Claude", "GPT", "GLM", "Kimi", "Qwen", "Gemini", "DeepSeek", "MiniMax", "MiMo", "Grok", "Z-AI", "Meta", "Mistral", "Llama", "Diğer"];
+const AILE_SIRASI = ["Muse Spark", "Claude", "GPT", "GLM", "Kimi", "Qwen", "Gemini", "DeepSeek", "MiniMax", "MiMo", "Grok", "Z-AI", "Meta", "Mistral", "Llama", "Other"];
 
 function aileBul(modelId) {
   const s = String(modelId || "").toLowerCase();
   for (const [jeton, ad] of AILE_JETONLARI) {
     if (s.includes(jeton)) return ad;
   }
-  return "Diğer";
+  return "Other";
 }
 
 function aileSira(ad) {
@@ -1206,7 +1206,9 @@ export default function ProviderDetailPage() {
     // sırasına göre dizilir. Arama süzgeci ikisine de uygulanır.
     const aramaKucuk = modelArama.trim().toLowerCase();
     const aramayaUyar = (id) => !aramaKucuk || String(id || "").toLowerCase().includes(aramaKucuk);
-    const ozelFiltreli = customModelRows.filter((m) => aramayaUyar(m.id));
+    const ozelFiltreli = customModelRows.filter((m) => aramayaUyar(m.id) && !disabledSet.has(m.id));
+    // Kapatılmış özel modeller ailede değil, alttaki geri yükleme
+    // bölümünde görünür (yoksa bir daha açılamazlar).
     const yerlesikFiltreli = displayModels.filter((m) => aramayaUyar(m.id));
     const aileHarita = new Map();
     const aileyeEkle = (tur, model) => {
@@ -1279,12 +1281,12 @@ export default function ProviderDetailPage() {
           <input
             value={modelArama}
             onChange={(e) => setModelArama(e.target.value)}
-            placeholder="Model ara…"
+            placeholder={translate("Search models…")}
             className="w-full rounded-lg border border-border bg-sidebar px-3 py-2 text-xs outline-none placeholder:text-text-muted/60 focus:border-primary"
           />
         )}
         {aileler.length === 0 && aramaKucuk ? (
-          <p className="py-6 text-center text-xs text-text-muted">Eşleşen model yok.</p>
+          <p className="py-6 text-center text-xs text-text-muted">{translate("No matching models.")}</p>
         ) : null}
         {aileler.map((f) => {
           const tumIdler = [...f.ozel.map((m) => m.id), ...f.yerlesik.map((m) => m.id)];
@@ -1300,9 +1302,9 @@ export default function ProviderDetailPage() {
                 <span className="material-symbols-outlined text-sm text-text-muted">
                   {kapaliMi ? "chevron_right" : "expand_more"}
                 </span>
-                <b className="text-[13px]">{f.ad}</b>
+                <b className="text-[13px]">{f.ad === "Other" ? translate("Other") : f.ad}</b>
                 <span className="font-mono text-[11px] text-text-muted">
-                  {acikIdler.length}/{tumIdler.length} açık
+                  {acikIdler.length}/{tumIdler.length} {translate("on")}
                 </span>
                 <span className="ml-auto flex gap-1" onClick={(e) => e.stopPropagation()}>
                   {kapaliIdler.length > 0 && (
@@ -1310,7 +1312,7 @@ export default function ProviderDetailPage() {
                       className="rounded px-2 py-0.5 text-[11px] text-text-muted hover:bg-sidebar hover:text-primary"
                       onClick={() => handleEnableAile(kapaliIdler)}
                     >
-                      Tümü aç
+                      {translate("Enable All")}
                     </button>
                   )}
                   {acikIdler.length > 0 && (
@@ -1318,7 +1320,7 @@ export default function ProviderDetailPage() {
                       className="rounded px-2 py-0.5 text-[11px] text-text-muted hover:bg-sidebar hover:text-primary"
                       onClick={() => handleDisableAll(acikIdler)}
                     >
-                      Kapat
+                      {translate("Turn Off")}
                     </button>
                   )}
                 </span>
@@ -1345,7 +1347,7 @@ export default function ProviderDetailPage() {
           return (
             <div className="mb-3 w-full rounded-lg border border-dashed border-text-muted/40 px-3 py-2">
               <div className="mb-2 text-xs text-text-muted">
-                Hesabında olup listede olmayan {yeni.length} model bulundu:
+                {translate("New models on your account:")} <b>{yeni.length}</b>
               </div>
               <div className="flex flex-wrap gap-2">
                 {yeni.slice(0, 30).map((m) => (
@@ -1355,7 +1357,7 @@ export default function ProviderDetailPage() {
                       className="rounded px-1.5 py-0.5 text-[11px] text-primary hover:bg-sidebar"
                       onClick={() => handleAddCustomModel(m.id, "llm", providerStorageAlias)}
                     >
-                      Ekle
+                      {translate("Add")}
                     </button>
                   </span>
                 ))}
@@ -1420,12 +1422,16 @@ export default function ProviderDetailPage() {
           );
         })()}
 
-        {/* Disabled models — restorable */}
-        {disabledDisplayModels.length > 0 && (
+        {/* Disabled models — restorable (built-in + custom) */}
+        {(() => {
+          const ozelKapali = customModelRows.filter((m) => disabledSet.has(m.id));
+          const hepsi = [...disabledDisplayModels, ...ozelKapali.filter((m) => !disabledDisplayModels.some((d) => d.id === m.id))];
+          if (!hepsi.length) return null;
+          return (
           <div className="w-full mt-2">
-            <p className="text-xs text-text-muted mb-2">Disabled models ({disabledDisplayModels.length}):</p>
+            <p className="text-xs text-text-muted mb-2">Disabled models ({hepsi.length}):</p>
             <div className="flex flex-wrap gap-2">
-              {disabledDisplayModels.map((m) => (
+              {hepsi.map((m) => (
                 <button
                   key={m.id}
                   onClick={() => handleEnableModel(m.id)}
@@ -1438,7 +1444,8 @@ export default function ProviderDetailPage() {
               ))}
             </div>
           </div>
-        )}
+          );
+        })()}
       </div>
     );
   };
@@ -1884,7 +1891,7 @@ export default function ProviderDetailPage() {
               <div className="flex gap-2">
                 {(providerId === "opencode-go" || providerId === "commandcode") && (
                   <Button size="sm" variant="secondary" icon="refresh" onClick={canliModelleriGetir} disabled={canliYukleniyor}>
-                    {canliYukleniyor ? "Çekiliyor…" : "Modelleri çek"}
+                    {canliYukleniyor ? translate("Fetching…") : translate("Fetch Models")}
                   </Button>
                 )}
                 {disabledModelIds.length > 0 && (
