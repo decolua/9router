@@ -484,6 +484,23 @@ export function createSSEStream(options = {}) {
         console.log("Error in flush:", error);
         finalizeStream();
       }
+    },
+
+    // A client that goes away mid-stream cancels the readable, and the Streams
+    // spec then calls `cancel` instead of `flush` -- never both. Recording lived
+    // only in `flush`, so an aborted request left no usage row, no request detail
+    // and nothing in Recent Requests, even though the provider had already
+    // generated (and been charged for) the partial answer. finalizeStream() is
+    // idempotent, so the terminal-event path in transform() still wins when the
+    // client closes after the answer completed.
+    //
+    // RUNTIME SCOPE: this is the Node path. Every disconnect signal in Next
+    // descends from the response's 'close' event, which Bun's node:http
+    // ServerResponse does not emit on a client hangup, so under `start:bun`
+    // nothing cancels this stream and finalizeStream() still only ever runs from
+    // flush() -- exactly as before this change.
+    cancel() {
+      finalizeStream();
     }
   });
 }
