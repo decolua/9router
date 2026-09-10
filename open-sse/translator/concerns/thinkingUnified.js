@@ -307,6 +307,18 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       if (effort) body.reasoning_effort = effort;
       break;
     }
+    case "opencode": {
+      // opencode zen gateway enum on OpenAI-style reasoning_effort:
+      // none|low|medium|high|max. Verified live: xhigh/minimal/auto → 400
+      // "[1210] Invalid API parameter"; omitted field → upstream default.
+      if (none && canDisable) { body.reasoning_effort = "none"; break; }
+      const level = toLevel(eff);
+      if (!level || level === "auto") break;
+      body.reasoning_effort = level === "xhigh" || level === "ultra" ? "max"
+        : level === "minimal" ? "low"
+        : level;
+      break;
+    }
     case "minimax": {
       // M3 adaptive; M2.x cannot disable (handled via canDisable clamp).
       body.thinking = { type: none && canDisable ? "disabled" : "adaptive" };
