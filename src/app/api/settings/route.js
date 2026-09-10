@@ -12,7 +12,31 @@ const SETTINGS_RESPONSE_HEADERS = {
 };
 
 // Secrets must never be mass-assigned from request body (CWE-915)
-const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
+// Security-critical settings that must be explicitly handled, not mass-assigned
+const PROTECTED_SETTING_KEYS = [
+  "password",
+  "mitmSudoEncrypted",
+  "requireLogin",
+  "requireApiKey",
+  "authMode",
+  "ssoType",
+  "oidcIssuerUrl",
+  "oidcClientId",
+  "oidcClientSecret",
+  "oidcScopes",
+  "oidcLoginLabel",
+  "samlEntryPoint",
+  "samlIssuer",
+  "samlCert",
+  "samlLoginLabel",
+  "samlAttributeEmail",
+  "samlAttributeName",
+  "tunnelDashboardAccess",
+  "enableObservability",
+  "outboundProxyEnabled",
+  "outboundProxyUrl",
+  "outboundNoProxy",
+];
 
 export async function GET() {
   try {
