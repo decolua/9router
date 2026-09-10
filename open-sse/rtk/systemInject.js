@@ -13,7 +13,7 @@ export function injectSystemPrompt(body, format, prompt) {
     if (!body || !prompt) return;
     if (typeof body !== "object") return;
 
-    // Kiro wire shape is unique (conversationState/systemPrompt) — handle directly.
+    // Kiro wire shape is unique (conversationState) — handle directly.
     if (isKiroBody(body) || format === FORMATS.KIRO) {
       injectKiroSystem(body, prompt);
       return;
@@ -61,10 +61,13 @@ export function injectSystemPrompt(body, format, prompt) {
 
 function isKiroBody(body) {
   if (!body || typeof body !== "object") return false;
-  if (typeof body.systemPrompt !== "string") return false;
   const cs = body.conversationState;
   if (!cs || typeof cs !== "object") return false;
-  return Array.isArray(cs.history) || !!(cs.currentMessage && typeof cs.currentMessage === "object");
+  // A top-level `systemPrompt` used to be the marker, but the Kiro translator no
+  // longer emits it (kiro.dev rejects the field), so gate on the turn shape.
+  const historyTurn = Array.isArray(cs.history)
+    && cs.history.some(it => it && (it.userInputMessage || it.assistantResponseMessage));
+  return historyTurn || !!(cs.currentMessage && cs.currentMessage.userInputMessage);
 }
 
 // Exact idempotency: prompt present as its own SEP-delimited segment (or the
@@ -258,80 +261,33 @@ function injectGeminiSystem(body, prompt) {
 }
 
 // ---- Kiro ----
-// Updates top-level systemPrompt and only the mirrored leading prefix of the
-// first user history turn, else current user. next = old + SEP + prompt.
-// Replace old leading prefix only; preserve time context and user tail.
+// The prompt is appended to the first user turn's content — the same place the
+// Kiro translator already mirrors the system text via its contentPrefix.
+//
+// A top-level `systemPrompt` is deliberately NOT written: the kiro.dev gateway
+// answers any body carrying that field with
+//   400 {"message":"Improperly formed request.","reason":"REQUEST_BODY_INVALID"}
+// The translator stopped emitting it in v0.5.59, but this injector kept adding
+// it back, so every kr/ model failed whenever an RTK prompt (caveman, ponytail)
+// was active.
 function injectKiroSystem(body, prompt) {
   try {
-    let oldPrompt = typeof body.systemPrompt === "string" ? body.systemPrompt : "";
-    // Repair path: a previous partial write left systemPrompt updated but user
-    // content still mirroring the pre-write prefix. Re-derive the effective old
-    // prefix from content so this pass converges instead of early-returning.
-    const cs0 = body.conversationState;
-    let firstUser0 = cs0 && Array.isArray(cs0.history)
-      ? (cs0.history.find(it => it && it.userInputMessage)?.userInputMessage ?? null)
-      : null;
-    if (!firstUser0 && cs0?.currentMessage?.userInputMessage) firstUser0 = cs0.currentMessage.userInputMessage;
-
-    if (firstUser0 && typeof firstUser0.content === "string" && oldPrompt && !hasPrompt(oldPrompt, prompt)) {
-      const c0 = firstUser0.content;
-      if (c0 === oldPrompt || (c0.startsWith(oldPrompt) && !c0.startsWith(`${oldPrompt}${SEP}`))) {
-        // systemPrompt advanced past mirrored prefix → stale; treat as un-mirrored
-        oldPrompt = "";
-      }
-    }
-    if (oldPrompt && hasPrompt(oldPrompt, prompt)) return;
-    const next = oldPrompt ? `${oldPrompt}${SEP}${prompt}` : prompt;
-
-    // Atomicity: write user content first, then systemPrompt only if content
-    // write succeeded (or was a no-op). If systemPrompt write then fails, the
-    // repair heuristic above re-derives from content on retry — no permanent
-    // half-applied state.
     const cs = body.conversationState;
     let targetMsg = null;
-    try {
-      const hist = Array.isArray(cs?.history) ? cs.history : null;
-      if (hist) {
-        for (const item of hist) {
-          if (item && item.userInputMessage) { targetMsg = item.userInputMessage; break; }
-        }
-      }
-      if (!targetMsg && cs?.currentMessage?.userInputMessage) {
-        targetMsg = cs.currentMessage.userInputMessage;
-      }
-    } catch (_) { targetMsg = null; }
-
-    let sysWritten = false;
-    try { body.systemPrompt = next; sysWritten = true; } catch (_) {}
-
-    const applyContent = () => {
-      const content = typeof targetMsg.content === "string" ? targetMsg.content : "";
-      if (oldPrompt === "") {
-        // Empty old prompt: prepend unless already at head (exact, not substring)
-        if (content.startsWith(prompt) || content.startsWith(next)) return;
-        const newContent = content ? `${next}${SEP}${content}` : next;
-        try { targetMsg.content = newContent; } catch (_) {}
-        return;
-      }
-      if (!content.startsWith(oldPrompt)) return; // not mirrored at head — leave alone
-      if (content.startsWith(next)) return; // already applied → idempotent
-      const tail = content.slice(oldPrompt.length);
-      try { targetMsg.content = `${next}${tail}`; } catch (_) {}
-    };
-
-    try {
-      if (targetMsg) applyContent();
-    } catch (_) {}
-    if (sysWritten && targetMsg) {
-      // verify convergence: content should now start with next (or be un-mirrored)
-      let ok = false;
-      try {
-        const c = targetMsg.content;
-        ok = typeof c !== "string" || c.startsWith(next) || !c.startsWith(oldPrompt);
-      } catch (_) {}
-      if (!ok) {
-        try { body.systemPrompt = oldPrompt; } catch (_) {} // rollback
+    const hist = Array.isArray(cs?.history) ? cs.history : null;
+    if (hist) {
+      for (const item of hist) {
+        if (item && item.userInputMessage) { targetMsg = item.userInputMessage; break; }
       }
     }
+    if (!targetMsg && cs?.currentMessage?.userInputMessage) {
+      targetMsg = cs.currentMessage.userInputMessage;
+    }
+    if (!targetMsg) return;
+
+    const content = typeof targetMsg.content === "string" ? targetMsg.content : "";
+    const next = dedupStringAppend(content, prompt);
+    if (next === content) return; // already injected — idempotent across retries
+    try { targetMsg.content = next; } catch (_) { /* frozen/proxy fail-open */ }
   } catch (_) {}
 }

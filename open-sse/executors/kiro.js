@@ -127,12 +127,18 @@ async function readResponsePrefix(response, signal, maxBytes, timeoutMs) {
   return decoder.decode(concatChunks(chunks, totalBytes));
 }
 
+// The instruction goes into the current user turn, never into a top-level
+// `systemPrompt`: kiro.dev answers any body carrying that field with
+// 400 REQUEST_BODY_INVALID, so writing it here turned every repair retry into
+// a hard failure.
 function appendRepairInstruction(body, kind) {
   const repaired = structuredClone(body || {});
   const instruction = REPAIR_INSTRUCTIONS[kind] || "Retry the previous incomplete Kiro response.";
-  repaired.systemPrompt = repaired.systemPrompt
-    ? `${repaired.systemPrompt}\n\n${instruction}`
-    : instruction;
+  const msg = repaired?.conversationState?.currentMessage?.userInputMessage;
+  if (msg) {
+    const content = typeof msg.content === "string" ? msg.content : "";
+    msg.content = content ? `${content}\n\n${instruction}` : instruction;
+  }
   return repaired;
 }
 
