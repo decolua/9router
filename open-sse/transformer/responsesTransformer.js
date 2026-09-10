@@ -7,6 +7,37 @@
 import fs from "fs";
 import path from "path";
 
+function toResponsesUsage(usage) {
+  if (!usage || typeof usage !== "object") return null;
+
+  const inputTokens = [usage.input_tokens, usage.prompt_tokens].find(Number.isFinite) ?? 0;
+  const outputTokens = [usage.output_tokens, usage.completion_tokens].find(Number.isFinite) ?? 0;
+  const responseUsage = {
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    total_tokens: Number.isFinite(usage.total_tokens)
+      ? usage.total_tokens
+      : inputTokens + outputTokens
+  };
+  const cachedTokens = [
+    usage.input_tokens_details?.cached_tokens,
+    usage.prompt_tokens_details?.cached_tokens
+  ].find(Number.isFinite);
+  const reasoningTokens = [
+    usage.output_tokens_details?.reasoning_tokens,
+    usage.completion_tokens_details?.reasoning_tokens
+  ].find(Number.isFinite);
+
+  if (Number.isFinite(cachedTokens)) {
+    responseUsage.input_tokens_details = { cached_tokens: cachedTokens };
+  }
+  if (Number.isFinite(reasoningTokens)) {
+    responseUsage.output_tokens_details = { reasoning_tokens: reasoningTokens };
+  }
+
+  return responseUsage;
+}
+
 // Create log directory for responses (Node.js only)
 export function createResponsesLogger(model, logsDir = null) {
   // Skip logging in worker environment (no fs)
@@ -73,6 +104,7 @@ export function createResponsesApiTransformStream(logger = null) {
     funcArgsDone: {},
     funcItemDone: {},
     buffer: "",
+    usage: null,
     completedSent: false
   };
 
@@ -233,7 +265,8 @@ export function createResponsesApiTransformStream(logger = null) {
           created_at: state.created,
           status: "completed",
           background: false,
-          error: null
+          error: null,
+          ...(state.usage ? { usage: state.usage } : {})
         }
       });
     }
@@ -262,6 +295,10 @@ export function createResponsesApiTransformStream(logger = null) {
           parsed = JSON.parse(dataStr);
         } catch {
           continue;
+        }
+
+        if (parsed.usage) {
+          state.usage = toResponsesUsage(parsed.usage);
         }
 
         if (!parsed.choices?.length) continue;
@@ -419,7 +456,6 @@ export function createResponsesApiTransformStream(logger = null) {
           for (const i in state.msgItemAdded) closeMessage(controller, i);
           closeReasoning(controller);
           for (const i in state.funcCallIds) closeToolCall(controller, i);
-          sendCompleted(controller);
         }
       }
     },
@@ -436,4 +472,3 @@ export function createResponsesApiTransformStream(logger = null) {
     }
   });
 }
-
