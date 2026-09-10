@@ -44,7 +44,7 @@ vi.mock("@/sse/utils/logger.js", () => ({
 }));
 
 vi.mock("@/shared/utils/ssrfGuard.js", () => ({
-  assertPublicUrl: vi.fn(),
+  assertPublicUrlResolved: vi.fn(async () => {}),
 }));
 
 import { handleFetch } from "@/sse/handlers/fetch.js";
@@ -85,7 +85,40 @@ describe("web fetch account state", () => {
     expect(mocks.clearAccountError).toHaveBeenCalledWith(
       "jina-connection",
       expect.objectContaining({ connectionName: "Jina Test" }),
+      "webfetch:jina-reader",
+    );
+    expect(mocks.getProviderCredentials).toHaveBeenCalledWith(
+      "jina-reader",
+      expect.any(Set),
+      "webfetch:jina-reader",
     );
     expect(mocks.markAccountUnavailable).not.toHaveBeenCalled();
+  });
+
+  it("scopes provider failures to web fetch", async () => {
+    mocks.handleFetchCore.mockResolvedValue({
+      success: false,
+      status: 429,
+      error: "quota exceeded",
+    });
+    mocks.markAccountUnavailable.mockResolvedValue({ shouldFallback: false });
+
+    const response = await handleFetch(new Request("http://localhost/v1/web/fetch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        provider: "jina-reader",
+        url: "https://example.com/article",
+      }),
+    }));
+
+    expect(response.status).toBe(429);
+    expect(mocks.markAccountUnavailable).toHaveBeenCalledWith(
+      "jina-connection",
+      429,
+      "quota exceeded",
+      "jina-reader",
+      "webfetch:jina-reader",
+    );
   });
 });

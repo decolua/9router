@@ -151,3 +151,17 @@ export function fixMissingToolResponses(body) {
   return body;
 }
 
+// Default `type: "custom"` on Claude-format tools that arrive without one.
+// Anthropic's Claude tool schema requires `type` to be explicitly set; strict gateways
+// (e.g., MiniMax Anthropic-compatible endpoint, error 2013) reject legacy payloads that
+// omit it with HTTP 400. Tools that already carry a truthy `type` (e.g., `computer_use`,
+// `bash`, `web_search_20250305`) are passed through untouched.
+//
+// Spread order matters: `{ ...tool, type: "custom" }` (spread first, override last)
+// ensures that falsy `type` values (null, undefined, "") in the original tool don't
+// overwrite the default. `{ type: "custom", ...tool }` would let `type: null` survive.
+export function defaultClaudeToolType(tools) {
+  if (!Array.isArray(tools)) return tools;
+  return tools.map(tool => tool?.type ? tool : { ...tool, type: "custom" });
+}
+
