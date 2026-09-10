@@ -2,6 +2,7 @@ import { FORMATS } from "./formats.js";
 import { ensureToolCallIds, fixMissingToolResponses } from "./concerns/toolCall.js";
 import { prepareClaudeRequest } from "./formats/claude.js";
 import { cloakClaudeTools, decloakStreamChunk } from "../utils/claudeCloaking.js";
+import { compressToolNames, decloakOpenAIChunk } from "../utils/toolCompressor.js";
 import { filterToOpenAIFormat } from "./formats/openai.js";
 import { normalizeThinkingConfig } from "../services/provider.js";
 import { applyThinking, captureThinking } from "./concerns/thinkingUnified.js";
@@ -52,6 +53,13 @@ function stripContentTypes(body, stripList = []) {
 export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null, stripList = [], connectionId = null, clientTool = null) {
   ensureInitialized();
   let result = body;
+
+  // Compress overly long tool names globally
+  const { body: compressedBody, toolNameMap } = compressToolNames(sourceFormat, result);
+  result = compressedBody;
+  if (toolNameMap) {
+    result._toolNameMap = toolNameMap;
+  }
 
   // Strip explicit content types (opt-in via strip[] in PROVIDER_MODELS entry)
   stripContentTypes(result, stripList);
@@ -138,10 +146,19 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   if (PROVIDERS[provider]?.quirks?.cloakToolsOnOAuth) {
     const apiKey = credentials?.accessToken || credentials?.apiKey || null;
     if (apiKey?.includes("sk-ant-oat")) {
-      const { body: cloakedBody, toolNameMap } = cloakClaudeTools(result);
+      const { body: cloakedBody, toolNameMap: cloakMap } = cloakClaudeTools(result);
       result = cloakedBody;
-      if (toolNameMap?.size > 0) {
-        result._toolNameMap = toolNameMap;
+      if (cloakMap?.size > 0) {
+        if (result._toolNameMap) {
+          const mergedMap = new Map(result._toolNameMap);
+          for (const [suffixed, originalOrShortened] of cloakMap) {
+            const trueOriginal = result._toolNameMap.get(originalOrShortened) || originalOrShortened;
+            mergedMap.set(suffixed, trueOriginal);
+          }
+          result._toolNameMap = mergedMap;
+        } else {
+          result._toolNameMap = cloakMap;
+        }
       }
     }
   }
@@ -166,7 +183,12 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
   // even when no format conversion is needed, so streamed tool_use blocks must
   // be decloaked here or the client sees an unknown ("_ide"-suffixed) tool.
   if (sourceFormat === targetFormat) {
-    return [decloakStreamChunk(chunk, state?.toolNameMap)];
+    if (sourceFormat === FORMATS.CLAUDE) {
+      return [decloakStreamChunk(chunk, state?.toolNameMap)];
+    } else if (sourceFormat === FORMATS.OPENAI) {
+      return [decloakOpenAIChunk(chunk, state?.toolNameMap)];
+    }
+    return [chunk];
   }
 
   let results = [chunk];
@@ -213,6 +235,15 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
   // Attach OpenAI intermediate results for logging
   if (openaiResults && sourceFormat !== FORMATS.OPENAI && targetFormat !== FORMATS.OPENAI) {
     results._openaiIntermediate = openaiResults;
+  }
+
+  // Global decloak at the end for cross-format translation if toolNameMap exists
+  if (state?.toolNameMap?.size > 0) {
+    if (sourceFormat === FORMATS.CLAUDE) {
+      results = results.map(r => decloakStreamChunk(r, state.toolNameMap));
+    } else if (sourceFormat === FORMATS.OPENAI) {
+      results = results.map(r => decloakOpenAIChunk(r, state.toolNameMap));
+    }
   }
 
   return results;
