@@ -19,12 +19,10 @@ function buildModelListHeaders(token, isApiKey) {
 }
 
 /**
- * Fetch ClinePass live model catalog from Cline's /models endpoint.
- *
- * @param {object} credentials - Connection credentials ({ accessToken, apiKey })
- * @returns {Promise<{ models: { id: string, name: string }[] } | null>}
+ * Internal: fetch the raw model list from Cline's /models endpoint.
+ * Returns the parsed array or null on any failure.
  */
-export async function resolveClinepassModels(credentials) {
+async function fetchClineRawModels(credentials) {
   const isApiKey = Boolean(credentials?.apiKey);
   const token = isApiKey ? credentials.apiKey : credentials?.accessToken;
   if (!token) return null;
@@ -45,19 +43,53 @@ export async function resolveClinepassModels(credentials) {
 
     const json = await response.json();
     const rawList = Array.isArray(json) ? json : json?.data;
-    if (!Array.isArray(rawList)) return null;
-
-    const models = rawList
-      .filter((m) => typeof m?.id === "string" && m.id.startsWith("cline-pass/"))
-      .map((m) => ({
-        id: m.id,
-        name: m.name || m.id,
-      }));
-
-    return models.length ? { models } : null;
+    return Array.isArray(rawList) ? rawList : null;
   } catch {
     return null;
   } finally {
     clearTimeout(timer);
   }
+}
+
+/**
+ * Fetch ClinePass live model catalog from Cline's /models endpoint.
+ * Returns only models with the cline-pass/ prefix.
+ *
+ * @param {object} credentials - Connection credentials ({ accessToken, apiKey })
+ * @returns {Promise<{ models: { id: string, name: string }[] } | null>}
+ */
+export async function resolveClinepassModels(credentials) {
+  const rawList = await fetchClineRawModels(credentials);
+  if (!rawList) return null;
+
+  const models = rawList
+    .filter((m) => typeof m?.id === "string" && m.id.startsWith("cline-pass/"))
+    .map((m) => ({
+      id: m.id,
+      name: m.name || m.id,
+    }));
+
+  return models.length ? { models } : null;
+}
+
+/**
+ * Fetch Cline live model catalog from Cline's /models endpoint.
+ * Unlike resolveClinepassModels, this returns ALL models (including
+ * free-tier models like z-ai/glm-5.3-flash) without the cline-pass/ prefix filter.
+ *
+ * @param {object} credentials - Connection credentials ({ accessToken, apiKey })
+ * @returns {Promise<{ models: { id: string, name: string }[] } | null>}
+ */
+export async function resolveClineModels(credentials) {
+  const rawList = await fetchClineRawModels(credentials);
+  if (!rawList) return null;
+
+  const models = rawList
+    .filter((m) => typeof m?.id === "string" && m.id.trim() !== "")
+    .map((m) => ({
+      id: m.id,
+      name: m.name || m.id,
+    }));
+
+  return models.length ? { models } : null;
 }

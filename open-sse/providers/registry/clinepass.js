@@ -25,6 +25,8 @@ export default {
       "HTTP-Referer": "https://cline.bot",
       "X-Title": "Cline",
     },
+    // Non-stream chat completions come back wrapped in {"success":true,"data":{...}}
+    quirks: { clineEnvelope: true },
     auth: {
       combined: true,
       header: "Authorization",
