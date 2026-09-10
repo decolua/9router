@@ -18,6 +18,14 @@ jobs:
         with:
           node-version: "22"
 
+      # Node 22's bundled npm (10.9.8) hits a known arborist bug
+      # ("Cannot read properties of null (reading 'edgesOut')") when a
+      # second, unrelated `npm install` (tests/package.json) runs against
+      # the same npm cache right after the root install populates it.
+      # npm 11 doesn't have the bug — upgrade before either install runs.
+      - name: Upgrade npm
+        run: npm install -g npm@11
+
       # Cache node_modules by package.json hash — repo intentionally omits lockfiles
       - uses: actions/cache@v4
         with:
@@ -33,12 +41,7 @@ jobs:
         run: npm install
 
       - name: Install test dependencies
-        # A back-to-back `npm install` in a second, unrelated package.json
-        # (tests/) against the same ~/.npm populated by the root install can
-        # corrupt npm's arborist state ("Cannot read properties of null
-        # (reading 'edgesOut')"). Clearing the cache between the two installs
-        # avoids it.
-        run: npm cache clean --force && npm install
+        run: npm install
         working-directory: tests
 
       - name: Run unit tests (no-regression baseline)
