@@ -21,8 +21,16 @@ const CODEX_SOURCE_TO_TARGET = {
 
 /**
  * Determine which SSE transform stream to use based on provider/format.
+ *
+ * Same-format requests normally take the raw passthrough stream (no
+ * translateResponse call at all). But when OAuth tool cloaking renamed the
+ * client's tools (toolNameMap present), every streamed tool_use block carries
+ * the suffixed name and MUST be decloaked before reaching the client — which
+ * happens in translateResponse's same-format branch. Route cloaked
+ * same-format streams through the translate stream so that branch actually
+ * runs; without a map, passthrough stays byte-exact as before.
  */
-function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey, credentials }) {
+export function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey, credentials }) {
   const isDroidCLI = userAgent?.toLowerCase().includes("droid") || userAgent?.toLowerCase().includes("codex-cli");
   // Responses-API providers (e.g. codex) emit Responses SSE → translate into client format
   const isResponsesProvider = PROVIDERS[provider]?.format === FORMATS.OPENAI_RESPONSES;
@@ -33,7 +41,7 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
     return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, credentials);
   }
 
-  if (needsTranslation(targetFormat, sourceFormat)) {
+  if (needsTranslation(targetFormat, sourceFormat) || toolNameMap?.size > 0) {
     return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, credentials);
   }
 
