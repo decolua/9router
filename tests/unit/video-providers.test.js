@@ -260,4 +260,37 @@ describe("vertex (veo) video adapter", () => {
     expect(result.status).toBe(400);
     expect(global.fetch).not.toHaveBeenCalled();
   });
+
+  // A base64url id decodes to arbitrary bytes, so a crafted one used to splice a
+  // path traversal into the fetch URL while the Authorization header stayed on.
+  it("rejects job ids that decode outside the projects/…/operations/ shape", async () => {
+    refreshVertexToken.mockResolvedValue({ accessToken: "vertex-tok" });
+    const jid = (s) => Buffer.from(s, "utf8").toString("base64url");
+
+    for (const id of [
+      jid("../../evil"),
+      jid("projects/p/locations/l/publishers/google/models/m/operations/../../x"),
+      jid("../../evil/operations/op"),
+      "!!!not-base64!!!",
+      `${JOB_ID}=`,
+      `${JOB_ID}\n`,
+    ]) {
+      const result = await handleVideoProxyCore({ provider: "vertex", requestId: id, credentials: { apiKey: saJson } });
+      expect(result.status).toBe(400);
+      expect(global.fetch).not.toHaveBeenCalled();
+    }
+  });
+
+  it("rejects a model id carrying path separators", async () => {
+    refreshVertexToken.mockResolvedValue({ accessToken: "vertex-tok" });
+    const result = await handleVideoProxyCore({
+      provider: "vertex",
+      action: "generations",
+      rawBody: JSON.stringify({ model: "../../evil", prompt: "x" }),
+      contentType: "application/json",
+      credentials: { apiKey: saJson },
+    });
+    expect(result.status).toBe(400);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
 });

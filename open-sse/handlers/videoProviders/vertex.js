@@ -13,7 +13,25 @@ import { parseVertexSaJson, refreshVertexToken } from "../../services/tokenRefre
 const DEFAULT_LOCATION = "us-central1";
 
 const encodeJobId = (name) => Buffer.from(name, "utf8").toString("base64url");
-const decodeJobId = (id) => Buffer.from(id, "base64url").toString("utf8");
+
+// Operation name shape: projects/{p}/locations/{l}/publishers/{pub}/models/{m}/operations/{op}.
+// Anchored and single-segment-per-field so a decoded path can never carry `..` or a
+// host-changing prefix into the request URL.
+const OPERATION_NAME_RE = /^projects\/[^/]+\/locations\/[^/]+\/publishers\/[^/]+\/models\/[^/]+\/operations\/[^/]+$/;
+
+function modelPathOf(operationName) {
+  return operationName.slice(0, operationName.indexOf("/operations/"));
+}
+
+function decodeJobId(id) {
+  const raw = String(id ?? "");
+  // Buffer.from(x, "base64url") silently drops invalid characters instead of
+  // throwing, so only ids that re-encode byte-for-byte are accepted.
+  if (!raw || raw.length > 1024 || !/^[A-Za-z0-9_-]+$/.test(raw)) return null;
+  const decoded = Buffer.from(raw, "base64url").toString("utf8");
+  if (Buffer.from(decoded, "utf8").toString("base64url") !== raw) return null;
+  return OPERATION_NAME_RE.test(decoded) ? decoded : null;
+}
 
 async function resolveAuth(credentials, log) {
   const saJson = parseVertexSaJson(credentials?.apiKey);
@@ -103,17 +121,11 @@ export default {
     const headers = { Accept: "application/json", "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 
     if (requestId) {
-      let operationName;
-      try {
-        operationName = decodeJobId(requestId);
-      } catch {
-        return { error: "Invalid Vertex video job id" };
-      }
-      const modelPath = operationName.split("/operations/")[0];
-      if (!modelPath || modelPath === operationName) return { error: "Invalid Vertex video job id" };
+      const operationName = decodeJobId(requestId);
+      if (!operationName) return { error: "Invalid Vertex video job id" };
       return {
         method: "POST",
-        url: `${base}/v1/${modelPath}:fetchPredictOperation`,
+        url: `${base}/v1/${modelPathOf(operationName)}:fetchPredictOperation`,
         headers,
         body: JSON.stringify({ operationName }),
       };
@@ -131,6 +143,8 @@ export default {
       return { error: "Invalid JSON body" };
     }
     if (!body.model) return { error: "Vertex video requires a model (e.g. vertex/veo-3.1-generate-preview)" };
+    // Plain model id only — a path segment carrying "/" or ".." would rewrite the URL.
+    if (!/^[A-Za-z0-9._-]+$/.test(body.model)) return { error: "Invalid Vertex video model id" };
     if (!body.prompt && !body.image && !body.image_url) return { error: "Vertex video requires a prompt or an image" };
 
     return {
