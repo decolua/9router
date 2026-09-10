@@ -256,11 +256,15 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     // Mask the raw client body in place as well: the persisted request-details
     // `request` field is built from `body` (extractRequestConfig) by every
     // downstream handler (streaming/non-streaming/SSE-to-JSON + error paths).
-    // For no-op translations translatedBody === body, so the second mask below
-    // is a no-op after the first one — merge stats from both either way.
+    // On a no-op translation translatedBody === body (shared reference): mask
+    // once only — re-masking would re-pseudonymize our own pseudonyms in
+    // pseudo mode (double alias layer, inflated stats). A real translation
+    // produces a distinct object that still needs its own pass.
     let dlpStats = null;
     if (body) dlpStats = mergeDlpStats(dlpStats, maskSensitiveData(body, dlp));
-    dlpStats = mergeDlpStats(dlpStats, maskSensitiveData(translatedBody, dlp));
+    if (translatedBody && translatedBody !== body) {
+      dlpStats = mergeDlpStats(dlpStats, maskSensitiveData(translatedBody, dlp));
+    }
     const dlpLine = formatDlpLog(dlpStats);
     if (dlpLine) console.log(dlpLine);
   }
