@@ -28,7 +28,7 @@ import { compressWithPxpipe } from "../rtk/pxpipe.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
-import { defaultClaudeToolType } from "../translator/concerns/toolCall.js";
+import { defaultClaudeToolType, shouldDefaultClaudeToolType } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
 /**
@@ -243,7 +243,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Claude tool schema requires `type` to be explicitly set; strict gateways (e.g., MiniMax)
   // reject legacy payloads that omit it with HTTP 400. Default to "custom" when missing.
-  if (finalFormat === FORMATS.CLAUDE && Array.isArray(translatedBody.tools)) {
+  // Provider-scoped via quirks (shouldDefaultClaudeToolType): only gateways that declare
+  // requireClaudeToolType get the explicit type. Applying it unconditionally breaks
+  // Claude-format endpoints that only accept the legacy typeless tool shape — DeepSeek's
+  // Anthropic-compatible endpoint 400s with "unknown variant `custom`" (#3905).
+  if (shouldDefaultClaudeToolType(provider, finalFormat, translatedBody.tools, PROVIDERS)) {
     translatedBody.tools = defaultClaudeToolType(translatedBody.tools);
   }
 
