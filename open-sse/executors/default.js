@@ -36,6 +36,13 @@ function applyAuth(headers, desc, credentials) {
   if (desc.anthropicVersion && !headers["anthropic-version"]) headers["anthropic-version"] = ANTHROPIC_API_VERSION;
 }
 
+// OpenAI's newer Chat Completions models reject the legacy max_tokens field.
+// Keep this scoped to the first-party OpenAI provider: other OpenAI-compatible
+// providers may still require max_tokens for models with similar names.
+function usesOpenAIMaxCompletionTokens(model) {
+  return /^(?:gpt-5(?:[.-]|$)|o[134](?:[.-]|$))/i.test(model || "");
+}
+
 // Provider-specific header quirks kept as small hooks (not pure auth).
 const HEADER_HOOKS = {
   // Stable device_id from OAuth connection (CLIProxyAPI KimiTokenStorage.DeviceID)
@@ -67,10 +74,29 @@ export class DefaultExecutor extends BaseExecutor {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
-  transformRequest(model, body) {
+  transformRequest(model, body, stream) {
     const transformed = this.applyJsonSchemaFallback(body);
 
     if (transformed && typeof transformed === "object") {
+      // The official OpenAI transport is force-streamed even for JSON clients.
+      // Keep the actual upstream body aligned with the executor's resolved mode;
+      // the chat core still converts the SSE response back to JSON for those clients.
+      if (this.provider === "openai" && stream === true) {
+        const clientRequestedStreaming = transformed.stream === true;
+        transformed.stream = true;
+        if (!clientRequestedStreaming) {
+          transformed.stream_options = {
+            ...transformed.stream_options,
+            include_usage: true,
+          };
+        }
+      }
+      if (this.provider === "openai" && usesOpenAIMaxCompletionTokens(model) && transformed.max_tokens !== undefined) {
+        if (transformed.max_completion_tokens === undefined) {
+          transformed.max_completion_tokens = transformed.max_tokens;
+        }
+        delete transformed.max_tokens;
+      }
       // quirk: some openai-compatible providers reject Anthropic's client_metadata field
       if (this.config.quirks?.dropClientMetadata) {
         delete transformed.client_metadata;
