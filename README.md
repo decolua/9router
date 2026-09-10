@@ -128,11 +128,11 @@ Default URLs:
 <table>
   <tr>
     <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=X69n5Lm06Yw">
-        <img src="https://img.youtube.com/vi/X69n5Lm06Yw/maxresdefault.jpg" alt="Tiết kiệm chi phí LLM với 9Router" width="300"/>
+      <a href="https://www.youtube.com/watch?v=raEyZPg5xE0">
+        <img src="https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg" alt="9Router Setup Tutorial" width="300"/>
       </a><br/>
-      <b>🇻🇳 Tiếng Việt</b><br/>
-      <sub>Tiết kiệm chi phí LLM cho OpenClaw với 9Router<br/>by <a href="https://www.youtube.com/c/M%C3%ACAIblog">Mì AI</a></sub>
+      <b>🇺🇸 English</b><br/>
+      <sub>9Router + Claude Code FREE Setup<br/>by <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
     </td>
     <td align="center" width="320">
       <a href="https://youtu.be/VQAw612S27Y">
@@ -140,13 +140,6 @@ Default URLs:
       </a><br/>
       <b>🇵🇰 اردو / हिन्दी</b><br/>
       <sub>9Router + Claude Code FREE Unlimited Setup<br/>by <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
-    </td>
-    <td align="center" width="320">
-      <a href="https://www.youtube.com/watch?v=raEyZPg5xE0">
-        <img src="https://img.youtube.com/vi/raEyZPg5xE0/maxresdefault.jpg" alt="9Router Setup Tutorial" width="300"/>
-      </a><br/>
-      <b>🇺🇸 English</b><br/>
-      <sub>9Router + Claude Code FREE Setup<br/>by <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
     </td>
     <td align="center" width="320">
       <a href="https://youtu.be/3dF5GIYMrcQ?si=bAyfyiHbARJQAHj_">
@@ -161,6 +154,13 @@ Default URLs:
       </a><br/>
       <b>🇺🇸 English</b><br/>
       <sub>Claude Code FREE Forever — Unlimited Models<br/>by <a href="https://www.youtube.com/@BuildAIWithHamid">Build AI With Hamid</a></sub>
+    </td>
+    <td align="center" width="320">
+      <a href="https://www.youtube.com/watch?v=X69n5Lm06Yw">
+        <img src="https://img.youtube.com/vi/X69n5Lm06Yw/maxresdefault.jpg" alt="Tiết kiệm chi phí LLM với 9Router" width="300"/>
+      </a><br/>
+      <b>🇻🇳 Tiếng Việt</b><br/>
+      <sub>Tiết kiệm chi phí LLM cho OpenClaw với 9Router<br/>by <a href="https://www.youtube.com/c/M%C3%ACAIblog">Mì AI</a></sub>
     </td>
   </tr>
   <tr>
