@@ -89,6 +89,10 @@ function convertMessages(messages = []) {
     if (role === ROLE.ASSISTANT) {
       const blocks = [];
       const text = flattenText(m.content);
+      // Preserve reasoning_content as a reasoning block (CommandCode/AI SDK v5 supports this)
+      if (m.reasoning_content) {
+        blocks.push({ type: "reasoning", text: m.reasoning_content });
+      }
       if (text) blocks.push({ type: OPENAI_BLOCK.TEXT, text });
       if (Array.isArray(m.tool_calls)) {
         for (const tc of m.tool_calls) {
