@@ -1394,5 +1394,7 @@
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ សេចក្តីជូនដំណឹងអំពីហានិភ័យ៖ អ្នកផ្តល់សេវានេះប្រើ Subscription/OAuth Session ដែលមិនមានអាជ្ញាបណ្ណផ្លូវការសម្រាប់ប្រើជា Proxy/Router។ គណនីអាចត្រូវបានដាក់កម្រិត ឬហាមឃាត់។ ប្រើដោយទទួលខុសត្រូវលើហានិភ័យដោយខ្លួនឯង។",
   "✓ Confirm Add": "✓ បញ្ជាក់ការបន្ថែម",
   "📝 Configure providers in dashboard or use environment variables": "📝 កំណត់អ្នកផ្តល់សេវាក្នុងផ្ទាំងគ្រប់គ្រង ឬប្រើ Environment Variables",
-  "🔐 OAuth required. Add now and authenticate after Apply; tool list will be discovered after first connect.": "🔐 ត្រូវការ OAuth។ បន្ថែមឥឡូវ ហើយផ្ទៀងផ្ទាត់បន្ទាប់ពីចុច អនុវត្ត; បញ្ជីឧបករណ៍នឹងត្រូវបានរកឃើញបន្ទាប់ពីការតភ្ជាប់លើកដំបូង។"
+  "🔐 OAuth required. Add now and authenticate after Apply; tool list will be discovered after first connect.": "🔐 ត្រូវការ OAuth។ បន្ថែមឥឡូវ ហើយផ្ទៀងផ្ទាត់បន្ទាប់ពីចុច អនុវត្ត; បញ្ជីឧបករណ៍នឹងត្រូវបានរកឃើញបន្ទាប់ពីការតភ្ជាប់លើកដំបូង។",
+  "Request details logging is turned off": "ការកត់ត្រាព័ត៌មានលម្អិតនៃសំណើបានបិទ",
+  "Enable Observability in Settings to start recording every request here.": "បើក Observability ក្នុងការកំណត់ ដើម្បីចាប់ផ្តើមកត់ត្រាសំណើទាំងអស់នៅទីនេះ។"
 }

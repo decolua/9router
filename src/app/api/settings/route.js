@@ -22,10 +22,11 @@ export async function GET() {
     
     const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
     const enableTranslator = process.env.ENABLE_TRANSLATOR === "true";
-    
-    return NextResponse.json({ 
-      ...safeSettings, 
+
+    return NextResponse.json({
+      ...safeSettings,
       enableRequestLogs,
+      enableRequestLogsDefined: process.env.ENABLE_REQUEST_LOGS !== undefined,
       enableTranslator,
       hasPassword: !!password
     }, { headers: SETTINGS_RESPONSE_HEADERS });

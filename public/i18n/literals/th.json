@@ -1389,5 +1389,7 @@
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ ประกาศความเสี่ยง: Provider นี้ใช้ subscription/OAuth session ที่ไม่ได้รับอนุญาตอย่างเป็นทางการสำหรับการใช้งาน proxy/router บัญชีอาจถูกจำกัดหรือแบน ใช้ด้วยความเสี่ยงของคุณเอง",
   "✓ Confirm Add": "✓ ยืนยันการเพิ่ม",
   "📝 Configure providers in dashboard or use environment variables": "📝 กำหนดค่า providers ใน dashboard หรือใช้ environment variables",
-  "🔐 OAuth required. Add now and authenticate after Apply; tool list will be discovered after first connect.": "🔐 ต้องใช้ OAuth เพิ่มตอนนี้แล้ว authenticate หลัง Apply; รายการเครื่องมือจะถูกค้นพบหลังการเชื่อมต่อครั้งแรก"
+  "🔐 OAuth required. Add now and authenticate after Apply; tool list will be discovered after first connect.": "🔐 ต้องใช้ OAuth เพิ่มตอนนี้แล้ว authenticate หลัง Apply; รายการเครื่องมือจะถูกค้นพบหลังการเชื่อมต่อครั้งแรก",
+  "Request details logging is turned off": "การบันทึกรายละเอียดคำขอปิดอยู่",
+  "Enable Observability in Settings to start recording every request here.": "เปิดใช้งาน Observability ในการตั้งค่าเพื่อเริ่มบันทึกคำขอทุกรายการที่นี่"
 }

@@ -1390,5 +1390,7 @@
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ 风险提示：此提供商使用的订阅/OAuth 会话未获官方授权用于代理/路由器使用。账户可能被限制或封禁。使用风险自负。",
   "✓ Confirm Add": "✓ 确认添加",
   "📝 Configure providers in dashboard or use environment variables": "📝 在仪表盘中配置提供商或使用环境变量",
-  "🔐 OAuth required. Add now and authenticate after Apply; tool list will be discovered after first connect.": "🔐 需要 OAuth。立即添加并在应用后认证；工具列表将在首次连接后自动发现。"
+  "🔐 OAuth required. Add now and authenticate after Apply; tool list will be discovered after first connect.": "🔐 需要 OAuth。立即添加并在应用后认证；工具列表将在首次连接后自动发现。",
+  "Request details logging is turned off": "请求详情日志已关闭",
+  "Enable Observability in Settings to start recording every request here.": "在设置中启用可观测性（Observability）以开始在此记录每个请求。"
 }
