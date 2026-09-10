@@ -13,6 +13,7 @@
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { GITHUB_COPILOT } from "../config/appConstants.js";
 import { refreshCopilotToken } from "./tokenRefresh.js";
+import { getCapabilitiesForModel } from "../providers/capabilities.js";
 
 const MODELS_URL = "https://api.githubcopilot.com/models";
 const FETCH_TIMEOUT_MS = 10_000;
@@ -73,7 +74,27 @@ function expandCatalog(raw) {
     const id = m.id;
     if (!id || seen.has(id)) continue;
     seen.add(id);
-    models.push({ id, name: m.name || id });
+    const upstream = m.capabilities || {};
+    const limits = upstream.limits || {};
+    const supports = upstream.supports || {};
+    const capabilities = {
+      ...getCapabilitiesForModel("github", id),
+      ...(Number.isFinite(limits.max_context_window_tokens)
+        ? { contextWindow: limits.max_context_window_tokens }
+        : {}),
+      ...(Number.isFinite(limits.max_prompt_tokens)
+        ? { maxPrompt: limits.max_prompt_tokens }
+        : {}),
+      ...(Number.isFinite(limits.max_output_tokens)
+        ? { maxOutput: limits.max_output_tokens }
+        : {}),
+      ...(typeof supports.vision === "boolean" ? { vision: supports.vision } : {}),
+      ...(typeof supports.tool_calls === "boolean" ? { tools: supports.tool_calls } : {}),
+      ...(supports.adaptive_thinking === true || Array.isArray(supports.reasoning_effort)
+        ? { reasoning: true }
+        : {}),
+    };
+    models.push({ id, name: m.name || id, capabilities });
   }
   return models;
 }
