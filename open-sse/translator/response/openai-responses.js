@@ -73,6 +73,15 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   if (delta.content) {
     let content = delta.content;
 
+    // Reasoning arrived via reasoning_content (not inline <think> tags) and now
+    // normal text begins → the reasoning section is over. Close it here on the
+    // state transition, so consumers get an explicit "reasoning ended" event
+    // before the first output_text.delta (#454) without translators having to
+    // inject literal tag markers into content.
+    if (state.reasoningId && !state.reasoningDone && !state.inThinking) {
+      closeReasoning(state, emit);
+    }
+
     if (content.includes("<think>")) {
       state.inThinking = true;
       content = content.replace("<think>", "");
