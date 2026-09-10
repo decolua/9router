@@ -21,15 +21,19 @@ export async function GET(request) {
 
   // request.signal fires reliably on client disconnect; ReadableStream.cancel()
   // is not always invoked in Next.js, which caused listeners to accumulate.
-  request.signal.addEventListener("abort", cleanup, { once: true });
+  if (request.signal.aborted) cleanup();
+  else request.signal.addEventListener("abort", cleanup, { once: true });
 
   const stream = new ReadableStream({
     start(controller) {
+      if (state.closed) {
+        controller.close();
+        return;
+      }
+
       // Send all buffered logs immediately on connect
       const buffered = getConsoleLogs();
-      if (buffered.length > 0) {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "init", logs: buffered })}\n\n`));
-      }
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "init", logs: buffered })}\n\n`));
 
       // Push new lines as they arrive
       state.send = (line) => {
