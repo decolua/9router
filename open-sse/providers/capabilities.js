@@ -134,6 +134,10 @@ export const MODEL_CAPABILITIES = {
 };
 
 const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
+// Kiro ListAvailableModels uses 200K when tokenLimits.maxInputTokens is absent.
+// Keep legacy Claude 4.5 variants at that conservative Kiro-specific floor;
+// do not inherit newer Claude families' 1M assumption without live evidence.
+const KIRO_CLAUDE_45_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "claude-budget", contextWindow: 200000, maxOutput: 64000 };
 
 // Codex OAuth (ChatGPT backend) — per-model context window reported by upstream
 // (lower than OpenAI API's 1.05M). Sol differs from Terra/Luna. #2720
@@ -163,6 +167,18 @@ export const PROVIDER_CAPABILITIES = {
     "gpt-5.6-luna-review":       CODEX_GPT_56_DEFAULT_CAPS,
   },
   "kiro": {
+    "claude-opus-4.5": KIRO_CLAUDE_45_CAPABILITIES,
+    "claude-opus-4.5-thinking": KIRO_CLAUDE_45_CAPABILITIES,
+    "claude-opus-4.5-agentic": KIRO_CLAUDE_45_CAPABILITIES,
+    "claude-opus-4.5-thinking-agentic": KIRO_CLAUDE_45_CAPABILITIES,
+    "claude-sonnet-4.5": KIRO_CLAUDE_45_CAPABILITIES,
+    "claude-sonnet-4.5-thinking": KIRO_CLAUDE_45_CAPABILITIES,
+    "claude-sonnet-4.5-agentic": KIRO_CLAUDE_45_CAPABILITIES,
+    "claude-sonnet-4.5-thinking-agentic": KIRO_CLAUDE_45_CAPABILITIES,
+    "claude-haiku-4.5": KIRO_CLAUDE_45_CAPABILITIES,
+    "claude-haiku-4.5-thinking": KIRO_CLAUDE_45_CAPABILITIES,
+    "claude-haiku-4.5-agentic": KIRO_CLAUDE_45_CAPABILITIES,
+    "claude-haiku-4.5-thinking-agentic": KIRO_CLAUDE_45_CAPABILITIES,
     "gpt-5.6-sol": KIRO_GPT_5_6_CAPABILITIES,
     "gpt-5.6-terra": KIRO_GPT_5_6_CAPABILITIES,
     "gpt-5.6-luna": KIRO_GPT_5_6_CAPABILITIES,
@@ -448,6 +464,32 @@ function refine(base, provider, model) {
   if (!result.vision && looksLikeVisionModel(model)) result.vision = true;
 
   return result;
+}
+
+// Declared (table/pattern) context window BEFORE any catalog refinement — used by
+// the context guard to decide whether a model has explicit metadata to trim
+// against. Deliberately does not consult catalogSource/refine: a live catalog
+// number is provider-reported and can change per request, not a stable static
+// declaration to size a conservative local trim against.
+export function getDeclaredContextWindowForModel(provider, model) {
+  if (!model) return null;
+  const baseModel = model.includes("/") ? model.split("/").pop() : model;
+
+  if (provider) {
+    const providerCaps = PROVIDER_CAPABILITIES[provider];
+    const providerMatch = providerCaps?.[model] || providerCaps?.[baseModel];
+    if (Number.isFinite(providerMatch?.contextWindow)) return providerMatch.contextWindow;
+  }
+
+  const exact = MODEL_CAPABILITIES[baseModel] || MODEL_CAPABILITIES[model];
+  if (Number.isFinite(exact?.contextWindow)) return exact.contextWindow;
+
+  for (const { pattern, caps } of PATTERN_CAPABILITIES) {
+    if ((matchPattern(pattern, baseModel) || matchPattern(pattern, model)) && Number.isFinite(caps?.contextWindow)) {
+      return caps.contextWindow;
+    }
+  }
+  return null;
 }
 
 export function getCapabilitiesForModel(provider, model) {

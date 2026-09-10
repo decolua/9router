@@ -4,6 +4,7 @@ import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
+import { formatIncompleteAnthropicStreamFailure } from "./anthropicStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
@@ -21,6 +22,24 @@ const STREAM_MODE = {
   TRANSLATE: "translate",    // Full translation between formats
   PASSTHROUGH: "passthrough" // No translation, normalize output, extract usage
 };
+
+// Classify a terminal chunk: "success" = normal completion (clears account error),
+// "error" = a terminal error event (must NOT clear account), null = not terminal.
+// Only a "success" terminal is allowed to fire onRequestSuccess.
+function classifyTerminalChunk(chunk, responsesEventName = null) {
+  if (!chunk || typeof chunk !== "object") return null;
+  // Error-shaped terminals first — never treat these as success.
+  if (chunk.type === "error" || responsesEventName === "error" || responsesEventName === "response.failed") return "error";
+  const responseStatus = chunk?.response?.status;
+  if (responseStatus === "failed") return "error";
+  // Success terminals.
+  if (chunk.done === true || chunk.type === "message_stop") return "success";
+  if (responsesEventName === "response.completed" || responsesEventName === "response.done") return "success";
+  if (responseStatus === "completed") return "success";
+  if (chunk.choices?.some?.(choice => choice?.finish_reason != null)) return "success";
+  if (chunk.candidates?.some?.(candidate => candidate?.finishReason != null || candidate?.finish_reason != null)) return "success";
+  return null;
+}
 
 /**
  * Create unified SSE transform stream
@@ -76,6 +95,11 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
+  // Terminal state of transformed client-visible output. Only "success" clears an
+  // account error; "error" prevents duplicate synthetic terminals; null means EOF
+  // arrived before any terminal and must be surfaced as an incomplete-stream error.
+  let terminalState = null;
+  let genuineTerminalSeen = false;
   let finalized = false;
 
   // Usage/logging tail, callable from transform() as well as flush(): a client that
@@ -102,7 +126,7 @@ export function createSSEStream(options = {}) {
       onStreamComplete({
         content: accumulatedContent,
         thinking: accumulatedThinking
-      }, finalUsage, ttftAt);
+      }, finalUsage, ttftAt, { genuineTerminal: genuineTerminalSeen });
     }
   };
 
@@ -136,6 +160,11 @@ export function createSSEStream(options = {}) {
           let output;
           let injectedUsage = false;
           let responsesTerminal = false;
+
+          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") {
+            genuineTerminalSeen = true;
+            terminalState = "success";
+          }
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
@@ -200,6 +229,9 @@ export function createSSEStream(options = {}) {
               }
 
               responsesTerminal = isOpenAIResponsesTerminalEvent(currentOpenAIResponsesEvent, parsed);
+              const parsedTerminal = classifyTerminalChunk(parsed);
+              if (parsedTerminal) terminalState = parsedTerminal;
+              if (parsedTerminal === "success") genuineTerminalSeen = true;
 
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
@@ -255,6 +287,9 @@ export function createSSEStream(options = {}) {
 
         if (isOpenAIResponsesStream && isOpenAIResponsesTerminalEvent(openAIResponsesEventName, parsed)) {
           openAIResponsesTerminalSeen = true;
+        }
+        if (classifyTerminalChunk(parsed, openAIResponsesEventName) === "success") {
+          genuineTerminalSeen = true;
         }
 
         // For Ollama: done=true is the final chunk with finish_reason/usage, must translate
@@ -365,6 +400,9 @@ export function createSSEStream(options = {}) {
               item.usage = filterUsageForFormat(buffered, sourceFormat);
             }
 
+            if (item.type === "message_stop") terminalState = "success";
+            else if (item.type === "error") terminalState = "error";
+
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
@@ -392,13 +430,25 @@ export function createSSEStream(options = {}) {
             controller.enqueue(sharedEncoder.encode(output));
           }
 
+          // A silent/incomplete close on a Claude client stream must not look like
+          // a clean finish — synthesize event:error before the sentinel/finalize
+          // below, so the client sees an explicit failure and the account is not
+          // cleared (terminalState stays "error", genuineTerminalSeen stays false).
+          if (sourceFormat === FORMATS.CLAUDE && terminalState === null) {
+            const failedOutput = formatIncompleteAnthropicStreamFailure();
+            reqLogger?.appendConvertedChunk?.(failedOutput);
+            controller.enqueue(sharedEncoder.encode(failedOutput));
+            terminalState = "error";
+          }
+
           // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
           // Some clients (e.g. OpenClaw) expect the OpenAI-style sentinel:
           //   data: [DONE]\n\n
           // Without it they can hang until timeout and trigger failover.
           // Gemini-family clients (Antigravity, Vertex, Gemini) reject this sentinel with 400 syntax errors.
+          // Claude uses message_stop or the event:error synthesized above and MUST NOT receive [DONE].
           const isGeminiFamily = provider === "antigravity" || provider === "gemini" || provider === "vertex";
-          if (!streamDoneSent && !isGeminiFamily) {
+          if (sourceFormat !== FORMATS.CLAUDE && !streamDoneSent && !isGeminiFamily) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
@@ -462,6 +512,18 @@ export function createSSEStream(options = {}) {
           }
         }
 
+        // Synthesize a Claude error terminal if a Claude client stream ends without one.
+        // A silent close (empty/malformed upstream) would otherwise look like a clean
+        // finish to the client; emit event:error so the client sees an explicit failure.
+        // This is NOT a success terminal — genuineTerminalSeen stays false so the account
+        // is not cleared and fallback bookkeeping treats it as a failed stream.
+        if (sourceFormat === FORMATS.CLAUDE && terminalState === null) {
+          const failedOutput = formatIncompleteAnthropicStreamFailure();
+          reqLogger?.appendConvertedChunk?.(failedOutput);
+          controller.enqueue(sharedEncoder.encode(failedOutput));
+          terminalState = "error";
+        }
+
         // Synthesize response.failed if a Responses passthrough stream never reached a terminal event
         const keepsOpenAIResponsesFormat = targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI_RESPONSES;
         if (keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
@@ -506,9 +568,10 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, sourceFormat = FORMATS.OPENAI) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
+    sourceFormat,
     provider,
     reqLogger,
     model,

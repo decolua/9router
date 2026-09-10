@@ -1,4 +1,5 @@
 import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
+import { classifyFallbackError } from "../services/accountFallback.js";
 
 /**
  * Build OpenAI-compatible error response body
@@ -96,11 +97,20 @@ export async function parseUpstreamError(response, executor = null) {
  * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number }}
  */
 export function createErrorResult(statusCode, message, resetsAtMs) {
+  // Attach scope so the account layer can skip locking on request-scoped errors
+  // (e.g. Kiro CONTENT_LENGTH_EXCEEDS_THRESHOLD / input too long) while still
+  // letting a combo advance to the next model.
+  const { scope, lockAccount, accountFallback, comboFallback } = classifyFallbackError(statusCode, message);
   return {
     success: false,
     status: statusCode,
     error: message,
     resetsAtMs,
+    errorScope: scope,
+    lockAccount,
+    accountFallback,
+    comboFallback,
+    streamStarted: false,
     response: errorResponse(statusCode, message)
   };
 }

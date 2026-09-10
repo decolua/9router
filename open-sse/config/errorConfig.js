@@ -75,6 +75,24 @@ export const ERROR_RULES = [
   { status: 429, backoff: true },
 ];
 
+/**
+ * Request-scoped error rules: the failure is caused by THIS request (too long,
+ * malformed input), not by the account/credential. For these:
+ *   - lockAccount: false  → do NOT cool down / lock the account (retrying the
+ *     same request on another account would fail identically).
+ *   - comboFallback: true → a combo SHOULD advance to the next model (a smaller-
+ *     context model may accept it); a solo request returns the error as-is.
+ * Matched case-insensitively as a substring, and optionally gated by status.
+ */
+export const REQUEST_SCOPED_ERROR_RULES = [
+  { text: "content_length_exceeds_threshold" },
+  { text: "input is too long" },
+  { text: "prompt is too long" },
+  { text: "context length exceeded" },
+  { text: "maximum context length" },
+  { text: "too many tokens" },
+];
+
 // Backward compat: COOLDOWN_MS object (used by index.js re-export)
 export const COOLDOWN_MS = {
   unauthorized: COOLDOWN.long,

@@ -16,7 +16,7 @@ import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "open-sse/services/combo.js";
-import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
+import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy, guardRequestForModelContext } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
@@ -220,6 +220,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   const { provider, model } = modelInfo;
 
+  // Conservative context guard for every model with explicit context metadata,
+  // including Kiro models (not only capacity-adapter-added models). Small requests
+  // remain object-identical; oversized histories drop the middle while preserving
+  // system/developer messages and the trailing current user/tool/media run.
+  body = guardRequestForModelContext(body, `${provider}/${model}`, ({
+    droppedMessages, beforeChars, afterChars, budgetChars
+  }) => {
+    log.warn("CONTEXT", `${provider}/${model} dropped ${droppedMessages} middle messages · chars ${beforeChars}→${afterChars} · budget ${Math.floor(budgetChars)}`);
+  });
+
   // Routing shown in the unified "▶" line (client model → provider/model)
 
   // Extract userAgent from request
@@ -320,11 +330,18 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       if (quotaResetMs) resetsAtMs = quotaResetMs;
     }
 
+    // Request-scoped failures (e.g. input too long) must not lock this healthy
+    // credential or retry another account for the same model. The Response then
+    // returns to combo.js, whose comboFallback policy can advance to another model.
+    const shouldLockAccount = result.lockAccount !== false;
+
     // Exhausted Antigravity model is blocked only in RAM cache until upstream resetAt.
     // Do not persist a modelLock_* for this path.
     const shouldFallback = provider === "antigravity" && quotaResetMs
       ? true
-      : (await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, resetsAtMs)).shouldFallback;
+      : shouldLockAccount
+        ? (await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, resetsAtMs)).shouldFallback
+        : result.accountFallback === true;
 
     if (shouldFallback) {
       log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);

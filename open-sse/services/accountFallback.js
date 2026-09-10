@@ -1,4 +1,4 @@
-import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
+import { ERROR_RULES, REQUEST_SCOPED_ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
@@ -13,40 +13,83 @@ export function getQuotaCooldown(backoffLevel = 0) {
 }
 
 /**
- * Check if error should trigger account fallback (switch to next account)
- * Config-driven: matches ERROR_RULES top-to-bottom (text rules first, then status)
- * @param {number} status - HTTP status code
- * @param {string} errorText - Error message text
- * @param {number} backoffLevel - Current backoff level for exponential backoff
- * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number }}
+ * Classify an upstream failure by scope and fallback policy.
+ *
+ * scope:
+ *   request   — request content/size is invalid; account remains healthy
+ *   account   — credential/quota/account-specific failure
+ *   transport — transient provider/network failure (default)
+ *
+ * accountFallback controls trying another credential for the SAME model.
+ * comboFallback controls advancing to another model in a combo.
  */
-export function checkFallbackError(status, errorText, backoffLevel = 0) {
+export function classifyFallbackError(status, errorText, backoffLevel = 0) {
   const lowerError = errorText
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
 
-  for (const rule of ERROR_RULES) {
-    // Text-based rule: match substring in error message
-    if (rule.text && lowerError && lowerError.includes(rule.text)) {
-      if (rule.backoff) {
-        const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
-      }
-      return { shouldFallback: true, cooldownMs: rule.cooldownMs };
-    }
-
-    // Status-based rule: match HTTP status code
-    if (rule.status && rule.status === status) {
-      if (rule.backoff) {
-        const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
-        return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
-      }
-      return { shouldFallback: true, cooldownMs: rule.cooldownMs };
+  for (const rule of REQUEST_SCOPED_ERROR_RULES) {
+    if ((!rule.status || rule.status === status) && rule.text && lowerError.includes(rule.text)) {
+      return {
+        scope: "request",
+        lockAccount: false,
+        accountFallback: false,
+        comboFallback: true,
+        shouldFallback: false,
+        cooldownMs: 0,
+      };
     }
   }
 
-  // Default: transient cooldown for any unmatched error
-  return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
+  for (const rule of ERROR_RULES) {
+    const matched = (rule.text && lowerError && lowerError.includes(rule.text))
+      || (rule.status && rule.status === status);
+    if (!matched) continue;
+
+    if (rule.backoff) {
+      const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
+      return {
+        scope: "account",
+        lockAccount: true,
+        accountFallback: true,
+        comboFallback: true,
+        shouldFallback: true,
+        cooldownMs: getQuotaCooldown(newLevel),
+        newBackoffLevel: newLevel,
+      };
+    }
+    return {
+      scope: "account",
+      lockAccount: true,
+      accountFallback: true,
+      comboFallback: true,
+      shouldFallback: true,
+      cooldownMs: rule.cooldownMs,
+    };
+  }
+
+  return {
+    scope: "transport",
+    lockAccount: true,
+    accountFallback: true,
+    comboFallback: true,
+    shouldFallback: true,
+    cooldownMs: TRANSIENT_COOLDOWN_MS,
+  };
+}
+
+/**
+ * Backward-compatible account fallback wrapper. Existing call sites continue to
+ * receive { shouldFallback, cooldownMs, newBackoffLevel? }; new code should use
+ * classifyFallbackError when it needs request/account/combo policy.
+ */
+export function checkFallbackError(status, errorText, backoffLevel = 0) {
+  const classification = classifyFallbackError(status, errorText, backoffLevel);
+  return {
+    shouldFallback: classification.accountFallback,
+    cooldownMs: classification.cooldownMs,
+    ...(classification.newBackoffLevel != null ? { newBackoffLevel: classification.newBackoffLevel } : {}),
+  };
 }
 
 /**

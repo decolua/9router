@@ -1,6 +1,6 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
-import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
+import { formatRetryAfter, classifyFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { getAntigravityQuotaCache } from "./antigravityQuota.js";
@@ -259,7 +259,16 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
       : Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
     newBackoffLevel = 0;
   } else {
-    ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));
+    const classification = classifyFallbackError(status, errorText, backoffLevel);
+    // Request-scoped failures (e.g. input too long, CONTENT_LENGTH_EXCEEDS_THRESHOLD)
+    // are caused by THIS request, not the account — never lock the credential.
+    // A combo still advances to another model, but the account stays healthy.
+    if (!classification.lockAccount) {
+      return { shouldFallback: classification.accountFallback, cooldownMs: 0 };
+    }
+    shouldFallback = classification.accountFallback;
+    cooldownMs = classification.cooldownMs;
+    newBackoffLevel = classification.newBackoffLevel;
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 

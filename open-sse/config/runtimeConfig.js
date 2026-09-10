@@ -55,6 +55,21 @@ export const STREAM_STALL_TIMEOUT_MS = envMs("STREAM_STALL_TIMEOUT_MS", 360 * 10
 // Time-to-first-token timeout (prompt prefill). Env: STREAM_FIRST_CHUNK_TIMEOUT_MS.
 export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_MS", 200 * 1000);
 
+// Stream preflight: validate a valid first output event before committing HTTP 200,
+// so a stream that never starts (empty/malformed 200) fails pre-commit and lets
+// combo/account fallback run instead of returning an empty 200 to the client.
+function envBool(name, def) {
+  const raw = process.env[name]?.trim().toLowerCase();
+  if (raw == null || raw === "") return def;
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+export const STREAM_PREFLIGHT_ENABLED = envBool("STREAM_PREFLIGHT_ENABLED", true);
+// Max time to wait for the first valid output event during preflight.
+export const STREAM_PREFLIGHT_TIMEOUT_MS = envMs("STREAM_PREFLIGHT_TIMEOUT_MS", STREAM_FIRST_CHUNK_TIMEOUT_MS);
+// Max bytes buffered during preflight before giving up (guards against a slow
+// dribble of comments/heartbeats that never yields a real first event).
+export const STREAM_PREFLIGHT_MAX_BYTES = envMs("STREAM_PREFLIGHT_MAX_BYTES", 64 * 1024);
+
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
 
