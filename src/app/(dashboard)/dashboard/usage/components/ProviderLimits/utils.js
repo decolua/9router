@@ -29,6 +29,14 @@ export function getConnectionLabel(connection) {
     || null;
 }
 
+export function getCodexPlan(quota, connection) {
+  const livePlan = quota?.plan?.trim();
+  if (livePlan && livePlan.toLowerCase() !== "unknown") return livePlan;
+
+  const storedPlan = connection?.providerSpecificData?.chatgptPlanType?.trim();
+  return storedPlan || null;
+}
+
 export function getConnectionQuotaRemaining(connection, quotaData) {
   const quota = quotaData[connection.id]?.quotas?.[0];
   if (!quota) return Number.POSITIVE_INFINITY;
