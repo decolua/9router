@@ -121,6 +121,16 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     const safeContent = contentObj?.content || "[Empty streaming response]";
     const safeThinking = contentObj?.thinking || null;
 
+    // An empty stream is NOT a success. This was hardcoded to "success", so a
+    // request that produced no content at all was recorded green — the dashboard,
+    // the usage view and anything reading requestDetails all agreed nothing was
+    // wrong while the caller received an empty body. Recording it truthfully is
+    // what makes the failure findable; pipeWithDisconnect emits the client-facing
+    // error frame (2026-08-05, expired Claude OAuth left isActive).
+    const producedNothing = !contentObj?.content && !contentObj?.thinking &&
+      !(usage?.completion_tokens > 0);
+    const detailStatus = producedNothing ? "error" : "success";
+
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
       latency,
@@ -130,10 +140,13 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       providerResponse: safeContent,
       response: { content: safeContent, thinking: safeThinking, type: "streaming" },
       pxpipe,
-      status: "success"
+      status: detailStatus
     }, { id: streamDetailId })).catch(err => {
       console.error("[RequestDetail] Failed to update streaming content:", err.message);
     });
+    if (producedNothing && log?.errorLine) {
+      log.errorLine(reqTag, "✗", `EMPTY STREAM · ${provider}/${model} · no content and no completion tokens`);
+    }
 
     // Persist stream usage to DB (no console line; the "📊 done" line below is authoritative)
     saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, label: "STREAM USAGE", silent: true });
