@@ -88,6 +88,26 @@ export const MODEL_PRICING = {
   // === Qwen ===
   "qwen3-coder-plus":             { input: 1.00,  output: 4.00,  cached: 0.50,  reasoning: 6.00,   cache_creation: 1.00  },
   "qwen3-coder-flash":            { input: 0.50,  output: 2.00,  cached: 0.25,  reasoning: 3.00,   cache_creation: 0.50  },
+  // Qwen3.8 family — canonical provider-agnostic rates (mirror TokenRouter overrides).
+  "qwen3-coder-plus":             { input: 0.65,  output: 3.25,  cached: 0.50,  reasoning: 3.25,   cache_creation: 1.00  },
+  "qwen3-coder-flash":            { input: 0.195, output: 0.975, cached: 0.25,  reasoning: 0.975,  cache_creation: 0.50  },
+  "qwen3-coder-next":             { input: 0.12,  output: 0.80,  cached: 0.06,  reasoning: 0.80,   cache_creation: 0.50  },
+  "qwen3.8-max":                  { input: 2.00,  output: 6.00,  cached: 0.25,  cache_creation: 2.50,  reasoning: 6.00  },
+  "qwen3.8-27b":                  { input: 0.40,  output: 3.00,  cached: 0.05,  reasoning: 3.00  },
+  "qwen3.8-2.4t-a95b":            { input: 2.00,  output: 6.00,  cached: 0.25,  reasoning: 6.00  },
+  "qwen3.7-max":                  { input: 1.475, output: 4.425, cached: 0.25,  reasoning: 4.425  },
+  "qwen3.7-plus":                 { input: 0.32,  output: 1.28,  cached: 0.08,  reasoning: 1.28  },
+  "qwen3.6-plus":                 { input: 0.325, output: 1.95,  reasoning: 1.95  },
+  "qwen3.6-flash":                { input: 0.1875, output: 1.125, cached: 0.01875, cache_creation: 0.2344, reasoning: 1.125 },
+  "qwen3.6-35b-a3b":              { input: 0.098, output: 0.95,  reasoning: 0.95  },
+  "qwen3.6-27b":                  { input: 0.289, output: 2.40,  reasoning: 2.40  },
+  "qwen3.6-max-preview":          { input: 1.027, output: 6.162, reasoning: 6.162  },
+  "qwen3.5-plus":                 { input: 0.30,  output: 1.80,  reasoning: 1.80  },
+  "qwen3.5-flash":                { input: 0.065, output: 0.26,  reasoning: 0.26  },
+  "qwen3.5-27b":                  { input: 0.195, output: 1.56,  reasoning: 1.56  },
+  "qwen3.5-35b-a3b":              { input: 0.14,  output: 1.00,  reasoning: 1.00  },
+  "qwen3.5-122b-a10b":            { input: 0.26,  output: 2.08,  reasoning: 2.08  },
+  "qwen3.5-397b-a17b":            { input: 0.3025, output: 1.925, reasoning: 1.925  },
 
   // === Kimi ===
   // Official platform.kimi.ai: cache-hit / cache-miss / output per 1M tokens
@@ -347,6 +367,14 @@ export const PATTERN_PRICING = [
   // --- Grok ---
   { pattern: "grok-code-*",     pricing: { input: 0.50,  output: 2.00,  cached: 0.25,  reasoning: 3.00,   cache_creation: 0.50  } },
   { pattern: "grok-*",          pricing: { input: 0.50,  output: 2.00,  cached: 0.25,  reasoning: 3.00,   cache_creation: 0.50  } },
+
+  // --- Meta Muse (specific first, generic last) ---
+  // Muse Spark (Meta Model API): $1.25/$4.25 standard, $0.10/$0.20 contributor.
+  { pattern: "*muse-spark*contributor*", pricing: { input: 0.10,  output: 0.20,  cached: 0.002, reasoning: 0.30,   cache_creation: 0.10  } },
+  { pattern: "*muse-spark*",    pricing: { input: 1.25,  output: 4.25,  cached: 0.15,  reasoning: 6.375,  cache_creation: 1.25  } },
+  // Muse Glimmer (open-weight 30B): ~$0.30/$1.20 via resellers.
+  { pattern: "*muse-glimmer*",  pricing: { input: 0.30,  output: 1.20,  cached: 0.04,  reasoning: 1.80,   cache_creation: 0.30  } },
+  { pattern: "*muse*",          pricing: { input: 1.25,  output: 4.25,  cached: 0.15,  reasoning: 6.375,  cache_creation: 1.25  } },
 ];
 
 /**
