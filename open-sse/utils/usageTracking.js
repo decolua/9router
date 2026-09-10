@@ -210,6 +210,36 @@ export function canonicalizeUsage(usage) {
 }
 
 /**
+ * Convert Claude's cache-exclusive input accounting to OpenAI's convention,
+ * where prompt_tokens includes cached and newly cached input tokens.
+ */
+export function claudeUsageToOpenAI(usage) {
+  const canonical = canonicalizeUsage({
+    prompt_tokens: usage?.input_tokens,
+    completion_tokens: usage?.output_tokens,
+    cache_read_input_tokens: usage?.cache_read_input_tokens,
+    cache_creation_input_tokens: usage?.cache_creation_input_tokens,
+  });
+  if (!canonical) return null;
+
+  const result = {
+    prompt_tokens: canonical.prompt_tokens,
+    completion_tokens: canonical.completion_tokens,
+    total_tokens: canonical.total_tokens,
+  };
+  if (canonical.cached_tokens > 0 || canonical.cache_creation_input_tokens > 0) {
+    result.prompt_tokens_details = {};
+    if (canonical.cached_tokens > 0) {
+      result.prompt_tokens_details.cached_tokens = canonical.cached_tokens;
+    }
+    if (canonical.cache_creation_input_tokens > 0) {
+      result.prompt_tokens_details.cache_creation_tokens = canonical.cache_creation_input_tokens;
+    }
+  }
+  return result;
+}
+
+/**
  * Check if usage has valid token data
  * Valid = has at least one token field with value > 0
  * Invalid = empty object {}, null, undefined, no token fields, or all zeros
