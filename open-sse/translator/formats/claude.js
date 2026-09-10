@@ -461,8 +461,21 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     // Strip built-in tools (e.g. web_search_20250305) and normalize to Anthropic-native shape
     // (drop `type` field, fold `function.{name,description,parameters}`) for non-Anthropic providers
     if (provider !== "claude") {
+      // Provider-specific whitelist of Anthropic tool `type` values that the
+      // upstream actually accepts. When the provider declares it
+      // (e.g. DeepSeek — only web_search_*), keep only listed types; otherwise
+      // keep the prior behaviour of dropping every non-function tool, which is
+      // correct for OpenAI-compatible targets reached through this Claude-format
+      // pass (their tools get normalized below to function-style).
+      const supportedTypes = PROVIDERS[provider]?.quirks?.claudeSupportedToolTypes;
+      const hasWhitelist = Array.isArray(supportedTypes);
       body.tools = body.tools
-        .filter(tool => !tool.type || tool.type === "function")
+        .filter(tool => {
+          const t = tool?.type;
+          if (!t || t === "function") return true;
+          if (hasWhitelist) return supportedTypes.includes(t);
+          return false;
+        })
         .map(tool => {
           if (tool.function) {
             return {
@@ -471,6 +484,13 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
               input_schema: tool.function.parameters,
             };
           }
+          // When the provider declared a supportedToolTypes whitelist, keep
+          // the surviving tools' `type` field intact — the upstream
+          // Anthropic-compatible endpoint (e.g. DeepSeek) requires it to
+          // route built-ins like web_search_* correctly. Without a
+          // whitelist, preserve prior behaviour and strip `type` so the
+          // tool is normalized to plain Anthropic shape.
+          if (hasWhitelist) return tool;
           const { type, ...rest } = tool;
           return rest;
         });
