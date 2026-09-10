@@ -552,7 +552,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
   );
 }
 
-function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove, onTest, isTesting, testStatus }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -574,12 +574,50 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
     if (e.key === "Escape") { setDraft(model); setEditing(false); }
   };
 
+  const testState = testStatus?.state;
+  const borderColor = testState === "ok"
+    ? "border border-green-500/40"
+    : testState === "error"
+    ? "border border-red-500/40"
+    : "border border-transparent";
+  const statusIcon = isTesting
+    ? "progress_activity"
+    : testState === "ok"
+    ? "check_circle"
+    : testState === "error"
+    ? "cancel"
+    : null;
+  const statusColor = testState === "ok"
+    ? "#22c55e"
+    : testState === "error"
+    ? "#ef4444"
+    : undefined;
+  // Latency tooltip: "{latencyMs}ms" on ok, truncated error on failure.
+  const testTooltip = testState === "ok"
+    ? `${testStatus.latencyMs ?? "?"}ms`
+    : testState === "error"
+    ? (testStatus.error || "Model not reachable").slice(0, 240)
+    : isTesting ? "Testing..." : "Test";
+
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`group flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 bg-black/[0.02] hover:bg-black/[0.04] dark:bg-white/[0.02] dark:hover:bg-white/[0.04] transition-colors ${isDragging ? "shadow-md ring-1 ring-primary/30" : ""}`}
+      className={`group flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 bg-black/[0.02] hover:bg-black/[0.04] dark:bg-white/[0.02] dark:hover:bg-white/[0.04] transition-colors ${borderColor} ${isDragging ? "shadow-md ring-1 ring-primary/30" : ""}`}
     >
+      {/* Status icon (replaces spacer when idle shows nothing) */}
+      {statusIcon ? (
+        <span
+          className="material-symbols-outlined shrink-0 text-[14px]"
+          style={{
+            color: statusColor,
+            ...(isTesting ? { animation: "spin 1s linear infinite" } : {}),
+          }}
+        >
+          {statusIcon}
+        </span>
+      ) : null}
+
       {/* Drag handle */}
       <button
         {...attributes}
@@ -618,7 +656,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
         </div>
       )}
 
-      {/* Priority arrows */}
+      {/* Priority arrows + Test */}
       <div className="flex shrink-0 items-center gap-0.5">
         <button
           onClick={onMoveUp}
@@ -636,6 +674,20 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
         >
           <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
         </button>
+        {onTest && (
+          <div className="relative group/test">
+            <button
+              onClick={onTest}
+              disabled={isTesting}
+              className="p-0.5 rounded text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5 transition-colors disabled:opacity-60"
+              title={testTooltip}
+            >
+              <span className="material-symbols-outlined text-[12px]" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
+                {isTesting ? "progress_activity" : "science"}
+              </span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Remove */}
@@ -658,6 +710,8 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
+  const [modelTestResults, setModelTestResults] = useState({});
+  const [testingModelIds, setTestingModelIds] = useState(() => new Set());
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -741,6 +795,36 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
     setModels(newModels);
   };
 
+  // Probe one combo model via POST /api/models/test (same endpoint the provider
+  // detail page uses). uid keeps results stable across reorders/edits.
+  const handleTestModel = async (uid, modelValue) => {
+    if (testingModelIds.has(uid)) return;
+    setTestingModelIds((prev) => new Set(prev).add(uid));
+    try {
+      const res = await fetch("/api/models/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: modelValue }),
+      });
+      const data = await res.json().catch(() => ({}));
+      setModelTestResults((prev) => ({
+        ...prev,
+        [uid]: {
+          state: data.ok ? "ok" : "error",
+          latencyMs: typeof data.latencyMs === "number" ? data.latencyMs : null,
+          error: data.ok ? null : (data.error || "Model not reachable"),
+        },
+      }));
+    } catch {
+      setModelTestResults((prev) => ({
+        ...prev,
+        [uid]: { state: "error", latencyMs: null, error: "Network error" },
+      }));
+    } finally {
+      setTestingModelIds((prev) => { const n = new Set(prev); n.delete(uid); return n; });
+    }
+  };
+
   const handleSave = async () => {
     if (!validateName(name)) return;
     setSaving(true);
@@ -801,6 +885,9 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
                       onMoveUp={() => handleMoveUp(index)}
                       onMoveDown={() => handleMoveDown(index)}
                       onRemove={() => handleRemoveModel(index)}
+                      onTest={() => handleTestModel(uid, model)}
+                      isTesting={testingModelIds.has(uid)}
+                      testStatus={modelTestResults[uid]}
                     />
                   ))}
                 </div>
