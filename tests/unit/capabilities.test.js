@@ -63,6 +63,27 @@ describe("getCapabilitiesForModel", () => {
     expect(getCapabilitiesForModel("kiro", "gpt-5.6-sol-thinking-agentic")).toMatchObject(kiroGpt56Expected);
   });
 
+  it("reports all muse-spark variants with vision, 1M context and 128k output", () => {
+    const expected = {
+      contextWindow: 1048576,
+      maxOutput: 131072,
+      vision: true,
+      reasoning: true,
+      thinkingFormat: "openai",
+    };
+    for (const model of [
+      "muse-spark-1.2",
+      "muse-spark-1.2-contributor",
+      "muse-spark-1.2-contributor-free",
+      "muse-spark-1.3-contributor-free",
+      "meta/muse-spark-1.2-contributor",
+      "ocg/muse-spark-1.2-contributor-free",
+    ]) {
+      expect(getCapabilitiesForModel("opencode", model)).toMatchObject(expected);
+      expect(getCapabilitiesForModel("orcarouter", model)).toMatchObject(expected);
+    }
+  });
+
   it("reports Codex GPT 6.0 Astra as a vision and thinking capable model", () => {
     expect(getCapabilitiesForModel("codex", "gpt-6-astra")).toMatchObject({
       vision: true,
