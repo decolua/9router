@@ -125,11 +125,14 @@ export default function ProvidersPage() {
 
   const sortByPriority = (entries, authType) =>
     [...entries].sort(([ka, a], [kb, b]) => {
+      const sa = getProviderStats(ka, authType);
+      const sb = getProviderStats(kb, authType);
+      const enabledA = sa.total > 0 && !sa.allDisabled;
+      const enabledB = sb.total > 0 && !sb.allDisabled;
+      if (enabledA !== enabledB) return Number(enabledB) - Number(enabledA);
       const pa = a.priority ?? 999;
       const pb = b.priority ?? 999;
       if (pa !== pb) return pa - pb;
-      const sa = getProviderStats(ka, authType);
-      const sb = getProviderStats(kb, authType);
       const ca = sa.connected > 0 ? 1 : 0;
       const cb = sb.connected > 0 ? 1 : 0;
       if (ca !== cb) return cb - ca;
@@ -138,11 +141,14 @@ export default function ProvidersPage() {
 
   const sortItemsByPriority = (items, authType) =>
     [...items].sort((a, b) => {
+      const sa = getProviderStats(a.id, authType);
+      const sb = getProviderStats(b.id, authType);
+      const enabledA = sa.total > 0 && !sa.allDisabled;
+      const enabledB = sb.total > 0 && !sb.allDisabled;
+      if (enabledA !== enabledB) return Number(enabledB) - Number(enabledA);
       const pa = a.priority ?? 999;
       const pb = b.priority ?? 999;
       if (pa !== pb) return pa - pb;
-      const sa = getProviderStats(a.id, authType);
-      const sb = getProviderStats(b.id, authType);
       const ca = sa.connected > 0 ? 1 : 0;
       const cb = sb.connected > 0 ? 1 : 0;
       if (ca !== cb) return cb - ca;
