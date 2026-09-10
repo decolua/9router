@@ -16,14 +16,17 @@ const TOOL_CALL_PREFIX = "[Called tools: ";
 const TOOL_RESULT_PREFIX = "[Tool result: ";
 
 // Flatten tool turns into prose so panel models keep the context but can't loop
-// on tools: drop the request's tools, turn tool/function results into assistant
+// on tools: drop the request's tools, turn tool/function results into user
 // text, and inline assistant tool_calls names instead of the structured field.
+// Tool results become user turns (matching the claude-to-openai translator's
+// ROLE.TOOL → USER mapping): a trailing assistant turn is rejected by Anthropic
+// as unsupported prefill on newer Claude models.
 function flattenToolHistory(messages) {
   return messages
     .filter((msg) => msg)
     .map((msg) => {
       if (msg.role === "tool" || msg.role === "function") {
-        return { role: "assistant", content: `${TOOL_RESULT_PREFIX}${extractTextContent(msg.content) || String(msg.content ?? "")}]` };
+        return { role: "user", content: `${TOOL_RESULT_PREFIX}${extractTextContent(msg.content) || String(msg.content ?? "")}]` };
       }
       if (msg.role === "assistant" && Array.isArray(msg.tool_calls)) {
         const { tool_calls, ...rest } = msg;
@@ -56,6 +59,16 @@ function flattenToolHistory(messages) {
       }
       return msg;
     });
+}
+
+// Anthropic rejects conversations that end on an assistant turn ("assistant
+// message prefill") for newer Claude models. Panel bodies are synthesized
+// requests, so close any trailing assistant/model turn (client prefill, or an
+// assistant tool_call inlined by flattenToolHistory) with a user turn.
+function ensureTrailingUserTurn(messages) {
+  const last = messages[messages.length - 1];
+  if (last?.role !== "assistant" && last?.role !== "model") return messages;
+  return [...messages, { role: "user", content: "Continue from where the previous assistant message left off." }];
 }
 
 // Reorder combo models by capability fit. Stable; never drops a model (fallback intact).
@@ -572,9 +585,9 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
 
   // Flatten tool turns to prose so panel models keep context without emitting tool_calls.
   if (Array.isArray(panelBody.messages)) {
-    panelBody.messages = flattenToolHistory(panelBody.messages);
+    panelBody.messages = ensureTrailingUserTurn(flattenToolHistory(panelBody.messages));
   } else if (Array.isArray(panelBody.input)) {
-    panelBody.input = flattenToolHistory(panelBody.input);
+    panelBody.input = ensureTrailingUserTurn(flattenToolHistory(panelBody.input));
   }
 
   const t0 = Date.now();
