@@ -111,10 +111,19 @@ const GOOGLE_DNS_SERVERS = ["8.8.8.8", "8.8.4.4"];
 const HTTPS_PORT = 443;
 const HTTP_SUCCESS_MIN = 200;
 const HTTP_SUCCESS_MAX = 300;
+const DEFAULT_PROXY_CONNECT_TIMEOUT_MS = 90_000;
+const DEFAULT_PROXY_HEADERS_TIMEOUT_MS = 300_000;
 
 function normalizeString(value) {
   if (value === undefined || value === null) return "";
   return String(value).trim();
+}
+
+function readPositiveIntegerEnv(name, fallback) {
+  const raw = normalizeString(process.env[name]);
+  if (!/^[1-9]\d*$/.test(raw)) return fallback;
+  const value = Number(raw);
+  return Number.isSafeInteger(value) ? value : fallback;
 }
 
 /**
@@ -226,7 +235,14 @@ async function getDispatcher(proxyUrl) {
       proxyDispatchers.delete(proxyDispatchers.keys().next().value);
     }
     const { ProxyAgent } = await import("undici");
-    proxyDispatchers.set(normalized, new ProxyAgent({ uri: normalized }));
+    const connectTimeout = readPositiveIntegerEnv("PROXY_CONNECT_TIMEOUT_MS", DEFAULT_PROXY_CONNECT_TIMEOUT_MS);
+    const headersTimeout = readPositiveIntegerEnv("PROXY_HEADERS_TIMEOUT_MS", DEFAULT_PROXY_HEADERS_TIMEOUT_MS);
+    proxyDispatchers.set(normalized, new ProxyAgent({
+      uri: normalized,
+      connectTimeout,
+      headersTimeout,
+      bodyTimeout: 0,
+    }));
   }
 
   return proxyDispatchers.get(normalized);
