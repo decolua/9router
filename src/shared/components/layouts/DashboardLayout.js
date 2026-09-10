@@ -76,8 +76,8 @@ export default function DashboardLayout({ children }) {
         />
       )}
 
-      {/* Sidebar - Desktop */}
-      <div className="hidden lg:flex">
+      {/* #1481: keep desktop sidebar visibility independent from Tailwind hidden/lg:flex ordering. */}
+      <div className="dashboard-sidebar-desktop">
         <Sidebar />
       </div>
 
