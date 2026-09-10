@@ -5,6 +5,7 @@ import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { chatCompletionToClaudeMessage } from "./claudeResponseConverter.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -266,6 +267,20 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
             responseId: jsonResponse.id || `resp_${Date.now()}`
           }
         };
+      } else if (sourceFormat === FORMATS.CLAUDE) {
+        const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
+        if (hasToolCalls) message.tool_calls = toolCalls;
+        const responseDone = jsonResponse.status === "completed" || jsonResponse.status === "done";
+        const finishReason = hasToolCalls ? "tool_calls" : (responseDone ? "stop" : (jsonResponse.status || "stop"));
+        const intermediate = {
+          id: jsonResponse.id || `chatcmpl-${Date.now()}`,
+          object: "chat.completion",
+          created: jsonResponse.created_at || Math.floor(Date.now() / 1000),
+          model: jsonResponse.model || model,
+          choices: [{ index: 0, message, finish_reason: finishReason }],
+          usage: { prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: inTokens + outTokens, ...cacheDetails }
+        };
+        finalResp = chatCompletionToClaudeMessage(intermediate);
       } else {
         const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
         if (hasToolCalls) message.tool_calls = toolCalls;
@@ -347,9 +362,12 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     // lost on the non-streaming return path. Inlined (not imported from
     // nonStreamingHandler.js) to avoid a circular import: nonStreamingHandler
     // already imports parseSSEToOpenAIResponse from this module.
-    const finalBody = sourceFormat === FORMATS.OPENAI_RESPONSES
-      ? chatCompletionToResponses(parsed, customToolNames)
-      : parsed;
+    let finalBody = parsed;
+    if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+      finalBody = chatCompletionToResponses(parsed, customToolNames);
+    } else if (sourceFormat === FORMATS.CLAUDE) {
+      finalBody = chatCompletionToClaudeMessage(parsed);
+    }
 
     return { success: true, response: new Response(JSON.stringify(finalBody), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {
