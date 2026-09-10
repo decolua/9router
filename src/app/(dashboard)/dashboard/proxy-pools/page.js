@@ -51,6 +51,8 @@ export default function ProxyPoolsPage() {
   const [healthProgress, setHealthProgress] = useState({ current: 0, total: 0 });
   const [bulkBusy, setBulkBusy] = useState(false);
   const [confirmState, setConfirmState] = useState(null);
+  const [showDeleteDeadModal, setShowDeleteDeadModal] = useState(false);
+  const [pendingDeleteIds, setPendingDeleteIds] = useState(new Set());
   const relayMenuRef = useRef(null);
   const notify = useNotificationStore();
 
@@ -180,7 +182,11 @@ export default function ProxyPoolsPage() {
       }
 
       await fetchProxyPools();
-      notify.success(data.ok ? "Proxy test passed" : "Proxy test failed");
+        if (data.ok) {
+          notify.success("Proxy test passed");
+        } else {
+          notify.error("Proxy test failed");
+        }
     } catch (error) {
       console.log("Error testing proxy pool:", error);
       notify.error("Failed to test proxy");
@@ -475,6 +481,18 @@ export default function ProxyPoolsPage() {
       };
     }
 
+    if (parts.length === 2) {
+      const [host, port] = parts;
+      if (!host || !port) {
+        throw new Error("Invalid host:port format");
+      }
+      const proxyUrl = `http://${host}:${port}`;
+      return {
+        proxyUrl,
+        name: `Imported ${host}:${port}`,
+      };
+    }
+
     throw new Error("Unsupported format");
   };
 
@@ -560,6 +578,11 @@ export default function ProxyPoolsPage() {
 
   const activeCount = useMemo(
     () => proxyPools.filter((pool) => pool.isActive === true).length,
+    [proxyPools]
+  );
+
+  const deadProxiesList = useMemo(
+    () => proxyPools.filter((pool) => pool.testStatus === "error"),
     [proxyPools]
   );
 
@@ -651,6 +674,20 @@ export default function ProxyPoolsPage() {
           )}
           <Badge variant="default">Total: {proxyPools.length}</Badge>
           <Badge variant="success">Active: {activeCount}</Badge>
+          {deadProxiesList.length > 0 && (
+            <Button
+              size="sm"
+              variant="secondary"
+              icon="delete"
+              onClick={() => {
+                setPendingDeleteIds(new Set(deadProxiesList.map((p) => p.id)));
+                setShowDeleteDeadModal(true);
+              }}
+              disabled={bulkBusy || healthChecking}
+            >
+              Delete Dead Proxies ({deadProxiesList.length})
+            </Button>
+          )}
         </div>
 
         {(selectedIds.length > 0 || healthChecking) && (
@@ -789,11 +826,11 @@ export default function ProxyPoolsPage() {
             <textarea
               value={batchImportText}
               onChange={(e) => setBatchImportText(e.target.value)}
-              placeholder={"http://user:pass@127.0.0.1:7897\n127.0.0.1:7897:user:pass"}
+              placeholder={"http://user:pass@127.0.0.1:7897\n127.0.0.1:7897:user:pass\n127.0.0.1:7897"}
               className="w-full min-h-[180px] py-2 px-3 text-sm text-text-main bg-white dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-md focus:ring-1 focus:ring-primary/30 focus:border-primary/50 focus:outline-none transition-all"
             />
             <p className="text-xs text-text-muted mt-1">
-              Supported formats: protocol://user:pass@host:port, host:port:user:pass
+              Supported formats: protocol://user:pass@host:port, host:port:user:pass, host:port
             </p>
           </div>
 
@@ -1045,6 +1082,134 @@ export default function ProxyPoolsPage() {
             <Button fullWidth variant="ghost" onClick={closeFormModal} disabled={saving}>
               Cancel
             </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={showDeleteDeadModal}
+        title="Delete Dead Proxies"
+        onClose={() => setShowDeleteDeadModal(false)}
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-sm text-text-muted">
+            The following proxies failed their last test. Remove any you want
+            to keep, then confirm deletion.
+          </p>
+          <div className="flex max-h-64 flex-col divide-y divide-black/[0.04] overflow-y-auto rounded-lg border border-border/50 dark:divide-white/[0.05]">
+            {deadProxiesList.length === 0 ? (
+              <p className="p-4 text-sm text-text-muted text-center">
+                No dead proxies found.
+              </p>
+            ) : (
+              deadProxiesList.map((proxy) => {
+                const removed = !pendingDeleteIds.has(proxy.id);
+                return (
+                  <div
+                    key={proxy.id}
+                    className={`flex items-center justify-between gap-3 px-4 py-3 ${
+                      removed ? "opacity-40" : ""
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className={`text-sm font-medium truncate ${removed ? "line-through" : ""}`}>
+                        {proxy.name}
+                      </p>
+                      <p className="text-xs text-text-muted truncate font-mono">
+                        {proxy.proxyUrl}
+                      </p>
+                      {proxy.lastError && !removed && (
+                        <p className="text-xs text-red-500 truncate mt-0.5">
+                          {proxy.lastError}
+                        </p>
+                      )}
+                    </div>
+                    {!removed && (
+                      <button
+                        onClick={() =>
+                          setPendingDeleteIds((prev) => {
+                            const next = new Set(prev);
+                            next.delete(proxy.id);
+                            return next;
+                          })
+                        }
+                        className="shrink-0 rounded p-1 text-text-muted hover:bg-red-500/10 hover:text-red-500 transition-colors"
+                        title="Remove from deletion list"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">close</span>
+                      </button>
+                    )}
+                    {removed && (
+                      <button
+                        onClick={() =>
+                          setPendingDeleteIds((prev) => {
+                            const next = new Set(prev);
+                            next.add(proxy.id);
+                            return next;
+                          })
+                        }
+                        className="shrink-0 rounded p-1 text-text-muted hover:bg-primary/10 hover:text-primary transition-colors"
+                        title="Add back to deletion list"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">undo</span>
+                      </button>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-text-muted">
+              {deadProxiesList.length - pendingDeleteIds.size} removed ·{" "}
+              {pendingDeleteIds.size} to delete
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                onClick={() => setShowDeleteDeadModal(false)}
+                disabled={bulkBusy}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                icon="delete"
+                onClick={async () => {
+                  setBulkBusy(true);
+                  try {
+                    let ok = 0;
+                    let blocked = 0;
+                    let failed = 0;
+                    for (const id of pendingDeleteIds) {
+                      try {
+                        const res = await fetch(`/api/proxy-pools/${id}`, {
+                          method: "DELETE",
+                        });
+                        if (res.ok) ok += 1;
+                        else if (res.status === 409) blocked += 1;
+                        else failed += 1;
+                      } catch {
+                        failed += 1;
+                      }
+                    }
+                    await fetchProxyPools();
+                    clearSelection();
+                    setShowDeleteDeadModal(false);
+                    notify.success(
+                      `Deleted ${ok}${blocked ? `, ${blocked} bound` : ""}${failed ? `, ${failed} failed` : ""}`
+                    );
+                  } finally {
+                    setBulkBusy(false);
+                  }
+                }}
+                disabled={pendingDeleteIds.size === 0 || bulkBusy}
+              >
+                {bulkBusy
+                  ? "Deleting..."
+                  : `Delete ${pendingDeleteIds.size} Dead Prox${pendingDeleteIds.size === 1 ? "y" : "ies"}`}
+              </Button>
+            </div>
           </div>
         </div>
       </Modal>
