@@ -153,7 +153,7 @@ docker build -t 9router .
 docker run -d \
   --name 9router \
   -p 3000:3000 \
-  -p 20128:20128 \
+  -p 127.0.0.1:20128:20128 \
   -e JWT_SECRET="your-secure-secret-change-this" \
   -e INITIAL_PASSWORD="your-secure-password" \
   -v 9router-data:/app/data \
@@ -173,7 +173,7 @@ services:
     container_name: 9router
     ports:
       - "3000:3000"
-      - "20128:20128"
+      - "127.0.0.1:20128:20128"
     environment:
       - NODE_ENV=production
       - JWT_SECRET=your-secure-secret-change-this
