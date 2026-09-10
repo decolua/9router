@@ -9,8 +9,10 @@ import {
   TUNNEL_PING_INTERVAL_MS,
   TUNNEL_PING_MAX_MS,
   STATUS_POLL_FAST_MS,
+  STATUS_POLL_SLOW_MS,
   REACHABLE_MISS_THRESHOLD,
   CLIENT_PING_FAST_MS,
+  CLIENT_PING_SLOW_MS,
 } from "./endpointConstants";
 import { clientPingUrl, clientPingAny } from "./endpointPing";
 import EndpointRow from "./components/EndpointRow";
@@ -112,8 +114,15 @@ export default function APIPageClient({ machineId }) {
     const allHealthy = tunnelHealthy && tsHealthy;
     const onVisible = () => { if (!document.hidden) syncTunnelStatus(); };
     document.addEventListener("visibilitychange", onVisible);
-    if (allHealthy) return () => document.removeEventListener("visibilitychange", onVisible);
-    const timer = setInterval(() => { if (!document.hidden) syncTunnelStatus(); }, STATUS_POLL_FAST_MS);
+    // Healthy is not a reason to stop looking. Returning here left the page with
+    // no timer at all, so a tunnel that dropped while everything was green was
+    // only noticed on the next visibilitychange -- which never fires if the tab
+    // simply stays open. Slow down instead of stopping; STATUS_POLL_SLOW_MS has
+    // been sitting beside STATUS_POLL_FAST_MS for exactly this.
+    const timer = setInterval(
+      () => { if (!document.hidden) syncTunnelStatus(); },
+      allHealthy ? STATUS_POLL_SLOW_MS : STATUS_POLL_FAST_MS,
+    );
     return () => {
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
@@ -148,8 +157,15 @@ export default function APIPageClient({ machineId }) {
     probeBoth();
     const tunnelHealthy = !tunnelEnabled || tunnelReachable;
     const tsHealthy = !tsEnabled || tsReachable;
-    if (tunnelHealthy && tsHealthy) return;
-    const id = setInterval(probeBoth, CLIENT_PING_FAST_MS);
+    // "slow when healthy" (see the comment above this effect) was never written:
+    // the healthy branch returned before any interval was created, so the probe
+    // that exists to keep the UI honest when backend DNS hiccups stopped running
+    // the moment the UI went green -- precisely when nothing else would catch a
+    // tunnel dropping underneath it.
+    const id = setInterval(
+      probeBoth,
+      tunnelHealthy && tsHealthy ? CLIENT_PING_SLOW_MS : CLIENT_PING_FAST_MS,
+    );
     return () => clearInterval(id);
   }, [tunnelEnabled, tunnelUrl, tunnelPublicUrl, tsEnabled, tsUrl, tunnelReachable, tsReachable]);
 
