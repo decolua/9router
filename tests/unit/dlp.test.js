@@ -32,10 +32,10 @@ import {
 const DIGITS = (s) => s.replace(/\D/g, "");
 
 describe("patterns", () => {
-  it("exports all 13 built-in types and DEFAULT_TYPES", () => {
+  it("exports all 14 built-in types and DEFAULT_TYPES", () => {
     expect(PII_TYPES.map((t) => t.id)).toEqual([
       "email", "phone", "cpf", "cnpj", "cep", "creditCard", "ip", "apiKey",
-      "usSsn", "usEin", "usZip", "iban", "eurVat",
+      "password", "usSsn", "usEin", "usZip", "iban", "eurVat",
     ]);
     expect(DEFAULT_TYPES).toEqual(["email", "phone", "cpf", "cnpj", "creditCard", "ip", "apiKey"]);
     for (const t of PII_TYPES) {
@@ -43,6 +43,35 @@ describe("patterns", () => {
       expect(t.regex).toBeInstanceOf(RegExp);
       expect(t.regex.global).toBe(true);
     }
+  });
+
+  it("password pattern matches config-style assignments only", () => {
+    const t = PATTERN_BY_ID.password;
+    const count = (s) => (s.match(t.regex) || []).length;
+    expect(count("password: hunter2")).toBe(1);
+    expect(count("passwd=hunter2")).toBe(1);
+    expect(count('"password": "x7!qZa"')).toBe(1);
+    expect(count("senha: 123456")).toBe(1);
+    expect(count("my password is 123456")).toBe(0);
+    expect(count("secret is: love")).toBe(0);
+    expect(count("no secrets here")).toBe(0);
+  });
+
+  it("password validate() rejects paths and doc placeholders, keeps real values", () => {
+    const masked = (s) => maskText(s, { mode: "redact", types: ["password"] }).matched;
+    // False positives — no masking
+    expect(masked("PWD=/var/www")).toBe(0);
+    expect(masked("password: changeme")).toBe(0);
+    expect(masked("secret: your_password_here")).toBe(0);
+    expect(masked("password: password")).toBe(0);
+    expect(masked("passwd: ********")).toBe(0);
+    // True positives — still masked (weak or strong, slot assignment is a leak)
+    expect(masked("password: hunter2")).toBe(1);
+    expect(masked('passwd=hunter2')).toBe(1);
+    expect(masked('"password": "x7!qZa"')).toBe(1);
+    expect(masked("senha: 123456")).toBe(1);
+    expect(masked("secret: Kx9mN2pL8qR4vY7w")).toBe(1);
+    expect(masked("password: a1b2c3")).toBe(1);
   });
 
   it("cpf validation accepts a known-valid CPF and rejects invalid ones", () => {

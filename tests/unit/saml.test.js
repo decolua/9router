@@ -144,6 +144,7 @@ describe("SAML 2.0 Auth Engine Utilities", () => {
     it("mergeWithDefaults safely populates DLP defaults for existing installations", () => {
       const merged = mergeWithDefaults({});
       expect(merged.dlpEnabled).toBe(false);
+      expect(merged.dlpConsent).toBe(false);
       expect(merged.dlpMode).toBe("pseudo");
       expect(merged.dlpTypes).toEqual(["email", "phone", "cpf", "cnpj", "creditCard", "ip", "apiKey"]);
       expect(merged.dlpCustomPatterns).toEqual([]);

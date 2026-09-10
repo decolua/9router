@@ -40,10 +40,14 @@ const DLP_CATEGORIES = [
     { id: "ip", label: "IP Address", desc: "IP addresses (IPv4/IPv6)" },
     { id: "apiKey", label: "API Key", desc: "API keys & bearer tokens" },
   ]},
+  { id: "credentials", label: "Credentials", types: [
+    { id: "password", label: "Password", desc: "Passwords & secrets in config-style assignments (password=…, passwd: …, senha …)" },
+  ]},
 ];
 
 const DEFAULT_SETTINGS = {
   dlpEnabled: false,
+  dlpConsent: false,
   dlpMode: "pseudo",
   dlpTypes: ["email", "phone", "cpf", "cnpj", "creditCard", "ip", "apiKey"],
   dlpCustomPatterns: [],
@@ -71,6 +75,7 @@ export default function PrivacyClient() {
   const [testState, setTestState] = useState({}); // { [patternId]: {sample, result} }
 
   const enabled = !!settings?.dlpEnabled;
+  const consented = !!settings?.dlpConsent;
   const showMapping = enabled && settings?.dlpMode === "pseudo";
 
   const loadSettings = useCallback(async () => {
@@ -100,6 +105,10 @@ export default function PrivacyClient() {
   const onToggleEnabled = async (v) => {
     setSettings((s) => ({ ...s, dlpEnabled: v }));
     await patchSetting({ dlpEnabled: v });
+  };
+  const onConsentChange = async (v) => {
+    setSettings((s) => ({ ...s, dlpConsent: v, dlpEnabled: v }));
+    await patchSetting({ dlpConsent: v, dlpEnabled: v });
   };
   const onSetMode = async (m) => {
     setSettings((s) => ({ ...s, dlpMode: m }));
@@ -185,9 +194,24 @@ export default function PrivacyClient() {
           <Toggle
             checked={enabled}
             onChange={onToggleEnabled}
+            disabled={!consented}
             label={enabled ? "Enabled" : "Disabled"}
           />
         </div>
+        <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+          ⚠️ Experimental feature — this module is provided as-is. Use at your own risk; we are not liable for any data loss or unexpected behavior.
+        </div>
+        <label className="mt-3 flex items-start gap-2 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={consented}
+            onChange={(e) => onConsentChange(e.target.checked)}
+          />
+          <span className="text-text-muted">
+            I understand this feature is experimental and I consent to using it at my own risk, including possible data loss.
+          </span>
+        </label>
       </Card>
 
       {!enabled && (

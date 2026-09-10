@@ -63,6 +63,7 @@ const DEFAULT_SETTINGS = {
   pxpipeMinChars: 25000,
   pxpipeTimeoutMs: 15000,
   dlpEnabled: false,
+  dlpConsent: false,
   dlpMode: "pseudo",
   dlpTypes: ["email", "phone", "cpf", "cnpj", "creditCard", "ip", "apiKey"],
   dlpCustomPatterns: [],

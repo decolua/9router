@@ -103,6 +103,13 @@ export function isValidIban(m) {
   }
 }
 
+// ---- Password FP guards (context slots only: reject paths & doc placeholders) ----
+const PASSWORD_PLACEHOLDERS = new Set([
+  "changeme", "yourpassword", "yourpasswordhere", "password", "secret",
+  "passwd", "example", "test", "testing", "default", "todo", "fixme",
+  "null", "undefined", "xxxxx",
+]);
+
 // ---- Catalog ----
 
 export const PII_TYPES = [
@@ -166,6 +173,29 @@ export const PII_TYPES = [
     category: "network",
     label: "API key",
     regex: /\b(?:sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{36}|AIza[0-9A-Za-z_-]{35}|xox[baprs]-[A-Za-z0-9-]{10,})\b|(?:Bearer\s+[A-Za-z0-9._~+/=-]{20,})/g,
+  },
+  {
+    id: "password",
+    name: "Passwords & secrets in config-style assignments",
+    category: "credentials",
+    label: "Password",
+    // Context-based: only matches when preceded by a credential keyword, so
+    // code/prose like "my password is …" is not mass-masked. Optional quotes
+    // cover both `password: x` and JSON `"password": "x"`.
+    regex: /\b(?:password|passwd|pwd|senha|secret)\b["']?\s*[:=]\s*["']?[^\s"'`,;\]\}]{6,}["']?/gi,
+    // Value-level FP guards: reject filesystem paths (shell `PWD=/var/www`)
+    // and documentation placeholders (changeme, ******, …). Weak real values
+    // in a password slot (e.g. `senha: 123456`) are still masked — a slot
+    // assignment is a leak regardless of strength.
+    validate: (m) => {
+      const sep = m.search(/[:=]/);
+      if (sep < 0) return false;
+      const raw = m.slice(sep + 1).replace(/^["'\s]+|["'\s]+$/g, "");
+      if (raw.includes("/")) return false;
+      if (raw.length < 6) return false;
+      const v = raw.toLowerCase().replace(/[^a-z0-9]/g, "");
+      return v.length >= 1 && !PASSWORD_PLACEHOLDERS.has(v);
+    },
   },
   {
     id: "usSsn",

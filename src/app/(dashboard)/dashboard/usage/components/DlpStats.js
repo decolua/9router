@@ -26,6 +26,7 @@ const TYPE_LABELS = {
   creditCard: "Credit Card",
   ip: "IP Address",
   apiKey: "API Key",
+  password: "Password",
   usSsn: "SSN / ITIN",
   usEin: "EIN",
   usZip: "ZIP Code",
