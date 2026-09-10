@@ -44,6 +44,13 @@ function envUrl(name, def) {
   return raw || def;
 }
 
+export function getComboPreactionConfig() {
+  return {
+    firstActionTimeoutMs: envMs("COMBO_RESPONSE_FIRST_ACTION_TIMEOUT_MS", 5000),
+    maxBytes: envMs("COMBO_RESPONSE_PREFLIGHT_MAX_BYTES", 64 * 1024),
+  };
+}
+
 // SearXNG endpoint used by the unauthenticated web-search provider.
 // Configure this for a separate Docker service or remote SearXNG instance.
 export const SEARXNG_URL = envUrl("SEARXNG_URL", "http://localhost:8888/search");
