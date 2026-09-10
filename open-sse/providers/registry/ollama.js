@@ -1,3 +1,5 @@
+import { CLAUDE_API_HEADERS } from "../shared.js";
+
 export default {
   id: "ollama",
   priority: 30,
@@ -22,6 +24,18 @@ export default {
     validateUrl: "https://ollama.com/api/tags",
     format: "ollama",
   },
+  // Multi-endpoint: pick the transport matching client sourceFormat to skip translation.
+  transports: [
+    {
+      format: "claude",
+      baseUrl: "https://ollama.com/v1/messages",
+      headers: { ...CLAUDE_API_HEADERS },
+      // COMP-04: ollama cloud authenticates with Authorization: Bearer (same scheme as the
+      // working /api/chat path — ollama.com auth domain), NOT the Anthropic-compat x-api-key
+      // convention. Confirmed by live probe: x-api-key raw → 401 Unauthorized.
+      auth: { combined: true, header: "Authorization", scheme: "bearer" },
+    },
+  ],
   models: [
     { id: "gpt-oss:120b", name: "GPT OSS 120B" },
     { id: "kimi-k2.5", name: "Kimi K2.5" },
