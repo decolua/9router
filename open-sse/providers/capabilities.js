@@ -222,9 +222,9 @@ export const PROVIDER_CAPABILITIES = {
   // windows (GLM-5.3 / Kimi-K3 / Qwen3.8-Max claim 180K but accept more).
   // max_output_tokens arrives as 0 for every model, so outputs are
   // best-guess from the real model family. Vision tags below follow the
-  // upstream is_vl flag per explicit request, even though the executor
-  // currently sends image_urls:null (image pass-through over the agent_chat
-  // SSE protocol is unverified). reasoning:true on all of them — every model can
+  // upstream is_vl flag. The executor uploads inlined images to
+  // /api/v2/image/upload and leaves image_urls/chat_context.imageUrls null
+  // (same as qodercli). reasoning:true on all of them — every model can
   // reason; the upstream is_reasoning flag only drives model_config selection.
   // thinkingFormat keeps the true-model family for documentation/UI, but
   // thinkingCanDisable:false everywhere: the executor only forwards

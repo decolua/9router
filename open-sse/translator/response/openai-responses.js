@@ -5,7 +5,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { buildChunk } from "../concerns/chunk.js";
-import { buildUsage } from "../concerns/usage.js";
+import { buildUsage, toResponsesUsage } from "../concerns/usage.js";
 import { fallbackToolCallId } from "../concerns/toolCall.js";
 import { reasoningDelta, extractReasoningText } from "../concerns/reasoning.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } from "../schema/index.js";
@@ -18,7 +18,13 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   if (!chunk) {
     return flushEvents(state);
   }
-  
+
+  // Usage riding on the finish chunk (include_usage style, e.g. coalesced Qoder frames):
+  // remember it so response.completed can report tokens even outside stream.js.
+  if (chunk.usage && typeof chunk.usage === "object" && !state.usage) {
+    state.usage = chunk.usage;
+  }
+
   if (!chunk.choices?.length) return [];
   
   const events = [];
@@ -368,17 +374,19 @@ function closeToolCall(state, emit, idx) {
 function sendCompleted(state, emit) {
   if (!state.completedSent) {
     state.completedSent = true;
-    emit("response.completed", {
-      type: "response.completed",
-      response: {
-        id: state.responseId,
-        object: "response",
-        created_at: state.created,
-        status: "completed",
-        background: false,
-        error: null
-      }
-    });
+    const response = {
+      id: state.responseId,
+      object: "response",
+      created_at: state.created,
+      status: "completed",
+      background: false,
+      error: null
+    };
+    // Carry provider usage (recorded by stream.js or from the finish chunk itself) in the
+    // Responses shape; proxies such as sub2api/Codex read tokens only from here.
+    const usage = toResponsesUsage(state.usage);
+    if (usage) response.usage = usage;
+    emit("response.completed", { type: "response.completed", response });
   }
 }
 

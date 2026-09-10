@@ -5,6 +5,7 @@ import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { toResponsesUsage } from "../../translator/concerns/usage.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -97,11 +98,8 @@ function chatCompletionToResponses(responseBody, customToolNames = null) {
     background: false,
     error: null,
     output,
-    usage: {
-      input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
-      output_tokens: usage.completion_tokens || usage.output_tokens || 0,
-      total_tokens: usage.total_tokens || (usage.prompt_tokens || 0) + (usage.completion_tokens || 0),
-    },
+    // Keep cached/reasoning details (input_tokens_details) — proxies bill cache hits from them
+    usage: toResponsesUsage(usage) || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
   };
 }
 
