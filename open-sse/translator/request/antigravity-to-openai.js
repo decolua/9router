@@ -73,7 +73,7 @@ export function antigravityToOpenAIRequest(model, body, stream) {
             function: {
               name: func.name,
               description: func.description || "",
-              parameters: normalizeSchemaTypes(func.parameters) || { type: "object", properties: {} }
+              parameters: cleanSchemaPreservingRequired(func.parameters) || { type: "object", properties: {} }
             }
           });
         }
@@ -85,12 +85,16 @@ export function antigravityToOpenAIRequest(model, body, stream) {
 }
 
 // Recursively convert Antigravity schema types (OBJECT, STRING, etc.) to lowercase
-// and strip unsupported fields like enumDescriptions
+// and strip unsupported fields like enumDescriptions.
+// Unlike cleanJSONSchemaForAntigravity, this preserves the `required` array — useful
+// for clients (e.g. OpenCode) that send full JSON Schema Draft 2020-12 tool schemas where
+// `required` is essential. In Draft 2020-12 the `required` keyword lives at the schema
+// root alongside `properties`, and `pattern` (minLength/maxLength/... pattern) belongs to
+// a sibling constraint object, not inside `properties` itself.
 function normalizeSchemaTypes(schema) {
   if (!schema || typeof schema !== "object") return schema;
 
   const result = Array.isArray(schema) ? [...schema] : { ...schema };
-
 
   if (typeof result.type === "string") {
     result.type = result.type.toLowerCase();
@@ -98,7 +102,6 @@ function normalizeSchemaTypes(schema) {
 
   // Strip enumDescriptions — not supported by upstream APIs
   delete result.enumDescriptions;
-
 
   if (result.properties) {
     const normalized = {};
@@ -113,6 +116,84 @@ function normalizeSchemaTypes(schema) {
   }
 
   return result;
+}
+
+// Clean a JSON Schema for Antigravity while PRESERVING the `required` array at every level.
+// Unlike cleanJSONSchemaForAntigravity (geminiHelper), this avoids removing `required` even
+// when it references fields defined in JSON Schema Draft 2020-12 constraint objects that
+// are stripped by removeUnsupportedKeywords (e.g. `pattern` lives in a `$defs`/$ref`/
+// allOf/oneOf constraint block, not in `properties`). Clients such as OpenCode send full
+// Draft 2020-12 schemas; stripping `required` causes the model to call tools without
+// mandatory arguments.
+function cleanSchemaPreservingRequired(schema) {
+  if (!schema || typeof schema !== "object") return schema;
+
+  const cleaned = structuredClone(schema);
+  _stripEnumDescriptions(cleaned);
+
+  _stripDraftMeta(cleaned);
+  _preserveRequired(cleaned);
+  return cleaned;
+}
+
+function _stripEnumDescriptions(obj) {
+  if (!obj || typeof obj !== "object") return;
+  delete obj.enumDescriptions;
+  if (Array.isArray(obj)) {
+    for (const item of obj) _stripEnumDescriptions(item);
+    return;
+  }
+  for (const value of Object.values(obj)) {
+    if (value && typeof value === "object") _stripEnumDescriptions(value);
+  }
+}
+
+function _stripDraftMeta(obj) {
+  if (!obj || typeof obj !== "object") return;
+  if (Array.isArray(obj)) {
+    for (const item of obj) _stripDraftMeta(item);
+    return;
+  }
+  for (const key of Object.keys(obj)) {
+    if (
+      key === "$schema" || key === "$defs" || key === "definitions" ||
+      key === "$ref" || key === "$comment" || key === "const" ||
+      key === "additionalProperties" || key === "propertyNames" ||
+      key === "patternProperties" || key === "title" ||
+      key.startsWith("x-")
+    ) {
+      delete obj[key];
+    }
+  }
+  for (const value of Object.values(obj)) {
+    if (value && typeof value === "object") _stripDraftMeta(value);
+  }
+}
+
+// Preserve `required` even when referenced fields are stripped from constraint blocks.
+// Recursively walks the schema; at each object-level node where both `required` and
+// `properties` are present, keeps `required` if at least one of its entries exists in
+// `properties`. This prevents removing `required` merely because a Draft 2020-12
+// constraint object (allOf/oneOf/anyOf/$ref) that defined the field was flattened away.
+function _preserveRequired(obj) {
+  if (!obj || typeof obj !== "object") return;
+  if (Array.isArray(obj)) {
+    for (const item of obj) _preserveRequired(item);
+    return;
+  }
+  if (obj.required && Array.isArray(obj.required) && obj.properties) {
+    const valid = obj.required.filter(field =>
+      Object.prototype.hasOwnProperty.call(obj.properties, field)
+    );
+    if (valid.length === 0) {
+      delete obj.required;
+    } else {
+      obj.required = valid;
+    }
+  }
+  for (const value of Object.values(obj)) {
+    if (value && typeof value === "object") _preserveRequired(value);
+  }
 }
 
 // Convert Antigravity content to OpenAI message

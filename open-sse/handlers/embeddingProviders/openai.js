@@ -24,6 +24,10 @@ export default function createOpenAIEmbeddingAdapter(providerId) {
         const dim = Number(dimensions);
         if (Number.isFinite(dim) && dim > 0) body.dimensions = dim;
       }
+      // NVIDIA nv-embedqa-e5-v5 is an asymmetric model — requires explicit input_type
+      if (providerId === "nvidia" && model?.includes("nv-embedqa-e5-v5")) {
+        body.input_type = "query";
+      }
       return body;
     },
     normalize: (responseBody) => responseBody,
