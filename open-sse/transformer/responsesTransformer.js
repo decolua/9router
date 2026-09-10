@@ -239,10 +239,18 @@ export function createResponsesApiTransformStream(logger = null) {
     }
   };
 
-  return new TransformStream({
+  // One decoder for the whole stream: a multi-byte character split across two
+  // network chunks must be held until the rest of its bytes arrive, or both
+  // halves decode to replacement characters.
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+  // Fed to the transform in flush() so a message left in the buffer without its
+  // blank-line terminator still goes through the normal path.
+  const SSE_MESSAGE_TERMINATOR = encoder.encode("\n\n");
+
+  const handlers = {
     transform(chunk, controller) {
-      const text = new TextDecoder().decode(chunk);
-      logger?.logInput(text.trim());
+      const text = decoder.decode(chunk, { stream: true });
+      if (text.trim()) logger?.logInput(text.trim());
       state.buffer += text;
 
       const messages = state.buffer.split("\n\n");
@@ -425,6 +433,9 @@ export function createResponsesApiTransformStream(logger = null) {
     },
 
     flush(controller) {
+      state.buffer += decoder.decode();
+      if (state.buffer.trim()) handlers.transform(SSE_MESSAGE_TERMINATOR, controller);
+
       for (const i in state.msgItemAdded) closeMessage(controller, i);
       closeReasoning(controller);
       for (const i in state.funcCallIds) closeToolCall(controller, i);
@@ -434,6 +445,8 @@ export function createResponsesApiTransformStream(logger = null) {
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       logger?.flush();
     }
-  });
+  };
+
+  return new TransformStream(handlers);
 }
 
