@@ -1,3 +1,4 @@
+import { clientQuotaError } from "../services/clientQuota.js";
 import {
   extractApiKey, isValidApiKey,
   getProviderCredentials, markAccountUnavailable,
@@ -19,6 +20,8 @@ const CREDENTIALED_PROVIDERS = new Set(
 );
 
 export async function handleTts(request) {
+  const quotaError = await clientQuotaError(request);
+  if (quotaError) return quotaError;
   let body;
   try {
     body = await request.json();

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { hasDashboardCredentials } from "@/dashboardGuard";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
 
 // GET /api/keys/[id] - Get single key
@@ -21,7 +22,11 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive } = body;
+    const { isActive, quotaExhausted } = body;
+    if (Object.hasOwn(body, "quotaExhausted")) {
+      if (!(await hasDashboardCredentials(request))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      if (typeof quotaExhausted !== "boolean") return NextResponse.json({ error: "quotaExhausted must be a boolean" }, { status: 400 });
+    }
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -29,6 +34,7 @@ export async function PUT(request, { params }) {
     }
 
     const updateData = {};
+    if (quotaExhausted !== undefined) updateData.quotaExhausted = quotaExhausted;
     if (isActive !== undefined) updateData.isActive = isActive;
 
     const updated = await updateApiKey(id, updateData);

@@ -5,6 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { NextRequest } from "next/server";
 
 const originalDataDir = process.env.DATA_DIR;
 let tempDir;
@@ -22,7 +23,7 @@ beforeAll(async () => {
   vi.resetModules();
   db = await import("@/lib/db/index.js");
   await db.initDb();
-  await db.updateSettings({ enableObservability2: true, observabilityBatchSize: 1 });
+  await db.updateSettings({ enableObservability: true, observabilityBatchSize: 1, observabilityMaxJsonSize: 5 });
 
   const { getAdapter } = await import("@/lib/db/driver.js");
   adapter = await getAdapter();
@@ -205,12 +206,15 @@ describe("token helpers — render-time crash safety", () => {
 
 describe("API route contract — validation boundary", () => {
   let GET;
+  let token;
   beforeAll(async () => {
     ({ GET } = await import("@/app/api/usage/request-details/route.js"));
+    const { createDashboardAuthToken } = await import("@/lib/auth/dashboardSession");
+    token = await createDashboardAuthToken();
   });
 
   function makeReq(query) {
-    return new Request(`http://localhost/api/usage/request-details?${query}`);
+    return new NextRequest(`http://localhost/api/usage/request-details?${query}`, { headers: { cookie: `auth_token=${token}` } });
   }
 
   it("page=0 → 400 (guard now reachable after NaN-check fix)", async () => {

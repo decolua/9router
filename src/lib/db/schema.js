@@ -79,6 +79,7 @@ export const TABLES = {
     columns: {
       id: "TEXT PRIMARY KEY",
       key: "TEXT UNIQUE NOT NULL",
+      quotaExhausted: "INTEGER NOT NULL DEFAULT 0",
       name: "TEXT",
       machineId: "TEXT",
       isActive: "INTEGER DEFAULT 1",

@@ -1,3 +1,4 @@
+import { clientQuotaError } from "../services/clientQuota.js";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -92,6 +93,8 @@ function withConnectionHeader(response, connectionId) {
  * POST /v1/videos/{generations|edits|extensions} — async job creation proxy.
  */
 export async function handleVideoCreate(request, action) {
+  const quotaError = await clientQuotaError(request);
+  if (quotaError) return quotaError;
   const authError = await requireValidApiKey(request);
   if (authError) return authError;
 
@@ -180,6 +183,8 @@ export async function handleVideoCreate(request, action) {
  * caller pins the creating account via `x-connection-id` (returned on create).
  */
 export async function handleVideoGet(request, requestId) {
+  const quotaError = await clientQuotaError(request);
+  if (quotaError) return quotaError;
   const authError = await requireValidApiKey(request);
   if (authError) return authError;
 

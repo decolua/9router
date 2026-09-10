@@ -14,7 +14,10 @@ const OPTIONAL_PARAMS = [
 ];
 
 export function extractRequestConfig(body, stream) {
-  const config = { messages: body.messages || [], model: body.model, stream };
+  const config = { model: body.model, stream };
+  for (const param of ['messages', 'input', 'instructions']) {
+    if (body[param] !== undefined) config[param] = body[param];
+  }
   for (const param of OPTIONAL_PARAMS) {
     if (body[param] !== undefined) config[param] = body[param];
   }

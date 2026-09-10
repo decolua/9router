@@ -1,10 +1,11 @@
+import { sanitizeActivityPayload } from "../../activityPayload.js";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
 const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
 const DEFAULT_FLUSH_INTERVAL_MS = 5000;
-const DEFAULT_MAX_JSON_SIZE = 5 * 1024;
+const DEFAULT_MAX_JSON_SIZE = 1024 * 1024;
 const CONFIG_CACHE_TTL_MS = 5000;
 
 let cachedConfig = null;
@@ -13,17 +14,26 @@ let cachedConfigTs = 0;
 async function getObservabilityConfig() {
   if (cachedConfig && (Date.now() - cachedConfigTs) < CONFIG_CACHE_TTL_MS) return cachedConfig;
   try {
-    const { getSettings } = await import("./settingsRepo.js");
-    const settings = await getSettings();
+    const { getSettings, exportSettings } = await import("./settingsRepo.js");
+    const raw = await exportSettings();
+    const settings = { ...await getSettings(), ...raw };
+    const bounded = (key, env, fallback, max) => {
+      const value = Number(raw[key] ?? process.env[env] ?? fallback);
+      return Number.isFinite(value) ? Math.min(max, Math.max(1, Math.floor(value))) : fallback;
+    };
+    const limits = {
+      maxRecords: bounded("observabilityMaxRecords", "OBSERVABILITY_MAX_RECORDS", DEFAULT_MAX_RECORDS, 10000),
+      batchSize: bounded("observabilityBatchSize", "OBSERVABILITY_BATCH_SIZE", DEFAULT_BATCH_SIZE, 100),
+      flushIntervalMs: bounded("observabilityFlushIntervalMs", "OBSERVABILITY_FLUSH_INTERVAL_MS", DEFAULT_FLUSH_INTERVAL_MS, 60000),
+      maxJsonSize: bounded("observabilityMaxJsonSize", "OBSERVABILITY_MAX_JSON_SIZE", 1024, 4096) * 1024,
+      maxTotalSize: bounded("observabilityMaxTotalSize", "OBSERVABILITY_MAX_TOTAL_SIZE", 64, 256) * 1024 * 1024,
+    };
     const envRequestLogs = process.env.ENABLE_REQUEST_LOGS;
     if (envRequestLogs !== undefined) {
       const enabled = envRequestLogs.toLowerCase() === "true";
       cachedConfig = {
         enabled,
-        maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
-        batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
-        flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
-        maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
+        ...limits,
       };
       cachedConfigTs = Date.now();
       return cachedConfig;
@@ -36,10 +46,7 @@ async function getObservabilityConfig() {
 
     cachedConfig = {
       enabled,
-      maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
-      batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
-      flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
-      maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
+      ...limits,
     };
   } catch {
     cachedConfig = {
@@ -54,6 +61,8 @@ async function getObservabilityConfig() {
   return cachedConfig;
 }
 
+const MAX_BUFFER_BYTES = 16 * 1024 * 1024;
+let bufferedBytes = 0;
 let writeBuffer = [];
 let flushTimer = null;
 let isFlushing = false;
@@ -68,7 +77,7 @@ function sanitizeHeaders(headers) {
   return sanitized;
 }
 
-export const __test__ = { sanitizeHeaders };
+export const __test__ = { sanitizeHeaders, bufferedBytes: () => bufferedBytes, pending: () => writeBuffer.map(item => item.detail) };
 
 function generateDetailId(model) {
   const timestamp = new Date().toISOString();
@@ -79,8 +88,8 @@ function generateDetailId(model) {
 
 function truncateField(obj, maxSize) {
   const str = JSON.stringify(obj || {});
-  if (str.length > maxSize) {
-    return { _truncated: true, _originalSize: str.length, _preview: str.substring(0, 200) };
+  if (Buffer.byteLength(str) > maxSize) {
+    return { _truncated: true, _originalSize: str.length, _originalBytes: Buffer.byteLength(str), _limit: maxSize, _unit: "bytes" };
   }
   return obj || {};
 }
@@ -92,7 +101,8 @@ async function flushToDatabase() {
   try {
     // Drain entire buffer (loop in case more pushed during await)
     while (writeBuffer.length > 0) {
-      const items = writeBuffer.splice(0, writeBuffer.length);
+      const items = writeBuffer.splice(0, writeBuffer.length).map(item => item.detail);
+      bufferedBytes = 0;
       const db = await getAdapter();
       const config = await getObservabilityConfig();
 
@@ -124,6 +134,12 @@ async function flushToDatabase() {
           );
         }
 
+        // Retain newest rows within both count and UTF-8 payload byte budgets.
+        let retainedBytes = 0;
+        for (const row of db.all('SELECT id, length(CAST(data AS BLOB)) AS bytes FROM requestDetails ORDER BY timestamp DESC, id DESC')) {
+          retainedBytes += row.bytes;
+          if (retainedBytes > config.maxTotalSize) db.run('DELETE FROM requestDetails WHERE id = ?', [row.id]);
+        }
         const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
         if (cnt && cnt.c > config.maxRecords) {
           db.run(
@@ -144,7 +160,19 @@ export async function saveRequestDetail(detail) {
   const config = await getObservabilityConfig();
   if (!config.enabled) {return;}
 
-  writeBuffer.push(detail);
+  // Sanitize and detach caller-owned objects before queuing. Bound pending
+  // payloads independently of batch size; retain newest records on overflow.
+  const safe = sanitizeActivityPayload(detail);
+  for (const field of ['request', 'providerRequest', 'providerResponse', 'response']) {
+    safe[field] = truncateField(safe[field], config.maxJsonSize);
+  }
+  const bytes = Buffer.byteLength(JSON.stringify(safe));
+  if (bytes > MAX_BUFFER_BYTES) return;
+  while (writeBuffer.length && bufferedBytes + bytes > MAX_BUFFER_BYTES) {
+    bufferedBytes -= writeBuffer.shift().bytes;
+  }
+  writeBuffer.push({ detail: safe, bytes });
+  bufferedBytes += bytes;
 
   // Trigger immediate flush if batch threshold reached.
   // flushToDatabase() drains entire buffer in a loop, so all pushes during await are persisted.

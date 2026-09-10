@@ -169,6 +169,11 @@ async function hasValidToken(request) {
   return await verifyDashboardAuthToken(token);
 }
 
+// Sensitive payload access never inherits the optional-login dashboard policy.
+export async function hasDashboardCredentials(request) {
+  return await hasValidCliToken(request) || await hasValidToken(request);
+}
+
 // Read settings directly from DB to avoid self-fetch deadlock in proxy
 async function loadSettings() {
   try {

@@ -19,6 +19,8 @@ import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
+  const quotaPendingRef = useRef(new Set());
+  const [quotaPending, setQuotaPending] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
@@ -667,6 +669,27 @@ export default function APIPageClient({ machineId }) {
     });
   };
 
+  const handleQuotaToggle = async (id, quotaExhausted) => {
+    if (quotaPendingRef.current.has(id)) return;
+    quotaPendingRef.current.add(id);
+    setQuotaPending(new Set(quotaPendingRef.current));
+    try {
+      const res = await fetch(`/api/keys/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quotaExhausted }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to update quota");
+      setKeys(prev => prev.map(k => k.id === id ? { ...k, quotaExhausted: data.key.quotaExhausted } : k));
+    } catch (error) {
+      alert(error.message || "Failed to update quota. Sign in to the dashboard first.");
+    } finally {
+      quotaPendingRef.current.delete(id);
+      setQuotaPending(new Set(quotaPendingRef.current));
+    }
+  };
+
   const handleToggleKey = async (id, isActive) => {
     try {
       const res = await fetch(`/api/keys/${id}`, {
@@ -1063,6 +1086,16 @@ export default function APIPageClient({ machineId }) {
                     }}
                     title={key.isActive ? "Pause key" : "Resume key"}
                   />
+                  <label className="flex items-center gap-2 text-xs text-text-muted">
+                    Local quota exhausted
+                    <Toggle
+                      size="sm"
+                      checked={key.quotaExhausted === true}
+                      disabled={quotaPending.has(key.id)}
+                      onChange={(checked) => handleQuotaToggle(key.id, checked)}
+                      title="Manual local quota block (HTTP 429). Keeps this key valid; turn off to restore access."
+                    />
+                  </label>
                   <button
                     onClick={() => handleDeleteKey(key.id)}
                     className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"

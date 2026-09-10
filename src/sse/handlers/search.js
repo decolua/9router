@@ -1,3 +1,4 @@
+import { clientQuotaError } from "../services/clientQuota.js";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -21,6 +22,8 @@ import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo
  * @param {Request} request
  */
 export async function handleSearch(request) {
+  const quotaError = await clientQuotaError(request);
+  if (quotaError) return quotaError;
   let body;
   try {
     body = await request.json();

@@ -1,3 +1,4 @@
+import { clientQuotaError } from "../services/clientQuota.js";
 import "open-sse/index.js";
 
 import {
@@ -30,6 +31,8 @@ import { getProjectIdForConnection } from "open-sse/services/projectId.js";
  * Format detection and translation handled by translator
  */
 export async function handleChat(request, clientRawRequest = null) {
+  const quotaError = await clientQuotaError(request);
+  if (quotaError) return quotaError;
   let body;
   try {
     body = await request.json();

@@ -9,6 +9,7 @@ function rowToKey(row) {
     name: row.name,
     machineId: row.machineId,
     isActive: row.isActive === 1 || row.isActive === true,
+    quotaExhausted: row.quotaExhausted === 1 || row.quotaExhausted === true,
     createdAt: row.createdAt,
   };
 }
@@ -36,6 +37,7 @@ export async function createApiKey(name, machineId) {
     key: result.key,
     machineId,
     isActive: true,
+    quotaExhausted: false,
     createdAt: new Date().toISOString(),
   };
   db.run(
@@ -53,8 +55,8 @@ export async function updateApiKey(id, data) {
     if (!row) return;
     const merged = { ...rowToKey(row), ...data };
     db.run(
-      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ? WHERE id = ?`,
-      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, id]
+      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, quotaExhausted = ? WHERE id = ?`,
+      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, merged.quotaExhausted === true ? 1 : 0, id]
     );
     result = merged;
   });

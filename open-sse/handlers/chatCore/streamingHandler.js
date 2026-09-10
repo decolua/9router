@@ -93,7 +93,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     tokens: { prompt_tokens: 0, completion_tokens: 0 },
     request: extractRequestConfig(body, stream),
     providerRequest: finalBody || translatedBody || null,
-    providerResponse: "[Streaming - raw response not captured]",
+    providerResponse: { _unavailable: true, reason: 'Raw provider SSE is not stored; response contains a semantic upstream summary.' },
     response: { content: "[Streaming in progress...]", thinking: null, type: "streaming" },
     pxpipe,
     status: "success"
@@ -118,7 +118,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime
     };
-    const safeContent = contentObj?.content || "[Empty streaming response]";
+    const safeContent = contentObj?.content || "";
     const safeThinking = contentObj?.thinking || null;
 
     saveRequestDetail(buildRequestDetail({
@@ -127,8 +127,8 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
       providerRequest: finalBody || translatedBody || null,
-      providerResponse: safeContent,
-      response: { content: safeContent, thinking: safeThinking, type: "streaming" },
+      providerResponse: { _unavailable: true, reason: 'Raw provider SSE is not stored; response contains a semantic upstream summary.' },
+      response: { content: safeContent, thinking: safeThinking, tool_calls: contentObj?.tool_calls || [], capture: contentObj?.capture || { kind: 'semantic_upstream_summary' }, type: "streaming" },
       pxpipe,
       status: "success"
     }, { id: streamDetailId })).catch(err => {

@@ -1,3 +1,4 @@
+import { clientQuotaError } from "../services/clientQuota.js";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -22,6 +23,8 @@ const NO_AUTH_PROVIDERS = new Set(["sdwebui", "comfyui"]);
  * @param {Request} request
  */
 export async function handleImageGeneration(request) {
+  const quotaError = await clientQuotaError(request);
+  if (quotaError) return quotaError;
   let body;
   try {
     body = await request.json();

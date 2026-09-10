@@ -51,7 +51,12 @@ export async function getPricing() {
 export async function getPricingForModel(provider, model) {
   if (!model) return null;
   const userPricing = await getUserPricing();
-  if (provider && userPricing[provider]?.[model]) return userPricing[provider][model];
+  const { normalizeAstraPricingModel } = await import("open-sse/config/astraPricing.js");
+  const astraModel = normalizeAstraPricingModel(provider, model);
+  const custom = provider && (userPricing[provider]?.[model] || (astraModel && userPricing[provider]?.[astraModel]));
+  // User prices replace official rates (no hidden long-context/tier override),
+  // but Astra output still includes reasoning, regardless of the rate source.
+  if (custom) return astraModel ? { ...custom, reasoning_in_output: true } : custom;
   const { getPricingForModel: resolveConst } = await import("open-sse/providers/pricing.js");
   return resolveConst(provider, model);
 }

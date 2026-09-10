@@ -1,3 +1,4 @@
+import { clientQuotaError } from "../services/clientQuota.js";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -22,6 +23,8 @@ import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
  * @param {Request} request
  */
 export async function handleFetch(request) {
+  const quotaError = await clientQuotaError(request);
+  if (quotaError) return quotaError;
   let body;
   try {
     body = await request.json();

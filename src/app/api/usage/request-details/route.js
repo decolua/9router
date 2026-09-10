@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRequestDetails } from "@/lib/usageDb";
+import { hasDashboardCredentials } from "@/dashboardGuard";
+import { sanitizeActivityPayload } from "@/lib/activityPayload";
 
 /**
  * GET /api/usage/request-details
@@ -7,6 +9,9 @@ import { getRequestDetails } from "@/lib/usageDb";
  */
 export async function GET(request) {
   try {
+    if (!(await hasDashboardCredentials(request))) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const { searchParams } = new URL(request.url);
     
     const pageRaw = parseInt(searchParams.get("page"));
@@ -48,22 +53,9 @@ export async function GET(request) {
     
     const result = await getRequestDetails(filter);
 
-    // Redact conversation payloads: the stored details include full request
-    // bodies (user prompts, tool calls) and provider responses. Returning them
-    // wholesale lets any dashboard-authenticated user (or, if requireLogin is
-    // disabled, anyone) read every user's conversation history. Keep the
-    // metadata (model, tokens, latency, status) but drop message content.
-    const redactedDetails = (result.details || []).map((d) => {
-      const redacted = { ...d };
-      for (const key of ["request", "providerRequest", "providerResponse", "response"]) {
-        if (redacted[key] !== undefined) {
-          redacted[key] = { redacted: true };
-        }
-      }
-      return redacted;
+    return NextResponse.json(sanitizeActivityPayload(result), {
+      headers: { "Cache-Control": "private, no-store", "Vary": "Cookie, x-9r-cli-token" },
     });
-
-    return NextResponse.json({ ...result, details: redactedDetails });
   } catch (error) {
     console.error("[API] Failed to get request details:", error);
     return NextResponse.json(

@@ -39,7 +39,7 @@ function TimeAgo({ timestamp }) {
   return <>{timeAgo(timestamp)}</>;
 }
 
-function RecentRequests({ requests = [] }) {
+export function RecentRequests({ requests = [] }) {
   return (
     <Card className="flex min-w-0 flex-col overflow-hidden" padding="sm" style={{ height: 480 }}>
       {/* Header */}
@@ -54,21 +54,18 @@ function RecentRequests({ requests = [] }) {
           <table className="w-full min-w-[300px] border-collapse text-xs">
             <thead className="sticky top-0 bg-bg z-10">
               <tr className="border-b border-border">
-                <th className="py-1.5 text-left font-semibold text-text-muted w-2"></th>
                 <th className="py-1.5 text-left font-semibold text-text-muted">Model</th>
+                <th className="py-1.5 text-left font-semibold text-text-muted">Client API key</th>
                 <th className="py-1.5 text-right font-semibold text-text-muted whitespace-nowrap">In / Out</th>
                 <th className="py-1.5 text-right font-semibold text-text-muted">When</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
               {requests.map((r, i) => {
-                const ok = !r.status || r.status === "ok" || r.status === "success";
                 return (
                   <tr key={i} className="hover:bg-bg-subtle transition-colors">
-                    <td className="py-1.5">
-                      <span className={`block w-1.5 h-1.5 rounded-full ${ok ? "bg-success" : "bg-error"}`} />
-                    </td>
                     <td className="py-1.5 font-mono truncate max-w-[120px]" title={r.model}>{r.model}</td>
+                    <td className="py-1.5 truncate max-w-[140px]" title={r.clientKeyName || "Unknown"}>{r.clientKeyName || "Unknown"}{r.clientKeyDeleted ? " (deleted)" : ""}</td>
                     <td className="py-1.5 text-right whitespace-nowrap">
                       <span className="text-primary">{fmt(r.promptTokens)}↑</span>
                       {" "}
@@ -82,6 +79,36 @@ function RecentRequests({ requests = [] }) {
           </table>
         </div>
       )}
+    </Card>
+  );
+}
+
+export function ClientKeyAnalytics({ analytics, onRefresh, snapshotAt, refreshing, refreshError }) {
+  if (!analytics) return null;
+  const rows = analytics.rows || [];
+  const showCost = rows.some(r => r.costSupportedRequests > 0);
+  const percent = value => Number.isFinite(value) ? ` · ${value.toFixed(1)}%` : "";
+  return (
+    <Card className="overflow-hidden" padding="sm">
+      <h3 className="font-semibold">Client API key analytics</h3>
+      <button type="button" onClick={onRefresh} disabled={refreshing || !onRefresh} className="text-sm border border-border rounded px-3 py-1 my-2">Refresh analytics</button>
+      <p className="text-xs text-text-muted">Snapshot · {snapshotAt || "Unavailable"} · Updates on refresh or period change, not live.</p>
+      {refreshError && <p role="alert" className="text-xs text-error">Refresh failed. Showing the previous snapshot.</p>}
+      <p className="text-xs text-text-muted my-2">Retained history · {analytics.period} · {analytics.from || "No records"}{analytics.to ? ` — ${analytics.to}` : ""}. Not lifetime totals. Outcomes unavailable from recorded usage. Requests count recorded usage, not full attempts. Provider attempts may be separate records; requests rejected before usage logging are not included.</p>
+      <p className="text-xs text-text-muted my-2">Shares use all retained matching records in the selected period, including Unknown: recorded requests, input tokens and output tokens each use their own total. Cost share uses only the known estimated-cost total; unpriced records are excluded. Zero totals show 0%. These are usage shares, not success rates.</p>
+      {analytics.totals && <p className="text-xs text-text-muted">Cost coverage: {analytics.totals.costSupportedRequests}/{analytics.totals.requests} records priced{analytics.totals.costSupportedRequests < analytics.totals.requests ? " (partial; unpriced costs unavailable)" : ""}.</p>}
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs text-left">
+          <thead><tr className="border-b border-border">{["Client API key", "Recorded usage", "Input tokens", "Output tokens", ...(showCost ? ["Estimated cost (USD)"] : [])].map(label => <th key={label} className="py-2 px-2 whitespace-nowrap">{label}</th>)}</tr></thead>
+          <tbody>{rows.map(row => <tr key={row.clientKeyId || "unknown"} className="border-b border-border/50">
+            <td className="py-2 px-2">{row.clientKeyName}{row.clientKeyDeleted ? " (deleted)" : ""}</td>
+            <td className="px-2">{fmt(row.requests)}<span className="text-text-muted">{percent(row.requestShare)}</span></td><td className="px-2 whitespace-nowrap">{fmt(row.promptTokens)}<span className="text-text-muted">{percent(row.inputTokenShare)}</span></td><td className="px-2 whitespace-nowrap">{fmt(row.completionTokens)}<span className="text-text-muted">{percent(row.outputTokenShare)}</span></td>
+            {showCost && <td className="px-2 whitespace-nowrap">{row.costSupportedRequests ? `$${row.cost.toFixed(6)}${percent(row.costShare)} · ${row.costSupportedRequests}/${row.requests} priced` : "Unavailable"}</td>}
+          </tr>)}</tbody>
+        </table>
+        {!rows.length && <p className="text-sm text-text-muted py-3">No recorded requests in this window.</p>}
+      </div>
+      <p className="text-xs text-text-muted mt-2">Unknown means no identifiable client key. Deleted keys retain their recorded name; renamed keys use their current name. Cost is shown only for records with known pricing, not a provider invoice. Codex OAuth costs are API-equivalent estimates, not a subscription charge. Standard rates are assumed when the processing tier is not recorded; historical unpriced records are not recalculated.</p>
     </Card>
   );
 }
@@ -210,6 +237,9 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const [snapshotAt, setSnapshotAt] = useState(null);
+  const [refreshError, setRefreshError] = useState(false);
   const [tableView, setTableView] = useState("model");
   const [viewMode, setViewMode] = useState("costs");
   const [providers, setProviders] = useState([]);
@@ -251,7 +281,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       .catch(() => {});
   }, []);
 
-  // Fetch filtered stats via REST when period changes
+  // Fetch filtered stats via REST only on period changes or explicit refresh
   useEffect(() => {
     // First load: show full spinner; subsequent: show subtle fetching indicator
     if (isInitialLoad.current) {
@@ -261,20 +291,24 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       setFetching(true);
     }
 
-    fetch(`/api/usage/stats?period=${period}`)
-      .then((r) => r.ok ? r.json() : null)
+    let cancelled = false;
+    const controller = new AbortController();
+    setRefreshError(false);
+    fetch(`/api/usage/stats?period=${period}`, { signal: controller.signal, cache: "no-store" })
+      .then((r) => { if (!r.ok) throw new Error("Stats unavailable"); return r.json(); })
       .then((data) => {
-        if (data) {
+        if (data && !cancelled) {
+          setSnapshotAt(new Date().toISOString());
           hasLoadedStats.current = true;
           setStats((prev) => ({ ...prev, ...data }));
         }
       })
-      .catch(() => {})
+      .catch(() => { if (!cancelled) setRefreshError(true); })
       .finally(() => {
-        setLoading(false);
-        setFetching(false);
+        if (!cancelled) { setLoading(false); setFetching(false); }
       });
-  }, [period]);
+    return () => { cancelled = true; controller.abort(); };
+  }, [period, refreshVersion]);
 
   // SSE connection - real-time updates for activeRequests + recentRequests only
   useEffect(() => {
@@ -468,6 +502,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       {loading ? spinner : <OverviewCards stats={stats} />}
 
       {/* Provider topology + Recent Requests */}
+      <ClientKeyAnalytics analytics={stats?.clientKeyAnalytics} onRefresh={() => setRefreshVersion(v => v + 1)} snapshotAt={snapshotAt} refreshing={fetching} refreshError={refreshError} />
       {loading ? spinner : (
         <div className="grid min-w-0 grid-cols-1 items-stretch gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
           <ProviderTopology

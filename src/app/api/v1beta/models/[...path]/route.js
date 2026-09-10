@@ -1,4 +1,5 @@
 import { handleChat } from "@/sse/handlers/chat.js";
+import { clientQuotaError } from "@/sse/services/clientQuota.js";
 import {
   clearAccountError,
   getProviderCredentials,
@@ -51,6 +52,8 @@ export async function OPTIONS() {
  * Gemini SSE format on the fly via transformOpenAISSEToGeminiSSE().
  */
 export async function POST(request, { params }) {
+  const quotaError = await clientQuotaError(request);
+  if (quotaError) return quotaError;
   await ensureInitialized();
 
   try {

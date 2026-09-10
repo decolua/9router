@@ -32,6 +32,7 @@ export async function POST(request) {
   } catch {}
 
   const response = await handleChat(request);
+  if (!response.ok) return response;
   return transformToOllama(response, modelName);
 }
 

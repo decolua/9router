@@ -1,4 +1,6 @@
 import { EventEmitter } from "events";
+import { clientIdentity, aggregateClientKeys } from "../../clientKeyAnalytics.js";
+import { getApiKeys } from "./apiKeysRepo.js";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
@@ -122,16 +124,17 @@ async function ensureRingInitialized() {
   recentRing.initialized = true;
   try {
     const db = await getAdapter();
-    const rows = db.all(`SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ORDER BY id DESC LIMIT ?`, [RING_CAP]);
+    const rows = db.all(`SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens, meta FROM usageHistory ORDER BY id DESC LIMIT ?`, [RING_CAP]);
     recentRing.items = rows.reverse().map((r) => ({
       timestamp: r.timestamp, provider: r.provider, model: r.model, connectionId: r.connectionId,
       apiKey: r.apiKey, endpoint: r.endpoint, cost: r.cost, status: r.status,
       tokens: parseJson(r.tokens, {}),
+      meta: parseJson(r.meta, {}),
     }));
   } catch {}
 }
 
-async function calculateCost(provider, model, tokens) {
+async function calculateCost(provider, model, tokens, meta) {
   if (!tokens || !provider || !model) return 0;
   try {
     const { getPricingForModel } = await import("./pricingRepo.js");
@@ -142,7 +145,9 @@ async function calculateCost(provider, model, tokens) {
     // copies drifting apart — see open-sse/providers/pricing.js for the
     // cache-inclusive prompt_tokens convention this assumes).
     const { calculateCostFromTokens } = await import("open-sse/providers/pricing.js");
-    return calculateCostFromTokens(tokens, pricing);
+    const cost = calculateCostFromTokens(tokens, pricing);
+    if (meta) meta.costSupported = Number.isFinite(cost) && cost >= 0;
+    return cost;
   } catch (e) {
     console.error("Error calculating cost:", e);
     return 0;
@@ -212,6 +217,7 @@ export async function getActiveRequests() {
   }
 
   await ensureRingInitialized();
+  const clientKeys = await getApiKeys();
   const seen = new Set();
   const recentRequests = [...recentRing.items]
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
@@ -219,18 +225,11 @@ export async function getActiveRequests() {
       const t = e.tokens || {};
       return {
         timestamp: e.timestamp, model: e.model, provider: e.provider || "",
+        ...clientIdentity(e, clientKeys),
         promptTokens: t.prompt_tokens || t.input_tokens || 0,
         completionTokens: t.completion_tokens || t.output_tokens || 0,
-        status: e.status || "ok",
+        status: e.status || "unknown",
       };
-    })
-    .filter((e) => {
-      if (e.promptTokens === 0 && e.completionTokens === 0) return false;
-      const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
-      const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
     })
     .slice(0, 20);
 
@@ -243,7 +242,8 @@ export async function saveRequestUsage(entry) {
     const db = await getAdapter();
 
     if (!entry.timestamp) entry.timestamp = new Date().toISOString();
-    entry.cost = await calculateCost(entry.provider, entry.model, entry.tokens);
+    entry.meta = clientIdentity(entry, await getApiKeys());
+    entry.cost = await calculateCost(entry.provider, entry.model, entry.tokens, entry.meta);
 
     const tokens = entry.tokens || {};
     const promptTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
@@ -283,8 +283,8 @@ export async function saveRequestUsage(entry) {
         [
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
-          promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson({}),
+          promptTokens, completionTokens, entry.cost || 0, entry.status || "unknown",
+          stringifyJson(tokens), stringifyJson(entry.meta),
         ]
       );
 
@@ -369,30 +369,35 @@ export async function getUsageStats(period = "all") {
   for (const k of allApiKeys) apiKeyMap[k.key] = { name: k.name, id: k.id, createdAt: k.createdAt };
 
   // recentRequests from live history (last 100 entries enough for 20 deduped)
-  const recentRows = db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
+  const recentRows = db.all(`SELECT timestamp, provider, model, tokens, status, apiKey, meta FROM usageHistory ORDER BY id DESC LIMIT 100`);
   const seen = new Set();
   const recentRequests = recentRows
     .map((r) => {
       const t = parseJson(r.tokens, {}) || {};
       return {
         timestamp: r.timestamp, model: r.model, provider: r.provider || "",
+        ...clientIdentity({ ...r, meta: parseJson(r.meta, {}) }, allApiKeys),
         promptTokens: t.prompt_tokens || t.input_tokens || 0,
         completionTokens: t.completion_tokens || t.output_tokens || 0,
         cachedTokens: t.cached_tokens || t.cache_read_input_tokens || 0,
-        status: r.status || "ok",
+        status: r.status || "unknown",
       };
-    })
-    .filter((e) => {
-      if (e.promptTokens === 0 && e.completionTokens === 0) return false;
-      const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
-      const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
     })
     .slice(0, 20);
 
+  const historyEnd = new Date();
+  // Match loadDaysInRange: N calendar days including today; 24h remains rolling.
+  const calendarDays = { today: 1, "7d": 7, "30d": 30, "60d": 60 }[period];
+  const historyStart = calendarDays
+    ? new Date(historyEnd.getFullYear(), historyEnd.getMonth(), historyEnd.getDate() - calendarDays + 1).toISOString()
+    : period === "24h" ? new Date(historyEnd.getTime() - PERIOD_MS[period]).toISOString() : null;
+  const clientHistory = db.all(
+    `SELECT timestamp, apiKey, meta, promptTokens, completionTokens, cost, status FROM usageHistory WHERE timestamp <= ?${historyStart ? " AND timestamp >= ?" : ""}`,
+    historyStart ? [historyEnd.toISOString(), historyStart] : [historyEnd.toISOString()]
+  ).map(r => ({ ...r, meta: parseJson(r.meta, {}) }));
+
   const stats = {
+    clientKeyAnalytics: aggregateClientKeys(clientHistory, allApiKeys, period),
     totalRequests: 0,
     totalPromptTokens: 0, totalCompletionTokens: 0, totalCachedTokens: 0, totalCost: 0,
     byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},

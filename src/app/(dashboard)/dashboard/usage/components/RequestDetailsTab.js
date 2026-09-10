@@ -99,6 +99,29 @@ function getInputTokens(tokens) {
   return prompt < cache ? cache : prompt;
 }
 
+export function ActivityPayloadView({ value, output = false }) {
+  const preClass = "max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4";
+  const notice = "text-sm text-text-muted";
+  if (value == null || (typeof value === "object" && Object.keys(value).length === 0)) return <p className={notice}>Not captured for this record.</p>;
+  if (value?._truncated) return <p className={notice}>Payload exceeded its storage limit{value._limit ? ` (${value._limit} bytes)` : ""}. Original size: {value._originalBytes ?? value._originalSize ?? "unknown"}{value._originalBytes ? " bytes" : " characters"}. Omitted historical content cannot be recovered; new limits apply only to new captures.</p>;
+  if (value?._unavailable) return <p className={notice}>{value.reason || "Payload was not captured."}</p>;
+  const legacy = typeof value === "string" ? value : value?.content;
+  if (legacy === "[Empty streaming response]" || legacy === "[Streaming - raw response not captured]") return <p className={notice}>Legacy streaming capture unavailable — not proof of an empty model response.</p>;
+  if (!output || typeof value !== "object") return <pre className={preClass}>{typeof value === "string" ? value : JSON.stringify(value, null, 2)}</pre>;
+  const hasSummary = value.capture?.kind === "semantic_upstream_summary";
+  const hasOutput = value.content || value.thinking || value.tool_calls?.length;
+  return <div className="space-y-3">
+    {hasSummary && <p className={notice}>Semantic upstream summary — not raw provider SSE or an exact client wire response.</p>}
+    {value.capture?.truncated && <p className={notice}>Capture limit reached; this summary is partial.</p>}
+    {hasSummary && !value.capture?.terminal && <p className={notice}>Stream completion was not captured; output may be partial.</p>}
+    {value.capture?.terminal && value.capture.terminal !== "response.completed" && <p className={notice}>Stream ended with {value.capture.terminal}; output may be partial.</p>}
+    {value.thinking && <><h4 className="text-sm font-semibold">Reasoning summary</h4><pre className={preClass}>{value.thinking}</pre></>}
+    {value.content && <><h4 className="text-sm font-semibold">Content</h4><pre className={preClass}>{typeof value.content === "string" ? value.content : JSON.stringify(value.content, null, 2)}</pre></>}
+    {!!value.tool_calls?.length && <><h4 className="text-sm font-semibold">Tool calls</h4><pre className={preClass}>{JSON.stringify(value.tool_calls, null, 2)}</pre></>}
+    {!hasOutput && <p className={notice}>No text, reasoning, or tool calls were captured for this record.</p>}
+  </div>;
+}
+
 export default function RequestDetailsTab() {
   const [details, setDetails] = useState([]);
   const [pagination, setPagination] = useState({
@@ -457,49 +480,16 @@ export default function RequestDetailsTab() {
 
             <div className="space-y-4">
               <CollapsibleSection title="1. Client Request (Input)" defaultOpen={true} icon="input">
-                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
-                  {JSON.stringify(selectedDetail.request, null, 2)}
-                </pre>
+                <ActivityPayloadView value={selectedDetail.request} />
               </CollapsibleSection>
-
-              {selectedDetail.providerRequest && (
-                <CollapsibleSection title="2. Provider Request (Translated)" icon="translate">
-                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
-                    {JSON.stringify(selectedDetail.providerRequest, null, 2)}
-                  </pre>
-                </CollapsibleSection>
-              )}
-
-              {selectedDetail.providerResponse && (
-                <CollapsibleSection title="3. Provider Response (Raw)" icon="data_object">
-                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
-                    {typeof selectedDetail.providerResponse === 'object'
-                      ? JSON.stringify(selectedDetail.providerResponse, null, 2)
-                      : selectedDetail.providerResponse
-                    }
-                  </pre>
-                </CollapsibleSection>
-              )}
-              
-              <CollapsibleSection title="4. Client Response (Final)" defaultOpen={true} icon="output">
-                {selectedDetail.response?.thinking && (
-                  <div className="mb-4">
-                    <h4 className="font-semibold text-text-main mb-2 flex items-center gap-2 text-xs uppercase tracking-wide opacity-70">
-                      <span className="material-symbols-outlined text-[16px]">psychology</span>
-                      Thinking Process
-                    </h4>
-                    <pre className="max-h-[200px] max-w-full overflow-auto rounded-lg border border-amber-200 bg-amber-50 p-3 font-mono text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100 sm:p-4">
-                      {selectedDetail.response.thinking}
-                    </pre>
-                  </div>
-                )}
-                
-                <h4 className="font-semibold text-text-main mb-2 text-xs uppercase tracking-wide opacity-70">
-                  Content
-                </h4>
-                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
-                  {selectedDetail.response?.content || "[No content]"}
-                </pre>
+              <CollapsibleSection title="2. Provider Request (Translated)" icon="translate">
+                <ActivityPayloadView value={selectedDetail.providerRequest} />
+              </CollapsibleSection>
+              <CollapsibleSection title="3. Provider Response (Stored payload)" icon="data_object">
+                <ActivityPayloadView value={selectedDetail.providerResponse} />
+              </CollapsibleSection>
+              <CollapsibleSection title="4. Response (Captured output)" defaultOpen={true} icon="output">
+                <ActivityPayloadView value={selectedDetail.response} output />
               </CollapsibleSection>
             </div>
           </div>

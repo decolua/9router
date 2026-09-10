@@ -5,6 +5,7 @@ import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBu
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
+import { createActivityStreamCapture } from "./activityStreamCapture.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
 
@@ -65,6 +66,14 @@ export function createSSEStream(options = {}) {
   let totalContentLength = 0;
   let accumulatedContent = "";
   let accumulatedThinking = "";
+  const maxCaptureChars = 1024 * 1024;
+  let legacyCaptureTruncated = false;
+  function boundedCapture(previous, addition) {
+    const available = Math.max(0, maxCaptureChars - accumulatedContent.length - accumulatedThinking.length);
+    if (addition.length > available) legacyCaptureTruncated = true;
+    return previous + addition.slice(0, available);
+  }
+  const activityCapture = createActivityStreamCapture();
   let ttftAt = null;
   let sseLineCount = 0;
   let sseEmittedCount = 0;
@@ -98,9 +107,10 @@ export function createSSEStream(options = {}) {
     }
 
     if (onStreamComplete) {
-      onStreamComplete({
+      onStreamComplete(activityCapture.result() || {
         content: accumulatedContent,
-        thinking: accumulatedThinking
+        thinking: accumulatedThinking,
+        capture: { kind: "semantic_upstream_summary", truncated: legacyCaptureTruncated, maxChars: maxCaptureChars }
       }, finalUsage, ttftAt);
     }
   };
@@ -126,7 +136,7 @@ export function createSSEStream(options = {}) {
         }
 
         // Capture Responses API event name to preserve framing in same-format passthrough
-        if (mode === STREAM_MODE.TRANSLATE && targetFormat === FORMATS.OPENAI_RESPONSES && trimmed.startsWith("event:")) {
+        if (trimmed.startsWith("event:")) {
           currentOpenAIResponsesEvent = trimmed.slice(6).trim();
         }
 
@@ -139,6 +149,7 @@ export function createSSEStream(options = {}) {
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
+              activityCapture.accept(parsed, currentOpenAIResponsesEvent);
 
               const idFixed = fixInvalidId(parsed);
 
@@ -186,11 +197,11 @@ export function createSSEStream(options = {}) {
               const reasoning = delta?.reasoning_content;
               if (content && typeof content === "string") {
                 totalContentLength += content.length;
-                accumulatedContent += content;
+                accumulatedContent = boundedCapture(accumulatedContent, content);
               }
               if (reasoning && typeof reasoning === "string") {
                 totalContentLength += reasoning.length;
-                accumulatedThinking += reasoning;
+                accumulatedThinking = boundedCapture(accumulatedThinking, reasoning);
               }
 
               const extracted = extractUsage(parsed);
@@ -244,6 +255,7 @@ export function createSSEStream(options = {}) {
 
         const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
+        activityCapture.accept(parsed, currentOpenAIResponsesEvent);
 
         // Responses API same-format passthrough: preserve event framing + track terminal state
         const isOpenAIResponsesStream = targetFormat === FORMATS.OPENAI_RESPONSES;
@@ -281,23 +293,23 @@ export function createSSEStream(options = {}) {
         // Claude format - content
         if (parsed.delta?.text) {
           totalContentLength += parsed.delta.text.length;
-          accumulatedContent += parsed.delta.text;
+          accumulatedContent = boundedCapture(accumulatedContent, parsed.delta.text);
         }
         // Claude format - thinking
         if (parsed.delta?.thinking) {
           totalContentLength += parsed.delta.thinking.length;
-          accumulatedThinking += parsed.delta.thinking;
+          accumulatedThinking = boundedCapture(accumulatedThinking, parsed.delta.thinking);
         }
         
         // OpenAI format - content
         if (parsed.choices?.[0]?.delta?.content) {
           totalContentLength += parsed.choices[0].delta.content.length;
-          accumulatedContent += parsed.choices[0].delta.content;
+          accumulatedContent = boundedCapture(accumulatedContent, parsed.choices[0].delta.content);
         }
         // OpenAI format - reasoning
         if (parsed.choices?.[0]?.delta?.reasoning_content) {
           totalContentLength += parsed.choices[0].delta.reasoning_content.length;
-          accumulatedThinking += parsed.choices[0].delta.reasoning_content;
+          accumulatedThinking = boundedCapture(accumulatedThinking, parsed.choices[0].delta.reasoning_content);
         }
         
         // Gemini format
@@ -307,9 +319,9 @@ export function createSSEStream(options = {}) {
               totalContentLength += part.text.length;
               // Check if this is thinking content
               if (part.thought === true) {
-                accumulatedThinking += part.text;
+                accumulatedThinking = boundedCapture(accumulatedThinking, part.text);
               } else {
-                accumulatedContent += part.text;
+                accumulatedContent = boundedCapture(accumulatedContent, part.text);
               }
             }
           }

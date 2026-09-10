@@ -118,6 +118,7 @@ export function normalizeUsage(usage) {
   if (!usage || typeof usage !== "object" || Array.isArray(usage)) return null;
 
   const normalized = {};
+  if (typeof usage.service_tier === "string") normalized.service_tier = usage.service_tier;
   const assignNumber = (key, value) => {
     if (value === undefined || value === null) return;
     const numeric = Number(value);
@@ -171,7 +172,7 @@ export function canonicalizeUsage(usage) {
   // (buildUsage()'s OpenAI-forwarding format) when the top-level field is
   // absent, so callers that pass a buildUsage() object through don't silently
   // drop cache_creation.
-  const cacheCreation = num(usage.cache_creation_input_tokens ?? usage.prompt_tokens_details?.cache_creation_tokens);
+  const cacheCreation = num(usage.cache_creation_input_tokens ?? usage.prompt_tokens_details?.cache_creation_tokens ?? usage.prompt_tokens_details?.cache_write_tokens);
 
   let prompt = num(usage.prompt_tokens ?? usage.input_tokens);
   let cached;
@@ -206,6 +207,7 @@ export function canonicalizeUsage(usage) {
     cache_creation_input_tokens: cacheCreation,
   };
   if (reasoning > 0) result.reasoning_tokens = reasoning;
+  if (typeof usage.service_tier === "string") result.service_tier = usage.service_tier;
   return result;
 }
 
@@ -269,7 +271,10 @@ export function extractUsage(chunk) {
     return normalizeUsage({
       prompt_tokens: usage.input_tokens || usage.prompt_tokens || 0,
       completion_tokens: usage.output_tokens || usage.completion_tokens || 0,
-      cached_tokens: cachedTokens,
+      // Responses input is cache-inclusive, including a first cache write.
+      cached_tokens: cachedTokens ?? 0,
+      cache_creation_input_tokens: usage.input_tokens_details?.cache_write_tokens,
+      service_tier: chunk.response?.service_tier ?? chunk.service_tier,
       reasoning_tokens: usage.output_tokens_details?.reasoning_tokens,
       prompt_tokens_details: cachedTokens ? { cached_tokens: cachedTokens } : undefined
     });
@@ -278,6 +283,7 @@ export function extractUsage(chunk) {
   // OpenAI format (also covers DeepSeek which uses prompt_cache_hit_tokens)
   if (chunk.usage && typeof chunk.usage === "object" && chunk.usage.prompt_tokens !== undefined) {
     return normalizeUsage({
+      service_tier: chunk.service_tier,
       prompt_tokens: chunk.usage.prompt_tokens,
       completion_tokens: chunk.usage.completion_tokens || 0,
       cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens || chunk.usage.prompt_cache_hit_tokens,
@@ -327,6 +333,8 @@ export function mergeUsage(prev, next) {
     // chunk can't poison the whole accumulation (Math.max(x, NaN) is NaN).
     if (typeof v === "number" && Number.isFinite(v)) {
       merged[k] = Math.max(typeof merged[k] === "number" ? merged[k] : 0, v);
+    } else if (k === 'service_tier' && typeof v === 'string') {
+      merged[k] = v; // pricing metadata: latest explicitly returned tier wins
     } else if (v && typeof v === "object") {
       merged[k] = v; // nested details objects: take latest
     }

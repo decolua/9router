@@ -1,3 +1,5 @@
+import { ASTRA_MODEL, ASTRA_PRICING, normalizeAstraPricingModel } from "../config/astraPricing.js";
+
 // Pricing rates for AI models — all rates in $/1M tokens
 //
 // Fallback order (first match wins):
@@ -141,6 +143,9 @@ export const MODEL_PRICING = {
  * Keyed by provider alias (cc, cx, gc, gh, ...) or provider id (openai, anthropic, ...).
  */
 export const PROVIDER_PRICING = {
+  openai: { [ASTRA_MODEL]: ASTRA_PRICING },
+  codex: { [ASTRA_MODEL]: ASTRA_PRICING },
+  cx: { [ASTRA_MODEL]: ASTRA_PRICING },
   // GitHub Copilot (gh) — explicit override, matches canonical gpt-5.3-codex rate
   gh: {
     "gpt-5.3-codex": { input: 1.75, output: 14.00, cached: 0.175, reasoning: 14.00, cache_creation: 1.75 },
@@ -370,6 +375,8 @@ export function getPricingForModel(provider, model) {
     return PROVIDER_PRICING[provider][model];
   }
 
+  if (normalizeAstraPricingModel(provider, model)) return ASTRA_PRICING;
+
   // 2. Canonical model pricing (strip vendor prefix if needed: "deepseek/deepseek-chat" → "deepseek-chat")
   const baseModel = model.includes("/") ? model.split("/").pop() : model;
   if (MODEL_PRICING[baseModel]) return MODEL_PRICING[baseModel];
@@ -415,6 +422,13 @@ export function calculateCostFromTokens(tokens, pricing) {
   let cost = 0;
 
   const inputTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
+  const tierMultiplier = pricing.tier_multipliers
+    ? pricing.tier_multipliers[tokens.service_tier ?? "standard"]
+    : 1;
+  if (!Number.isFinite(tierMultiplier)) return NaN;
+  if (pricing.long_context && inputTokens > pricing.long_context.above) {
+    pricing = { ...pricing, ...pricing.long_context };
+  }
   const cachedTokens = tokens.cached_tokens || tokens.cache_read_input_tokens || 0;
   const cacheCreationTokens = tokens.cache_creation_input_tokens || 0;
   // prompt_tokens is cache-inclusive (see canonicalizeUsage): cached + cache_creation
@@ -424,20 +438,20 @@ export function calculateCostFromTokens(tokens, pricing) {
   cost += nonCachedInput * (pricing.input / 1000000);
 
   if (cachedTokens > 0) {
-    cost += cachedTokens * ((pricing.cached || pricing.input) / 1000000);
+    cost += cachedTokens * ((pricing.cached ?? pricing.input) / 1000000);
   }
 
   const outputTokens = tokens.completion_tokens || tokens.output_tokens || 0;
   cost += outputTokens * (pricing.output / 1000000);
 
   const reasoningTokens = tokens.reasoning_tokens || 0;
-  if (reasoningTokens > 0) {
+  if (reasoningTokens > 0 && !pricing.reasoning_in_output) {
     cost += reasoningTokens * ((pricing.reasoning || pricing.output) / 1000000);
   }
 
   if (cacheCreationTokens > 0) {
-    cost += cacheCreationTokens * ((pricing.cache_creation || pricing.input) / 1000000);
+    cost += cacheCreationTokens * ((pricing.cache_creation ?? pricing.input) / 1000000);
   }
 
-  return cost;
+  return cost * tierMultiplier;
 }
