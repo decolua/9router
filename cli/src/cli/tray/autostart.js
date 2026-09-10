@@ -6,6 +6,49 @@ const { execSync } = require("child_process");
 const APP_NAME = "9router";
 const APP_LABEL = "com.9router.autostart";
 
+/** Same data directory the CLI's api/client.js uses. */
+function getDataDir() {
+  if (process.env.DATA_DIR) return process.env.DATA_DIR;
+  if (process.platform === "win32") {
+    return path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), APP_NAME);
+  }
+  return path.join(os.homedir(), `.${APP_NAME}`);
+}
+
+/**
+ * Marks that the automatic first-run enable has already happened.
+ *
+ * Without it, switching to tray mode re-enabled autostart on every launch, so
+ * neither way of turning it off survived: the tray's "Disable" was undone by
+ * the next hide, and deleting the startup entry by hand was undone too (#3628).
+ * Once this file exists the automatic path never writes again; only an explicit
+ * enable does.
+ */
+function autostartDecidedFile() {
+  return path.join(getDataDir(), "autostart-decided");
+}
+
+function hasDecidedAutoStart() {
+  try {
+    return fs.existsSync(autostartDecidedFile());
+  } catch (err) {
+    // Unreadable data dir: treat as decided rather than write an entry the
+    // user has no recorded way of refusing.
+    return true;
+  }
+}
+
+function rememberAutoStartDecision() {
+  try {
+    const file = autostartDecidedFile();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, new Date().toISOString());
+  } catch (err) {
+    // Best-effort: a data dir we cannot write is not a reason to fail the
+    // enable/disable the user actually asked for.
+  }
+}
+
 /**
  * Resolve the absolute path to this package's cli.js.
  *
@@ -51,13 +94,28 @@ function enableAutoStart(cliPath) {
   if (platform === "linux" && !process.env.DISPLAY) return false;
 
   try {
-    if (platform === "darwin") return enableMacOS(cliPath);
-    if (platform === "win32") return enableWindows(cliPath);
-    if (platform === "linux") return enableLinux(cliPath);
+    let ok = false;
+    if (platform === "darwin") ok = enableMacOS(cliPath);
+    if (platform === "win32") ok = enableWindows(cliPath);
+    if (platform === "linux") ok = enableLinux(cliPath);
+    if (ok) rememberAutoStartDecision();
+    return ok;
   } catch (err) {
     // Silent fail — autostart is optional
   }
   return false;
+}
+
+/**
+ * Enable autostart the first time only, for callers that are not the user
+ * asking — switching to tray mode, for instance. Once the choice has been
+ * made, by this function or by an explicit enable/disable, it is left alone.
+ *
+ * @returns {boolean} whether an entry was written on this call
+ */
+function ensureAutoStart(cliPath) {
+  if (hasDecidedAutoStart()) return false;
+  return enableAutoStart(cliPath);
 }
 
 /**
@@ -66,6 +124,9 @@ function enableAutoStart(cliPath) {
  */
 function disableAutoStart() {
   const platform = process.platform;
+  // Record the choice first: even if removing the entry throws, the automatic
+  // path must not treat the next launch as a fresh install and put it back.
+  rememberAutoStartDecision();
   try {
     if (platform === "darwin") return disableMacOS();
     if (platform === "win32") return disableWindows();
@@ -301,6 +362,7 @@ function disableLinux() {
 
 module.exports = {
   enableAutoStart,
+  ensureAutoStart,
   disableAutoStart,
   isAutoStartEnabled
 };
