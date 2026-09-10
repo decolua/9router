@@ -7,12 +7,16 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
     ? "border-green-500/40"
     : testStatus === "error"
     ? "border-red-500/40"
+    : testStatus === "slow" || testStatus === "rate_limited"
+    ? "border-amber-500/40"
     : "border-border";
 
   const iconColor = testStatus === "ok"
     ? "#22c55e"
     : testStatus === "error"
     ? "#ef4444"
+    : testStatus === "slow" || testStatus === "rate_limited"
+    ? "#f59e0b"
     : undefined;
 
   return (
@@ -22,7 +26,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
           className="material-symbols-outlined shrink-0 text-base"
           style={iconColor ? { color: iconColor } : undefined}
         >
-          {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
+          {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : testStatus === "slow" || testStatus === "rate_limited" ? "warning" : "smart_toy"}
         </span>
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <code className="max-w-[72vw] truncate rounded bg-sidebar px-1.5 py-0.5 font-mono text-xs text-text-muted sm:max-w-[360px]">{displayModel}</code>
@@ -90,7 +94,7 @@ ModelRow.propTypes = {
   alias: PropTypes.string,
   copied: PropTypes.string,
   onCopy: PropTypes.func.isRequired,
-  testStatus: PropTypes.oneOf(["ok", "error"]),
+  testStatus: PropTypes.oneOf(["ok", "error", "slow", "rate_limited", "not_tested"]),
   isCustom: PropTypes.bool,
   isFree: PropTypes.bool,
   onDeleteAlias: PropTypes.func,
