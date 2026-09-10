@@ -26,6 +26,8 @@ vi.mock("@/shared/constants/config", () => ({
       claude: {
         settingsKey: "claudeAutoPing",
         quotaKey: "session (5h)",
+        pingInactiveSession: true,
+        inactiveMinPingIntervalMs: 18000000,
         pingModel: "claude-haiku-4-5-20251001",
         pingText: "hi",
         pingMaxTokens: 1,
@@ -368,5 +370,173 @@ describe("quota auto-ping", () => {
       max_tokens: 1,
       messages: [{ role: "user", content: "hi" }],
     });
+  });
+
+  const availableSession = { used: 0, total: 100, remaining: 100, resetAt: null };
+  const availableWeekly = { used: 0, total: 100, remaining: 100, resetAt: null };
+  const defaultInactiveQuotas = {
+    "session (5h)": availableSession,
+    "weekly Fable (7d)": availableWeekly,
+  };
+
+  function arrangeInactiveClaude({ enabled = true, connection = {}, quotas = defaultInactiveQuotas, proxyConfig } = {}) {
+    deps.getSettings.mockResolvedValue({ claudeAutoPing: { connections: { "claude-1": enabled } } });
+    deps.getProviderConnections.mockImplementation(async ({ provider }) => (
+      provider === "claude"
+        ? [{ id: "claude-1", provider: "claude", authType: "oauth", accessToken: "token", ...connection }]
+        : []
+    ));
+    if (proxyConfig) deps.resolveConnectionProxyConfig.mockResolvedValue(proxyConfig);
+    getClaudeUsage.mockResolvedValue({ quotas });
+  }
+
+  it("starts an inactive Claude session and drains the response before persistence", async () => {
+    const order = [];
+    const responseText = vi.fn(async () => { order.push("drain"); return ""; });
+    deps.proxyAwareFetch.mockResolvedValue({ ok: true, text: responseText });
+    deps.updateProviderConnection.mockImplementation(async () => { order.push("db"); });
+    arrangeInactiveClaude();
+
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(deps.proxyAwareFetch).toHaveBeenCalledTimes(1);
+    expect(responseText).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(["drain", "db"]);
+    expect(deps.updateProviderConnection).toHaveBeenCalledWith("claude-1", expect.objectContaining({
+      lastPingAt: "2026-01-01T12:00:00.000Z",
+    }));
+    const update = deps.updateProviderConnection.mock.calls[0][1];
+    expect(update).not.toHaveProperty("lastPingedResetAt");
+    expect(update).not.toHaveProperty("lastPingedResetKey");
+  });
+
+  it.each([
+    ["weekly row is absent", { "session (5h)": availableSession }],
+    ["session row is absent", { "weekly Fable (7d)": availableWeekly }],
+    ["weekly quota is exhausted", {
+      "session (5h)": availableSession,
+      "weekly Fable (7d)": { used: 100, total: 100, remaining: 0, resetAt: null },
+    }],
+    ["session-named weekly quota is exhausted", {
+      "session (5h)": availableSession,
+      "weekly session Fable (7d)": { used: 100, total: 100, remaining: 0, resetAt: null },
+    }],
+    ["session quota is exhausted", {
+      "session (5h)": { used: 100, total: 100, remaining: 0, resetAt: null },
+      "weekly Fable (7d)": availableWeekly,
+    }],
+    ["another blocking quota is exhausted", {
+      ...defaultInactiveQuotas,
+      "monthly (30d)": { used: 100, total: 100, remaining: 0, resetAt: null },
+    }],
+  ])("does not start an inactive Claude session when %s", async (_case, quotas) => {
+    arrangeInactiveClaude({ quotas });
+
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(deps.proxyAwareFetch).not.toHaveBeenCalled();
+  });
+
+  it("does not repeat an inactive Claude ping inside five hours", async () => {
+    arrangeInactiveClaude({ connection: { lastPingAt: "2026-01-01T11:00:00.000Z" } });
+
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(deps.proxyAwareFetch).not.toHaveBeenCalled();
+  });
+
+  it("does not apply the inactive five-hour guard to an active reset ping", async () => {
+    arrangeInactiveClaude({
+      connection: { lastPingAt: "2026-01-01T11:00:00.000Z" },
+      quotas: {
+        "session (5h)": { ...availableSession, resetAt: "2026-01-01T11:59:00.000Z" },
+      },
+    });
+
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(deps.proxyAwareFetch).toHaveBeenCalledTimes(1);
+    expect(deps.updateProviderConnection).toHaveBeenCalledWith("claude-1", expect.objectContaining({
+      lastPingedResetAt: "2026-01-01T11:59:00.000Z",
+      lastPingedResetKey: "2026-01-01T11:59:00.000Z",
+    }));
+  });
+
+  it("does not start an inactive Claude session when the selected proxy is unavailable", async () => {
+    arrangeInactiveClaude({
+      connection: { providerSpecificData: { proxyPoolId: "pool-1" } },
+      proxyConfig: { source: "none", proxyPoolId: "pool-1", proxyPool: null },
+    });
+
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(deps.proxyAwareFetch).not.toHaveBeenCalled();
+  });
+
+  it("starts an inactive Claude session through an available selected proxy", async () => {
+    arrangeInactiveClaude({
+      connection: { providerSpecificData: { proxyPoolId: "pool-1" } },
+      proxyConfig: {
+        source: "pool",
+        proxyPoolId: "pool-1",
+        proxyPool: { id: "pool-1" },
+        connectionProxyEnabled: true,
+        connectionProxyUrl: "http://proxy.test:8080",
+      },
+    });
+
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(deps.proxyAwareFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels a failed Claude response and suppresses retries during the failure cooldown", async () => {
+    const cancel = vi.fn().mockRejectedValue(new Error("synthetic cancel failure"));
+    deps.proxyAwareFetch.mockResolvedValue({ ok: false, body: { cancel } });
+    arrangeInactiveClaude();
+
+    await runQuotaAutoPingTick(deps, state);
+    vi.setSystemTime(new Date("2026-01-01T12:01:00.000Z"));
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(cancel).toHaveBeenCalledTimes(1);
+    expect(deps.proxyAwareFetch).toHaveBeenCalledTimes(1);
+    expect(deps.updateProviderConnection).not.toHaveBeenCalled();
+  });
+
+  it("suppresses retries when draining an accepted Claude response fails", async () => {
+    const responseText = vi.fn().mockRejectedValue(new Error("synthetic body failure"));
+    deps.proxyAwareFetch.mockResolvedValue({ ok: true, text: responseText });
+    arrangeInactiveClaude();
+
+    await runQuotaAutoPingTick(deps, state);
+    vi.setSystemTime(new Date("2026-01-01T12:01:00.000Z"));
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(responseText).toHaveBeenCalledTimes(1);
+    expect(deps.proxyAwareFetch).toHaveBeenCalledTimes(1);
+    expect(deps.updateProviderConnection).not.toHaveBeenCalled();
+  });
+
+  it("deduplicates an accepted inactive Claude ping when DB persistence fails", async () => {
+    deps.updateProviderConnection
+      .mockRejectedValueOnce(new Error("synthetic DB failure"))
+      .mockResolvedValueOnce(undefined);
+    arrangeInactiveClaude();
+
+    await runQuotaAutoPingTick(deps, state);
+    vi.setSystemTime(new Date("2026-01-01T12:16:00.000Z"));
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(deps.proxyAwareFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps inactive Claude auto-ping opt-in per connection", async () => {
+    arrangeInactiveClaude({ enabled: false });
+
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(getClaudeUsage).not.toHaveBeenCalled();
+    expect(deps.proxyAwareFetch).not.toHaveBeenCalled();
   });
 });

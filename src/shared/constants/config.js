@@ -62,7 +62,7 @@ export const CONSOLE_LOG_CONFIG = {
 // Client-side store TTL: how long fetched data stays fresh before re-fetching
 export const CLIENT_STORE_TTL_MS = 60000;
 
-// Quota auto-ping: keep 5h windows warm by sending a tiny request right after reset.
+// Quota auto-ping: send tiny opt-in requests around resets or to start guarded inactive windows.
 export const QUOTA_AUTOPING_CONFIG = {
   tickIntervalMs: 60000,                // scheduler tick
   pingLeadMs: 5000,                     // fire once reset passes (within tolerance)
@@ -72,6 +72,8 @@ export const QUOTA_AUTOPING_CONFIG = {
     claude: {
       settingsKey: "claudeAutoPing",    // preserve existing settings contract
       quotaKey: "session (5h)",         // quota key returned by usage handler
+      pingInactiveSession: true,
+      inactiveMinPingIntervalMs: 5 * 60 * 60 * 1000,
       pingModel: "claude-haiku-4-5-20251001",
       pingText: "hi",
       pingMaxTokens: 1,
