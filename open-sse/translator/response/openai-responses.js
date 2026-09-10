@@ -10,6 +10,26 @@ import { fallbackToolCallId } from "../concerns/toolCall.js";
 import { reasoningDelta, extractReasoningText } from "../concerns/reasoning.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } from "../schema/index.js";
 
+// Namespace tools are expanded into dotted names (`collaboration.spawn_agent`) on the
+// request side. Split them back into Responses `name` + `namespace` so the client router
+// can route the tool call. Flat names pass through unchanged.
+function splitToolName(name) {
+  if (typeof name !== "string") return { name: name || "", namespace: null };
+  if (globalThis.__CB_TOOL_MAP__ && globalThis.__CB_TOOL_MAP__[name]) {
+    name = globalThis.__CB_TOOL_MAP__[name];
+  }
+  let n = name;
+  if (n.startsWith("functions.")) n = n.slice("functions.".length);
+  const dot = n.indexOf(".");
+  if (dot < 0) {
+    if (globalThis.__CB_NS_TOOLS__ && globalThis.__CB_NS_TOOLS__[n]) {
+      return { name: n, namespace: globalThis.__CB_NS_TOOLS__[n] };
+    }
+    return { name: n, namespace: null };
+  }
+  return { name: n.slice(dot + 1), namespace: n.slice(0, dot) };
+}
+
 /**
  * Translate OpenAI chunk to Responses API events
  * @returns {Array} Array of events with { event, data } structure
@@ -295,7 +315,7 @@ function emitToolCall(state, emit, tc) {
         type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
         ...(custom ? { input: "" } : { arguments: "" }),
         call_id: callId,
-        name: state.funcNames[tcIdx] || ""
+        ...splitToolName(state.funcNames[tcIdx] || "")
       }
     });
   }
@@ -356,7 +376,7 @@ function closeToolCall(state, emit, idx) {
         type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
         ...(custom ? { input: extractCustomToolInput(args) } : { arguments: args }),
         call_id: callId,
-        name: state.funcNames[idx] || ""
+        ...splitToolName(state.funcNames[idx] || "")
       }
     });
 
