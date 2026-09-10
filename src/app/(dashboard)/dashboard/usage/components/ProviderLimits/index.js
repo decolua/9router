@@ -37,6 +37,8 @@ import {
   ACCOUNT_PAGE_SIZE_MAX,
   ACCOUNT_FILTER_OPTIONS,
   QUOTA_SORT_OPTIONS,
+  formatSubscriptionActiveUntil,
+  shouldShowSubscriptionExpiry,
 } from "./utils";
 import Card from "@/shared/components/Card";
 import { ConfirmModal, EditConnectionModal } from "@/shared/components";
@@ -1092,6 +1094,19 @@ export default function ProviderLimits() {
                           {getConnectionSecondaryLabel(conn)}
                         </p>
                       ) : null}
+                      {conn.provider === "codex" && (() => {
+                        const rawAct = quota?.raw?.subscriptionActiveUntil ?? quota?.subscriptionActiveUntil ?? null;
+                        const rawPlan = quota?.raw?.subscriptionPlan ?? quota?.subscriptionPlan ?? null;
+                        const showExpiry = shouldShowSubscriptionExpiry({ subscriptionPlan: rawPlan, subscriptionActiveUntil: rawAct });
+                        const fmt = showExpiry ? formatSubscriptionActiveUntil(rawAct) : null;
+                        if (!rawPlan && !fmt) return null;
+                        return (
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            {rawPlan ? <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">{String(rawPlan)}</span> : null}
+                            {fmt ? <time dateTime={fmt.dateTime} className="text-[11px] text-text-muted">Subscription active until {fmt.display}</time> : null}
+                          </div>
+                        );
+                      })()}
                       {conn.provider === "kiro" && (
                         <div className="mt-1 flex flex-wrap items-center gap-1">
                           <span className="rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-semibold text-brand-600 dark:text-brand-300">

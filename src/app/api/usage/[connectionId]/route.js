@@ -6,6 +6,7 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import { getCodexSubscriptionEntitlement } from "open-sse/services/usage/codex.js";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -181,6 +182,38 @@ export async function GET(request, { params }) {
       } catch (retryError) {
         console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
       }
+    }
+
+    // Codex OAuth subscription expiry (fail-open, never affects quota response)
+    if (connection.provider === "codex" && connection.authType === "oauth") {
+      try {
+        const sub = await getCodexSubscriptionEntitlement({
+          accessToken: connection.accessToken,
+          idToken: connection.idToken,
+          providerSpecificData: connection.providerSpecificData,
+          proxyOptions,
+          force,
+          now: Date.now(),
+        });
+        if (sub) {
+          if (sub.subscriptionActiveUntil) usage.subscriptionActiveUntil = sub.subscriptionActiveUntil;
+          if (sub.subscriptionPlan) usage.subscriptionPlan = sub.subscriptionPlan;
+          if (sub.subscriptionSource) usage.subscriptionSource = sub.subscriptionSource;
+          const patch = sub.patch || {};
+          const psd = connection.providerSpecificData || {};
+          const nextPsd = { ...psd };
+          let changed = false;
+          for (const k of ["codexSubscriptionActiveUntil","codexSubscriptionPlan","codexSubscriptionSource","codexSubscriptionFetchedAt","codexSubscriptionAttemptAt"]) {
+            if (patch[k] !== undefined && patch[k] !== psd[k]) {
+              nextPsd[k] = patch[k];
+              changed = true;
+            }
+          }
+          if (changed) {
+            try { await updateProviderConnection(connection.id, { providerSpecificData: nextPsd }); } catch {}
+          }
+        }
+      } catch {}
     }
 
     return Response.json(usage);
