@@ -4,8 +4,14 @@ import { homedir } from "os";
 import { join } from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { hasValidCliToken, isAuthenticated } from "@/dashboardGuard";
 
 const execFileAsync = promisify(execFile);
+
+async function requireAuth(request) {
+  if (await hasValidCliToken(request) || await isAuthenticated(request)) return true;
+  return false;
+}
 
 const ACCESS_TOKEN_KEYS = ["cursorAuth/accessToken", "cursorAuth/token"];
 const MACHINE_ID_KEYS = [
@@ -174,7 +180,10 @@ async function extractTokensViaCLI(dbPath) {
  * Auto-detect and extract Cursor tokens from local SQLite database.
  * Strategy: better-sqlite3 → sqlite3 CLI → manual fallback
  */
-export async function GET() {
+export async function GET(request) {
+  if (!(await requireAuth(request))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
     const platform = process.platform;
     const candidates = getCandidatePaths(platform);
