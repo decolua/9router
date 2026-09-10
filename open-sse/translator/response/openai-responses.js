@@ -19,8 +19,18 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
     return flushEvents(state);
   }
   
-  if (!chunk.choices?.length) return [];
-  
+  // Usage-only trail chunk: OpenAI/OpenRouter stream the terminal usage
+  // ({choices: [], usage: {...}}) as a SEPARATE chunk AFTER the finish_reason
+  // chunk. Dropping it here left response.completed with zeroed tokens even
+  // though the counts were known. Capture it; response.completed is deferred to
+  // flush so it always carries the final usage.
+  if (!chunk.choices?.length) {
+    if (chunk.usage && typeof chunk.usage === "object") {
+      state.usage = state.usage ? { ...state.usage, ...chunk.usage } : chunk.usage;
+    }
+    return [];
+  }
+
   const events = [];
   const nextSeq = () => ++state.seq;
   
@@ -110,12 +120,15 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
     }
   }
 
-  // Handle finish_reason
+  // Handle finish_reason: close every open item, but DO NOT emit
+  // response.completed yet. OpenAI-compatible upstreams (OpenRouter included)
+  // send the terminal usage in a separate choices-less chunk AFTER this one, so
+  // completing here would publish zeroed tokens. flushEvents() emits the single
+  // terminal event once usage has been captured (or estimated).
   if (choice.finish_reason) {
     for (const i in state.msgItemAdded) closeMessage(state, emit, i);
     closeReasoning(state, emit);
     for (const i in state.funcCallIds) closeToolCall(state, emit, i);
-    sendCompleted(state, emit);
   }
 
   return events;

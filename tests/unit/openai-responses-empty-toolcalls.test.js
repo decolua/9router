@@ -24,6 +24,8 @@ describe("OpenAI Chat stream → Responses: empty tool_calls arrays", () => {
     ];
 
     const events = chunks.flatMap((chunk) => openaiToOpenAIResponsesResponse(chunk, state));
+    // response.completed is deferred to flush so it can carry trailing usage
+    events.push(...openaiToOpenAIResponsesResponse(null, state));
     const textDone = events.filter((e) => e.event === "response.output_text.done");
     const textDeltas = events.filter((e) => e.event === "response.output_text.delta");
 
@@ -86,6 +88,7 @@ describe("OpenAI Chat stream → Responses: empty tool_calls arrays", () => {
       if (chunk.usage) state.usage = chunk.usage;
       return openaiToOpenAIResponsesResponse(chunk, state);
     });
+    events.push(...openaiToOpenAIResponsesResponse(null, state));
 
     const completed = events.find((e) => e.event === "response.completed");
     expect(completed.data.response).toMatchObject({
@@ -97,6 +100,42 @@ describe("OpenAI Chat stream → Responses: empty tool_calls arrays", () => {
         output_tokens_details: { reasoning_tokens: 15 },
         total_tokens: 120,
       },
+    });
+  });
+
+  it("carries usage from the trailing choices-less chunk (OpenRouter/OpenAI)", () => {
+    // Real OpenRouter/OpenAI streaming emits the terminal usage in a SEPARATE
+    // chunk AFTER finish_reason: {"choices":[],"usage":{...}}. Dropping that
+    // chunk published response.completed with zeroed tokens even though
+    // 9router's own logs showed the real counts (#telemetry).
+    const state = initState(FORMATS.OPENAI_RESPONSES);
+    const chunks = [
+      { id: "cmb-trail", model: "deepseek-v4.1-flash", choices: [{ index: 0, delta: { content: "hi" }, finish_reason: null }] },
+      { id: "cmb-trail", model: "deepseek-v4.1-flash", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+      {
+        id: "cmb-trail",
+        model: "deepseek-v4.1-flash",
+        choices: [],
+        usage: {
+          prompt_tokens: 213619,
+          completion_tokens: 2455,
+          total_tokens: 216074,
+          prompt_tokens_details: { cached_tokens: 210944 },
+          completion_tokens_details: { reasoning_tokens: 360 },
+        },
+      },
+    ];
+
+    const events = chunks.flatMap((chunk) => openaiToOpenAIResponsesResponse(chunk, state));
+    events.push(...openaiToOpenAIResponsesResponse(null, state));
+
+    const completed = events.find((e) => e.event === "response.completed");
+    expect(completed.data.response.usage).toEqual({
+      input_tokens: 213619,
+      input_tokens_details: { cached_tokens: 210944 },
+      output_tokens: 2455,
+      output_tokens_details: { reasoning_tokens: 360 },
+      total_tokens: 216074,
     });
   });
 });
