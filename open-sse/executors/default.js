@@ -67,7 +67,7 @@ export class DefaultExecutor extends BaseExecutor {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
-  transformRequest(model, body) {
+  transformRequest(model, body, stream, credentials) {
     const transformed = this.applyJsonSchemaFallback(body);
 
     if (transformed && typeof transformed === "object") {
@@ -76,6 +76,28 @@ export class DefaultExecutor extends BaseExecutor {
         delete transformed.client_metadata;
       }
       stripUnsupportedParams(this.provider, model, transformed);
+      const quirkModels = this.config.quirks?.forceAutoToolChoiceModels;
+      if (Array.isArray(quirkModels) && quirkModels.length && "tool_choice" in transformed) {
+        const suffix = typeof model === "string" ? model.match(/\((?:none|off|auto|minimal|low|medium|high|xhigh|max|ultra|\d+)\)\s*$/i) : null;
+        const bare = suffix ? model.slice(0, suffix.index).trim() : model;
+        if (quirkModels.includes(bare) && transformed.tool_choice !== "auto") transformed.tool_choice = "auto";
+      }
+
+      // Go Muse Spark Responses endpoint rejects Chat param `reasoning_effort`.
+      // Only convert when we are actually on /responses for this model.
+      if (typeof transformed.reasoning_effort === "string") {
+        const baseUrl = credentials?.runtimeTransport?.baseUrl || "";
+        const onResponses = String(baseUrl).includes("/responses");
+        const isGoMuse = this.provider === "opencode-go" && /muse-spark/i.test(String(model || ""));
+        if (onResponses && isGoMuse) {
+          const cur = transformed.reasoning;
+          const curObj = cur && typeof cur === "object" && !Array.isArray(cur) ? cur : {};
+          const normalized = transformed.reasoning_effort.toLowerCase().trim();
+          const effort = (normalized === "none" || normalized === "off") ? "minimal" : normalized;
+          transformed.reasoning = { ...curObj, effort, summary: curObj.summary || "auto" };
+          delete transformed.reasoning_effort;
+        }
+      }
     }
 
     return injectReasoningContent({ provider: this.provider, model, body: transformed });
@@ -168,7 +190,6 @@ export class DefaultExecutor extends BaseExecutor {
       || (this.provider?.startsWith?.("anthropic-compatible-") && isClaudeModel))) {
       headers["Anthropic-Beta"] = selectAnthropicBeta(model);
     }
-
     // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
     if (this.provider?.startsWith?.("anthropic-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || "";

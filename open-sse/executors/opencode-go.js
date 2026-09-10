@@ -152,7 +152,7 @@ export class OpenCodeGoExecutor extends DefaultExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
-    const out = super.transformRequest(model, body);
+    const out = super.transformRequest(model, body, stream, credentials);
     if (!isResponsesModel(model || body?.model)) return out;
     const normalized = normalizeResponsesInput(out.input);
     if (normalized) out.input = normalized;

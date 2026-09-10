@@ -109,4 +109,9 @@ describe("OpenCode Go per-model transport guard (chatCore logic)", () => {
       expect(pickTransport("opencode-go", "openai-responses", "opencode-go", m)).toBeNull();
     }
   });
+
+  it("lists each opencode-go model id exactly once (no duplicate registry entries)", () => {
+    const ids = (PROVIDER_MODELS["opencode-go"] || []).map((m) => m.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
 });

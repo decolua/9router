@@ -24,6 +24,11 @@ export default {
     usage: {
       url: "https://opencode.ai/zen/go/v1/usage",
     },
+    quirks: {
+      // Go Muse Spark ids on /responses reject forced tool_choice (only "auto").
+      // Exact versions only — future models keep native behavior.
+      forceAutoToolChoiceModels: ["muse-spark-1.2-contributor", "muse-spark-1.3-contributor"],
+    },
   },
   // Multi-endpoint: pick the transport matching the client sourceFormat to skip
   // translation. Guarded per-model by `supportedFormats` (see chatCore) because
