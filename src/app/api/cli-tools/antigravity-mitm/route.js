@@ -59,7 +59,7 @@ function checkIsAdmin() {
 
 function checkPrivilege(pwd) {
   if (checkIsAdmin()) return true;
-  if (isWin) return false;
+  if (isWin) return true;
   if (!isSudoPasswordRequired()) return true;
   return !!pwd;
 }
