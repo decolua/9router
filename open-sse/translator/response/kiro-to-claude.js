@@ -15,6 +15,7 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
+import { repairDuplicatedJsonArguments, appendToolArgs } from "../concerns/toolArgs.js";
 
 function stopThinkingBlock(state, results) {
   if (!state.thinkingBlockStarted) return;
@@ -178,9 +179,10 @@ export function kiroToClaudeResponse(chunk, state) {
       if (tc.function?.arguments) {
         const toolInfo = state.toolCalls.get(idx);
         if (toolInfo) {
+          const current = state.toolArgBuffers.get(idx) || "";
           state.toolArgBuffers.set(
             idx,
-            (state.toolArgBuffers.get(idx) || "") + tc.function.arguments
+            appendToolArgs(current, tc.function.arguments)
           );
         }
       }
@@ -194,26 +196,41 @@ export function kiroToClaudeResponse(chunk, state) {
 
     if (state.toolCalls) {
       for (const [idx, toolInfo] of state.toolCalls) {
+        if (toolInfo.closed) continue;
+        toolInfo.closed = true;
         const buffered = state.toolArgBuffers?.get(idx);
         if (buffered) {
           results.push({
             type: "content_block_delta",
             index: toolInfo.blockIndex,
-            delta: { type: "input_json_delta", partial_json: buffered },
+            delta: { type: "input_json_delta", partial_json: repairDuplicatedJsonArguments(buffered) },
           });
         }
         results.push({ type: "content_block_stop", index: toolInfo.blockIndex });
       }
     }
 
-    state.finishReason = choice.finish_reason;
-    const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
-    results.push({
-      type: "message_delta",
-      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
-      usage: finalUsage,
-    });
-    results.push({ type: "message_stop" });
+    if (!state.finishReasonSent) {
+      state.finishReasonSent = true;
+      state.finishReason = choice.finish_reason;
+      const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+      results.push({
+        type: "message_delta",
+        delta: { stop_reason: convertFinishReason(choice.finish_reason) },
+        usage: finalUsage,
+      });
+      results.push({ type: "message_stop" });
+    } else if (state.usage && !state.messageStopSent) {
+      // Later finish chunk (commonly finish_reason:"stop" carrying usage).
+      // Tool blocks are already closed; emit a usage-only message_delta so the
+      // client still receives final usage without re-opening/duplicating blocks.
+      state.messageStopSent = true;
+      results.push({
+        type: "message_delta",
+        delta: { stop_reason: convertFinishReason(choice.finish_reason) },
+        usage: state.usage,
+      });
+    }
   }
 
   return results.length > 0 ? results : null;
