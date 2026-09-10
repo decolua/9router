@@ -25,6 +25,13 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
 
+  const invalidEncryptedContent = lowerError.includes("invalid_encrypted_content") ||
+    (lowerError.includes("encrypted content") &&
+      (lowerError.includes("could not be verified") || lowerError.includes("could not be decrypted or parsed")));
+  if (status === 400 && invalidEncryptedContent) {
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
+
   for (const rule of ERROR_RULES) {
     // Text-based rule: match substring in error message
     if (rule.text && lowerError && lowerError.includes(rule.text)) {
