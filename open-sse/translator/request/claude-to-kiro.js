@@ -242,9 +242,9 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     ? (credentials?.providerSpecificData?.profileArn || "")
     : (credentials?.providerSpecificData?.profileArn || resolveDefaultProfileArn(authMethod));
 
-  // Kiro CLI/KAS sends system prompt as top-level `systemPrompt`. Keep a
-  // content fallback too because the CodeWhisperer surface does not always
-  // enforce top-level systemPrompt for direct calls.
+  // The system prompt travels inside the first user turn's content (contentPrefix):
+  // the CodeWhisperer surface rejects a top-level `systemPrompt` with
+  // 400 REQUEST_BODY_INVALID, so the value below is only a replay cache key.
   const timestamp = new Date().toISOString();
   const systemPromptParts = [];
   if (thinkingBudget !== null && !usesNativeGptEffort) {
