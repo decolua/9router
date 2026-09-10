@@ -33,7 +33,12 @@ jobs:
         run: npm install
 
       - name: Install test dependencies
-        run: npm install
+        # A back-to-back `npm install` in a second, unrelated package.json
+        # (tests/) against the same ~/.npm populated by the root install can
+        # corrupt npm's arborist state ("Cannot read properties of null
+        # (reading 'edgesOut')"). Clearing the cache between the two installs
+        # avoids it.
+        run: npm cache clean --force && npm install
         working-directory: tests
 
       - name: Run unit tests (no-regression baseline)
