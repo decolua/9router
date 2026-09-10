@@ -45,7 +45,14 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     }
   }
 
-  // Default: transient cooldown for any unmatched error
+  // Client-side request errors (400 Bad Request, 422 Unprocessable Entity) that are not
+  // matched by quota/rate-limit rules are non-retryable client errors (#3794, #3786).
+  // Return immediately without fallback or locking accounts.
+  if (status === 400 || status === 422) {
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
+
+  // Default: transient cooldown for any unmatched server/network error
   return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
 }
 

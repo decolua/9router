@@ -52,7 +52,9 @@ export async function GET(_request, { params }) {
     // Match the same LLM catalog exposed by GET /v1/models. A catch-all
     // parameter is required because provider-prefixed IDs contain a slash.
     const models = await buildModelsList([LLM_KIND]);
-    const matchedModel = models.find((candidate) => candidate.id === identifier);
+    const matchedModel = models.find(
+      (candidate) => candidate.id === identifier || candidate.id.endsWith(`/${identifier}`)
+    );
 
     if (!matchedModel) {
       return json(
