@@ -158,7 +158,10 @@ function formatDisplayName(modelName, modelId, rateMultiplier) {
  */
 async function fetchKiroCatalogRaw(credentials, signal) {
   const profileArn = credentials?.providerSpecificData?.profileArn || "";
-  const region = regionFromProfileArn(profileArn);
+  const authMethod = credentials?.providerSpecificData?.authMethod;
+  const region = profileArn
+    ? regionFromProfileArn(profileArn)
+    : credentials?.providerSpecificData?.region || DEFAULT_REGION;
   const params = new URLSearchParams();
   params.set("origin", "AI_EDITOR");
   if (profileArn) params.set("profileArn", profileArn);
@@ -166,7 +169,8 @@ async function fetchKiroCatalogRaw(credentials, signal) {
 
   const headers = {
     ...buildKiroFingerprintHeaders(credentials),
-    "Authorization": `Bearer ${credentials?.accessToken || ""}`
+    "Authorization": `Bearer ${credentials?.accessToken || ""}`,
+    ...(authMethod === "api_key" ? { "TokenType": "API_KEY" } : {}),
   };
 
   const controller = new AbortController();
@@ -293,12 +297,14 @@ export async function resolveKiroModels(credentials, options = {}) {
     if (!upstreamId) continue;
     const display = formatDisplayName(m.modelName, upstreamId, m.rateMultiplier);
     const ctx = Number(m?.tokenLimits?.maxInputTokens) || 200_000;
+    const maxOutputTokens = Number(m?.tokenLimits?.maxOutputTokens) || null;
     for (const v of buildVariants(upstreamId, display)) {
       expanded.push({
         ...v,
         // Carry over context window + raw upstream metadata so the caller
         // (e.g. the dashboard models endpoint) can render it.
         contextLength: ctx,
+        ...(maxOutputTokens ? { maxOutputTokens } : {}),
         rateMultiplier: Number.isFinite(Number(m.rateMultiplier)) ? Number(m.rateMultiplier) : 1.0,
         upstreamModelId: upstreamId,
         description: m.description || ""
