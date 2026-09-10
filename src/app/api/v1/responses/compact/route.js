@@ -1,5 +1,6 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
+import { withScopeAuth } from "@/middleware/scopeAuth.js";
 
 let initialized = false;
 
@@ -33,5 +34,5 @@ export async function POST(request) {
     headers: request.headers,
     body: JSON.stringify(body)
   });
-  return await handleChat(newRequest);
+  return await withScopeAuth(handleChat)(newRequest);
 }

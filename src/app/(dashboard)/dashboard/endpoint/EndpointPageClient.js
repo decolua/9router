@@ -17,13 +17,17 @@ import EndpointRow from "./components/EndpointRow";
 import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
+import KeyScopePicker from "./components/KeyScopePicker";
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyScope, setNewKeyScope] = useState(null);
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
+  const [scopeEditingKey, setScopeEditingKey] = useState(null);
+  const [scopeEditDraft, setScopeEditDraft] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -629,7 +633,7 @@ export default function APIPageClient({ machineId }) {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({ name: newKeyName, scope: newKeyScope }),
       });
       const data = await res.json();
 
@@ -637,10 +641,34 @@ export default function APIPageClient({ machineId }) {
         setCreatedKey(data.key);
         await fetchData();
         setNewKeyName("");
+        setNewKeyScope(null);
         setShowAddModal(false);
       }
     } catch (error) {
       console.log("Error creating key:", error);
+    }
+  };
+
+  const handleOpenScopeEditor = (key) => {
+    setScopeEditingKey(key);
+    setScopeEditDraft(key.scope ?? null);
+  };
+
+  const handleSaveKeyScope = async () => {
+    if (!scopeEditingKey) return;
+    try {
+      const res = await fetch(`/api/keys/${scopeEditingKey.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope: scopeEditDraft }),
+      });
+      if (res.ok) {
+        setKeys((prev) => prev.map((k) => (k.id === scopeEditingKey.id ? { ...k, scope: scopeEditDraft } : k)));
+        setScopeEditingKey(null);
+        setScopeEditDraft(null);
+      }
+    } catch (error) {
+      console.log("Error updating key scope:", error);
     }
   };
 
@@ -1042,8 +1070,18 @@ export default function APIPageClient({ machineId }) {
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
+                  {key.scope && (
+                    <p className="text-xs text-primary mt-1">Scoped ({(key.scope.providers || []).length} provider{(key.scope.providers || []).length === 1 ? "" : "s"})</p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleOpenScopeEditor(key)}
+                    className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                    title="Edit scope"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">tune</span>
+                  </button>
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -1083,6 +1121,7 @@ export default function APIPageClient({ machineId }) {
         onClose={() => {
           setShowAddModal(false);
           setNewKeyName("");
+          setNewKeyScope(null);
         }}
       >
         <div className="flex flex-col gap-4">
@@ -1092,6 +1131,10 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
+          <div>
+            <p className="text-sm font-medium mb-2">Access Scope</p>
+            <KeyScopePicker value={newKeyScope} onChange={setNewKeyScope} />
+          </div>
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
               Create
@@ -1100,6 +1143,36 @@ export default function APIPageClient({ machineId }) {
               onClick={() => {
                 setShowAddModal(false);
                 setNewKeyName("");
+                setNewKeyScope(null);
+              }}
+              variant="ghost"
+              fullWidth
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Scope Modal */}
+      <Modal
+        isOpen={!!scopeEditingKey}
+        title={`Edit Scope — ${scopeEditingKey?.name || ""}`}
+        onClose={() => {
+          setScopeEditingKey(null);
+          setScopeEditDraft(null);
+        }}
+      >
+        <div className="flex flex-col gap-4">
+          <KeyScopePicker value={scopeEditDraft} onChange={setScopeEditDraft} />
+          <div className="flex gap-2">
+            <Button onClick={handleSaveKeyScope} fullWidth>
+              Save
+            </Button>
+            <Button
+              onClick={() => {
+                setScopeEditingKey(null);
+                setScopeEditDraft(null);
               }}
               variant="ghost"
               fullWidth

@@ -1,4 +1,5 @@
 import { handleEmbeddings } from "@/sse/handlers/embeddings.js";
+import { withScopeAuth } from "@/middleware/scopeAuth.js";
 
 /**
  * Handle CORS preflight
@@ -17,5 +18,5 @@ export async function OPTIONS() {
  * POST /v1/embeddings - OpenAI-compatible embeddings endpoint
  */
 export async function POST(request) {
-  return await handleEmbeddings(request);
+  return await withScopeAuth(handleEmbeddings)(request);
 }
