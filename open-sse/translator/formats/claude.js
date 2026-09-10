@@ -592,6 +592,12 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
         });
     }
 
+    // Strip any client-supplied cache_control from tools and anchor on the
+    // last tool that can actually be cached (Anthropic rejects defer_loading
+    // + cache_control together, #3567). chatCore re-stamps this after
+    // disclosure filtering for the translated request path (single source of
+    // truth there), but this anchor still matters for direct/other callers
+    // of prepareClaudeRequest.
     const lastCacheable = lastCacheableToolIndex(body.tools);
     body.tools = body.tools.map((tool, i) => {
       const { cache_control, ...rest } = tool;
