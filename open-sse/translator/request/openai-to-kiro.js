@@ -51,7 +51,16 @@ function convertMessages(messages, model) {
 
   const flushPending = () => {
     if (currentRole === "user") {
-      const content = pendingUserContent.join("\n\n").trim() || "continue";
+      // Kiro's CodeWhisperer API rejects a fully-empty user `content`, so a
+      // placeholder is only needed for a genuinely bare turn. When the turn
+      // carries toolResults/images (the agentic tool-loop case), empty content
+      // is accepted by Kiro and avoids injecting a fake "continue" user
+      // instruction that the model reads as a real prompt and that leaks into
+      // the visible conversation. Verified against live Kiro: a tool-result
+      // turn with content:"" returns 200 and the model answers correctly.
+      const text = pendingUserContent.join("\n\n").trim();
+      const hasContext = pendingToolResults.length > 0 || pendingImages.length > 0;
+      const content = text || (hasContext ? "" : "continue");
       const userMsg = {
         userInputMessage: {
           content: content,

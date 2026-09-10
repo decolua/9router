@@ -239,7 +239,7 @@ exports[`GOLDEN request: OpenAI → Kiro > full body (image base64 + tool_result
       "userInputMessage": {
         "content": "[Context: Current time is <TS>
 
-continue",
+",
         "modelId": "claude-sonnet-4.5",
         "origin": "AI_EDITOR",
         "userInputMessageContext": {
