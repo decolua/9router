@@ -15,6 +15,7 @@ const fixture = {
   providerResponse: { choices: [{ message: { content: 'fixture response', tool_calls: [{ function: { name: 'fixture_tool', arguments: '{"path":"fixture.txt"}' } }] } }] },
   response: { content: 'fixture client response' },
 };
+const redactedFixture = { ...fixture, ...Object.fromEntries(['request', 'providerRequest', 'providerResponse', 'response'].map(key => [key, { redacted: true }])) };
 function request(headers = {}) { return new NextRequest('http://localhost/api/usage/request-details', { headers }); }
 beforeEach(() => {
   vi.clearAllMocks();
@@ -22,7 +23,7 @@ beforeEach(() => {
   mocks.getRequestDetails.mockResolvedValue({ details: [structuredClone(fixture)], pagination: { totalItems: 1 } });
 });
 describe('Activity payload authentication', () => {
-  it('sanitizes historical headers and structured credentials without removing conversation', async () => {
+  it('redacts every historical conversation payload while retaining metadata', async () => {
     const detail = structuredClone(fixture);
     detail.request.headers = { Authorization: 'fixture-secret', 'X-Api-Key': 'fixture-secret', Cookie: 'fixture-secret', 'content-type': 'application/json' };
     detail.providerRequest.headers = { 'x-goog-api-key': 'fixture-secret' };
@@ -34,9 +35,8 @@ describe('Activity payload authentication', () => {
     const response = await GET(request({ cookie: `auth_token=${token}` }));
     const body = await response.json();
     expect(JSON.stringify(body)).not.toContain('fixture-secret');
-    expect(body.details[0].request.body).toEqual(fixture.request.body);
-    expect(body.details[0].providerResponse).toEqual(fixture.providerResponse);
-    expect(body.details[0].request.headers['content-type']).toBe('application/json');
+    expect(body.details[0]).toEqual(redactedFixture);
+    expect(JSON.stringify(body)).not.toContain('fixture task prompt');
     expect(detail.request.headers.Authorization).toBe('fixture-secret');
     expect(response.headers.get('cache-control')).toContain('no-store');
   });
@@ -53,12 +53,12 @@ describe('Activity payload authentication', () => {
     const token = await getConsistentMachineId('9r-cli-auth');
     const response = await GET(request({ 'x-9r-cli-token': token }));
     expect(response.status).toBe(200);
-    expect((await response.json()).details[0]).toEqual(fixture);
+    expect((await response.json()).details[0]).toEqual(redactedFixture);
   });
-  it('shows saved prompts, responses and tool calls to a valid dashboard session', async () => {
+  it('redacts prompts, responses and tool calls even for a valid dashboard session', async () => {
     const token = await createDashboardAuthToken();
     const response = await GET(request({ cookie: `auth_token=${token}` }));
     expect(response.status).toBe(200);
-    expect((await response.json()).details[0]).toEqual(fixture);
+    expect((await response.json()).details[0]).toEqual(redactedFixture);
   });
 });

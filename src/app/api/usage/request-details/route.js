@@ -53,7 +53,17 @@ export async function GET(request) {
     
     const result = await getRequestDetails(filter);
 
-    return NextResponse.json(sanitizeActivityPayload(result), {
+    // Conversation visibility stays redacted even for authenticated admins.
+    const details = (result.details || []).map((detail) => {
+      const redacted = { ...detail };
+      for (const key of ["request", "providerRequest", "providerResponse", "response"]) {
+        if (Object.prototype.hasOwnProperty.call(redacted, key)) {
+          redacted[key] = { redacted: true };
+        }
+      }
+      return redacted;
+    });
+    return NextResponse.json(sanitizeActivityPayload({ ...result, details }), {
       headers: { "Cache-Control": "private, no-store", "Vary": "Cookie, x-9r-cli-token" },
     });
   } catch (error) {
