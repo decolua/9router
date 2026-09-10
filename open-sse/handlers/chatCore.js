@@ -31,6 +31,7 @@ import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { maskSensitiveData, formatDlpLog, mergeDlpStats } from "../dlp/index.js";
+import { recordDlpMasks } from "@/lib/db/repos/dlpStatsRepo.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -261,12 +262,21 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     // pseudo mode (double alias layer, inflated stats). A real translation
     // produces a distinct object that still needs its own pass.
     let dlpStats = null;
-    if (body) dlpStats = mergeDlpStats(dlpStats, maskSensitiveData(body, dlp));
+    let requestStats = null;
+    if (body) {
+      requestStats = maskSensitiveData(body, dlp);
+      dlpStats = mergeDlpStats(dlpStats, requestStats);
+    }
     if (translatedBody && translatedBody !== body) {
       dlpStats = mergeDlpStats(dlpStats, maskSensitiveData(translatedBody, dlp));
     }
     const dlpLine = formatDlpLog(dlpStats);
     if (dlpLine) console.log(dlpLine);
+    // Stats: record the raw client-body pass only — a real translation copied the
+    // body into a new object, so the merged count would double-count every value.
+    if (requestStats?.matched) {
+      recordDlpMasks({ scope: "request", mode: dlp?.mode || "redact", matched: requestStats.matched, byType: requestStats.byType }).catch(() => {});
+    }
   }
 
   // RTK: compress tool_result content

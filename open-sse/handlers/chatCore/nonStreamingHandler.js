@@ -11,6 +11,7 @@ import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 import { maskSensitiveData, formatDlpLog, mergeDlpStats } from "../../dlp/index.js";
+import { recordDlpMasks } from "@/lib/db/repos/dlpStatsRepo.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -371,8 +372,10 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   // DLP: mask sensitive values in the final response body before it is logged
   let dlpRespStats = null;
+  let clientRespStats = null;
   if (dlp?.enabled && dlp.maskResponses !== false) {
-    dlpRespStats = mergeDlpStats(dlpRespStats, maskSensitiveData(translatedResponse, dlp));
+    clientRespStats = maskSensitiveData(translatedResponse, dlp);
+    dlpRespStats = mergeDlpStats(dlpRespStats, clientRespStats);
 
     // When the translation produced a NEW object (Ollama / SSE-to-JSON / Claude /
     // Gemini copy paths), the raw provider body above is a different object and is
@@ -385,6 +388,10 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
     const dlpLine = formatDlpLog(dlpRespStats, "response");
     if (dlpLine) console.log(dlpLine);
+    // Stats: record what the client actually received (translatedResponse pass).
+    if (clientRespStats?.matched) {
+      recordDlpMasks({ scope: "response", mode: dlp?.mode || "redact", matched: clientRespStats.matched, byType: clientRespStats.byType }).catch(() => {});
+    }
   }
 
   reqLogger.logConvertedResponse(translatedResponse);

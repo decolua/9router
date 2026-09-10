@@ -6,6 +6,7 @@ import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./str
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 import { maskSensitiveData, formatDlpLog, mergeDlpStats } from "../dlp/index.js";
+import { recordDlpMasks } from "@/lib/db/repos/dlpStatsRepo.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
 
@@ -127,6 +128,10 @@ export function createSSEStream(options = {}) {
     // One [DLP] response line per request — whatever got masked across chunks.
     const dlpRespLine = formatDlpLog(dlpResponseStats, "response");
     if (dlpRespLine) console.log(dlpRespLine);
+    // Stats: record what the client received across all chunks.
+    if (dlpResponseStats?.matched) {
+      recordDlpMasks({ scope: "response", mode: dlp?.mode || "redact", matched: dlpResponseStats.matched, byType: dlpResponseStats.byType }).catch(() => {});
+    }
   };
 
   return new TransformStream({
