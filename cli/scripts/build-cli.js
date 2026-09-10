@@ -22,6 +22,7 @@ const EXCLUDE_PATTERNS = [
   ".env.*.local",
   "*.log",          // Log files
   "tmp",            // Temp files
+  ".build-home",    // Build-only credentials and machine state
   ".DS_Store",      // macOS files
 ];
 
@@ -169,6 +170,7 @@ function buildCliPackage() {
   }
 
   // Step 1: Build app with Next.js (workspace tracing root → traced node_modules in standalone).
+  fs.rmSync(buildDistDir, { recursive: true, force: true });
   console.log("1️⃣  Building Next.js app...");
   try {
     execSync("npm run build", {
