@@ -40,6 +40,7 @@ export function hasValuableContent(chunk, format) {
     const delta = chunk.choices[0].delta;
     return delta.content && delta.content !== "" ||
            delta.reasoning_content && delta.reasoning_content !== "" ||
+           delta.reasoning && delta.reasoning !== "" ||
            delta.tool_calls && delta.tool_calls.length > 0 ||
            chunk.choices[0].finish_reason ||
            delta.role;
