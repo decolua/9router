@@ -14,7 +14,7 @@ export function getQuotaCooldown(backoffLevel = 0) {
 
 /**
  * Check if error should trigger account fallback (switch to next account)
- * Config-driven: matches ERROR_RULES top-to-bottom (text rules first, then status)
+ * Config-driven: terminal statuses take precedence, then ERROR_RULES match top-to-bottom
  * @param {number} status - HTTP status code
  * @param {string} errorText - Error message text
  * @param {number} backoffLevel - Current backoff level for exponential backoff
@@ -24,6 +24,10 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
   const lowerError = errorText
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
+  const terminalStatusRule = ERROR_RULES.find(rule => rule.status === status && rule.fallback === false);
+  if (terminalStatusRule) {
+    return { shouldFallback: false, cooldownMs: 0, newBackoffLevel: backoffLevel };
+  }
 
   for (const rule of ERROR_RULES) {
     // Text-based rule: match substring in error message
