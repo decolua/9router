@@ -1,8 +1,17 @@
 import { NextResponse } from "next/server";
 import { testSingleConnection } from "./testUtils.js";
+import { hasValidCliToken, isAuthenticated } from "@/dashboardGuard";
+
+async function requireAuth(request) {
+  if (await hasValidCliToken(request) || await isAuthenticated(request)) return true;
+  return false;
+}
 
 // POST /api/providers/[id]/test - Test connection
 export async function POST(request, { params }) {
+  if (!(await requireAuth(request))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
     const { id } = await params;
     const result = await testSingleConnection(id);
