@@ -5,6 +5,52 @@ import { dbg } from "./debugLog.js";
 const originalFetch = globalThis.fetch;
 const proxyDispatchers = new Map();
 
+// ─── Stale keep-alive protection ───────────────
+// Undici pools keep-alive sockets up to keepAliveMaxTimeout (default 600s),
+// far past edge idle timeouts (e.g. Cloudflare closes idle connections
+// first). Reusing a server-closed socket produces zero response bytes: the
+// request hangs or fails with UND_ERR_SOCKET/ECONNRESET, and every follow-up
+// request can draw another dead socket until the process restarts.
+// Close our side first (below any known server window) and retry once on a
+// fresh socket when the first attempt dies before responding.
+function envKeepAliveMs(name, def) {
+  const raw = process.env[name];
+  if (raw == null || raw === "") return def;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : def;
+}
+
+export const DIRECT_KEEP_ALIVE_TIMEOUT_MS = envKeepAliveMs("FETCH_KEEP_ALIVE_TIMEOUT_MS", 30_000);
+export const DIRECT_KEEP_ALIVE_MAX_TIMEOUT_MS = envKeepAliveMs("FETCH_KEEP_ALIVE_MAX_TIMEOUT_MS", 30_000);
+
+let _directDispatcher = null;
+
+export async function getDirectDispatcher() {
+  if (_directDispatcher) return _directDispatcher;
+  try {
+    const { Agent } = await import("undici");
+    _directDispatcher = new Agent({
+      keepAliveTimeout: DIRECT_KEEP_ALIVE_TIMEOUT_MS,
+      keepAliveMaxTimeout: DIRECT_KEEP_ALIVE_MAX_TIMEOUT_MS,
+    });
+  } catch (error) {
+    dbg("FETCH", `capped direct dispatcher unavailable, using default: ${error?.message || error}`);
+    _directDispatcher = null;
+  }
+  return _directDispatcher;
+}
+
+export function resetDirectDispatcherForTests() {
+  _directDispatcher = null;
+}
+
+// True when the failure means "our socket was dead", not "the host is down":
+// zero response bytes received. Safe to replay once on a fresh connection.
+export function isStaleSocketError(error) {
+  const code = error?.cause?.code || error?.code;
+  return code === "UND_ERR_SOCKET" || code === "ECONNRESET" || code === "EPIPE";
+}
+
 // ─── TLS fingerprinting via got-scraping (browser-like JA3) ───────────────
 // Disabled: not in use. Kept commented for future re-enable.
 // Restore the original block to re-enable per-host JA3 spoofing.
@@ -348,9 +394,20 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
     }
   }
 
-  // got-scraping disabled — use native fetch directly
-  // (Re-enable per-host by wrapping with tryGotScrapingFetch when needed)
-  return originalFetch(url, options);
+  // got-scraping disabled — use native fetch through the capped direct
+  // dispatcher so pooled sockets never outlive server idle timeouts.
+  // Single fresh-socket retry on stale keep-alive reuse (zero response bytes
+  // received, so the replay cannot double-execute server-side).
+  const dispatcher = await getDirectDispatcher();
+  const directOptions = dispatcher ? { ...options, dispatcher } : { ...options };
+  try {
+    return await originalFetch(url, directOptions);
+  } catch (error) {
+    if (!dispatcher || !isStaleSocketError(error)) throw error;
+    dbg("FETCH", `stale keep-alive socket for ${targetUrl}, retrying once with Connection: close`);
+    const retryHeaders = { ...(directOptions.headers || {}), Connection: "close" };
+    return await originalFetch(url, { ...directOptions, headers: retryHeaders });
+  }
 }
 
 /**
