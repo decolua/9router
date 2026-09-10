@@ -6,7 +6,6 @@
 
 import fs from "fs";
 import path from "path";
-import { toResponsesUsage } from "../translator/concerns/usage.js";
 
 // Create log directory for responses (Node.js only)
 export function createResponsesLogger(model, logsDir = null) {
@@ -74,7 +73,6 @@ export function createResponsesApiTransformStream(logger = null) {
     funcArgsDone: {},
     funcItemDone: {},
     buffer: "",
-    usage: null,
     completedSent: false
   };
 
@@ -227,17 +225,17 @@ export function createResponsesApiTransformStream(logger = null) {
   const sendCompleted = (controller) => {
     if (!state.completedSent) {
       state.completedSent = true;
-      const response = {
-        id: state.responseId,
-        object: "response",
-        created_at: state.created,
-        status: "completed",
-        background: false,
-        error: null
-      };
-      const usage = toResponsesUsage(state.usage);
-      if (usage) response.usage = usage;
-      emit(controller, "response.completed", { type: "response.completed", response });
+      emit(controller, "response.completed", {
+        type: "response.completed",
+        response: {
+          id: state.responseId,
+          object: "response",
+          created_at: state.created,
+          status: "completed",
+          background: false,
+          error: null
+        }
+      });
     }
   };
 
@@ -265,9 +263,6 @@ export function createResponsesApiTransformStream(logger = null) {
         } catch {
           continue;
         }
-
-        // Remember usage (finish chunk or trailing include_usage frame) for response.completed
-        if (parsed.usage && typeof parsed.usage === "object") state.usage = parsed.usage;
 
         if (!parsed.choices?.length) continue;
         

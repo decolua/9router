@@ -11,7 +11,6 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
-import { toResponsesUsage } from "../../translator/concerns/usage.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -132,8 +131,11 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
     background: false,
     error: null,
     output,
-    // Keep cached/reasoning details (input_tokens_details) — proxies bill cache hits from them
-    usage: toResponsesUsage(usage) || { input_tokens: 0, output_tokens: 0, total_tokens: 0 },
+    usage: {
+      input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
+      output_tokens: usage.completion_tokens || usage.output_tokens || 0,
+      total_tokens: usage.total_tokens || (usage.prompt_tokens || 0) + (usage.completion_tokens || 0),
+    },
   };
 }
 

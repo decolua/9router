@@ -3,7 +3,6 @@ import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
-import { toResponsesUsage } from "../translator/concerns/usage.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
@@ -202,8 +201,7 @@ export function createSSEStream(options = {}) {
 
               responsesTerminal = isOpenAIResponsesTerminalEvent(currentOpenAIResponsesEvent, parsed);
 
-              const isFinishChunk = parsed.choices?.[0]?.finish_reason
-                || parsed.choices?.[0]?.delta?.finish_reason;
+              const isFinishChunk = parsed.choices?.[0]?.finish_reason;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
                 parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
@@ -365,19 +363,6 @@ export function createSSEStream(options = {}) {
               // Add buffer and filter usage for client (but keep original in state.usage for logging)
               const buffered = addBufferToUsage(state.usage);
               item.usage = filterUsageForFormat(buffered, sourceFormat);
-            }
-
-            // Responses API clients (Codex, sub2api /v1/responses): usage lives on
-            // response.completed → response.usage. Same buffer/estimate policy as above.
-            const completedResponse = item.event === "response.completed" ? item.data?.response : null;
-            if (completedResponse && typeof completedResponse === "object") {
-              if (state.usage) {
-                completedResponse.usage = toResponsesUsage(addBufferToUsage(state.usage)) ?? completedResponse.usage;
-              } else if (!completedResponse.usage && totalContentLength > 0) {
-                const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
-                completedResponse.usage = toResponsesUsage(estimated);
-                state.usage = estimated;
-              }
             }
 
             const output = formatSSE(item, sourceFormat);

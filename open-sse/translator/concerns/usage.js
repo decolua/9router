@@ -67,34 +67,3 @@ export function toOpenAIUsage(raw, kind) {
   if (!extract || !raw || typeof raw !== "object") return null;
   return buildUsage(extract(raw));
 }
-
-// Convert an OpenAI-shaped (or already-canonical / Claude-shaped) usage object into the
-// Responses API shape emitted by `response.completed`. Details objects are always present
-// (like the real API) so proxies that read `input_tokens_details.cached_tokens` never see undefined.
-// Returns null when there is nothing countable.
-export function toResponsesUsage(usage) {
-  if (!usage || typeof usage !== "object") return null;
-  const input = n(usage.prompt_tokens ?? usage.input_tokens);
-  const output = n(usage.completion_tokens ?? usage.output_tokens);
-  if (input === 0 && output === 0) return null;
-  const cached = n(
-    usage.input_tokens_details?.cached_tokens ??
-    usage.prompt_tokens_details?.cached_tokens ??
-    usage.cached_tokens ??
-    usage.cache_read_input_tokens
-  );
-  const reasoning = n(
-    usage.output_tokens_details?.reasoning_tokens ??
-    usage.completion_tokens_details?.reasoning_tokens ??
-    usage.reasoning_tokens
-  );
-  const out = {
-    input_tokens: input,
-    output_tokens: output,
-    total_tokens: typeof usage.total_tokens === "number" ? usage.total_tokens : input + output,
-    input_tokens_details: { cached_tokens: cached },
-    output_tokens_details: { reasoning_tokens: reasoning },
-  };
-  if (usage.estimated) out.estimated = true;
-  return out;
-}

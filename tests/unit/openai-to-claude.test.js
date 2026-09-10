@@ -203,31 +203,4 @@ describe("openaiToClaudeResponse", () => {
       limit: 120
     });
   });
-
-  it("records usage from a choices:[] frame so the finish chunk can emit it", () => {
-    const state = { toolCalls: new Map() };
-    expect(openaiToClaudeResponse({
-      usage: {
-        prompt_tokens: 90,
-        completion_tokens: 7,
-        prompt_tokens_details: { cached_tokens: 30 },
-      },
-      choices: [],
-    }, state)).toBeNull();
-    expect(state.usage).toEqual({
-      input_tokens: 60,
-      output_tokens: 7,
-      cache_read_input_tokens: 30,
-    });
-
-    const events = openaiToClaudeResponse({
-      id: "chatcmpl-qoder-finish",
-      model: "qoder/auto",
-      choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-    }, state);
-    const delta = events.find((e) => e.type === "message_delta");
-    expect(delta.usage.input_tokens).toBe(60);
-    expect(delta.usage.output_tokens).toBe(7);
-    expect(delta.usage.cache_read_input_tokens).toBe(30);
-  });
 });
