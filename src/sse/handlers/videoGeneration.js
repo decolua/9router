@@ -5,7 +5,7 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getProviderConnectionById } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
 import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets } from "open-sse/handlers/videoCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -16,6 +16,21 @@ import * as log from "../utils/logger.js";
 // Video generation is xAI-only today; requests without a provider prefix
 // (bare model id, or multipart bodies we deliberately don't parse) land here.
 const DEFAULT_VIDEO_PROVIDER = "xai";
+
+/**
+ * Poll requests carry no model, so the provider comes from the pinned
+ * connection (`x-connection-id`, returned on create) or an explicit
+ * `?provider=` — falling back to the historical xAI default.
+ */
+async function resolveGetProvider(request, connectionId) {
+  if (connectionId) {
+    const conn = await getProviderConnectionById(connectionId).catch(() => null);
+    if (conn?.provider && getVideoConfig(conn.provider)) return conn.provider;
+  }
+  const queried = new URL(request.url).searchParams.get("provider");
+  if (queried && getVideoConfig(queried)) return queried;
+  return DEFAULT_VIDEO_PROVIDER;
+}
 
 // Creation POSTs are billable jobs — only rotate to another account for
 // errors that upstream rejects BEFORE creating a job (auth/quota). A 5xx may
@@ -185,8 +200,8 @@ export async function handleVideoGet(request, requestId) {
 
   if (!requestId) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing video request id");
 
-  const provider = DEFAULT_VIDEO_PROVIDER;
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
+  const provider = await resolveGetProvider(request, preferredConnectionId);
 
   const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId });
   if (!credentials || credentials.allRateLimited) {
