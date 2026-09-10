@@ -5,7 +5,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { buildChunk } from "../concerns/chunk.js";
-import { buildUsage } from "../concerns/usage.js";
+import { buildUsage, toResponsesUsage } from "../concerns/usage.js";
 import { fallbackToolCallId } from "../concerns/toolCall.js";
 import { reasoningDelta, extractReasoningText } from "../concerns/reasoning.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } from "../schema/index.js";
@@ -368,16 +368,26 @@ function closeToolCall(state, emit, idx) {
 function sendCompleted(state, emit) {
   if (!state.completedSent) {
     state.completedSent = true;
+    const response = {
+      id: state.responseId,
+      object: "response",
+      created_at: state.created,
+      status: "completed",
+      background: false,
+      error: null
+    };
+    // Responses-API clients size their context from response.completed and
+    // compact their history once it nears the model window. On a passthrough
+    // route the upstream supplies this field; on a pivot (e.g.
+    // openai-responses -> claude) we synthesize the event ourselves, so it has
+    // to be filled in here or the client sees every turn as costing zero
+    // tokens, never compacts, and grows until the upstream rejects the request
+    // with context_length_exceeded.
+    const usage = toResponsesUsage(state.usage);
+    if (usage) response.usage = usage;
     emit("response.completed", {
       type: "response.completed",
-      response: {
-        id: state.responseId,
-        object: "response",
-        created_at: state.created,
-        status: "completed",
-        background: false,
-        error: null
-      }
+      response
     });
   }
 }

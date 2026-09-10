@@ -67,3 +67,29 @@ export function toOpenAIUsage(raw, kind) {
   if (!extract || !raw || typeof raw !== "object") return null;
   return buildUsage(extract(raw));
 }
+
+// Convert an OpenAI Chat usage object → Responses API shape.
+// Chat uses prompt_tokens/completion_tokens with cache under
+// prompt_tokens_details; Responses uses input_tokens/output_tokens with cache
+// under input_tokens_details. Clients that size their context from
+// response.completed read the Responses spelling only, so a Chat-shaped object
+// forwarded verbatim reads as zero. Returns null when there is nothing to send.
+export function toResponsesUsage(usage) {
+  if (!usage || typeof usage !== "object") return null;
+  const input = n(usage.prompt_tokens) || n(usage.input_tokens);
+  const output = n(usage.completion_tokens) || n(usage.output_tokens);
+  const total = n(usage.total_tokens) || input + output;
+  if (!input && !output) return null;
+
+  const out = { input_tokens: input, output_tokens: output, total_tokens: total };
+
+  // prompt_tokens is already cache-inclusive here (see claude-to-openai), which
+  // matches the Responses contract: input_tokens includes cached_tokens.
+  const cached = n(usage.cached_tokens) || n(usage.prompt_tokens_details?.cached_tokens);
+  if (cached > 0) out.input_tokens_details = { cached_tokens: cached };
+
+  const reasoning = n(usage.completion_tokens_details?.reasoning_tokens);
+  if (reasoning > 0) out.output_tokens_details = { reasoning_tokens: reasoning };
+
+  return out;
+}

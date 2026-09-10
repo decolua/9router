@@ -194,6 +194,15 @@ Respond ONLY with the JSON object, no other text.`);
     result._toolNameMap = toolNameMap;
   }
 
+  // Responses-API custom/freeform tool names ride along as translator metadata.
+  // openai-responses -> claude has no direct translator, so it pivots through
+  // this one; a fresh result object is built above, so the metadata has to be
+  // carried over explicitly or chatCore loses it and emits function_call
+  // instead of custom_tool_call for freeform tools.
+  if (body._customToolNames) {
+    result._customToolNames = body._customToolNames;
+  }
+
   return result;
 }
 
