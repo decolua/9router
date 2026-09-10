@@ -1,5 +1,10 @@
 import { Readable } from "stream";
-import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
+import {
+  MEMORY_CONFIG,
+  MITM_DNS_BYPASS_ENABLED,
+  MITM_DNS_SERVERS,
+  MITM_DNS_TIMEOUT_MS,
+} from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
 
 const originalFetch = globalThis.fetch;
@@ -107,7 +112,6 @@ const MITM_BYPASS_HOSTS = [
   "codewhisperer.us-east-1.amazonaws.com",
   "api2.cursor.sh",
 ];
-const GOOGLE_DNS_SERVERS = ["8.8.8.8", "8.8.4.4"];
 const HTTPS_PORT = 443;
 const HTTP_SUCCESS_MIN = 200;
 const HTTP_SUCCESS_MAX = 300;
@@ -118,22 +122,26 @@ function normalizeString(value) {
 }
 
 /**
- * Resolve real IP using Google DNS (bypass system DNS)
+ * Resolve real IP using an external resolver (bypass system DNS)
+ * Returns null when the resolver is unreachable — the caller falls back to system DNS.
  */
 async function resolveRealIP(hostname) {
   const cached = DNS_CACHE.get(hostname);
-  if (cached && Date.now() < cached.expiry) return cached.ip;
+  if (cached && Date.now() < cached.expiry) return cached.ip; // ip === null => cached failure
 
   try {
     const dns = await import("dns");
     const { promisify } = await import("util");
-    const resolver = new dns.Resolver();
-    resolver.setServers(GOOGLE_DNS_SERVERS);
+    // tries:1 — a resolver that doesn't answer won't answer on retry either, and each
+    // extra try multiplies the stall every request to this host has to sit through.
+    const resolver = new dns.Resolver({ timeout: MITM_DNS_TIMEOUT_MS, tries: 1 });
+    resolver.setServers(MITM_DNS_SERVERS);
     const resolve4 = promisify(resolver.resolve4.bind(resolver));
     const addresses = await resolve4(hostname);
     DNS_CACHE.set(hostname, { ip: addresses[0], expiry: Date.now() + MEMORY_CONFIG.dnsCacheTtlMs });
     return addresses[0];
   } catch (error) {
+    DNS_CACHE.set(hostname, { ip: null, expiry: Date.now() + MEMORY_CONFIG.dnsFailCacheTtlMs });
     console.warn(`[ProxyFetch] DNS resolve failed for ${hostname}:`, error.message);
     return null;
   }
@@ -143,6 +151,7 @@ async function resolveRealIP(hostname) {
  * Check if request should bypass MITM DNS redirect
  */
 function shouldBypassMitmDns(url) {
+  if (!MITM_DNS_BYPASS_ENABLED) return false;
   try {
     const hostname = new URL(url).hostname;
     return MITM_BYPASS_HOSTS.some(host => hostname.includes(host));

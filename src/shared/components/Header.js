@@ -77,6 +77,13 @@ const getPageInfo = (pathname) => {
       icon: "dns",
       breadcrumbs: [],
     };
+  if (pathname.includes("/chat-completions"))
+    return {
+      title: "Chat Completions",
+      description: "Test combos against OpenAI and Anthropic compatible endpoints",
+      icon: "chat",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/combos"))
     return {
       title: "Combos",
