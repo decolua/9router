@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { EventEmitter } from "events";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
@@ -7,6 +8,38 @@ function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
   if (key.length <= 8) return key.charAt(0) + "***";
   return key.slice(0, 8) + "***";
+}
+
+// Grouping identity for stats.byApiKey. NEVER the raw key (leaks via JSON
+// property names) and NEVER the display mask (first 8 chars are identical for
+// every key generated on one installation, so distinct keys would collide).
+function makeApiKeyIdentity(apiKeyMap, salt) {
+  const memo = new Map();
+  return (rawKey) => {
+    if (!rawKey || typeof rawKey !== "string") return "local-no-key";
+    let id = memo.get(rawKey);
+    if (!id) {
+      const info = apiKeyMap[rawKey];
+      id = info?.id
+        ? `id:${info.id}`
+        : `k:${crypto.createHmac("sha256", salt).update(rawKey).digest("hex").slice(0, 16)}`;
+      memo.set(rawKey, id);
+    }
+    return id;
+  };
+}
+
+function apiKeyDisplayFields(rawKey, identity, apiKeyMap) {
+  if (!rawKey) return { apiKeyMasked: null, keyName: "Local (No API Key)", apiKeyKey: "local-no-key" };
+  const keyInfo = apiKeyMap[rawKey];
+  // Digest suffix keeps deleted keys distinguishable: the masked prefix alone
+  // is identical for all of an installation's keys and the UI groups by name.
+  const idSuffix = identity.replace(/^(id:|k:)/, "").slice(0, 6);
+  return {
+    apiKeyMasked: maskApiKey(rawKey),
+    keyName: keyInfo?.name || `${maskApiKey(rawKey)}#${idSuffix}`,
+    apiKeyKey: identity,
+  };
 }
 
 const PENDING_TIMEOUT_MS = 60 * 1000;
@@ -368,6 +401,18 @@ export async function getUsageStats(period = "all") {
   const apiKeyMap = {};
   for (const k of allApiKeys) apiKeyMap[k.key] = { name: k.name, id: k.id, createdAt: k.createdAt };
 
+  let identitySalt = "";
+  try {
+    identitySalt = await getMeta("usageIdentitySalt");
+    if (!identitySalt) {
+      identitySalt = crypto.randomBytes(16).toString("hex");
+      await setMeta("usageIdentitySalt", identitySalt);
+    }
+  } catch {
+    identitySalt = "usage-identity-fallback";
+  }
+  const keyIdentity = makeApiKeyIdentity(apiKeyMap, identitySalt);
+
   // recentRequests from live history (last 100 entries enough for 20 deduped)
   const recentRows = db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
   const seen = new Set();
@@ -500,17 +545,25 @@ export async function getUsageStats(period = "all") {
         if (dateKey > (stats.byAccount[accountKey].lastUsed || "")) stats.byAccount[accountKey].lastUsed = dateKey;
       }
 
-      for (const [akKey, ak] of Object.entries(day.byApiKey || {})) {
-        const rawModel = ak.rawModel || "";
-        const provider = ak.provider || "";
+      for (const [dayKey, ak] of Object.entries(day.byApiKey || {})) {
+        // Persisted keys are `${rawKey}|${model}|${provider}`; parse from the
+        // RIGHT because raw keys can contain "|" (arbitrary bearer values are
+        // persisted verbatim when requireApiKey is off).
+        const seg = dayKey.split("|");
+        const provSeg = seg.length >= 3 ? seg[seg.length - 1] : "unknown";
+        const modelSeg = seg.length >= 3 ? seg[seg.length - 2] : "";
+        const rawSeg = seg.slice(0, Math.max(1, seg.length - 2)).join("|");
+        const apiKeyVal = ak.apiKey && typeof ak.apiKey === "string"
+          ? ak.apiKey
+          : (rawSeg !== "local-no-key" ? rawSeg : null);
+        const rawModel = ak.rawModel || modelSeg;
+        const provider = ak.provider || (provSeg === "unknown" ? "" : provSeg);
         const providerDisplayName = providerNodeNameMap[provider] || provider;
-        const apiKeyVal = ak.apiKey;
-        const keyInfo = apiKeyVal ? apiKeyMap[apiKeyVal] : null;
-        const keyName = keyInfo?.name || (apiKeyVal ? apiKeyVal.slice(0, 8) + "..." : "Local (No API Key)");
-        const apiKeyMasked = maskApiKey(apiKeyVal);
-        const apiKeyKey = apiKeyMasked || "local-no-key";
+        const identity = keyIdentity(apiKeyVal);
+        const akKey = `${identity}|${rawModel}|${provider || "unknown"}`;
         if (!stats.byApiKey[akKey]) {
-          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey, lastUsed: dateKey };
+          const display = apiKeyDisplayFields(apiKeyVal, identity, apiKeyMap);
+          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKeyMasked: display.apiKeyMasked, keyName: display.keyName, apiKeyKey: display.apiKeyKey, lastUsed: dateKey };
         }
         stats.byApiKey[akKey].requests += ak.requests || 0;
         stats.byApiKey[akKey].promptTokens += ak.promptTokens || 0;
@@ -554,9 +607,7 @@ export async function getUsageStats(period = "all") {
         if (stats.byAccount[accountKey] && new Date(ts) > new Date(stats.byAccount[accountKey].lastUsed)) stats.byAccount[accountKey].lastUsed = ts;
       }
 
-      const apiKeyKey = (e.apiKey && typeof e.apiKey === "string")
-        ? `${e.apiKey}|${e.model}|${e.provider || "unknown"}`
-        : "local-no-key";
+      const apiKeyKey = `${keyIdentity(e.apiKey && typeof e.apiKey === "string" ? e.apiKey : null)}|${e.model}|${e.provider || "unknown"}`;
       if (stats.byApiKey[apiKeyKey] && new Date(ts) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) stats.byApiKey[apiKeyKey].lastUsed = ts;
 
       const endpoint = e.endpoint || "Unknown";
@@ -623,25 +674,16 @@ export async function getUsageStats(period = "all") {
         if (new Date(r.timestamp) > new Date(stats.byAccount[accountKey].lastUsed)) stats.byAccount[accountKey].lastUsed = r.timestamp;
       }
 
-      if (r.apiKey && typeof r.apiKey === "string") {
-        const keyInfo = apiKeyMap[r.apiKey];
-        const keyName = keyInfo?.name || r.apiKey.slice(0, 8) + "...";
-        const apiKeyMasked = maskApiKey(r.apiKey);
-        const akKey = `${apiKeyMasked}|${r.model}|${r.provider || "unknown"}`;
-        if (!stats.byApiKey[akKey]) {
-          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey: apiKeyMasked, lastUsed: r.timestamp };
-        }
-        const ake = stats.byApiKey[akKey];
-        ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cachedTokens += cachedTokens; ake.cost += entryCost;
-        if (new Date(r.timestamp) > new Date(ake.lastUsed)) ake.lastUsed = r.timestamp;
-      } else {
-        if (!stats.byApiKey["local-no-key"]) {
-          stats.byApiKey["local-no-key"] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked: null, keyName: "Local (No API Key)", apiKeyKey: "local-no-key", lastUsed: r.timestamp };
-        }
-        const ake = stats.byApiKey["local-no-key"];
-        ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cachedTokens += cachedTokens; ake.cost += entryCost;
-        if (new Date(r.timestamp) > new Date(ake.lastUsed)) ake.lastUsed = r.timestamp;
+      const rawApiKey = r.apiKey && typeof r.apiKey === "string" ? r.apiKey : null;
+      const identity = keyIdentity(rawApiKey);
+      const akKey = `${identity}|${r.model}|${r.provider || "unknown"}`;
+      if (!stats.byApiKey[akKey]) {
+        const display = apiKeyDisplayFields(rawApiKey, identity, apiKeyMap);
+        stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked: display.apiKeyMasked, keyName: display.keyName, apiKeyKey: display.apiKeyKey, lastUsed: r.timestamp };
       }
+      const ake = stats.byApiKey[akKey];
+      ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cachedTokens += cachedTokens; ake.cost += entryCost;
+      if (new Date(r.timestamp) > new Date(ake.lastUsed)) ake.lastUsed = r.timestamp;
 
       const endpoint = r.endpoint || "Unknown";
       const epKey = `${endpoint}|${r.model}|${r.provider || "unknown"}`;
