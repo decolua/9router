@@ -27,6 +27,14 @@ export function lastCacheableToolIndex(tools) {
 // Check if message has valid non-empty content
 export function hasValidContent(msg) {
   if (typeof msg.content === "string" && msg.content.trim()) return true;
+  if (msg.content && typeof msg.content === "object" && !Array.isArray(msg.content)) {
+    const block = msg.content;
+    return !!((block.type === CLAUDE_BLOCK.TEXT && block.text?.trim()) ||
+      block.type === CLAUDE_BLOCK.TOOL_USE ||
+      block.type === CLAUDE_BLOCK.TOOL_RESULT ||
+      block.type === CLAUDE_BLOCK.IMAGE ||
+      block.type === CLAUDE_BLOCK.DOCUMENT);
+  }
   if (Array.isArray(msg.content)) {
     return msg.content.some(block =>
       (block.type === CLAUDE_BLOCK.TEXT && block.text?.trim()) ||
@@ -37,6 +45,48 @@ export function hasValidContent(msg) {
     );
   }
   return false;
+}
+// Content may arrive as a single content block object (spec allows string | array;
+// some clients send the bare object). Wrap it as a one-block array and strip any
+// client-placed cache_control: a bare-object marker must never survive
+// normalization, on any path, guard or no guard.
+function normalizeMessageContent(msg) {
+  const c = msg?.content;
+  if (c && typeof c === "object" && !Array.isArray(c)) {
+    delete c.cache_control;
+    msg.content = [c];
+  }
+  return msg;
+}
+
+// Total blocks carrying cache_control across system, tools, and messages — the
+// upstream Messages API allows at most 4 markers per request.
+function countCacheControlBlocks(body) {
+  let n = 0;
+  if (Array.isArray(body?.system)) for (const b of body.system) if (b?.cache_control) n++;
+  if (Array.isArray(body?.tools)) for (const t of body.tools) if (t?.cache_control) n++;
+  if (Array.isArray(body?.messages)) {
+    for (const m of body.messages) {
+      if (Array.isArray(m?.content)) {
+        for (const b of m.content) if (b?.cache_control) n++;
+      } else if (m?.content && typeof m.content === "object" && m.content.cache_control) n++;
+    }
+  }
+  return n;
+}
+// Strip every cache_control except the last 4 markers in document order
+// (system, then tools, then messages). Tail-most breakpoints keep paying off
+// on later turns; earlier ones are superseded once the prefix grows past them.
+function pruneCacheControlBlocks(body) {
+  const marked = [];
+  if (Array.isArray(body?.system)) for (const b of body.system) if (b?.cache_control) marked.push(b);
+  if (Array.isArray(body?.tools)) for (const t of body.tools) if (t?.cache_control) marked.push(t);
+  if (Array.isArray(body?.messages)) {
+    for (const m of body.messages) {
+      if (Array.isArray(m?.content)) for (const b of m.content) if (b?.cache_control) marked.push(b);
+    }
+  }
+  for (const b of marked.slice(0, -4)) delete b.cache_control;
 }
 
 // Fix tool_use/tool_result ordering for Claude API
@@ -136,8 +186,9 @@ function hasForeignServerToolUseId(block) {
 // Newer Cowork/Claude Code clients emit beta-only shapes that OAuth endpoints reject:
 // 1. thinking.type "adaptive" → unsupported on Haiku
 // 2. output_config.effort → unsupported on Haiku
-// 3. role "system" messages (mid-conversation-system beta) → only top-level system is allowed
-// 4. server_tool_use blocks carrying a foreign (non-srvtoolu_) id → rejected outright
+// 3. bare content-block objects (content: {block} instead of [{block}]) → wrapped first
+// 4. role "system" messages (mid-conversation-system beta) → only top-level system is allowed
+// 5. server_tool_use blocks carrying a foreign (non-srvtoolu_) id → rejected outright
 export function normalizeClaudePassthrough(body, model = "") {
   if (!body || typeof body !== "object") return body;
 
@@ -152,7 +203,15 @@ export function normalizeClaudePassthrough(body, model = "") {
     if (Object.keys(body.output_config).length === 0) delete body.output_config;
   }
 
-  // 2. Fold mid-conversation system messages into the neighbouring turn.
+  // 3. Wrap bare content-block objects as one-element arrays before folding.
+  // Some clients send content: {block} instead of content: [{block}]; the
+  // mid-conversation-system fold below assumes the array shape, so it must
+  // run first — a bare-object neighbor would otherwise be zeroed to [].
+  if (Array.isArray(body.messages)) {
+    for (const msg of body.messages) normalizeMessageContent(msg);
+  }
+
+  // 4. Fold mid-conversation system messages into the neighbouring turn.
   // Hoisting them into body.system would insert volatile content (token counters,
   // reminders) ahead of the whole conversation and invalidate the prefix cache on
   // every request. Folding in place keeps the cached prefix stable.
@@ -186,7 +245,7 @@ export function normalizeClaudePassthrough(body, model = "") {
     body.messages = messages;
   }
 
-  // 3. Drop thinking blocks whose signature is not Claude's (combo mixes models,
+  // 5. Drop thinking blocks whose signature is not Claude's (combo mixes models,
   // so foreign signatures leak into history and Anthropic rejects them).
   const thinkingEnabled = body.thinking?.type === "enabled";
   const droppedServerToolUseIds = new Set();
@@ -233,7 +292,7 @@ export function normalizeClaudePassthrough(body, model = "") {
     }
   }
 
-  // 5. Drop empty text blocks and any message left with no content at all.
+  // 6. Drop empty text blocks and any message left with no content at all.
   // Anthropic rejects `messages.N.content` blocks with empty text (400
   // "text content blocks must be non-empty"); a message whose blocks were all
   // stripped above must be dropped, not padded with an empty placeholder.
@@ -271,6 +330,29 @@ function markLastCacheableBlock(msg) {
 // (normalize, tool dedupe, token savers) — otherwise the anchor drifts off the tail.
 export function anchorClaudeCache(body) {
   if (!body || typeof body !== "object") return body;
+  if (Array.isArray(body.messages)) {
+    for (const msg of body.messages) normalizeMessageContent(msg);
+  }
+  // Invalid markers first, whatever the budget: Anthropic rejects a tool that
+  // carries BOTH defer_loading and cache_control (#3567). The re-anchor path
+  // below strips them anyway; the over-budget early return used to forward
+  // them untouched.
+  if (Array.isArray(body.tools)) {
+    for (const t of body.tools) {
+      if (t?.defer_loading === true) delete t.cache_control;
+    }
+  }
+
+  // Over-budget prune: a client body already carrying MORE than 4 markers is a
+  // guaranteed 400; forwarding it untouched burns the account pool. Keep the
+  // LAST 4 breakpoints and strip the earlier ones.
+  if (countCacheControlBlocks(body) > 4) pruneCacheControlBlocks(body);
+
+  // Budget guard AFTER normalization and prune: at exactly 4 the client has
+  // spent the whole budget and every remaining marker is itself a valid
+  // breakpoint — re-anchoring past a spent budget can only exceed it, so
+  // skip re-anchoring.
+  if (countCacheControlBlocks(body) >= 4) return body;
 
   if (Array.isArray(body.system)) {
     const last = body.system.length - 1;
@@ -368,6 +450,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     // Pass 1: remove cache_control + filter empty messages
     for (let i = 0; i < len; i++) {
       const msg = body.messages[i];
+      normalizeMessageContent(msg);
 
       // Remove cache_control from content blocks
       if (Array.isArray(msg.content)) {
