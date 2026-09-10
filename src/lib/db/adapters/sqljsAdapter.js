@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import initSqlJs from "sql.js";
 import { PRAGMA_SQL } from "../schema.js";
+import { registerShutdownFlusher } from "../../shutdown.js";
 
 let SQL = null;
 
@@ -105,11 +106,8 @@ export async function createSqlJsAdapter(filePath) {
     db.close();
   }
 
-  // Flush on shutdown
   const flush = () => { if (dirty) try { persist(); } catch {} };
-  process.on("beforeExit", flush);
-  process.on("SIGINT", flush);
-  process.on("SIGTERM", flush);
+  registerShutdownFlusher(flush, 100);
 
   return { driver: "sql.js", run, get, all, exec, transaction, close, raw: db };
 }
