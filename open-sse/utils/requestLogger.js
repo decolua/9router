@@ -69,25 +69,52 @@ function writeJsonFile(sessionPath, filename, data) {
   }
 }
 
-// Mask sensitive data in headers (DISABLED - keep full token for testing)
-function maskSensitiveHeaders(headers) {
+const SENSITIVE_HEADER_PATTERNS = [
+  "authorization",
+  "proxy-authorization",
+  "api-key",
+  "apikey",
+  "x-api-key",
+  "x-key",
+  "cookie",
+  "set-cookie",
+  "token",
+  "secret",
+  "password",
+  "credential"
+];
+
+function maskHeaderValue(value) {
+  if (Array.isArray(value)) return value.map(maskHeaderValue);
+  if (value === undefined || value === null) return value;
+  const text = String(value);
+  if (!text) return text;
+
+  const bearerMatch = text.match(/^(Bearer|Token|Basic)\s+(.+)$/i);
+  if (bearerMatch) return `${bearerMatch[1]} ${maskToken(bearerMatch[2])}`;
+  return maskToken(text);
+}
+
+function maskToken(text) {
+  if (text.length <= 8) return "[REDACTED]";
+  if (text.length <= 20) return `${text.slice(0, 4)}...[REDACTED]`;
+  return `${text.slice(0, 8)}...[REDACTED]...${text.slice(-4)}`;
+}
+
+// Debug request logs are opt-in, but they must never persist live secrets.
+export function maskSensitiveHeaders(headers) {
   if (!headers) return {};
-  return { ...headers };
-  
-  // Old masking code (disabled):
-  // const masked = { ...headers };
-  // const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token"];
-  // 
-  // for (const key of Object.keys(masked)) {
-  //   const lowerKey = key.toLowerCase();
-  //   if (sensitiveKeys.some(sk => lowerKey.includes(sk))) {
-  //     const value = masked[key];
-  //     if (value && value.length > 20) {
-  //       masked[key] = value.slice(0, 10) + "..." + value.slice(-5);
-  //     }
-  //   }
-  // }
-  // return masked;
+  const source = typeof headers.entries === "function" ? Object.fromEntries(headers.entries()) : headers;
+  const masked = { ...source };
+
+  for (const key of Object.keys(masked)) {
+    const lowerKey = key.toLowerCase();
+    if (SENSITIVE_HEADER_PATTERNS.some(pattern => lowerKey.includes(pattern))) {
+      masked[key] = maskHeaderValue(masked[key]);
+    }
+  }
+
+  return masked;
 }
 
 // No-op logger when logging is disabled
@@ -170,7 +197,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         timestamp: new Date().toISOString(),
         status,
         statusText,
-        headers: headers ? (typeof headers.entries === "function" ? Object.fromEntries(headers.entries()) : headers) : {},
+        headers: maskSensitiveHeaders(headers),
         body
       });
     },
