@@ -6,6 +6,25 @@ import {
 
 const TOOL_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const TOOL_NAME_PATTERN = /[^a-zA-Z0-9_-]/g;
+const UNSUPPORTED_SCHEMA_KEYS = new Set([
+  "additionalProperties",
+  "anyOf",
+  "oneOf",
+  "allOf",
+  "not",
+  "$schema",
+  "$id",
+  "$ref",
+  "$defs",
+  "definitions",
+  "if",
+  "then",
+  "else",
+  "unevaluatedProperties",
+  "unevaluatedItems",
+  "contentEncoding",
+  "contentMediaType",
+]);
 
 function clone(value) {
   return value == null ? value : JSON.parse(JSON.stringify(value));
@@ -53,7 +72,16 @@ function cleanSchemaValue(value) {
 
   const cleaned = {};
   for (const [key, child] of Object.entries(value)) {
-    if (key === "additionalProperties") continue;
+    if (key === "properties" && child && typeof child === "object" && !Array.isArray(child)) {
+      cleaned[key] = Object.fromEntries(
+        Object.entries(child).map(([name, propertySchema]) => [
+          name,
+          cleanSchemaValue(propertySchema),
+        ])
+      );
+      continue;
+    }
+    if (UNSUPPORTED_SCHEMA_KEYS.has(key)) continue;
     if (key === "required" && Array.isArray(child) && child.length === 0) continue;
     cleaned[key] = cleanSchemaValue(child);
   }
@@ -61,17 +89,53 @@ function cleanSchemaValue(value) {
 }
 
 function normalizeRootSchema(schema) {
-  const cleaned = cleanSchemaValue(schema && typeof schema === "object" ? clone(schema) : {});
+  const source = schema && typeof schema === "object" ? clone(schema) : {};
+  const rootBranches = new Map(
+    ["allOf", "oneOf", "anyOf"].map((keyword) => [
+      keyword,
+      Array.isArray(source[keyword]) ? source[keyword] : [],
+    ])
+  );
+  for (const keyword of rootBranches.keys()) delete source[keyword];
+
+  const cleaned = cleanSchemaValue(source);
   cleaned.type = "object";
   if (!cleaned.properties || typeof cleaned.properties !== "object" || Array.isArray(cleaned.properties)) {
     cleaned.properties = {};
   }
-  if (Array.isArray(cleaned.required)) {
-    cleaned.required = [...new Set(cleaned.required.filter(
-      (name) => typeof name === "string" && Object.hasOwn(cleaned.properties, name)
-    ))];
-    if (cleaned.required.length === 0) delete cleaned.required;
+
+  const required = new Set(Array.isArray(cleaned.required) ? cleaned.required : []);
+  for (const keyword of ["allOf", "oneOf", "anyOf"]) {
+    const branches = rootBranches.get(keyword).map(normalizeRootSchema);
+    if (branches.length === 0) continue;
+
+    for (const branch of branches) {
+      for (const [name, property] of Object.entries(branch.properties)) {
+        // Conflicting branch definitions keep the first because Kiro does not
+        // document which nested schema combinators it accepts.
+        if (!Object.hasOwn(cleaned.properties, name)) cleaned.properties[name] = property;
+      }
+    }
+
+    if (keyword === "allOf") {
+      for (const branch of branches) {
+        for (const name of branch.required || []) required.add(name);
+      }
+    } else {
+      const common = new Set(branches[0].required || []);
+      for (const branch of branches.slice(1)) {
+        for (const name of common) {
+          if (!(branch.required || []).includes(name)) common.delete(name);
+        }
+      }
+      for (const name of common) required.add(name);
+    }
   }
+
+  cleaned.required = [...required].filter(
+    (name) => typeof name === "string" && Object.hasOwn(cleaned.properties, name)
+  );
+  if (cleaned.required.length === 0) delete cleaned.required;
   return cleaned;
 }
 
