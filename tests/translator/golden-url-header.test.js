@@ -4,6 +4,7 @@
 import { describe, it, expect } from "vitest";
 import { PROVIDERS } from "../../open-sse/config/providers.js";
 import { DefaultExecutor } from "../../open-sse/executors/default.js";
+import { createRequire } from "node:module";
 
 // Credentials mẫu cố định (deterministic) — KHÔNG dùng Date.now/random.
 const API_KEY_CRED = { apiKey: "sk-test-APIKEY", providerSpecificData: {} };
@@ -23,14 +24,30 @@ const SPECIALIZED = new Set([
   "xiaomi-tokenplan", "mimo-free",
 ]);
 
-// Sanitize header: khử token + field thời gian động (kimi X-Msh-Device-Id) để snapshot ổn định.
+// Giá trị phụ thuộc MÁY CHẠY TEST — không phải hành vi của provider.
+// Cline/Kimi gắn chúng vào header, nên nếu để nguyên thì snapshot chỉ khớp trên
+// đúng máy đã sinh ra nó, và hostname của người đó bị commit vào repo.
+const APP_VERSION = createRequire(import.meta.url)("../../package.json").version;
+const VOLATILE_BY_KEY = {
+  "X-PLATFORM": "<PLATFORM>",
+  "X-PLATFORM-VERSION": "<NODE>",
+  "X-Msh-Device-Name": "<HOST>",
+  "X-Msh-Device-Model": "<DEVICE-MODEL>",
+};
+
+// Sanitize header: khử token + field thời gian động (kimi X-Msh-Device-Id) + field
+// phụ thuộc máy/phiên bản để snapshot ổn định.
 function sanitize(headers) {
   const out = {};
   for (const [k, v] of Object.entries(headers)) {
+    if (k in VOLATILE_BY_KEY) { out[k] = VOLATILE_BY_KEY[k]; continue; }
     out[k] = typeof v === "string"
       ? v.replace(/Bearer .+/, "Bearer <TOK>")
           .replace(/sk-test-APIKEY|tok-test-ACCESS/g, "<CRED>")
           .replace(/kimi-\d{10,}/g, "kimi-<TS>")
+          // User-Agent, X-CLIENT-VERSION, X-CORE-VERSION, X-Msh-Version: mọi header
+          // mang số phiên bản app đều đổi sau mỗi lần release.
+          .split(APP_VERSION).join("<VERSION>")
       : v;
   }
   return out;
