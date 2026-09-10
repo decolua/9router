@@ -36,8 +36,9 @@ export default function ModelSelectModal({
 }) {
   // Filter activeProviders by serviceKinds when kindFilter set (e.g. "webSearch", "webFetch")
   const filteredActiveProviders = useMemo(() => {
-    if (!kindFilter) return activeProviders;
     return activeProviders.filter((p) => {
+      if (p.isActive === false || AI_PROVIDERS[p.provider]?.hidden) return false;
+      if (!kindFilter) return true;
       const info = AI_PROVIDERS[p.provider];
       const kinds = info?.serviceKinds || ["llm"];
       return kinds.includes(kindFilter);
@@ -55,10 +56,10 @@ export default function ModelSelectModal({
   // as a fallback, since it quickly becomes stale and different accounts can
   // have different model entitlements.
   const cursorConnectionIds = useMemo(
-    () => activeProviders
+    () => filteredActiveProviders
       .filter((provider) => provider.provider === "cursor" && provider.id)
       .map((provider) => provider.id),
-    [activeProviders],
+    [filteredActiveProviders],
   );
 
   useEffect(() => {
@@ -201,6 +202,7 @@ export default function ModelSelectModal({
     });
 
     sortedProviderIds.forEach((providerId) => {
+      if (AI_PROVIDERS[providerId]?.hidden) return;
       const alias = getProviderAlias(providerId);
       const providerInfo = allProviders[providerId] || { name: providerId, color: "#666" };
       const isCustomProvider = isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
@@ -277,7 +279,7 @@ export default function ModelSelectModal({
         // Custom (openai/anthropic-compatible) providers are LLM-only — skip for typed media kinds
         if (kindFilter && TYPED_KINDS.has(kindFilter)) return;
         // Find connection object to get prefix synchronously without waiting for providerNodes fetch
-        const connection = activeProviders.find(p => p.provider === providerId);
+        const connection = filteredActiveProviders.find(p => p.provider === providerId);
         const matchedNode = providerNodes.find(node => node.id === providerId);
         const displayName = matchedNode?.name || connection?.name || providerInfo.name;
         const nodePrefix = connection?.providerSpecificData?.prefix || matchedNode?.prefix || providerId;
@@ -394,7 +396,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders, cursorModels]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, cursorModels]);
 
   // Filter combos by search query (and hide combos when kindFilter is set — combos are LLM-only by design)
   const filteredCombos = useMemo(() => {
