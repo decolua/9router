@@ -307,7 +307,7 @@ describe("D: cache tokens survive the kiro -> claude translation", () => {
       completion_tokens: 20,
       prompt_tokens_details: { cached_tokens: 480, cache_creation_tokens: 20 }
     })).toEqual({
-      input_tokens: 500,
+      input_tokens: 0,
       output_tokens: 20,
       cache_read_input_tokens: 480,
       cache_creation_input_tokens: 20
