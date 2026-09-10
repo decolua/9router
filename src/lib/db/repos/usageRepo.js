@@ -709,9 +709,22 @@ export async function getChartData(period = "7d") {
     return buckets;
   }
 
+  const labelFn = (d, opts = { month: "short", day: "numeric" }) => d.toLocaleDateString("en-US", opts);
+
+  if (period === "all") {
+    const dayRows = loadDaysInRange(db, null).sort((a, b) => a.dateKey.localeCompare(b.dateKey));
+    return dayRows.map((r) => {
+      const dayData = parseJson(r.data, {});
+      return {
+        label: labelFn(new Date(`${r.dateKey}T00:00:00`), { month: "short", day: "numeric", year: "numeric" }),
+        tokens: (dayData.promptTokens || 0) + (dayData.completionTokens || 0),
+        cost: dayData.cost || 0,
+      };
+    });
+  }
+
   const bucketCount = period === "7d" ? 7 : period === "30d" ? 30 : 60;
   const today = new Date();
-  const labelFn = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
   // Build map of dateKey → day data
   const dayRows = loadDaysInRange(db, bucketCount);
