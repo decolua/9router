@@ -88,7 +88,11 @@ export function createSSEStream(options = {}) {
     let finalUsage = isPassthrough ? usage : state?.usage;
 
     if (!hasValidUsage(finalUsage) && totalContentLength > 0) {
-      finalUsage = estimateUsage(body, totalContentLength, isPassthrough ? FORMATS.OPENAI : sourceFormat);
+      // Unbuffered: this value is only ever recorded -- logUsage and
+      // onStreamComplete below -- and never sent to the client. The buffer is a
+      // margin for the client's own context arithmetic, so counting it here
+      // reported every estimated turn as BUFFER_TOKENS larger than it was.
+      finalUsage = estimateUsage(body, totalContentLength, isPassthrough ? FORMATS.OPENAI : sourceFormat, { buffer: false });
       if (isPassthrough) usage = finalUsage; else state.usage = finalUsage;
     }
 
@@ -203,8 +207,10 @@ export function createSSEStream(options = {}) {
 
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
-                const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
-                parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
+                // Same split the non-estimated branch below already makes: the
+                // client copy carries the buffer, `usage` keeps the real number.
+                const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI, { buffer: false });
+                parsed.usage = filterUsageForFormat(addBufferToUsage(estimated), FORMATS.OPENAI);
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 usage = estimated;
                 injectedUsage = true;
@@ -356,8 +362,10 @@ export function createSSEStream(options = {}) {
             // Inject estimated usage if finish chunk has no valid usage
             const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
             if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
-              const estimated = estimateUsage(body, totalContentLength, sourceFormat);
-              item.usage = filterUsageForFormat(estimated, sourceFormat); // Filter + already has buffer
+              // state.usage is what gets logged (see the comment on the branch
+              // below); only the emitted item carries the buffer.
+              const estimated = estimateUsage(body, totalContentLength, sourceFormat, { buffer: false });
+              item.usage = filterUsageForFormat(addBufferToUsage(estimated), sourceFormat);
               state.usage = estimated;
             } else if (state.finishReason && isFinishChunk && state.usage) {
               // Add buffer and filter usage for client (but keep original in state.usage for logging)
