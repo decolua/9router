@@ -7,6 +7,7 @@ import { DATA_DIR } from "@/lib/dataDir";
 import { getSettings } from "@/lib/localDb";
 
 const DEFAULT_PASSWORD = "123456";
+const SESSION_MAX_AGE_SEC = 24 * 60 * 60;
 
 function loadJwtSecret() {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
@@ -64,6 +65,7 @@ export async function setDashboardAuthCookie(cookieStore, request, claims = {}) 
     secure: shouldUseSecureCookie(request),
     sameSite: "lax",
     path: "/",
+    maxAge: SESSION_MAX_AGE_SEC,
   });
 }
 

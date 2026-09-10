@@ -1,16 +1,16 @@
 import { createHash, randomBytes, randomUUID } from "crypto";
 import { CLAUDE_TOOL_SUFFIX, CC_DEFAULT_TOOLS } from "../config/appConstants.js";
+import { CLAUDE_CLI_VERSION } from "../providers/shared.js";
 
-const CLAUDE_VERSION = "2.1.92";
 const CC_ENTRYPOINT = "sdk-cli";
 
-// Generate billing header matching real Claude Code 2.1.92+ format:
+// Generate the billing header expected from current Claude Code clients.
 // x-anthropic-billing-header: cc_version=<ver>.<build>; cc_entrypoint=sdk-cli; cch=<hash>;
 function generateBillingHeader(payload) {
   const content = JSON.stringify(payload);
   const cch = createHash("sha256").update(content).digest("hex").slice(0, 5);
   const buildHash = randomBytes(2).toString("hex").slice(0, 3);
-  return `x-anthropic-billing-header: cc_version=${CLAUDE_VERSION}.${buildHash}; cc_entrypoint=${CC_ENTRYPOINT}; cch=${cch};`;
+  return `x-anthropic-billing-header: cc_version=${CLAUDE_CLI_VERSION}.${buildHash}; cc_entrypoint=${CC_ENTRYPOINT}; cch=${cch};`;
 }
 
 // Derive a deterministic UUID-v4-shaped string from a seed (stable per account)
@@ -19,7 +19,7 @@ function deriveUuid(seed) {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${((parseInt(h[16], 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 
-// Generate fake user ID in Claude Code 2.1.92+ JSON format:
+// Generate fake user ID in the current Claude Code JSON format:
 // {"device_id":"<64hex>","account_uuid":"<uuid>","session_id":"<uuid>"}
 // device_id/account_uuid derive from apiKey (stable per account), session_id per-conversation
 function generateFakeUserID(sessionId, apiKey) {

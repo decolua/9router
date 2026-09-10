@@ -1,4 +1,6 @@
 import { getApiKeys } from "@/lib/localDb";
+import { resolveProviderId } from "@/shared/constants/providers.js";
+import { unwrapClineEnvelope } from "open-sse/shared/clineEnvelope.js";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 
@@ -150,6 +152,11 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
   const rawText = await res.text().catch(() => "");
   let parsed = null;
   try { parsed = rawText ? JSON.parse(rawText) : null; } catch {}
+
+  // Unwrap before the choices checks below. No-op for providers that do not
+  // opt in via transport.quirks.clineEnvelope.
+  const providerId = resolveProviderId(String(model).split("/")[0]);
+  parsed = unwrapClineEnvelope(parsed, providerId);
 
   if (!res.ok) {
     const detail = parsed?.error?.message || parsed?.msg || parsed?.message || parsed?.error || rawText;

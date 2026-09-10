@@ -8,7 +8,7 @@ import { getModelsByProviderId, PROVIDER_ID_TO_ALIAS } from "@/shared/constants/
 import {
   ClaudeToolCard, CodexToolCard, DroidToolCard, OpenClawToolCard,
   HermesToolCard, DefaultToolCard, OpenCodeToolCard, CoworkToolCard,
-  CopilotToolCard, ClineToolCard, KiloToolCard, DeepSeekTuiToolCard,
+  ClineToolCard, KiloToolCard, DeepSeekTuiToolCard,
   JcodeToolCard, GrokBuildToolCard,
 } from "../components";
 
@@ -156,8 +156,6 @@ export default function ToolDetailClient({ toolId, machineId }) {
         return <OpenClawToolCard {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} />;
       case "hermes":
         return <HermesToolCard {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} />;
-      case "copilot":
-        return <CopilotToolCard {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} />;
       case "cline":
         return <ClineToolCard {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} />;
       case "kilo":
