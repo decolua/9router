@@ -26,23 +26,54 @@ export function isOpenAIResponsesTerminalEvent(eventName, chunk) {
 const sharedEncoder = new TextEncoder();
 
 // Encoded response.failed + [DONE] payload for aborted/stalled Responses passthrough streams
-export function buildAbortedResponsesTerminalBytes() {
-  return sharedEncoder.encode(`${formatIncompleteOpenAIResponsesStreamFailure()}data: [DONE]\n\n`);
+export function buildAbortedResponsesTerminalBytes({ model } = {}) {
+  return buildResponsesFailureTerminalBytes(
+    "stream closed before response.completed",
+    { code: "stream_disconnected", model },
+  );
+}
+
+export function buildResponsesFailureTerminalBytes(message, options = {}) {
+  return sharedEncoder.encode(`${formatOpenAIResponsesStreamFailure(message, options)}data: [DONE]\n\n`);
 }
 
 // Synthesize a response.failed event for streams that close without a terminal event
-export function formatIncompleteOpenAIResponsesStreamFailure() {
+export function formatIncompleteOpenAIResponsesStreamFailure({ model } = {}) {
+  return formatOpenAIResponsesStreamFailure(
+    "stream closed before response.completed",
+    { code: "stream_disconnected", model },
+  );
+}
+
+function formatOpenAIResponsesStreamFailure(message, {
+  code = "upstream_error",
+  model = "unknown",
+  sequenceNumber = 1,
+} = {}) {
+  const now = Date.now();
   return formatSSE({
     event: "response.failed",
     data: {
       type: "response.failed",
+      sequence_number: sequenceNumber,
       response: {
-        id: `resp_${Date.now()}`,
+        id: `resp_${now}_${Math.random().toString(36).slice(2, 8)}`,
+        object: "response",
+        created_at: Math.floor(now / 1000),
         status: "failed",
+        incomplete_details: null,
+        instructions: null,
+        metadata: {},
+        model: model || "unknown",
+        output: [],
+        parallel_tool_calls: true,
+        temperature: null,
+        tool_choice: "auto",
+        tools: [],
+        top_p: null,
         error: {
-          type: "stream_error",
-          code: "stream_disconnected",
-          message: "stream closed before response.completed"
+          code,
+          message,
         }
       }
     }
