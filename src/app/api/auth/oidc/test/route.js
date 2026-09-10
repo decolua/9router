@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { getSettings } from "@/lib/localDb";
 import { fetchOidcDiscovery, getPublicOrigin, probeOidcClientSecret } from "@/lib/auth/oidc";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { assertPublicUrl } from "@/shared/utils/ssrfGuard";
 
 async function canAccessTestRoute() {
   const settings = await getSettings();
@@ -36,6 +37,13 @@ export async function POST(request) {
     }
     if (!clientId) {
       return NextResponse.json({ error: "Client ID is required" }, { status: 400 });
+    }
+
+    // SSRF guard: reject internal/private/metadata targets
+    try {
+      assertPublicUrl(issuerUrl);
+    } catch (err) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
     }
 
     const discovery = await fetchOidcDiscovery(issuerUrl);
