@@ -612,7 +612,14 @@ function startServer(updatePromise) {
   function spawnServer() {
     serverStartTime = Date.now();
     crashLog = [];
-    const child = spawn(RUNTIME, ["--dns-result-order=ipv4first", "--max-old-space-size=6144", serverPath], {
+    const runtimeArgs = ["--dns-result-order=ipv4first"];
+    if (!process.env.NODE_OPTIONS || !process.env.NODE_OPTIONS.includes("max-old-space-size")) {
+      const totalMemMb = Math.floor(os.totalmem() / (1024 * 1024));
+      const heapMb = Math.min(6144, Math.max(512, Math.floor(totalMemMb * 0.75)));
+      runtimeArgs.push(`--max-old-space-size=${heapMb}`);
+    }
+    runtimeArgs.push(serverPath);
+    const child = spawn(RUNTIME, runtimeArgs, {
       cwd: standaloneDir,
       stdio: showLog ? "inherit" : ["ignore", "ignore", "pipe"],
       detached: true,
