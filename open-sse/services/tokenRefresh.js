@@ -1,3 +1,4 @@
+import { createPrivateKey } from "node:crypto";
 import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, REFRESH_LEAD_MS } from "../config/appConstants.js";
 import {
@@ -74,6 +75,27 @@ export function parseVertexSaJson(apiKey) {
 }
 
 // Cache Vertex tokens keyed by service account email { token, expiresAt }
+
+// Validate that private_key is an RSA-2048+ PEM jose can sign RS256 with.
+// Returns null on success, or a user-facing error message.
+export function validateVertexSaKey(saJson) {
+  if (!saJson?.private_key) return "Vertex: service account JSON missing private_key";
+  let key;
+  try {
+    key = createPrivateKey(saJson.private_key.replace(/\\n/g, "\n"));
+  } catch {
+    return "Vertex: service account private_key is not a valid PEM key";
+  }
+  if (key.asymmetricKeyType !== "rsa") {
+    return `Vertex: service account private_key must be RSA (got ${key.asymmetricKeyType})`;
+  }
+  const bits = key.asymmetricKeyDetails?.modulusLength || 0;
+  if (bits < 2048) {
+    return `Vertex: service account private_key must be RSA-2048 or larger (RS256), got ${bits} bits`;
+  }
+  return null;
+}
+
 const vertexTokenCache = new Map();
 
 export async function refreshVertexToken(saJson, log) {
@@ -85,6 +107,11 @@ export async function refreshVertexToken(saJson, log) {
   }
 
   try {
+    const keyError = validateVertexSaKey(saJson);
+    if (keyError) {
+      log?.error?.("TOKEN_REFRESH", keyError);
+      return null;
+    }
     const { SignJWT, importPKCS8 } = await import("jose");
     log?.debug?.("TOKEN_REFRESH", `Vertex minting token for ${saJson.client_email}`);
     const privateKey = await importPKCS8(saJson.private_key.replace(/\\n/g, "\n"), "RS256");
