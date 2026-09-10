@@ -9,7 +9,9 @@ const DLP_TEMPLATES = [
   { id: "standard", label: "Standard", types: ["email", "phone", "cpf", "cnpj", "creditCard", "ip", "apiKey"] },
   { id: "financial", label: "Financial", types: ["creditCard", "apiKey", "cpf", "cnpj"] },
   { id: "brazilian", label: "Brazilian", types: ["cpf", "cnpj", "cep", "phone"] },
-  { id: "full", label: "Full", types: ["email", "phone", "cpf", "cnpj", "cep", "creditCard", "ip", "apiKey"] },
+  { id: "usa", label: "USA", types: ["usSsn", "usEin", "usZip", "email", "phone"] },
+  { id: "eur", label: "EUR", types: ["eurVat", "iban", "email", "phone", "creditCard"] },
+  { id: "full", label: "Full", types: ["email", "phone", "cpf", "cnpj", "cep", "creditCard", "ip", "apiKey", "usSsn", "usEin", "usZip", "iban", "eurVat"] },
 ];
 
 const DLP_CATEGORIES = [
@@ -21,6 +23,15 @@ const DLP_CATEGORIES = [
     { id: "cpf", label: "CPF", desc: "CPF (valid check digits)" },
     { id: "cnpj", label: "CNPJ", desc: "CNPJ (valid check digits)" },
     { id: "cep", label: "CEP", desc: "CEP postal codes (12345-678)" },
+  ]},
+  { id: "us", label: "USA IDs", types: [
+    { id: "usSsn", label: "SSN / ITIN", desc: "US Social Security / ITIN (valid area/group)" },
+    { id: "usEin", label: "EIN", desc: "US Employer ID (12-3456789)" },
+    { id: "usZip", label: "ZIP Code", desc: "US postal codes (12345 or 12345-6789)" },
+  ]},
+  { id: "eur", label: "EUR IDs", types: [
+    { id: "iban", label: "IBAN", desc: "European bank accounts (mod-97 valid)" },
+    { id: "eurVat", label: "EU VAT", desc: "EU VAT numbers (per-country format, no checksum)" },
   ]},
   { id: "financial", label: "Financial", types: [
     { id: "creditCard", label: "Credit Card", desc: "Credit card numbers (Luhn-valid)" },

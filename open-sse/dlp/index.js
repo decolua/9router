@@ -28,12 +28,26 @@ function buildCustomRule(cp) {
   return { id: cp.id, name: cp.name, pattern: cp.pattern, custom: true, regex: new RegExp(cp.pattern, flags.includes("g") ? flags : `${flags}g`) };
 }
 
+// Order so structural/checksum rules consume their tokens BEFORE the generic
+// matchers can swallow them: IBAN/SSN/EIN digits must never be seen by the
+// phone matcher (16-digit bank numbers pass the 10-digit phone gate), and a
+// 5-digit substring of an EU VAT must not become a US ZIP match. Order inside
+// the same tier follows the catalog (stable sort). Custom rules run last.
+const RULE_PRIORITY = new Map([
+  "iban", "eurVat", "usSsn", "usEin", "usZip", "cpf", "cnpj", "cep",
+  "creditCard", "ip", "apiKey", "email",
+].map((id, i) => [id, i]));
+
 export function buildRules(types, customPatterns) {
   const rules = [];
   for (const id of types || []) {
     const def = PATTERN_BY_ID[id];
     if (def) rules.push(def);
   }
+  rules.sort((a, b) =>
+    (RULE_PRIORITY.get(a.id) ?? RULE_PRIORITY.size) -
+    (RULE_PRIORITY.get(b.id) ?? RULE_PRIORITY.size)
+  );
   for (const cp of customPatterns || []) {
     try {
       const rule = buildCustomRule(cp);

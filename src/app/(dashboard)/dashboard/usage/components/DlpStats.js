@@ -16,6 +16,24 @@ import Card from "@/shared/components/Card";
 
 const fmt = (n) => new Intl.NumberFormat().format(n || 0);
 
+// Readable labels for built-in category ids in the breakdown / top-category card.
+const TYPE_LABELS = {
+  email: "Email",
+  phone: "Phone",
+  cpf: "CPF",
+  cnpj: "CNPJ",
+  cep: "CEP",
+  creditCard: "Credit Card",
+  ip: "IP Address",
+  apiKey: "API Key",
+  usSsn: "SSN / ITIN",
+  usEin: "EIN",
+  usZip: "ZIP Code",
+  iban: "IBAN",
+  eurVat: "EU VAT",
+};
+const labelOf = (key) => TYPE_LABELS[key] || key;
+
 export default function DlpStats({ period = "7d" }) {
   const [stats, setStats] = useState(null);
   const [chart, setChart] = useState([]);
@@ -79,7 +97,7 @@ export default function DlpStats({ period = "7d" }) {
         <Card className="flex min-w-0 flex-col gap-1 px-4 py-3">
           <span className="text-text-muted text-sm uppercase font-semibold">Top Category</span>
           <span className="truncate text-2xl font-bold text-warning">
-            {stats?.topCategory?.name || "—"}
+            {labelOf(stats?.topCategory?.name) || "—"}
           </span>
           {stats?.topCategory && (
             <span className="text-[10px] text-text-muted">{fmt(stats.topCategory.count)} values</span>
@@ -161,7 +179,7 @@ export default function DlpStats({ period = "7d" }) {
         <div className="flex flex-col gap-1.5">
           {topCategories.map(([name, count]) => (
             <div key={name} className="flex items-center gap-2 text-xs">
-              <span className="w-32 truncate text-text-muted">{name}</span>
+              <span className="w-32 truncate text-text-muted">{labelOf(name)}</span>
               <div className="h-2 flex-1 overflow-hidden rounded-full bg-bg-subtle">
                 <div
                   className="h-full rounded-full bg-primary/60"

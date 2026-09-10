@@ -53,6 +53,56 @@ export function isValidIpv4(m) {
   return parts.every((p) => /^\d{1,3}$/.test(p) && parseInt(p, 10) <= 255);
 }
 
+export function isValidSsn(m) {
+  const d = DIGITS(m);
+  if (d.length !== 9) return false;
+  const area = parseInt(d.slice(0, 3), 10);
+  // SSN areas 001-899 (666 excluded); ITIN areas 900-999 — both are valid
+  // US taxpayer identification numbers.
+  const ssn = area >= 1 && area <= 899 && area !== 666;
+  const itin = area >= 900 && area <= 999;
+  if (!ssn && !itin) return false;
+  const group = parseInt(d.slice(3, 5), 10);
+  if (group === 0) return false;
+  const serial = parseInt(d.slice(5, 9), 10);
+  if (serial === 0) return false;
+  return true;
+}
+
+export function isValidEin(m) {
+  const d = DIGITS(m);
+  // EIN = 2-digit prefix + 7-digit number (9 digits total, one optional dash).
+  if (d.length !== 9) return false;
+  const prefix = parseInt(d.slice(0, 2), 10);
+  if (prefix < 1 || prefix > 99) return false;
+  if (new Set(d).size === 1) return false;
+  return true;
+}
+
+export function isValidUsZip(m) {
+  const d = DIGITS(m);
+  if (d.length !== 5) return false;
+  const prefix = parseInt(d.slice(0, 3), 10);
+  // Leading zeros are legal (00501, 009xx PR); 001-004 and 000 have no ZIPs.
+  if (prefix < 5 || prefix > 999) return false;
+  if (new Set(d).size === 1) return false;
+  return true;
+}
+
+export function isValidIban(m) {
+  const normalized = String(m).replace(/[^A-Z0-9]/gi, "").toUpperCase();
+  if (normalized.length < 15 || normalized.length > 34) return false;
+  if (!/^[A-Z]{2}\d{2}/.test(normalized)) return false;
+  // MOD-97-10: move the 4 first chars to the end, letters -> numbers, mod 97.
+  const rearranged = normalized.slice(4) + normalized.slice(0, 4);
+  const mapped = rearranged.replace(/[A-Z]/g, (c) => String(c.charCodeAt(0) - 55));
+  try {
+    return BigInt(mapped) % 97n === 1n;
+  } catch {
+    return false;
+  }
+}
+
 // ---- Catalog ----
 
 export const PII_TYPES = [
@@ -116,6 +166,45 @@ export const PII_TYPES = [
     category: "network",
     label: "API key",
     regex: /\b(?:sk-[A-Za-z0-9_-]{20,}|ghp_[A-Za-z0-9]{36}|AIza[0-9A-Za-z_-]{35}|xox[baprs]-[A-Za-z0-9-]{10,})\b|(?:Bearer\s+[A-Za-z0-9._~+/=-]{20,})/g,
+  },
+  {
+    id: "usSsn",
+    name: "US Social Security / ITIN numbers",
+    category: "us",
+    label: "SSN / ITIN",
+    regex: /\b\d{3}-\d{2}-\d{4}\b/g,
+    validate: isValidSsn,
+  },
+  {
+    id: "usEin",
+    name: "US Employer Identification Numbers",
+    category: "us",
+    label: "EIN",
+    regex: /\b\d{2}-\d{7}\b/g,
+    validate: isValidEin,
+  },
+  {
+    id: "usZip",
+    name: "US ZIP codes",
+    category: "us",
+    label: "ZIP code",
+    regex: /\b\d{5}(?:-\d{4})?\b/g,
+    validate: isValidUsZip,
+  },
+  {
+    id: "iban",
+    name: "IBAN bank account numbers",
+    category: "eur",
+    label: "IBAN (SEPA)",
+    regex: /\b[A-Z]{2}\d{2}[ ]?[A-Z0-9]{11,30}\b/g,
+    validate: isValidIban,
+  },
+  {
+    id: "eurVat",
+    name: "EU VAT registration numbers",
+    category: "eur",
+    label: "EU VAT",
+    regex: /\b(?:ATU\d{8}|BE\d{10}|BG\d{9,10}|CY\d{8}[A-Z]|CZ\d{8,10}|DE\d{9}|DK\d{8}|EE\d{9}|EL\d{9}|ES[A-Z0-9]\d{7}[A-Z0-9]|FI\d{8}|FR[A-Z0-9]{2}\d{9}|HR\d{11}|HU\d{8}|IE\d{7}[A-Z]{1,2}|IT\d{11}|LT\d{9,12}|LU\d{8}|LV\d{11}|MT\d{8}|NL\d{9}B\d{2}|PL\d{10}|PT\d{9}|RO\d{8,10}|SE\d{12}|SI\d{8}|SK\d{10})\b/g,
   },
 ];
 

@@ -7,6 +7,10 @@ import {
   isValidCnpj,
   luhnValid,
   isValidIpv4,
+  isValidSsn,
+  isValidEin,
+  isValidUsZip,
+  isValidIban,
 } from "../open-sse/dlp/patterns.js";
 import {
   getPseudonym,
@@ -28,9 +32,10 @@ import {
 const DIGITS = (s) => s.replace(/\D/g, "");
 
 describe("patterns", () => {
-  it("exports all 8 built-in types and DEFAULT_TYPES", () => {
+  it("exports all 13 built-in types and DEFAULT_TYPES", () => {
     expect(PII_TYPES.map((t) => t.id)).toEqual([
       "email", "phone", "cpf", "cnpj", "cep", "creditCard", "ip", "apiKey",
+      "usSsn", "usEin", "usZip", "iban", "eurVat",
     ]);
     expect(DEFAULT_TYPES).toEqual(["email", "phone", "cpf", "cnpj", "creditCard", "ip", "apiKey"]);
     for (const t of PII_TYPES) {
@@ -321,5 +326,91 @@ describe("dlp stats logging", () => {
     expect(t2.byType).toEqual({ email: 2, phone: 2 });
     expect(mergeDlpStats({ matched: 1, byType: { x: 1 } }, null).matched).toBe(1);
     expect(mergeDlpStats(null, null).matched).toBe(0);
+  });
+});
+
+describe("USA patterns", () => {
+  it("isValidSsn accepts SSN (001-899 excl. 666) and ITIN (900-999), rejects empty groups", () => {
+    expect(isValidSsn("123-45-6789")).toBe(true);
+    expect(isValidSsn("899-12-3456")).toBe(true);
+    expect(isValidSsn("900-12-3456")).toBe(true); // ITIN
+    expect(isValidSsn("999-12-3456")).toBe(true); // ITIN
+    expect(isValidSsn("666-12-3456")).toBe(false);
+    expect(isValidSsn("000-12-3456")).toBe(false);
+    expect(isValidSsn("123-00-6789")).toBe(false);
+    expect(isValidSsn("123-45-0000")).toBe(false);
+  });
+
+  it("isValidEin accepts 01-99 prefixes, rejects 00 and all-same digits", () => {
+    expect(isValidEin("12-3456789")).toBe(true);
+    expect(isValidEin("01-2345678")).toBe(true);
+    expect(isValidEin("99-1234567")).toBe(true);
+    expect(isValidEin("00-1234567")).toBe(false);
+    expect(isValidEin("11-1111111")).toBe(false);
+    expect(isValidEin("12345678")).toBe(false);  // too short (needs 2+7)
+    expect(isValidEin("1234567890")).toBe(false); // too long
+  });
+
+  it("isValidUsZip accepts real prefixes incl. 005/009, rejects 000/001 and all-same", () => {
+    expect(isValidUsZip("00501")).toBe(true);
+    expect(isValidUsZip("00987")).toBe(true);
+    expect(isValidUsZip("90210")).toBe(true);
+    expect(isValidUsZip("99950")).toBe(true);
+    expect(isValidUsZip("00000")).toBe(false);
+    expect(isValidUsZip("00123")).toBe(false);
+    expect(isValidUsZip("99999")).toBe(false);
+  });
+
+  it("maskText masks a valid SSN but leaves invalid ones intact", () => {
+    const made = maskText("SSN 123-45-6789 and invalid 666-12-3456", { mode: "redact", types: ["usSsn"] });
+    expect(made.matched).toBe(1);
+    expect(made.text).not.toContain("123-45-6789");
+    expect(made.text).toContain("666-12-3456");
+    expect(made.byType).toEqual({ usSsn: 1 });
+  });
+});
+
+describe("EUR patterns", () => {
+  it("isValidIban validates the mod-97 checksum (spaces normalized)", () => {
+    expect(isValidIban("GB82WEST12345698765432")).toBe(true);
+    expect(isValidIban("DE89370400440532013000")).toBe(true);
+    expect(isValidIban("PT50000201231234567890154")).toBe(true);
+    expect(isValidIban("DE89 3704 0044 0532 0130 00")).toBe(true);
+    expect(isValidIban("DE89370400440532013001")).toBe(false);
+    expect(isValidIban("DE12")).toBe(false);
+    expect(isValidIban("")).toBe(false);
+  });
+
+  it("maskText masks valid IBANs and leaves broken ones intact", () => {
+    const made = maskText("IBAN DE89370400440532013000 e invalido DE89370400440532013001", { mode: "redact", types: ["iban"] });
+    expect(made.matched).toBe(1);
+    expect(made.text).toContain("DE89370400440532013001");
+    expect(made.byType).toEqual({ iban: 1 });
+  });
+
+  it("maskText masks valid EU VAT numbers by country prefix, not lookalikes", () => {
+    const made = maskText("VATs: DE123456789 IT12345678901 FR12345678901 e falso XX123456789", { mode: "redact", types: ["eurVat"] });
+    expect(made.matched).toBe(3);
+    expect(made.text).toContain("XX123456789");
+    expect(made.byType).toEqual({ eurVat: 3 });
+  });
+});
+
+describe("rule ordering (structural before generic)", () => {
+  it("IBAN is masked by its own rule, not swallowed by the phone matcher", () => {
+    const made = maskText("IBAN DE89370400440532013000", {
+      mode: "redact",
+      types: ["phone", "iban", "usZip", "eurVat"],
+    });
+    expect(made.matched).toBe(1);
+    expect(made.byType).toEqual({ iban: 1 });
+    expect(made.text).toBe("IBAN [PII-REDACTED]");
+  });
+
+  it("a 5-digit substring of an EU VAT does not become a US ZIP match", () => {
+    const made = maskText("VAT DE123456789", { mode: "redact", types: ["usZip", "eurVat"] });
+    expect(made.matched).toBe(1);
+    expect(made.byType).toEqual({ eurVat: 1 });
+    expect(made.text).toBe("VAT [PII-REDACTED]");
   });
 });
