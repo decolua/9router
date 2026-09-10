@@ -2,10 +2,10 @@
 import { randomUUID } from "node:crypto";
 import { nowSec } from "./_base.js";
 import { PROVIDERS } from "../../config/providers.js";
+import { CODEX_CLI_VERSION } from "../../config/appConstants.js";
 
 const CODEX_RESPONSES_URL = PROVIDERS["codex"].baseUrl;
-const CODEX_USER_AGENT = "codex_cli_rs/0.136.0";
-const CODEX_VERSION = "0.136.0";
+const CODEX_USER_AGENT = `codex_cli_rs/${CODEX_CLI_VERSION}`;
 const CODEX_ORIGINATOR = "codex_cli_rs";
 const CODEX_MODEL_SUFFIX = "-image";
 const CODEX_REF_DETAIL = "high";
@@ -157,7 +157,7 @@ export default {
       "originator": CODEX_ORIGINATOR,
       "session_id": randomUUID(),
       "user-agent": CODEX_USER_AGENT,
-      "version": CODEX_VERSION,
+      "version": CODEX_CLI_VERSION,
       "x-client-request-id": randomUUID(),
     };
   },

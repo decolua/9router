@@ -7,6 +7,9 @@ import { createRequire } from "module";
 export const GEMINI_CLI_VERSION = PROVIDERS["gemini-cli"]?.cliVersion;
 export const GEMINI_CLI_API_CLIENT = PROVIDERS["gemini-cli"]?.apiClient;
 
+// === Codex CLI === derive từ registry codex.transport
+export const CODEX_CLI_VERSION = PROVIDERS["codex"]?.cliVersion;
+
 // Map Node arch to Gemini CLI arch string (x64/x86/arm64/...)
 function geminiCLIArch() {
   const a = arch();
