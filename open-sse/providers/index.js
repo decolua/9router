@@ -24,6 +24,7 @@ const MEDIA_KEYS = new Set([
   "serviceKinds", "ttsConfig", "sttConfig", "embeddingConfig",
   "imageConfig", "imageToTextConfig", "videoConfig", "musicConfig",
   "searchViaChat", "searchConfig", "fetchConfig",
+  "ocrConfig", "moderationConfig",
   "modelsFetcher", "mediaPriority", "hiddenKinds",
 ]);
 

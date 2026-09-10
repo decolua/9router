@@ -72,6 +72,8 @@ const SERVICE_KIND_CAPABILITIES = {
   stt: { audioInput: true },
   tts: { audioOutput: true },
   embedding: { tools: false },
+  ocr: { tools: false },
+  moderation: { tools: false },
 };
 
 export function capabilitiesFromServiceKind(kind) {

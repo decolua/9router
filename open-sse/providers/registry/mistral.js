@@ -25,7 +25,11 @@ export default {
     { id: "codestral-latest", name: "Codestral" },
     { id: "mistral-medium-latest", name: "Mistral Medium 3" },
     { id: "mistral-embed", name: "Mistral Embed", kind: "embedding" },
+    { id: "mistral-ocr-latest", name: "Mistral OCR", kind: "ocr" },
+    { id: "mistral-moderation-latest", name: "Mistral Moderation", kind: "moderation" },
   ],
-  serviceKinds: ["llm","imageToText","embedding"],
+  serviceKinds: ["llm","imageToText","embedding","ocr","moderation"],
   embeddingConfig: { baseUrl: "https://api.mistral.ai/v1/embeddings", authType: "apikey", authHeader: "bearer" },
+  ocrConfig: { baseUrl: "https://api.mistral.ai/v1/ocr", authType: "apikey", authHeader: "bearer" },
+  moderationConfig: { baseUrl: "https://api.mistral.ai/v1/moderations", authType: "apikey", authHeader: "bearer" },
 };
