@@ -105,11 +105,16 @@ export async function createSqlJsAdapter(filePath) {
     db.close();
   }
 
-  // Flush on shutdown
+  // Flush on shutdown. `once` plus an explicit exit, matching the native
+  // adapters: installing a SIGINT/SIGTERM listener replaces Node's default
+  // terminate action, so a handler that only flushes leaves the process running
+  // after Ctrl-C, and `docker stop` waits out its whole grace period before
+  // SIGKILL. `on` would also stack a listener per adapter created.
   const flush = () => { if (dirty) try { persist(); } catch {} };
-  process.on("beforeExit", flush);
-  process.on("SIGINT", flush);
-  process.on("SIGTERM", flush);
+  const onShutdown = () => { flush(); process.exit(0); };
+  process.once("beforeExit", flush);
+  process.once("SIGINT", onShutdown);
+  process.once("SIGTERM", onShutdown);
 
   return { driver: "sql.js", run, get, all, exec, transaction, close, raw: db };
 }
