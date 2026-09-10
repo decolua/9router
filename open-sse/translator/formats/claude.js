@@ -592,9 +592,20 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
         });
     }
 
-    // Strip any client-supplied cache_control from tools; chatCore stamps the
-    // actual last tool after disclosure filtering (single source of truth).
-    body.tools = body.tools.map(({ cache_control, ...rest }) => rest);
+    // Strip any client-supplied cache_control from tools and anchor on the
+    // last tool that can actually be cached (Anthropic rejects defer_loading
+    // + cache_control together, #3567). chatCore re-stamps this after
+    // disclosure filtering for the translated request path (single source of
+    // truth there), but this anchor still matters for direct/other callers
+    // of prepareClaudeRequest.
+    const lastCacheable = lastCacheableToolIndex(body.tools);
+    body.tools = body.tools.map((tool, i) => {
+      const { cache_control, ...rest } = tool;
+      if (i === lastCacheable) {
+        return { ...rest, cache_control: { type: "ephemeral", ttl: "1h" } };
+      }
+      return rest;
+    });
 
     // Remove tools array and tool_choice if empty after filtering
     if (body.tools.length === 0) {
