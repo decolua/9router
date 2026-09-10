@@ -118,10 +118,20 @@ export function getModelLockKey(model) {
  * Reads flat field `modelLock_${model}` (or `modelLock___all` when model=null).
  */
 export function isModelLockActive(connection, model) {
-  const key = getModelLockKey(model);
-  const expiry = connection[key] || connection[MODEL_LOCK_ALL];
-  if (!expiry) return false;
-  return new Date(expiry).getTime() > Date.now();
+  const now = Date.now();
+  const stillLocked = (value) => {
+    if (!value) return false;
+    const until = new Date(value).getTime();
+    return Number.isFinite(until) && until > now;
+  };
+  // Each key is judged on its own expiry. `a || b` picked the per-model key on the
+  // truthiness of the string, so a stale one hid a still-active account-wide lock:
+  // the connection then read as free for exactly the model that had just failed,
+  // while still reading as locked for every other model. Nothing clears the stale
+  // key either -- the lazy cleanup runs only after a successful request, and an
+  // account under an `__all` lock never gets one. Same rule the sibling
+  // `getEarliestModelLockUntil` already applies when it skips expired entries.
+  return stillLocked(connection[getModelLockKey(model)]) || stillLocked(connection[MODEL_LOCK_ALL]);
 }
 
 /**
