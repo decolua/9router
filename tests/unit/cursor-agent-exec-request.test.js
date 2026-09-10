@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 
-import { CursorExecutor } from "../../open-sse/executors/cursor.js";
-import { encodeField, wrapConnectRPCFrame } from "../../open-sse/utils/cursorProtobuf.js";
+import { CursorExecutor, resolveCursorAgentModel } from "../../open-sse/executors/cursor.js";
+import { decodeMessage, encodeField, wrapConnectRPCFrame } from "../../open-sse/utils/cursorProtobuf.js";
 
 const LEN = 2;
 
@@ -110,5 +110,74 @@ describe("CursorExecutor AgentService exec_request handling", () => {
     expect(result.response.status).not.toBe(200);
     const payload = await result.response.json();
     expect(payload.error.message).toContain("unsupported IDE tool");
+  });
+
+  it("acks KV blob set/get without treating it as assistant text", async () => {
+    const blobId = Buffer.from("kv-blob-id");
+    const blobData = Buffer.from("not-visible-payload");
+    const setArgs = Buffer.concat([
+      Buffer.from(encodeField(1, LEN, blobId)),
+      Buffer.from(encodeField(2, LEN, blobData)),
+    ]);
+    const setKv = Buffer.concat([
+      Buffer.from(encodeField(1, 0, 7)),
+      Buffer.from(encodeField(3, LEN, setArgs)),
+    ]);
+    const kvFrame = Buffer.from(wrapConnectRPCFrame(encodeField(4, LEN, setKv)));
+
+    const { result, written } = await runAgent({
+      frames: [kvFrame, textFrame("pong")],
+      stream: true,
+    });
+
+    expect(written.length).toBe(2); // run frame + KV ack
+    const events = parseSSE(await result.response.text());
+    const content = events.map((e) => e.choices?.[0]?.delta?.content || "").join("");
+    expect(content).toBe("pong");
+  });
+
+  it("passes the connection proxy into AgentService Run", async () => {
+    const executor = new CursorExecutor();
+    let seenProxy = undefined;
+    stubAgentSession(executor, [textFrame("pong")]);
+    const original = executor.openAgentHttp2Stream;
+    executor.openAgentHttp2Stream = (url, headers, signal, proxyOptions) => {
+      seenProxy = proxyOptions;
+      return original(url, headers, signal, proxyOptions);
+    };
+
+    const proxyOptions = {
+      connectionProxyEnabled: true,
+      connectionProxyUrl: "http://127.0.0.1:10808",
+    };
+    await executor.execute({
+      model: "claude-fable-5",
+      body: { messages: [{ role: "user", content: "hi" }] },
+      stream: false,
+      credentials,
+      proxyOptions,
+    });
+
+    expect(seenProxy).toEqual(proxyOptions);
+  });
+
+  it("maps Fable *-fast slugs to the catalog id in RequestedModel.model_id", async () => {
+    expect(resolveCursorAgentModel("claude-fable-5-thinking-max-fast")).toBe("claude-fable-5-thinking-max");
+    expect(resolveCursorAgentModel("claude-fable-5-max-fast")).toBe("claude-fable-5-max");
+    expect(resolveCursorAgentModel("claude-opus-5-thinking-max-fast")).toBe("claude-opus-5-thinking-max-fast");
+    expect(resolveCursorAgentModel("gpt-5.6-sol-max-fast")).toBe("gpt-5.6-sol-max-fast");
+
+    const executor = new CursorExecutor();
+    const written = stubAgentSession(executor, [textFrame("pong")]);
+    await executor.executeAgent({
+      model: "claude-fable-5-thinking-max-fast",
+      body: { messages: [{ role: "user", content: "hi" }] },
+      stream: false,
+      credentials,
+    });
+
+    const run = decodeMessage(decodeMessage(written[0].subarray(5)).get(1)[0].value);
+    const requested = decodeMessage(run.get(9)[0].value);
+    expect(Buffer.from(requested.get(1)[0].value).toString("utf8")).toBe("claude-fable-5-thinking-max");
   });
 });
