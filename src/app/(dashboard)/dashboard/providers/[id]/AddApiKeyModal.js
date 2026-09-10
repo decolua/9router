@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import PropTypes from "prop-types";
-import { Button, Badge, Input, Modal, Select } from "@/shared/components";
+import { Button, Badge, Input, Modal, Select, Toggle } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { planBulkAdd } from "@/shared/utils/bulkAdd";
 
@@ -20,6 +20,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
+  const isCommandCode = provider === "commandcode";
   const providerRegions = AI_PROVIDERS?.[provider]?.regions || null;
   const defaultRegion = AI_PROVIDERS?.[provider]?.defaultRegion || providerRegions?.[0]?.id || "";
 
@@ -51,6 +52,13 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const [mode, setMode] = useState("single"); // "single" | "bulk"
   const [bulkText, setBulkText] = useState("");
   const [bulkResult, setBulkResult] = useState(null); // { success, failed }
+  const [zdrEnabled, setZdrEnabled] = useState(false);
+
+  // ZDR is an explicit per-connection privacy choice. Do not carry it into a
+  // subsequent add after this modal has been closed.
+  useEffect(() => {
+    if (!isOpen) setZdrEnabled(false);
+  }, [isOpen]);
 
   const buildProviderSpecificData = () => {
     if (isOllamaLocal && formData.ollamaHostUrl.trim()) {
@@ -66,6 +74,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     }
     if (isCloudflareAi) {
       return { accountId: cloudflareData.accountId };
+    }
+    if (isCommandCode) {
+      return { zdrEnabled };
     }
     if (providerRegions && region) {
       return { region };
@@ -227,6 +238,14 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         )}
 
         {mode === "single" && (<>
+        {isCommandCode && (
+          <Toggle
+            checked={zdrEnabled}
+            onChange={setZdrEnabled}
+            label="Require Zero Data Retention (ZDR)"
+            description="Sends x-cmd-zdr: 1 for this API key. Models without a ZDR upstream may be unavailable."
+          />
+        )}
         <Input
           label="Name"
           value={formData.name}

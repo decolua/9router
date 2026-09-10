@@ -35,6 +35,10 @@ export class CommandCodeExecutor extends BaseExecutor {
     const token = credentials?.apiKey || credentials?.accessToken;
     if (token) headers["Authorization"] = `Bearer ${token}`;
 
+    if (credentials?.providerSpecificData?.zdrEnabled === true) {
+      headers["x-cmd-zdr"] = "1";
+    }
+
     if (stream) headers["Accept"] = "text/event-stream";
     return headers;
   }

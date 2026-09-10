@@ -423,6 +423,7 @@ export async function POST(request) {
             headers: {
               "Content-Type": "application/json",
               ...(cfg.headers || {}),
+              ...(providerSpecificData?.zdrEnabled === true ? { "x-cmd-zdr": "1" } : {}),
               "x-session-id": crypto.randomUUID(),
               "Authorization": `Bearer ${apiKey}`,
             },
