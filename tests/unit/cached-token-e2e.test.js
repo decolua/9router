@@ -81,4 +81,46 @@ describe("cached-token end-to-end (persist + aggregate + cost)", () => {
     expect(hist[0].tokens.prompt_tokens).toBe(1000);
     expect(hist[0].tokens.cached_tokens).toBe(600);
   });
+
+  it("keeps API-key identity distinct and non-secret across every stats period", async () => {
+    const keyA = await db.createApiKey("Shared name", "identity-machine");
+    const keyB = await db.createApiKey("Shared name", "identity-machine");
+    const deletedKey = await db.createApiKey("Deleted name", "identity-machine");
+    const keys = [keyA, keyB, deletedKey];
+
+    for (const [index, apiKey] of keys.entries()) {
+      await db.saveRequestUsage({
+        timestamp: new Date(Date.now() - index * 1000).toISOString(),
+        provider: "identity-test",
+        model: "same-model",
+        apiKey: apiKey.key,
+        tokens: { prompt_tokens: 10 + index, completion_tokens: 1 },
+        endpoint: "/v1/responses",
+        status: "ok",
+      });
+    }
+    await db.deleteApiKey(deletedKey.id);
+
+    for (const period of ["today", "24h", "7d", "30d", "60d", "all"]) {
+      const stats = await db.getUsageStats(period);
+      const serialized = JSON.stringify(stats.byApiKey);
+      const rows = Object.entries(stats.byApiKey)
+        .filter(([, row]) => row.provider === "identity-test" && row.rawModel === "same-model");
+
+      expect(rows, period).toHaveLength(3);
+      expect(new Set(rows.map(([key]) => key)).size, period).toBe(3);
+      expect(new Set(rows.map(([, row]) => row.apiKeyKey)).size, period).toBe(3);
+      expect(new Set(rows.map(([, row]) => row.keyName)).size, period).toBe(3);
+      expect(rows.map(([, row]) => row.requests), period).toEqual([1, 1, 1]);
+      for (const apiKey of keys) expect(serialized, period).not.toContain(apiKey.key);
+
+      expect(rows.some(([, row]) => row.apiKeyKey === `api-key:${keyA.id}`), period).toBe(true);
+      expect(rows.some(([, row]) => row.apiKeyKey === `api-key:${keyB.id}`), period).toBe(true);
+      expect(rows.some(([, row]) => /^api-key:sha256:[0-9a-f]{64}$/.test(row.apiKeyKey)), period).toBe(true);
+      for (const [key, row] of rows) {
+        expect(key, period).toBe(`${row.apiKeyKey}|same-model|identity-test`);
+        expect(row.keyName, period).toMatch(/ \([0-9a-f-]{8}\)$/);
+      }
+    }
+  });
 });
