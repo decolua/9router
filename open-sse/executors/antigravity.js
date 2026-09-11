@@ -1,7 +1,14 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
-import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX, ANTIGRAVITY_PROMPT_REWRITES } from "../config/appConstants.js";
+import {
+  OAUTH_ENDPOINTS,
+  ANTIGRAVITY_HEADERS,
+  AG_DEFAULT_TOOLS,
+  AG_TOOL_SUFFIX,
+  ANTIGRAVITY_PROMPT_REWRITES,
+  ANTIGRAVITY_TELEMETRY_KEYS,
+} from "../config/appConstants.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { resolveSessionId, toNumericSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
@@ -54,6 +61,37 @@ const ANTIGRAVITY_REQUEST_BLACKLIST = [
 const stripBlacklisted = obj => {
   for (const key of ANTIGRAVITY_REQUEST_BLACKLIST) delete obj[key];
 };
+
+function stripHarnessTelemetry(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+
+  let changed = false;
+  const cleaned = { ...value };
+  for (const key of ANTIGRAVITY_TELEMETRY_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(cleaned, key)) {
+      delete cleaned[key];
+      changed = true;
+    }
+  }
+
+  const labels = cleaned.labels;
+  if (labels && typeof labels === "object" && !Array.isArray(labels)) {
+    let labelsChanged = false;
+    const cleanedLabels = { ...labels };
+    for (const key of ANTIGRAVITY_TELEMETRY_KEYS) {
+      if (Object.prototype.hasOwnProperty.call(cleanedLabels, key)) {
+        delete cleanedLabels[key];
+        labelsChanged = true;
+      }
+    }
+    if (labelsChanged) {
+      cleaned.labels = cleanedLabels;
+      changed = true;
+    }
+  }
+
+  return changed ? cleaned : value;
+}
 
 // Image generation model name patterns
 const IMAGE_MODEL_PATTERNS = [
@@ -135,6 +173,7 @@ export class AntigravityExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
+    body = { ...(body || {}) };
     const projectId = credentials?.projectId || this.generateProjectId();
 
     // OpenAI clients may include stream_options even for non-streaming calls.
@@ -187,6 +226,8 @@ export class AntigravityExecutor extends BaseExecutor {
         request,
       };
     }
+
+    delete body.requestType;
 
     const rawSessionId = body.request?.sessionId || resolveSessionId({ headers: credentials?.rawHeaders, body, connectionId: credentials?.email || credentials?.connectionId, scope: "antigravity" });
     const sessionId = toNumericSessionId(rawSessionId) || rawSessionId;
@@ -261,15 +302,31 @@ export class AntigravityExecutor extends BaseExecutor {
     // Strip tools/toolConfig (handled separately) and blacklisted fields that Google rejects
     const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
     stripBlacklisted(requestWithoutTools);
-    
-    // Rewrite competing-client branding in system prompts (e.g. Zed's Claude prompt,
-    // OpenCode naming) so Antigravity doesn't flag the request with a 429 Quota Exhausted.
-    if (requestWithoutTools.systemInstruction?.parts) {
-      for (const part of requestWithoutTools.systemInstruction.parts) {
-        if (typeof part.text !== "string") continue;
+
+    // Rewrite only string systemInstruction part text, preserving all other request data.
+    const systemInstruction = requestWithoutTools.systemInstruction;
+    if (
+      systemInstruction &&
+      typeof systemInstruction === "object" &&
+      !Array.isArray(systemInstruction) &&
+      Array.isArray(systemInstruction.parts)
+    ) {
+      let systemInstructionChanged = false;
+      const parts = systemInstruction.parts.map(part => {
+        if (!part || typeof part !== "object" || typeof part.text !== "string") return part;
+
+        let text = part.text;
         for (const { from, to } of ANTIGRAVITY_PROMPT_REWRITES) {
-          part.text = part.text.replaceAll(from, to);
+          text = text.replaceAll(from, to);
         }
+        if (text === part.text) return part;
+
+        systemInstructionChanged = true;
+        return { ...part, text };
+      });
+
+      if (systemInstructionChanged) {
+        requestWithoutTools.systemInstruction = { ...systemInstruction, parts };
       }
     }
 
@@ -293,15 +350,15 @@ export class AntigravityExecutor extends BaseExecutor {
 
     this._lastSessionId = transformedRequest.sessionId; // cached for buildHeaders (base.execute order)
 
-    return {
+    const cleanedRequest = stripHarnessTelemetry(transformedRequest);
+    return stripHarnessTelemetry({
       ...body,
       project: projectId,
       model: body.model || model,
       userAgent: "antigravity",
-      requestType: "agent",
       requestId: buildIdeRequestId({ body, request: transformedRequest, credentials, model, requestType: "agent" }),
-      request: transformedRequest
-    };
+      request: cleanedRequest
+    });
   }
 
   async refreshCredentials(credentials, log, proxyOptions = null) {
