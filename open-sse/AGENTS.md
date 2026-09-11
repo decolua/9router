@@ -14,7 +14,7 @@ Provider-agnostic SSE engine: one OpenAI-style request → any provider (LLM cha
 - `providers/` — registry build + `capabilities.js` + `pricing.js`. Entry: `index.js` (PROVIDERS).
 - `handlers/` — per-modality cores (chat/image/embedding/tts/stt/search) + sub-provider folders. `chatCore/` has the streaming/non-streaming/sse-to-json handlers.
 - `rtk/` — request token-killer. `index.js` compresses `tool_result` content in-place (OpenAI/Claude/Kiro shapes); `filters/` per-tool compressors + `autodetect.js`; `headroom.js` external compress proxy; `caveman.js` system-prompt injector.
-- `dlp/` — Privacy & DLP masking engine. `patterns.js` holds the PII regex/wildcard patterns, `pseudonyms.js` the reversible pseudonymization mapping table and `[PII-REDACTED]` label; `index.js` walks request/response bodies in place, masking matching strings with redaction or pseudonyms. Mirrors `rtk/` conventions: **fail-open**, never throws out of the request path.
+- `dlp/` — Privacy (DLP) masking engine. `patterns.js` holds the PII regex/wildcard patterns, `pseudonyms.js` the reversible pseudonymization mapping table and `[PII-REDACTED]` label; `index.js` walks request/response bodies in place, masking matching strings with redaction or pseudonyms. Mirrors `rtk/` conventions: **fail-open**, never throws out of the request path.
 - `transformer/` — `responsesTransformer.js` (Chat Completions SSE → Codex Responses API SSE), `streamToJsonConverter.js`.
 - `shared/` — cross-provider auth/identity: `clineAuth.js`, `machineId.js`, `qoder/`.
 - `services/` — `model.js`, `provider.js`, `accountFallback.js`, `combo.js`, `compact.js`, `tokenRefresh/`+`tokenRefresh.js`, `oauthCredentialManager.js`, `usage/`, `projectId.js`, `kiroModels.js`/`qoderModels.js`.

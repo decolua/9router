@@ -27,7 +27,7 @@
 # v0.5.70 (2026-09-09)
 
 ## Features
-- **Privacy & DLP**: new System > Privacy & DLP page — global enable toggle, per-type PII
+- **Privacy**: new System > Privacy page — global enable toggle, per-type PII
   checkboxes with templates (Minimal / Standard / Financial / Brazilian / Full), custom
   masking patterns (regex or wildcard) testable in the UI, pseudonymization (reversible,
   in-memory mapping table) or anonymization (`[PII-REDACTED]`), and model-response masking.

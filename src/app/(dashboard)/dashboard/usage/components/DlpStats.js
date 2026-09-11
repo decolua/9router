@@ -75,7 +75,7 @@ export default function DlpStats({ period = "7d" }) {
     <Card className="flex min-w-0 flex-col gap-3 p-3 sm:p-4">
       {/* Section header */}
       <div className="flex w-full flex-wrap items-center justify-between gap-2">
-        <span className="text-text-main text-sm font-semibold uppercase tracking-wide">Privacy & DLP</span>
+        <span className="text-text-main text-sm font-semibold uppercase tracking-wide">Privacy</span>
         <span className="rounded-full border border-border bg-bg-subtle px-2 py-0.5 text-[11px] font-medium text-text-muted">
           Mode: {modeLabel}
         </span>

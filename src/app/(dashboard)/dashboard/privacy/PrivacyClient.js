@@ -184,7 +184,7 @@ export default function PrivacyClient() {
               <span className="material-symbols-outlined text-primary">
                 shield
               </span>
-              Privacy & DLP
+              Privacy
             </h2>
             <p className="text-sm text-text-muted mt-1">
               Detect and mask sensitive data (PII) in prompts before they reach

@@ -1,4 +1,4 @@
-// Privacy & DLP masking statistics. One row per masking event (request mask,
+// Privacy masking statistics. One row per masking event (request mask,
 // response mask — non-streaming and streaming), only when matched > 0.
 // Mirrors the usageHistory/usageDaily pattern: events feed daily/hourly buckets
 // for the usage dashboard, exactly like the token chart.

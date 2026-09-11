@@ -1,4 +1,4 @@
-// Privacy & DLP stats persistence: recordDlpMasks / getDlpStats / getDlpChartData.
+// Privacy stats persistence: recordDlpMasks / getDlpStats / getDlpChartData.
 // Isolated via temp DATA_DIR like the other DB tests.
 import fs from "node:fs";
 import os from "node:os";

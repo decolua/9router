@@ -484,7 +484,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       {/* Token / Cost chart - sync period */}
       {loading ? spinner : <UsageChart period={period} />}
 
-      {/* Privacy & DLP stats - sync period (end of the graphs, before the table) */}
+      {/* Privacy stats - sync period (end of the graphs, before the table) */}
       {loading ? spinner : <DlpStats period={period} />}
 
       {/* Table with dropdown selector */}

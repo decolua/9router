@@ -322,7 +322,7 @@ export default function Sidebar({ onClose }) {
               <span className="text-[13px] font-medium">9English</span>
             </a>
 
-            {/* Privacy & DLP */}
+            {/* Privacy */}
             <Link
               href="/dashboard/privacy"
               onClick={onClose}
@@ -334,7 +334,7 @@ export default function Sidebar({ onClose }) {
               <span className="material-symbols-outlined text-[18px] group-hover:text-primary transition-colors">
                 shield
               </span>
-              <span className="text-[13px] font-medium">Privacy & DLP</span>
+              <span className="text-[13px] font-medium">Privacy</span>
             </Link>
 
             {/* Settings */}
