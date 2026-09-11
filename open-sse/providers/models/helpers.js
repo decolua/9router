@@ -25,3 +25,15 @@ export function isMuseSparkModel(modelId) {
   const base = clean.includes("/") ? clean.split("/").pop() : clean;
   return /^muse[-_]?spark(?:$|[-_:.\s])/i.test(base);
 }
+
+const OPENCODE_RESPONSES_MODELS = new Set([
+  "grok-4.6",
+  "gpt-5.6-luna",
+]);
+
+export function isOpencodeResponsesModel(modelId) {
+  if (!modelId || typeof modelId !== "string") return false;
+  const clean = modelId.replace(/\([^()]+\)\s*$/, "").trim();
+  const base = clean.includes("/") ? clean.split("/").pop() : clean;
+  return OPENCODE_RESPONSES_MODELS.has(base) || isMuseSparkModel(base);
+}
