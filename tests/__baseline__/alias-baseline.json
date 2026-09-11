@@ -116,7 +116,9 @@
     "devin": "devin",
     "devin-cli": "devin-cli",
     "morph": "morph",
-    "morphllm": "morph"
+    "morphllm": "morph",
+    "orca": "orcarouter",
+    "orcarouter": "orcarouter"
   },
   "idToAlias": {
     "alicode": "alicode",
@@ -181,6 +183,7 @@
     "opencode": "oc",
     "opencode-go": "opencode-go",
     "openrouter": "openrouter",
+    "orcarouter": "orcarouter",
     "perplexity": "perplexity",
     "perplexity-agent": "perplexity-agent",
     "perplexity-web": "perplexity-web",
@@ -273,6 +276,7 @@
     "openrouter",
     "openrouter-tts-models",
     "openrouter-tts-voices",
+    "orcarouter",
     "perplexity",
     "perplexity-agent",
     "perplexity-web",

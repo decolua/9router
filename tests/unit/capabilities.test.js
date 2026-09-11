@@ -73,4 +73,77 @@ describe("getCapabilitiesForModel", () => {
       maxOutput: 128000,
     });
   });
+
+  it("reports OrcaRouter router ids with the live catalog context windows", () => {
+    expect(getCapabilitiesForModel("orcarouter", "orcarouter/fusion")).toMatchObject({
+      reasoning: true,
+      thinkingFormat: "openai",
+      vision: true,
+      contextWindow: 1000000,
+      maxOutput: 128000,
+    });
+    expect(getCapabilitiesForModel("orcarouter", "orcarouter/fusion-flash").contextWindow).toBe(262144);
+    // free pool rides the DeepSeek V4 Flash free line
+    expect(getCapabilitiesForModel("orcarouter", "orcarouter/free")).toMatchObject({
+      reasoning: true,
+      vision: true,
+      contextWindow: 1048576,
+      maxOutput: 384000,
+    });
+    // raw `orca` alias resolves to the same table (no 200K-floor fallback)
+    expect(getCapabilitiesForModel("orca", "orcarouter/free")).toMatchObject({
+      reasoning: true,
+      vision: true,
+      contextWindow: 1048576,
+    });
+  });
+
+  it("scopes OrcaRouter legacy DeepSeek alias limits to orcarouter only", () => {
+    // On OrcaRouter these ids are 1M/384K V4-Flash aliases, unlike DeepSeek's own 128K API
+    expect(getCapabilitiesForModel("orcarouter", "deepseek/deepseek-chat").contextWindow).toBe(1048576);
+    expect(getCapabilitiesForModel("orcarouter", "deepseek/deepseek-reasoner")).toMatchObject({
+      reasoning: true,
+      thinkingFormat: "deepseek",
+      contextWindow: 1048576,
+    });
+    // ...while the real DeepSeek provider keeps the stock 128K specs
+    expect(getCapabilitiesForModel("deepseek", "deepseek-chat").contextWindow).toBe(128000);
+  });
+
+  it("gives the $0 free-pool ids their real catalog specs", () => {
+    // glm-5.3-flash-free shares glm-5.3-flash's multimodal 1M-ctx spec per /v1/models +
+    // /api/pricing — must not fall through to the 200K *glm-5.3* family pattern
+    expect(getCapabilitiesForModel("orcarouter", "z-ai/glm-5.3-flash-free")).toMatchObject({
+      reasoning: true,
+      vision: true,
+      contextWindow: 1000000,
+      maxOutput: 128000,
+    });
+    // the other free-pool ids already resolve correctly through family patterns
+    expect(getCapabilitiesForModel("orcarouter", "deepseek/deepseek-v4-flash-free").contextWindow).toBe(1000000);
+    expect(getCapabilitiesForModel("orcarouter", "tencent/hy3-free").contextWindow).toBe(262144);
+  });
+
+  it("resolves prefixed vendor models through the canonical capability tables", () => {
+    expect(getCapabilitiesForModel("orcarouter", "anthropic/claude-opus-4.8")).toMatchObject(claudeSonnet5Expected);
+    expect(getCapabilitiesForModel("orcarouter", "google/gemini-3-flash-preview").thinkingFormat).toBe("gemini-level");
+    expect(getCapabilitiesForModel("orcarouter", "z-ai/glm-5.1").thinkingFormat).toBe("zai");
+    expect(getCapabilitiesForModel("orcarouter", "openai/gpt-image-1.5")).toMatchObject({
+      imageOutput: true,
+      tools: false,
+    });
+  });
+
+  it("gives user-added custom models the pattern/floor fallback with vision heuristic", () => {
+    // unknown custom id → safe floor (200K, no vision), tools on
+    expect(getCapabilitiesForModel("orcarouter", "my-lab/my-custom-model")).toMatchObject({
+      vision: false,
+      reasoning: false,
+      tools: true,
+      contextWindow: 200000,
+    });
+    // claude-like / gpt-like custom ids still hit their family pattern
+    expect(getCapabilitiesForModel("orcarouter", "proxy/claude-opus-9-custom").reasoning).toBe(true);
+    expect(getCapabilitiesForModel("orcarouter", "tuning/gpt-5-custom-finetune").reasoning).toBe(true);
+  });
 });

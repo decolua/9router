@@ -1262,28 +1262,73 @@ export default function ProviderDetailPage() {
             ...customModelRows.map((model) => model.fullModel),
           ]);
           const hardcodedIds = new Set(models.map((m) => m.id));
+          const disabledSet = new Set(disabledModelIds);
+          // Same $0-id heuristic as suggested-models/filters.js ("x-free", ":free", "orcarouter/free")
+          const isFreeId = (id) => /(^|[-_/:])free$/i.test(id || "");
           const notAdded = suggestedModels.filter(
             (m) => !addedFullModels.has(`${providerStorageAlias}/${m.id}`) && !hardcodedIds.has(m.id)
           );
-          if (notAdded.length === 0) return null;
+          // Seeded $0 models the user disabled — surface them here so a "disable all"
+          // doesn't bury the free pool under Disabled models. Restore, not add:
+          // these are seeded ids, adding would duplicate the built-in row.
+          const freeDisabled = suggestedModels.filter(
+            (m) =>
+              hardcodedIds.has(m.id) &&
+              disabledSet.has(m.id) &&
+              isFreeId(m.id) &&
+              !addedFullModels.has(`${providerStorageAlias}/${m.id}`)
+          );
+          if (notAdded.length === 0 && freeDisabled.length === 0) return null;
+          // Only fetcher types that actually filter to $0 models may claim "free"
+          // here; generic catalogs (orcarouter, tokenrouter, venice, …) are paid.
+          const suggestedType = providerInfo?.modelsFetcher?.type;
+          const suggestedLabel = suggestedType === "openrouter-free"
+            ? "Suggested free models (≥200k context):"
+            : (suggestedType === "opencode-free" || suggestedType === "mimo-free")
+              ? "Suggested free models:"
+              : "Suggested models:";
+          const modelBtnClass = "flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors";
+          const modelTitle = (m) => m.contextLength ? `${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx` : m.name;
           return (
             <div className="w-full mt-2">
-              <p className="text-xs text-text-muted mb-2">Suggested free models (≥200k context):</p>
-              <div className="flex flex-wrap gap-2">
-                {notAdded.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={async () => {
-                      await handleAddCustomModel(m.id, "llm", providerStorageAlias);
-                    }}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
-                    title={`${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx`}
-                  >
-                    <span className="material-symbols-outlined text-[13px]">add</span>
-                    {m.id.split("/").pop()}
-                  </button>
-                ))}
-              </div>
+              {freeDisabled.length > 0 && (
+                <>
+                  <p className="text-xs text-text-muted mb-2">Suggested free models ({freeDisabled.length}):</p>
+                  <div className="flex flex-wrap gap-2">
+                    {freeDisabled.map((m) => (
+                      <button
+                        key={`free-${m.id}`}
+                        onClick={() => handleEnableModel(m.id)}
+                        className={modelBtnClass}
+                        title={modelTitle(m)}
+                      >
+                        <span className="material-symbols-outlined text-[13px]">add</span>
+                        {m.id.split("/").pop()}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+              {notAdded.length > 0 && (
+                <>
+                  <p className="text-xs text-text-muted mb-2">{suggestedLabel}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {notAdded.map((m) => (
+                      <button
+                        key={m.id}
+                        onClick={async () => {
+                          await handleAddCustomModel(m.id, "llm", providerStorageAlias);
+                        }}
+                        className={modelBtnClass}
+                        title={modelTitle(m)}
+                      >
+                        <span className="material-symbols-outlined text-[13px]">add</span>
+                        {m.id.split("/").pop()}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           );
         })()}

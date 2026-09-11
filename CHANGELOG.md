@@ -1,3 +1,10 @@
+﻿# Unreleased
+
+## Features
+- **Providers**: add OrcaRouter (`orcarouter.ai`) — OpenAI-compatible gateway routing to OpenAI, Anthropic, Google, DeepSeek, Qwen, Kimi, GLM, MiniMax & more at provider cost; seeds current-gen models only (GPT 5.6 series, `orcarouter/free` / `orcarouter/fusion*` routers, the $0 free pool), plus embeddings/TTS/image endpoints and live `/v1/models` catalog fetching with older ids available on demand
+- **Capabilities**: resolve OrcaRouter router ids (`orcarouter/fusion*`, `orcarouter/free`) and its legacy `deepseek-chat`/`deepseek-reasoner` aliases (1M V4-Flash) with real catalog specs scoped to the provider; add `gpt-image-1.5`/`gpt-image-1-mini` to the canonical image-model table
+- **Dashboard**: fix suggested-models fetch for generic OpenAI-shaped catalogs (`openai` filter type was unregistered — tokenrouter, venice, vercel, perplexity-agent silently returned nothing); only catalogs whose filter actually selects $0 models are labeled "Suggested free models" now, free ids sort first, and ctx-less entries no longer render "NaNk ctx" tooltips
+
 # v0.5.75 (2026-09-10)
 
 ## Features
@@ -23,6 +30,12 @@
 - **Video / Vertex**: reject job ids and model ids that would escape the request URL path (SSRF)
 - **Usage**: parse the Fable weekly limit from `limits[]` instead of fabricating a row (#3847)
 - **Auth**: set a 24h `maxAge` on the dashboard session cookie
+# Unreleased
+
+## Features
+- **Providers**: add OrcaRouter (`orcarouter.ai`) — OpenAI-compatible gateway routing to OpenAI, Anthropic, Google, DeepSeek, Qwen, Kimi, GLM, MiniMax & more at provider cost; seeds current-gen models only (GPT 5.6 series, `orcarouter/free` / `orcarouter/fusion*` routers, the $0 free pool), plus embeddings/TTS/image endpoints and live `/v1/models` catalog fetching with older ids available on demand
+- **Capabilities**: resolve OrcaRouter router ids (`orcarouter/fusion*`, `orcarouter/free`) and its legacy `deepseek-chat`/`deepseek-reasoner` aliases (1M V4-Flash) with real catalog specs scoped to the provider; add `gpt-image-1.5`/`gpt-image-1-mini` to the canonical image-model table
+- **Dashboard**: fix suggested-models fetch for generic OpenAI-shaped catalogs (`openai` filter type was unregistered — tokenrouter, venice, vercel, perplexity-agent silently returned nothing); only catalogs whose filter actually selects $0 models are labeled "Suggested free models" now, free ids sort first, and ctx-less entries no longer render "NaNk ctx" tooltips
 
 # v0.5.69 (2026-09-05)
 

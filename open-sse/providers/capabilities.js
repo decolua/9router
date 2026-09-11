@@ -106,6 +106,8 @@ export const MODEL_CAPABILITIES = {
 
   // Gemini image-gen / OpenAI image / xai image variants
   "gpt-image-1":       { imageOutput: true, tools: false },
+  "gpt-image-1.5":     { imageOutput: true, tools: false },
+  "gpt-image-1-mini":  { imageOutput: true, tools: false },
 
   // GLM vision variants (text GLM has no vision) — 5.3-Flash and 5V-Turbo are
   // natively multimodal per z.ai, and 5.3-Flash carries the full 1M window.
@@ -251,7 +253,35 @@ export const PROVIDER_CAPABILITIES = {
     "laguna-s-2.1":  { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 32000 },
     "laguna-xs-2.1": { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 },
   },
+  // OrcaRouter — meta-router ids match no vendor family pattern, so they would
+  // fall to the 200K floor. fusion* context_length comes from the live
+  // /v1/models catalog; orcarouter/free publishes no limits in any catalog and
+  // mirrors the DeepSeek V4-Flash free line per /api/pricing (1M ctx / 384K out).
+  // The routers front multimodal families (Claude/Gemini/GPT), so they declare
+  // vision. The legacy deepseek-chat/-reasoner ids are V4-Flash aliases on
+  // OrcaRouter (1M ctx / 384K out per /api/pricing), unlike DeepSeek's own 128K
+  // API ids — keyed by full prefixed id so the real DeepSeek provider is
+  // unaffected. The orcarouter/* router ids accept OpenAI-shape reasoning_effort
+  // (docs.orcarouter.ai/advanced/reasoning); deepseek-reasoner keeps its native
+  // deepseek thinking format for the DeepSeek upstream.
+  "orcarouter": {
+    "orcarouter/fusion":       { reasoning: true, thinkingFormat: "openai", vision: true, contextWindow: 1000000, maxOutput: 128000 },
+    "orcarouter/fusion-mini":  { reasoning: true, thinkingFormat: "openai", vision: true, contextWindow: 1000000, maxOutput: 128000 },
+    "orcarouter/fusion-flash": { reasoning: true, thinkingFormat: "openai", vision: true, contextWindow: 262144, maxOutput: 128000 },
+    "orcarouter/free":         { reasoning: true, thinkingFormat: "openai", vision: true, contextWindow: 1048576, maxOutput: 384000 },
+    // $0-pool ids publish no numeric limits in any OrcaRouter catalog; specs come
+    // from the paid sibling's catalog entry (identical description). Without an
+    // exact row glm-5.3-flash-free falls to the 200K *glm-5.3* pattern with no vision.
+    "z-ai/glm-5.3-flash-free": { reasoning: true, thinkingFormat: "openai", vision: true, videoInput: true, contextWindow: 1000000, maxOutput: 128000 },
+    "deepseek/deepseek-chat":     { contextWindow: 1048576, maxOutput: 384000 },
+    "deepseek/deepseek-reasoner": { reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 384000 },
+  },
 };
+
+// Alias for callers passing the raw `orca` alias: parseModel resolves it to
+// `orcarouter` on the chat path, but direct getCapabilitiesForModel("orca", …)
+// lookups would otherwise miss the table above and fall to the 200K floor.
+PROVIDER_CAPABILITIES.orca = PROVIDER_CAPABILITIES.orcarouter;
 
 /**
  * Pattern fallback — glob (* = wildcard), matched case-insensitively and
