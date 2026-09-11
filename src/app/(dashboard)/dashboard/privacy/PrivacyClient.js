@@ -6,7 +6,7 @@ import { cn } from "@/shared/utils/cn";
 
 const DLP_TEMPLATES = [
   { id: "minimal", label: "Minimal", types: ["email", "phone"] },
-  { id: "standard", label: "Standard", types: ["email", "phone", "cpf", "cnpj", "creditCard", "ip", "apiKey"] },
+  { id: "standard", label: "Standard", types: ["email", "phone", "cpf", "cnpj", "creditCard", "ip", "apiKey", "password"] },
   { id: "financial", label: "Financial", types: ["creditCard", "apiKey", "cpf", "cnpj"] },
   { id: "brazilian", label: "Brazilian", types: ["cpf", "cnpj", "cep", "phone"] },
   { id: "usa", label: "USA", types: ["usSsn", "usEin", "usZip", "email", "phone"] },
