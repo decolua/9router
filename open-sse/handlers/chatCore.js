@@ -25,7 +25,8 @@ import { injectPonytail } from "../rtk/ponytail.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { compressWithPxpipe } from "../rtk/pxpipe.js";
-import { getCapabilitiesForModel } from "../providers/capabilities.js";
+import { getCapabilitiesForModel, withDeclaredCapabilities } from "../providers/capabilities.js";
+import { getDeclaredModelCaps } from "../providers/declaredCaps.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType, shouldDefaultClaudeToolType } from "../translator/concerns/toolCall.js";
@@ -155,8 +156,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (credentials) credentials.rawHeaders = clientRawRequest?.headers || {};
 
   // Auto-strip media blocks the model can't read (vision/audio/pdf) before translation.
+  // The static name-pattern table only guesses from the model id, so an operator
+  // who hand-declared "vision: true" on a custom model must have that declaration
+  // layered on top — otherwise this strip silently drops their image blocks and
+  // the upstream model answers as if no image was sent.
   if (!passthrough) {
-    const caps = getCapabilitiesForModel(provider, model);
+    const declared = await getDeclaredModelCaps(provider, model);
+    const caps = withDeclaredCapabilities(getCapabilitiesForModel(provider, model), declared);
     if (stripUnsupportedModalities(body, sourceFormat, caps)) {
       log?.debug?.("MODALITY", `stripped unsupported media for ${provider}/${model}`);
     }

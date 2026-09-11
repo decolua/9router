@@ -477,3 +477,40 @@ export function getCapabilitiesForModel(provider, model) {
   // 4. Floor
   return refine(null, provider, model);
 }
+
+/**
+ * Overlay operator-declared capabilities on top of a resolved base.
+ *
+ * A user who adds a model by hand in the dashboard can tick "vision" (or any
+ * other capability) on the model card. That declaration lives in the kv
+ * `customModels` record as a `caps` object. It is an explicit statement about a
+ * model the operator knows first-hand, so it must beat the pattern-matched
+ * guess in {@link getCapabilitiesForModel} — which only sees the model *name*
+ * and therefore guesses from family patterns.
+ *
+ * Concretely: a hand-added `cbai/deepseek-v4.1-flash` with `caps.vision = true`
+ * was being reported as text-only, because no pattern claimed vision for that
+ * name and the declaration was never consulted. Consumers (the dashboard,
+ * /v1/models, client SDKs) then dropped image blocks before they ever reached
+ * the provider.
+ *
+ * Only known capability keys are honoured, so a stale or hand-edited kv row
+ * cannot inject arbitrary fields into the API response.
+ *
+ * @param {object|null|undefined} base - capabilities from the static chain
+ * @param {object|null|undefined} declared - operator-declared `caps` from kv
+ * @returns {object|null} merged capabilities, or `base` unchanged when nothing was declared
+ */
+export function withDeclaredCapabilities(base, declared) {
+  if (!declared || typeof declared !== "object") return base ?? null;
+
+  const overlay = {};
+  for (const key of Object.keys(DEFAULT_CAPABILITIES)) {
+    if (Object.prototype.hasOwnProperty.call(declared, key) && declared[key] !== undefined) {
+      overlay[key] = declared[key];
+    }
+  }
+  if (Object.keys(overlay).length === 0) return base ?? null;
+
+  return { ...DEFAULT_CAPABILITIES, ...(base ?? {}), ...overlay };
+}
