@@ -191,8 +191,8 @@ describe("applyThinking per provider format", () => {
     expect(xhigh.reasoning_effort).toBe("max");
   });
   it("Token Market nests its boolean thinking switch under extra_body", () => {
-    const enabled = apply("openai", "gpt-5.4", { reasoning_effort: "high" }, "tokensmarket");
-    const disabled = apply("openai", "gpt-5.4", { reasoning_effort: "none" }, "tokensmarket");
+    const enabled = apply("openai", "gpt-5.4", { reasoning_effort: "high" }, "tokenmarket");
+    const disabled = apply("openai", "gpt-5.4", { reasoning_effort: "none" }, "tokenmarket");
     expect(enabled.extra_body).toEqual({ enable_thinking: true });
     expect(enabled.reasoning_effort).toBeUndefined();
     expect(disabled.extra_body).toEqual({ enable_thinking: false });
@@ -201,7 +201,7 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "gpt-5.4", {
       reasoning_effort: "high",
       extra_body: { provider: { sort: ["latency"] } },
-    }, "tokensmarket");
+    }, "tokenmarket");
     expect(out.extra_body).toEqual({
       provider: { sort: ["latency"] },
       enable_thinking: true,

@@ -1010,10 +1010,10 @@
     },
     "format": "openai"
   },
-  "tokensmarket": {
+  "tokenmarket": {
     "baseUrl": "https://api.tokensmarket.ai/v1/chat/completions",
     "validateUrl": "https://api.tokensmarket.ai/v1/models",
-    "thinkingFormat": "tokensmarket",
+    "thinkingFormat": "tokenmarket",
     "format": "openai"
   }
 }

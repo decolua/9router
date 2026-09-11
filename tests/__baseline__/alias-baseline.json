@@ -117,8 +117,8 @@
     "devin-cli": "devin-cli",
     "morph": "morph",
     "morphllm": "morph",
-    "tm": "tokensmarket",
-    "tokensmarket": "tokensmarket"
+    "tm": "tokenmarket",
+    "tokenmarket": "tokenmarket"
   },
   "idToAlias": {
     "alicode": "alicode",
@@ -192,8 +192,8 @@
     "siliconflow": "siliconflow",
     "tencent": "hunyuan",
     "together": "together",
+    "tokenmarket": "tokenmarket",
     "tokenrouter": "tokenrouter",
-    "tokensmarket": "tokensmarket",
     "venice": "venice",
     "vercel-ai-gateway": "vercel-ai-gateway",
     "vertex": "vertex",
@@ -292,8 +292,8 @@
     "siliconflow",
     "stability-ai",
     "together",
+    "tokenmarket",
     "tokenrouter",
-    "tokensmarket",
     "venice",
     "vertex",
     "vertex-partner",

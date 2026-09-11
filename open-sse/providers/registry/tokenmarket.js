@@ -1,8 +1,8 @@
 export default {
-  id: "tokensmarket",
-  alias: "tokensmarket",
+  id: "tokenmarket",
+  alias: "tokenmarket",
   aliases: ["tm"],
-  uiAlias: "tokensmarket",
+  uiAlias: "tokenmarket",
   display: {
     name: "Token Market",
     icon: "hub",
@@ -24,7 +24,7 @@ export default {
   transport: {
     baseUrl: "https://api.tokensmarket.ai/v1/chat/completions",
     validateUrl: "https://api.tokensmarket.ai/v1/models",
-    thinkingFormat: "tokensmarket",
+    thinkingFormat: "tokenmarket",
   },
   serviceKinds: ["llm"],
   // Small seed catalog for first-run discovery. The authenticated /v1/models
