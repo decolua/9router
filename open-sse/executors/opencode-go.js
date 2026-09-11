@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { DefaultExecutor } from "./default.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
-import { isMuseSparkModel } from "../providers/models/helpers.js";
+import { isMuseSparkModel, isOpencodeResponsesModel } from "../providers/models/helpers.js";
 import {
   normalizeResponsesInput,
   clampResponsesCallId,
@@ -45,8 +45,17 @@ function baseModelId(model) {
   return String(model || "").replace(/\([^()]+\)\s*$/, "").trim();
 }
 
+// Models served by /zen/go/v1/responses; other models stay on /chat/completions or /messages.
+const RESPONSES_MODELS = new Set([
+  "grok-4.6",
+  "gpt-5.6-luna",
+  "muse-spark-1.2-contributor",
+  "muse-spark-1.3-contributor",
+]);
+
 function isResponsesModel(model) {
-  return isMuseSparkModel(baseModelId(model));
+  const base = baseModelId(model);
+  return RESPONSES_MODELS.has(base) || isOpencodeResponsesModel(base);
 }
 
 // Flatten Chat Completions tool declarations into the Responses flat shape and

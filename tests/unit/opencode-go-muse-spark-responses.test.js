@@ -58,6 +58,18 @@ describe("OpenCodeGoExecutor routing + sanitization", () => {
     })).toBe("https://opencode.ai/zen/go/v1/responses");
   });
 
+  it("routes gpt-5.6-luna and grok-4.6 to /responses", () => {
+    const ex = new OpenCodeGoExecutor();
+    for (const m of ["gpt-5.6-luna", "grok-4.6"]) {
+      expect(ex.buildUrl(m)).toBe("https://opencode.ai/zen/go/v1/responses");
+      expect(getModelTargetFormat("ocg", m)).toBe(FORMATS.OPENAI_RESPONSES);
+      expect(getModelTargetFormat("opencode-go", m)).toBe(FORMATS.OPENAI_RESPONSES);
+      expect(ex.buildUrl(m, true, 0, {
+        runtimeTransport: { baseUrl: "https://opencode.ai/zen/go/v1/chat/completions" },
+      })).toBe("https://opencode.ai/zen/go/v1/responses");
+    }
+  });
+
   it("leaves non-muse models on the default/runtime transport", () => {
     const ex = new OpenCodeGoExecutor();
     expect(ex.buildUrl("kimi-k2.6")).toBe("https://opencode.ai/zen/go/v1/chat/completions");
