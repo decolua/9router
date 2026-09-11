@@ -32,4 +32,12 @@ export const FILTERS = {
       .filter((m) => (m.tier === "free" || m.id?.endsWith(":free")) && m.supports_chat === true && (!m.media_type || m.media_type === "chat" || m.media_type === "text"))
       .map((m) => ({ id: m.id, name: m.name || m.id, contextLength: m.context_length }))
       .sort((a, b) => String(a.id).localeCompare(String(b.id))),
+
+  // Nous Portal mirrors OpenRouter's catalog shape; the picker section is
+  // "free models", and on Nous only ids suffixed ":free" are free.
+  "nous": (models) =>
+    (Array.isArray(models) ? models : [])
+      .filter((m) => m.id?.endsWith(":free"))
+      .map((m) => ({ id: m.id, name: m.name || m.id, contextLength: m.context_length }))
+      .sort((a, b) => (b.contextLength || 0) - (a.contextLength || 0)),
 };
