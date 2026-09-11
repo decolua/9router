@@ -1009,5 +1009,11 @@
       "preserveCacheControl": true
     },
     "format": "openai"
+  },
+  "tokensmarket": {
+    "baseUrl": "https://api.tokensmarket.ai/v1/chat/completions",
+    "validateUrl": "https://api.tokensmarket.ai/v1/models",
+    "thinkingFormat": "tokensmarket",
+    "format": "openai"
   }
 }

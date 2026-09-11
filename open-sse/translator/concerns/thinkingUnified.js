@@ -333,6 +333,15 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
       if (level) body.reasoning_effort = level;
       break;
     }
+    case "tokensmarket": {
+      // Token Market exposes a provider-agnostic boolean switch under extra_body.
+      // It does not define portable effort levels or thinking budgets.
+      if (!body.extra_body || typeof body.extra_body !== "object" || Array.isArray(body.extra_body)) {
+        body.extra_body = {};
+      }
+      body.extra_body.enable_thinking = !(none && canDisable);
+      break;
+    }
     case "kiro":
       // Kiro thinking handled via system-tag injection in openai-to-kiro.js; no body field here.
       break;
