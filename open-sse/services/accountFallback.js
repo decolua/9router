@@ -56,8 +56,15 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
   return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
 }
 
+// Upstream gateway failures (Cloudflare 502/503/504/524) mean the hop in front
+// of the origin never answered; they are not credential-specific. With a single
+// configured account there is nothing to fall back to, so locking it only turns
+// one transient gateway blip into a 30s outage where every request is rejected
+// with "all accounts locked". Return the mapped error and let the client retry.
+const TRANSIENT_GATEWAY_STATUSES = new Set([502, 503, 504, 524]);
+
 export function shouldSkipAccountFallback(status, activeAccountCount) {
-  return Number(status) === 524 && activeAccountCount <= 1;
+  return TRANSIENT_GATEWAY_STATUSES.has(Number(status)) && activeAccountCount <= 1;
 }
 
 /**

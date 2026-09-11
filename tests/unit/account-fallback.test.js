@@ -49,6 +49,15 @@ describe("account fallback availability", () => {
     expect(shouldSkipAccountFallback(524, 2)).toBe(false);
   });
 
+  it("skips fallback for transient gateway errors on a sole account", () => {
+    // 502/503/504 come from the hop in front of the origin, not the credential.
+    // Locking the only account turns a transient gateway blip into a 30s outage.
+    for (const status of [502, 503, 504]) {
+      expect(shouldSkipAccountFallback(status, 1)).toBe(true);
+      expect(shouldSkipAccountFallback(status, 2)).toBe(false);
+    }
+  });
+
   it("does not affect other error statuses", () => {
     expect(shouldSkipAccountFallback(429, 1)).toBe(false);
   });
