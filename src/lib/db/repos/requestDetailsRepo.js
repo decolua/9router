@@ -68,6 +68,8 @@ function sanitizeHeaders(headers) {
   return sanitized;
 }
 
+export const __test__ = { sanitizeHeaders };
+
 function generateDetailId(model) {
   const timestamp = new Date().toISOString();
   const random = Math.random().toString(36).substring(2, 8);

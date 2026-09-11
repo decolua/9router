@@ -154,7 +154,18 @@ export class DefaultExecutor extends BaseExecutor {
     for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);
     applyAuth(headers, desc, credentials);
 
-    if (this.provider === "claude" && model) {
+    // anthropic-compatible-* nodes serving a real Claude model sit in front of
+    // Anthropic itself (a rotating multi-account proxy, a corporate gateway),
+    // so the request needs the same beta flags the `claude` provider sends:
+    // without `context-management-2025-06-27` upstream rejects the
+    // `context_management` block Claude Code puts in every request with
+    // "context_management: Extra inputs are not permitted" (HTTP 400), and the
+    // combo silently falls through to the next model. The model id gates this:
+    // a node fronting Kimi or GLM answers on its own ids and never matches, so
+    // gateways that would choke on unknown beta flags are left untouched.
+    const isClaudeModel = typeof model === "string" && /^claude-/.test(model);
+    if (model && (this.provider === "claude"
+      || (this.provider?.startsWith?.("anthropic-compatible-") && isClaudeModel))) {
       headers["Anthropic-Beta"] = selectAnthropicBeta(model);
     }
 

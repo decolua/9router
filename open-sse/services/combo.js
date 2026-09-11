@@ -138,8 +138,42 @@ export function detectRequiredCapabilities(body) {
     if (Array.isArray(content)) for (const b of content) scanBlock(b);
   };
 
+  const scanMessage = (m) => {
+    if (!m || typeof m !== "object") return;
+
+    // Ollama / Hermes images array (strings or objects)
+    if (Array.isArray(m.images) && m.images.length > 0) {
+      required.add("vision");
+    }
+
+    // Vercel AI SDK / Hermes attachments / experimental_attachments
+    const attachments = m.experimental_attachments || m.attachments;
+    if (Array.isArray(attachments)) {
+      for (const att of attachments) {
+        if (!att) continue;
+        const mime = att.contentType || att.mediaType || (typeof att.url === "string" && att.url.match(/^data:([^;,]+)/)?.[1]);
+        if (mime) addByMime(mime);
+        else if (att.url || att.data) required.add("vision");
+      }
+    }
+
+    // Direct message-level modality properties
+    if (m.image_url || m.image) required.add("vision");
+    if (m.audio_url || m.audio) required.add("audioInput");
+
+    // Scan array content blocks
+    scanContent(m.content);
+
+    // Scan string content for embedded data URIs
+    if (typeof m.content === "string") {
+      if (m.content.includes("data:image/")) required.add("vision");
+      else if (m.content.includes("data:audio/")) required.add("audioInput");
+      else if (m.content.includes("data:application/pdf")) required.add("pdf");
+    }
+  };
+
   // Modalities: current user turn only (trailing user run across each known shape).
-  for (const m of trailingUserItems(body.messages)) scanContent(m.content);      // openai / claude
+  for (const m of trailingUserItems(body.messages)) scanMessage(m);              // openai / claude / hermes / ollama
   for (const it of trailingUserItems(body.input)) scanContent(it.content);       // responses
   const contents = body.contents || body.request?.contents;                      // gemini / antigravity
   for (const c of trailingUserItems(contents)) scanContent(c.parts);
@@ -530,7 +564,10 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   log.info("FUSION", `Combo "${comboName}" | panel=${panel.length} [${panel.join(", ")}] | judge=${judge} | quorum=${minPanel}`);
 
   // 1. Fan out to the panel in parallel: non-streaming, tools stripped (we want prose).
-  const { tools, tool_choice, ...rest } = body;
+  const { tools, tool_choice, stream_options, ...rest } = body;
+  // Fusion runs panel models non-streaming; drop stream_options too, or providers
+  // like DeepSeek reject it with "stream_options should be set along with stream = true".
+  // See issue #3024.
   const panelBody = { ...rest, stream: false };
 
   // Flatten tool turns to prose so panel models keep context without emitting tool_calls.

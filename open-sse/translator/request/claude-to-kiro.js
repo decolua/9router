@@ -242,9 +242,9 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     ? (credentials?.providerSpecificData?.profileArn || "")
     : (credentials?.providerSpecificData?.profileArn || resolveDefaultProfileArn(authMethod));
 
-  // Kiro CLI/KAS sends system prompt as top-level `systemPrompt`. Keep a
-  // content fallback too because the CodeWhisperer surface does not always
-  // enforce top-level systemPrompt for direct calls.
+  // The system prompt travels inside the first user turn's content (contentPrefix):
+  // the CodeWhisperer surface rejects a top-level `systemPrompt` with
+  // 400 REQUEST_BODY_INVALID, so the value below is only a replay cache key.
   const timestamp = new Date().toISOString();
   const systemPromptParts = [];
   if (thinkingBudget !== null && !usesNativeGptEffort) {
@@ -287,6 +287,18 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     toolSpecs,
     nameMap,
   });
+  // canonicalizeKiroConversation() already ran its second-chance repair (flatten
+  // every structured tool turn to text, then re-validate). A body that is STILL
+  // invalid here cannot be made shippable, and Kiro answers it with
+  // 400 {"message":"Improperly formed request.","reason":"REQUEST_BODY_INVALID"}.
+  // Fail locally instead: chatCore turns a falsy return into a 400 without
+  // spending an upstream call or a per-account cooldown. The taxonomy
+  // (role:N | pair:N | id:N | spec:N | orphan:0 | current) names the offending
+  // turn so the shape can be diagnosed from the log alone.
+  if (!canonical.valid) {
+    console.error(`[Kiro] refusing invalid conversation (claude → kiro): ${(canonical.errors || []).join(", ") || "unknown"} | turns=${(canonical.history || []).length + 1}`);
+    return null;
+  }
   const replayCurrent = canonical.currentMessage.userInputMessage;
   const userInputMessage = {
     content: replayCurrent.content || "",
@@ -304,18 +316,14 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     conversationState: {
       chatTriggerType: "MANUAL",
       conversationId,
-      agentContinuationId: continuationId,
-      agentTaskType: "vibe",
       currentMessage: {
         userInputMessage,
       },
       history: canonical.history,
     },
-    agentMode: "vibe",
   };
 
   if (profileArn) payload.profileArn = profileArn;
-  if (systemPrompt) payload.systemPrompt = systemPrompt;
   if (additionalModelRequestFields) {
     payload.additionalModelRequestFields = additionalModelRequestFields;
   }

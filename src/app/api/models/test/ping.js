@@ -1,4 +1,6 @@
 import { getApiKeys } from "@/lib/localDb";
+import { resolveProviderId } from "@/shared/constants/providers.js";
+import { unwrapClineEnvelope } from "open-sse/shared/clineEnvelope.js";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 
@@ -135,9 +137,11 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     headers,
     body: JSON.stringify({
       model,
-      // Claude-on-Copilot returns empty choices at max_tokens:1 (budget is spent
-      // before a content token emits), so a 1-token probe yields a false negative.
-      max_tokens: 16,
+      // 1024 tokens: reasoning models (ClinePass/kimi-k3, deepseek-v4-pro, etc.) spend
+      // their budget on chain-of-thought before emitting an answer. A tiny probe like
+      // max_tokens:16 starves the answer and yields a false "no choices" failure.
+      // See issue #3010.
+      max_tokens: 1024,
       stream: false,
       messages: [{ role: "user", content: "hi" }],
     }),
@@ -148,6 +152,11 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
   const rawText = await res.text().catch(() => "");
   let parsed = null;
   try { parsed = rawText ? JSON.parse(rawText) : null; } catch {}
+
+  // Unwrap before the choices checks below. No-op for providers that do not
+  // opt in via transport.quirks.clineEnvelope.
+  const providerId = resolveProviderId(String(model).split("/")[0]);
+  parsed = unwrapClineEnvelope(parsed, providerId);
 
   if (!res.ok) {
     const detail = parsed?.error?.message || parsed?.msg || parsed?.message || parsed?.error || rawText;
@@ -180,6 +189,21 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
   }
 
   const hasChoices = Array.isArray(parsed?.choices) && parsed.choices.length > 0;
+
+  // Soft-pass (issue #3010): a reasoning model may burn its whole budget on
+  // chain-of-thought and return finish_reason:"length" with empty content but
+  // non-empty reasoning/thinking. That's a successful connection, not a failure.
+  const firstChoice = parsed?.choices?.[0] || {};
+  const hasReasoning =
+    firstChoice.message?.reasoning ||
+    firstChoice.message?.reasoning_content ||
+    firstChoice.message?.thinking ||
+    firstChoice.message?.thinking_content;
+  const contentEmpty = !String(firstChoice.message?.content || "").trim();
+  if (hasChoices && firstChoice.finish_reason === "length" && contentEmpty && hasReasoning) {
+    return { ok: true, latencyMs, error: null, status: res.status, note: "reasoning-only response (length-limited)" };
+  }
+
   if (!hasChoices) {
     return {
       ok: false,

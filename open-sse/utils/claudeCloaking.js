@@ -1,16 +1,16 @@
 import { createHash, randomBytes, randomUUID } from "crypto";
 import { CLAUDE_TOOL_SUFFIX, CC_DEFAULT_TOOLS } from "../config/appConstants.js";
+import { CLAUDE_CLI_VERSION } from "../providers/shared.js";
 
-const CLAUDE_VERSION = "2.1.92";
 const CC_ENTRYPOINT = "sdk-cli";
 
-// Generate billing header matching real Claude Code 2.1.92+ format:
+// Generate the billing header expected from current Claude Code clients.
 // x-anthropic-billing-header: cc_version=<ver>.<build>; cc_entrypoint=sdk-cli; cch=<hash>;
 function generateBillingHeader(payload) {
   const content = JSON.stringify(payload);
   const cch = createHash("sha256").update(content).digest("hex").slice(0, 5);
   const buildHash = randomBytes(2).toString("hex").slice(0, 3);
-  return `x-anthropic-billing-header: cc_version=${CLAUDE_VERSION}.${buildHash}; cc_entrypoint=${CC_ENTRYPOINT}; cch=${cch};`;
+  return `x-anthropic-billing-header: cc_version=${CLAUDE_CLI_VERSION}.${buildHash}; cc_entrypoint=${CC_ENTRYPOINT}; cch=${cch};`;
 }
 
 // Derive a deterministic UUID-v4-shaped string from a seed (stable per account)
@@ -19,7 +19,7 @@ function deriveUuid(seed) {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${((parseInt(h[16], 16) & 0x3) | 0x8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }
 
-// Generate fake user ID in Claude Code 2.1.92+ JSON format:
+// Generate fake user ID in the current Claude Code JSON format:
 // {"device_id":"<64hex>","account_uuid":"<uuid>","session_id":"<uuid>"}
 // device_id/account_uuid derive from apiKey (stable per account), session_id per-conversation
 function generateFakeUserID(sessionId, apiKey) {
@@ -31,8 +31,8 @@ function generateFakeUserID(sessionId, apiKey) {
 
 /**
  * Cloak tools before sending to Claude provider (anti-ban):
- * - Rename non-CC client tools with _cc suffix in tools[] and messages[]
- * - Skip tools that are already CC default names (they become decoys as-is)
+ * - Rename client tools with the CLAUDE_TOOL_SUFFIX ("_ide") in tools[] and messages[]
+ * - Skip tools that carry a `type` (server-side built-ins) — sent as-is
  * - Inject CC_DECOY_TOOLS after client tools
  * Returns { body, toolNameMap } where toolNameMap maps suffixed → original
  * @param {object} body - Claude API request body
@@ -99,6 +99,33 @@ export function decloakToolNames(body, toolNameMap) {
     return block;
   });
   return { ...body, content };
+}
+
+/**
+ * Decloak the tool name inside a single streamed Claude SSE event.
+ *
+ * Streaming counterpart of decloakToolNames(). Required for claude→claude
+ * proxying: translateResponse() returns same-format chunks untouched, so
+ * without this the client receives the cloaked ("_ide"-suffixed) tool name
+ * and rejects the call as an unknown tool. In a Claude SSE stream a tool
+ * name appears exactly once per call — on the content_block_start event of
+ * a tool_use block; argument deltas carry no name.
+ *
+ * Unknown names (e.g. a CC decoy tool the model called anyway) pass through
+ * unchanged, matching the non-streaming decloak behavior.
+ *
+ * @param {object|null} chunk - Parsed SSE event (may be null on stream flush)
+ * @param {Map|null} toolNameMap - Suffixed → original name map from cloakClaudeTools()
+ * @returns {object|null} The chunk, with the tool_use name restored when cloaked
+ */
+export function decloakStreamChunk(chunk, toolNameMap) {
+  if (!toolNameMap?.size || !chunk || typeof chunk !== "object") return chunk;
+  if (chunk.type !== "content_block_start") return chunk;
+  const block = chunk.content_block;
+  if (block?.type !== "tool_use" || typeof block.name !== "string") return chunk;
+  const original = toolNameMap.get(block.name);
+  if (!original) return chunk;
+  return { ...chunk, content_block: { ...block, name: original } };
 }
 
 // CC decoy tools — Claude Code native tool names, marked unavailable
