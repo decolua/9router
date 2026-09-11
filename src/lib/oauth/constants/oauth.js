@@ -130,6 +130,21 @@ export const GROK_CLI_CONFIG = { ...PROVIDER_OAUTH["grok-cli"] };
 //   3) Redirect → ${cb}?refreshToken=...&loginHost=...&isRedirect=true
 //   4) POST ExchangeToken {ClientID, RefreshToken, ClientSecret:"-"} → {Result.AccessToken, ExpiresAt}
 //   5) POST GetUserInfo (x-cloudide-token) → email/name
+// Xiaomi MiMo Desktop OAuth — custom ECDH encrypted-callback flow (NOT standard OAuth2).
+//   1) Client generates X25519 keypair
+//   2) Browser opens ${platformUrl}/authorize?pk=<pubkey>&redirect_uri=http://localhost:<port>/&kn=mimocode&key_name=...
+//   3) Redirect → http://localhost:<port>/?u=<base64 encrypted payload>
+//   4) Decrypt: ECDH(shared) → SHA256 → AES-256-GCM
+//      Layout: [12-byte nonce][32-byte ephemeral pubkey][ciphertext][16-byte GCM tag]
+//   5) Result JSON: { uid, sk, url }
+export const XIAOMI_MIMO_CONFIG = {
+  platformUrl: process.env.MIMO_PLATFORM_URL || "https://platform.xiaomimimo.com",
+  defaultBaseUrl: "https://api.xiaomimimo.com/v1",
+  kn: "mimocode",
+  callbackPath: "/",
+  timeoutMs: 300000, // 5 minutes
+};
+
 export const TRAE_CONFIG = {
   clientId: "ono9krqynydwx5",
   clientSecret: "-",

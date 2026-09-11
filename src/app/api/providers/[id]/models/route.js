@@ -11,6 +11,7 @@ import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
+import { resolveClineModels, resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -283,6 +284,37 @@ const PROVIDER_MODELS_CONFIG = {
       return {
         models: getStaticProviderModels("cursor"),
         warning: "Cursor returned no live models; falling back to static catalog.",
+      };
+    },
+  },
+
+  // Cline/ClinePass share api.cline.bot/api/v1/models. The service layer already
+  // handles Bearer-vs-`workos:` auth and swallows failures into null, so these follow
+  // the cursor direct pattern (no refreshFn) and only differ in filtering:
+  // cline returns the whole catalog verbatim, clinepass keeps cline-pass/* only.
+  cline: {
+    customResolver: async (connection) => {
+      const result = await resolveClineModels({
+        accessToken: connection.accessToken,
+        apiKey: connection.apiKey,
+      });
+      if (result?.models?.length) return { models: result.models };
+      return {
+        models: getStaticProviderModels("cline"),
+        warning: "Cline returned no live models; falling back to static catalog.",
+      };
+    },
+  },
+  clinepass: {
+    customResolver: async (connection) => {
+      const result = await resolveClinepassModels({
+        accessToken: connection.accessToken,
+        apiKey: connection.apiKey,
+      });
+      if (result?.models?.length) return { models: result.models };
+      return {
+        models: getStaticProviderModels("clinepass"),
+        warning: "ClinePass returned no live models; falling back to static catalog.",
       };
     },
   },
