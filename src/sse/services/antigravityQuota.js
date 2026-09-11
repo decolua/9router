@@ -6,7 +6,54 @@
 
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { getAntigravityUsage } from "open-sse/services/usage/google.js";
+import { updateProviderConnection } from "@/lib/localDb";
+import { getProviderModels } from "open-sse/config/providerModels.js";
 import * as log from "../utils/logger.js";
+
+// Models registered for Antigravity (fallback if registry empty)
+const ANTIGRAVITY_MODELS_FALLBACK = [
+  "gemini-3.8-flash-high", "gemini-3.8-flash-medium", "gemini-3.8-flash-low",
+  "gemini-3.7-flash-high", "gemini-3.7-flash-medium", "gemini-3.7-flash-low",
+  "gemini-3.6-flash-high", "gemini-3.6-flash-medium", "gemini-3.6-flash-low",
+  "gemini-3-flash-agent", "gemini-3.5-flash-low", "gemini-3.5-flash-extra-low",
+  "gemini-pro-agent", "gemini-3.1-pro-low",
+  "claude-sonnet-4-6", "claude-opus-4-6-thinking",
+  "gpt-oss-120b-medium", "gemini-3-flash",
+  "gemini-3.1-flash-image", "gemini-3-pro-image",
+];
+
+export async function syncAntigravityQuotaLocksToDb(connectionId, quotas) {
+  if (!connectionId || !quotas || typeof quotas !== "object") return;
+  const now = Date.now();
+  const models = (getProviderModels("antigravity") || []).map(m => m.id);
+  const targetModels = models.length > 0 ? models : ANTIGRAVITY_MODELS_FALLBACK;
+  const updates = {};
+
+  for (const m of targetModels) {
+    const q = findAntigravityQuota(quotas, m);
+    if (!q) continue;
+    const isExhausted = (q.remainingPercentage !== undefined && q.remainingPercentage <= 0) ||
+                        (q.remaining !== undefined && q.remaining <= 0);
+    const resetTimeMs = q.resetAt ? new Date(q.resetAt).getTime() : 0;
+    if (isExhausted && resetTimeMs > now) {
+      updates[`modelLock_${m}`] = new Date(resetTimeMs).toISOString();
+    } else if (
+      (q.remainingPercentage !== undefined && q.remainingPercentage > 0) ||
+      (q.remaining !== undefined && q.remaining > 0) ||
+      (resetTimeMs && resetTimeMs <= now)
+    ) {
+      updates[`modelLock_${m}`] = null;
+    }
+  }
+
+  if (Object.keys(updates).length > 0) {
+    try {
+      await updateProviderConnection(connectionId, updates);
+    } catch (err) {
+      log.warn("AG_QUOTA", `${connectionId.slice(0, 8)} | failed to sync model locks to db: ${err.message}`);
+    }
+  }
+}
 
 // In-memory cache: connectionId → { [modelId]: { remainingPercentage, resetAt } }
 const quotaCache = new Map();
@@ -122,12 +169,157 @@ async function _doRefresh(connectionId, accessToken, providerSpecificData, now) 
     // Strike blocks are re-asserted after every refresh so an optimistic
     // upstream reading cannot resurrect a pair we just circuit-broke.
     quotaCache.set(connectionId, applyActiveStrikeBlocks(connectionId, usage.quotas));
+    // Sync model locks directly to DB so zero-quota models are immediately skipped without probing
+    syncAntigravityQuotaLocksToDb(connectionId, usage.quotas);
 
     return usage.quotas;
   } catch (e) {
     log.warn("AG_QUOTA", `${connectionId.slice(0, 8)} | refresh failed: ${e.message}`);
     return null;
   }
+}
+
+/**
+ * Resolve the matching quota entry from Antigravity quotas map for a requested model.
+ * Groups models by family:
+ * - Anything with "flash" matches "Flash (High)" quota (gemini-3-flash-agent, etc.)
+ *   completely skipping model version strings for robust checking.
+ * - Anything with "pro" matches "Pro" quota (gemini-pro-agent, etc.)
+ * - Claude Sonnet / Opus matches their respective quotas.
+ * - Supports weekly family quotas (gemini_weekly, claude_gpt_weekly) for Free tier
+ *   and exhausted weekly limits.
+ * - Fallback to exact modelKey or matching displayName.
+ *
+ * @param {object|null|undefined} quotas - The quotas map from Antigravity usage API
+ * @param {string|null|undefined} model - The requested model ID or alias
+ * @returns {object|null} The matching quota entry or null
+ */
+export function findAntigravityQuota(quotas, model) {
+  if (!quotas || typeof quotas !== "object" || !model) return null;
+
+  const rawModel = String(model).trim();
+  const cleanModel = rawModel.replace(/^(ag|antigravity)\//i, "");
+  const modelLower = cleanModel.toLowerCase();
+
+  // Find family weekly quota
+  let weeklyQuota = null;
+  if (modelLower.startsWith("gemini") || modelLower.includes("gemini")) {
+    weeklyQuota = quotas["gemini_weekly"] || null;
+  } else if (
+    modelLower.startsWith("claude") || modelLower.includes("claude") ||
+    modelLower.includes("sonnet") || modelLower.includes("opus") ||
+    modelLower.startsWith("gpt") || modelLower.includes("gpt") || modelLower.includes("oss")
+  ) {
+    weeklyQuota = quotas["claude_gpt_weekly"] || null;
+  }
+
+  // If weekly quota is exhausted, the entire model family cannot be used
+  const isWeeklyExhausted = weeklyQuota && (
+    (weeklyQuota.remainingPercentage !== undefined && weeklyQuota.remainingPercentage <= 0) ||
+    (weeklyQuota.remaining !== undefined && weeklyQuota.remaining <= 0)
+  );
+  if (isWeeklyExhausted) {
+    return weeklyQuota;
+  }
+
+  // Find model-specific or group quota
+  let modelQuota = null;
+
+  // 1. Direct key match if present
+  if (quotas[cleanModel]) modelQuota = quotas[cleanModel];
+  else if (quotas[rawModel]) modelQuota = quotas[rawModel];
+
+  // 2. Flash group: anything with "flash" (gemini-3.8-flash-high, gemini-3.7-flash-high, etc.)
+  // syncs with "Flash (High)" quota (upstream key gemini-3-flash-agent, or displayName with "flash" and "high")
+  else if (modelLower.includes("flash")) {
+    if (quotas["gemini-3-flash-agent"]) modelQuota = quotas["gemini-3-flash-agent"];
+    else {
+      for (const [key, q] of Object.entries(quotas)) {
+        const name = (q.displayName || "").toLowerCase();
+        if ((key.includes("flash") || name.includes("flash")) && (name.includes("high") || key.includes("high") || key.includes("agent"))) {
+          modelQuota = q;
+          break;
+        }
+      }
+      if (!modelQuota) {
+        for (const [key, q] of Object.entries(quotas)) {
+          if (key.includes("flash") || (q.displayName && q.displayName.toLowerCase().includes("flash"))) {
+            modelQuota = q;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // 3. Pro group: anything with "pro" (gemini-pro-agent, gemini-3.1-pro-low, etc.)
+  else if (modelLower.includes("pro")) {
+    if (quotas["gemini-pro-agent"]) modelQuota = quotas["gemini-pro-agent"];
+    else {
+      for (const [key, q] of Object.entries(quotas)) {
+        if (key.includes("pro") || (q.displayName && q.displayName.toLowerCase().includes("pro"))) {
+          modelQuota = q;
+          break;
+        }
+      }
+    }
+  }
+
+  // 4. Claude Sonnet group
+  else if (modelLower.includes("sonnet")) {
+    if (quotas["claude-sonnet-4-6"]) modelQuota = quotas["claude-sonnet-4-6"];
+    else {
+      for (const [key, q] of Object.entries(quotas)) {
+        if (key.includes("sonnet") || (q.displayName && q.displayName.toLowerCase().includes("sonnet"))) {
+          modelQuota = q;
+          break;
+        }
+      }
+    }
+  }
+
+  // 5. Claude Opus group
+  else if (modelLower.includes("opus")) {
+    if (quotas["claude-opus-4-6-thinking"]) modelQuota = quotas["claude-opus-4-6-thinking"];
+    else {
+      for (const [key, q] of Object.entries(quotas)) {
+        if (key.includes("opus") || (q.displayName && q.displayName.toLowerCase().includes("opus"))) {
+          modelQuota = q;
+          break;
+        }
+      }
+    }
+  }
+
+  // 6. GPT group
+  else if (modelLower.includes("gpt") || modelLower.includes("oss")) {
+    if (quotas["gpt-oss-120b-medium"]) modelQuota = quotas["gpt-oss-120b-medium"];
+    else {
+      for (const [key, q] of Object.entries(quotas)) {
+        if (key.includes("gpt") || (q.displayName && (q.displayName.toLowerCase().includes("gpt") || q.displayName.toLowerCase().includes("oss")))) {
+          modelQuota = q;
+          break;
+        }
+      }
+    }
+  }
+
+  // 7. Generic displayName check
+  if (!modelQuota) {
+    for (const [key, q] of Object.entries(quotas)) {
+      if (q.displayName && q.displayName.toLowerCase() === modelLower) {
+        modelQuota = q;
+        break;
+      }
+    }
+  }
+
+  if (modelQuota) return modelQuota;
+
+  // Fallback to weekly quota if no model-specific quota was reported (e.g. Free Tier)
+  if (weeklyQuota) return weeklyQuota;
+
+  return null;
 }
 
 /**
@@ -140,7 +332,8 @@ export async function handleAntigravityQuotaError(connectionId, status, model, a
 
   // Throttle applies to error paths too: one quota request per account/30s.
   // The first 409/429 populates cache; concurrent or repeated errors reuse it.
-  const quota = (await refreshAntigravityQuota(connectionId, accessToken, providerSpecificData))?.[model];
+  const quotas = await refreshAntigravityQuota(connectionId, accessToken, providerSpecificData);
+  const quota = findAntigravityQuota(quotas, model);
 
   // Strike breaker: count every 429 whose quota reading is either optimistic
   // (remaining > 0) or unavailable (quota API 403/error). 3 within the window
