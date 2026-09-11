@@ -371,7 +371,7 @@ export default function PrivacyClient() {
         )}
         <div className="flex flex-col gap-3">
           {settings.dlpCustomPatterns.map((cp, i) => {
-            const id = cp.id || `${cp.type}-${cp.pattern}-${i}`;
+            const id = cp.id || `legacy-${cp.type}-${i}`;
             const t = testState[id] || {};
             const sample = t.sample || "";
             const result = t.result;
