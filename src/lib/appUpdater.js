@@ -49,12 +49,12 @@ function collectAppPids() {
       const lines = output.split("\n").slice(1).filter(l => l.trim());
       lines.forEach(line => {
         const lower = line.toLowerCase();
-        // Match 9router-specific processes only (not generic next-server/cloudflared)
+        // Match anything running from 9router install dir or wrapper cli.js
         const isAppProcess = lower.includes("9router") ||
+          lower.includes("next-server") ||
           lower.includes("\\bin\\app\\") ||
           lower.includes("/bin/app/") ||
-          lower.includes("cli.js") ||
-          lower.includes("9router-app");
+          lower.includes("cli.js");
         if (isAppProcess) {
           const match = line.match(/^"(\d+)"/);
           if (match && match[1] && match[1] !== process.pid.toString()) pids.push(match[1]);
@@ -62,7 +62,7 @@ function collectAppPids() {
       });
     } catch { /* no processes */ }
 
-    // Kill cloudflared + tray binaries started by 9router (hold app dir lock)
+    // Kill cloudflared + tray binaries (hold app dir lock)
     for (const procName of ["cloudflared", "tray_windows_release"]) {
       try {
         const cmd = `powershell -NonInteractive -WindowStyle Hidden -Command "Get-Process ${procName} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"`;
@@ -77,10 +77,10 @@ function collectAppPids() {
     try {
       const output = execSync("ps aux 2>/dev/null", { encoding: "utf8", timeout: KILL_TIMEOUT_MS });
       output.split("\n").forEach(line => {
-        // Match 9router-specific processes only (not generic next-server/cloudflared)
         const isAppProcess = line.includes("9router") ||
+          line.includes("next-server") ||
+          line.includes("cloudflared") ||
           line.includes("/bin/app/") ||
-          line.includes("9router-app") ||
           line.includes("tray_darwin") ||
           line.includes("tray_linux");
         if (isAppProcess) {
