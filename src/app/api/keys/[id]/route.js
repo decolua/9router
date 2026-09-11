@@ -21,7 +21,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive } = body;
+    const { isActive, ...extra } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -30,6 +30,22 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
+
+    const POLICY_FIELDS = [
+      "allowedModels", "blockedModels", "allowedCombos", "scopes",
+      "expiresAt", "maxRequestsPerDay", "maxSpendUsdPerDay",
+    ];
+    for (const field of POLICY_FIELDS) {
+      if (extra[field] !== undefined) updateData[field] = extra[field];
+    }
+
+    // Enforce mutual exclusivity: only one daily limit type allowed
+    if (updateData.maxRequestsPerDay != null && updateData.maxSpendUsdPerDay != null) {
+      return NextResponse.json(
+        { error: "API key cannot have both request limit and spend limit. Choose one." },
+        { status: 400 }
+      );
+    }
 
     const updated = await updateApiKey(id, updateData);
 

@@ -4,6 +4,7 @@ import {
   clearAccountError,
   extractApiKey,
   isValidApiKey,
+  getApiKeyPolicyError,
 } from "../services/auth.js";
 import { getSettings, getCombos } from "@/lib/localDb";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
@@ -66,6 +67,11 @@ export async function handleFetch(request) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: provider (or model)");
   }
 
+  if (apiKey) {
+    const policyErr = await getApiKeyPolicyError(apiKey, providerInput);
+    if (policyErr) return errorResponse(policyErr.status, policyErr.message);
+  }
+
   if (!targetUrl || typeof targetUrl !== "string") {
     log.warn("FETCH", "Missing url");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: url");
@@ -99,7 +105,7 @@ export async function handleFetch(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleProviderFetch(b, m, request, apiKey, settings),
+      handleSingleModel: (b, m, modelEntry) => handleSingleProviderFetch(b, m, request, apiKey, settings, { preferredConnectionId: modelEntry?.connectionId }),
       log,
       comboName: providerInput,
       comboStrategy,
@@ -110,7 +116,7 @@ export async function handleFetch(request) {
   return handleSingleProviderFetch(body, providerInput, request, apiKey, settings);
 }
 
-async function handleSingleProviderFetch(body, providerInput, request, apiKey, settings) {
+async function handleSingleProviderFetch(body, providerInput, request, apiKey, settings, options = {}) {
   const targetUrl = body.url;
   const format = body.format;
   const maxCharacters = body.max_characters;
@@ -165,7 +171,9 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
   const fetchLockKey = `webfetch:${providerId}`;
 
   while (true) {
-    const credentials = await getProviderCredentials(providerId, excludeConnectionIds, fetchLockKey);
+    const credentials = await getProviderCredentials(providerId, excludeConnectionIds, fetchLockKey, {
+      preferredConnectionId: options.preferredConnectionId,
+    });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {

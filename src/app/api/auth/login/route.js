@@ -93,7 +93,7 @@ export async function POST(request) {
       return NextResponse.json({ success: true, mustChangePassword: false }, { headers: NO_STORE_HEADERS });
     }
 
-    const { remainingBeforeLock } = recordFail(ip);
+    recordFail(ip);
     const postLock = checkLock(ip);
     if (postLock.locked) {
       return NextResponse.json(
@@ -101,10 +101,7 @@ export async function POST(request) {
         { status: 429, headers: { "Retry-After": String(postLock.retryAfter) } }
       );
     }
-    return NextResponse.json(
-      { error: `Invalid password. ${remainingBeforeLock} attempt(s) left before lockout.`, remainingBeforeLock },
-      { status: 401 }
-    );
+    return NextResponse.json({ error: "Invalid password." }, { status: 401 });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

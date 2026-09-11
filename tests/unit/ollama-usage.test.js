@@ -44,6 +44,26 @@ const SAMPLE_USAGE = {
   },
 };
 
+// Real shape captured 2026-09: Ollama replaced session/weekly with a single
+// monthly bucket.
+const SAMPLE_USAGE_MONTHLY = {
+  activity: {
+    cost: "0.00000",
+    period: {
+      type: "last_4_weeks",
+      starting_at: "2026-08-17T00:00:00Z",
+      ending_at: "2026-09-09T13:39:08Z",
+    },
+    models: [],
+  },
+  limits: {
+    monthly: {
+      usage: 0.239,
+      models: [{ name: "gpt-oss:20b", request_count: 2776 }],
+    },
+  },
+};
+
 const SAMPLE_ME = {
   Plan: "max",
 };
@@ -126,6 +146,43 @@ describe("getUsageForProvider(ollama)", () => {
     expect(usage.message).toMatch(/api key/i);
     expect(proxyAwareFetch).not.toHaveBeenCalled();
   });
+
+  it("parses the monthly-only limits shape (2026-09 upstream change)", async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(jsonResponse(SAMPLE_USAGE_MONTHLY))
+      .mockResolvedValueOnce(jsonResponse(SAMPLE_ME));
+
+    const usage = await getUsageForProvider({
+      provider: "ollama",
+      apiKey: "k",
+      providerSpecificData: {},
+    });
+
+    expect(usage.message).toBeUndefined();
+    expect(usage.quotas["Session (5h)"]).toBeUndefined();
+    expect(usage.quotas["Weekly (7d)"]).toBeUndefined();
+    expect(usage.quotas.Monthly).toMatchObject({
+      used: 24,
+      total: 100,
+      remainingPercentage: 76,
+      unlimited: false,
+    });
+  });
+
+  it("still reports 'no usage limits' when neither old nor new fields are present", async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(jsonResponse({ activity: {}, limits: {} }))
+      .mockResolvedValueOnce(jsonResponse(SAMPLE_ME));
+
+    const usage = await getUsageForProvider({
+      provider: "ollama",
+      apiKey: "k",
+      providerSpecificData: {},
+    });
+
+    expect(usage.message).toMatch(/no usage limits reported/i);
+    expect(usage.quotas).toEqual({});
+  });
 });
 
 describe("parseQuotaData(ollama)", () => {
@@ -160,6 +217,28 @@ describe("parseQuotaData(ollama)", () => {
       used: 100,
       total: 100,
       remainingPercentage: 0,
+    });
+  });
+
+  it("forwards a Monthly row the same way (2026-09 upstream shape)", () => {
+    const rows = parseQuotaData("ollama", {
+      plan: "Free",
+      quotas: {
+        Monthly: {
+          used: 24,
+          total: 100,
+          remainingPercentage: 76,
+          resetAt: null,
+        },
+      },
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      name: "Monthly",
+      used: 24,
+      total: 100,
+      remainingPercentage: 76,
     });
   });
 });

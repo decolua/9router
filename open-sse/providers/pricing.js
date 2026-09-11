@@ -145,6 +145,10 @@ export const MODEL_PRICING = {
  * Only include entries where price DIFFERS from MODEL_PRICING.
  * Keyed by provider alias (cc, cx, gc, gh, ...) or provider id (openai, anthropic, ...).
  */
+// Kenari IDR→USD rate, from kenari's own pricing fixture (tests/fixtures/kenari/pricing.json,
+// top-level usd_idr_rate field, fetched 2026-09-09). Manually-refreshed snapshot, not a live rate.
+export const KENARI_IDR_PER_USD = 17500;
+
 export const PROVIDER_PRICING = {
   // GitHub Copilot (gh) — explicit override, matches canonical gpt-5.3-codex rate
   gh: {
@@ -266,6 +270,18 @@ export const PROVIDER_PRICING = {
     "z-ai/glm-5.1": { input: 1.05, output: 3.5, cached: 0.525, reasoning: 3.5 },
     "z-ai/glm-5.2": { input: 1.4, output: 4.4, cached: 0.26, reasoning: 4.4 },
     "z-ai/glm-5.3-free": { input: 0, output: 0, cached: 0, reasoning: 0 },
+  },
+  // Kenari — rates converted from kenari's own pricing fixture
+  // (tests/fixtures/kenari/pricing.json, captured via public GET /api/public/pricing, no auth,
+  // fetched 2026-09-09). Fixture unit is micro-IDR per 1M tokens; converted to USD/1M with
+  // KENARI_IDR_PER_USD (kenari's own usd_idr_rate field). Manual refresh only, not live.
+  // cache_creation omitted where the fixture has null cache_write (dimension not offered) —
+  // the cost calculator falls back to pricing.input in that case.
+  kenari: {
+    "step-3-7-flash": { input: 0.24, output: 1.371429, cached: 0.048 },
+    "glm-5-3-flash": { input: 0.000857, output: 0.002857, cached: 0.000143 },
+    "gemini-2-5-flash-lite": { input: 0.022857, output: 0.097143, cached: 0.002286, cache_creation: 0.02 },
+    "gpt-oss-120b": { input: 0.036, output: 0.2, cached: 0.0036 },
   },
 };
 

@@ -122,7 +122,10 @@ import p118 from "./selfhosted-tts.js";
 import p119 from "./selfhosted-embedding.js";
 import p120 from "./fish-audio.js";
 import p121 from "./alitp-intl.js";
-import p122 from "./xquik.js";
+import p122 from "./freebuff.js";
+import p124 from "./xquik.js";
+import p125 from "./kenari.js";
+
 export default [
   p0,
   p1,
@@ -246,4 +249,6 @@ export default [
   p120,
   p121,
   p122,
+  p124,
+  p125,
 ];

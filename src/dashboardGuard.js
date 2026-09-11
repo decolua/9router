@@ -153,9 +153,12 @@ async function hasValidApiKey(request) {
 }
 
 async function canAccessPublicLlmApi(request) {
+  if (request.method === "OPTIONS") return true;
   if (isLocalRequest(request)) return true;
   if (await hasValidCliToken(request)) return true;
-  return await hasValidApiKey(request);
+  if (extractApiKey(request)) return await hasValidApiKey(request);
+  const settings = await loadSettings();
+  return settings?.requireApiKey === false;
 }
 
 async function canAccessLocalOnlyRoute(request) {
@@ -197,6 +200,7 @@ export const __test__ = {
   extractApiKey,
   canAccessPublicLlmApi,
   canAccessLocalOnlyRoute,
+  _resetCachedCliToken: () => { cachedCliToken = null; },
 };
 
 export async function proxy(request) {

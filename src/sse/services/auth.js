@@ -1,8 +1,8 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
+import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools, getApiKeyMetadata, touchApiKey, extendConnectionModelLock, clearConnectionModelLockIfObserved, getObservedConnectionModelLock } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
-import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
-import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil, MODEL_LOCK_ALL, ADAPTIVE_FAILURE_ACTION, classifyAdaptiveFailure } from "open-sse/services/accountFallback.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { modelPatternMatches } from "@/shared/utils/modelPermissions.js";
 import { getAntigravityQuotaCache } from "./antigravityQuota.js";
 import * as log from "../utils/logger.js";
 
@@ -10,6 +10,18 @@ import * as log from "../utils/logger.js";
 let selectionMutex = Promise.resolve();
 
 const GITHUB_MONTHLY_USAGE_LIMIT = "you've reached your additional usage limit for your plan";
+
+export function filterConnectionsForModel(providerId, connections, model, settings = {}) {
+  const override = (settings.providerStrategies || {})[providerId] || {};
+  if (providerId !== "freebuff" || override.strictModelAssignment !== true || !model) return connections;
+  return connections.filter((connection) => {
+    const data = connection.providerSpecificData || {};
+    const assignedModel = Object.prototype.hasOwnProperty.call(data, "assignedModel")
+      ? data.assignedModel
+      : data.freebuffModel;
+    return assignedModel === model;
+  });
+}
 
 function githubMonthlyResetMs(status, errorText, provider) {
   if (resolveProviderId(provider) !== "github" || Number(status) !== 402) return null;
@@ -69,7 +81,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       };
     }
 
-    const connections = await getProviderConnections({ provider: providerId, isActive: true });
+    let connections = await getProviderConnections({ provider: providerId, isActive: true });
+    const settings = await getSettings();
+    connections = filterConnectionsForModel(providerId, connections, model, settings);
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {
@@ -133,7 +147,6 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    const settings = await getSettings();
     // Per-provider strategy overrides global setting
     const providerOverride = (settings.providerStrategies || {})[providerId] || {};
     const strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";
@@ -144,6 +157,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       connection = availableConnections.find((c) => c.id === preferredConnectionId);
       if (connection) {
         log.info("AUTH", `${provider} | pinned to ${connection.id?.slice(0, 8)} (${connection.name || connection.email || "unnamed"})`);
+      } else {
+        log.warn("AUTH", `${provider} | pinned connection ${preferredConnectionId?.slice(0, 8)} is unavailable or inactive. Bypassing fallback.`);
+        return null;
       }
     }
     if (connection) {
@@ -192,7 +208,34 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       connection = availableConnections[0];
     }
 
-    const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+    const configuredProxyPoolIds = providerId === "freebuff"
+      ? [...new Set([
+        ...(Array.isArray(connection.providerSpecificData?.proxyPoolIds) ? connection.providerSpecificData.proxyPoolIds : []),
+        connection.providerSpecificData?.proxyPoolId,
+      ].map((id) => String(id || "").trim()).filter(Boolean))]
+      : null;
+    const requestedForcedPoolId = String(options?.forceProxyPoolId || "").trim();
+    const allowedForcedPoolIds = Array.isArray(options?.allowedProxyPoolIds)
+      ? new Set(options.allowedProxyPoolIds.map((id) => String(id || "").trim()).filter(Boolean))
+      : null;
+    const forcedProxyPoolId = requestedForcedPoolId && allowedForcedPoolIds?.has(requestedForcedPoolId)
+      ? requestedForcedPoolId
+      : null;
+    if (requestedForcedPoolId && !forcedProxyPoolId) return null;
+    const psdForProxy = providerId === "freebuff"
+      ? {
+        ...(connection.providerSpecificData || {}),
+        proxyPoolId: forcedProxyPoolId || connection.providerSpecificData?.proxyPoolId,
+        proxyPoolIds: forcedProxyPoolId ? [forcedProxyPoolId] : configuredProxyPoolIds,
+        proxyPoolScope: `${providerId}::${model || ""}`,
+      }
+      : connection.providerSpecificData?.proxyPoolIds?.length
+        ? { ...connection.providerSpecificData, proxyPoolScope: `${providerId}::${model || ""}` }
+        : connection.providerSpecificData;
+    const excludedPoolIds = options?.excludePoolIds;
+    const resolvedProxy = excludedPoolIds?.size
+      ? await resolveConnectionProxyConfig(psdForProxy || {}, connection.id, excludedPoolIds)
+      : await resolveConnectionProxyConfig(psdForProxy || {}, connection.id);
 
     return {
       authType: connection.authType,
@@ -213,13 +256,21 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         connectionNoProxy: resolvedProxy.connectionNoProxy,
         connectionProxyPoolId: resolvedProxy.proxyPoolId || null,
         vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
+        proxyPoolId: resolvedProxy.proxyPoolId || null,
+        noFitPool: resolvedProxy.noFitPool === true,
+        strictProxy: resolvedProxy.strictProxy === true,
       },
+      _observedPoolFitness: providerId === "freebuff" && resolvedProxy.proxyPoolId
+        ? Object.freeze({ poolId: resolvedProxy.proxyPoolId, scope: `${providerId}::${model || ""}`, version: Number.isInteger(resolvedProxy.observedFitnessVersion) ? resolvedProxy.observedFitnessVersion : 0 })
+        : null,
       connectionId: connection.id,
       // Include current status for optimization check
       testStatus: connection.testStatus,
       lastError: connection.lastError,
       // Pass full connection for clearAccountError to read modelLock_* keys
-      _connection: connection
+      _connection: connection,
+      _observedModelLock: getObservedConnectionModelLock(connection, model),
+      _observedModel: model,
     };
   } finally {
     if (resolveMutex) resolveMutex();
@@ -242,47 +293,47 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
 
-  // GitHub premium-request exhaustion is account-wide until the next UTC month.
   const githubResetAtMs = githubMonthlyResetMs(status, errorText, provider);
+  const classification = classifyAdaptiveFailure({ status, error: errorText, provider, model, resetsAtMs });
+  const action = githubResetAtMs ? ADAPTIVE_FAILURE_ACTION.ACCOUNT_QUOTA_LOCK : classification.action;
+  const expiresAtMs = githubResetAtMs || classification.expiresAtMs;
 
-  // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
-  let shouldFallback, cooldownMs, newBackoffLevel;
-  if (githubResetAtMs) {
-    shouldFallback = true;
-    cooldownMs = githubResetAtMs - Date.now();
-    newBackoffLevel = 0;
-  } else if (resetsAtMs && resetsAtMs > Date.now()) {
-    shouldFallback = true;
-    // Antigravity quota API provides exact per-model resetAt. Do not truncate it.
-    cooldownMs = resolveProviderId(provider) === "antigravity"
-      ? resetsAtMs - Date.now()
-      : Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
-    newBackoffLevel = 0;
-  } else {
-    ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel));
+  // Antigravity's live quota API (open-sse/services/usage/google.js via
+  // src/sse/services/antigravityQuota.js) always supplies an explicit,
+  // trustworthy resetsAtMs from a successful upstream quota fetch — this can
+  // arrive even when the raw error text doesn't match classifyAdaptiveFailure's
+  // quota regexes (e.g. a bare 409/429 with no "quota exceeded" wording). Treat
+  // that case as an explicit model-quota lock too, so the precise reset time is
+  // never dropped in favor of a generic transient backoff.
+  const isExplicitProviderReset = resetsAtMs && resetsAtMs > Date.now()
+    && action !== ADAPTIVE_FAILURE_ACTION.ACCOUNT_QUOTA_LOCK
+    && action !== ADAPTIVE_FAILURE_ACTION.MODEL_QUOTA_LOCK;
+
+  if (action === ADAPTIVE_FAILURE_ACTION.ACCOUNT_QUOTA_LOCK || action === ADAPTIVE_FAILURE_ACTION.MODEL_QUOTA_LOCK || isExplicitProviderReset) {
+    const lockModel = action === ADAPTIVE_FAILURE_ACTION.ACCOUNT_QUOTA_LOCK ? null : model;
+    const finalExpiresAtMs = isExplicitProviderReset ? resetsAtMs : expiresAtMs;
+    const lock = {
+      expiresAt: new Date(finalExpiresAtMs).toISOString(),
+      reason: classification.reason || "Quota limit",
+      source: classification.source,
+      classifiedAt: new Date().toISOString(),
+    };
+    await extendConnectionModelLock(connectionId, lockModel, lock);
+    const cooldownMs = Math.max(0, finalExpiresAtMs - Date.now());
+    return { shouldFallback: true, cooldownMs };
   }
+
+  const { shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel);
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
-
   const reason = typeof errorText === "string" ? errorText.slice(0, 100) : "Provider error";
-  const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
-
   await updateProviderConnection(connectionId, {
-    ...lockUpdate,
+    ...buildModelLockUpdate(model, cooldownMs),
     testStatus: "unavailable",
     lastError: reason,
     errorCode: status,
     lastErrorAt: new Date().toISOString(),
     backoffLevel: newBackoffLevel ?? backoffLevel
   });
-
-  const lockKey = Object.keys(lockUpdate)[0];
-  const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
-  log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
-
-  if (provider && status && reason) {
-    console.error(`❌ ${provider} [${status}]: ${reason}`);
-  }
-
   return { shouldFallback: true, cooldownMs };
 }
 
@@ -298,6 +349,12 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
 export async function clearAccountError(connectionId, currentConnection, model = null) {
   if (!connectionId || connectionId === "noauth") return;
   const conn = currentConnection._connection || currentConnection;
+  const selectedModel = model ?? currentConnection._observedModel;
+  const observed = currentConnection._observedModelLock;
+  if (selectedModel && observed?.expiresAt && observed?.classifiedAt) {
+    await clearConnectionModelLockIfObserved(connectionId, selectedModel, observed);
+    return;
+  }
   const now = Date.now();
   const allLockKeys = Object.keys(conn).filter(k => k.startsWith("modelLock_"));
 
@@ -361,4 +418,82 @@ export function extractApiKey(request) {
 export async function isValidApiKey(apiKey) {
   if (!apiKey) return false;
   return await validateApiKey(apiKey);
+}
+
+/**
+ * Check if a model is allowed under a key's configured model scopes.
+ *
+ * Logic:
+ *   1. No key metadata → allow
+ *   2. allowedModels empty ([]) → allow (backward compat)
+ *   3. Pattern match every entry in allowedModels
+ *
+ * @param {string} apiKey - The API key string
+ * @param {string} modelId - The model ID to check
+ * @returns {Promise<boolean>}
+ */
+export async function isModelAllowedForKey(apiKey, modelId) {
+  if (!apiKey || !modelId) return true;
+
+  const metadata = await getApiKeyMetadata(apiKey);
+  if (!metadata) return true;
+  if (!metadata.allowedModels || metadata.allowedModels.length === 0) return true;
+  return metadata.allowedModels.some((p) => modelPatternMatches(p, [modelId]));
+}
+
+/**
+ * Check a key's daily request-count/spend limits against today's recorded usage.
+ * Cost is only known after a request completes, so this checks already-recorded
+ * usage against the cap — the request that crosses the cap still succeeds, the
+ * next one is blocked. Runs regardless of the requireApiKey setting.
+ *
+ * @param {string} apiKey
+ * @returns {Promise<{allowed: boolean, reason?: string}>}
+ */
+export async function checkDailyLimit(apiKey) {
+  if (!apiKey) return { allowed: true };
+
+  const { getDailyUsageForApiKey } = await import("@/lib/db/repos/usageRepo");
+  const metadata = await getApiKeyMetadata(apiKey);
+  if (!metadata) return { allowed: true };
+  if (metadata.maxRequestsPerDay == null && metadata.maxSpendUsdPerDay == null) return { allowed: true };
+
+  const usage = await getDailyUsageForApiKey(apiKey);
+
+  if (metadata.maxRequestsPerDay != null && usage.requests >= metadata.maxRequestsPerDay) {
+    return { allowed: false, reason: `Daily request limit reached (${usage.requests}/${metadata.maxRequestsPerDay})` };
+  }
+  if (metadata.maxSpendUsdPerDay != null && usage.cost >= metadata.maxSpendUsdPerDay) {
+    return { allowed: false, reason: `Daily spend limit reached ($${usage.cost.toFixed(4)}/$${metadata.maxSpendUsdPerDay})` };
+  }
+  return { allowed: true };
+}
+
+/**
+ * Check if the key has expired based on expiresAt timestamp.
+ *
+ * @param {string} apiKey
+ * @returns {Promise<boolean>}
+ */
+export async function isKeyExpired(apiKey) {
+  if (!apiKey) return false;
+  const metadata = await getApiKeyMetadata(apiKey);
+  if (!metadata || !metadata.expiresAt) return false;
+  return new Date(metadata.expiresAt) < new Date();
+}
+
+export async function getApiKeyPolicyError(apiKey, modelId) {
+  if (!apiKey) return null;
+  if (await isKeyExpired(apiKey)) {
+    return { status: 401, message: "API key has expired" };
+  }
+  if (!(await isModelAllowedForKey(apiKey, modelId))) {
+    return { status: 403, message: `API key lacks permission for model: ${modelId}` };
+  }
+  const limitCheck = await checkDailyLimit(apiKey);
+  if (!limitCheck.allowed) {
+    return { status: 429, message: limitCheck.reason };
+  }
+  touchApiKey(apiKey).catch((err) => log.warn("AUTH", `Failed to touch api key: ${err.message}`));
+  return null;
 }

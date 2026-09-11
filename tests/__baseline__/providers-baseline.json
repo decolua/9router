@@ -456,6 +456,11 @@
     "clientSecret": "4Z3YjXycVsQvyGF1etiNlIBB4RsqSDtW",
     "tokenUrl": "https://iflow.cn/oauth/token"
   },
+  "kenari": {
+    "baseUrl": "https://kenari.id/v1/chat/completions",
+    "validateUrl": "https://kenari.id/v1/models",
+    "format": "openai"
+  },
   "kilocode": {
     "baseUrl": "https://api.kilo.ai/api/openrouter/chat/completions",
     "headers": {},

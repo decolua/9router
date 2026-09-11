@@ -563,6 +563,21 @@ export function parseQuotaData(provider, data) {
               resetAt: quota.resetAt || null,
               recurring: quota.recurring !== false,
             });
+            });
+          }
+          break;
+
+      case "freebuff":
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([modelKey, quota]) => {
+            normalizedQuotas.push({
+              name: quota.displayName || modelKey,
+              modelKey,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              recurring: quota.recurring !== false,
+            });
           });
         }
         break;
@@ -630,7 +645,7 @@ export function parseQuotaData(provider, data) {
         break;
 
       case "ollama":
-        // Session (5h) / Weekly (7d) usage % from ollama.com/api/usage.
+        // Monthly (or legacy Session/Weekly) usage % from ollama.com/api/usage.
         // remainingPercentage only — no absolute remaining (UI treats remaining as %).
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([name, quota]) => {

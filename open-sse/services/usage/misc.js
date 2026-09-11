@@ -86,12 +86,18 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
 
     const sessionRaw = limits.session?.usage;
     const weeklyRaw = limits.weekly?.usage;
+    // 2026-09: Ollama switched their reported window from session (5h) /
+    // weekly (7d) to a single monthly bucket. Support both shapes so this
+    // keeps working if they ever restore the old fields.
+    const monthlyRaw = limits.monthly?.usage;
     const sessionNum = Number(sessionRaw);
     const weeklyNum = Number(weeklyRaw);
+    const monthlyNum = Number(monthlyRaw);
     const hasSession = sessionRaw !== undefined && sessionRaw !== null && !Number.isNaN(sessionNum);
     const hasWeekly = weeklyRaw !== undefined && weeklyRaw !== null && !Number.isNaN(weeklyNum);
+    const hasMonthly = monthlyRaw !== undefined && monthlyRaw !== null && !Number.isNaN(monthlyNum);
 
-    if (!hasSession && !hasWeekly) {
+    if (!hasSession && !hasWeekly && !hasMonthly) {
       return {
         plan,
         message: "Ollama Cloud connected. No usage limits reported.",
@@ -102,6 +108,7 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
     const quotas = {};
     if (hasSession) quotas["Session (5h)"] = ratioQuota(sessionNum);
     if (hasWeekly) quotas["Weekly (7d)"] = ratioQuota(weeklyNum);
+    if (hasMonthly) quotas["Monthly"] = ratioQuota(monthlyNum);
 
     return { plan, quotas };
   } catch (error) {

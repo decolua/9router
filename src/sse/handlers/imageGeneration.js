@@ -4,6 +4,7 @@ import {
   clearAccountError,
   extractApiKey,
   isValidApiKey,
+  getApiKeyPolicyError,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
@@ -46,6 +47,11 @@ export async function handleImageGeneration(request) {
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   if (!body.prompt) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: prompt");
 
+  if (apiKey) {
+    const policyErr = await getApiKeyPolicyError(apiKey, modelStr);
+    if (policyErr) return errorResponse(policyErr.status, policyErr.message);
+  }
+
   // Combo expansion: model may be a combo name → run fallback/round-robin across models
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
@@ -56,7 +62,7 @@ export async function handleImageGeneration(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelImage(b, m, { wantsStream, binaryOutput, preferredConnectionId }),
+      handleSingleModel: (b, m, modelEntry) => handleSingleModelImage(b, m, { wantsStream, binaryOutput, preferredConnectionId: modelEntry?.connectionId || preferredConnectionId }),
       log,
       comboName: modelStr,
       comboStrategy,

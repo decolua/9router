@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import initSqlJs from "sql.js";
 import { PRAGMA_SQL } from "../schema.js";
+import { sharedAdapterAsync } from "./sharedAdapter.js";
 
 let SQL = null;
 
@@ -10,7 +11,7 @@ async function loadSql() {
   return SQL;
 }
 
-export async function createSqlJsAdapter(filePath) {
+async function createSqlJsAdapterRaw(filePath) {
   const SQLLib = await loadSql();
   const buf = fs.existsSync(filePath) ? fs.readFileSync(filePath) : null;
   const db = new SQLLib.Database(buf);
@@ -99,17 +100,29 @@ export async function createSqlJsAdapter(filePath) {
     }
   }
 
+  let closed = false;
   function close() {
+    if (closed) return;
+    closed = true;
     if (saveTimer) clearTimeout(saveTimer);
+    process.removeListener("beforeExit", onBeforeExit);
+    process.removeListener("SIGINT", onSigint);
+    process.removeListener("SIGTERM", onSigterm);
     if (dirty) persist();
     db.close();
   }
 
-  // Flush on shutdown
   const flush = () => { if (dirty) try { persist(); } catch {} };
-  process.on("beforeExit", flush);
-  process.on("SIGINT", flush);
-  process.on("SIGTERM", flush);
+  const onBeforeExit = () => { flush(); close(); };
+  const onSigint = () => { flush(); close(); };
+  const onSigterm = () => { flush(); close(); };
+  process.on("beforeExit", onBeforeExit);
+  process.on("SIGINT", onSigint);
+  process.on("SIGTERM", onSigterm);
 
   return { driver: "sql.js", run, get, all, exec, transaction, close, raw: db };
+}
+
+export async function createSqlJsAdapter(filePath) {
+  return sharedAdapterAsync(filePath, createSqlJsAdapterRaw);
 }

@@ -4,6 +4,7 @@ import {
   clearAccountError,
   extractApiKey,
   isValidApiKey,
+  getApiKeyPolicyError,
 } from "../services/auth.js";
 import { getSettings, getCombos } from "@/lib/localDb";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
@@ -63,6 +64,11 @@ export async function handleSearch(request) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: provider (or model)");
   }
 
+  if (apiKey) {
+    const policyErr = await getApiKeyPolicyError(apiKey, providerInput);
+    if (policyErr) return errorResponse(policyErr.status, policyErr.message);
+  }
+
   if (!query || typeof query !== "string" || !query.trim()) {
     log.warn("SEARCH", "Missing query");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: query");
@@ -79,7 +85,7 @@ export async function handleSearch(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleProviderSearch(b, m, request, apiKey, settings),
+      handleSingleModel: (b, m, modelEntry) => handleSingleProviderSearch(b, m, request, apiKey, settings, { preferredConnectionId: modelEntry?.connectionId }),
       log,
       comboName: providerInput,
       comboStrategy,
@@ -90,7 +96,7 @@ export async function handleSearch(request) {
   return handleSingleProviderSearch(body, providerInput, request, apiKey, settings);
 }
 
-async function handleSingleProviderSearch(body, providerInput, request, apiKey, settings) {
+async function handleSingleProviderSearch(body, providerInput, request, apiKey, settings, options = {}) {
   const query = body.query;
   const providerId = resolveProviderId(providerInput);
   const resolvedProvider = AI_PROVIDERS[providerId];
@@ -164,7 +170,9 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
     // Provider that actually owns the connection in use — differs from
     // providerId once we fall back, and error locks must be attributed to it.
     let credentialProviderId = providerId;
-    let credentials = await getProviderCredentials(providerId, excludeConnectionIds, searchLockKey);
+    let credentials = await getProviderCredentials(providerId, excludeConnectionIds, searchLockKey, {
+      preferredConnectionId: options.preferredConnectionId,
+    });
 
     // Fall back to the related chat provider's credentials when this search
     // provider has none of its own (one key, chat + search).

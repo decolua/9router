@@ -19,6 +19,7 @@ import {
   KIMCHI_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
+import { getKimchiUserAgent } from "open-sse/utils/kimchiUserAgent.js";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -93,13 +94,28 @@ const OAUTH_TEST_CONFIG = {
   },
   "codebuddy-cn": { tokenExists: true },
   kimchi: {
-    url: KIMCHI_CONFIG.validationUrl || "https://api.cast.ai/v1/llm/openai/supported-providers",
+    url: "https://api.kimchi.org/v1/auth/me",
     method: "GET",
     authHeader: "Authorization",
     authPrefix: "Bearer ",
     extraHeaders: {
       Accept: "application/json",
-      "User-Agent": "kimchi/0.1.40",
+      "User-Agent": getKimchiUserAgent(),
+    },
+    refreshable: false,
+  },
+  freebuff: {
+    url: "https://www.codebuff.com/api/v1/freebuff/session",
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    extraHeaders: {
+      Accept: "application/json",
+      "User-Agent": "codebuff-cli/0.0.138",
+    },
+    acceptStatuses: [403, 404],
+    softFailMessage: {
+      403: "Connected, but Freebuff is gated (403) — country blocked or account banned.",
     },
     refreshable: false,
   },
@@ -638,6 +654,10 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       }
       case "deepseek": {
         const res = await fetchWithConnectionProxy("https://api.deepseek.com/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
+      }
+      case "kenari": {
+        const res = await fetchWithConnectionProxy(PROVIDERS["kenari"]?.validateUrl || "https://kenari.id/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
       case "groq": {

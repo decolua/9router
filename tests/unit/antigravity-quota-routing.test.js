@@ -13,6 +13,7 @@ vi.mock("@/lib/localDb", () => ({
   getProxyPools: vi.fn(),
   validateApiKey: vi.fn(),
   updateProviderConnection: vi.fn(),
+  getObservedConnectionModelLock: vi.fn(),
 }));
 vi.mock("@/lib/network/connectionProxy", () => ({
   resolveConnectionProxyConfig: mocks.resolveConnectionProxyConfig,
