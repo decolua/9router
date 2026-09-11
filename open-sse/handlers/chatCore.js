@@ -30,6 +30,8 @@ import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType, shouldDefaultClaudeToolType } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { maskSensitiveData, formatDlpLog, mergeDlpStats } from "../dlp/index.js";
+import { recordDlpMasks } from "@/lib/db/repos/dlpStatsRepo.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -58,7 +60,7 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, dlp, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -253,6 +255,33 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Per-request opt-out: client can bypass all token savers via header
   const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
+
+  // DLP: mask sensitive data before token savers and dispatch
+  if (dlp?.enabled) {
+    // Mask the raw client body in place as well: the persisted request-details
+    // `request` field is built from `body` (extractRequestConfig) by every
+    // downstream handler (streaming/non-streaming/SSE-to-JSON + error paths).
+    // On a no-op translation translatedBody === body (shared reference): mask
+    // once only — re-masking would re-pseudonymize our own pseudonyms in
+    // pseudo mode (double alias layer, inflated stats). A real translation
+    // produces a distinct object that still needs its own pass.
+    let dlpStats = null;
+    let requestStats = null;
+    if (body) {
+      requestStats = maskSensitiveData(body, dlp);
+      dlpStats = mergeDlpStats(dlpStats, requestStats);
+    }
+    if (translatedBody && translatedBody !== body) {
+      dlpStats = mergeDlpStats(dlpStats, maskSensitiveData(translatedBody, dlp));
+    }
+    const dlpLine = formatDlpLog(dlpStats);
+    if (dlpLine) console.log(dlpLine);
+    // Stats: record the raw client-body pass only — a real translation copied the
+    // body into a new object, so the merged count would double-count every value.
+    if (requestStats?.matched) {
+      recordDlpMasks({ scope: "request", mode: dlp?.mode || "redact", matched: requestStats.matched, byType: requestStats.byType }).catch(() => {});
+    }
+  }
 
   // RTK: compress tool_result content
   const rtkStats = compressMessages(translatedBody, tokenSaverEnabled && rtkEnabled);
@@ -474,7 +503,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, resetsAtMs);
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
+  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log, dlp };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 

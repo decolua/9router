@@ -7,7 +7,7 @@ import {
   pickSamlDisplayName,
   validateSamlResponse,
 } from "../../src/lib/auth/saml.js";
-import { mergeWithDefaults } from "../../src/lib/db/repos/settingsRepo.js";
+import { mergeWithDefaults, normalizeCustomPatterns } from "../../src/lib/db/repos/settingsRepo.js";
 
 describe("SAML 2.0 Auth Engine Utilities", () => {
   describe("formatX509Certificate", () => {
@@ -139,6 +139,75 @@ describe("SAML 2.0 Auth Engine Utilities", () => {
       expect(merged.samlLoginLabel).toBe("Sign in with SAML SSO");
       expect(merged.samlAttributeEmail).toBe("email");
       expect(merged.samlAttributeName).toBe("name");
+    });
+
+    it("mergeWithDefaults safely populates DLP defaults for existing installations", () => {
+      const merged = mergeWithDefaults({});
+      expect(merged.dlpEnabled).toBe(false);
+      expect(merged.dlpConsent).toBe(false);
+      expect(merged.dlpMode).toBe("pseudo");
+      expect(merged.dlpTypes).toEqual(["email", "phone", "cpf", "cnpj", "creditCard", "ip", "apiKey"]);
+      expect(merged.dlpCustomPatterns).toEqual([]);
+      expect(merged.dlpMaskResponses).toBe(true);
+    });
+
+    it("mergeWithDefaults assigns UUIDs to legacy custom patterns without id", () => {
+      const merged = mergeWithDefaults({
+        dlpCustomPatterns: [
+          { name: "codigo CC", pattern: "CC-\\d{4}", type: "regex", enabled: false },
+          { name: "chave vault", pattern: "vault-*-secret", type: "wildcard", enabled: false },
+        ],
+      });
+      const ids = merged.dlpCustomPatterns.map((c) => c.id);
+      expect(ids).toHaveLength(2);
+      for (const id of ids) expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+      expect(new Set(ids).size).toBe(2);
+      // conteúdo preservado
+      expect(merged.dlpCustomPatterns[0].pattern).toBe("CC-\\d{4}");
+      expect(merged.dlpCustomPatterns[1].name).toBe("chave vault");
+    });
+
+    it("mergeWithDefaults resolves legacy ids colliding with the frontend fallback", () => {
+      // Cenário real do bug: um pattern sem id (fallback `regex-CC-\d{4}-0` no
+      // frontend) + um segundo idêntico persistido com esse mesmo id derivado.
+      // O pattern sem id ganha UUID (fim da colisão); o id legado único é
+      // preservado — ambos os keys ficam distintos.
+      const merged = mergeWithDefaults({
+        dlpCustomPatterns: [
+          { name: "codigo CC", pattern: "CC-\\d{4}", type: "regex", enabled: false },
+          { name: "codigo CC", pattern: "CC-\\d{4}", type: "regex", enabled: false, id: "regex-CC-\\d{4}-0" },
+        ],
+      });
+      const cps = merged.dlpCustomPatterns;
+      expect(cps).toHaveLength(2);
+      const ids = cps.map((c) => c.id);
+      expect(new Set(ids).size).toBe(2);
+      // id legado único preservado…
+      expect(cps.some((c) => c.id === "regex-CC-\\d{4}-0")).toBe(true);
+      // …e o pattern sem id recebe um UUID (deixa de colidir com o id acima).
+      const withUuid = cps.find((c) => c.id !== "regex-CC-\\d{4}-0");
+      expect(withUuid.name).toBe("codigo CC");
+      expect(withUuid.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-/i);
+    });
+
+    it("normalizeCustomPatterns preserves unique valid ids and keeps the shape", () => {
+      const cp = { name: "ok", pattern: "x+", type: "regex", id: "11111111-2222-4333-8444-555555555555" };
+      const out = normalizeCustomPatterns([cp, { name: "sem id", pattern: "y+", type: "wildcard" }]);
+      expect(out[0].id).toBe(cp.id);
+      expect(out[1].id).toMatch(/^[0-9a-f-]{36}$/i);
+      expect(out[1].pattern).toBe("y+");
+      expect(normalizeCustomPatterns(undefined)).toEqual([]);
+      expect(normalizeCustomPatterns(null)).toEqual([]);
+      expect(normalizeCustomPatterns("nope")).toEqual([]);
+    });
+
+    it("normalizeCustomPatterns is idempotent", () => {
+      const once = normalizeCustomPatterns([
+        { name: "a", pattern: "x+", type: "regex" },
+        { name: "a", pattern: "x+", type: "regex", id: "legacy-dup" },
+      ]);
+      const twice = normalizeCustomPatterns(once);
+      expect(twice.map((c) => c.id)).toEqual(once.map((c) => c.id));
     });
   });
 });

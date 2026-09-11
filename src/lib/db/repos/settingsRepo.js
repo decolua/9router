@@ -1,5 +1,6 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { randomUUID } from "node:crypto";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787";
@@ -62,12 +63,35 @@ const DEFAULT_SETTINGS = {
   pxpipeAutoInstall: true,
   pxpipeMinChars: 25000,
   pxpipeTimeoutMs: 15000,
+  dlpEnabled: false,
+  dlpConsent: false,
+  dlpMode: "pseudo",
+  dlpTypes: ["email", "phone", "cpf", "cnpj", "creditCard", "ip", "apiKey"],
+  dlpCustomPatterns: [],
+  dlpMaskResponses: true,
 };
 
 async function readRaw() {
   const db = await getAdapter();
   const row = db.get(`SELECT data FROM settings WHERE id = 1`);
   return row ? parseJson(row.data, {}) : {};
+}
+
+/**
+ * Guarantee every custom pattern has a stable, unique `id`.
+ * Legacy rows may lack `id` entirely or carry derived non-unique ids
+ * (e.g. `regex-CC-\d{4}-0`) that collided as React keys. Missing/duplicate
+ * ids get a fresh UUID. Idempotent: a second pass changes nothing.
+ */
+export function normalizeCustomPatterns(customPatterns) {
+  if (!Array.isArray(customPatterns)) return [];
+  const seen = new Set();
+  return customPatterns.map((cp) => {
+    const current = cp && typeof cp.id === "string" && cp.id.trim() && !seen.has(cp.id);
+    const id = current ? cp.id : randomUUID();
+    seen.add(id);
+    return { ...cp, id };
+  });
 }
 
 // Merge raw settings with defaults; backward-compat for missing keys
@@ -86,6 +110,9 @@ export function mergeWithDefaults(raw) {
       }
     }
   }
+  // Fix up legacy custom patterns with missing/duplicate ids before they
+  // reach the UI (React keys) or the DLP engine (identity).
+  merged.dlpCustomPatterns = normalizeCustomPatterns(merged.dlpCustomPatterns);
   return merged;
 }
 
