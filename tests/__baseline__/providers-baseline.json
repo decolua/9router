@@ -44,6 +44,7 @@
     },
     "usage": {
       "quotaApiUrl": "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels",
+      "quotaSummaryApiUrl": "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary",
       "loadProjectApiUrl": "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
       "tokenUrl": "https://oauth2.googleapis.com/token"
     },
@@ -131,6 +132,9 @@
       "HTTP-Referer": "https://cline.bot",
       "X-Title": "Cline"
     },
+    "quirks": {
+      "clineEnvelope": true
+    },
     "tokenUrl": "https://api.cline.bot/api/v1/auth/token",
     "refreshUrl": "https://api.cline.bot/api/v1/auth/refresh",
     "auth": {
@@ -148,6 +152,9 @@
     "headers": {
       "HTTP-Referer": "https://cline.bot",
       "X-Title": "Cline"
+    },
+    "quirks": {
+      "clineEnvelope": true
     },
     "auth": {
       "combined": true,
@@ -240,6 +247,12 @@
     "validateUrl": "https://api.deepseek.com/models",
     "reasoningInject": {
       "scope": "all"
+    },
+    "quirks": {
+      "claudeSupportedToolTypes": [
+        "web_search_20250305",
+        "web_search_20260209"
+      ]
     },
     "format": "openai",
     "transports": [
@@ -438,6 +451,9 @@
   "groq": {
     "baseUrl": "https://api.groq.com/openai/v1/chat/completions",
     "validateUrl": "https://api.groq.com/openai/v1/models",
+    "usage": {
+      "url": "https://api.groq.com/openai/v1/models"
+    },
     "format": "openai"
   },
   "hyperbolic": {
@@ -571,7 +587,8 @@
       "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
     },
     "quirks": {
-      "dropOutputConfig": true
+      "dropOutputConfig": true,
+      "requireClaudeToolType": true
     },
     "reasoningInject": {
       "scope": "all"
@@ -622,7 +639,8 @@
       "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
     },
     "quirks": {
-      "dropOutputConfig": true
+      "dropOutputConfig": true,
+      "requireClaudeToolType": true
     },
     "reasoningInject": {
       "scope": "all"
@@ -709,6 +727,9 @@
   "opencode-go": {
     "baseUrl": "https://opencode.ai/zen/go/v1/chat/completions",
     "headers": {},
+    "usage": {
+      "url": "https://opencode.ai/zen/go/v1/usage"
+    },
     "format": "openai",
     "transports": [
       {
@@ -949,6 +970,7 @@
       "HTTP-Referer": "https://endpoint-proxy.local",
       "X-Title": "Endpoint Proxy"
     },
+    "forceStream": true,
     "format": "openai"
   },
   "baidu": {
