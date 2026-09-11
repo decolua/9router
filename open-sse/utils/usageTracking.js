@@ -59,12 +59,40 @@ export function addBufferToUsage(usage) {
 export function filterUsageForFormat(usage, targetFormat) {
   if (!usage || typeof usage !== "object") return usage;
 
+  let adapted = { ...usage };
+
+  // Format adaptation: bridge cross-format field shapes before whitelist filtering
+  if (targetFormat === FORMATS.CLAUDE) {
+    if (adapted.input_tokens === undefined && adapted.prompt_tokens !== undefined) {
+      const prompt = adapted.prompt_tokens || 0;
+      const cached = adapted.cached_tokens ?? adapted.cache_read_input_tokens ?? 0;
+      const cacheCreate = adapted.cache_creation_input_tokens || 0;
+      adapted.input_tokens = Math.max(0, prompt - cached - cacheCreate);
+    }
+    if (adapted.output_tokens === undefined && adapted.completion_tokens !== undefined) {
+      adapted.output_tokens = adapted.completion_tokens;
+    }
+    if (adapted.cache_read_input_tokens === undefined && adapted.cached_tokens !== undefined && adapted.cached_tokens > 0) {
+      adapted.cache_read_input_tokens = adapted.cached_tokens;
+    }
+  } else if (targetFormat === FORMATS.OPENAI || targetFormat === FORMATS.CODEX || targetFormat === FORMATS.KIRO || !targetFormat || targetFormat === "default") {
+    const cached = adapted.cached_tokens ?? adapted.prompt_tokens_details?.cached_tokens ?? adapted.cache_read_input_tokens;
+    if (cached !== undefined && cached > 0) {
+      adapted.cached_tokens = cached;
+      if (!adapted.prompt_tokens_details) {
+        adapted.prompt_tokens_details = { cached_tokens: cached };
+      } else if (adapted.prompt_tokens_details.cached_tokens === undefined) {
+        adapted.prompt_tokens_details = { ...adapted.prompt_tokens_details, cached_tokens: cached };
+      }
+    }
+  }
+
   // Helper to pick only defined fields from usage
   const pickFields = (fields) => {
     const filtered = {};
     for (const field of fields) {
-      if (usage[field] !== undefined) {
-        filtered[field] = usage[field];
+      if (adapted[field] !== undefined) {
+        filtered[field] = adapted[field];
       }
     }
     return filtered;
@@ -291,12 +319,14 @@ export function extractUsage(chunk) {
   // Antigravity wraps usageMetadata inside response: { response: { usageMetadata: {...} } }
   const usageMeta = chunk.usageMetadata || chunk.response?.usageMetadata;
   if (usageMeta && typeof usageMeta === "object") {
+    const cachedTokens = usageMeta.cachedContentTokenCount;
     return normalizeUsage({
       prompt_tokens: usageMeta.promptTokenCount || 0,
       completion_tokens: usageMeta.candidatesTokenCount || 0,
       total_tokens: usageMeta.totalTokenCount,
-      cached_tokens: usageMeta.cachedContentTokenCount,
-      reasoning_tokens: usageMeta.thoughtsTokenCount
+      cached_tokens: cachedTokens,
+      reasoning_tokens: usageMeta.thoughtsTokenCount,
+      prompt_tokens_details: cachedTokens ? { cached_tokens: cachedTokens } : undefined
     });
   }
 

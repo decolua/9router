@@ -375,68 +375,13 @@ export function parseQuotaData(provider, data) {
 
       case "antigravity":
         if (data.quotas) {
-          const entries = Object.entries(data.quotas);
-          const weeklyKeys = new Set(["gemini_weekly", "claude_gpt_weekly"]);
-          const geminiModels = entries.filter(([k]) => k.startsWith("gemini-") && !k.includes("image"));
-          const claudeModels = entries.filter(([k]) => k.startsWith("claude-"));
-          const imageModels = entries.filter(([k]) => k.includes("image"));
-          const weeklyModels = entries.filter(([k]) => weeklyKeys.has(k));
-          const otherModels = entries.filter(([k]) => !k.startsWith("gemini-") && !k.startsWith("claude-") && !k.includes("image") && !weeklyKeys.has(k));
-
-          if (geminiModels.length > 0) {
-            const rep = geminiModels.reduce((min, cur) =>
-              (cur[1].remainingPercentage ?? 100) < (min[1].remainingPercentage ?? 100) ? cur : min
-            )[1];
+          Object.entries(data.quotas).forEach(([modelKey, quota]) => {
+            let cleanName = (quota.displayName || modelKey)
+              .replace(/\s+models?/gi, "")
+              .replace(/Claude and GPT/gi, "Claude & GPT");
             normalizedQuotas.push({
-              name: "Gemini (Flash / Pro)",
-              modelKey: "gemini",
-              used: rep.used || 0,
-              total: rep.total || 0,
-              resetAt: rep.resetAt || null,
-              remainingPercentage: rep.remainingPercentage,
-            });
-          }
-
-          if (claudeModels.length > 0) {
-            const rep = claudeModels.reduce((min, cur) =>
-              (cur[1].remainingPercentage ?? 100) < (min[1].remainingPercentage ?? 100) ? cur : min
-            )[1];
-            normalizedQuotas.push({
-              name: "Claude (Sonnet / Opus)",
-              modelKey: "claude",
-              used: rep.used || 0,
-              total: rep.total || 0,
-              resetAt: rep.resetAt || null,
-              remainingPercentage: rep.remainingPercentage,
-            });
-          }
-
-          weeklyModels.forEach(([modelKey, quota]) => {
-            normalizedQuotas.push({
-              name: quota.displayName || modelKey,
-              modelKey,
-              used: quota.used || 0,
-              total: quota.total || 0,
-              resetAt: quota.resetAt || null,
-              remainingPercentage: quota.remainingPercentage,
-            });
-          });
-
-          imageModels.forEach(([modelKey, quota]) => {
-            normalizedQuotas.push({
-              name: quota.displayName || modelKey,
-              modelKey,
-              used: quota.used || 0,
-              total: quota.total || 0,
-              resetAt: quota.resetAt || null,
-              remainingPercentage: quota.remainingPercentage,
-            });
-          });
-
-          otherModels.forEach(([modelKey, quota]) => {
-            normalizedQuotas.push({
-              name: quota.displayName || modelKey,
-              modelKey,
+              name: cleanName,
+              modelKey: modelKey, // Keep modelKey for sorting
               used: quota.used || 0,
               total: quota.total || 0,
               resetAt: quota.resetAt || null,
@@ -711,4 +656,30 @@ export function parseQuotaData(provider, data) {
   }
 
   return normalizedQuotas;
+}
+
+export function getCodeBuddyCredits(quota) {
+  if (quota?.raw?.summary) {
+    return {
+      total: Number(quota.raw.summary.totalCapacity) || 0,
+      used: Number(quota.raw.summary.totalUsed) || 0,
+      remaining: Number(quota.raw.summary.totalRemaining) || 0,
+    };
+  }
+  let total = 0;
+  let used = 0;
+  let remaining = 0;
+  for (const q of quota?.quotas || []) {
+    const t = Number(q.total) || 0;
+    const u = Number(q.used) || 0;
+    const r = q.remaining !== undefined ? Number(q.remaining) : Math.max(0, t - u);
+    total += t;
+    used += u;
+    remaining += r;
+  }
+  return {
+    total: Number(total.toFixed(2)),
+    used: Number(used.toFixed(2)),
+    remaining: Number(remaining.toFixed(2)),
+  };
 }

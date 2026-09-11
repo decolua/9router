@@ -107,11 +107,10 @@ async function runHeavyStartup() {
 
   configureTunnelMonitoring(settings);
 
-  if (hasQuotaAutoPingEnabled(settings)) {
-    import("@/shared/services/quotaAutoPing")
-      .then(({ startQuotaAutoPing }) => startQuotaAutoPing())
-      .catch((e) => console.log("[AutoPing] scheduler start failed:", e.message));
-  }
+  // Background scheduler: quota auto-ping (Claude/Codex) & CodeBuddy CN daily check-in
+  import("@/shared/services/quotaAutoPing")
+    .then(({ startQuotaAutoPing }) => startQuotaAutoPing())
+    .catch((e) => console.log("[AutoPing] scheduler start failed:", e.message));
 
   // Proactive OAuth token refresh (e.g. grok-cli ~6h TTL). Module is idempotent
   // and also started from custom-server.js when that entry is used.

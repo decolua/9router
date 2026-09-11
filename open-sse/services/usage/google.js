@@ -115,59 +115,77 @@ async function getGeminiSubscriptionInfo(accessToken, proxyOptions = null) {
 }
 
 /**
- * Antigravity Usage - Fetch quota from Google Cloud Code API
+ * Antigravity Usage - Fetch quota from retrieveUserQuotaSummary endpoint
+ * Returns per-group buckets with both Weekly and Five-Hour limits,
+ * matching the official Antigravity CLI display.
  */
 export async function getAntigravityUsage(accessToken, providerSpecificData, proxyOptions = null) {
   try {
-    // Fetch subscription info once — reuse for both projectId and plan
-    const subscriptionInfo = await getAntigravitySubscriptionInfo(accessToken, proxyOptions);
-    const projectId = subscriptionInfo?.cloudaicompanionProject || null;
+    // Use retrieveUserQuotaSummary — the same endpoint the official CLI uses
+    const QUOTA_SUMMARY_URL = "https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary";
 
-    const response = await fetchWithTimeout(ANTIGRAVITY_CONFIG.quotaApiUrl, {
+    const response = await fetchWithTimeout(QUOTA_SUMMARY_URL, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
-        "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
         "Content-Type": "application/json",
+        "User-Agent": ANTIGRAVITY_CONFIG.userAgent,
         "X-Client-Name": "antigravity",
         "X-Client-Version": ANTIGRAVITY_IDE_VERSION,
       },
-      body: JSON.stringify({
-        ...(projectId ? { project: projectId } : {})
-      }),
+      body: JSON.stringify({}),
     }, 10000, proxyOptions);
 
     if (response.status === 403) {
       return {
         message: "Antigravity quota API access forbidden. Chat may still work.",
-        quotas: {}
+        quotas: {},
       };
     }
 
     if (response.status === 401) {
       return {
         message: "Antigravity quota API authentication expired. Chat may still work.",
-        quotas: {}
+        quotas: {},
       };
     }
 
     if (!response.ok) {
-      throw new Error(`Antigravity API error: ${response.status}`);
+      throw new Error(`Antigravity quota API error: ${response.status}`);
     }
 
     const data = await response.json();
     const quotas = {};
 
-    // Detect tier: free-tier accounts only have weekly quotas (no separate 5h window).
-    // On free-tier, fetchAvailableModels returns misleading per-model quota info
-    // (missing remainingFraction defaults to 0, or reflects the weekly limit not a 5h window).
-    const paidTierId = subscriptionInfo?.paidTier?.id;
-    const isFreeTier = !paidTierId || paidTierId === "free-tier";
+    // Parse groups → buckets structure (identical to official CLI)
+    if (Array.isArray(data.groups)) {
+      for (const group of data.groups) {
+        if (!Array.isArray(group.buckets)) continue;
 
-    // Parse model quotas only for paid-tier accounts.
-    // Free-tier accounts skip this — their only meaningful quota is the weekly limit.
-    if (!isFreeTier && data.models) {
-      // Filter only recommended/important models (must match PROVIDER_MODELS ag ids)
+        for (const bucket of group.buckets) {
+          const frac = bucket.remainingFraction;
+          if (frac == null) continue;
+
+          const pct = frac * 100;
+          const used = Math.round(1000 * (1 - frac));
+          const windowKey = bucket.window === "5h" ? "5h" : "7d";
+
+          const cleanGroup = String(group.displayName || "")
+            .replace(/\s+models?/i, "")
+            .replace(/Claude and GPT/i, "Claude & GPT")
+            .trim();
+
+          quotas[bucket.bucketId] = {
+            used,
+            total: 1000,
+            resetAt: parseResetTime(bucket.resetTime),
+            remainingPercentage: pct,
+            unlimited: false,
+            displayName: `${cleanGroup} (${windowKey})`,
+          };
+        }
+      }
+    } else if (data.models) {
       const importantModels = [
         'gemini-3.8-flash-high',
         'gemini-3.8-flash-medium',
@@ -185,30 +203,20 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         'claude-sonnet-4-6',
         'claude-opus-4-6-thinking',
         'gpt-oss-120b-medium',
-        // Image generation models
         'gemini-3.1-flash-image',
       ];
 
       for (const [modelKey, info] of Object.entries(data.models)) {
-        // Skip models without quota info
-        if (!info.quotaInfo) {
-          continue;
-        }
-
-        // Skip internal models and non-important models
-        if (info.isInternal || !importantModels.includes(modelKey)) {
+        if (!info.quotaInfo || info.isInternal || !importantModels.includes(modelKey)) {
           continue;
         }
 
         const remainingFraction = info.quotaInfo.remainingFraction || 0;
         const remainingPercentage = remainingFraction * 100;
-
-        // Convert percentage to used/total for UI compatibility
-        const total = 1000; // Normalized base
+        const total = 1000;
         const remaining = Math.round(total * remainingFraction);
         const used = total - remaining;
 
-        // Use modelKey as key (matches PROVIDER_MODELS id)
         quotas[modelKey] = {
           used,
           total,
@@ -220,55 +228,8 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
       }
     }
 
-    // Best-effort weekly quota overlay — never blocks or breaks per-model results
-    try {
-      const weeklyQuotas = await fetchAntigravityWeeklyQuota(
-        accessToken,
-        projectId,
-        proxyOptions
-      );
-
-      // Reconcile weekly quota against model family status:
-      // If every model in a family is locked/exhausted (remainingPercentage === 0)
-      // until a future reset time, the weekly limit cannot be 100% available.
-      // On Google's Free Starter tier, retrieveUserQuotaSummary buggily reports
-      // remainingFraction: 1 even after the starter quota is depleted and all models 429.
-      const entries = Object.entries(quotas);
-      const geminiModels = entries.filter(([k]) => k.startsWith("gemini-") && !k.includes("image"));
-      const claudeModels = entries.filter(([k]) => k.startsWith("claude-"));
-
-      if (weeklyQuotas.gemini_weekly && geminiModels.length > 0) {
-        const allGeminiExhausted = geminiModels.every(([, q]) => (q.remainingPercentage ?? 0) === 0);
-        if (allGeminiExhausted && weeklyQuotas.gemini_weekly.remainingPercentage > 0) {
-          const maxResetAt = geminiModels.reduce((max, [, q]) =>
-            !max || (q.resetAt && new Date(q.resetAt) > new Date(max)) ? q.resetAt : max, null
-          );
-          weeklyQuotas.gemini_weekly.used = weeklyQuotas.gemini_weekly.total;
-          weeklyQuotas.gemini_weekly.remainingPercentage = 0;
-          if (maxResetAt) {
-            weeklyQuotas.gemini_weekly.resetAt = maxResetAt;
-          }
-        }
-      }
-
-      if (weeklyQuotas.claude_gpt_weekly && claudeModels.length > 0) {
-        const allClaudeExhausted = claudeModels.every(([, q]) => (q.remainingPercentage ?? 0) === 0);
-        if (allClaudeExhausted && weeklyQuotas.claude_gpt_weekly.remainingPercentage > 0) {
-          const maxResetAt = claudeModels.reduce((max, [, q]) =>
-            !max || (q.resetAt && new Date(q.resetAt) > new Date(max)) ? q.resetAt : max, null
-          );
-          weeklyQuotas.claude_gpt_weekly.used = weeklyQuotas.claude_gpt_weekly.total;
-          weeklyQuotas.claude_gpt_weekly.remainingPercentage = 0;
-          if (maxResetAt) {
-            weeklyQuotas.claude_gpt_weekly.resetAt = maxResetAt;
-          }
-        }
-      }
-
-      Object.assign(quotas, weeklyQuotas);
-    } catch {
-      // Silently ignore — weekly is best-effort
-    }
+    // Fetch plan name from subscription info
+    const subscriptionInfo = await getAntigravitySubscriptionInfo(accessToken, proxyOptions);
 
     return {
       plan: subscriptionInfo?.currentTier?.name || "Unknown",

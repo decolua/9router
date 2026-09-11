@@ -1,0 +1,208 @@
+From 0229f5794b9f3ec265160091fd3a750ae5bc095b Mon Sep 17 00:00:00 2001
+From: Biuzai OpenClaw Agent <biuzai@openclaw.ai>
+Date: Tue, 25 Aug 2026 20:14:17 +0800
+Subject: [PATCH 1/2] =?UTF-8?q?fix(usage):=20forward=20cache=20fields=20in?=
+ =?UTF-8?q?=20OpenAI=E2=86=92Claude,=20OpenAI=E2=86=92Responses=20non-stre?=
+ =?UTF-8?q?aming=20paths=20+=20align=20Gemini=20thoughtsTokenCount=20to=20?=
+ =?UTF-8?q?completion=5Ftokens?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- openAICompletionToClaudeMessage: forward cached_tokens as cache_read_input_tokens
+  and cache_creation_input_tokens when present (was dropping both)
+- openAICompletionToResponses: forward cached_tokens as input_tokens_details.cached_tokens
+  (Responses API convention; was dropping entirely)
+- translateNonStreamingResponse Gemini branch: move thoughtsTokenCount from
+  prompt_tokens to completion_tokens to align with extractUsage convention
+- Add 4 unit tests covering all 3 fixes
+---
+ .../handlers/chatCore/nonStreamingHandler.js  |  46 +++++---
+ tests/unit/cached-token-usage.test.js         | 100 ++++++++++++++++++
+ 2 files changed, 133 insertions(+), 13 deletions(-)
+
+diff --git a/open-sse/handlers/chatCore/nonStreamingHandler.js b/open-sse/handlers/chatCore/nonStreamingHandler.js
+index becc0842..a5711903 100644
+--- a/open-sse/handlers/chatCore/nonStreamingHandler.js
++++ b/open-sse/handlers/chatCore/nonStreamingHandler.js
+@@ -54,10 +54,17 @@ function openAICompletionToClaudeMessage(responseBody) {
+     content,
+     stop_reason: fromOpenAIFinish(choice.finish_reason, FORMATS.CLAUDE),
+     stop_sequence: null,
+-    usage: {
+-      input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
+-      output_tokens: usage.completion_tokens || usage.output_tokens || 0,
+-    },
++    usage: (() => {
++      const u = {
++        input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
++        output_tokens: usage.completion_tokens || usage.output_tokens || 0,
++      };
++      const cached = usage.cached_tokens || usage.prompt_tokens_details?.cached_tokens || 0;
++      if (cached > 0) u.cache_read_input_tokens = cached;
++      const cacheCreate = usage.cache_creation_input_tokens || 0;
++      if (cacheCreate > 0) u.cache_creation_input_tokens = cacheCreate;
++      return u;
++    })(),
+   };
+ }
+ 
+@@ -130,11 +137,18 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
+     background: false,
+     error: null,
+     output,
+-    usage: {
+-      input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
+-      output_tokens: usage.completion_tokens || usage.output_tokens || 0,
+-      total_tokens: usage.total_tokens || (usage.prompt_tokens || 0) + (usage.completion_tokens || 0),
+-    },
++    usage: (() => {
++      const u = {
++        input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
++        output_tokens: usage.completion_tokens || usage.output_tokens || 0,
++        total_tokens: usage.total_tokens || (usage.prompt_tokens || 0) + (usage.completion_tokens || 0),
++      };
++      const cached = usage.cached_tokens || usage.prompt_tokens_details?.cached_tokens || 0;
++      if (cached > 0) {
++        u.input_tokens_details = { cached_tokens: cached };
++      }
++      return u;
++    })(),
+   };
+ }
+ 
+@@ -202,13 +216,19 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
+     };
+ 
+     if (usage) {
++      const cached = usage.cachedContentTokenCount || 0;
++      const thoughts = usage.thoughtsTokenCount || 0;
+       result.usage = {
+-        prompt_tokens: (usage.promptTokenCount || 0) + (usage.thoughtsTokenCount || 0),
+-        completion_tokens: usage.candidatesTokenCount || 0,
++        prompt_tokens: usage.promptTokenCount || 0,
++        completion_tokens: (usage.candidatesTokenCount || 0) + thoughts,
+         total_tokens: usage.totalTokenCount || 0
+       };
+-      if (usage.thoughtsTokenCount > 0) {
+-        result.usage.completion_tokens_details = { reasoning_tokens: usage.thoughtsTokenCount };
++      if (cached > 0) {
++        result.usage.cached_tokens = cached;
++        result.usage.prompt_tokens_details = { cached_tokens: cached };
++      }
++      if (thoughts > 0) {
++        result.usage.completion_tokens_details = { reasoning_tokens: thoughts };
+       }
+     }
+     return result;
+diff --git a/tests/unit/cached-token-usage.test.js b/tests/unit/cached-token-usage.test.js
+index 878110d0..db13325d 100644
+--- a/tests/unit/cached-token-usage.test.js
++++ b/tests/unit/cached-token-usage.test.js
+@@ -186,3 +186,103 @@ describe("Kiro usage pass-through", () => {
+     expect(out.prompt_tokens_details.cache_creation_tokens).toBe(50);
+   });
+ });
++
++describe("filterUsageForFormat cross-format adaptation (Antigravity/Gemini -> Claude & OpenAI)", () => {
++  it("extractUsage captures cachedContentTokenCount and generates prompt_tokens_details for Gemini/AG", async () => {
++    const { extractUsage } = await import("../../open-sse/utils/usageTracking.js");
++    const usage = extractUsage({
++      usageMetadata: {
++        promptTokenCount: 1500,
++        candidatesTokenCount: 120,
++        totalTokenCount: 1620,
++        cachedContentTokenCount: 1000,
++        thoughtsTokenCount: 50
++      }
++    });
++    expect(usage.prompt_tokens).toBe(1500);
++    expect(usage.completion_tokens).toBe(120);
++    expect(usage.cached_tokens).toBe(1000);
++    expect(usage.prompt_tokens_details).toEqual({ cached_tokens: 1000 });
++  });
++
++  it("adapts Gemini/canonical usage to Claude format with proper cache_read_input_tokens and subtracted input_tokens", async () => {
++    const { filterUsageForFormat } = await import("../../open-sse/utils/usageTracking.js");
++    const usage = {
++      prompt_tokens: 2000,
++      completion_tokens: 150,
++      cached_tokens: 1200,
++      cache_creation_input_tokens: 0
++    };
++    const claudeUsage = filterUsageForFormat(usage, "claude");
++    expect(claudeUsage.input_tokens).toBe(800); // 2000 - 1200
++    expect(claudeUsage.output_tokens).toBe(150);
++    expect(claudeUsage.cache_read_input_tokens).toBe(1200);
++  });
++
++  it("adapts usage to OpenAI format, ensuring cached_tokens and prompt_tokens_details exist", async () => {
++    const { filterUsageForFormat } = await import("../../open-sse/utils/usageTracking.js");
++    const usage = {
++      prompt_tokens: 2000,
++      completion_tokens: 150,
++      cached_tokens: 1200
++    };
++    const openaiUsage = filterUsageForFormat(usage, "openai");
++    expect(openaiUsage.prompt_tokens).toBe(2000);
++    expect(openaiUsage.completion_tokens).toBe(150);
++    expect(openaiUsage.cached_tokens).toBe(1200);
++    expect(openaiUsage.prompt_tokens_details).toEqual({ cached_tokens: 1200 });
++  });
++});
++
++describe("nonStreamingHandler cache field forwarding", () => {
++  let translateNonStreamingResponse;
++
++  beforeAll(async () => {
++    const mod = await import("../../open-sse/handlers/chatCore/nonStreamingHandler.js");
++    translateNonStreamingResponse = mod.translateNonStreamingResponse;
++  });
++
++  it("OpenAI→Claude non-streaming preserves cached_tokens as cache_read_input_tokens", () => {
++    const body = {
++      id: "chatcmpl-test",
++      choices: [{ index: 0, message: { role: "assistant", content: "hi" }, finish_reason: "stop" }],
++      usage: { prompt_tokens: 2000, completion_tokens: 50, cached_tokens: 1200, prompt_tokens_details: { cached_tokens: 1200 } }
++    };
++    const result = translateNonStreamingResponse(body, "openai", "claude");
++    expect(result.usage.cache_read_input_tokens).toBe(1200);
++    expect(result.usage.input_tokens).toBeDefined();
++    expect(result.usage.output_tokens).toBe(50);
++  });
++
++  it("OpenAI→Claude non-streaming omits cache_read_input_tokens when cached_tokens is 0", () => {
++    const body = {
++      id: "chatcmpl-nocache",
++      choices: [{ index: 0, message: { role: "assistant", content: "hi" }, finish_reason: "stop" }],
++      usage: { prompt_tokens: 500, completion_tokens: 30 }
++    };
++    const result = translateNonStreamingResponse(body, "openai", "claude");
++    expect(result.usage.cache_read_input_tokens).toBeUndefined();
++  });
++
++  it("OpenAI→Responses non-streaming preserves input_tokens_details.cached_tokens", () => {
++    const body = {
++      id: "chatcmpl-resp",
++      choices: [{ index: 0, message: { role: "assistant", content: "hi" }, finish_reason: "stop" }],
++      usage: { prompt_tokens: 3000, completion_tokens: 100, cached_tokens: 2000, prompt_tokens_details: { cached_tokens: 2000 } }
++    };
++    const result = translateNonStreamingResponse(body, "openai", "openai-responses");
++    expect(result.usage.input_tokens_details).toEqual({ cached_tokens: 2000 });
++  });
++
++  it("Gemini non-streaming puts thoughtsTokenCount into completion_tokens not prompt_tokens", () => {
++    const geminiBody = {
++      candidates: [{ content: { parts: [{ text: "answer" }] } }],
++      usageMetadata: { promptTokenCount: 1000, candidatesTokenCount: 200, totalTokenCount: 1500, thoughtsTokenCount: 300, cachedContentTokenCount: 500 }
++    };
++    const result = translateNonStreamingResponse(geminiBody, "antigravity", "openai");
++    expect(result.usage.prompt_tokens).toBe(1000);
++    expect(result.usage.completion_tokens).toBe(500);
++    expect(result.usage.cached_tokens).toBe(500);
++    expect(result.usage.completion_tokens_details).toEqual({ reasoning_tokens: 300 });
++  });
++});
+-- 
+2.43.0
+

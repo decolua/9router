@@ -83,6 +83,7 @@ export default function ProviderDetailPage() {
   const stopOneByOneRef = useRef(false);
   const [importingQoderModels, setImportingQoderModels] = useState(false);
   const [importingClineModels, setImportingClineModels] = useState(false);
+  const [syncingCodebuddyModels, setSyncingCodebuddyModels] = useState(false);
   const { copied, copy } = useCopyToClipboard();
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
@@ -666,6 +667,130 @@ export default function ProviderDetailPage() {
       setImportingClineModels(false);
     }
   };
+
+  // Fetch live CodeBuddy CN models from all active accounts, merge and sync to customModels
+  const handleSyncCodebuddyModels = async (silent = false) => {
+    if (syncingCodebuddyModels) return;
+    const activeConnections = connections.filter((conn) => conn.isActive !== false);
+    if (activeConnections.length === 0) {
+      if (!silent) alert(translate("Please add an active CodeBuddy connection first"));
+      return;
+    }
+
+    setSyncingCodebuddyModels(true);
+    try {
+      const results = await Promise.allSettled(
+        activeConnections.map(async (conn) => {
+          const res = await fetch(`/api/providers/${conn.id}/models`);
+          const data = await res.json();
+          if (!res.ok) {
+            throw new Error(data.error || `HTTP ${res.status}`);
+          }
+          return data.models || [];
+        })
+      );
+
+      const fulfilled = results.filter((r) => r.status === "fulfilled");
+      const rejected = results.filter((r) => r.status === "rejected");
+
+      if (fulfilled.length === 0) {
+        const firstErr = rejected[0]?.reason?.message || translate("Failed to fetch models");
+        if (!silent) alert(translate("Failed to fetch models") + ": " + firstErr);
+        return;
+      }
+
+      // Best-effort union of models across all successful accounts
+      const allFetchedModels = [];
+      const seenIds = new Set();
+      for (const r of fulfilled) {
+        for (const m of r.value) {
+          const id = m?.id || m?.name;
+          if (id && !seenIds.has(id)) {
+            seenIds.add(id);
+            allFetchedModels.push(m);
+          }
+        }
+      }
+
+      if (allFetchedModels.length === 0) {
+        if (!silent) alert(translate("No models returned"));
+        return;
+      }
+
+      let importedCount = 0;
+      for (const model of allFetchedModels) {
+        const modelId = model.id || model.name;
+        if (!modelId) continue;
+        const alreadyExists =
+          customModels.some(
+            (entry) =>
+              entry.providerAlias === providerStorageAlias &&
+              entry.id === modelId &&
+              (entry.kind || entry.type || "llm") === "llm"
+          ) ||
+          Object.values(modelAliases).includes(`${providerStorageAlias}/${modelId}`) ||
+          models.some((m) => m.id === modelId);
+
+        if (alreadyExists) continue;
+
+        await handleAddCustomModel(modelId, "llm", providerStorageAlias);
+        importedCount += 1;
+      }
+
+      // Mark models no longer in upstream as disabled (User Decision 9A)
+      const upstreamIdSet = new Set(allFetchedModels.map((m) => m.id || m.name));
+      const disabledSet = new Set(disabledModelIds);
+      for (const cm of customModels) {
+        if (cm.providerAlias === providerStorageAlias && (cm.kind || cm.type || "llm") === "llm") {
+          if (!upstreamIdSet.has(cm.id) && !disabledSet.has(cm.id)) {
+            await handleDisableModel(cm.id);
+          }
+        }
+      }
+
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("cbcn_models_last_sync", String(Date.now()));
+      }
+
+      await Promise.all([fetchCustomModels(), fetchDisabledModels()]);
+
+      if (!silent) {
+        let msg = "";
+        if (importedCount === 0) {
+          msg = translate("All models already exist, no new models added");
+        } else {
+          msg = translate("Successfully added") + ` ${importedCount} ` + translate("models");
+        }
+        if (rejected.length > 0) {
+          msg += ` (${rejected.length} ${translate("accounts failed to sync")})`;
+        }
+        alert(msg);
+      }
+    } catch (error) {
+      console.log("Error syncing CodeBuddy models:", error);
+      if (!silent) alert(translate("Error fetching models") + ": " + error.message);
+    } finally {
+      setSyncingCodebuddyModels(false);
+    }
+  };
+
+  // Auto-sync CodeBuddy CN models if last sync was > 24 hours ago (User Decision 6B & 8B)
+  useEffect(() => {
+    if (providerId !== "codebuddy-cn") return;
+    const activeConns = connections.filter((conn) => conn.isActive !== false);
+    if (activeConns.length === 0) return;
+
+    const lastSyncStr = typeof window !== "undefined" ? window.localStorage.getItem("cbcn_models_last_sync") : null;
+    const lastSync = Number(lastSyncStr || 0);
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    if (Date.now() - lastSync > ONE_DAY_MS) {
+      const timer = setTimeout(() => {
+        handleSyncCodebuddyModels(true);
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [providerId, connections]);
 
   const handleRunOneByOneTest = async () => {
     if (oneByOneRunning || connections.length === 0) return;
@@ -1252,6 +1377,20 @@ export default function ProviderDetailPage() {
               {importingClineModels ? "progress_activity" : "download"}
             </span>
             {importingClineModels ? translate("Fetching...") : translate("Import from /models")}
+          </button>
+        )}
+
+        {/* Sync CodeBuddy CN models button — only show for codebuddy-cn provider */}
+        {providerId === "codebuddy-cn" && connections.some((conn) => conn.isActive !== false) && (
+          <button
+            onClick={() => handleSyncCodebuddyModels(false)}
+            disabled={syncingCodebuddyModels}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-500/40 px-3 py-2 text-xs text-blue-600 dark:text-blue-400 transition-colors hover:border-blue-500 hover:bg-blue-500/5 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span className="material-symbols-outlined text-sm" style={syncingCodebuddyModels ? { animation: "spin 1s linear infinite" } : undefined}>
+              {syncingCodebuddyModels ? "progress_activity" : "sync"}
+            </span>
+            {syncingCodebuddyModels ? translate("Syncing...") : translate("Sync Upstream Models")}
           </button>
         )}
 

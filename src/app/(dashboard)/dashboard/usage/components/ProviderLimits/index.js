@@ -37,6 +37,7 @@ import {
   ACCOUNT_PAGE_SIZE_MAX,
   ACCOUNT_FILTER_OPTIONS,
   QUOTA_SORT_OPTIONS,
+  getCodeBuddyCredits,
 } from "./utils";
 import Card from "@/shared/components/Card";
 import { ConfirmModal, EditConnectionModal } from "@/shared/components";
@@ -168,6 +169,13 @@ export default function ProviderLimits() {
     eligibleConnections: 0,
     providerFilteredConnections: 0,
   });
+  const [checkins, setCheckins] = useState({});
+  const [todayString, setTodayString] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  });
+  const [checkinLoading, setCheckinLoading] = useState(false);
+  const [singleCheckingInId, setSingleCheckingInId] = useState(null);
 
   const intervalRef = useRef(null);
   const countdownRef = useRef(null);
@@ -212,7 +220,7 @@ export default function ProviderLimits() {
         return [];
       }
     },
-    [accountFilter, expiringFirst, page, pageSize, providerFilter],
+    [accountFilter, page, pageSize, providerFilter],
   );
 
   // Fetch quota for a specific connection
@@ -221,9 +229,6 @@ export default function ProviderLimits() {
     setErrors((prev) => ({ ...prev, [connectionId]: null }));
 
     try {
-      console.log(
-        `[ProviderLimits] Fetching quota for ${provider} (${connectionId})`,
-      );
       const url = `/api/usage/${connectionId}${force ? "?force=1" : ""}`;
       const response = await fetch(url);
 
@@ -262,7 +267,6 @@ export default function ProviderLimits() {
       }
 
       const data = await response.json();
-      console.log(`[ProviderLimits] Got quota for ${provider}:`, data);
 
       // Parse quota data using provider-specific parser
       const parsedQuotas = parseQuotaData(provider, data);
@@ -301,6 +305,95 @@ export default function ProviderLimits() {
     },
     [fetchQuota],
   );
+
+  const fetchCheckins = useCallback(async () => {
+    try {
+      const res = await fetch("/api/usage/all/checkin");
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data?.checkins) {
+        setCheckins(data.checkins);
+      }
+      if (data?.today) {
+        setTodayString(data.today);
+      }
+    } catch (_) {}
+  }, []);
+
+  const handleCheckinAll = useCallback(async () => {
+    if (checkinLoading) return;
+    setCheckinLoading(true);
+    try {
+      const res = await fetch("/api/usage/all/checkin", { method: "POST" });
+      const data = await res.json();
+      if (data?.results) {
+        setCheckins((prev) => ({ ...prev, ...data.results }));
+      }
+      const cbcnConns = connections.filter((c) => c.provider === "codebuddy-cn");
+      await Promise.all(
+        cbcnConns.map((c) => fetchQuota(c.id, c.provider, { force: true })),
+      );
+      setLastUpdated(new Date());
+    } catch (e) {
+      console.error("One-click checkin failed:", e);
+    } finally {
+      setCheckinLoading(false);
+    }
+  }, [checkinLoading, connections, fetchQuota]);
+
+  const handleCheckinSingle = useCallback(async (connId) => {
+    if (singleCheckingInId) return;
+    setSingleCheckingInId(connId);
+    try {
+      const res = await fetch(`/api/usage/${connId}/checkin`, { method: "POST" });
+      const data = await res.json();
+      if (data?.result) {
+        setCheckins((prev) => ({ ...prev, [connId]: data.result }));
+      }
+      await fetchQuota(connId, "codebuddy-cn", { force: true });
+      setLastUpdated(new Date());
+    } catch (e) {
+      console.error(`Checkin failed for ${connId}:`, e);
+    } finally {
+      setSingleCheckingInId(null);
+    }
+  }, [singleCheckingInId, fetchQuota]);
+
+  const cbcnConnections = useMemo(() => {
+    return connections.filter((c) => c.provider === "codebuddy-cn");
+  }, [connections]);
+
+  const cbcnSummary = useMemo(() => {
+    if (cbcnConnections.length === 0) return null;
+
+    let totalCapacity = 0;
+    let totalUsed = 0;
+    let totalRemaining = 0;
+    let checkedInCount = 0;
+
+    for (const conn of cbcnConnections) {
+      const q = quotaData[conn.id];
+      const rec = checkins[conn.id];
+      const isChecked = rec && (rec.date === todayString || !rec.date) && (rec.ok || rec.already);
+      if (isChecked) {
+        checkedInCount += 1;
+      }
+
+      const credits = getCodeBuddyCredits(q);
+      totalCapacity += credits.total;
+      totalUsed += credits.used;
+      totalRemaining += credits.remaining;
+    }
+
+    return {
+      accountsCount: cbcnConnections.length,
+      totalCapacity: Number(totalCapacity.toFixed(2)),
+      totalUsed: Number(totalUsed.toFixed(2)),
+      totalRemaining: Number(totalRemaining.toFixed(2)),
+      checkedInCount,
+      allCheckedIn: checkedInCount >= cbcnConnections.length,
+    };
+  }, [cbcnConnections, quotaData, checkins, todayString]);
 
   const handleResetCodexLimit = useCallback(
     async (connectionId, provider) => {
@@ -486,11 +579,12 @@ export default function ProviderLimits() {
         filterQuotaStateByConnections(prev, visibleConnections),
       );
 
-      await Promise.all(
-        visibleConnections
+      await Promise.all([
+        ...visibleConnections
           .filter(shouldFetch)
           .map((conn) => fetchQuota(conn.id, conn.provider)),
-      );
+        fetchCheckins(),
+      ]);
 
       setLastUpdated(new Date());
     } catch (error) {
@@ -498,7 +592,7 @@ export default function ProviderLimits() {
     } finally {
       setRefreshingAll(false);
     }
-  }, [refreshingAll, fetchConnections, fetchQuota, page]);
+  }, [refreshingAll, fetchConnections, fetchQuota, fetchCheckins, page]);
 
   useEffect(() => {
     const initializeData = async () => {
@@ -515,14 +609,15 @@ export default function ProviderLimits() {
         filterQuotaStateByConnections(prev, visibleConnections),
       );
 
-      await Promise.all(
-        visibleConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
-      );
+      await Promise.all([
+        ...visibleConnections.map((conn) => fetchQuota(conn.id, conn.provider)),
+        fetchCheckins(),
+      ]);
       setLastUpdated(new Date());
     };
 
     initializeData();
-  }, [fetchConnections, fetchQuota, page]);
+  }, [fetchConnections, fetchQuota, fetchCheckins, page]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1042,6 +1137,69 @@ export default function ProviderLimits() {
         </div>
       )}
 
+      {/* CodeBuddy CN Summary Banner */}
+      {cbcnSummary && (providerFilter === "all" || providerFilter === "codebuddy-cn") && (
+        <div className="relative overflow-hidden rounded-2xl border border-primary/20 bg-gradient-to-r from-primary/5 via-surface to-primary/5 p-4 shadow-sm backdrop-blur dark:border-primary/20">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-5 sm:gap-6">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <span className="material-symbols-outlined text-[24px]">account_balance_wallet</span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5 text-[11px] font-medium text-text-muted">
+                    <span>CodeBuddy CN 积分概览</span>
+                    <span className="rounded-full bg-black/5 px-1.5 py-0.2 text-[10px] text-text-muted dark:bg-white/10">
+                      {cbcnSummary.accountsCount} 账户
+                    </span>
+                  </div>
+                  <div className="mt-0.5 flex items-baseline gap-2">
+                    <span className="text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                      {cbcnSummary.totalRemaining.toLocaleString()}
+                    </span>
+                    <span className="text-xs text-text-muted">
+                      / {cbcnSummary.totalCapacity.toLocaleString()} 总积分
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="hidden h-8 w-px bg-black/10 dark:bg-white/10 sm:block" />
+
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-text-muted">
+                  event_available
+                </span>
+                <div className="text-xs">
+                  <span className="text-text-muted">今日签到状态：</span>
+                  <span className={`font-medium ${cbcnSummary.allCheckedIn ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
+                    {cbcnSummary.checkedInCount} / {cbcnSummary.accountsCount} 已签到
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleCheckinAll}
+                disabled={checkinLoading}
+                className={`flex h-9 items-center gap-1.5 rounded-xl px-3.5 text-xs font-medium transition-all shadow-sm ${
+                  cbcnSummary.allCheckedIn
+                    ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 dark:text-emerald-400"
+                    : "border border-primary/30 bg-primary text-white hover:bg-primary/90 shadow-primary/20"
+                } disabled:cursor-not-allowed disabled:opacity-60`}
+              >
+                <span className={`material-symbols-outlined text-[16px] ${checkinLoading ? "animate-spin" : ""}`}>
+                  {checkinLoading ? "progress_activity" : cbcnSummary.allCheckedIn ? "done_all" : "task_alt"}
+                </span>
+                <span>{checkinLoading ? "签到中..." : cbcnSummary.allCheckedIn ? "全部已签到" : "一键每日签到"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {sortedConnections.map((conn) => {
           const quota = quotaData[conn.id];
@@ -1057,6 +1215,16 @@ export default function ProviderLimits() {
           const rawQuotas = quota?.quotas || [];
           const visibleQuotas = filterQuotasByVisibility(conn.provider, rawQuotas, quotaVisibility);
           const hiddenQuotaRows = getHiddenQuotaRows(conn.provider, rawQuotas, quotaVisibility);
+
+          const isCbcn = conn.provider === "codebuddy-cn";
+          const cbcnCredits = isCbcn ? getCodeBuddyCredits(quota) : null;
+          const cbcnCheckinRecord = isCbcn ? checkins[conn.id] : null;
+          const isCbcnCheckedIn =
+            isCbcn &&
+            cbcnCheckinRecord &&
+            (cbcnCheckinRecord.date === todayString || !cbcnCheckinRecord.date) &&
+            (cbcnCheckinRecord.ok || cbcnCheckinRecord.already);
+          const isCheckingInThis = singleCheckingInId === conn.id;
 
           return (
             <Card
@@ -1277,15 +1445,51 @@ export default function ProviderLimits() {
                     <p className="text-xs text-text-muted">{quota.message}</p>
                   </div>
                 ) : (
-                  <QuotaTable
-                    quotas={visibleQuotas}
-                    compact
-                    sortMode="default"
-                    showSortLabel={
-                      conn.provider === "codex" && quotaSortMode !== "default"
-                    }
-                    onHideQuota={(quotaRow) => handleHideQuota(conn.provider, quotaRow)}
-                  />
+                  <>
+                    {isCbcn && cbcnCredits && (
+                      <div className="mb-2 flex items-center justify-between gap-2 rounded-lg border border-black/5 bg-black/[0.02] px-2.5 py-1.5 dark:border-white/5 dark:bg-white/[0.02]">
+                        <div className="flex items-baseline gap-1.5 text-xs">
+                          <span className="text-[11px] text-text-muted">账户积分:</span>
+                          <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                            {cbcnCredits.remaining.toLocaleString()}
+                          </span>
+                          <span className="text-[11px] text-text-muted">
+                            / {cbcnCredits.total.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          {isCbcnCheckedIn ? (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
+                              <span className="material-symbols-outlined text-[13px]">check_circle</span>
+                              <span>今日已签到</span>
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleCheckinSingle(conn.id)}
+                              disabled={isCheckingInThis || rowBusy}
+                              className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/20 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                              title="点击签到领取积分"
+                            >
+                              <span className={`material-symbols-outlined text-[13px] ${isCheckingInThis ? "animate-spin" : ""}`}>
+                                {isCheckingInThis ? "progress_activity" : "event_available"}
+                              </span>
+                              <span>{isCheckingInThis ? "签到中..." : "签到"}</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    <QuotaTable
+                      quotas={visibleQuotas}
+                      compact
+                      sortMode="default"
+                      showSortLabel={
+                        conn.provider === "codex" && quotaSortMode !== "default"
+                      }
+                      onHideQuota={(quotaRow) => handleHideQuota(conn.provider, quotaRow)}
+                    />
+                  </>
                 )}
                 {quota?.message && !error && !isLoading && (
                   <p className="mt-2 px-1 text-[10px] leading-relaxed text-text-muted">

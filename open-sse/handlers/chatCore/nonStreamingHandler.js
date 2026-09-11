@@ -55,10 +55,17 @@ function openAICompletionToClaudeMessage(responseBody) {
     content,
     stop_reason: fromOpenAIFinish(choice.finish_reason, FORMATS.CLAUDE),
     stop_sequence: null,
-    usage: {
-      input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
-      output_tokens: usage.completion_tokens || usage.output_tokens || 0,
-    },
+    usage: (() => {
+      const u = {
+        input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
+        output_tokens: usage.completion_tokens || usage.output_tokens || 0,
+      };
+      const cached = usage.cached_tokens || usage.prompt_tokens_details?.cached_tokens || 0;
+      if (cached > 0) u.cache_read_input_tokens = cached;
+      const cacheCreate = usage.cache_creation_input_tokens || 0;
+      if (cacheCreate > 0) u.cache_creation_input_tokens = cacheCreate;
+      return u;
+    })(),
   };
 }
 
@@ -131,11 +138,18 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
     background: false,
     error: null,
     output,
-    usage: {
-      input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
-      output_tokens: usage.completion_tokens || usage.output_tokens || 0,
-      total_tokens: usage.total_tokens || (usage.prompt_tokens || 0) + (usage.completion_tokens || 0),
-    },
+    usage: (() => {
+      const u = {
+        input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
+        output_tokens: usage.completion_tokens || usage.output_tokens || 0,
+        total_tokens: usage.total_tokens || (usage.prompt_tokens || 0) + (usage.completion_tokens || 0),
+      };
+      const cached = usage.cached_tokens || usage.prompt_tokens_details?.cached_tokens || 0;
+      if (cached > 0) {
+        u.input_tokens_details = { cached_tokens: cached };
+      }
+      return u;
+    })(),
   };
 }
 
@@ -203,13 +217,19 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     };
 
     if (usage) {
+      const cached = usage.cachedContentTokenCount || 0;
+      const thoughts = usage.thoughtsTokenCount || 0;
       result.usage = {
-        prompt_tokens: (usage.promptTokenCount || 0) + (usage.thoughtsTokenCount || 0),
-        completion_tokens: usage.candidatesTokenCount || 0,
+        prompt_tokens: usage.promptTokenCount || 0,
+        completion_tokens: (usage.candidatesTokenCount || 0) + thoughts,
         total_tokens: usage.totalTokenCount || 0
       };
-      if (usage.thoughtsTokenCount > 0) {
-        result.usage.completion_tokens_details = { reasoning_tokens: usage.thoughtsTokenCount };
+      if (cached > 0) {
+        result.usage.cached_tokens = cached;
+        result.usage.prompt_tokens_details = { cached_tokens: cached };
+      }
+      if (thoughts > 0) {
+        result.usage.completion_tokens_details = { reasoning_tokens: thoughts };
       }
     }
     return result;

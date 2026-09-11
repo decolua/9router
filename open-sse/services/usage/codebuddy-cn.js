@@ -131,7 +131,28 @@ async function getCodeBuddyUsage(providerId, accessToken, apiKey, providerSpecif
     const basePkg = refills[0] || accounts[0] || {};
     const plan = basePkg.PackageName || basePkg.SubProductName || "CodeBuddy";
 
-    return { plan, quotas };
+    let totalCapacity = 0;
+    let totalUsed = 0;
+    accounts.forEach((acc) => {
+      if (isRefill(acc)) {
+        totalCapacity += num(acc.CycleCapacitySizePrecise, acc.CycleCapacitySize);
+        totalUsed += num(acc.CycleCapacityUsedPrecise, acc.CycleCapacityUsed);
+      } else {
+        totalCapacity += num(acc.CapacitySizePrecise, acc.CapacitySize);
+        totalUsed += num(acc.CapacityUsedPrecise, acc.CapacityUsed);
+      }
+    });
+    const totalRemaining = Math.max(0, totalCapacity - totalUsed);
+
+    return {
+      plan,
+      quotas,
+      summary: {
+        totalCapacity: Number(totalCapacity.toFixed(2)),
+        totalUsed: Number(totalUsed.toFixed(2)),
+        totalRemaining: Number(totalRemaining.toFixed(2)),
+      },
+    };
   } catch (error) {
     return { message: `CodeBuddy (${providerId}) error: ${error.message}` };
   }
@@ -143,4 +164,65 @@ export async function getCodeBuddyCnUsage(accessToken, apiKey, providerSpecificD
 
 export async function getCodeBuddyIntlUsage(accessToken, apiKey, providerSpecificData, proxyOptions = null) {
   return getCodeBuddyUsage("codebuddy-intl", accessToken, apiKey, providerSpecificData, proxyOptions);
+}
+
+export async function dailyCheckinCodeBuddy(accessToken, apiKey, providerSpecificData = {}, proxyOptions = null) {
+  const token = accessToken || apiKey;
+  if (!token) {
+    return { ok: false, message: "CodeBuddy credential not available." };
+  }
+
+  const endpoints = [
+    "https://www.codebuddy.cn/v2/billing/meter/daily-checkin",
+    "https://copilot.tencent.com/v2/billing/meter/daily-checkin",
+  ];
+
+  const headers = {
+    ...(PROVIDERS[PROVIDER_ID]?.headers || {}),
+    Authorization: `Bearer ${token}`,
+    "Content-Type": "application/json",
+    Accept: "application/json",
+    ...(providerSpecificData?.uid ? { "X-User-Id": String(providerSpecificData.uid) } : {}),
+    ...(providerSpecificData?.enterpriseId ? {
+      "X-Enterprise-Id": String(providerSpecificData.enterpriseId),
+      "X-Tenant-Id": String(providerSpecificData.enterpriseId),
+    } : {}),
+    ...(providerSpecificData?.domain ? { "X-Domain": String(providerSpecificData.domain) } : {}),
+  };
+
+  let lastError = null;
+  for (const url of endpoints) {
+    try {
+      const response = await proxyAwareFetch(url, {
+        method: "POST",
+        headers,
+        body: "{}",
+      }, proxyOptions);
+
+      const text = await response.text();
+      let json = {};
+      try {
+        json = JSON.parse(text);
+      } catch (_) {}
+
+      const code = json?.code;
+      const msg = json?.msg || text;
+      const isAlready = code === 10001 || /已签到|已领取|已经.*(?:签到|领取)|重复签到|already/i.test(msg);
+      const isSuccess = (code === 0 && response.ok) || isAlready;
+
+      return {
+        ok: isSuccess,
+        already: isAlready,
+        code,
+        message: msg || (isSuccess ? "Success" : `HTTP ${response.status}`),
+      };
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  return {
+    ok: false,
+    message: lastError ? lastError.message : "Checkin failed",
+  };
 }

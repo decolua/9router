@@ -51,4 +51,21 @@ describe("#3260 non-streaming usage extraction for enveloped Gemini responses", 
     expect(extractUsageFromResponse({ response: { candidates: [] } })).toBeNull();
     expect(extractUsageFromResponse(null)).toBeNull();
   });
+
+  it("translateNonStreamingResponse preserves cached_tokens and prompt_tokens_details from Gemini usageMetadata", async () => {
+    const { translateNonStreamingResponse } = await import("../../open-sse/handlers/chatCore/nonStreamingHandler.js");
+    const res = translateNonStreamingResponse(
+      {
+        response: {
+          candidates: [{ content: { parts: [{ text: "hello" }] }, finishReason: "STOP" }],
+          usageMetadata: USAGE_METADATA
+        }
+      },
+      "gemini",
+      "openai"
+    );
+    expect(res.usage).toBeDefined();
+    expect(res.usage.cached_tokens).toBe(78);
+    expect(res.usage.prompt_tokens_details).toEqual({ cached_tokens: 78 });
+  });
 });

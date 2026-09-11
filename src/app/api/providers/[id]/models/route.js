@@ -12,6 +12,7 @@ import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveClineModels, resolveClinepassModels } from "open-sse/services/clinepassModels.js";
+import { resolveCodebuddyCnModels } from "open-sse/services/codebuddyCnModels.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -320,6 +321,51 @@ const PROVIDER_MODELS_CONFIG = {
   },
 
   // Custom resolvers (non-OpenAI-shaped APIs / token-refresh flows)
+  "codebuddy-cn": {
+    customResolver: async (connection) => {
+      const credentials = {
+        accessToken: connection.accessToken,
+        apiKey: connection.apiKey,
+        refreshToken: connection.refreshToken,
+        providerSpecificData: connection.providerSpecificData || {},
+      };
+      const proxyConfig = resolveConnectionProxyConfig(connection);
+      const proxyOptions = {
+        connectionProxyEnabled: proxyConfig?.connectionProxyEnabled === true,
+        proxyUrl: proxyConfig?.proxyUrl || null,
+      };
+      let warning;
+      try {
+        const result = await resolveCodebuddyCnModels(credentials, {
+          forceRefresh: true,
+          proxyOptions,
+          log: console,
+          onCredentialsRefreshed: async (refreshed) => {
+            if (refreshed?.accessToken) {
+              await updateProviderCredentials(connection.id, {
+                accessToken: refreshed.accessToken,
+                refreshToken: refreshed.refreshToken || connection.refreshToken,
+                expiresIn: refreshed.expiresIn,
+              });
+              connection.accessToken = refreshed.accessToken;
+              if (refreshed.refreshToken) connection.refreshToken = refreshed.refreshToken;
+            }
+          },
+        });
+        if (result?.models?.length) {
+          return { models: result.models };
+        }
+        warning = result?.error || "CodeBuddy CN returned no live models; falling back to static catalog.";
+      } catch (error) {
+        warning = `Failed to fetch CodeBuddy CN models: ${error.message}`;
+        console.log("Failed to fetch CodeBuddy CN models dynamically, falling back to static:", error.message);
+      }
+      return {
+        models: getStaticProviderModels("codebuddy-cn"),
+        warning,
+      };
+    },
+  },
   kiro: {
     customResolver: async (connection) => {
       const credentials = {

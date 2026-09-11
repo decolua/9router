@@ -4,6 +4,8 @@ import "open-sse/index.js";
 import { getSettings, getProviderConnections, updateProviderConnection } from "@/lib/localDb";
 import { getClaudeUsage } from "open-sse/services/usage/claude.js";
 import { getCodexUsage } from "open-sse/services/usage/codex.js";
+import { dailyCheckinCodeBuddy } from "open-sse/services/usage/codebuddy-cn.js";
+import { makeKv } from "@/lib/db/helpers/kvStore";
 import { getExecutor } from "open-sse/executors/index.js";
 import { CLAUDE_CLI_SPOOF_HEADERS } from "open-sse/providers/shared.js";
 import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
@@ -258,10 +260,75 @@ function createDefaultDeps() {
   };
 }
 
+async function runCodeBuddyAutoCheckin(deps, state) {
+  const now = new Date();
+  const currentHour = now.getHours();
+  // Target daily check-in slots: 09:00 and 21:00
+  if (currentHour !== 9 && currentHour !== 21) return;
+
+  const dateKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const slotKey = `${dateKey}_${currentHour}`;
+
+  if (state.lastCheckinSlot === slotKey) return;
+  state.lastCheckinSlot = slotKey;
+
+  try {
+    const allConns = await deps.getProviderConnections();
+    const cbcnConns = (allConns || []).filter(
+      (c) => c.provider === "codebuddy-cn" && (c.isActive === undefined || c.isActive === true || c.isActive === 1)
+    );
+    if (cbcnConns.length === 0) return;
+
+    const checkinKv = makeKv("codebuddy_checkin");
+    for (const conn of cbcnConns) {
+      try {
+        const proxyConfig = await deps.resolveConnectionProxyConfig(conn.providerSpecificData);
+        const proxyOptions = {
+          connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
+          connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
+          connectionNoProxy: proxyConfig.connectionNoProxy || "",
+          strictProxy: false,
+        };
+
+        let activeConn = conn;
+        try {
+          const refreshed = await deps.refreshAndUpdateCredentials(conn, false, proxyOptions);
+          if (refreshed?.connection) activeConn = refreshed.connection;
+        } catch (e) {
+          console.warn(`[AutoCheckin] Token refresh failed for ${conn.id}:`, e.message);
+        }
+
+        const result = await dailyCheckinCodeBuddy(
+          activeConn.accessToken || activeConn.apiKey,
+          activeConn.apiKey,
+          activeConn.providerSpecificData,
+          proxyOptions
+        );
+
+        await checkinKv.set(conn.id, {
+          date: dateKey,
+          checkedAt: new Date().toISOString(),
+          ok: Boolean(result.ok),
+          already: Boolean(result.already),
+          code: result.code ?? null,
+          message: result.message || "",
+        });
+        console.log(`[AutoCheckin] CodeBuddy CN ${conn.id}: ${result.message || (result.ok ? "Success" : "Failed")}`);
+      } catch (e) {
+        console.warn(`[AutoCheckin] CodeBuddy CN ${conn.id} error:`, e.message);
+      }
+    }
+  } catch (e) {
+    console.warn("[AutoCheckin] Checkin tick failed:", e.message);
+  }
+}
+
 export async function runQuotaAutoPingTick(deps = createDefaultDeps(), state = g) {
   if (state.running) return;
   state.running = true;
   try {
+    await runCodeBuddyAutoCheckin(deps, state);
+
     const settings = await deps.getSettings();
 
     for (const [provider, providerConfig] of Object.entries(C.providers)) {

@@ -1,0 +1,115 @@
+From 13b0eff3207ce1196c5c7144d768270c2b0e16f8 Mon Sep 17 00:00:00 2001
+From: Biuzai OpenClaw Agent <biuzai@openclaw.ai>
+Date: Tue, 25 Aug 2026 20:16:35 +0800
+Subject: [PATCH 2/2] fix(usage): bridge cached token fields across formats in
+ filterUsageForFormat + extractUsage
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Root cause: Gemini/Antigravity upstream returns cachedContentTokenCount but
+9router drops it during cross-format translation:
+1. filterUsageForFormat whitelist strips cached_tokens before Claude/OpenAI
+   clients see it — now adapts fields before filtering (Claude gets
+   cache_read_input_tokens; OpenAI gets prompt_tokens_details.cached_tokens)
+2. extractUsage Gemini branch now outputs prompt_tokens_details alongside
+   root cached_tokens so strict OpenAI clients (Cursor) can display cache
+3. Add test for non-streaming Gemini cached_tokens preservation
+---
+ open-sse/utils/usageTracking.js               | 38 +++++++++++++++++--
+ .../antigravity-nonstream-usage-3260.test.js  | 17 +++++++++
+ 2 files changed, 51 insertions(+), 4 deletions(-)
+
+diff --git a/open-sse/utils/usageTracking.js b/open-sse/utils/usageTracking.js
+index 24518ef3..8939d09a 100644
+--- a/open-sse/utils/usageTracking.js
++++ b/open-sse/utils/usageTracking.js
+@@ -59,12 +59,40 @@ export function addBufferToUsage(usage) {
+ export function filterUsageForFormat(usage, targetFormat) {
+   if (!usage || typeof usage !== "object") return usage;
+ 
++  let adapted = { ...usage };
++
++  // Format adaptation: bridge cross-format field shapes before whitelist filtering
++  if (targetFormat === FORMATS.CLAUDE) {
++    if (adapted.input_tokens === undefined && adapted.prompt_tokens !== undefined) {
++      const prompt = adapted.prompt_tokens || 0;
++      const cached = adapted.cached_tokens ?? adapted.cache_read_input_tokens ?? 0;
++      const cacheCreate = adapted.cache_creation_input_tokens || 0;
++      adapted.input_tokens = Math.max(0, prompt - cached - cacheCreate);
++    }
++    if (adapted.output_tokens === undefined && adapted.completion_tokens !== undefined) {
++      adapted.output_tokens = adapted.completion_tokens;
++    }
++    if (adapted.cache_read_input_tokens === undefined && adapted.cached_tokens !== undefined && adapted.cached_tokens > 0) {
++      adapted.cache_read_input_tokens = adapted.cached_tokens;
++    }
++  } else if (targetFormat === FORMATS.OPENAI || targetFormat === FORMATS.CODEX || targetFormat === FORMATS.KIRO || !targetFormat || targetFormat === "default") {
++    const cached = adapted.cached_tokens ?? adapted.prompt_tokens_details?.cached_tokens ?? adapted.cache_read_input_tokens;
++    if (cached !== undefined && cached > 0) {
++      adapted.cached_tokens = cached;
++      if (!adapted.prompt_tokens_details) {
++        adapted.prompt_tokens_details = { cached_tokens: cached };
++      } else if (adapted.prompt_tokens_details.cached_tokens === undefined) {
++        adapted.prompt_tokens_details = { ...adapted.prompt_tokens_details, cached_tokens: cached };
++      }
++    }
++  }
++
+   // Helper to pick only defined fields from usage
+   const pickFields = (fields) => {
+     const filtered = {};
+     for (const field of fields) {
+-      if (usage[field] !== undefined) {
+-        filtered[field] = usage[field];
++      if (adapted[field] !== undefined) {
++        filtered[field] = adapted[field];
+       }
+     }
+     return filtered;
+@@ -288,12 +316,14 @@ export function extractUsage(chunk) {
+   // Antigravity wraps usageMetadata inside response: { response: { usageMetadata: {...} } }
+   const usageMeta = chunk.usageMetadata || chunk.response?.usageMetadata;
+   if (usageMeta && typeof usageMeta === "object") {
++    const cachedTokens = usageMeta.cachedContentTokenCount;
+     return normalizeUsage({
+       prompt_tokens: usageMeta.promptTokenCount || 0,
+       completion_tokens: usageMeta.candidatesTokenCount || 0,
+       total_tokens: usageMeta.totalTokenCount,
+-      cached_tokens: usageMeta.cachedContentTokenCount,
+-      reasoning_tokens: usageMeta.thoughtsTokenCount
++      cached_tokens: cachedTokens,
++      reasoning_tokens: usageMeta.thoughtsTokenCount,
++      prompt_tokens_details: cachedTokens ? { cached_tokens: cachedTokens } : undefined
+     });
+   }
+ 
+diff --git a/tests/unit/antigravity-nonstream-usage-3260.test.js b/tests/unit/antigravity-nonstream-usage-3260.test.js
+index af7fc9a1..735350df 100644
+--- a/tests/unit/antigravity-nonstream-usage-3260.test.js
++++ b/tests/unit/antigravity-nonstream-usage-3260.test.js
+@@ -51,4 +51,21 @@ describe("#3260 non-streaming usage extraction for enveloped Gemini responses",
+     expect(extractUsageFromResponse({ response: { candidates: [] } })).toBeNull();
+     expect(extractUsageFromResponse(null)).toBeNull();
+   });
++
++  it("translateNonStreamingResponse preserves cached_tokens and prompt_tokens_details from Gemini usageMetadata", async () => {
++    const { translateNonStreamingResponse } = await import("../../open-sse/handlers/chatCore/nonStreamingHandler.js");
++    const res = translateNonStreamingResponse(
++      {
++        response: {
++          candidates: [{ content: { parts: [{ text: "hello" }] }, finishReason: "STOP" }],
++          usageMetadata: USAGE_METADATA
++        }
++      },
++      "gemini",
++      "openai"
++    );
++    expect(res.usage).toBeDefined();
++    expect(res.usage.cached_tokens).toBe(78);
++    expect(res.usage.prompt_tokens_details).toEqual({ cached_tokens: 78 });
++  });
+ });
+-- 
+2.43.0
+

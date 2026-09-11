@@ -198,3 +198,103 @@ describe("Kiro usage pass-through", () => {
     expect(out.prompt_tokens_details.cache_creation_tokens).toBe(50);
   });
 });
+
+describe("filterUsageForFormat cross-format adaptation (Antigravity/Gemini -> Claude & OpenAI)", () => {
+  it("extractUsage captures cachedContentTokenCount and generates prompt_tokens_details for Gemini/AG", async () => {
+    const { extractUsage } = await import("../../open-sse/utils/usageTracking.js");
+    const usage = extractUsage({
+      usageMetadata: {
+        promptTokenCount: 1500,
+        candidatesTokenCount: 120,
+        totalTokenCount: 1620,
+        cachedContentTokenCount: 1000,
+        thoughtsTokenCount: 50
+      }
+    });
+    expect(usage.prompt_tokens).toBe(1500);
+    expect(usage.completion_tokens).toBe(120);
+    expect(usage.cached_tokens).toBe(1000);
+    expect(usage.prompt_tokens_details).toEqual({ cached_tokens: 1000 });
+  });
+
+  it("adapts Gemini/canonical usage to Claude format with proper cache_read_input_tokens and subtracted input_tokens", async () => {
+    const { filterUsageForFormat } = await import("../../open-sse/utils/usageTracking.js");
+    const usage = {
+      prompt_tokens: 2000,
+      completion_tokens: 150,
+      cached_tokens: 1200,
+      cache_creation_input_tokens: 0
+    };
+    const claudeUsage = filterUsageForFormat(usage, "claude");
+    expect(claudeUsage.input_tokens).toBe(800); // 2000 - 1200
+    expect(claudeUsage.output_tokens).toBe(150);
+    expect(claudeUsage.cache_read_input_tokens).toBe(1200);
+  });
+
+  it("adapts usage to OpenAI format, ensuring cached_tokens and prompt_tokens_details exist", async () => {
+    const { filterUsageForFormat } = await import("../../open-sse/utils/usageTracking.js");
+    const usage = {
+      prompt_tokens: 2000,
+      completion_tokens: 150,
+      cached_tokens: 1200
+    };
+    const openaiUsage = filterUsageForFormat(usage, "openai");
+    expect(openaiUsage.prompt_tokens).toBe(2000);
+    expect(openaiUsage.completion_tokens).toBe(150);
+    expect(openaiUsage.cached_tokens).toBe(1200);
+    expect(openaiUsage.prompt_tokens_details).toEqual({ cached_tokens: 1200 });
+  });
+});
+
+describe("nonStreamingHandler cache field forwarding", () => {
+  let translateNonStreamingResponse;
+
+  beforeAll(async () => {
+    const mod = await import("../../open-sse/handlers/chatCore/nonStreamingHandler.js");
+    translateNonStreamingResponse = mod.translateNonStreamingResponse;
+  });
+
+  it("OpenAI→Claude non-streaming preserves cached_tokens as cache_read_input_tokens", () => {
+    const body = {
+      id: "chatcmpl-test",
+      choices: [{ index: 0, message: { role: "assistant", content: "hi" }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 2000, completion_tokens: 50, cached_tokens: 1200, prompt_tokens_details: { cached_tokens: 1200 } }
+    };
+    const result = translateNonStreamingResponse(body, "openai", "claude");
+    expect(result.usage.cache_read_input_tokens).toBe(1200);
+    expect(result.usage.input_tokens).toBeDefined();
+    expect(result.usage.output_tokens).toBe(50);
+  });
+
+  it("OpenAI→Claude non-streaming omits cache_read_input_tokens when cached_tokens is 0", () => {
+    const body = {
+      id: "chatcmpl-nocache",
+      choices: [{ index: 0, message: { role: "assistant", content: "hi" }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 500, completion_tokens: 30 }
+    };
+    const result = translateNonStreamingResponse(body, "openai", "claude");
+    expect(result.usage.cache_read_input_tokens).toBeUndefined();
+  });
+
+  it("OpenAI→Responses non-streaming preserves input_tokens_details.cached_tokens", () => {
+    const body = {
+      id: "chatcmpl-resp",
+      choices: [{ index: 0, message: { role: "assistant", content: "hi" }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 3000, completion_tokens: 100, cached_tokens: 2000, prompt_tokens_details: { cached_tokens: 2000 } }
+    };
+    const result = translateNonStreamingResponse(body, "openai", "openai-responses");
+    expect(result.usage.input_tokens_details).toEqual({ cached_tokens: 2000 });
+  });
+
+  it("Gemini non-streaming puts thoughtsTokenCount into completion_tokens not prompt_tokens", () => {
+    const geminiBody = {
+      candidates: [{ content: { parts: [{ text: "answer" }] } }],
+      usageMetadata: { promptTokenCount: 1000, candidatesTokenCount: 200, totalTokenCount: 1500, thoughtsTokenCount: 300, cachedContentTokenCount: 500 }
+    };
+    const result = translateNonStreamingResponse(geminiBody, "antigravity", "openai");
+    expect(result.usage.prompt_tokens).toBe(1000);
+    expect(result.usage.completion_tokens).toBe(500);
+    expect(result.usage.cached_tokens).toBe(500);
+    expect(result.usage.completion_tokens_details).toEqual({ reasoning_tokens: 300 });
+  });
+});
