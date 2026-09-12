@@ -2,7 +2,8 @@ import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
-import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
+import { addBufferToUsage, filterUsageForFormat, synthesizeThinkingTokens } from "../../utils/usageTracking.js";
+import { shouldSynthesizeReasoning } from "../../utils/stream.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
@@ -282,7 +283,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, requestedModel, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, requestedModel, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log, thinkingIntent }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
@@ -360,7 +361,15 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }
 
   if (translatedResponse?.usage) {
-    translatedResponse.usage = filterUsageForFormat(addBufferToUsage(translatedResponse.usage), sourceFormat);
+    // Hidden-thinking synthesis on the JSON path mirrors the streaming seam:
+    // when the request asked for thinking and the upstream never reported a
+    // reasoning count, add it to the CLIENT-facing usage only — the stats
+    // object extracted above stays raw. Same gate, same intent snapshot.
+    const buffered = addBufferToUsage(translatedResponse.usage);
+    translatedResponse.usage = filterUsageForFormat(
+      shouldSynthesizeReasoning(body, model, thinkingIntent) ? synthesizeThinkingTokens(buffered, sourceFormat) : buffered,
+      sourceFormat
+    );
   }
 
   // Strip reasoning_content only when content is non-empty.

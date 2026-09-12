@@ -84,9 +84,11 @@ describe("synthesizeThinkingTokens", () => {
     // Gemini: top-level thoughtsTokenCount, completion read from candidatesTokenCount
     const gemini = synthesizeThinkingTokens({ promptTokenCount: 10, candidatesTokenCount: 100 }, FORMATS.GEMINI);
     expect(gemini.thoughtsTokenCount).toBe(75);
-    // Claude: no reasoning field exists on that wire format — no-op
-    const claude = { input_tokens: 10, output_tokens: 100 };
-    expect(synthesizeThinkingTokens(claude, FORMATS.CLAUDE)).toBe(claude);
+    // Claude Messages wire has no native field — top-level reasoning_tokens
+    // annotation (thinking is already inside output_tokens upstream)
+    const claude = synthesizeThinkingTokens({ input_tokens: 10, output_tokens: 100 }, FORMATS.CLAUDE);
+    expect(claude.reasoning_tokens).toBe(75);
+    expect(claude.output_tokens).toBe(100);
   });
 
   it("reads completion from Claude/Gemini field names too", () => {
@@ -638,5 +640,175 @@ describe("intent captured before translateRequest (production shape)", () => {
 
     const usage = finishUsageOf(await runStream(body, intent));
     expect(usage.completion_tokens_details).toBeUndefined();
+  });
+});
+
+// Messages API (Claude wire) clients: the stream seam synthesizes a top-level
+// reasoning_tokens annotation because the Anthropic usage object has no native
+// thinking field (thinking is folded into output_tokens).
+describe("claude messages stream synthesis", () => {
+  let createPassthroughStreamWithLogger;
+
+  beforeAll(async () => {
+    ({ createPassthroughStreamWithLogger } = await import("../../open-sse/utils/stream.js"));
+  });
+
+  const THINKING_BODY = { thinking: { type: "enabled", budget_tokens: 2000 } };
+
+  const SSE = [
+    'data: {"type":"message_start","message":{"id":"msg_1","usage":{"input_tokens":10,"output_tokens":1}}}',
+    'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"a reasonably long answer"}}',
+    'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":100}}',
+    'data: {"type":"message_stop"}',
+    "",
+  ].join("\n\n");
+
+  async function runClaudeStream(body = THINKING_BODY) {
+    const chunks = [];
+    const stream = createPassthroughStreamWithLogger("claude", null, "big-pickle", "conn-test", body, null, null, null, FORMATS.CLAUDE);
+    const reader = stream.readable.getReader();
+    const writer = stream.writable.getWriter();
+    const done = (async () => {
+      for (;;) {
+        const { done: finished, value } = await reader.read();
+        if (finished) break;
+        chunks.push(new TextDecoder().decode(value));
+      }
+    })();
+    await writer.write(new TextEncoder().encode(SSE));
+    await writer.close();
+    await done;
+    return chunks.join("");
+  }
+
+  function deltaUsageOf(output) {
+    const parsed = output.split("\n")
+      .map((l) => l.replace(/^data: ?/, ""))
+      .filter((l) => l.startsWith("{"))
+      .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+      .filter(Boolean);
+    return parsed.find((p) => p?.type === "message_delta")?.usage;
+  }
+
+  it("annotates reasoning_tokens on the message_delta usage when thinking was requested", async () => {
+    const usage = deltaUsageOf(await runClaudeStream());
+    expect(usage.reasoning_tokens).toBe(75);
+    expect(usage.output_tokens).toBe(100); // real numbers untouched
+  });
+
+  it("does NOT annotate when the request has no thinking config", async () => {
+    const usage = deltaUsageOf(await runClaudeStream({}));
+    expect(usage.reasoning_tokens).toBeUndefined();
+  });
+});
+
+// Non-streaming (JSON) responses: the same synthesis rule applies to the
+// client-facing usage of the translated body, whatever the client wire format.
+describe("non-streaming JSON synthesis", () => {
+  let handleNonStreamingResponse, extractThinking;
+
+  beforeAll(async () => {
+    ({ handleNonStreamingResponse } = await import("../../open-sse/handlers/chatCore/nonStreamingHandler.js"));
+    ({ extractThinking } = await import("../../open-sse/translator/concerns/thinkingUnified.js"));
+  });
+
+  const OPENAI_COMPLETION = {
+    id: "chatcmpl-1", object: "chat.completion", created: 1, model: "big-pickle",
+    choices: [{ index: 0, message: { role: "assistant", content: "a reasonably long answer" }, finish_reason: "stop" }],
+    usage: { prompt_tokens: 10, completion_tokens: 100, total_tokens: 110 },
+  };
+  const CLAUDE_MESSAGE = {
+    id: "msg_1", type: "message", role: "assistant", model: "big-pickle",
+    content: [{ type: "text", text: "a reasonably long answer" }],
+    stop_reason: "end_turn", stop_sequence: null,
+    usage: { input_tokens: 10, output_tokens: 100 },
+  };
+
+  async function runJson(providerBody, sourceFormat, body, thinkingIntent) {
+    const providerResponse = new Response(JSON.stringify(providerBody), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+    const result = await handleNonStreamingResponse({
+      providerResponse, provider: "opencode", model: "big-pickle",
+      sourceFormat, targetFormat: sourceFormat,
+      body, stream: false, translatedBody: providerBody, finalBody: null,
+      requestStartTime: Date.now(), connectionId: "conn-test", apiKey: null,
+      clientRawRequest: null, requestedModel: "oc/big-pickle",
+      reqLogger: { logProviderResponse() {}, logConvertedResponse() {} },
+      toolNameMap: null, customToolNames: null,
+      trackDone: () => {}, appendLog: () => {}, pxpipe: null, reqTag: "", log: null,
+      thinkingIntent,
+    });
+    return JSON.parse(await result.response.text());
+  }
+
+  it("completions JSON: synthesizes completion_tokens_details when thinking was requested", async () => {
+    const out = await runJson(OPENAI_COMPLETION, FORMATS.OPENAI, {}, { mode: "level", level: "high" });
+    expect(out.usage.completion_tokens_details.reasoning_tokens).toBe(75);
+    expect(out.usage.completion_tokens).toBe(100);
+  });
+
+  it("messages JSON: annotates top-level reasoning_tokens when thinking was requested", async () => {
+    const body = { thinking: { type: "enabled", budget_tokens: 2000 } };
+    const out = await runJson(CLAUDE_MESSAGE, FORMATS.CLAUDE, body, extractThinking(body));
+    expect(out.usage.reasoning_tokens).toBe(75);
+    expect(out.usage.output_tokens).toBe(100);
+  });
+
+  it("does NOT synthesize without thinking intent", async () => {
+    const out = await runJson(OPENAI_COMPLETION, FORMATS.OPENAI, {}, null);
+    expect(out.usage.completion_tokens_details).toBeUndefined();
+  });
+
+  it("keeps upstream-reported reasoning untouched", async () => {
+    const reported = { ...OPENAI_COMPLETION, usage: { prompt_tokens: 10, completion_tokens: 100, total_tokens: 110, completion_tokens_details: { reasoning_tokens: 42 } } };
+    const out = await runJson(reported, FORMATS.OPENAI, {}, { mode: "level", level: "high" });
+    expect(out.usage.completion_tokens_details.reasoning_tokens).toBe(42);
+  });
+});
+
+// Provider forced streaming but the client wants JSON: the SSE is consumed and
+// re-assembled into one JSON body — the re-attached usage must carry the
+// synthesized reasoning field too.
+describe("forced SSE→JSON synthesis", () => {
+  let handleForcedSSEToJson;
+
+  beforeAll(async () => {
+    ({ handleForcedSSEToJson } = await import("../../open-sse/handlers/chatCore/sseToJsonHandler.js"));
+  });
+
+  const SSE = [
+    'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"a reasonably long answer"},"finish_reason":null}]}',
+    'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}',
+    'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":100,"total_tokens":110}}',
+    "data: [DONE]",
+    "",
+  ].join("\n\n");
+
+  async function runForced(sourceFormat, thinkingIntent) {
+    const providerResponse = new Response(SSE, {
+      status: 200, headers: { "content-type": "text/event-stream" },
+    });
+    const result = await handleForcedSSEToJson({
+      providerResponse, sourceFormat, targetFormat: FORMATS.OPENAI,
+      provider: "opencode", model: "big-pickle",
+      body: {}, stream: false, translatedBody: {}, finalBody: null,
+      requestStartTime: Date.now(), connectionId: "conn-test", apiKey: null,
+      clientRawRequest: null, requestedModel: "oc/big-pickle", customToolNames: null,
+      trackDone: () => {}, appendLog: () => {}, reqTag: "", log: null,
+      thinkingIntent,
+    });
+    return JSON.parse(await result.response.text());
+  }
+
+  it("synthesizes reasoning on the re-assembled JSON usage", async () => {
+    const out = await runForced(FORMATS.OPENAI, { mode: "level", level: "high" });
+    expect(out.usage.completion_tokens_details.reasoning_tokens).toBe(75);
+    expect(out.usage.prompt_tokens).toBe(10); // real numbers, no buffer on this path
+  });
+
+  it("does NOT synthesize without thinking intent", async () => {
+    const out = await runForced(FORMATS.OPENAI, null);
+    expect(out.usage.completion_tokens_details).toBeUndefined();
   });
 });

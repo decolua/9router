@@ -28,7 +28,7 @@ const sharedEncoder = new TextEncoder();
 // post-translation body here would miss the intent for exactly the
 // hidden-thinking models that need synthesis. It wins over a fresh
 // extractThinking(body), which stays as the fallback for direct callers.
-function shouldSynthesizeReasoning(body, model, thinkingIntent = null) {
+export function shouldSynthesizeReasoning(body, model, thinkingIntent = null) {
   try {
     const { override } = parseSuffix(model);
     const cfg = override || thinkingIntent || extractThinking(body);
@@ -77,6 +77,10 @@ export function createSSEStream(options = {}) {
     credentials = null,
     thinkingIntent = null
   } = options;
+
+  // PASSTHROUGH runs same-format, so the client format IS the seam format
+  // (usage field names, synthesis shape); translate mode reads it directly.
+  const passthroughFormat = mode === STREAM_MODE.PASSTHROUGH ? (sourceFormat || FORMATS.OPENAI) : sourceFormat;
 
   let buffer = "";
   let usage = null;
@@ -169,7 +173,7 @@ export function createSSEStream(options = {}) {
     let finalUsage = isPassthrough ? usage : state?.usage;
 
     if (!hasValidUsage(finalUsage) && totalContentLength > 0) {
-      finalUsage = estimateUsage(body, totalContentLength, isPassthrough ? FORMATS.OPENAI : sourceFormat);
+      finalUsage = estimateUsage(body, totalContentLength, isPassthrough ? passthroughFormat : sourceFormat);
       if (isPassthrough) usage = finalUsage; else state.usage = finalUsage;
     }
 
@@ -290,22 +294,22 @@ export function createSSEStream(options = {}) {
               // bare finish chunk).
               const carriesUsage = hasValidUsage(parsed.usage);
               if (isFinishChunk && !carriesUsage && !hasValidUsage(usage)) {
-                const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
+                const estimated = estimateUsage(body, totalContentLength, passthroughFormat);
                 // Client copy gets the buffer + synthesized thinking field; the
                 // estimate kept for stats/logging stays untouched.
-                parsed.usage = buildClientUsage(estimated, FORMATS.OPENAI);
+                parsed.usage = buildClientUsage(estimated, passthroughFormat);
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 usage = estimated;
                 injectedUsage = true;
               } else if (carriesUsage) {
-                parsed.usage = synthesizeReasoning ? synthesizeThinkingTokens(parsed.usage, FORMATS.OPENAI) : parsed.usage;
+                parsed.usage = synthesizeReasoning ? synthesizeThinkingTokens(parsed.usage, passthroughFormat) : parsed.usage;
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               } else if (isFinishChunk && usage) {
                 // Real usage received earlier beats the chars/4 estimate
                 // above: forward the buffered numbers.
                 const buffered = addBufferToUsage(usage);
-                parsed.usage = buildClientUsage(buffered, FORMATS.OPENAI);
+                parsed.usage = buildClientUsage(buffered, passthroughFormat);
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               } else if (idFixed || fieldsInjected) {
@@ -602,7 +606,7 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, thinkingIntent = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, thinkingIntent = null, sourceFormat = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
@@ -612,6 +616,7 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     body,
     onStreamComplete,
     apiKey,
-    thinkingIntent
+    thinkingIntent,
+    sourceFormat
   });
 }

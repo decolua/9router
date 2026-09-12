@@ -86,8 +86,10 @@ export function addBufferToUsage(usage) {
  *   completion  > 10 → reasoning = floor(75% of completion)
  * Format-aware: completion is read from OpenAI/Claude/Gemini field names and
  * the synthesized count lands in the field the target wire format actually
- * carries. Claude's usage object has no reasoning field at all — returned
- * unchanged.
+ * carries. Claude's Messages usage object has NO native reasoning field
+ * (thinking is folded into output_tokens upstream), so the synthesized count
+ * lands in a top-level `reasoning_tokens` annotation — the same convention
+ * normalizeUsage reads back.
  *
  * @param {object} usage - usage object in any known shape
  * @param {string} targetFormat - client wire format (FORMATS.*)
@@ -108,9 +110,11 @@ export function synthesizeThinkingTokens(usage, targetFormat = FORMATS.OPENAI) {
   if (reported > 0) return usage;
 
   const family = usageFormatFamily(targetFormat);
-  if (family === FORMATS.CLAUDE) return usage; // no reasoning field on this wire format
-
   const synthesized = completion <= HIDDEN_THINKING_MAX_OUTPUT ? 0 : Math.floor(completion * HIDDEN_THINKING_RATIO);
+
+  // Claude Messages wire format has no native reasoning field — annotate
+  // top-level reasoning_tokens (thinking is already inside output_tokens).
+  if (family === FORMATS.CLAUDE) return { ...usage, reasoning_tokens: synthesized };
 
   if (family === FORMATS.GEMINI) return { ...usage, thoughtsTokenCount: synthesized };
   if (family === FORMATS.OPENAI_RESPONSES) {
@@ -196,8 +200,9 @@ export function filterUsageForFormat(usage, targetFormat) {
   // Define allowed fields for each format
   const formatFields = {
     [FORMATS.CLAUDE]: [
-      'input_tokens', 'output_tokens', 
+      'input_tokens', 'output_tokens',
       'cache_read_input_tokens', 'cache_creation_input_tokens',
+      'reasoning_tokens',
       'estimated'
     ],
     [FORMATS.GEMINI]: [

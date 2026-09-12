@@ -4,6 +4,8 @@ import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
+import { synthesizeThinkingTokens } from "../../utils/usageTracking.js";
+import { shouldSynthesizeReasoning } from "../../utils/stream.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
@@ -179,12 +181,17 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, requestedModel, customToolNames, trackDone, appendLog, reqTag, log }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, requestedModel, customToolNames, trackDone, appendLog, reqTag, log, thinkingIntent }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
 
   trackDone();
+
+  // Hidden-thinking synthesis on the SSE→JSON path — same gate as the
+  // streaming seam. Returns a NEW usage object (or the input untouched), so
+  // the stats objects captured below keep the raw upstream numbers.
+  const synthesize = (u) => (shouldSynthesizeReasoning(body, model, thinkingIntent) ? synthesizeThinkingTokens(u, sourceFormat) : u);
 
   const ctx = {
     provider, model, connectionId,
@@ -223,8 +230,10 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         status: "success"
       }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
 
-      // Client is Responses API → return as-is
+      // Client is Responses API → return as-is (usage synthesized for the client;
+      // the stats `usage` captured above keeps the raw upstream object)
       if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+        if (jsonResponse.usage) jsonResponse.usage = synthesize(jsonResponse.usage);
         return { success: true, response: new Response(JSON.stringify(jsonResponse), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
       }
 
@@ -261,7 +270,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         finalResp = {
           response: {
             candidates: [{ content: { role: "model", parts: [{ text: textContent || "" }] }, finishReason: "STOP", index: 0 }],
-            usageMetadata: { promptTokenCount: inTokens, candidatesTokenCount: outTokens, totalTokenCount: inTokens + outTokens },
+            usageMetadata: synthesize({ promptTokenCount: inTokens, candidatesTokenCount: outTokens, totalTokenCount: inTokens + outTokens }),
             modelVersion: model,
             responseId: jsonResponse.id || `resp_${Date.now()}`
           }
@@ -277,7 +286,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
           created: jsonResponse.created_at || Math.floor(Date.now() / 1000),
           model: jsonResponse.model || model,
           choices: [{ index: 0, message, finish_reason: finishReason }],
-          usage: { prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: inTokens + outTokens, ...cacheDetails }
+          usage: synthesize({ prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: inTokens + outTokens, ...cacheDetails })
         };
       }
 
@@ -327,7 +336,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     // on both sides). Whatever drops it between assembly and serialisation, the client
     // must not be left unable to account for its own token spend: a caller cannot tell
     // a 90%-cached request from a cheap one without this.
-    if (usage && Object.keys(usage).length > 0) parsed.usage = usage;
+    if (usage && Object.keys(usage).length > 0) parsed.usage = synthesize(usage);
 
     // Strip reasoning_content only when content is non-empty.
     // When content is empty (e.g. thinking models that used all tokens for reasoning),
@@ -350,6 +359,11 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     const finalBody = sourceFormat === FORMATS.OPENAI_RESPONSES
       ? chatCompletionToResponses(parsed, customToolNames)
       : parsed;
+
+    // chatCompletionToResponses rebuilds usage from scratch and drops the
+    // details objects — re-synthesize on the final shape (no-op when the
+    // reasoning count already made it through).
+    if (finalBody?.usage) finalBody.usage = synthesize(finalBody.usage);
 
     return { success: true, response: new Response(JSON.stringify(finalBody), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {
