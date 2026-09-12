@@ -1,9 +1,10 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
-import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, synthesizeThinkingTokens, COLORS } from "./usageTracking.js";
+import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, convertUsageForFormat, synthesizeThinkingTokens, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
+import { extractThinking, parseSuffix } from "../translator/concerns/thinkingUnified.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
@@ -13,6 +14,21 @@ export { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER };
 
 // sharedEncoder is stateless — safe to share across streams
 const sharedEncoder = new TextEncoder();
+
+// Gate for hidden-thinking synthesis: fabricate reasoning_tokens only when the
+// client actually asked for thinking — a request-body config (reasoning_effort /
+// thinking / thinkingConfig / enable_thinking, any client format) or a model
+// suffix like "model(high)". An explicit "none" means thinking was disabled →
+// no synthesis. Fail-open: on any error, leave usage untouched.
+function shouldSynthesizeReasoning(body, model) {
+  try {
+    const { override } = parseSuffix(model);
+    const cfg = override || extractThinking(body);
+    return !!cfg && cfg.mode !== "none";
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Stream modes
@@ -77,6 +93,17 @@ export function createSSEStream(options = {}) {
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
   let finalized = false;
+
+  // Hidden-thinking synthesis gate + client-usage builder. buildClientUsage is
+  // for CLIENT-facing copies only: rename to the client's wire format,
+  // synthesize the reasoning field when the request asked for thinking, then
+  // filter to the format's whitelist. Stats-side usage objects never pass
+  // through it.
+  const synthesizeReasoning = shouldSynthesizeReasoning(body, model);
+  const buildClientUsage = (u, targetFormat) => filterUsageForFormat(
+    synthesizeReasoning ? synthesizeThinkingTokens(convertUsageForFormat(u, targetFormat), targetFormat) : convertUsageForFormat(u, targetFormat),
+    targetFormat
+  );
 
   // Usage/logging tail, callable from transform() as well as flush(): a client that
   // closes right after the terminal event cancels the reader, and flush() never runs.
@@ -202,17 +229,19 @@ export function createSSEStream(options = {}) {
               responsesTerminal = isOpenAIResponsesTerminalEvent(currentOpenAIResponsesEvent, parsed);
 
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
-              if (isFinishChunk && !hasValidUsage(parsed.usage)) {
+              if (isFinishChunk && !hasValidUsage(parsed.usage) && !hasValidUsage(usage)) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
                 // Client copy gets the buffer + synthesized thinking field; the
                 // estimate kept for stats/logging stays untouched.
-                parsed.usage = filterUsageForFormat(synthesizeThinkingTokens(estimated), FORMATS.OPENAI);
+                parsed.usage = buildClientUsage(estimated, FORMATS.OPENAI);
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 usage = estimated;
                 injectedUsage = true;
               } else if (isFinishChunk && usage) {
+                // Real usage — on the finish chunk or received earlier — beats
+                // the chars/4 estimate above: forward the buffered numbers.
                 const buffered = addBufferToUsage(usage);
-                parsed.usage = filterUsageForFormat(synthesizeThinkingTokens(buffered), FORMATS.OPENAI);
+                parsed.usage = buildClientUsage(buffered, FORMATS.OPENAI);
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               } else if (idFixed || fieldsInjected) {
@@ -355,18 +384,27 @@ export function createSSEStream(options = {}) {
               continue; // Skip this empty chunk
             }
 
-            // Inject estimated usage if finish chunk has no valid usage
+            // Inject usage on the finish chunk. Real usage — on the finish item
+            // itself or received earlier — is preferred over a chars/4 estimate;
+            // the client copy carries the synthesized thinking field when the
+            // request asked for thinking, while state.usage keeps the raw
+            // numbers for stats/logging.
             const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
-            if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
+            if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && !hasValidUsage(state.usage) && totalContentLength > 0) {
               const estimated = estimateUsage(body, totalContentLength, sourceFormat);
-              // Client copy gets synthesized thinking; the estimate kept for
-              // stats/logging (state.usage) stays untouched.
-              item.usage = filterUsageForFormat(synthesizeThinkingTokens(estimated), sourceFormat); // Filter + already has buffer
+              item.usage = buildClientUsage(estimated, sourceFormat); // already has buffer
               state.usage = estimated;
             } else if (state.finishReason && isFinishChunk && state.usage) {
-              // Add buffer and filter usage for client (but keep original in state.usage for logging)
-              const buffered = addBufferToUsage(state.usage);
-              item.usage = filterUsageForFormat(synthesizeThinkingTokens(buffered), sourceFormat);
+              item.usage = buildClientUsage(addBufferToUsage(state.usage), sourceFormat);
+            }
+
+            // Gemini-family finish items keep usage in response.usageMetadata —
+            // merge the synthesized thoughts count into it (creating it from
+            // tracked usage when the upstream sent none) without disturbing the
+            // numbers already there.
+            if (synthesizeReasoning && item.response?.candidates?.[0]?.finishReason) {
+              const base = item.response.usageMetadata || (hasValidUsage(state.usage) ? convertUsageForFormat(state.usage, sourceFormat) : null);
+              if (base) item.response.usageMetadata = synthesizeThinkingTokens(base, sourceFormat);
             }
 
             const output = formatSSE(item, sourceFormat);

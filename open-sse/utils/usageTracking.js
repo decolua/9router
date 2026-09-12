@@ -22,11 +22,21 @@ const BUFFER_TOKENS = 2000;
 
 // Hidden-thinking synthesis (synthesizeThinkingTokens): some upstreams (e.g.
 // opencode big-pickle) think without ever reporting reasoning_tokens, and
-// client tools require the field. Completions at or below the threshold are
-// assumed reasoning-free; above it, a fixed share of the output tokens is
-// attributed to thinking.
+// client tools require the field. Callers gate it on the request's thinking
+// intent (shouldSynthesizeReasoning in stream.js). Completions at or below the
+// threshold are assumed reasoning-free; above it, a fixed share of the output
+// tokens is attributed to thinking.
 const HIDDEN_THINKING_MAX_OUTPUT = 10;
-const HIDDEN_THINKING_RATIO = 0.7;
+const HIDDEN_THINKING_RATIO = 0.75;
+
+// Group a wire format into the usage-field family it shares. Mirrors the
+// grouping filterUsageForFormat already applies (gemini-cli/antigravity use
+// Gemini fields; openai-response(s) share the Responses shape).
+function usageFormatFamily(targetFormat) {
+  if (targetFormat === FORMATS.GEMINI || targetFormat === FORMATS.GEMINI_CLI || targetFormat === FORMATS.ANTIGRAVITY) return FORMATS.GEMINI;
+  if (targetFormat === FORMATS.OPENAI_RESPONSES || targetFormat === FORMATS.OPENAI_RESPONSE) return FORMATS.OPENAI_RESPONSES;
+  return targetFormat;
+}
 
 // Get HH:MM:SS timestamp
 function getTimeString() {
@@ -65,30 +75,53 @@ export function addBufferToUsage(usage) {
 }
 
 /**
- * Synthesize completion_tokens_details.reasoning_tokens for CLIENT-facing
- * usage when the upstream didn't report it — some models think upstream but
- * never emit the field, and client tools require it. Applied to every stream
- * unconditionally; usage that already reports reasoning passes through
- * untouched. Client-facing only: pass the addBufferToUsage() copy, never the
- * usage object kept for stats — the result is a NEW object whose
- * completion_tokens_details is replaced, so the stats-side nested details
- * stay untouched.
- *   completion_tokens <= 10 → reasoning_tokens = 0
- *   completion_tokens  > 10 → reasoning_tokens = floor(70% of completion_tokens)
+ * Synthesize the reasoning-token count for CLIENT-facing usage when the
+ * upstream didn't report it — some models think upstream but never emit the
+ * field, and client tools require it. Callers gate this on the request's
+ * thinking intent; usage that already reports reasoning passes through
+ * untouched. Client-facing only: pass a copy (e.g. the addBufferToUsage()
+ * result), never the usage object kept for stats — the result is a NEW
+ * object, so the stats side stays untouched.
+ *   completion <= 10 → reasoning = 0
+ *   completion  > 10 → reasoning = floor(75% of completion)
+ * Format-aware: completion is read from OpenAI/Claude/Gemini field names and
+ * the synthesized count lands in the field the target wire format actually
+ * carries. Claude's usage object has no reasoning field at all — returned
+ * unchanged.
  *
- * @param {object} usage - OpenAI-shaped usage object
- * @returns {object} usage with reasoning_tokens synthesized when absent
+ * @param {object} usage - usage object in any known shape
+ * @param {string} targetFormat - client wire format (FORMATS.*)
+ * @returns {object} usage with the reasoning field synthesized when absent
  */
-export function synthesizeThinkingTokens(usage) {
+export function synthesizeThinkingTokens(usage, targetFormat = FORMATS.OPENAI) {
   if (!usage || typeof usage !== "object") return usage;
 
-  const completion = Number(usage.completion_tokens);
+  const completion = Number(usage.completion_tokens ?? usage.output_tokens ?? usage.candidatesTokenCount);
   if (!Number.isFinite(completion) || completion <= 0) return usage;
 
-  const reported = Number(usage.reasoning_tokens) || Number(usage.completion_tokens_details?.reasoning_tokens) || 0;
+  const reported = Number(
+    usage.reasoning_tokens ??
+    usage.completion_tokens_details?.reasoning_tokens ??
+    usage.output_tokens_details?.reasoning_tokens ??
+    usage.thoughtsTokenCount
+  ) || 0;
   if (reported > 0) return usage;
 
+  const family = usageFormatFamily(targetFormat);
+  if (family === FORMATS.CLAUDE) return usage; // no reasoning field on this wire format
+
   const synthesized = completion <= HIDDEN_THINKING_MAX_OUTPUT ? 0 : Math.floor(completion * HIDDEN_THINKING_RATIO);
+
+  if (family === FORMATS.GEMINI) return { ...usage, thoughtsTokenCount: synthesized };
+  if (family === FORMATS.OPENAI_RESPONSES) {
+    return {
+      ...usage,
+      output_tokens_details: {
+        ...(usage.output_tokens_details && typeof usage.output_tokens_details === "object" ? usage.output_tokens_details : {}),
+        reasoning_tokens: synthesized,
+      },
+    };
+  }
   return {
     ...usage,
     completion_tokens_details: {
@@ -96,6 +129,54 @@ export function synthesizeThinkingTokens(usage) {
       reasoning_tokens: synthesized,
     },
   };
+}
+
+/**
+ * Rename canonical usage fields (prompt_tokens/completion_tokens, as produced
+ * by extractUsage/estimateUsage) into the target wire format's field names.
+ * filterUsageForFormat only SELECTS keys — it never renames — so any seam that
+ * hands canonical usage to a Gemini/Responses client must convert first.
+ * Already-native shapes keep their own names; other formats pass through
+ * unchanged (identity).
+ *
+ * @param {object} usage - usage object (canonical or native shape)
+ * @param {string} targetFormat - client wire format (FORMATS.*)
+ * @returns {object} usage in the target format's field names
+ */
+export function convertUsageForFormat(usage, targetFormat) {
+  if (!usage || typeof usage !== "object") return usage;
+
+  const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : undefined; };
+  const family = usageFormatFamily(targetFormat);
+
+  if (family === FORMATS.GEMINI) {
+    const converted = {
+      promptTokenCount: num(usage.promptTokenCount ?? usage.prompt_tokens ?? usage.input_tokens) ?? 0,
+      candidatesTokenCount: num(usage.candidatesTokenCount ?? usage.completion_tokens ?? usage.output_tokens) ?? 0,
+      totalTokenCount: num(usage.totalTokenCount ?? usage.total_tokens) ?? 0,
+    };
+    const cached = num(usage.cachedContentTokenCount ?? usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens);
+    if (cached) converted.cachedContentTokenCount = cached;
+    const thoughts = num(usage.thoughtsTokenCount ?? usage.reasoning_tokens ?? usage.completion_tokens_details?.reasoning_tokens);
+    if (thoughts) converted.thoughtsTokenCount = thoughts;
+    if (usage.estimated) converted.estimated = true;
+    return converted;
+  }
+
+  if (family === FORMATS.OPENAI_RESPONSES) {
+    const converted = {
+      input_tokens: num(usage.input_tokens ?? usage.prompt_tokens) ?? 0,
+      output_tokens: num(usage.output_tokens ?? usage.completion_tokens) ?? 0,
+    };
+    const cached = num(usage.input_tokens_details?.cached_tokens ?? usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens);
+    if (cached) converted.input_tokens_details = { cached_tokens: cached };
+    const reasoning = num(usage.output_tokens_details?.reasoning_tokens ?? usage.reasoning_tokens ?? usage.thoughtsTokenCount);
+    if (reasoning) converted.output_tokens_details = { reasoning_tokens: reasoning };
+    if (usage.estimated) converted.estimated = true;
+    return converted;
+  }
+
+  return usage;
 }
 
 export function filterUsageForFormat(usage, targetFormat) {
