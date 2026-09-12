@@ -40,11 +40,18 @@ export function getCapacityAdapterConfig(cap, settings) {
   return entry;
 }
 
-// Flatten enabled models across all capability pools, in priority order, deduped.
-export function getCapacityAdapterModels(settings) {
+// Flatten enabled models across capability pools, in priority order, deduped.
+// When `requiredCapabilities` is given, only the pools for the capabilities the
+// request actually needs are consulted. Without that scoping a pool enabled for
+// a different capability can leak its models into the request — an enabled pool
+// with no models resolves to DEFAULT_FALLBACK_MODEL, which may well satisfy the
+// *other* capability (e.g. an audio pool injecting a vision-capable model).
+export function getCapacityAdapterModels(settings, requiredCapabilities = null) {
+  const hard = requiredCapabilities ? new Set([...requiredCapabilities].filter((c) => HARD_CAPS.has(c))) : null;
   const seen = new Set();
   const models = [];
   for (const cap of CAPABILITY_KEYS) {
+    if (hard && !hard.has(cap)) continue;
     const { enabled, models: pool } = getCapacityAdapterConfig(cap, settings);
     if (!enabled) continue;
     for (const m of pool) {
@@ -94,7 +101,7 @@ export function augmentModelsWithCapacityAdapter(models, requiredCapabilities, s
   if (hard.length === 0 || !Array.isArray(models) || models.length === 0) return models;
   if (models.some((m) => modelSatisfies(m, hard))) return models;
 
-  const pool = getCapacityAdapterModels(settings).filter((m) => !models.includes(m) && modelSatisfies(m, hard));
+  const pool = getCapacityAdapterModels(settings, hard).filter((m) => !models.includes(m) && modelSatisfies(m, hard));
   if (pool.length === 0) return models;
   return [...pool, ...models];
 }
