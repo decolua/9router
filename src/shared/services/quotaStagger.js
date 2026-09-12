@@ -777,4 +777,3 @@ export function hasQuotaAutoPingEnabled(settings) {
   );
   return Boolean(legacyEnabled || staggerEnabled);
 }
-
