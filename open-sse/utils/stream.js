@@ -20,10 +20,18 @@ const sharedEncoder = new TextEncoder();
 // thinking / thinkingConfig / enable_thinking, any client format) or a model
 // suffix like "model(high)". An explicit "none" means thinking was disabled →
 // no synthesis. Fail-open: on any error, leave usage untouched.
-function shouldSynthesizeReasoning(body, model) {
+//
+// `thinkingIntent` is the client's config snapshotted BEFORE translateRequest
+// mutated the body: translation legitimately strips thinking fields in place
+// (normalizeThinkingConfig for non-user last messages; applyThinking's
+// stripAll for models whose capabilities say reasoning:false), so reading the
+// post-translation body here would miss the intent for exactly the
+// hidden-thinking models that need synthesis. It wins over a fresh
+// extractThinking(body), which stays as the fallback for direct callers.
+function shouldSynthesizeReasoning(body, model, thinkingIntent = null) {
   try {
     const { override } = parseSuffix(model);
-    const cfg = override || extractThinking(body);
+    const cfg = override || thinkingIntent || extractThinking(body);
     return !!cfg && cfg.mode !== "none";
   } catch {
     return false;
@@ -66,7 +74,8 @@ export function createSSEStream(options = {}) {
     body = null,
     onStreamComplete = null,
     apiKey = null,
-    credentials = null
+    credentials = null,
+    thinkingIntent = null
   } = options;
 
   let buffer = "";
@@ -99,7 +108,7 @@ export function createSSEStream(options = {}) {
   // synthesize the reasoning field when the request asked for thinking, then
   // filter to the format's whitelist. Stats-side usage objects never pass
   // through it.
-  const synthesizeReasoning = shouldSynthesizeReasoning(body, model);
+  const synthesizeReasoning = shouldSynthesizeReasoning(body, model, thinkingIntent);
   const buildClientUsage = (u, targetFormat) => filterUsageForFormat(
     synthesizeReasoning ? synthesizeThinkingTokens(convertUsageForFormat(u, targetFormat), targetFormat) : convertUsageForFormat(u, targetFormat),
     targetFormat
@@ -574,7 +583,7 @@ export function createSSEStream(options = {}) {
   });
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, credentials = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, credentials = null, thinkingIntent = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -588,11 +597,12 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     body,
     onStreamComplete,
     apiKey,
-    credentials
+    credentials,
+    thinkingIntent
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, thinkingIntent = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
@@ -601,6 +611,7 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    thinkingIntent
   });
 }

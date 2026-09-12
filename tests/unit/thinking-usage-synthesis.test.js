@@ -555,3 +555,88 @@ describe("translate stream synthesis (same-format openai→openai)", () => {
     expect(finish.usage.prompt_tokens).toBe(10); // upstream numbers untouched
   });
 });
+
+// Production repro: the client body passes through translateRequest BY
+// REFERENCE before the stream seam is built, and translation strips thinking
+// config in place — applyThinking's stripAll for models whose capabilities say
+// reasoning:false (big-pickle is not in the capabilities registry), and
+// normalizeThinkingConfig for non-user last messages. chatCore therefore
+// snapshots the intent pre-translation and hands it to the seam as
+// `thinkingIntent`; without it the gate reads a body that has already lost
+// the very field it gates on and synthesis never fires.
+describe("intent captured before translateRequest (production shape)", () => {
+  let createPassthroughStreamWithLogger, translateRequest, extractThinking;
+
+  beforeAll(async () => {
+    ({ createPassthroughStreamWithLogger } = await import("../../open-sse/utils/stream.js"));
+    ({ translateRequest } = await import("../../open-sse/translator/index.js"));
+    ({ extractThinking } = await import("../../open-sse/translator/concerns/thinkingUnified.js"));
+  });
+
+  const UPSTREAM = [
+    'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"hello world"},"finish_reason":null}]}',
+    'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":100,"total_tokens":110}}',
+    "data: [DONE]",
+    "",
+  ].join("\n\n");
+
+  async function runStream(body, thinkingIntent) {
+    const chunks = [];
+    const stream = createPassthroughStreamWithLogger("opencode", null, "big-pickle", "conn-test", body, null, null, thinkingIntent);
+    const reader = stream.readable.getReader();
+    const writer = stream.writable.getWriter();
+    const done = (async () => {
+      for (;;) {
+        const { done: finished, value } = await reader.read();
+        if (finished) break;
+        chunks.push(new TextDecoder().decode(value));
+      }
+    })();
+    await writer.write(new TextEncoder().encode(UPSTREAM));
+    await writer.close();
+    await done;
+    return chunks.join("");
+  }
+
+  function finishUsageOf(output) {
+    const parsed = output.split("\n")
+      .map((l) => l.replace(/^data: ?/, ""))
+      .filter((l) => l.startsWith("{"))
+      .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+      .filter(Boolean);
+    return parsed.find((p) => p?.choices?.[0]?.finish_reason === "stop")?.usage;
+  }
+
+  it("still synthesizes when translateRequest has stripped the thinking config from the body", async () => {
+    const body = { model: "big-pickle", messages: [{ role: "user", content: "hi" }], stream: true, reasoning_effort: "high" };
+
+    // what chatCore does: snapshot intent, then translate (mutates body in place)
+    const intent = extractThinking(body);
+    expect(intent).toEqual({ mode: "level", level: "high" });
+    translateRequest(FORMATS.OPENAI, FORMATS.OPENAI, "big-pickle", body, true, null, "opencode");
+    // the strip the gate used to trip over: caps say big-pickle cannot reason
+    expect(body.reasoning_effort).toBeUndefined();
+
+    const usage = finishUsageOf(await runStream(body, intent));
+    expect(usage.completion_tokens_details.reasoning_tokens).toBe(75);
+    expect(usage.completion_tokens).toBe(100); // real numbers untouched
+  });
+
+  it("does NOT synthesize from a stripped body when no intent is passed (the old, broken gate)", async () => {
+    const body = { model: "big-pickle", messages: [{ role: "user", content: "hi" }], stream: true, reasoning_effort: "high" };
+    translateRequest(FORMATS.OPENAI, FORMATS.OPENAI, "big-pickle", body, true, null, "opencode");
+    expect(body.reasoning_effort).toBeUndefined();
+
+    const usage = finishUsageOf(await runStream(body, null));
+    expect(usage.completion_tokens_details).toBeUndefined();
+  });
+
+  it("an explicit none intent disables synthesis even though the body lost the field", async () => {
+    const body = { model: "big-pickle", messages: [{ role: "user", content: "hi" }], stream: true, reasoning_effort: "none" };
+    const intent = extractThinking(body);
+    translateRequest(FORMATS.OPENAI, FORMATS.OPENAI, "big-pickle", body, true, null, "opencode");
+
+    const usage = finishUsageOf(await runStream(body, intent));
+    expect(usage.completion_tokens_details).toBeUndefined();
+  });
+});

@@ -116,6 +116,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
   }
 
+  // Snapshot the client's thinking intent AFTER the provider-level override
+  // above but BEFORE translateRequest mutates `body` in place: translation
+  // legitimately strips thinking fields (normalizeThinkingConfig for non-user
+  // last messages; applyThinking stripAll for models whose capabilities say
+  // reasoning:false). The stream seam's synthesis gate needs the original
+  // intent — the post-translation body has lost exactly the signal it gates on.
+  const clientThinkingIntent = extractThinking(body);
+
   const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
   const providerRequiresStreaming = PROVIDERS[provider]?.forceStream === true;
   let stream = providerRequiresStreaming ? true : (body.stream !== false);
@@ -483,7 +491,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, resetsAtMs);
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, requestedModel, pxpipe: pxpipeSummary, reqTag, log };
+  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, requestedModel, pxpipe: pxpipeSummary, reqTag, log, thinkingIntent: clientThinkingIntent };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 
