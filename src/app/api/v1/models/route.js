@@ -117,9 +117,18 @@ const LIVE_MODEL_RESOLVERS = {
     return result?.models?.length ? { models: result.models } : null;
   },
   zed: async (conn) => {
+    const proxy = await resolveConnectionProxyConfig(conn.providerSpecificData || {});
     const result = await resolveZedModels({
       accessToken: conn.accessToken,
       providerSpecificData: conn.providerSpecificData || {},
+    }, {
+      proxyOptions: {
+        connectionProxyEnabled: proxy.connectionProxyEnabled === true,
+        connectionProxyUrl: proxy.connectionProxyUrl || "",
+        connectionNoProxy: proxy.connectionNoProxy || "",
+        vercelRelayUrl: proxy.vercelRelayUrl || "",
+        strictProxy: proxy.strictProxy === true,
+      },
     });
     if (!result?.models?.length) return null;
     return {

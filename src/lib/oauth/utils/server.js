@@ -641,16 +641,71 @@ export function stopWindsurfProxy() {
 // Zed RSA native-app proxy. Singleton session.
 // Callback: GET http://127.0.0.1:<port>/?user_id=...&access_token=<RSA-encrypted>
 // The proxy decrypts the access token using the private key stored in session.codeVerifier.
+//
+// React StrictMode (and double-clicks) call /authorize twice. A second keypair would
+// orphan the popup's public key and make decrypt fail — reuse the in-flight draft/session.
 // ───────────────────────────────────────────────────────────────────────────
 
 let zedProxyServer = null;
 let zedProxyTimeout = null;
 let zedProxyPort = null;
 let zedSession = null;
+/** Auth material from /authorize before /register-session confirms it. */
+let zedAuthDraft = null;
 
-export function registerZedSession({ state, codeVerifier }) {
+/** Return in-flight Zed auth so a second /authorize reuses the same RSA keypair. */
+export function peekZedAuthReuse() {
+  if (zedSession?.status === "pending" && zedSession.codeVerifier && zedSession.authUrl) {
+    return {
+      authUrl: zedSession.authUrl,
+      state: zedSession.state,
+      codeVerifier: zedSession.codeVerifier,
+      systemId: zedSession.systemId,
+      redirectUri: zedSession.redirectUri,
+      flowType: zedSession.flowType,
+      callbackPath: zedSession.callbackPath || "/",
+    };
+  }
+  if (zedAuthDraft?.codeVerifier && zedAuthDraft?.authUrl) {
+    return { ...zedAuthDraft };
+  }
+  return null;
+}
+
+export function saveZedAuthDraft(authData) {
+  if (!authData?.codeVerifier || !authData?.authUrl || !authData?.state) return false;
+  // First writer wins — a parallel StrictMode /authorize must reuse, not replace.
+  if (zedAuthDraft?.codeVerifier || (zedSession?.status === "pending" && zedSession?.codeVerifier)) {
+    return false;
+  }
+  zedAuthDraft = {
+    authUrl: authData.authUrl,
+    state: authData.state,
+    codeVerifier: authData.codeVerifier,
+    systemId: authData.systemId || null,
+    redirectUri: authData.redirectUri,
+    flowType: authData.flowType,
+    callbackPath: authData.callbackPath || "/",
+  };
+  return true;
+}
+
+export function registerZedSession({ state, codeVerifier, systemId, authUrl, redirectUri, flowType, callbackPath }) {
   if (!state || !codeVerifier) return false;
-  zedSession = { state, codeVerifier, status: "pending", createdAt: Date.now() };
+  // Prefer explicit fields; fall back to draft so systemId/authUrl survive register.
+  const draft = zedAuthDraft;
+  zedSession = {
+    state,
+    codeVerifier,
+    systemId: systemId || draft?.systemId || null,
+    authUrl: authUrl || draft?.authUrl || null,
+    redirectUri: redirectUri || draft?.redirectUri || null,
+    flowType: flowType || draft?.flowType || null,
+    callbackPath: callbackPath || draft?.callbackPath || "/",
+    status: "pending",
+    createdAt: Date.now(),
+  };
+  zedAuthDraft = null;
   return true;
 }
 export function getZedSessionStatus(state) {
@@ -659,7 +714,10 @@ export function getZedSessionStatus(state) {
   return zedSession;
 }
 export function clearZedSession(state) {
-  if (!state || (zedSession && zedSession.state === state)) zedSession = null;
+  if (!state || (zedSession && zedSession.state === state)) {
+    zedSession = null;
+    zedAuthDraft = null;
+  }
 }
 
 export function startZedProxy(preferredPort = 0) {
@@ -668,6 +726,9 @@ export function startZedProxy(preferredPort = 0) {
       resolve({ success: true, port: zedProxyPort, callbackUrl: `http://127.0.0.1:${zedProxyPort}/` });
       return;
     }
+    // Fresh listen — drop any stale draft/session from a previous attempt.
+    zedSession = null;
+    zedAuthDraft = null;
     const server = http.createServer(async (req, res) => {
       const url = new URL(req.url, "http://localhost");
       // Log path + redacted params (access_token is the RSA-encrypted credential).
@@ -696,11 +757,19 @@ export function startZedProxy(preferredPort = 0) {
       }
       // Pass raw callback path+query to exchangeTokens → parseZedCallbackPayload.
       // codeVerifier carries the encoded RSA private key for decryption.
-      const rawCallback = url.search ? `${url.pathname}?${url.searchParams.toString()}` : url.pathname;
+      // Full absolute URL so parseZedCallbackPayload never sees a bare "/?…" path.
+      const rawCallback = `http://127.0.0.1:${zedProxyPort || "0"}${url.pathname}${url.search}`;
       try {
         const { exchangeTokens } = await import("../providers.js");
         const { createProviderConnection } = await import("@/models");
-        const tokenData = await exchangeTokens("zed", rawCallback, null, session.codeVerifier, session.state);
+        const tokenData = await exchangeTokens(
+          "zed",
+          rawCallback,
+          null,
+          session.codeVerifier,
+          session.state,
+          { systemId: session.systemId },
+        );
         const connection = await createProviderConnection({
           provider: "zed",
           authType: "oauth",
@@ -713,6 +782,7 @@ export function startZedProxy(preferredPort = 0) {
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(renderCodexResultPage(true, "You can close this window."));
       } catch (err) {
+        console.log("[Zed proxy] exchange failed:", err?.message || err);
         session.status = "error";
         session.error = err.message;
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });

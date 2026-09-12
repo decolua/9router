@@ -14,6 +14,8 @@ const zed = {
   config: ZED_HOSTED_CONFIG,
   flowType: "authorization_code",
   callbackPath: "/",
+  // prepareConfig mints a fresh RSA keypair — never re-run it during exchange.
+  skipPrepareOnExchange: true,
   prepareConfig: async (config, meta) => {
     // native_app_port is the local callback port (passed via meta from start-proxy).
     const nativeAppPort = Number(meta?.nativeAppPort) || ZED_HOSTED_CONFIG.defaultNativeAppPort;
@@ -21,11 +23,12 @@ const zed = {
     return { ...config, ...auth };
   },
   buildAuthUrl: (config, redirectUri, state) => config.authUrl,
-  exchangeToken: async (config, code, redirectUri, codeVerifier, state) => {
+  exchangeToken: async (config, code, redirectUri, codeVerifier, state, meta = {}) => {
     // code = raw callback URL/query; codeVerifier = encoded private key verifier.
     const { userId, encryptedAccessToken } = parseZedCallbackPayload(code);
     const accessToken = decryptZedAccessToken(encryptedAccessToken, codeVerifier);
-    return { accessToken, userId, systemId: config.systemId };
+    // systemId must match the one embedded in the native_app_signin URL (session meta).
+    return { accessToken, userId, systemId: meta.systemId || config.systemId || "" };
   },
   postExchange: async (tokens) => {
     const credentials = {
@@ -35,7 +38,11 @@ const zed = {
     let userInfo = null;
     try {
       userInfo = await fetchZedAuthenticatedUser(credentials, { config: ZED_HOSTED_CONFIG });
-    } catch { /* best-effort */ }
+    } catch (err) {
+      // 401/403 means the decrypted token is already unusable — fail the connect
+      // instead of saving a green "active" row that cannot list models.
+      if (Number(err?.status) === 401 || Number(err?.status) === 403) throw err;
+    }
     const organizationId = resolveZedOrganizationId(credentials, userInfo);
     return {
       userInfo,

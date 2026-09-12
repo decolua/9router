@@ -150,7 +150,7 @@ const REFRESH_HANDLERS = {
   cline: (c, log) => refreshClineToken(c.refreshToken, log),
   // ClinePass shares Cline's WorkOS auth endpoints, so the same refresh works.
   clinepass: (c, log) => refreshClineToken(c.refreshToken, log),
-  zed: () => refreshZedToken(),
+  zed: (c, log) => refreshZedToken(c, log),
   windsurf: (c, log) => refreshWindsurfToken(c, log),
   // Kimi Code OAuth (merged into id `kimi`); legacy id still routes here
   kimi: (c, log) => refreshKimiToken(c.refreshToken, c, log),

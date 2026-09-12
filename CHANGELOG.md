@@ -1,3 +1,11 @@
+# Unreleased
+
+## Features
+- **Zed**: unhide Hosted AI on the Providers dashboard (alias `zd`) with RSA native-app browser sign-in, keyring/credential import, live `/models` catalog, MITM CLI capture, and `/v1/chat/completions` through `cloud.zed.dev` (Claude / GPT / Gemini / Grok / Baseten)
+
+## Fixes
+- **Zed**: speak the current cloud protocol (`x-zed-version` 1.19.x, NDJSON `/completions`, snake_case provider tags including `baseten`) and stop auto-filling a local keyring token that `cloud.zed.dev` already 401s — Sign in with browser instead (Zed has no refresh token)
+
 # v0.5.75 (2026-09-10)
 
 ## Features

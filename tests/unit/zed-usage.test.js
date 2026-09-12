@@ -103,6 +103,17 @@ describe("parseZedAuthenticatedUserUsage", () => {
     expect(parsed.message).toMatch(/dashboard\.zed\.dev/);
   });
 
+  it("explains empty quotas on the free plan", () => {
+    const parsed = parseZedAuthenticatedUserUsage({
+      plan: { plan_v3: "zed_free" },
+    });
+
+    expect(parsed.plan).toBe("Zed Free");
+    expect(parsed.quotas).toEqual({});
+    expect(parsed.message).toMatch(/Zed Pro/i);
+    expect(parsed.message).toMatch(/zed\.dev\/account/);
+  });
+
   it("surfaces overdue invoice warning", () => {
     const parsed = parseZedAuthenticatedUserUsage({
       plan: {

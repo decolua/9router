@@ -11,29 +11,59 @@
 
 import crypto from "node:crypto";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import {
+  ZED_WEB_BASE_URL,
+  ZED_CLOUD_BASE_URL,
+  ZED_LLM_BASE_URL,
+  ZED_CLIENT_VERSION,
+  ZED_HEADERS,
+  ZED_LLM_TOKEN_TTL_MS,
+  ZED_MODEL_CACHE_TTL_MS,
+  ZED_PRIVATE_KEY_PREFIX,
+  ZED_FREE_PLAN_IDS,
+  isNewerZedVersion,
+  buildZedHostedModelsBlockedMessage,
+  buildZedEmptyCatalogMessage,
+  buildZedUnauthorizedMessage,
+} from "../config/zedConstants.js";
 
-export const ZED_WEB_BASE_URL = "https://zed.dev";
-export const ZED_CLOUD_BASE_URL = "https://cloud.zed.dev";
-export const ZED_LLM_BASE_URL = "https://cloud.zed.dev";
-
-export const ZED_HEADERS = {
-  expiredToken: "x-zed-expired-token",
-  outdatedToken: "x-zed-outdated-token",
-  clientSupportsStatus: "x-zed-client-supports-status-messages",
-  clientSupportsStreamEnded:
-    "x-zed-client-supports-stream-ended-request-completion-status",
-  serverSupportsStatus: "x-zed-server-supports-status-messages",
-  clientSupportsXai: "x-zed-client-supports-x-ai",
-  systemId: "x-zed-system-id",
+export {
+  ZED_WEB_BASE_URL,
+  ZED_CLOUD_BASE_URL,
+  ZED_LLM_BASE_URL,
+  ZED_HEADERS,
 };
 
-const PRIVATE_KEY_PREFIX = "zed-rsa-pkcs1:";
-const LLM_TOKEN_TTL_MS = 50 * 60 * 1000;
-const MODEL_CACHE_TTL_MS = 60 * 60 * 1000;
+const PRIVATE_KEY_PREFIX = ZED_PRIVATE_KEY_PREFIX;
+const LLM_TOKEN_TTL_MS = ZED_LLM_TOKEN_TTL_MS;
+const MODEL_CACHE_TTL_MS = ZED_MODEL_CACHE_TTL_MS;
 
 const llmTokenCache = new Map();
 const modelCache = new Map();
 const modelInflight = new Map();
+let negotiatedZedClientVersion = ZED_CLIENT_VERSION;
+
+export function getZedClientVersion() {
+  return negotiatedZedClientVersion;
+}
+
+export function noteZedMinimumRequiredVersion(required) {
+  const value = String(required || "").trim();
+  if (!value) return negotiatedZedClientVersion;
+  if (isNewerZedVersion(value, negotiatedZedClientVersion)) {
+    negotiatedZedClientVersion = value;
+  }
+  return negotiatedZedClientVersion;
+}
+
+function zedLlmDefaultHeaders() {
+  return {
+    [ZED_HEADERS.version]: getZedClientVersion(),
+    [ZED_HEADERS.clientSupportsStatus]: "true",
+    [ZED_HEADERS.clientSupportsStreamEnded]: "true",
+    [ZED_HEADERS.clientSupportsXai]: "true",
+  };
+}
 
 function b64url(value) {
   return Buffer.from(value).toString("base64url");
@@ -107,12 +137,26 @@ export function parseZedCallbackPayload(input) {
   try {
     data = JSON.parse(raw);
   } catch {
-    let url;
+    let url = null;
+    // Absolute URL
     try {
       url = new URL(raw);
     } catch {
+      /* continue */
+    }
+    // Path + query from the local proxy: "/?user_id=…&access_token=…" or "/callback?…"
+    if (!url && raw.startsWith("/")) {
       try {
-        url = new URL(`http://127.0.0.1/?${raw.replace(/^\?/, "")}`);
+        url = new URL(raw, "http://127.0.0.1");
+      } catch {
+        /* continue */
+      }
+    }
+    // Bare query: "?user_id=…" or "user_id=…"
+    if (!url) {
+      try {
+        const q = raw.startsWith("?") ? raw : `?${raw}`;
+        url = new URL(`http://127.0.0.1/${q}`);
       } catch {
         throw new Error("Invalid Zed callback URL");
       }
@@ -159,11 +203,26 @@ export function decryptZedAccessToken(encryptedAccessToken, privateKeyVerifier) 
 export function buildZedUserAuthHeader(credentials) {
   const psd = credentials?.providerSpecificData || {};
   const userId = psd.userId || credentials?.userId;
-  const accessToken = credentials?.accessToken || credentials?.apiKey;
+  const accessToken = normalizeZedAccessToken(credentials?.accessToken || credentials?.apiKey);
   if (!userId || !accessToken) {
     throw new Error("Zed credential is missing userId or accessToken");
   }
   return `${userId} ${accessToken}`;
+}
+
+/** Compact keyring v2 JSON so Authorization stays a single header value. */
+export function normalizeZedAccessToken(raw) {
+  const token = String(raw || "").trim();
+  if (!token.startsWith("{")) return token;
+  try {
+    const parsed = JSON.parse(token);
+    if (parsed?.version === 2 && typeof parsed.token === "string") {
+      return JSON.stringify(parsed);
+    }
+  } catch {
+    /* keep raw */
+  }
+  return token;
 }
 
 function getSystemId(credentials) {
@@ -184,9 +243,10 @@ async function fetchJson(url, options, proxyOptions = null) {
     }
   }
   if (!res.ok) {
-    const message =
+    const raw =
       data?.message || data?.error?.message || data?.error || text || `HTTP ${res.status}`;
-    const err = new Error(String(message));
+    const message = res.status === 401 ? buildZedUnauthorizedMessage() : String(raw);
+    const err = new Error(message);
     err.status = res.status;
     err.body = data;
     throw err;
@@ -280,6 +340,7 @@ export async function fetchZedLlmToken(credentials, options = {}) {
       body: JSON.stringify({ organization_id: organizationId }),
       signal: options.signal ?? undefined,
     },
+    options.proxyOptions ?? null,
   );
   const token =
     typeof data?.token === "string" ? data.token : data?.token?.[0] || data?.token?.value;
@@ -301,17 +362,27 @@ export async function zedLlmFetch(credentials, path, options = {}) {
   const url = zedUrl(config, "llmBaseUrl", path, ZED_LLM_BASE_URL);
   const buildRequest = async (forceRefresh) => {
     const token = await fetchZedLlmToken(credentials, { ...options, forceRefresh });
-    return proxyAwareFetch(url, {
-      ...options.fetchOptions,
-      headers: {
-        ...(options.fetchOptions?.headers || {}),
-        Authorization: `Bearer ${token}`,
+    return proxyAwareFetch(
+      url,
+      {
+        ...options.fetchOptions,
+        headers: {
+          ...zedLlmDefaultHeaders(),
+          ...(options.fetchOptions?.headers || {}),
+          Authorization: `Bearer ${token}`,
+        },
+        signal: options.signal ?? undefined,
       },
-      signal: options.signal ?? undefined,
-    });
+      options.proxyOptions ?? null,
+    );
   };
 
   let response = await buildRequest(false);
+  const requiredVersion = response?.headers?.get?.(ZED_HEADERS.minimumRequiredVersion);
+  if (requiredVersion && isNewerZedVersion(requiredVersion, getZedClientVersion())) {
+    noteZedMinimumRequiredVersion(requiredVersion);
+    response = await buildRequest(false);
+  }
   if (shouldRefreshZedLlmToken(response)) {
     response = await buildRequest(true);
   }
@@ -370,7 +441,6 @@ export async function resolveZedModels(credentials, options = {}) {
         method: "GET",
         headers: {
           Accept: "application/json",
-          [ZED_HEADERS.clientSupportsXai]: "true",
         },
       },
     });
@@ -389,6 +459,23 @@ export async function resolveZedModels(credentials, options = {}) {
       const id = normalizeZedModelId(raw?.id);
       if (id) rawById.set(id, raw);
     }
+
+    let planInfo = null;
+    let warning = null;
+    if (models.length === 0) {
+      // Empty catalog is usually a plan gate (Zed Free has no hosted models), not a parse bug.
+      try {
+        const userInfo = await fetchZedAuthenticatedUser(credentials, options);
+        const webBaseUrl = options.config?.webBaseUrl || ZED_WEB_BASE_URL;
+        planInfo = summarizeZedPlan(userInfo, { webBaseUrl });
+        warning = planInfo?.blocksHostedModels
+          ? planInfo.message
+          : buildZedEmptyCatalogMessage();
+      } catch {
+        warning = buildZedEmptyCatalogMessage();
+      }
+    }
+
     const entry = {
       expiresAt: Date.now() + MODEL_CACHE_TTL_MS,
       models,
@@ -399,6 +486,8 @@ export async function resolveZedModels(credentials, options = {}) {
       recommendedModels: (data?.recommended_models || data?.recommendedModels || [])
         .map(normalizeZedModelId)
         .filter(Boolean),
+      planInfo,
+      warning,
     };
     modelCache.set(key, entry);
     return entry;
@@ -412,8 +501,42 @@ export async function resolveZedModels(credentials, options = {}) {
   }
 }
 
+/**
+ * Explain why Zed's /models catalog is empty (plan/trial/quota).
+ * Token-based plans (student/pro) may report model_requests.limit=0 while still
+ * listing models — that alone is NOT "free plan blocked".
+ */
+export function summarizeZedPlan(userInfo, options = {}) {
+  const plan = userInfo?.plan || {};
+  const planId = plan.plan_v3 || plan.plan_v2 || plan.plan || null;
+  const limit = plan.usage?.model_requests?.limit;
+  const modelLimit =
+    typeof limit?.limited === "number"
+      ? limit.limited
+      : typeof limit?.Limited === "number"
+        ? limit.Limited
+        : limit === "unlimited" || limit?.unlimited
+          ? Infinity
+          : null;
+  const trialStarted = !!plan.trial_started_at;
+  const isFree = !planId || ZED_FREE_PLAN_IDS.has(String(planId));
+  // Only treat classic free plans as hard-blocked for catalog purposes.
+  const blocksHostedModels = isFree;
+  const webBaseUrl = options.webBaseUrl || ZED_WEB_BASE_URL;
+
+  return {
+    planId,
+    modelRequestLimit: modelLimit,
+    trialStarted,
+    isFree,
+    blocksHostedModels,
+    message: blocksHostedModels ? buildZedHostedModelsBlockedMessage(webBaseUrl) : null,
+  };
+}
+
 export function clearZedCaches() {
   llmTokenCache.clear();
   modelCache.clear();
   modelInflight.clear();
+  negotiatedZedClientVersion = ZED_CLIENT_VERSION;
 }

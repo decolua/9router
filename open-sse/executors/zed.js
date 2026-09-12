@@ -24,30 +24,26 @@ import { claudeToOpenAIResponse } from "../translator/response/claude-to-openai.
 import { geminiToOpenAIResponse } from "../translator/response/gemini-to-openai.js";
 import { openaiResponsesToOpenAIResponse } from "../translator/response/openai-responses.js";
 import {
+  ZED_CLIENT_VERSION,
+  ZED_COMPLETIONS_ACCEPT,
+  ZED_PROVIDER,
+  ZED_WEB_BASE_URL,
+  resolveZedProvider,
+  buildZedOpaqueCompletionErrorMessage,
+} from "../config/zedConstants.js";
+import {
   ZED_HEADERS,
+  ZED_LLM_BASE_URL,
+  fetchZedAuthenticatedUser,
+  getZedClientVersion,
   resolveZedModels,
+  summarizeZedPlan,
   zedLlmFetch,
 } from "../shared/zedAuth.js";
-
-const ZED_PROVIDER = {
-  anthropic: "Anthropic",
-  openai: "OpenAi",
-  google: "Google",
-  xai: "XAi",
-};
+import crypto from "node:crypto";
 
 function normalizeZedProvider(value, model) {
-  const raw = String(value || "").toLowerCase();
-  if (raw === "anthropic") return ZED_PROVIDER.anthropic;
-  if (raw === "openai" || raw === "open_ai") return ZED_PROVIDER.openai;
-  if (raw === "google" || raw === "gemini") return ZED_PROVIDER.google;
-  if (raw === "xai" || raw === "x_ai" || raw === "x-ai") return ZED_PROVIDER.xai;
-
-  const m = String(model || "").toLowerCase();
-  if (m.includes("claude")) return ZED_PROVIDER.anthropic;
-  if (m.includes("gemini")) return ZED_PROVIDER.google;
-  if (m.includes("grok") || m.includes("xai")) return ZED_PROVIDER.xai;
-  return ZED_PROVIDER.openai;
+  return resolveZedProvider(value, model);
 }
 
 function buildProviderRequest(provider, model, body, stream, credentials) {
@@ -60,7 +56,7 @@ function buildProviderRequest(provider, model, body, stream, credentials) {
   if (provider === ZED_PROVIDER.openai) {
     return openaiToOpenAIResponsesRequest(model, body, true, credentials);
   }
-  // xAI is OpenAI-shaped — forward as-is.
+  // xAI and Baseten are OpenAI chat-shaped — forward as-is.
   return { ...(body || {}), model, stream: stream !== false };
 }
 
@@ -209,14 +205,15 @@ class ZedExecutor extends BaseExecutor {
     super("zed");
   }
 
-  async resolveModel(model, credentials, signal, log) {
+  async resolveModel(model, credentials, signal, log, proxyOptions = null) {
     try {
-      const catalog = await resolveZedModels(credentials, { config: this.config, signal });
+      const catalog = await resolveZedModels(credentials, { config: this.config, signal, proxyOptions });
       let raw = catalog?.rawById?.get(model) ?? null;
       if (!raw) {
         const refreshed = await resolveZedModels(credentials, {
           config: this.config,
           signal,
+          proxyOptions,
           forceRefresh: true,
         });
         raw = refreshed?.rawById?.get(model) ?? null;
@@ -230,12 +227,12 @@ class ZedExecutor extends BaseExecutor {
   }
 
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
-    const { provider } = await this.resolveModel(model, credentials, signal, log);
+    const { provider } = await this.resolveModel(model, credentials, signal, log, proxyOptions);
     const providerRequest = buildProviderRequest(provider, model, body, stream, credentials);
     const bodyRecord = body || {};
     const payload = {
-      thread_id: bodyRecord.thread_id || credentials?._clientSessionId,
-      prompt_id: bodyRecord.prompt_id,
+      thread_id: bodyRecord.thread_id || credentials?._clientSessionId || crypto.randomUUID(),
+      prompt_id: bodyRecord.prompt_id || crypto.randomUUID(),
       provider,
       model,
       provider_request: providerRequest,
@@ -244,24 +241,41 @@ class ZedExecutor extends BaseExecutor {
     const response = await zedLlmFetch(credentials, "/completions", {
       config: this.config,
       signal,
+      proxyOptions,
       fetchOptions: {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Accept: "application/x-ndjson, text/event-stream, */*",
+          Accept: ZED_COMPLETIONS_ACCEPT,
           "User-Agent": "9router/zed",
-          "x-zed-version": this.config?.appVersion?.toString() || "0.200.0",
+          [ZED_HEADERS.version]: this.config?.appVersion?.toString() || getZedClientVersion() || ZED_CLIENT_VERSION,
           [ZED_HEADERS.clientSupportsStatus]: "true",
           [ZED_HEADERS.clientSupportsStreamEnded]: "true",
+          [ZED_HEADERS.clientSupportsXai]: "true",
         },
         body: JSON.stringify(payload),
       },
     });
 
+    // Cache plan summary for opaque 500 messages (Zed often hides billing failures).
+    if (!response.ok && response.status >= 500) {
+      try {
+        const userInfo = await fetchZedAuthenticatedUser(credentials, {
+          config: this.config,
+          signal,
+        });
+        this._lastPlanInfo = summarizeZedPlan(userInfo, {
+          webBaseUrl: this.config?.webBaseUrl || ZED_WEB_BASE_URL,
+        });
+      } catch {
+        this._lastPlanInfo = null;
+      }
+    }
+
     const wrapped = response.ok ? wrapZedCompletionStream(response, provider, model) : response;
     return {
       response: wrapped,
-      url: `${this.config?.llmBaseUrl || "https://cloud.zed.dev"}/completions`,
+      url: `${this.config?.llmBaseUrl || ZED_LLM_BASE_URL}/completions`,
       headers: { "Content-Type": "application/json", Authorization: "Bearer <zed-llm-token>" },
       transformedBody: payload,
     };
@@ -287,6 +301,18 @@ class ZedExecutor extends BaseExecutor {
     }
     if (code) {
       return { status: response.status, message: `Zed ${code}: ${rawMessage}` };
+    }
+    const isOpaque =
+      response.status >= 500 &&
+      (!rawMessage || /internal server error/i.test(String(rawMessage)));
+    if (isOpaque) {
+      return {
+        status: response.status,
+        message: buildZedOpaqueCompletionErrorMessage(
+          this._lastPlanInfo,
+          this.config?.webBaseUrl || ZED_WEB_BASE_URL,
+        ),
+      };
     }
     return { status: response.status, message: rawMessage || `Zed upstream error: ${response.status}` };
   }
