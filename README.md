@@ -1271,6 +1271,13 @@ docker run -d --name 9router -p 20128:20128 \
 - `PORT=20128`
 - `HOSTNAME=0.0.0.0`
 
+> **Local-only tweak (not needed for most users):** If host antivirus (e.g. Kaspersky) does TLS interception, the container does not trust its root CA and upstream calls fail with `SELF_SIGNED_CERT_IN_CHAIN`. Export the CA to `<DATA_DIR>/certs/` and point `NODE_EXTRA_CA_CERTS` at it in `docker-compose.yml`:
+>
+> ```yaml
+> environment:
+>   NODE_EXTRA_CA_CERTS: /app/data/certs/<your-ca>.pem
+> ```
+
 **Useful commands:**
 
 ```bash
