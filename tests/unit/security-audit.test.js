@@ -34,18 +34,13 @@ describe("AUDIT-002: API key masking", () => {
       path.resolve("src/lib/db/repos/usageRepo.js"),
       "utf-8"
     );
-    // Both code paths (daily summary + 24h live) should use apiKeyMasked
+    // The rollup merge path (all periods) should use apiKeyMasked
     const maskedCount = (source.match(/apiKeyMasked/g) || []).length;
-    expect(maskedCount).toBeGreaterThanOrEqual(4); // function def + 3 usage sites
+    expect(maskedCount).toBeGreaterThanOrEqual(4); // function def + usage sites
 
     // The byApiKey stats entries should use apiKeyMasked, not raw apiKey
-    // Check the daily summary path
-    const dailyPath = source.match(/stats\.byApiKey\[akKey\] = \{[^}]*apiKeyMasked[^}]*\}/);
-    expect(dailyPath).not.toBeNull();
-    // Check the 24h live path
-    const livePath = source.match(/stats\.byApiKey\[akKey\] = \{[^}]*apiKeyMasked[^}]*\}/g);
-    expect(livePath).not.toBeNull();
-    expect(livePath.length).toBeGreaterThanOrEqual(1);
+    const mergePath = source.match(/stats\.byApiKey\[akKey\] \?\?= \{[^}]*apiKeyMasked/);
+    expect(mergePath).not.toBeNull();
   });
 
   it("byApiKey object keys should use masked key, not raw key", () => {
@@ -53,9 +48,11 @@ describe("AUDIT-002: API key masking", () => {
       path.resolve("src/lib/db/repos/usageRepo.js"),
       "utf-8"
     );
-    // The 24h path should use apiKeyMasked in the akKey template
-    expect(source).toContain("${apiKeyMasked}|${r.model}|${r.provider");
-    // Should NOT use raw r.apiKey in the key
+    // The rollup merge path derives the stats key from the masked key
+    expect(source).toContain('const apiKeyKey = apiKeyMasked || "local-no-key"');
+    expect(source).toContain("${apiKeyKey}|${r.model}|${r.provider");
+    // Should NOT use the raw API key in the stats key (the endpoint dimension
+    // also keys by r.dimKey — that one is an endpoint name, not a secret)
     expect(source).not.toContain("${r.apiKey}|${r.model}|${r.provider");
   });
 });
