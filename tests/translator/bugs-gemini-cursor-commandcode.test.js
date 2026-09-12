@@ -62,15 +62,57 @@ describe("OpenAI → CommandCode", () => {
     expect(Object.keys(call.input).length, "arguments silently dropped to {}").toBeGreaterThan(0);
   });
 
-  // openai-to-commandcode.js:41-42 — image becomes "[image omitted]"
-  // KNOWN BUG
-  it.fails("image content is preserved", () => {
+  // FIXED: data-URI images are forwarded as Anthropic-style base64 blocks.
+  it("preserves inline image content as a base64 image block", () => {
     const out = O2CC({
       messages: [{ role: "user", content: [
         { type: "text", text: "look" },
         { type: "image_url", image_url: { url: "data:image/png;base64,BBBB" } },
       ] }],
     });
-    expect(JSON.stringify(out), "image omitted").toContain("BBBB");
+    const blocks = out.params.messages[0].content;
+    expect(blocks).toContainEqual({
+      type: "image",
+      source: { type: "base64", media_type: "image/png", data: "BBBB" },
+    });
+    expect(JSON.stringify(out), "image not omitted").not.toContain("[image omitted]");
+  });
+
+  // FIXED: AI SDK-style `{type:"image", image:"data:..."}` parts are preserved
+  // (issue #1330 shape), not just `{type:"image_url"}`.
+  it("preserves AI SDK-style image parts", () => {
+    const out = O2CC({
+      messages: [{ role: "user", content: [
+        { type: "image", image: "data:image/jpeg;base64,CCCC" },
+      ] }],
+    });
+    expect(out.params.messages[0].content).toContainEqual({
+      type: "image",
+      source: { type: "base64", media_type: "image/jpeg", data: "CCCC" },
+    });
+  });
+
+  // FIXED: remote http(s) image URLs are forwarded as URL image blocks.
+  it("preserves remote image URLs", () => {
+    const out = O2CC({
+      messages: [{ role: "user", content: [
+        { type: "image_url", image_url: { url: "https://example.com/a.png" } },
+      ] }],
+    });
+    expect(out.params.messages[0].content).toContainEqual({
+      type: "image",
+      source: { type: "url", url: "https://example.com/a.png" },
+    });
+  });
+
+  // Unfetchable/opaque image URLs still degrade to a placeholder rather than
+  // producing an invalid block.
+  it("falls back to a placeholder for non-fetchable image URLs", () => {
+    const out = O2CC({
+      messages: [{ role: "user", content: [
+        { type: "image_url", image_url: { url: "ftp://example.com/a.png" } },
+      ] }],
+    });
+    expect(out.params.messages[0].content).toContainEqual({ type: "text", text: "[image omitted]" });
   });
 });
