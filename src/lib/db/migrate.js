@@ -3,6 +3,7 @@ import path from "node:path";
 import { LEGACY_FILES, DB_DIR } from "./paths.js";
 import { TABLES, buildCreateTableSql, SCHEMA_VERSION } from "./schema.js";
 import { MIGRATIONS, latestVersion } from "./migrations/index.js";
+import { backfillUsageRollups } from "./migrations/002-usage-rollups.js";
 import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
 import { getAppVersion } from "./version.js";
@@ -189,7 +190,8 @@ function importLegacyUsage(adapter, data) {
         e.cost || 0,
         e.status || "ok",
         stringifyJson(t),
-        stringifyJson({}),
+        // legacy entries were persisted whole — keep combo attribution alive
+        stringifyJson(e.meta && typeof e.meta === "object" ? e.meta : {}),
       ]
     );
   }
@@ -277,6 +279,12 @@ export async function runMigrationOnce(adapter) {
         importLegacyUsage(adapter, legacyUsage);
         importLegacyDisabled(adapter, legacyDisabled);
         importLegacyDetails(adapter, legacyDetails);
+        // Migrations ran before this import on an empty usageHistory, so the
+        // rollup backfill saw nothing — aggregate the just-imported rows now
+        // or every stats read comes back empty for legacy upgraders.
+        if (legacyUsage?.history?.length) {
+          backfillUsageRollups(adapter);
+        }
         setMetaSync(adapter, "appVersion", getAppVersion());
         setMetaSync(adapter, "backupSchemaVersion", SCHEMA_VERSION);
         setMetaSync(adapter, "migratedAt", new Date().toISOString());

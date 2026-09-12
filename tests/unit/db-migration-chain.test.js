@@ -83,6 +83,44 @@ describe("Schema migrations", () => {
     expect(aliases).toHaveLength(1);
   });
 
+  it("legacy usage.json import backfills rollups and keeps combo meta", async () => {
+    // Legacy lowdb persisted history entries whole (incl. meta.requestedModel)
+    const legacy = {
+      history: [
+        {
+          timestamp: "2026-08-01T10:00:00.000Z", provider: "openai", model: "gpt-4o",
+          tokens: { prompt_tokens: 11, completion_tokens: 7 }, status: "ok",
+          meta: { requestedModel: "my-combo" },
+        },
+        {
+          timestamp: "2026-08-01T11:00:00.000Z", provider: "openai", model: "gpt-4o-mini",
+          tokens: { prompt_tokens: 5, completion_tokens: 3 }, status: "ok",
+        },
+      ],
+      dailySummary: { "2026-08-01": { requests: 2, promptTokens: 16, completionTokens: 10 } },
+      totalRequestsLifetime: 2,
+    };
+    fs.writeFileSync(path.join(tempDir, "usage.json"), JSON.stringify(legacy));
+
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const db = await getAdapter();
+
+    // rollups must carry the imported rows — migrations ran before the import
+    const prov = db.get(`SELECT SUM(requests) n, SUM(promptTokens) p FROM usageRollupDaily WHERE dimension='provider' AND dimKey='openai'`);
+    expect(prov.n).toBe(2);
+    expect(prov.p).toBe(16);
+    // combo attribution survives the import
+    const combo = db.get(`SELECT * FROM usageRollupDaily WHERE dimension='combo' AND dimKey='my-combo'`);
+    expect(combo.requests).toBe(1);
+    expect(combo.promptTokens).toBe(11);
+
+    const dbIndex = await import("@/lib/db/index.js");
+    const stats = await dbIndex.getUsageStats("all");
+    expect(stats.totalRequests).toBe(2);
+    expect(stats.byCombo["my-combo"].requests).toBe(1);
+    expect(parseInt(db.get(`SELECT value v FROM _meta WHERE key='totalRequestsLifetime'`).v, 10)).toBe(2);
+  });
+
   it("auto-sync re-creates missing index when DB lacks it", async () => {
     const { getAdapter } = await import("@/lib/db/driver.js");
     const db = await getAdapter();

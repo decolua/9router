@@ -40,45 +40,53 @@ const UPSERT_SET = `
     provider = excluded.provider,
     lastUsed = CASE WHEN excluded.lastUsed > usageRollupHourly.lastUsed THEN excluded.lastUsed ELSE usageRollupHourly.lastUsed END`;
 
+// Aggregate every existing usageHistory row into the rollup tables (hourly
+// per dimension, then compacted to daily). Additive via UPSERT, but each
+// history row must be counted exactly once across calls — only invoke on a
+// DB whose rollups are known-stale-or-empty (fresh migration, legacy import
+// on a fresh DB). Runs in pure SQL, no JS row materialization.
+export function backfillUsageRollups(db) {
+  for (const arm of ARMS) {
+    db.exec(`
+      INSERT INTO usageRollupHourly(dateKey, hour, dimension, dimKey, model, provider, requests, promptTokens, completionTokens, cachedTokens, reasoningTokens, cost, lastUsed)
+      SELECT strftime('%Y-%m-%d', timestamp, 'localtime'),
+             CAST(strftime('%H', timestamp, 'localtime') AS INTEGER),
+             '${arm.dim}',
+             ${arm.expr},
+             COUNT(*),
+             ${TOKEN_COLS},
+             MAX(timestamp)
+      FROM usageHistory
+      ${arm.where}
+      GROUP BY 1, 2, 3, 4, 5, 6
+      ${UPSERT_SET}`);
+  }
+
+  // Compact hourly → daily (the >24h read path reads daily rows only)
+  db.exec(`
+    INSERT INTO usageRollupDaily(dateKey, dimension, dimKey, model, provider, requests, promptTokens, completionTokens, cachedTokens, reasoningTokens, cost, lastUsed)
+    SELECT dateKey, dimension, dimKey, model, provider, SUM(requests), SUM(promptTokens), SUM(completionTokens), SUM(cachedTokens), SUM(reasoningTokens), SUM(cost), MAX(lastUsed)
+    FROM usageRollupHourly
+    WHERE true
+    GROUP BY 1, 2, 3, 4, 5
+    ON CONFLICT(dateKey, dimension, dimKey, model) DO UPDATE SET
+      requests = requests + excluded.requests,
+      promptTokens = promptTokens + excluded.promptTokens,
+      completionTokens = completionTokens + excluded.completionTokens,
+      cachedTokens = cachedTokens + excluded.cachedTokens,
+      reasoningTokens = reasoningTokens + excluded.reasoningTokens,
+      cost = cost + excluded.cost,
+      provider = excluded.provider,
+      lastUsed = CASE WHEN excluded.lastUsed > usageRollupDaily.lastUsed THEN excluded.lastUsed ELSE usageRollupDaily.lastUsed END`);
+}
+
 const migration = {
   version: 2,
   name: "usage-rollups",
   up(db) {
     db.exec(buildCreateTableSql("usageRollupHourly", TABLES.usageRollupHourly));
     db.exec(buildCreateTableSql("usageRollupDaily", TABLES.usageRollupDaily));
-
-    for (const arm of ARMS) {
-      db.exec(`
-        INSERT INTO usageRollupHourly(dateKey, hour, dimension, dimKey, model, provider, requests, promptTokens, completionTokens, cachedTokens, reasoningTokens, cost, lastUsed)
-        SELECT strftime('%Y-%m-%d', timestamp, 'localtime'),
-               CAST(strftime('%H', timestamp, 'localtime') AS INTEGER),
-               '${arm.dim}',
-               ${arm.expr},
-               COUNT(*),
-               ${TOKEN_COLS},
-               MAX(timestamp)
-        FROM usageHistory
-        ${arm.where}
-        GROUP BY 1, 2, 3, 4, 5, 6
-        ${UPSERT_SET}`);
-    }
-
-    // Compact hourly → daily (the >24h read path reads daily rows only)
-    db.exec(`
-      INSERT INTO usageRollupDaily(dateKey, dimension, dimKey, model, provider, requests, promptTokens, completionTokens, cachedTokens, reasoningTokens, cost, lastUsed)
-      SELECT dateKey, dimension, dimKey, model, provider, SUM(requests), SUM(promptTokens), SUM(completionTokens), SUM(cachedTokens), SUM(reasoningTokens), SUM(cost), MAX(lastUsed)
-      FROM usageRollupHourly
-      WHERE true
-      GROUP BY 1, 2, 3, 4, 5
-      ON CONFLICT(dateKey, dimension, dimKey, model) DO UPDATE SET
-        requests = requests + excluded.requests,
-        promptTokens = promptTokens + excluded.promptTokens,
-        completionTokens = completionTokens + excluded.completionTokens,
-        cachedTokens = cachedTokens + excluded.cachedTokens,
-        reasoningTokens = reasoningTokens + excluded.reasoningTokens,
-        cost = cost + excluded.cost,
-        provider = excluded.provider,
-        lastUsed = CASE WHEN excluded.lastUsed > usageRollupDaily.lastUsed THEN excluded.lastUsed ELSE usageRollupDaily.lastUsed END`);
+    backfillUsageRollups(db);
   },
 };
 
