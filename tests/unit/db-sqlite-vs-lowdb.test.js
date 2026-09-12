@@ -349,13 +349,23 @@ describe("DB SQLite layer — public API parity", () => {
 
     // Add marker, export, import a different payload, verify reset
     await sqliteDb.setModelAlias("marker", "before");
+    const combo = await sqliteDb.createCombo({ name: "combo-rt", models: ["m1"], systemPromptEnabled: true, systemPrompt: "You are {name}." });
     const snap = await sqliteDb.exportDb();
+    expect(snap.combos.find((c) => c.id === combo.id)).toMatchObject({ systemPromptEnabled: true, systemPrompt: "You are {name}." });
 
     await sqliteDb.setModelAlias("marker", "after");
+    await sqliteDb.updateCombo(combo.id, { systemPromptEnabled: false, systemPrompt: "" });
     expect((await sqliteDb.getModelAliases()).marker).toBe("after");
 
     await sqliteDb.importDb(snap);
     expect((await sqliteDb.getModelAliases()).marker).toBe("before");
+    expect(await sqliteDb.getComboById(combo.id)).toMatchObject({ systemPromptEnabled: true, systemPrompt: "You are {name}." });
+
+    // Legacy exports without the identity-prompt fields import to disabled defaults
+    await sqliteDb.importDb({ ...snap, combos: snap.combos.map((c) => ({ ...c, systemPromptEnabled: undefined, systemPrompt: undefined })) });
+    expect(await sqliteDb.getComboById(combo.id)).toMatchObject({ systemPromptEnabled: false, systemPrompt: "" });
+
+    await sqliteDb.deleteCombo(combo.id);
   });
 
   it("pricing: user pricing merged with constants", async () => {
