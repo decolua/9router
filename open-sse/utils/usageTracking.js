@@ -20,6 +20,14 @@ export const COLORS = {
 // Buffer tokens to prevent context errors
 const BUFFER_TOKENS = 2000;
 
+// Hidden-thinking synthesis (synthesizeThinkingTokens): some upstreams (e.g.
+// opencode big-pickle) think without ever reporting reasoning_tokens, and
+// client tools require the field. Completions at or below the threshold are
+// assumed reasoning-free; above it, a fixed share of the output tokens is
+// attributed to thinking.
+const HIDDEN_THINKING_MAX_OUTPUT = 10;
+const HIDDEN_THINKING_RATIO = 0.7;
+
 // Get HH:MM:SS timestamp
 function getTimeString() {
   return new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -54,6 +62,40 @@ export function addBufferToUsage(usage) {
   }
 
   return result;
+}
+
+/**
+ * Synthesize completion_tokens_details.reasoning_tokens for CLIENT-facing
+ * usage when the upstream didn't report it — some models think upstream but
+ * never emit the field, and client tools require it. Applied to every stream
+ * unconditionally; usage that already reports reasoning passes through
+ * untouched. Client-facing only: pass the addBufferToUsage() copy, never the
+ * usage object kept for stats — the result is a NEW object whose
+ * completion_tokens_details is replaced, so the stats-side nested details
+ * stay untouched.
+ *   completion_tokens <= 10 → reasoning_tokens = 0
+ *   completion_tokens  > 10 → reasoning_tokens = floor(70% of completion_tokens)
+ *
+ * @param {object} usage - OpenAI-shaped usage object
+ * @returns {object} usage with reasoning_tokens synthesized when absent
+ */
+export function synthesizeThinkingTokens(usage) {
+  if (!usage || typeof usage !== "object") return usage;
+
+  const completion = Number(usage.completion_tokens);
+  if (!Number.isFinite(completion) || completion <= 0) return usage;
+
+  const reported = Number(usage.reasoning_tokens) || Number(usage.completion_tokens_details?.reasoning_tokens) || 0;
+  if (reported > 0) return usage;
+
+  const synthesized = completion <= HIDDEN_THINKING_MAX_OUTPUT ? 0 : Math.floor(completion * HIDDEN_THINKING_RATIO);
+  return {
+    ...usage,
+    completion_tokens_details: {
+      ...(usage.completion_tokens_details && typeof usage.completion_tokens_details === "object" ? usage.completion_tokens_details : {}),
+      reasoning_tokens: synthesized,
+    },
+  };
 }
 
 export function filterUsageForFormat(usage, targetFormat) {
