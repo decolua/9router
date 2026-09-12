@@ -26,4 +26,10 @@ export const FILTERS = {
     (Array.isArray(models) ? models : [])
       .filter((m) => m.id?.startsWith("mimo") || m.name?.toLowerCase().includes("mimo"))
       .map((m) => ({ id: m.id, name: m.name || m.id })),
+
+  "airforce-free": (models) =>
+    (Array.isArray(models) ? models : [])
+      .filter((m) => (m.tier === "free" || m.id?.endsWith(":free")) && m.supports_chat === true && (!m.media_type || m.media_type === "chat" || m.media_type === "text"))
+      .map((m) => ({ id: m.id, name: m.name || m.id, contextLength: m.context_length }))
+      .sort((a, b) => String(a.id).localeCompare(String(b.id))),
 };
