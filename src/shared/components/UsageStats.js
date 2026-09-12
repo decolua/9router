@@ -86,22 +86,24 @@ function RecentRequests({ requests = [] }) {
   );
 }
 
+function decorateEntry(key, data, pending = 0) {
+  const totalTokens = (data.promptTokens || 0) + (data.completionTokens || 0);
+  const totalCost = data.cost || 0;
+  // ponytail: cost split is a token-share allocation of the (rate-accurate)
+  // server total, not a per-rate recompute. cached is a subset of prompt, so
+  // peel it out of the input share. Upgrade to a stored per-component cost
+  // breakdown if exact cached-rate cost display is needed.
+  const cachedTokens = data.cachedTokens || 0;
+  const nonCachedInput = Math.max(0, (data.promptTokens || 0) - cachedTokens);
+  const inputCost = totalTokens > 0 ? nonCachedInput * (totalCost / totalTokens) : 0;
+  const cachedCost = totalTokens > 0 ? cachedTokens * (totalCost / totalTokens) : 0;
+  const outputCost = totalTokens > 0 ? (data.completionTokens || 0) * (totalCost / totalTokens) : 0;
+  return { ...data, key, totalTokens, totalCost, inputCost, cachedCost, outputCost, pending };
+}
+
 function sortData(dataMap, pendingMap = {}, sortBy, sortOrder) {
   return Object.entries(dataMap || {})
-    .map(([key, data]) => {
-      const totalTokens = (data.promptTokens || 0) + (data.completionTokens || 0);
-      const totalCost = data.cost || 0;
-      // ponytail: cost split is a token-share allocation of the (rate-accurate)
-      // server total, not a per-rate recompute. cached is a subset of prompt, so
-      // peel it out of the input share. Upgrade to a stored per-component cost
-      // breakdown if exact cached-rate cost display is needed.
-      const cachedTokens = data.cachedTokens || 0;
-      const nonCachedInput = Math.max(0, (data.promptTokens || 0) - cachedTokens);
-      const inputCost = totalTokens > 0 ? nonCachedInput * (totalCost / totalTokens) : 0;
-      const cachedCost = totalTokens > 0 ? cachedTokens * (totalCost / totalTokens) : 0;
-      const outputCost = totalTokens > 0 ? (data.completionTokens || 0) * (totalCost / totalTokens) : 0;
-      return { ...data, key, totalTokens, totalCost, inputCost, cachedCost, outputCost, pending: pendingMap[key] || 0 };
-    })
+    .map(([key, data]) => decorateEntry(key, data, pendingMap[key] || 0))
     .sort((a, b) => {
       let valA = a[sortBy];
       let valB = b[sortBy];
@@ -111,6 +113,26 @@ function sortData(dataMap, pendingMap = {}, sortBy, sortOrder) {
       if (valA > valB) return sortOrder === "asc" ? 1 : -1;
       return 0;
     });
+}
+
+// Nested per-model rows under a combo / provider group (server sends
+// stats.byCombo[x].byModel / stats.byProvider[x].byModel), most-used first.
+function decorateNestedModels(byModelMap, viewMode) {
+  return Object.entries(byModelMap || {})
+    .map(([key, data]) => decorateEntry(key, data))
+    .sort((a, b) => (viewMode === "costs" ? b.totalCost - a.totalCost : b.totalTokens - a.totalTokens));
+}
+
+// One group per combo / provider; its expandable detail rows are the models
+// that actually served its requests instead of repeating the group itself.
+// Providers group under their display name (entry.provider), combos under
+// their name (the map key).
+function groupWithNestedModels(entries, viewMode) {
+  return entries.map((entry) => ({
+    groupKey: entry.provider || entry.key,
+    summary: entry,
+    items: decorateNestedModels(entry.byModel, viewMode),
+  }));
 }
 
 function getGroupKey(item, keyField) {
@@ -448,7 +470,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       case "combo": {
         return {
           columns: COMBO_COLUMNS,
-          groupedData: groupDataByKey(sortData(stats.byCombo, {}, sortBy, sortOrder), "comboName"),
+          groupedData: groupWithNestedModels(sortData(stats.byCombo, {}, sortBy, sortOrder), viewMode),
           storageKey: "usage-stats:expanded-combos",
           emptyMessage: "No combo usage recorded yet.",
           renderSummaryCells: (group) => (
@@ -460,12 +482,10 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           ),
           renderDetailCells: (item) => (
             <>
-              <td className="px-6 py-3 font-medium" title={(item.models || []).join(", ")}>
-                {item.comboName}
-                {item.models?.length > 0 && (
-                  <span className="ml-2 text-xs font-normal text-text-muted">
-                    {item.models.length} model{item.models.length > 1 ? "s" : ""}
-                  </span>
+              <td className="px-6 py-3">
+                <span className={`font-mono text-xs ${item.pending > 0 ? "text-primary" : ""}`}>{item.rawModel || item.key}</span>
+                {item.provider && (
+                  <Badge variant="neutral" size="sm" className="ml-2">{item.provider}</Badge>
                 )}
               </td>
               <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
@@ -477,7 +497,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       case "provider": {
         return {
           columns: PROVIDER_COLUMNS,
-          groupedData: groupDataByKey(sortData(stats.byProvider, {}, sortBy, sortOrder), "provider"),
+          groupedData: groupWithNestedModels(sortData(stats.byProvider, {}, sortBy, sortOrder), viewMode),
           storageKey: "usage-stats:expanded-providers",
           emptyMessage: "No provider usage recorded yet.",
           renderSummaryCells: (group) => (
@@ -489,7 +509,9 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           ),
           renderDetailCells: (item) => (
             <>
-              <td className="px-6 py-3 font-medium"><Badge variant="neutral" size="sm">{item.provider}</Badge></td>
+              <td className="px-6 py-3">
+                <span className={`font-mono text-xs ${item.pending > 0 ? "text-primary" : ""}`}>{item.rawModel || item.key}</span>
+              </td>
               <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
               <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
             </>
@@ -497,7 +519,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         };
       }
     }
-  }, [stats, tableView, sortBy, sortOrder]);
+  }, [stats, tableView, sortBy, sortOrder, viewMode]);
 
   if (!stats && !loading) return <div className="text-text-muted">Failed to load usage statistics.</div>;
 

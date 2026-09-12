@@ -207,13 +207,19 @@ export default function UsageTable({
                   <ValueCells item={group.summary} viewMode={viewMode} isSummary />
                 </tr>
                 {/* Detail rows */}
-                {expanded.has(group.groupKey) && group.items.map((item) => (
+                {expanded.has(group.groupKey) && (group.items.length ? group.items.map((item) => (
                   <tr
                     key={`detail-${item.key}`}
                     className="group-detail hover:bg-bg-subtle/20 transition-colors"
                   >
                     {renderDetailCells(item)}
                     <ValueCells item={item} viewMode={viewMode} />
+                  </tr>
+                )) : (
+                  <tr key={`detail-empty-${group.groupKey}`} className="group-detail">
+                    <td colSpan={totalColSpan} className="px-6 py-2 text-xs text-text-muted">
+                      No per-model data recorded for this period.
+                    </td>
                   </tr>
                 ))}
               </Fragment>

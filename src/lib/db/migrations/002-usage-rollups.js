@@ -8,7 +8,7 @@ import { TABLES, buildCreateTableSql } from "../schema.js";
 
 // Shared column projection: dateKey/hour in LOCAL time (same clock the JS
 // write path uses via getLocalDateKey), token sums with the same fallbacks
-// as aggregateEntryToDay.
+// as the old aggregateEntryToDay.
 const TOKEN_COLS = `
   SUM(promptTokens),
   SUM(completionTokens),
@@ -17,15 +17,16 @@ const TOKEN_COLS = `
   SUM(cost)`;
 
 // One grouped INSERT per dimension. Every arm carries a WHERE clause —
-// INSERT ... SELECT ... ON CONFLICT needs it to parse unambiguously.
+// INSERT ... SELECT ... ON CONFLICT needs it to parse unambiguously. All
+// arms keep (model, provider) sub-keys: the dashboard groups every
+// dimension's rows per model+provider.
 const ARMS = [
-  // model is a sub-key only under provider/combo (dashboard nests per-model there)
-  { dim: "provider", expr: `COALESCE(provider, '') AS dimKey, COALESCE(model, '') AS model`, where: "WHERE provider IS NOT NULL" },
-  { dim: "model", expr: `COALESCE(model, '') || '|' || COALESCE(provider, '') AS dimKey, COALESCE(model, '') AS model`, where: "WHERE model IS NOT NULL" },
-  { dim: "combo", expr: `json_extract(meta, '$.requestedModel') AS dimKey, COALESCE(model, '') AS model`, where: "WHERE json_extract(meta, '$.requestedModel') IS NOT NULL" },
-  { dim: "account", expr: `connectionId AS dimKey, '' AS model`, where: "WHERE connectionId IS NOT NULL" },
-  { dim: "apiKey", expr: `COALESCE(apiKey, 'local-no-key') AS dimKey, '' AS model`, where: "WHERE true" },
-  { dim: "endpoint", expr: `COALESCE(endpoint, 'Unknown') AS dimKey, '' AS model`, where: "WHERE true" },
+  { dim: "provider", expr: `COALESCE(provider, '') AS dimKey, COALESCE(model, '') AS model, COALESCE(provider, '') AS provider`, where: "WHERE provider IS NOT NULL" },
+  { dim: "model", expr: `COALESCE(model, '') || '|' || COALESCE(provider, '') AS dimKey, COALESCE(model, '') AS model, COALESCE(provider, '') AS provider`, where: "WHERE model IS NOT NULL" },
+  { dim: "combo", expr: `json_extract(meta, '$.requestedModel') AS dimKey, COALESCE(model, '') AS model, COALESCE(provider, '') AS provider`, where: "WHERE json_extract(meta, '$.requestedModel') IS NOT NULL" },
+  { dim: "account", expr: `connectionId AS dimKey, COALESCE(model, '') AS model, COALESCE(provider, '') AS provider`, where: "WHERE connectionId IS NOT NULL" },
+  { dim: "apiKey", expr: `COALESCE(apiKey, 'local-no-key') AS dimKey, COALESCE(model, '') AS model, COALESCE(provider, '') AS provider`, where: "WHERE true" },
+  { dim: "endpoint", expr: `COALESCE(endpoint, 'Unknown') AS dimKey, COALESCE(model, '') AS model, COALESCE(provider, '') AS provider`, where: "WHERE true" },
 ];
 
 const UPSERT_SET = `
@@ -36,6 +37,7 @@ const UPSERT_SET = `
     cachedTokens = cachedTokens + excluded.cachedTokens,
     reasoningTokens = reasoningTokens + excluded.reasoningTokens,
     cost = cost + excluded.cost,
+    provider = excluded.provider,
     lastUsed = CASE WHEN excluded.lastUsed > usageRollupHourly.lastUsed THEN excluded.lastUsed ELSE usageRollupHourly.lastUsed END`;
 
 const migration = {
@@ -47,7 +49,7 @@ const migration = {
 
     for (const arm of ARMS) {
       db.exec(`
-        INSERT INTO usageRollupHourly(dateKey, hour, dimension, dimKey, model, requests, promptTokens, completionTokens, cachedTokens, reasoningTokens, cost, lastUsed)
+        INSERT INTO usageRollupHourly(dateKey, hour, dimension, dimKey, model, provider, requests, promptTokens, completionTokens, cachedTokens, reasoningTokens, cost, lastUsed)
         SELECT strftime('%Y-%m-%d', timestamp, 'localtime'),
                CAST(strftime('%H', timestamp, 'localtime') AS INTEGER),
                '${arm.dim}',
@@ -57,17 +59,17 @@ const migration = {
                MAX(timestamp)
         FROM usageHistory
         ${arm.where}
-        GROUP BY 1, 2, 3, 4, 5
+        GROUP BY 1, 2, 3, 4, 5, 6
         ${UPSERT_SET}`);
     }
 
     // Compact hourly → daily (the >24h read path reads daily rows only)
     db.exec(`
-      INSERT INTO usageRollupDaily(dateKey, dimension, dimKey, model, requests, promptTokens, completionTokens, cachedTokens, reasoningTokens, cost, lastUsed)
-      SELECT dateKey, dimension, dimKey, model, SUM(requests), SUM(promptTokens), SUM(completionTokens), SUM(cachedTokens), SUM(reasoningTokens), SUM(cost), MAX(lastUsed)
+      INSERT INTO usageRollupDaily(dateKey, dimension, dimKey, model, provider, requests, promptTokens, completionTokens, cachedTokens, reasoningTokens, cost, lastUsed)
+      SELECT dateKey, dimension, dimKey, model, provider, SUM(requests), SUM(promptTokens), SUM(completionTokens), SUM(cachedTokens), SUM(reasoningTokens), SUM(cost), MAX(lastUsed)
       FROM usageRollupHourly
       WHERE true
-      GROUP BY 1, 2, 3, 4
+      GROUP BY 1, 2, 3, 4, 5
       ON CONFLICT(dateKey, dimension, dimKey, model) DO UPDATE SET
         requests = requests + excluded.requests,
         promptTokens = promptTokens + excluded.promptTokens,
@@ -75,6 +77,7 @@ const migration = {
         cachedTokens = cachedTokens + excluded.cachedTokens,
         reasoningTokens = reasoningTokens + excluded.reasoningTokens,
         cost = cost + excluded.cost,
+        provider = excluded.provider,
         lastUsed = CASE WHEN excluded.lastUsed > usageRollupDaily.lastUsed THEN excluded.lastUsed ELSE usageRollupDaily.lastUsed END`);
   },
 };

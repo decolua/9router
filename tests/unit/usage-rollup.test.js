@@ -51,11 +51,12 @@ describe("rollup dual-write in saveRequestUsage", () => {
     expect(h[0].reasoningTokens).toBe(12);
     expect(h[0].lastUsed).toBe("2026-01-01T01:02:03.000Z");
 
-    // every dimension present, model sub-key only where the UI nests it
+    // every dimension present, all carrying (model, provider) sub-keys —
+    // the dashboard groups every dimension's rows per model+provider
     const dims = a.all(`SELECT DISTINCT dimension FROM usageRollupHourly`).map((r) => r.dimension).sort();
     expect(dims).toEqual(["account", "apiKey", "combo", "endpoint", "model", "provider"]);
-    const flat = a.all(`SELECT DISTINCT model FROM usageRollupHourly WHERE dimension IN ('account','apiKey','endpoint')`);
-    expect(flat.every((r) => r.model === "")).toBe(true);
+    const sub = a.all(`SELECT DISTINCT model, provider FROM usageRollupHourly WHERE dimension IN ('account','apiKey','endpoint')`);
+    expect(sub.every((r) => r.model === "glm-5.3" && r.provider === "glm")).toBe(true);
     const modelRow = a.get(`SELECT * FROM usageRollupHourly WHERE dimension = 'model'`);
     expect(modelRow.dimKey).toBe("glm-5.3|glm");
   });
