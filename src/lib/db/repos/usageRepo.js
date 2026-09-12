@@ -1,7 +1,6 @@
 import { EventEmitter } from "events";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
-import { getMeta, setMeta } from "../helpers/metaStore.js";
 
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
@@ -58,6 +57,23 @@ function addToCounter(target, key, values) {
   target[key].cachedTokens += values.cachedTokens || 0;
   target[key].cost += values.cost || 0;
   if (values.meta) Object.assign(target[key], values.meta);
+}
+
+// Accumulate one request into a nested per-model counter map — the breakdown
+// rendered under a combo / provider row in Usage Stats. `info.model` is the raw
+// upstream model id, `info.provider` its display name.
+function addToNestedModelCounter(target, key, info, vals) {
+  const { model, provider, timestamp } = info;
+  if (!target[key]) {
+    target[key] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: model, provider, lastUsed: timestamp };
+  }
+  const c = target[key];
+  c.requests += vals.requests || 1;
+  c.promptTokens += vals.promptTokens || 0;
+  c.completionTokens += vals.completionTokens || 0;
+  c.cachedTokens += vals.cachedTokens || 0;
+  c.cost += vals.cost || 0;
+  if (new Date(timestamp) > new Date(c.lastUsed)) c.lastUsed = timestamp;
 }
 
 function aggregateEntryToDay(day, entry) {
@@ -340,13 +356,17 @@ export async function getUsageHistory(filter = {}) {
   }));
 }
 
+// Local-midnight Date of the first day covered by a maxDays window (null → unbounded)
+function getPeriodCutoff(maxDays) {
+  const today = new Date();
+  return new Date(today.getFullYear(), today.getMonth(), today.getDate() - maxDays + 1);
+}
+
 function loadDaysInRange(adapter, maxDays) {
   if (maxDays == null) {
     return adapter.all(`SELECT dateKey, data FROM usageDaily`);
   }
-  const today = new Date();
-  const cutoff = new Date(today.getFullYear(), today.getMonth(), today.getDate() - maxDays + 1);
-  const cutoffKey = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, "0")}-${String(cutoff.getDate()).padStart(2, "0")}`;
+  const cutoffKey = getLocalDateKey(getPeriodCutoff(maxDays));
   return adapter.all(`SELECT dateKey, data FROM usageDaily WHERE dateKey >= ?`, [cutoffKey]);
 }
 
@@ -566,21 +586,47 @@ export async function getUsageStats(period = "all") {
       }
     }
 
-    // Overlay precise lastUsed timestamps from history
-    const overlayCutoff = maxDays ? Date.now() - maxDays * 86400000 : 0;
+    // Overlay precise lastUsed timestamps from history. The per-model
+    // breakdowns under byProvider / byCombo entries are rebuilt here too:
+    // usageDaily only pre-aggregates flat counters, while usageHistory keeps
+    // every individual request (never pruned), so history is the exact — and
+    // oldest-reaching — source for the nested rows. The cutoff matches the
+    // loaded day range so nested sums stay consistent with the flat totals.
+    const cutoffDate = maxDays != null ? getPeriodCutoff(maxDays) : null;
+    const cutoffKey = cutoffDate ? getLocalDateKey(cutoffDate) : null;
     const histRows = db.all(
-      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, meta FROM usageHistory WHERE timestamp >= ?`,
-      [new Date(overlayCutoff).toISOString()]
+      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens, meta FROM usageHistory WHERE timestamp >= ?`,
+      [cutoffDate ? cutoffDate.toISOString() : new Date(0).toISOString()]
     );
     for (const e of histRows) {
       const ts = e.timestamp;
+      if (cutoffKey && getLocalDateKey(ts) < cutoffKey) continue;
+      const meta = parseJson(e.meta, {}) || {};
+      const tokens = parseJson(e.tokens, {}) || {};
+      const vals = {
+        promptTokens: e.promptTokens || 0,
+        completionTokens: e.completionTokens || 0,
+        cachedTokens: tokens.cached_tokens || tokens.cache_read_input_tokens || 0,
+        cost: e.cost || 0,
+      };
+      const providerDisplayName = providerNodeNameMap[e.provider] || e.provider;
+
       const modelKey = e.provider ? `${e.model} (${e.provider})` : e.model;
       if (stats.byModel[modelKey] && new Date(ts) > new Date(stats.byModel[modelKey].lastUsed)) stats.byModel[modelKey].lastUsed = ts;
 
-      if (e.provider && stats.byProvider[e.provider] && new Date(ts) > new Date(stats.byProvider[e.provider].lastUsed)) stats.byProvider[e.provider].lastUsed = ts;
+      if (e.provider && stats.byProvider[e.provider]) {
+        if (new Date(ts) > new Date(stats.byProvider[e.provider].lastUsed)) stats.byProvider[e.provider].lastUsed = ts;
+        stats.byProvider[e.provider].byModel ||= {};
+        addToNestedModelCounter(stats.byProvider[e.provider].byModel, e.model || "unknown", { model: e.model, provider: providerDisplayName, timestamp: ts }, vals);
+      }
 
-      const comboName = parseJson(e.meta, {})?.requestedModel;
-      if (comboName && stats.byCombo[comboName] && new Date(ts) > new Date(stats.byCombo[comboName].lastUsed)) stats.byCombo[comboName].lastUsed = ts;
+      const comboName = meta.requestedModel;
+      if (comboName && stats.byCombo[comboName]) {
+        if (new Date(ts) > new Date(stats.byCombo[comboName].lastUsed)) stats.byCombo[comboName].lastUsed = ts;
+        stats.byCombo[comboName].byModel ||= {};
+        const comboModelKey = e.provider ? `${e.model} (${e.provider})` : (e.model || "unknown");
+        addToNestedModelCounter(stats.byCombo[comboName].byModel, comboModelKey, { model: e.model, provider: providerDisplayName, timestamp: ts }, vals);
+      }
 
       if (e.connectionId) {
         const accountName = connectionMap[e.connectionId] || `Account ${e.connectionId.slice(0, 8)}...`;
@@ -633,6 +679,8 @@ export async function getUsageStats(period = "all") {
       stats.byProvider[r.provider].cachedTokens += cachedTokens;
       stats.byProvider[r.provider].cost += entryCost;
       if (new Date(r.timestamp) > new Date(stats.byProvider[r.provider].lastUsed)) stats.byProvider[r.provider].lastUsed = r.timestamp;
+      stats.byProvider[r.provider].byModel ||= {};
+      addToNestedModelCounter(stats.byProvider[r.provider].byModel, r.model || "unknown", { model: r.model, provider: providerDisplayName, timestamp: r.timestamp }, { promptTokens, completionTokens, cachedTokens, cost: entryCost });
 
       const modelKey = r.provider ? `${r.model} (${r.provider})` : r.model;
       if (!stats.byModel[modelKey]) {
@@ -652,6 +700,9 @@ export async function getUsageStats(period = "all") {
         const ce = stats.byCombo[requestedModel];
         ce.requests++; ce.promptTokens += promptTokens; ce.completionTokens += completionTokens; ce.cachedTokens += cachedTokens; ce.cost += entryCost;
         if (new Date(r.timestamp) > new Date(ce.lastUsed)) ce.lastUsed = r.timestamp;
+        ce.byModel ||= {};
+        const comboModelKey = r.provider ? `${r.model} (${r.provider})` : (r.model || "unknown");
+        addToNestedModelCounter(ce.byModel, comboModelKey, { model: r.model, provider: providerDisplayName, timestamp: r.timestamp }, { promptTokens, completionTokens, cachedTokens, cost: entryCost });
       }
 
       if (r.connectionId) {
