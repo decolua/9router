@@ -56,11 +56,9 @@ import p53 from "./kimi.js";
 import p54 from "./kiro.js";
 import p55 from "./linkup.js";
 import p56 from "./local-device.js";
-import p57 from "./mimo-free.js";
 import p58 from "./minimax-cn.js";
 import p59 from "./minimax.js";
 import p60 from "./mistral.js";
-import p61 from "./mmf.js";
 import p62 from "./nanobanana.js";
 import p63 from "./nebius.js";
 import p64 from "./nvidia.js";
@@ -183,11 +181,9 @@ export default [
   p54,
   p55,
   p56,
-  p57,
   p58,
   p59,
   p60,
-  p61,
   p62,
   p63,
   p64,

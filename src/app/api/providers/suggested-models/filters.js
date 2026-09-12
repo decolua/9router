@@ -21,12 +21,6 @@ export const FILTERS = {
       .filter((m) => (m.id?.endsWith("-free") || KNOWN_FREE_OPENCODE_MODELS.includes(m.id)) && !DEAD_FREE_OPENCODE_MODELS.has(m.id))
       .map((m) => ({ id: m.id, name: m.id })),
 
-  // models.dev returns a large catalog; keep only mimo models
-  "mimo-free": (models) =>
-    (Array.isArray(models) ? models : [])
-      .filter((m) => m.id?.startsWith("mimo") || m.name?.toLowerCase().includes("mimo"))
-      .map((m) => ({ id: m.id, name: m.name || m.id })),
-
   "airforce-free": (models) =>
     (Array.isArray(models) ? models : [])
       .filter((m) => (m.tier === "free" || m.id?.endsWith(":free")) && m.supports_chat === true && (!m.media_type || m.media_type === "chat" || m.media_type === "text"))
