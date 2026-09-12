@@ -65,10 +65,16 @@ function runVersionedMigrations(adapter) {
   const pending = MIGRATIONS.filter((m) => m.version > current);
   let lastApplied = current;
   for (const m of pending) {
-    adapter.transaction(() => {
+    if (m.transactional === false) {
+      // e.g. VACUUM / PRAGMA changes that cannot run inside a transaction
       m.up(adapter);
       setMetaSync(adapter, "schemaVersion", m.version);
-    });
+    } else {
+      adapter.transaction(() => {
+        m.up(adapter);
+        setMetaSync(adapter, "schemaVersion", m.version);
+      });
+    }
     lastApplied = m.version;
     console.log(`[DB][migrate] applied #${m.version} ${m.name}`);
   }

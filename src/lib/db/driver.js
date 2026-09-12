@@ -70,6 +70,10 @@ async function initAdapter() {
 
   const { runMigrationOnce } = await import("./migrate.js");
   await runMigrationOnce(adapter);
+
+  // Prune usage data past the stats horizon (gated to 1 run / 12h, timer unref'd)
+  const { scheduleRetention } = await import("./repos/usageRetention.js");
+  scheduleRetention();
   return adapter;
 }
 
