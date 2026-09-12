@@ -36,6 +36,7 @@ export {
 export {
   getCombos, getComboById, getComboByName,
   createCombo, updateCombo, deleteCombo,
+  sanitizeComboSystemPromptFields, MAX_COMBO_SYSTEM_PROMPT_CHARS,
 } from "./repos/combosRepo.js";
 
 // Aliases (model + custom + mitm)

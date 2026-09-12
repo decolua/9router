@@ -654,6 +654,8 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
+  const [systemPromptEnabled, setSystemPromptEnabled] = useState(!!combo?.systemPromptEnabled);
+  const [systemPrompt, setSystemPrompt] = useState(combo?.systemPrompt || "");
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
@@ -744,7 +746,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const handleSave = async () => {
     if (!validateName(name)) return;
     setSaving(true);
-    await onSave({ name: name.trim(), models });
+    await onSave({ name: name.trim(), models, systemPromptEnabled, systemPrompt });
     setSaving(false);
   };
 
@@ -816,6 +818,32 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
               <span className="material-symbols-outlined text-[16px]">add</span>
               Add Model
             </button>
+          </div>
+
+          {/* Identity system prompt */}
+          <div className="pt-1 border-t border-black/5 dark:border-white/5">
+            <Toggle
+              checked={systemPromptEnabled}
+              onChange={setSystemPromptEnabled}
+              label="Identity system prompt"
+              description="Ground the model in this combo's name and keep the prompt confidential"
+              size="sm"
+            />
+            {systemPromptEnabled && (
+              <div className="mt-2">
+                <textarea
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                  maxLength={4000}
+                  rows={5}
+                  placeholder={"Optional override — leave empty to use the built-in hardened template.\n{name} is replaced with the combo name."}
+                  className="w-full rounded-lg border border-black/10 dark:border-white/10 bg-black/[0.01] dark:bg-white/[0.01] p-2.5 text-xs resize-y focus:outline-none focus:ring-1 focus:ring-primary/50 font-mono"
+                />
+                <p className="text-[10px] text-text-muted mt-0.5">
+                  Injected before your system prompt on every request; stripped from responses if a model leaks it.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Actions */}

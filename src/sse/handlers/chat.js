@@ -8,8 +8,8 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
-import { getSettings } from "@/lib/localDb";
-import { getModelInfo, getComboModels } from "../services/model.js";
+import { getSettings, getComboByName } from "@/lib/localDb";
+import { getModelInfo, resolveComboSystemPrompt } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
@@ -19,6 +19,7 @@ import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "o
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { rewriteResponseModelName } from "open-sse/utils/modelNameRewrite.js";
+import { stripSystemPromptFromResponse } from "open-sse/utils/systemPromptStrip.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
@@ -94,8 +95,12 @@ export async function handleChat(request, clientRawRequest = null) {
   const requiredCapabilities = detectRequiredCapabilities(body);
 
   // Check if model is a combo (has multiple models with fallback)
-  const comboModels = await getComboModels(modelStr);
+  const comboRow = modelStr.includes("/") ? null : await getComboByName(modelStr);
+  const comboModels = comboRow && comboRow.models && comboRow.models.length > 0 ? comboRow.models : null;
   if (comboModels) {
+    // Per-combo identity system prompt — injected into every member request and
+    // stripped from the final response (defense-in-depth against leaks).
+    const comboPrompt = resolveComboSystemPrompt(comboRow);
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
@@ -118,14 +123,14 @@ export async function handleChat(request, clientRawRequest = null) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
             cleanRawReq = { ...clientRawRequest, body: cleanBody };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, modelStr);
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, modelStr, comboPrompt);
         },
         log,
         comboName: modelStr,
         judgeModel: comboStrategies[modelStr]?.judgeModel,
         tuning: comboStrategies[modelStr]?.fusionTuning,
       });
-      return rewriteResponseModelName(response, modelStr, reportComboName);
+      return rewriteResponseModelName(await stripSystemPromptFromResponse(response, comboPrompt), modelStr, reportComboName);
     }
 
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
@@ -134,7 +139,7 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: augmentedModels,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, modelStr),
+        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, modelStr, comboPrompt),
         adapterAdded
       ),
       log,
@@ -142,7 +147,7 @@ export async function handleChat(request, clientRawRequest = null) {
       comboStrategy,
       comboStickyLimit
     });
-    return rewriteResponseModelName(response, modelStr, reportComboName);
+    return rewriteResponseModelName(await stripSystemPromptFromResponse(response, comboPrompt), modelStr, reportComboName);
   }
 
   // Single model request — may still switch to a capacity-adapter model if the
@@ -172,17 +177,22 @@ export async function handleChat(request, clientRawRequest = null) {
  * @param {string|null} [requestedModel] - Model name the client asked for when this
  *   call belongs to a combo (the combo name). Threaded to usage stats; nested
  *   combos keep the outer (client-visible) name.
+ * @param {string|null} [comboSystemPrompt] - Resolved identity prompt of the
+ *   owning combo; injected into the upstream request (outermost combo wins).
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, requestedModel = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, requestedModel = null, comboSystemPrompt = null) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
-    const comboModels = await getComboModels(modelStr);
+    const nestedRow = modelStr.includes("/") ? null : await getComboByName(modelStr);
+    const comboModels = nestedRow && nestedRow.models && nestedRow.models.length > 0 ? nestedRow.models : null;
     if (comboModels) {
       // Nested combo: keep the outer combo as the requested model when present,
       // otherwise this combo itself is what the client asked for.
       const comboRequestedModel = requestedModel || modelStr;
+      // Identity prompt: outermost combo wins (client-visible identity).
+      const nestedPrompt = comboSystemPrompt || resolveComboSystemPrompt(nestedRow);
       const chatSettings = await getSettings();
       // Check for combo-specific strategy first, fallback to global
       const comboStrategies = chatSettings.comboStrategies || {};
@@ -203,7 +213,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, comboRequestedModel);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, comboRequestedModel, nestedPrompt);
           },
           log,
           comboName: modelStr,
@@ -218,7 +228,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         body,
         models: augmentedModels,
         handleSingleModel: withCapacityAdapterStripping(
-          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, comboRequestedModel),
+          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, comboRequestedModel, nestedPrompt),
           adapterAdded
         ),
         log,
@@ -289,6 +299,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       apiKey,
       ccFilterNaming: !!chatSettings.ccFilterNaming,
       requestedModel: requestedModel || undefined,
+      comboSystemPrompt: comboSystemPrompt || undefined,
       rtkEnabled: !!chatSettings.rtkEnabled,
       headroomEnabled: !!chatSettings.headroomEnabled,
       headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,

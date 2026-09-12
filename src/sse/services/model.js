@@ -2,6 +2,7 @@
 import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
 import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
+import { DEFAULT_COMBO_IDENTITY_PROMPT } from "open-sse/config/appConstants.js";
 
 // Local provider alias overrides (HMR-friendly, applied on top of open-sse map)
 const LOCAL_PROVIDER_ALIASES = {
@@ -91,4 +92,20 @@ export async function getComboModels(modelStr) {
     return combo.models;
   }
   return null;
+}
+
+/**
+ * Resolve the per-combo identity system prompt (Explicit Identity Grounding +
+ * Constraint Binding). The resolved text is both what gets injected into the
+ * upstream request and the needle stripped from responses.
+ * @param {object} combo - Full combo row (from getComboByName)
+ * @returns {string|null} Prompt text, or null when off (toggle off / media combo)
+ */
+export function resolveComboSystemPrompt(combo) {
+  if (!combo || !combo.systemPromptEnabled || combo.kind) return null;
+  const name = combo.name || "";
+  const custom = typeof combo.systemPrompt === "string" ? combo.systemPrompt.trim() : "";
+  const template = custom || DEFAULT_COMBO_IDENTITY_PROMPT;
+  const prompt = template.replaceAll("{name}", name).trim();
+  return prompt || null;
 }

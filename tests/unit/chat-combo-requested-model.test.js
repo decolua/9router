@@ -5,6 +5,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   handleChatCore: vi.fn(),
   settings: { requireApiKey: false },
+  combos: {
+    "my-combo": { name: "my-combo", models: ["openai/gpt-4o", "anthropic/claude-3"] },
+    "fusion-combo": { name: "fusion-combo", models: ["openai/gpt-4o"] },
+    "id-combo": { name: "id-combo", models: ["openai/gpt-4o"], systemPromptEnabled: true },
+  },
 }));
 
 vi.mock("../../src/sse/services/auth.js", () => ({
@@ -18,18 +23,17 @@ vi.mock("../../src/sse/services/auth.js", () => ({
   extractApiKey: () => null,
   isValidApiKey: vi.fn(),
 }));
-vi.mock("@/lib/localDb", () => ({ getSettings: async () => mocks.settings }));
+vi.mock("@/lib/localDb", () => ({
+  getSettings: async () => mocks.settings,
+  getComboByName: async (name) => mocks.combos[name] || null,
+}));
 vi.mock("../../src/sse/services/model.js", () => ({
   getModelInfo: async (modelStr) => {
     if (modelStr === "openai/gpt-4o") return { provider: "openai", model: "gpt-4o" };
     if (modelStr === "anthropic/claude-3") return { provider: "anthropic", model: "claude-3" };
     return { provider: null };
   },
-  getComboModels: async (modelStr) => {
-    if (modelStr === "my-combo") return ["openai/gpt-4o", "anthropic/claude-3"];
-    if (modelStr === "fusion-combo") return ["openai/gpt-4o"];
-    return null;
-  },
+  resolveComboSystemPrompt: (combo) => (combo?.systemPromptEnabled ? `You are ${combo.name}.` : null),
 }));
 vi.mock("../../open-sse/handlers/chatCore.js", () => ({
   handleChatCore: mocks.handleChatCore,
@@ -100,5 +104,18 @@ describe("combo requestedModel threading", () => {
     const call = mocks.handleChatCore.mock.calls[0][0];
     expect(call.requestedModel).toBeUndefined();
     expect(call.modelInfo).toEqual({ provider: "openai", model: "gpt-4o" });
+  });
+
+  it("threads the resolved identity prompt as comboSystemPrompt", async () => {
+    const res = await handleChat(chatRequest("id-combo"));
+    expect(res.ok).toBe(true);
+    const call = mocks.handleChatCore.mock.calls[0][0];
+    expect(call.comboSystemPrompt).toBe("You are id-combo.");
+  });
+
+  it("leaves comboSystemPrompt undefined for combos without an identity prompt", async () => {
+    await handleChat(chatRequest("my-combo"));
+    const call = mocks.handleChatCore.mock.calls[0][0];
+    expect(call.comboSystemPrompt).toBeUndefined();
   });
 });
