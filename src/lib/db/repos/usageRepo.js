@@ -104,6 +104,61 @@ function aggregateEntryToDay(day, entry) {
   addToCounter(day.byEndpoint, epKey, { ...vals, meta: { endpoint, rawModel: entry.model, provider: entry.provider } });
 }
 
+// ── Rollup pre-aggregation (read-path source of truth after the cutover) ──
+// Incremental counters, upserted in the same transaction as the history
+// insert so rollups and usageHistory never drift. One row per dimension the
+// dashboard shows; `model` is a sub-key only under provider/combo where the
+// UI nests per-model rows. lastUsed is maintained in-row — reads never need
+// to overlay-scan usageHistory for it again.
+const UPSERT_ROLLUP_HOURLY = `
+  INSERT INTO usageRollupHourly(dateKey, hour, dimension, dimKey, model, requests, promptTokens, completionTokens, cachedTokens, reasoningTokens, cost, lastUsed)
+  VALUES(?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(dateKey, hour, dimension, dimKey, model) DO UPDATE SET
+    requests = requests + 1,
+    promptTokens = promptTokens + excluded.promptTokens,
+    completionTokens = completionTokens + excluded.completionTokens,
+    cachedTokens = cachedTokens + excluded.cachedTokens,
+    reasoningTokens = reasoningTokens + excluded.reasoningTokens,
+    cost = cost + excluded.cost,
+    lastUsed = CASE WHEN excluded.lastUsed > usageRollupHourly.lastUsed THEN excluded.lastUsed ELSE usageRollupHourly.lastUsed END`;
+
+const UPSERT_ROLLUP_DAILY = `
+  INSERT INTO usageRollupDaily(dateKey, dimension, dimKey, model, requests, promptTokens, completionTokens, cachedTokens, reasoningTokens, cost, lastUsed)
+  VALUES(?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(dateKey, dimension, dimKey, model) DO UPDATE SET
+    requests = requests + 1,
+    promptTokens = promptTokens + excluded.promptTokens,
+    completionTokens = completionTokens + excluded.completionTokens,
+    cachedTokens = cachedTokens + excluded.cachedTokens,
+    reasoningTokens = reasoningTokens + excluded.reasoningTokens,
+    cost = cost + excluded.cost,
+    lastUsed = CASE WHEN excluded.lastUsed > usageRollupDaily.lastUsed THEN excluded.lastUsed ELSE usageRollupDaily.lastUsed END`;
+
+function rollupDimsForEntry(entry) {
+  const model = entry.model || "";
+  const dims = [];
+  if (entry.provider) dims.push(["provider", entry.provider, model]);
+  if (entry.model) dims.push(["model", `${model}|${entry.provider || ""}`, model]);
+  if (entry.meta?.requestedModel) dims.push(["combo", entry.meta.requestedModel, model]);
+  if (entry.connectionId) dims.push(["account", entry.connectionId, ""]);
+  const apiKeyVal = entry.apiKey && typeof entry.apiKey === "string" ? entry.apiKey : "local-no-key";
+  dims.push(["apiKey", apiKeyVal, ""]);
+  dims.push(["endpoint", entry.endpoint || "Unknown", ""]);
+  return dims;
+}
+
+function upsertUsageRollups(db, entry, vals, dateKey, hour) {
+  for (const [dimension, dimKey, model] of rollupDimsForEntry(entry)) {
+    const params = (prefixCols) => [
+      ...prefixCols, dimension, dimKey, model,
+      vals.promptTokens, vals.completionTokens, vals.cachedTokens, vals.reasoningTokens,
+      vals.cost, entry.timestamp,
+    ];
+    db.run(UPSERT_ROLLUP_HOURLY, params([dateKey, hour]));
+    db.run(UPSERT_ROLLUP_DAILY, params([dateKey]));
+  }
+}
+
 function pushToRing(entry) {
   recentRing.items.push(entry);
   if (recentRing.items.length > RING_CAP) {
@@ -296,6 +351,17 @@ export async function saveRequestUsage(entry) {
       );
 
       const dateKey = getLocalDateKey(entry.timestamp);
+
+      // Incremental rollup upserts — same transaction, so rollups can never
+      // drift from usageHistory (rebuild from history stays a valid reset).
+      upsertUsageRollups(db, entry, {
+        promptTokens,
+        completionTokens,
+        cachedTokens: tokens.cached_tokens || tokens.cache_read_input_tokens || 0,
+        reasoningTokens: tokens.reasoning_tokens || 0,
+        cost: entry.cost || 0,
+      }, dateKey, new Date(entry.timestamp).getHours());
+
       const row = db.get(`SELECT data FROM usageDaily WHERE dateKey = ?`, [dateKey]);
       const day = row ? parseJson(row.data, {}) : {
         requests: 0, promptTokens: 0, completionTokens: 0, cost: 0,

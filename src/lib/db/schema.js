@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -136,6 +136,46 @@ export const TABLES = {
       dateKey: "TEXT PRIMARY KEY",
       data: "TEXT NOT NULL",
     },
+  },
+  // Pre-aggregated usage stats (the read path's source of truth once the
+  // cutover lands). One row per (grain × dimension × dimKey × model) — bounded
+  // by dimension cardinality (~1k rows/day), never by request count. Written
+  // incrementally by saveRequestUsage; backfilled from usageHistory by
+  // migration 002. `model` is a sub-key only for provider/combo/model (the
+  // dimensions the dashboard nests per-model); account/apiKey/endpoint stay
+  // flat with model = ''.
+  usageRollupHourly: {
+    columns: {
+      dateKey: "TEXT NOT NULL",
+      hour: "INTEGER NOT NULL",
+      dimension: "TEXT NOT NULL",
+      dimKey: "TEXT NOT NULL",
+      model: "TEXT NOT NULL DEFAULT ''",
+      requests: "INTEGER DEFAULT 0",
+      promptTokens: "INTEGER DEFAULT 0",
+      completionTokens: "INTEGER DEFAULT 0",
+      cachedTokens: "INTEGER DEFAULT 0",
+      reasoningTokens: "INTEGER DEFAULT 0",
+      cost: "REAL DEFAULT 0",
+      lastUsed: "TEXT",
+    },
+    primaryKey: "PRIMARY KEY (dateKey, hour, dimension, dimKey, model)",
+  },
+  usageRollupDaily: {
+    columns: {
+      dateKey: "TEXT NOT NULL",
+      dimension: "TEXT NOT NULL",
+      dimKey: "TEXT NOT NULL",
+      model: "TEXT NOT NULL DEFAULT ''",
+      requests: "INTEGER DEFAULT 0",
+      promptTokens: "INTEGER DEFAULT 0",
+      completionTokens: "INTEGER DEFAULT 0",
+      cachedTokens: "INTEGER DEFAULT 0",
+      reasoningTokens: "INTEGER DEFAULT 0",
+      cost: "REAL DEFAULT 0",
+      lastUsed: "TEXT",
+    },
+    primaryKey: "PRIMARY KEY (dateKey, dimension, dimKey, model)",
   },
   requestDetails: {
     columns: {
