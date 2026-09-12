@@ -113,7 +113,18 @@ export const MODEL_CAPABILITIES = {
   "glm-4.6v":          { vision: true, videoInput: true, reasoning: true, thinkingFormat: "zai", contextWindow: 128000, maxOutput: 32768 },
   "glm-4.5v":          { vision: true, videoInput: true, reasoning: true, thinkingFormat: "zai", contextWindow: 64000, maxOutput: 16384 },
 
-  // DeepSeek's first V4 model with image input; text limits match V4-Flash.
+  // DeepSeek V4.1 Flash. `deepseek-flash` is the canonical id since DeepSeek's
+  // 2026-09-10 rename ("Change the model name to `deepseek-flash` to call the
+  // latest V4.1 Flash model") and it is natively multimodal (image input) with
+  // the full 1M window / 384K output. Without this entry the canonical id falls
+  // through to the generic *deepseek* pattern and is reported as text-only with
+  // a 128K window, so image requests are handed off to the capacity-adapter pool.
+  "deepseek-flash": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
+
+  // Retired V4-Flash ids. DeepSeek no longer lists them but still routes both
+  // to V4.1 Flash, so they keep identical (vision-capable) caps until those
+  // temporary routes are removed upstream.
+  "deepseek-v4-flash": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
   "deepseek-v4-flash-vision-exp": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
 
   // Qwen plain coder/text (no vision) — registry "vision-model" / "coder-model" aliases
