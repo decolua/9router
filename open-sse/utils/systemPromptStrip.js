@@ -221,6 +221,21 @@ export function createSystemPromptStripStream(needle) {
     return f.push(text);
   }
 
+  // A terminal line must wait only while a redaction hold-back is actually
+  // pending. Holding unconditionally reorders the stream: the trailing usage
+  // chunk (stream_options.include_usage — no finish_reason) would overtake
+  // the finish chunk, and clients that read the LAST usage-bearing chunk
+  // would see the finish chunk's injected estimate instead of the real
+  // numbers that arrived after it. A terminal line emitted when nothing is
+  // held back can never be followed by a remainder — later chunks without
+  // text fields (usage-only) push nothing into the filters.
+  function hasPendingRemainder() {
+    for (const f of filters.values()) {
+      if (f.pending && f.pending.trim()) return true;
+    }
+    return false;
+  }
+
   function processLine(line) {
     if (!needleView || !line.startsWith("data:")) return line;
     const payload = line.slice(5).trimStart();
@@ -319,7 +334,9 @@ export function createSystemPromptStripStream(needle) {
         let nl;
         while ((nl = buffer.indexOf("\n", start)) !== -1) {
           const line = buffer.slice(start, nl);
-          if (!needleView || !isTerminalSSELine(line)) {
+          if (needleView && isTerminalSSELine(line) && hasPendingRemainder()) {
+            terminalQueue.push(line);
+          } else {
             // Defer bare JSON lines: an immediately following DONE marker may
             // make this the SSE-labelled raw-JSON hybrid form.
             if (needleView && (line.trimStart().startsWith("{") || line.trimStart().startsWith("[")) && !line.trimStart().startsWith("data:")) {
@@ -329,8 +346,6 @@ export function createSystemPromptStripStream(needle) {
               emitted += out;
               controller.enqueue(encoder.encode(out));
             }
-          } else {
-            terminalQueue.push(line);
           }
           start = nl + 1;
         }

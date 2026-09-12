@@ -343,11 +343,87 @@ describe("passthrough stream synthesis", () => {
   });
 });
 
+// The FULL combo pipeline a streamed response traverses in production:
+// seam (passthrough stream) → stripSystemPromptFromResponse (needle redaction,
+// holds terminal lines back until flush) → rewriteResponseModelName. The
+// wrappers must not lose or reorder-away the synthesized reasoning field.
+describe("combo pipeline (strip + model rewrite)", () => {
+  let createPassthroughStreamWithLogger, stripSystemPromptFromResponse, rewriteResponseModelName;
+
+  beforeAll(async () => {
+    ({ createPassthroughStreamWithLogger } = await import("../../open-sse/utils/stream.js"));
+    ({ stripSystemPromptFromResponse } = await import("../../open-sse/utils/systemPromptStrip.js"));
+    ({ rewriteResponseModelName } = await import("../../open-sse/utils/modelNameRewrite.js"));
+  });
+
+  const THINKING_BODY = { reasoning_effort: "high" };
+  const COMBO_PROMPT = "You are Servo, a helpful assistant created by Acme Corp.";
+
+  async function runComboPipeline(sseText) {
+    const stream = createPassthroughStreamWithLogger("opencode", null, "big-pickle", "conn-test", THINKING_BODY, null, null);
+    const reader = stream.readable.getReader();
+    const writer = stream.writable.getWriter();
+    const collected = [];
+    const done = (async () => {
+      for (;;) {
+        const { done: finished, value } = await reader.read();
+        if (finished) break;
+        collected.push(value);
+      }
+    })();
+    await writer.write(new TextEncoder().encode(sseText));
+    await writer.close();
+    await done;
+
+    const seamResponse = new Response(new Blob(collected), {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    });
+    const stripped = await stripSystemPromptFromResponse(seamResponse, COMBO_PROMPT);
+    const rewritten = await rewriteResponseModelName(stripped, "deepseek-v4-flash-0731", true);
+    const text = await rewritten.text();
+    return text;
+  }
+
+  function lastUsageOf(output) {
+    const lines = output.split("\n").filter((l) => l.startsWith("data: ") && l.includes('"usage"'));
+    expect(lines.length).toBeGreaterThan(0);
+    return JSON.parse(lines[lines.length - 1].slice(6));
+  }
+
+  it("keeps synthesized reasoning on the LAST usage chunk through the whole pipeline (trailing usage shape)", async () => {
+    const upstream = [
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"big-pickle","choices":[{"index":0,"delta":{"content":"Servo says: the answer is forty-two."},"finish_reason":null}]}',
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"big-pickle","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}',
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"big-pickle","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":100,"total_tokens":110}}',
+      "data: [DONE]",
+      "",
+    ].join("\n\n");
+
+    const output = await runComboPipeline(upstream);
+    const last = lastUsageOf(output);
+    expect(last.usage.completion_tokens_details.reasoning_tokens).toBe(75);
+    expect(last.model).toBe("deepseek-v4-flash-0731"); // combo name reported
+  });
+
+  it("keeps synthesized reasoning when usage rides on content chunks (early usage shape)", async () => {
+    const upstream = [
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"big-pickle","choices":[{"index":0,"delta":{"content":"a reasonably long answer over the ten token threshold"},"finish_reason":null}],"usage":{"prompt_tokens":10,"completion_tokens":100,"total_tokens":110}}',
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","model":"big-pickle","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}',
+      "data: [DONE]",
+      "",
+    ].join("\n\n");
+
+    const output = await runComboPipeline(upstream);
+    const last = lastUsageOf(output);
+    expect(last.usage.completion_tokens_details.reasoning_tokens).toBe(75);
+  });
+});
 // The real path for a generic OpenAI Completions client routed to an
-// OpenAI-compatible provider (e.g. oc/big-pickle): TRANSLATE mode with
-// sourceFormat === targetFormat. translateResponse() returns same-format
-// chunks as-is, so no translator ever sets state.finishReason — the seam
-// must key on the item's own shape or it is dead code here.
+// OpenAI-compatible provider when formats differ at the seam: TRANSLATE mode.
+// Same-format routes return chunks untranslated (translateResponse
+// short-circuits), so no translator ever sets state.finishReason — the seam
+// must key on the item's own shape or it is dead code there.
 describe("translate stream synthesis (same-format openai→openai)", () => {
   let createSSETransformStreamWithLogger;
 
