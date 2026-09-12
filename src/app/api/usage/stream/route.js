@@ -1,70 +1,90 @@
-import { getUsageStats, statsEmitter, getActiveRequests } from "@/lib/usageDb";
+import { statsEmitter, getActiveRequests } from "@/lib/usageDb";
 
 export const dynamic = "force-dynamic";
 
+// The stream only feeds live fields (activeRequests, recentRequests,
+// errorProvider, pending) — full per-period stats come from the REST route,
+// where each client picks its own window. One shared hub computes and encodes
+// the payload ONCE per event tick and hands every connected client the same
+// chunk; clients never trigger their own getUsageStats() recompute.
+const hub = global._usageStatsHub ??= {
+  clients: new Set(), // per-connection (chunk) => void enqueue handlers
+  timer: null,
+  started: false,
+};
+
+async function refreshAndBroadcast() {
+  if (!hub.clients.size) return;
+  try {
+    const payload = await getActiveRequests();
+    const chunk = new TextEncoder().encode(`data: ${JSON.stringify(payload)}\n\n`);
+    for (const send of [...hub.clients]) {
+      try { send(chunk); } catch { hub.clients.delete(send); }
+    }
+  } catch {
+    // transient compute failure — next event retries; clients keep their last frame
+  }
+}
+
+function scheduleRefresh() {
+  if (hub.timer) return; // collapse update/pending bursts into one refresh
+  hub.timer = setTimeout(() => {
+    hub.timer = null;
+    refreshAndBroadcast();
+  }, 50);
+  hub.timer.unref?.();
+}
+
+if (!hub.started) {
+  hub.started = true;
+  statsEmitter.on("update", scheduleRefresh);
+  statsEmitter.on("pending", scheduleRefresh);
+}
+
 export async function GET() {
-  const encoder = new TextEncoder();
-  const state = { closed: false, keepalive: null, send: null, sendPending: null, cachedStats: null };
+  const state = { closed: false, keepalive: null, send: null };
 
   const stream = new ReadableStream({
     async start(controller) {
-      // Full stats refresh (heavy) + immediate lightweight push
-      state.send = async () => {
+      const encoder = new TextEncoder();
+
+      const detach = () => {
         if (state.closed) return;
-        try {
-          // Push lightweight update immediately so UI reflects changes fast
-          if (state.cachedStats) {
-            const { activeRequests, recentRequests, errorProvider } = await getActiveRequests();
-            const quickStats = { ...state.cachedStats, activeRequests, recentRequests, errorProvider };
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify(quickStats)}\n\n`));
-          }
-          // Then do full recalc and update cache
-          const stats = await getUsageStats();
-          state.cachedStats = stats;
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
-        } catch {
-          state.closed = true;
-          statsEmitter.off("update", state.send);
-          statsEmitter.off("pending", state.sendPending);
-          clearInterval(state.keepalive);
-        }
+        state.closed = true;
+        if (state.send) hub.clients.delete(state.send);
+        clearInterval(state.keepalive);
       };
 
-      // Lightweight push: only refresh activeRequests + recentRequests on pending changes
-      state.sendPending = async () => {
-        if (state.closed || !state.cachedStats) return;
-        try {
-          const { activeRequests, recentRequests, errorProvider } = await getActiveRequests();
-          const stats = { ...state.cachedStats, activeRequests, recentRequests, errorProvider };
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
-        } catch {
-          state.closed = true;
-          statsEmitter.off("update", state.send);
-          statsEmitter.off("pending", state.sendPending);
-          clearInterval(state.keepalive);
-        }
+      state.send = (chunk) => {
+        if (state.closed) throw new Error("closed");
+        controller.enqueue(chunk);
       };
 
-      await state.send();
+      // Initial lightweight snapshot; full stats arrive via the client's own
+      // REST fetch for its chosen period.
+      try {
+        const payload = await getActiveRequests();
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+      } catch {
+        detach();
+        return;
+      }
 
-      statsEmitter.on("update", state.send);
-      statsEmitter.on("pending", state.sendPending);
+      hub.clients.add(state.send);
 
       state.keepalive = setInterval(() => {
         if (state.closed) { clearInterval(state.keepalive); return; }
         try {
           controller.enqueue(encoder.encode(": ping\n\n"));
         } catch {
-          state.closed = true;
-          clearInterval(state.keepalive);
+          detach();
         }
       }, 25000);
     },
 
     cancel() {
+      if (state.send) hub.clients.delete(state.send);
       state.closed = true;
-      statsEmitter.off("update", state.send);
-      statsEmitter.off("pending", state.sendPending);
       clearInterval(state.keepalive);
     },
   });

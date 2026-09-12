@@ -20,6 +20,9 @@ if (!global._statsEmitter) {
   global._statsEmitter = new EventEmitter();
   global._statsEmitter.setMaxListeners(50);
 }
+// Per-period stats cache: cleared on every accepted write, otherwise a short
+// TTL bounds staleness of the live fields (activeRequests, last10Minutes…).
+if (!global._usageStatsCache) global._usageStatsCache = new Map();
 if (!global._pendingTimers) global._pendingTimers = {};
 if (!global._recentRing) global._recentRing = { items: [], initialized: false };
 if (!global._connectionMapCache) global._connectionMapCache = { map: {}, ts: 0 };
@@ -31,6 +34,8 @@ const pendingTimers = global._pendingTimers;
 const recentRing = global._recentRing;
 const connCache = global._connectionMapCache;
 const statsEmitTimers = global._statsEmitTimers;
+const statsCache = global._usageStatsCache;
+const STATS_CACHE_TTL_MS = 5000;
 
 export const statsEmitter = global._statsEmitter;
 
@@ -245,7 +250,7 @@ export async function getActiveRequests() {
     .slice(0, 20);
 
   const errorProvider = (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "";
-  return { activeRequests, recentRequests, errorProvider };
+  return { activeRequests, recentRequests, errorProvider, pending: pendingRequests };
 }
 
 export async function saveRequestUsage(entry) {
@@ -321,6 +326,7 @@ export async function saveRequestUsage(entry) {
 
     if (inserted) {
       pushToRing(entry);
+      statsCache.clear(); // per-period stats caches are stale the moment a row lands
       scheduleStatsEvent("update", 250);
     }
   } catch (e) {
@@ -366,13 +372,12 @@ function rollupRowsForPeriod(db, period) {
       [todayKey, getLocalDateKey(yesterday), now.getHours()]
     );
   }
+  // "all" is capped at the 60-day retention horizon — the stats window the
+  // product promises; reads stay bounded even before retention pruning runs.
   const periodDays = { "7d": 7, "30d": 30, "60d": 60 };
-  const maxDays = periodDays[period] || null; // "all" → every retained daily row
-  if (maxDays) {
-    const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() - maxDays + 1);
-    return db.all(`SELECT * FROM usageRollupDaily WHERE dateKey >= ?`, [getLocalDateKey(cutoff)]);
-  }
-  return db.all(`SELECT * FROM usageRollupDaily`);
+  const maxDays = periodDays[period] ?? 60;
+  const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() - maxDays + 1);
+  return db.all(`SELECT * FROM usageRollupDaily WHERE dateKey >= ?`, [getLocalDateKey(cutoff)]);
 }
 
 // Merge one rollup row into the stats object — shape-compatible with what the
@@ -442,6 +447,9 @@ function mergeRollupRow(stats, r, ctx) {
 }
 
 export async function getUsageStats(period = "all") {
+  const hit = statsCache.get(period);
+  if (hit && Date.now() - hit.at < STATS_CACHE_TTL_MS) return hit.stats;
+
   const db = await getAdapter();
 
   const [{ getProviderConnections }, { getApiKeys }, { getProviderNodes }, { getCombos }] = await Promise.all([
@@ -563,6 +571,7 @@ export async function getUsageStats(period = "all") {
   }
 
   stats.totalRequests = Object.values(stats.byProvider).reduce((sum, p) => sum + (p.requests || 0), 0);
+  statsCache.set(period, { stats, at: Date.now() });
   return stats;
 }
 
