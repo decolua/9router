@@ -1,4 +1,5 @@
 import { FORMATS } from "../translator/formats.js";
+import { hasValidUsage } from "./usageTracking.js";
 
 // Parse SSE data line
 export function parseSSELine(line, format = null) {
@@ -38,11 +39,15 @@ export function hasValuableContent(chunk, format) {
   // OpenAI format
   if (format === FORMATS.OPENAI && chunk.choices?.[0]?.delta) {
     const delta = chunk.choices[0].delta;
+    // A usage-bearing chunk is valuable even with an empty delta: OpenAI-style
+    // streams deliver the final usage in a chunk whose only payload is `usage`
+    // (stream_options.include_usage). Dropping it loses the real token counts.
     return delta.content && delta.content !== "" ||
            delta.reasoning_content && delta.reasoning_content !== "" ||
            delta.tool_calls && delta.tool_calls.length > 0 ||
            chunk.choices[0].finish_reason ||
-           delta.role;
+           delta.role ||
+           hasValidUsage(chunk.usage);
   }
 
   // Claude format

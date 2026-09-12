@@ -205,11 +205,12 @@ describe("passthrough stream synthesis", () => {
 
     const { output, onStreamComplete } = await runPassthrough(upstream);
 
-    // client chunk: synthesized 75% of 100, prompt keeps the +2000 buffer
+    // client chunk: the chunk's own real numbers stay untouched, only the
+    // synthesized reasoning field is added
     const finishChunk = finishChunkOf(output);
     expect(finishChunk.usage.completion_tokens_details.reasoning_tokens).toBe(75);
     expect(finishChunk.usage.completion_tokens).toBe(100);
-    expect(finishChunk.usage.prompt_tokens).toBe(2010);
+    expect(finishChunk.usage.prompt_tokens).toBe(10);
 
     // stats side: raw upstream numbers, no synthesized reasoning anywhere
     expect(onStreamComplete).toHaveBeenCalledTimes(1);
@@ -311,5 +312,170 @@ describe("passthrough stream synthesis", () => {
 
     const { output } = await runPassthrough(upstream, { model: "muse-spark-1.3-contributor-free" });
     expect(finishChunkOf(output).usage.completion_tokens_details.reasoning_tokens).toBe(42);
+  });
+
+  it("rewrites the TRAILING usage chunk (after finish) instead of forwarding it raw", async () => {
+    // stream_options.include_usage shape: usage arrives in its own chunk with
+    // empty choices AFTER the finish chunk. Clients that read the LAST
+    // usage-bearing chunk previously saw the raw numbers — no synthesized
+    // reasoning, no +2000 buffer.
+    const upstream = [
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"hello world"},"finish_reason":null}]}',
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}',
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":100,"total_tokens":110}}',
+      "data: [DONE]",
+      "",
+    ].join("\n\n");
+
+    const { output, onStreamComplete } = await runPassthrough(upstream);
+
+    const withUsage = parseChunks(output).filter((p) => p.usage);
+    expect(withUsage.length).toBeGreaterThan(0);
+    const last = withUsage[withUsage.length - 1];
+    expect(last.usage.completion_tokens_details.reasoning_tokens).toBe(75);
+    expect(last.usage.prompt_tokens).toBe(10);
+
+    // stats: the real numbers replace the estimate injected on the finish chunk
+    const statsUsage = onStreamComplete.mock.calls[0][1];
+    expect(statsUsage.prompt_tokens).toBe(10);
+    expect(statsUsage.completion_tokens).toBe(100);
+    expect(statsUsage.estimated).toBeUndefined();
+  });
+});
+
+// The real path for a generic OpenAI Completions client routed to an
+// OpenAI-compatible provider (e.g. oc/big-pickle): TRANSLATE mode with
+// sourceFormat === targetFormat. translateResponse() returns same-format
+// chunks as-is, so no translator ever sets state.finishReason — the seam
+// must key on the item's own shape or it is dead code here.
+describe("translate stream synthesis (same-format openai→openai)", () => {
+  let createSSETransformStreamWithLogger;
+
+  beforeAll(async () => {
+    ({ createSSETransformStreamWithLogger } = await import("../../open-sse/utils/stream.js"));
+  });
+
+  const THINKING_BODY = { reasoning_effort: "high" };
+
+  async function runTranslate(sseText) {
+    const chunks = [];
+    const onStreamComplete = vi.fn();
+    const stream = createSSETransformStreamWithLogger(
+      FORMATS.OPENAI, FORMATS.OPENAI, "opencode", null, null, "big-pickle", "conn-test", THINKING_BODY, onStreamComplete, null
+    );
+    const reader = stream.readable.getReader();
+    const writer = stream.writable.getWriter();
+    const done = (async () => {
+      for (;;) {
+        const { done: finished, value } = await reader.read();
+        if (finished) break;
+        chunks.push(new TextDecoder().decode(value));
+      }
+    })();
+    await writer.write(new TextEncoder().encode(sseText));
+    await writer.close();
+    await done;
+    return { output: chunks.join(""), onStreamComplete };
+  }
+
+  function parseChunks(output) {
+    return output.split("\n")
+      .map((l) => l.replace(/^data: ?/, ""))
+      .filter((l) => l.startsWith("{"))
+      .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+      .filter(Boolean);
+  }
+
+  it("synthesizes on the finish chunk carrying usage (usage embedded)", async () => {
+    const upstream = [
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"hello world"},"finish_reason":null}]}',
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":100,"total_tokens":110}}',
+      "data: [DONE]",
+      "",
+    ].join("\n\n");
+
+    const { output, onStreamComplete } = await runTranslate(upstream);
+
+    const finish = parseChunks(output).find((p) => p?.choices?.[0]?.finish_reason === "stop");
+    expect(finish.usage.completion_tokens_details.reasoning_tokens).toBe(75);
+    expect(finish.usage.completion_tokens).toBe(100);
+    expect(finish.usage.prompt_tokens).toBe(10); // real numbers untouched, only the field added
+
+    const statsUsage = onStreamComplete.mock.calls[0][1];
+    expect(statsUsage.prompt_tokens).toBe(10);
+    expect(statsUsage.completion_tokens).toBe(100);
+    expect(statsUsage.reasoning_tokens).toBeUndefined();
+  });
+
+  it("rewrites the trailing usage chunk (after finish) instead of forwarding it raw", async () => {
+    const upstream = [
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}',
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"a longer answer well above the synthesis threshold"},"finish_reason":null}]}',
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}',
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":100,"total_tokens":110}}',
+      "data: [DONE]",
+      "",
+    ].join("\n\n");
+
+    const { output, onStreamComplete } = await runTranslate(upstream);
+
+    const withUsage = parseChunks(output).filter((p) => p.usage);
+    expect(withUsage.length).toBeGreaterThan(0);
+    const last = withUsage[withUsage.length - 1];
+    expect(last.usage.completion_tokens_details.reasoning_tokens).toBe(75);
+    expect(last.usage.prompt_tokens).toBe(10);
+    expect(last.usage.completion_tokens).toBe(100);
+
+    // stats: real numbers — the finish-chunk estimate must be REPLACED, not
+    // max-merged (which kept the inflated chars/4 prompt)
+    const statsUsage = onStreamComplete.mock.calls[0][1];
+    expect(statsUsage.prompt_tokens).toBe(10);
+    expect(statsUsage.completion_tokens).toBe(100);
+    expect(statsUsage.estimated).toBeUndefined();
+  });
+
+  it("estimates when the upstream never sends usage", async () => {
+    const upstream = [
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"' + "x".repeat(100) + '"},"finish_reason":null}]}',
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}',
+      "data: [DONE]",
+      "",
+    ].join("\n\n");
+
+    const { output } = await runTranslate(upstream);
+
+    const finish = parseChunks(output).find((p) => p?.choices?.[0]?.finish_reason === "stop");
+    expect(finish.usage.estimated).toBe(true);
+    expect(finish.usage.completion_tokens).toBe(25); // floor(100 chars / 4)
+    expect(finish.usage.completion_tokens_details.reasoning_tokens).toBe(18); // floor(25 * 0.75)
+  });
+
+  it("does NOT synthesize without thinking config (same-format translate)", async () => {
+    const chunks = [];
+    const onStreamComplete = vi.fn();
+    const stream = createSSETransformStreamWithLogger(
+      FORMATS.OPENAI, FORMATS.OPENAI, "opencode", null, null, "big-pickle", "conn-test", {}, onStreamComplete, null
+    );
+    const reader = stream.readable.getReader();
+    const writer = stream.writable.getWriter();
+    const done = (async () => {
+      for (;;) {
+        const { done: finished, value } = await reader.read();
+        if (finished) break;
+        chunks.push(new TextDecoder().decode(value));
+      }
+    })();
+    const upstream = [
+      'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":100,"total_tokens":110}}',
+      "data: [DONE]",
+      "",
+    ].join("\n\n");
+    await writer.write(new TextEncoder().encode(upstream));
+    await writer.close();
+    await done;
+
+    const finish = parseChunks(chunks.join("")).find((p) => p?.choices?.[0]?.finish_reason === "stop");
+    expect(finish.usage.completion_tokens_details).toBeUndefined();
+    expect(finish.usage.prompt_tokens).toBe(10); // upstream numbers untouched
   });
 });

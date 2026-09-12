@@ -105,6 +105,51 @@ export function createSSEStream(options = {}) {
     targetFormat
   );
 
+  // Real usage replaces a previously injected estimate instead of max-merging
+  // into it: the chars/4 estimate (already +2000-buffered) would otherwise
+  // keep inflating the stats numbers when the true usage chunk arrives late.
+  const mergeTrackedUsage = (prev, next) => (next ? (prev?.estimated ? next : mergeUsage(prev, next)) : prev);
+
+  // Translate-mode usage seam, applied to every client-bound item. Keyed on
+  // the ITEM's own shape, never on state.finishReason: same-format routes
+  // return chunks untranslated (translateResponse short-circuits), so no
+  // translator ever sets state.finishReason there — the old gate made the
+  // seam dead code for e.g. an OpenAI client talking to an OpenAI-compatible
+  // provider. Also fires for any usage-bearing chunk, not just the finish
+  // item: OpenAI-style streams deliver usage in a separate chunk AFTER finish
+  // (stream_options.include_usage), and that trailing chunk previously
+  // slipped through raw, giving clients that read the LAST usage chunk
+  // un-synthesized (missing/0) reasoning numbers. Items that already carry
+  // the upstream's real numbers keep them untouched — only the reasoning
+  // field is added; the +2000 buffer applies solely to copies we INJECT.
+  const synthesizeClient = (u) => (synthesizeReasoning ? synthesizeThinkingTokens(u, sourceFormat) : u);
+  const applyUsageSeam = (item) => {
+    const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
+    const carriesUsage = hasValidUsage(item.usage) || hasValidUsage(item.response?.usage);
+    if (isFinishChunk && !carriesUsage && !hasValidUsage(state.usage) && totalContentLength > 0) {
+      const estimated = estimateUsage(body, totalContentLength, sourceFormat);
+      item.usage = buildClientUsage(estimated, sourceFormat); // already has buffer
+      state.usage = estimated;
+    } else if (carriesUsage) {
+      if (item.response?.usage && !item.usage) item.response.usage = synthesizeClient(item.response.usage);
+      else item.usage = synthesizeClient(item.usage);
+    } else if (isFinishChunk && state.usage) {
+      // Finish item without its own usage, real usage tracked earlier (e.g.
+      // Claude message_delta): forward the buffered client copy.
+      item.usage = buildClientUsage(addBufferToUsage(state.usage), sourceFormat);
+    }
+
+    // Gemini-family finish items keep usage in response.usageMetadata —
+    // merge the synthesized thoughts count into it (creating it from
+    // tracked usage when the upstream sent none) without disturbing the
+    // numbers already there.
+    if (synthesizeReasoning && item.response?.candidates?.[0]?.finishReason) {
+      const base = item.response.usageMetadata || (hasValidUsage(state.usage) ? convertUsageForFormat(state.usage, sourceFormat) : null);
+      if (base) item.response.usageMetadata = synthesizeThinkingTokens(base, sourceFormat);
+    }
+    return item;
+  };
+
   // Usage/logging tail, callable from transform() as well as flush(): a client that
   // closes right after the terminal event cancels the reader, and flush() never runs.
   const finalizeStream = () => {
@@ -223,13 +268,19 @@ export function createSSEStream(options = {}) {
 
               const extracted = extractUsage(parsed);
               if (extracted) {
-                usage = mergeUsage(usage, extracted);
+                usage = mergeTrackedUsage(usage, extracted);
               }
 
               responsesTerminal = isOpenAIResponsesTerminalEvent(currentOpenAIResponsesEvent, parsed);
 
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
-              if (isFinishChunk && !hasValidUsage(parsed.usage) && !hasValidUsage(usage)) {
+              // Same rules as the translate seam: a chunk that carries the
+              // upstream's real usage keeps those numbers and only gains the
+              // synthesized reasoning field; the +2000 buffer applies only to
+              // copies we inject (estimate, or earlier-tracked usage onto a
+              // bare finish chunk).
+              const carriesUsage = hasValidUsage(parsed.usage);
+              if (isFinishChunk && !carriesUsage && !hasValidUsage(usage)) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
                 // Client copy gets the buffer + synthesized thinking field; the
                 // estimate kept for stats/logging stays untouched.
@@ -237,9 +288,13 @@ export function createSSEStream(options = {}) {
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 usage = estimated;
                 injectedUsage = true;
+              } else if (carriesUsage) {
+                parsed.usage = synthesizeReasoning ? synthesizeThinkingTokens(parsed.usage, FORMATS.OPENAI) : parsed.usage;
+                output = `data: ${JSON.stringify(parsed)}\n`;
+                injectedUsage = true;
               } else if (isFinishChunk && usage) {
-                // Real usage — on the finish chunk or received earlier — beats
-                // the chars/4 estimate above: forward the buffered numbers.
+                // Real usage received earlier beats the chars/4 estimate
+                // above: forward the buffered numbers.
                 const buffered = addBufferToUsage(usage);
                 parsed.usage = buildClientUsage(buffered, FORMATS.OPENAI);
                 output = `data: ${JSON.stringify(parsed)}\n`;
@@ -349,7 +404,7 @@ export function createSSEStream(options = {}) {
 
         // Extract usage
         const extracted = extractUsage(parsed);
-        if (extracted) state.usage = mergeUsage(state.usage, extracted); // Keep original usage for logging
+        if (extracted) state.usage = mergeTrackedUsage(state.usage, extracted); // Keep original usage for logging
 
         // Responses same-format passthrough: re-emit with original event framing
         if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {
@@ -384,28 +439,11 @@ export function createSSEStream(options = {}) {
               continue; // Skip this empty chunk
             }
 
-            // Inject usage on the finish chunk. Real usage — on the finish item
-            // itself or received earlier — is preferred over a chars/4 estimate;
-            // the client copy carries the synthesized thinking field when the
-            // request asked for thinking, while state.usage keeps the raw
-            // numbers for stats/logging.
-            const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
-            if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && !hasValidUsage(state.usage) && totalContentLength > 0) {
-              const estimated = estimateUsage(body, totalContentLength, sourceFormat);
-              item.usage = buildClientUsage(estimated, sourceFormat); // already has buffer
-              state.usage = estimated;
-            } else if (state.finishReason && isFinishChunk && state.usage) {
-              item.usage = buildClientUsage(addBufferToUsage(state.usage), sourceFormat);
-            }
-
-            // Gemini-family finish items keep usage in response.usageMetadata —
-            // merge the synthesized thoughts count into it (creating it from
-            // tracked usage when the upstream sent none) without disturbing the
-            // numbers already there.
-            if (synthesizeReasoning && item.response?.candidates?.[0]?.finishReason) {
-              const base = item.response.usageMetadata || (hasValidUsage(state.usage) ? convertUsageForFormat(state.usage, sourceFormat) : null);
-              if (base) item.response.usageMetadata = synthesizeThinkingTokens(base, sourceFormat);
-            }
+            // Inject usage at the seam: a chars/4 estimate only when no real
+            // usage was ever seen, the buffered real numbers otherwise, with
+            // the synthesized thinking field on the client copy (see
+            // applyUsageSeam).
+            applyUsageSeam(item);
 
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
@@ -464,7 +502,7 @@ export function createSSEStream(options = {}) {
             // Same accumulation the transform loop does, so finalizeStream() can
             // log a tail chunk's tokens instead of falling back to null.
             const extracted = extractUsage(parsed);
-            if (extracted) state.usage = mergeUsage(state.usage, extracted);
+            if (extracted) state.usage = mergeTrackedUsage(state.usage, extracted);
 
             const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
 
@@ -478,6 +516,9 @@ export function createSSEStream(options = {}) {
             if (translated?.length > 0) {
               for (const item of translated) {
                 if (item === null || item === undefined) continue;
+                // A usage-bearing chunk can arrive without its closing newline
+                // and surface here — it needs the same client treatment.
+                applyUsageSeam(item);
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
                 controller.enqueue(sharedEncoder.encode(output));
@@ -498,6 +539,9 @@ export function createSSEStream(options = {}) {
         if (flushed?.length > 0) {
           for (const item of flushed) {
             if (item === null || item === undefined) continue;
+            // Translator-synthesized closing items (e.g. Claude message_delta)
+            // carry the final usage — same client treatment as during transform.
+            applyUsageSeam(item);
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
