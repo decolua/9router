@@ -33,6 +33,9 @@ SortIcon.propTypes = {
  */
 function ValueCells({ item, viewMode, isSummary = false }) {
   if (viewMode === "tokens") {
+    const hitRatio = (item.promptTokens || 0) > 0 && item.cachedTokens > 0
+      ? `${((item.cachedTokens / item.promptTokens) * 100).toFixed(1)}%`
+      : null;
     return (
       <>
         <td className="px-6 py-3 text-right text-text-muted">
@@ -40,6 +43,9 @@ function ValueCells({ item, viewMode, isSummary = false }) {
         </td>
         <td className="px-6 py-3 text-right text-text-muted">
           {item.cachedTokens ? fmt(item.cachedTokens) : "—"}
+        </td>
+        <td className="px-6 py-3 text-right text-text-muted">
+          {hitRatio ?? "—"}
         </td>
         <td className="px-6 py-3 text-right text-text-muted">
           {isSummary && item.completionTokens === undefined ? "—" : fmt(item.completionTokens)}
@@ -140,6 +146,7 @@ export default function UsageTable({
       return [
         { field: "promptTokens", label: "Input Tokens" },
         { field: "cachedTokens", label: "Cached" },
+        { field: "cacheHitRatio", label: "Cache Hits" },
         { field: "completionTokens", label: "Output Tokens" },
         { field: "totalTokens", label: "Total Tokens" },
       ];
