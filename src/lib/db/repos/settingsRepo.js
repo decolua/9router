@@ -67,6 +67,8 @@ const DEFAULT_SETTINGS = {
   pxpipeTimeoutMs: 15000,
   // Per-provider user header overrides applied at dispatch: { [providerId]: { headers: {..} } }
   providerOverrides: {},
+  webSearchRouteModel: "",
+  webSearchFallbackProvider: "",
 };
 
 async function readRaw() {
