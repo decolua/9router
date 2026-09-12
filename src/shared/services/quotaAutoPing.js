@@ -1,4 +1,3 @@
-// Quota auto-ping scheduler: warms 5h windows by sending tiny opt-in requests right after reset.
 import "open-sse/index.js";
 
 import { getSettings, getProviderConnections, updateProviderConnection } from "@/lib/localDb";
@@ -10,6 +9,14 @@ import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { refreshAndUpdateCredentials } from "@/app/api/usage/[connectionId]/route.js";
 import { QUOTA_AUTOPING_CONFIG } from "@/shared/constants/config";
+import {
+  getStaggerGroup,
+  isStaggerAutoPingEnabled,
+  updateStaggerState,
+  getStaggerDecision,
+  markStaggerPing,
+  hasQuotaAutoPingEnabled,
+} from "@/shared/services/quotaStagger.js";
 
 const C = QUOTA_AUTOPING_CONFIG;
 const CLAUDE_PING_URL = "https://api.anthropic.com/v1/messages?beta=true";
@@ -185,15 +192,27 @@ function shouldSkipAfterFailure(state, key, nowMs = Date.now()) {
   return failedAt && nowMs - failedAt < C.failureCooldownMs;
 }
 
-async function pingConnection(conn, provider, providerConfig, handler, deps, state = g) {
+async function pingConnection(conn, provider, providerConfig, handler, deps, state = g, settings = null, allActiveConnections = null) {
   const key = cacheKey(provider, conn.id);
 
-  // resetAt is stable for time-based windows; Codex polls every tick because inactive windows slide forward.
-  const cachedReset = state.resetCache[key];
-  if (!providerConfig.pingWhenResetAtSlides && cachedReset && Date.now() < new Date(cachedReset).getTime() - C.refreshAheadMs) return;
-
-  // Avoid hammering provider auth/quota endpoints if a ping failed recently.
   if (shouldSkipAfterFailure(state, key)) return;
+
+  const currentSettings = settings || (await deps.getSettings()) || {};
+  const currentActiveConnections = allActiveConnections || (await deps.getProviderConnections({ isActive: true })) || [];
+
+  const isStaggerFn = deps.isStaggerAutoPingEnabled || isStaggerAutoPingEnabled;
+  const getGroupFn = deps.getStaggerGroup || getStaggerGroup;
+  const updateStaggerStateFn = deps.updateStaggerState || updateStaggerState;
+  const getStaggerDecisionFn = deps.getStaggerDecision || getStaggerDecision;
+  const markStaggerPingFn = deps.markStaggerPing || markStaggerPing;
+
+  const isGrouped = isStaggerFn(currentSettings, conn);
+  const group = isGrouped ? getGroupFn(currentSettings, conn.id) : null;
+
+  const cachedReset = state.resetCache[key];
+  if (!isGrouped && !providerConfig.pingWhenResetAtSlides && cachedReset && Date.now() < new Date(cachedReset).getTime() - C.refreshAheadMs) {
+    return;
+  }
 
   const proxyCfg = await deps.resolveConnectionProxyConfig(conn.providerSpecificData);
   const proxyOptions = buildProxyOptions(proxyCfg);
@@ -208,8 +227,150 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
     return;
   }
 
-  const usage = await handler.getUsage(connection.accessToken, proxyOptions);
+  let usage;
+  try {
+    usage = await handler.getUsage(connection.accessToken, proxyOptions);
+  } catch (e) {
+    state.failureCache[key] = Date.now();
+    console.warn(`[AutoPing] ${provider}:${conn.id}: usage failed: ${e.message}`);
+    return;
+  }
+
   const quotas = usage?.quotas || {};
+
+  if (isGrouped) {
+    const nowMs = Date.now();
+    const sampleObservedAtMs = usage?.observedAtMs || nowMs;
+
+    const nextState = updateStaggerStateFn({
+      connection,
+      settings: currentSettings,
+      connections: currentActiveConnections,
+      quotas,
+      nowMs,
+      observedAtMs: sampleObservedAtMs,
+    });
+
+    if (nextState) {
+      await deps.updateProviderConnection(connection.id, { quotaStaggerState: nextState });
+      connection = { ...connection, quotaStaggerState: nextState };
+    }
+
+    const decision = getStaggerDecisionFn({
+      connection,
+      settings: currentSettings,
+      connections: currentActiveConnections,
+      nowMs,
+    });
+
+    const sessionQuota = quotas?.[providerConfig.quotaKey] || quotas?.session || quotas?.["session (5h)"];
+    const weeklyQuota = quotas?.weekly || quotas?.["weekly (7d)"] || Object.entries(quotas).find(([k]) => k.toLowerCase().includes("weekly"))?.[1];
+
+    if (!sessionQuota || !weeklyQuota) {
+      return;
+    }
+
+    const resetAt = sessionQuota?.resetAt;
+    if (resetAt) state.resetCache[key] = resetAt;
+
+    if (decision.waiting) {
+      return;
+    }
+
+    if (decision.ready) {
+      if (shouldSkipAfterFailure(state, key, nowMs)) return;
+      if (isQuotaExhausted(sessionQuota)) return;
+      if (hasExhaustedBlockingQuota(quotas, providerConfig.quotaKey)) return;
+      if (wasPingedRecently(connection, providerConfig.minPingIntervalMs, nowMs)) return;
+
+      const resetKey = resetAt ? normalizeResetKey(resetAt) : null;
+      const lastPingedResetKey = connection.lastPingedResetKey || (connection.lastPingedResetAt ? normalizeResetKey(connection.lastPingedResetAt) : null);
+      const isSessionPending = Boolean(nextState?.pendingSlots?.session);
+      if (isSessionPending && resetKey && lastPingedResetKey === resetKey) return;
+
+      const latestSettings = await deps.getSettings();
+      const latestActiveConnections = (await deps.getProviderConnections({ isActive: true })) || [];
+      if (!isStaggerFn(latestSettings, connection)) return;
+
+      const latestDecision = getStaggerDecisionFn({
+        connection,
+        settings: latestSettings,
+        connections: latestActiveConnections,
+        nowMs: Date.now(),
+      });
+      if (!latestDecision.ready) return;
+
+      const ok = await handler.sendPing(connection, providerConfig, proxyOptions, deps);
+      if (!ok) {
+        state.failureCache[key] = Date.now();
+        console.warn(`[AutoPing] ${provider}:${connection.id}: ping failed`);
+        return;
+      }
+
+      delete state.failureCache[key];
+      const pingedMs = Date.now();
+      const updatedState = markStaggerPingFn(nextState, pingedMs);
+      await deps.updateProviderConnection(connection.id, {
+        lastPingedResetAt: resetAt || null,
+        lastPingedResetKey: resetKey || "first-use",
+        lastPingAt: new Date(pingedMs).toISOString(),
+        updatedAt: new Date(pingedMs).toISOString(),
+        quotaStaggerState: updatedState,
+      });
+      console.log(`[AutoPing] ${provider}:${connection.id}: stagger ping sent`);
+      return;
+    }
+
+    const legacyToggleEnabled = currentSettings?.[providerConfig.settingsKey]?.connections?.[connection.id] === true;
+    const sessionPolicyActive = group?.session?.enabled === true;
+    const weeklyVerifiedActiveOrFixed = (nextState?.windowStatus?.weekly === "active" && (toFiniteNumber(weeklyQuota?.used) > 0 || toFiniteNumber(weeklyQuota?.utilization) > 0))
+      || nextState?.windowStatus?.weekly === "fixed";
+
+    if (!sessionPolicyActive && legacyToggleEnabled && weeklyVerifiedActiveOrFixed && resetAt) {
+      if (hasExhaustedBlockingQuota(quotas, providerConfig.quotaKey)) return;
+      if (isQuotaExhausted(sessionQuota)) return;
+
+      const resetKey = normalizeResetKey(resetAt);
+      const lastPingedResetKey = connection.lastPingedResetKey || normalizeResetKey(connection.lastPingedResetAt);
+
+      if (!shouldPingForReset(providerConfig, cachedReset, resetAt, nowMs)) return;
+      if (wasPingedRecently(connection, providerConfig.minPingIntervalMs, nowMs)) return;
+      if (lastPingedResetKey === resetKey) return;
+
+      const latestSettings = await deps.getSettings();
+      const latestActiveConnections = (await deps.getProviderConnections({ isActive: true })) || [];
+      if (isStaggerFn(latestSettings, connection)) {
+        const latestGroup = getGroupFn(latestSettings, connection.id);
+        if (latestGroup?.session?.enabled === true) return;
+        const latestDecision = getStaggerDecisionFn({
+          connection,
+          settings: latestSettings,
+          connections: latestActiveConnections,
+          nowMs: Date.now(),
+        });
+        if (latestDecision.waiting) return;
+      }
+      if (latestSettings?.[providerConfig.settingsKey]?.connections?.[connection.id] !== true) return;
+
+      const ok = await handler.sendPing(connection, providerConfig, proxyOptions, deps);
+      if (!ok) {
+        state.failureCache[key] = Date.now();
+        console.warn(`[AutoPing] ${provider}:${connection.id}: ping failed (reset ${resetAt})`);
+        return;
+      }
+
+      delete state.failureCache[key];
+      await deps.updateProviderConnection(connection.id, {
+        lastPingedResetAt: resetAt,
+        lastPingedResetKey: resetKey,
+        lastPingAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      console.log(`[AutoPing] ${provider}:${connection.id}: legacy ping sent (reset ${resetAt})`);
+    }
+    return;
+  }
+
   const quota = quotas?.[providerConfig.quotaKey];
   const resetAt = quota?.resetAt;
   if (!resetAt) return;
@@ -223,14 +384,25 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   const resetKey = normalizeResetKey(resetAt);
   const lastPingedResetKey = connection.lastPingedResetKey || normalizeResetKey(connection.lastPingedResetAt);
 
-  // Claude waits for reset. Codex pings only when resetAt slides, which means the 5h window is inactive.
   if (!shouldPingForReset(providerConfig, cachedReset, resetAt, now)) return;
   if (wasPingedRecently(connection, providerConfig.minPingIntervalMs, now)) return;
   if (lastPingedResetKey === resetKey) return;
 
+  const latestSettings = await deps.getSettings();
+  const latestActiveConnections = (await deps.getProviderConnections({ isActive: true })) || [];
+  if (isStaggerFn(latestSettings, connection)) {
+    const latestDecision = getStaggerDecisionFn({
+      connection,
+      settings: latestSettings,
+      connections: latestActiveConnections,
+      nowMs: Date.now(),
+    });
+    if (!latestDecision.ready) return;
+  }
+  if (latestSettings?.[providerConfig.settingsKey]?.connections?.[connection.id] !== true) return;
+
   const ok = await handler.sendPing(connection, providerConfig, proxyOptions, deps);
   if (!ok) {
-    // Do not mark reset as pinged unless upstream accepted the tiny request.
     state.failureCache[key] = Date.now();
     console.warn(`[AutoPing] ${provider}:${connection.id}: ping failed (reset ${resetAt})`);
     return;
@@ -255,6 +427,11 @@ function createDefaultDeps() {
     refreshAndUpdateCredentials,
     proxyAwareFetch,
     getExecutor,
+    getStaggerGroup,
+    isStaggerAutoPingEnabled,
+    updateStaggerState,
+    getStaggerDecision,
+    markStaggerPing,
   };
 }
 
@@ -264,18 +441,26 @@ export async function runQuotaAutoPingTick(deps = createDefaultDeps(), state = g
   try {
     const settings = await deps.getSettings();
 
+    if (!hasQuotaAutoPingEnabled(settings)) return;
+
+    const allActiveConnections = (await deps.getProviderConnections({ isActive: true })) || [];
+    const isStaggerFn = deps.isStaggerAutoPingEnabled || isStaggerAutoPingEnabled;
+
     for (const [provider, providerConfig] of Object.entries(C.providers)) {
       const handler = providerHandlers[provider];
       if (!handler) continue;
 
       const enabledMap = settings?.[providerConfig.settingsKey]?.connections || {};
-      if (Object.keys(enabledMap).length === 0) continue;
+      const providerConns = allActiveConnections.filter(
+        (c) => c.provider === provider && c.authType === "oauth" && c.isActive !== false
+      );
+      const targets = providerConns.filter(
+        (conn) => enabledMap[conn.id] === true || isStaggerFn(settings, conn)
+      );
 
-      const conns = await deps.getProviderConnections({ provider, isActive: true });
-      const targets = conns.filter((conn) => conn.authType === "oauth" && enabledMap[conn.id] === true);
       for (const conn of targets) {
         try {
-          await pingConnection(conn, provider, providerConfig, handler, deps, state);
+          await pingConnection(conn, provider, providerConfig, handler, deps, state, settings, allActiveConnections);
         } catch (e) {
           state.failureCache[cacheKey(provider, conn.id)] = Date.now();
           console.warn(`[AutoPing] ${provider}:${conn.id}: ${e.message}`);
@@ -304,10 +489,9 @@ export function stopQuotaAutoPing() {
   console.log("[AutoPing] scheduler stopped");
 }
 
+export { hasQuotaAutoPingEnabled };
+
 export function configureQuotaAutoPing(settings) {
-  const enabled = Object.values(C.providers).some((providerConfig) =>
-    Object.values(settings?.[providerConfig.settingsKey]?.connections || {}).some(Boolean)
-  );
-  if (enabled) startQuotaAutoPing();
+  if (hasQuotaAutoPingEnabled(settings)) startQuotaAutoPing();
   else stopQuotaAutoPing();
 }
