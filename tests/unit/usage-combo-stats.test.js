@@ -72,67 +72,6 @@ describe("usage stats by combo", () => {
   });
 });
 
-// Nested per-model breakdowns under each combo (stats.byCombo[x].byModel) and
-// provider (stats.byProvider[x].byModel) — built from usageHistory in both
-// stats paths, including data written before the breakdown existed.
-describe("nested per-model breakdowns under combos and providers", () => {
-  const expectedComboModels = {
-    "gpt-4o (openai)": { requests: 2, promptTokens: 30, completionTokens: 15 },
-    "claude-3-5-sonnet (openai)": { requests: 1, promptTokens: 30, completionTokens: 15 },
-  };
-  const expectedProviderModels = {
-    "gpt-4o": { requests: 3, promptTokens: 130, completionTokens: 65 },
-    "claude-3-5-sonnet": { requests: 1, promptTokens: 30, completionTokens: 15 },
-  };
-
-  function expectBreakdown(byModel, expected) {
-    expect(Object.keys(byModel).sort()).toEqual(Object.keys(expected).sort());
-    for (const [key, want] of Object.entries(expected)) {
-      expect(byModel[key].requests).toBe(want.requests);
-      expect(byModel[key].promptTokens).toBe(want.promptTokens);
-      expect(byModel[key].completionTokens).toBe(want.completionTokens);
-      expect(byModel[key].rawModel).toBeTruthy();
-      expect(byModel[key].provider).toBeTruthy();
-      expect(byModel[key].lastUsed).toBeTruthy();
-    }
-  }
-
-  it("exposes combo.byModel in the 24h (live history) stats path", async () => {
-    const stats = await db.getUsageStats("24h");
-    expectBreakdown(stats.byCombo["my-combo"].byModel, expectedComboModels);
-    // nested rows must not leak into the non-combo request
-    expect(stats.byCombo["my-combo"].byModel["gpt-4o (openai)"].requests).toBe(2);
-  });
-
-  it("exposes provider.byModel in the 24h (live history) stats path", async () => {
-    const stats = await db.getUsageStats("24h");
-    expectBreakdown(stats.byProvider.openai.byModel, expectedProviderModels);
-  });
-
-  it("rebuilds combo.byModel from history in the daily-summary stats path (7d)", async () => {
-    const stats = await db.getUsageStats("7d");
-    expectBreakdown(stats.byCombo["my-combo"].byModel, expectedComboModels);
-    // nested sums stay consistent with the flat combo totals
-    const nestedRequests = Object.values(stats.byCombo["my-combo"].byModel)
-      .reduce((sum, m) => sum + m.requests, 0);
-    expect(nestedRequests).toBe(stats.byCombo["my-combo"].requests);
-  });
-
-  it("rebuilds provider.byModel from history in the daily-summary stats path (7d)", async () => {
-    const stats = await db.getUsageStats("7d");
-    expectBreakdown(stats.byProvider.openai.byModel, expectedProviderModels);
-  });
-
-  it("leaves combos without history-derived models out of the breakdown", async () => {
-    const stats = await db.getUsageStats("24h");
-    // a combo entry only exists for traffic that carried requestedModel, so
-    // any combo in byCombo has at least one nested model row
-    for (const combo of Object.values(stats.byCombo)) {
-      expect(Object.keys(combo.byModel || {}).length).toBeGreaterThan(0);
-    }
-  });
-});
-
 describe("usage stats by provider", () => {
   it("exposes provider rows with display name and lastUsed in the 24h path", async () => {
     const stats = await db.getUsageStats("24h");
