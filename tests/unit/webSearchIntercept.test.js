@@ -59,7 +59,7 @@ beforeEach(() => {
 });
 
 describe("applyWebSearchFallback", () => {
-  it("rewrites a Claude response: tool_use becomes a text block with the search result", async () => {
+  it("rewrites a Claude response: tool_use becomes native search blocks + a text fallback", async () => {
     const response = {
       type: "message",
       role: "assistant",
@@ -77,10 +77,23 @@ describe("applyWebSearchFallback", () => {
     expect(coreArg.credentials.accessToken).toBe("t");
 
     expect(out.content[0]).toEqual({ type: "text", text: "Let me search." });
-    expect(out.content[1].type).toBe("text");
-    const payload = JSON.parse(out.content[1].text.replace("[Skill result: 9router_web_search]\n", ""));
+    // Claude Code's "Did N searches" footer counts server_tool_use /
+    // web_search_tool_result blocks in the content, so the rewrite must emit them.
+    expect(out.content.map((b) => b.type)).toEqual([
+      "text", "server_tool_use", "web_search_tool_result", "text",
+    ]);
+    const serverUse = out.content[1];
+    expect(serverUse.name).toBe("web_search");
+    expect(serverUse.id).toMatch(/^srvtoolu_[a-zA-Z0-9_]+$/);
+    expect(serverUse.input).toEqual({ query: "latest ai news", max_results: 5 });
+    const toolResult = out.content[2];
+    expect(toolResult.tool_use_id).toBe(serverUse.id);
+    expect(toolResult.content).toEqual([{ type: "web_search_result", title: "A", url: "https://a" }]);
+    const payload = JSON.parse(out.content[3].text.replace("[Skill result: 9router_web_search]\n", ""));
     expect(payload.success).toBe(true);
     expect(payload.results).toHaveLength(1);
+    // The pricing path: usage.server_tool_use.web_search_requests.
+    expect(out.usage.server_tool_use.web_search_requests).toBe(1);
     expect(out.stop_reason).toBe("end_turn");
     expect(out.stop_sequence).toBeNull();
   });
@@ -95,8 +108,10 @@ describe("applyWebSearchFallback", () => {
       stop_reason: "tool_use",
     };
     const out = await applyWebSearchFallback({ translatedResponse: response, sourceFormat: "claude", fallbackPlan: PLAN, log: {} });
-    expect(out.content.map((b) => b.type)).toEqual(["text", "tool_use"]);
-    expect(out.content[1].id).toBe("tu_2");
+    expect(out.content.map((b) => b.type)).toEqual([
+      "server_tool_use", "web_search_tool_result", "text", "tool_use",
+    ]);
+    expect(out.content[3].id).toBe("tu_2");
     expect(out.stop_reason).toBe("tool_use"); // not rewritten while a real tool_use remains
   });
 
@@ -134,7 +149,10 @@ describe("applyWebSearchFallback", () => {
     mocks.markAccountUnavailable.mockResolvedValue({ shouldFallback: false });
     const response = { type: "message", content: [{ type: "tool_use", id: "t", name: PLAN.toolName, input: { query: "q" } }] };
     const out = await applyWebSearchFallback({ translatedResponse: response, sourceFormat: "claude", fallbackPlan: PLAN, log: {} });
-    const payload = JSON.parse(out.content[0].text.split("\n")[1]);
+    expect(out.content.map((b) => b.type)).toEqual(["server_tool_use", "web_search_tool_result", "text"]);
+    // A failed search surfaces as the native error shape, not fabricated results.
+    expect(out.content[1].content).toEqual({ error_code: "9router_search_error", error_message: "up down" });
+    const payload = JSON.parse(out.content[2].text.split("\n")[1]);
     expect(payload.success).toBe(false);
     expect(payload.error).toBe("up down");
   });

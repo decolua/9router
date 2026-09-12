@@ -214,35 +214,68 @@ function resultPayload(outcome) {
   };
 }
 
+// Claude Code renders native search execution as a server_tool_use block followed by a
+// web_search_tool_result block, and its "Did N searches" footer counts exactly those blocks
+// in the assistant content (XES in the CLI bundle: searchCount = max(server_tool_use,
+// web_search_tool_result) and results carry {title,url} per hit). We served the search
+// locally, so emit the same pair. Ids use the srvtoolu_ prefix the Anthropic validator
+// expects and the tool name stays "web_search", so the claude.js history round-trip keeps
+// the blocks instead of dropping them. The text block is kept for non-claude upstreams that
+// lose these blocks in translation (and it is how results reached the model before).
+function searchBlocks(toolName, call, payload) {
+  const id = `srvtoolu_${String(call.id).replace(/[^a-zA-Z0-9_]/g, "_")}`;
+  return [
+    { type: CLAUDE_BLOCK.SERVER_TOOL_USE, id, name: "web_search", input: call.args },
+    {
+      type: CLAUDE_BLOCK.WEB_SEARCH_TOOL_RESULT,
+      tool_use_id: id,
+      content: payload.success
+        ? payload.results.map((r) => ({ type: "web_search_result", title: r.title, url: r.url }))
+        : { error_code: "9router_search_error", error_message: String(payload.error || "Search failed") },
+    },
+    { type: CLAUDE_BLOCK.TEXT, text: `[Skill result: ${toolName}]\n${JSON.stringify(payload)}` },
+  ];
+}
+
+// Claude Code also prices searches from usage.server_tool_use.web_search_requests, which
+// only Anthropic's own execution sets. Count the searches we served locally so the number
+// reflects what actually happened; additive so any upstream count is kept.
+function withSearchUsage(usage, count, toolKey, requestKey) {
+  const prev = toRecord(usage);
+  const prevTool = toRecord(prev[toolKey]);
+  return {
+    ...prev,
+    [toolKey]: { ...prevTool, [requestKey]: (Number(prevTool[requestKey]) || 0) + count },
+  };
+}
+
 function rewriteClaude(response, toolName, handled, outcomes) {
-  const textById = new Map(
-    handled.map((call, i) => [
-      call.id,
-      { type: CLAUDE_BLOCK.TEXT, text: `[Skill result: ${toolName}]\n${JSON.stringify(outcomes[i])}` },
-    ]),
+  const blocksById = new Map(
+    handled.map((call, i) => [call.id, searchBlocks(toolName, call, outcomes[i])]),
   );
   const content = [];
   let inserted = false;
   for (const block of response.content) {
-    if (block?.type === CLAUDE_BLOCK.TOOL_USE && textById.has(block.id)) {
-      content.push(textById.get(block.id));
+    if (block?.type === CLAUDE_BLOCK.TOOL_USE && blocksById.has(block.id)) {
+      content.push(...blocksById.get(block.id));
       inserted = true;
       continue;
     }
     // Results must precede any remaining (client-owned) tool_use blocks.
     if (!inserted && block?.type === CLAUDE_BLOCK.TOOL_USE) {
-      for (const call of handled) content.push(textById.get(call.id));
+      for (const call of handled) content.push(...blocksById.get(call.id));
       inserted = true;
     }
     content.push(block);
   }
   if (!inserted) {
-    for (const call of handled) content.push(textById.get(call.id));
+    for (const call of handled) content.push(...blocksById.get(call.id));
   }
   const hasRemainingToolUse = content.some((b) => b?.type === CLAUDE_BLOCK.TOOL_USE);
   return {
     ...response,
     content,
+    usage: withSearchUsage(response.usage, handled.length, "server_tool_use", "web_search_requests"),
     ...(hasRemainingToolUse ? {} : { stop_reason: CLAUDE_STOP.END_TURN, stop_sequence: null }),
   };
 }
