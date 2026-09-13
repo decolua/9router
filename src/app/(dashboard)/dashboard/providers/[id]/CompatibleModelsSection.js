@@ -1,10 +1,11 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { Button } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
 import { runModelBatchTest } from "@/shared/utils/modelBatchTester";
+import { fetchModelTestResults, saveModelTestResults, clearModelTestResults } from "@/shared/utils/modelTestResultsClient";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
 
 function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting, latencyMs, error }) {
@@ -98,8 +99,24 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   const [batchResults, setBatchResults] = useState({});
   const [batchSummary, setBatchSummary] = useState(null);
   const [deletingFailed, setDeletingFailed] = useState(false);
+  const [savedResults, setSavedResults] = useState({});
   const stopBatchTestRef = useRef(false);
   const notify = useNotificationStore();
+
+  // Restore last-test status (active/failed) from the server so rows show it on load.
+  useEffect(() => {
+    let cancelled = false;
+    fetchModelTestResults().then((all) => {
+      if (cancelled) return;
+      const prefix = `${providerStorageAlias}/`;
+      const mine = {};
+      for (const [key, value] of Object.entries(all)) {
+        if (key.startsWith(prefix)) mine[key.slice(prefix.length)] = value;
+      }
+      setSavedResults(mine);
+    });
+    return () => { cancelled = true; };
+  }, [providerStorageAlias]);
 
   const allModels = getProviderCustomModelRows({
     customModels,
@@ -131,9 +148,20 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}` }),
       });
       const data = await res.json();
-      setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
+      const state = data.ok ? "ok" : "error";
+      setModelTestResults((prev) => ({ ...prev, [modelId]: state }));
+      saveModelTestResults({
+        [`${providerStorageAlias}/${modelId}`]: {
+          state,
+          latencyMs: typeof data.latencyMs === "number" ? data.latencyMs : null,
+          error: data.ok ? null : (data.error || "Model not reachable"),
+        },
+      });
     } catch {
       setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
+      saveModelTestResults({
+        [`${providerStorageAlias}/${modelId}`]: { state: "error", latencyMs: null, error: "Network error" },
+      });
     } finally {
       setTestingModelId(null);
     }
@@ -156,12 +184,19 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     setBatchResults(initial);
     setBatchSummary(null);
 
+    // Terminal results collected as the pool finishes — persisted once at the end.
+    const collected = {};
+
     try {
       const finalSummary = await runModelBatchTest({
         models: filteredModels.map((m) => ({ id: m.id, fullModel: `${providerStorageAlias}/${m.id}` })),
         buildFullModel: (m) => m.fullModel,
-        onResult: (modelId, result) =>
-          setBatchResults((prev) => ({ ...prev, [modelId]: result })),
+        onResult: (modelId, result) => {
+          if (result.state === "ok" || result.state === "error") {
+            collected[modelId] = result;
+          }
+          setBatchResults((prev) => ({ ...prev, [modelId]: result }));
+        },
         onSummary: setBatchSummary,
         stopRef: stopBatchTestRef,
       });
@@ -177,6 +212,17 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
       notify.error("Model batch test failed");
       console.log("Error in batch model test:", error);
     } finally {
+      if (Object.keys(collected).length > 0) {
+        const toSave = {};
+        for (const [modelId, result] of Object.entries(collected)) {
+          toSave[`${providerStorageAlias}/${modelId}`] = {
+            state: result.state,
+            latencyMs: result.latencyMs,
+            error: result.error,
+          };
+        }
+        saveModelTestResults(toSave);
+      }
       setBatchTesting(false);
       setBatchStopping(false);
       stopBatchTestRef.current = false;
@@ -211,6 +257,9 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
           delete next[model.id];
           return next;
         });
+        // Drop its persisted last-test record too so the combo picker
+        // stops treating this (now removed) model as failed.
+        clearModelTestResults([`${providerStorageAlias}/${model.id}`]);
       }
       notify.success(`Deleted ${deleted} failed model${deleted === 1 ? "" : "s"}`);
     } catch (error) {
@@ -374,21 +423,29 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
           </div>
 
           <div className="flex flex-col gap-3">
-            {filteredModels.map(({ id, alias, source }) => (
-              <CompatibleModelRow
-                key={`${source}-${providerStorageAlias}/${id}`}
-                modelId={id}
-                fullModel={`${providerDisplayAlias}/${id}`}
-                copied={copied}
-                onCopy={onCopy}
-                onDeleteAlias={() => source === "custom" ? onDeleteCustomModel(id) : onDeleteAlias(alias)}
-                onTest={canTest ? () => handleTestModel(id) : undefined}
-                testStatus={batchResults[id]?.state === "ok" ? "ok" : batchResults[id]?.state === "error" ? "error" : modelTestResults[id]}
-                isTesting={testingModelId === id || batchResults[id]?.state === "testing"}
-                latencyMs={batchResults[id]?.latencyMs ?? null}
-                error={batchResults[id]?.error ?? null}
-              />
-            ))}
+            {filteredModels.map(({ id, alias, source }) => {
+              const live = batchResults[id];
+              const saved = savedResults[id];
+              const rowState = live?.state === "ok" || live?.state === "error" ? live.state
+                : modelTestResults[id]
+                ? modelTestResults[id]
+                : saved?.state;
+              return (
+                <CompatibleModelRow
+                  key={`${source}-${providerStorageAlias}/${id}`}
+                  modelId={id}
+                  fullModel={`${providerDisplayAlias}/${id}`}
+                  copied={copied}
+                  onCopy={onCopy}
+                  onDeleteAlias={() => source === "custom" ? onDeleteCustomModel(id) : onDeleteAlias(alias)}
+                  onTest={canTest ? () => handleTestModel(id) : undefined}
+                  testStatus={rowState === "ok" ? "ok" : rowState === "error" ? "error" : undefined}
+                  isTesting={testingModelId === id || live?.state === "testing"}
+                  latencyMs={live?.latencyMs ?? saved?.latencyMs ?? null}
+                  error={live?.error ?? saved?.error ?? null}
+                />
+              );
+            })}
             {modelSearch && shownCount === 0 && (
               <div className="flex w-full flex-col items-center gap-1 py-6 text-center">
                 <span className="material-symbols-outlined text-[28px] text-text-muted">

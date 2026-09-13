@@ -15,6 +15,7 @@ import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
 import { runModelBatchTest } from "@/shared/utils/modelBatchTester";
+import { fetchModelTestResults, saveModelTestResults } from "@/shared/utils/modelTestResultsClient";
 import { useNotificationStore } from "@/store/notificationStore";
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
@@ -64,6 +65,7 @@ export default function ProviderDetailPage() {
   const [modelTestResults, setModelTestResults] = useState({});
   const [modelsTestError, setModelsTestError] = useState("");
   const [testingModelIds, setTestingModelIds] = useState(() => new Set());
+  const [savedModelTestResults, setSavedModelTestResults] = useState({});
   const [showAddCustomModel, setShowAddCustomModel] = useState(false);
   const [selectedConnectionIds, setSelectedConnectionIds] = useState([]);
   const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
@@ -308,6 +310,21 @@ export default function ProviderDetailPage() {
       .then((data) => { if (data.models?.length) setKiloFreeModels(data.models); })
       .catch(() => {});
   }, [providerId]);
+
+  // Restore persisted last-test status (active/failed) for this provider's models
+  useEffect(() => {
+    let cancelled = false;
+    fetchModelTestResults().then((all) => {
+      if (cancelled) return;
+      const prefix = `${providerStorageAlias}/`;
+      const mine = {};
+      for (const [key, value] of Object.entries(all)) {
+        if (key.startsWith(prefix)) mine[key.slice(prefix.length)] = value;
+      }
+      setSavedModelTestResults(mine);
+    });
+    return () => { cancelled = true; };
+  }, [providerStorageAlias]);
 
   const fetchConnections = useCallback(async () => {
     try {
@@ -1126,11 +1143,22 @@ export default function ProviderDetailPage() {
         body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}` }),
       });
       const data = await res.json();
-      setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));
+      const state = data.ok ? "ok" : "error";
+      setModelTestResults((prev) => ({ ...prev, [modelId]: state }));
       setModelsTestError(data.ok ? "" : (data.error || "Model not reachable"));
+      saveModelTestResults({
+        [`${providerStorageAlias}/${modelId}`]: {
+          state,
+          latencyMs: typeof data.latencyMs === "number" ? data.latencyMs : null,
+          error: data.ok ? null : (data.error || "Model not reachable"),
+        },
+      });
     } catch {
       setModelTestResults((prev) => ({ ...prev, [modelId]: "error" }));
       setModelsTestError("Network error");
+      saveModelTestResults({
+        [`${providerStorageAlias}/${modelId}`]: { state: "error", latencyMs: null, error: "Network error" },
+      });
     } finally {
       setTestingModelIds((prev) => { const n = new Set(prev); n.delete(modelId); return n; });
     }
@@ -1153,12 +1181,19 @@ export default function ProviderDetailPage() {
     setBatchResults(initial);
     setBatchSummary(null);
 
+    // Terminal results collected as the pool finishes — persisted once at the end.
+    const collected = {};
+
     try {
       const finalSummary = await runModelBatchTest({
         models: modelsToTest,
         buildFullModel: (m) => `${providerStorageAlias}/${m.id}`,
-        onResult: (modelId, result) =>
-          setBatchResults((prev) => ({ ...prev, [modelId]: result })),
+        onResult: (modelId, result) => {
+          if (result.state === "ok" || result.state === "error") {
+            collected[modelId] = result;
+          }
+          setBatchResults((prev) => ({ ...prev, [modelId]: result }));
+        },
         onSummary: setBatchSummary,
         stopRef: stopBatchTestRef,
       });
@@ -1174,6 +1209,17 @@ export default function ProviderDetailPage() {
       notify.error("Model batch test failed");
       console.log("Error in batch model test:", error);
     } finally {
+      if (Object.keys(collected).length > 0) {
+        const toSave = {};
+        for (const [modelId, result] of Object.entries(collected)) {
+          toSave[`${providerStorageAlias}/${modelId}`] = {
+            state: result.state,
+            latencyMs: result.latencyMs,
+            error: result.error,
+          };
+        }
+        saveModelTestResults(toSave);
+      }
       setBatchTesting(false);
       setBatchStopping(false);
       stopBatchTestRef.current = false;
@@ -1279,7 +1325,7 @@ export default function ProviderDetailPage() {
                 handleDeleteAlias(model.alias);
               }
             }}
-            testStatus={batchResults[model.id]?.state === "ok" ? "ok" : batchResults[model.id]?.state === "error" ? "error" : modelTestResults[model.id]}
+            testStatus={batchResults[model.id]?.state === "ok" || batchResults[model.id]?.state === "error" ? batchResults[model.id].state : modelTestResults[model.id] || savedModelTestResults[model.id]?.state}
             onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
             isTesting={testingModelIds.has(model.id) || batchResults[model.id]?.state === "testing"}
             isCustom
@@ -1305,7 +1351,7 @@ export default function ProviderDetailPage() {
               onCopy={copy}
               onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
               onDeleteAlias={() => handleDeleteAlias(existingAlias)}
-              testStatus={batchResults[model.id]?.state === "ok" ? "ok" : batchResults[model.id]?.state === "error" ? "error" : modelTestResults[model.id]}
+              testStatus={batchResults[model.id]?.state === "ok" || batchResults[model.id]?.state === "error" ? batchResults[model.id].state : modelTestResults[model.id] || savedModelTestResults[model.id]?.state}
               onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelIds.has(model.id) || batchResults[model.id]?.state === "testing"}
               isFree={model.isFree}
