@@ -123,7 +123,7 @@ export async function GET() {
 // POST - Backup old fields and write new settings
 export async function POST(request) {
   try {
-    const { env, exaMcpEnabled, maxContextTokens } = await request.json();
+    const { env, exaMcpEnabled, autoCompactWindow } = await request.json();
     
     if (!env || typeof env !== "object") {
       return NextResponse.json(
@@ -166,12 +166,13 @@ export async function POST(request) {
       },
     };
 
-    // CLAUDE_CODE_MAX_CONTEXT_TOKENS — only set when a concrete value is chosen;
-    // "Default" removes the key so Claude Code falls back to the model's window.
-    if (maxContextTokens) {
-      newSettings.env.CLAUDE_CODE_MAX_CONTEXT_TOKENS = String(maxContextTokens);
+    // CLAUDE_CODE_AUTO_COMPACT_WINDOW — the token threshold that triggers
+    // auto-compact. Only set when a concrete value is chosen; "Default" removes
+    // the key so Claude Code derives the window from the model.
+    if (autoCompactWindow) {
+      newSettings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(autoCompactWindow);
     } else {
-      delete newSettings.env.CLAUDE_CODE_MAX_CONTEXT_TOKENS;
+      delete newSettings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
     }
 
     // Write new settings
@@ -203,7 +204,7 @@ const RESET_ENV_KEYS = [
   "ANTHROPIC_DEFAULT_SONNET_MODEL",
   "ANTHROPIC_DEFAULT_HAIKU_MODEL",
   "API_TIMEOUT_MS",
-  "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
+  "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
 ];
 
 // DELETE - Reset settings (remove env fields)
