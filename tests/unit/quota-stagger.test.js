@@ -11,6 +11,9 @@ import {
   updateStaggerState,
   getStaggerDecision,
   markStaggerPing,
+  STAGGER_SCHEMA_VERSION,
+  STAGGER_SIGNATURE_VERSION,
+  computeGroupSignature,
 } from "@/shared/services/quotaStagger.js";
 
 describe("quota stagger core", () => {
@@ -428,22 +431,26 @@ describe("quota stagger core", () => {
         nowMs: t1,
       });
 
+      const connsWithA = baseConnections.map((c) =>
+        c.id === "cx-1" ? { ...c, quotaStaggerState: sA1 } : c
+      );
+
       const sB1 = updateStaggerState({
         connection: { id: "cx-2", provider: "codex", quotaStaggerState: sB0 },
         settings,
-        connections: baseConnections,
+        connections: connsWithA,
         quotas: { session: { used: 0, total: 100, remaining: 100, resetAt: new Date(t1 + duration5h).toISOString() } },
         nowMs: t1,
       });
 
-      expect(sA1.pendingSlots.session).toBe(fixedNow);
       expect(sA1.ready).toBe(true);
       expect(sA1.waiting).toBe(false);
+      expect(sA1.pendingSlots.session).toBe(t1);
 
-      expect(sB1.pendingSlots.session).toBe(fixedNow + 0.5 * duration5h);
       expect(sB1.ready).toBe(false);
       expect(sB1.waiting).toBe(true);
-      expect(sB1.notBeforeMs).toBe(fixedNow + 9000000);
+      expect(sB1.pendingSlots.session).toBe(t1 + 0.5 * duration5h);
+      expect(sB1.notBeforeMs).toBe(t1 + 9000000);
     });
   });
 
@@ -765,6 +772,59 @@ describe("quota stagger core", () => {
       expect(s1.ready).toBe(false);
     });
 
+    it("keeps account 0 ready and account 1 in its cycle phase after 22 hours have elapsed", () => {
+      const anchor = fixedNow;
+      const group = {
+        id: "g-22h",
+        name: "22h Elapsed",
+        enabled: true,
+        connectionIds: ["cx-1", "cx-2"],
+        session: { enabled: true, anchorAt: new Date(anchor).toISOString() },
+        weekly: { enabled: true, anchorAt: new Date(anchor).toISOString() },
+      };
+      const settings = { quotaStaggerGroups: [group] };
+
+      const tElapsed = anchor + 22 * 3600 * 1000;
+      const mkSlide = (id, now, conns = baseConnections) => {
+        const s1 = updateStaggerState({
+          connection: { id, provider: "codex" },
+          settings,
+          connections: conns,
+          quotas: {
+            session: { used: 0, total: 100, remaining: 100, resetAt: new Date(now + duration5h).toISOString() },
+            weekly: { used: 0, total: 100, remaining: 100, resetAt: new Date(now + 604800000).toISOString() },
+          },
+          nowMs: now,
+        });
+        return updateStaggerState({
+          connection: { id, provider: "codex", quotaStaggerState: s1 },
+          settings,
+          connections: conns,
+          quotas: {
+            session: { used: 0, total: 100, remaining: 100, resetAt: new Date(now + 60000 + duration5h).toISOString() },
+            weekly: { used: 0, total: 100, remaining: 100, resetAt: new Date(now + 60000 + 604800000).toISOString() },
+          },
+          nowMs: now + 60000,
+        });
+      };
+
+      const s0 = mkSlide("cx-1", tElapsed);
+      const connsWith0 = baseConnections.map((c) => (c.id === "cx-1" ? { ...c, quotaStaggerState: s0 } : c));
+      const s1 = mkSlide("cx-2", tElapsed, connsWith0);
+
+      expect(s0.ready).toBe(true);
+      expect(s0.waiting).toBe(false);
+      expect(s0.notBeforeMs).toBeLessThanOrEqual(tElapsed + 60000);
+      expect(s0.pendingSlots.session).toBe(tElapsed + 60000);
+      expect(s0.pendingSlots.weekly).toBe(tElapsed + 60000);
+
+      expect(s1.ready).toBe(false);
+      expect(s1.waiting).toBe(true);
+      expect(s1.pendingSlots.session).toBe(s0.phaseAnchors.session + 0.5 * duration5h);
+      expect(s1.pendingSlots.weekly).toBe(s0.phaseAnchors.weekly + 84 * 3600 * 1000);
+      expect(s1.notBeforeMs - (tElapsed + 60000)).toBe(84 * 3600 * 1000);
+    });
+
     it("calculates 3 phases: index 0 at 0, index 1 at 1/3, index 2 at 2/3", () => {
       const group = {
         id: "g-3p",
@@ -776,30 +836,32 @@ describe("quota stagger core", () => {
       };
       const settings = { quotaStaggerGroups: [group] };
 
-      const mkSlide = (id, now) => {
+      const mkSlide = (id, now, conns = baseConnections) => {
         const s1 = updateStaggerState({
           connection: { id, provider: "codex" },
           settings,
-          connections: baseConnections,
+          connections: conns,
           quotas: { session: { used: 0, total: 100, remaining: 100, resetAt: new Date(now + duration5h).toISOString() } },
           nowMs: now,
         });
         return updateStaggerState({
           connection: { id, provider: "codex", quotaStaggerState: s1 },
           settings,
-          connections: baseConnections,
+          connections: conns,
           quotas: { session: { used: 0, total: 100, remaining: 100, resetAt: new Date(now + 60000 + duration5h).toISOString() } },
           nowMs: now + 60000,
         });
       };
 
       const s0 = mkSlide("cx-1", fixedNow);
-      const s1 = mkSlide("cx-2", fixedNow);
-      const s2 = mkSlide("cx-3", fixedNow);
+      const connsWith0 = baseConnections.map((c) => (c.id === "cx-1" ? { ...c, quotaStaggerState: s0 } : c));
+      const s1 = mkSlide("cx-2", fixedNow, connsWith0);
+      const connsWith01 = connsWith0.map((c) => (c.id === "cx-2" ? { ...c, quotaStaggerState: s1 } : c));
+      const s2 = mkSlide("cx-3", fixedNow, connsWith01);
 
-      expect(s0.pendingSlots.session).toBe(fixedNow);
-      expect(s1.pendingSlots.session).toBe(fixedNow + Math.round((1 / 3) * duration5h));
-      expect(s2.pendingSlots.session).toBe(fixedNow + Math.round((2 / 3) * duration5h));
+      expect(s0.ready).toBe(true);
+      expect(s1.pendingSlots.session).toBe(s0.phaseAnchors.session + Math.round((1 / 3) * duration5h));
+      expect(s2.pendingSlots.session).toBe(s0.phaseAnchors.session + Math.round((2 / 3) * duration5h));
     });
 
     it("calculates 4 phases: index 0 at 0, 1 at 1/4, 2 at 2/4, 3 at 3/4", () => {
@@ -813,30 +875,34 @@ describe("quota stagger core", () => {
       };
       const settings = { quotaStaggerGroups: [group] };
 
-      const mkSlide = (id, now) => {
+      const mkSlide = (id, now, conns = baseConnections) => {
         const s1 = updateStaggerState({
           connection: { id, provider: "codex" },
           settings,
-          connections: baseConnections,
+          connections: conns,
           quotas: { session: { used: 0, total: 100, remaining: 100, resetAt: new Date(now + duration5h).toISOString() } },
           nowMs: now,
         });
         return updateStaggerState({
           connection: { id, provider: "codex", quotaStaggerState: s1 },
           settings,
-          connections: baseConnections,
+          connections: conns,
           quotas: { session: { used: 0, total: 100, remaining: 100, resetAt: new Date(now + 60000 + duration5h).toISOString() } },
           nowMs: now + 60000,
         });
       };
 
-      const s1 = mkSlide("cx-2", fixedNow);
-      const s2 = mkSlide("cx-3", fixedNow);
-      const s3 = mkSlide("cx-4", fixedNow);
+      const s0 = mkSlide("cx-1", fixedNow);
+      const connsWith0 = baseConnections.map((c) => (c.id === "cx-1" ? { ...c, quotaStaggerState: s0 } : c));
+      const s1 = mkSlide("cx-2", fixedNow, connsWith0);
+      const connsWith01 = connsWith0.map((c) => (c.id === "cx-2" ? { ...c, quotaStaggerState: s1 } : c));
+      const s2 = mkSlide("cx-3", fixedNow, connsWith01);
+      const connsWith012 = connsWith01.map((c) => (c.id === "cx-3" ? { ...c, quotaStaggerState: s2 } : c));
+      const s3 = mkSlide("cx-4", fixedNow, connsWith012);
 
-      expect(s1.pendingSlots.session).toBe(fixedNow + 0.25 * duration5h);
-      expect(s2.pendingSlots.session).toBe(fixedNow + 0.5 * duration5h);
-      expect(s3.pendingSlots.session).toBe(fixedNow + 0.75 * duration5h);
+      expect(s1.pendingSlots.session).toBe(s0.phaseAnchors.session + 0.25 * duration5h);
+      expect(s2.pendingSlots.session).toBe(s0.phaseAnchors.session + 0.5 * duration5h);
+      expect(s3.pendingSlots.session).toBe(s0.phaseAnchors.session + 0.75 * duration5h);
     });
   });
 
@@ -1557,6 +1623,653 @@ describe("quota stagger core", () => {
       expect(usage.quotas["weekly (7d)"].windowDurationMs).toBe(604800000);
       expect(typeof usage.observedAtMs).toBe("number");
       expect(usage.observedAtMs).toBeGreaterThan(0);
+    });
+  });
+
+  describe("automatic realignment and multi-policy scheduling", () => {
+    const fixedNow = 1770000000000;
+    const duration5h = 18000000;
+    const duration7d = 604800000;
+
+    it("simulates minute-by-minute lifecycle across 3 cycles for active Codex starting 6min apart, achieving 2.5h stagger", () => {
+      const group = {
+        id: "g-active-codex",
+        name: "Active Codex AB",
+        enabled: true,
+        connectionIds: ["cx-1", "cx-2"],
+        session: { enabled: true, anchorAt: new Date(fixedNow).toISOString() },
+        weekly: { enabled: true, anchorAt: new Date(fixedNow).toISOString() },
+      };
+      const settings = { quotaStaggerGroups: [group] };
+      let connections = [
+        { id: "cx-1", provider: "codex", authType: "oauth", isActive: true },
+        { id: "cx-2", provider: "codex", authType: "oauth", isActive: true },
+      ];
+
+      const startA = fixedNow + 45 * 60 * 1000;
+      let resetA = startA + duration5h;
+      const startB = fixedNow + 51 * 60 * 1000;
+      let resetB = startB + duration5h;
+      const weeklyResetA = startA + duration7d;
+      const weeklyResetB = startB + duration7d;
+
+      const sessionStartsA = [];
+      const sessionStartsB = [];
+      let prePollAtBResetWaiting = false;
+
+      for (let now = fixedNow + 52 * 60 * 1000; now <= fixedNow + 20 * 3600 * 1000; now += 60000) {
+        if (now === resetB) {
+          const decPre = getStaggerDecision({ connection: connections[1], settings, connections, nowMs: now });
+          if (decPre.waiting === true && decPre.ready === false) {
+            prePollAtBResetWaiting = true;
+          }
+        }
+
+        const quotasA = {
+          session: {
+            used: now < resetA ? 20 : 0,
+            total: 100,
+            remaining: now < resetA ? 80 : 100,
+            resetAt: new Date(now < resetA ? resetA : now + duration5h).toISOString(),
+          },
+          weekly: {
+            used: 20,
+            total: 100,
+            remaining: 80,
+            resetAt: new Date(weeklyResetA).toISOString(),
+          },
+        };
+        connections[0] = {
+          ...connections[0],
+          quotaStaggerState: updateStaggerState({
+            connection: connections[0],
+            settings,
+            connections,
+            quotas: quotasA,
+            nowMs: now,
+            observedAtMs: now,
+          }),
+        };
+
+        const quotasB = {
+          session: {
+            used: now < resetB ? 20 : 0,
+            total: 100,
+            remaining: now < resetB ? 80 : 100,
+            resetAt: new Date(now < resetB ? resetB : now + duration5h).toISOString(),
+          },
+          weekly: {
+            used: 20,
+            total: 100,
+            remaining: 80,
+            resetAt: new Date(weeklyResetB).toISOString(),
+          },
+        };
+        connections[1] = {
+          ...connections[1],
+          quotaStaggerState: updateStaggerState({
+            connection: connections[1],
+            settings,
+            connections,
+            quotas: quotasB,
+            nowMs: now,
+            observedAtMs: now,
+          }),
+        };
+
+        if (now < resetA) {
+          const d = getStaggerDecision({ connection: connections[0], settings, connections, nowMs: now });
+          expect(d.ready).toBe(false);
+        }
+        if (now < resetB) {
+          const d = getStaggerDecision({ connection: connections[1], settings, connections, nowMs: now });
+          expect(d.ready).toBe(false);
+        }
+
+        const decA = getStaggerDecision({ connection: connections[0], settings, connections, nowMs: now });
+        if (decA.ready && connections[0].quotaStaggerState.windowStatus.session === "inactive") {
+          connections[0].quotaStaggerState = markStaggerPing(connections[0].quotaStaggerState, now);
+          resetA = now + duration5h;
+          sessionStartsA.push(now);
+        }
+
+        const decB = getStaggerDecision({ connection: connections[1], settings, connections, nowMs: now });
+        if (decB.ready && connections[1].quotaStaggerState.windowStatus.session === "inactive") {
+          connections[1].quotaStaggerState = markStaggerPing(connections[1].quotaStaggerState, now);
+          resetB = now + duration5h;
+          sessionStartsB.push(now);
+        }
+      }
+
+      expect(prePollAtBResetWaiting).toBe(true);
+      expect(sessionStartsA.length).toBeGreaterThanOrEqual(3);
+      expect(sessionStartsB.length).toBeGreaterThanOrEqual(3);
+      for (let i = 0; i < 3; i++) {
+        const diff = sessionStartsB[i] - sessionStartsA[i];
+        expect(Math.abs(diff - 2.5 * 3600 * 1000)).toBeLessThanOrEqual(120 * 1000);
+        expect(Math.abs(diff - 6 * 60 * 1000)).toBeGreaterThan(3600 * 1000);
+      }
+    });
+
+    it("simulates weekly lifecycle ensuring follower waits for 3.5d stagger and session due cannot bypass weekly", () => {
+      const group = {
+        id: "g-weekly-sim",
+        name: "Weekly Simulation",
+        enabled: true,
+        connectionIds: ["cx-1", "cx-2"],
+        session: { enabled: true, anchorAt: new Date(fixedNow).toISOString() },
+        weekly: { enabled: true, anchorAt: new Date(fixedNow).toISOString() },
+      };
+      const settings = { quotaStaggerGroups: [group] };
+      let connections = [
+        { id: "cx-1", provider: "codex", authType: "oauth", isActive: true },
+        { id: "cx-2", provider: "codex", authType: "oauth", isActive: true },
+      ];
+
+      const startA = fixedNow + 45 * 60 * 1000;
+      let resetA = startA + duration5h;
+      let weeklyResetA = startA + duration7d;
+
+      const startB = fixedNow + 51 * 60 * 1000;
+      let resetB = startB + duration5h;
+      let weeklyResetB = startB + duration7d;
+
+      let leaderNewWeeklyStart = null;
+      let bWeeklyActivationTime = null;
+      let bWeeklyActivatedBeforeTarget = false;
+      let bSessionsBlockedByWeekly = 0;
+
+      const tStart = fixedNow + 52 * 60 * 1000;
+      const tEnd = fixedNow + 255 * 3600 * 1000;
+
+      for (let now = tStart; now <= tEnd; now += 60000) {
+        const quotasA = {
+          session: {
+            used: now < resetA ? 20 : 0,
+            total: 100,
+            remaining: now < resetA ? 80 : 100,
+            resetAt: new Date(now < resetA ? resetA : now + duration5h).toISOString(),
+          },
+          weekly: {
+            used: now < weeklyResetA ? 20 : 0,
+            total: 100,
+            remaining: now < weeklyResetA ? 80 : 100,
+            resetAt: new Date(now < weeklyResetA ? weeklyResetA : now + duration7d).toISOString(),
+          },
+        };
+        connections[0] = {
+          ...connections[0],
+          quotaStaggerState: updateStaggerState({
+            connection: connections[0],
+            settings,
+            connections,
+            quotas: quotasA,
+            nowMs: now,
+            observedAtMs: now,
+          }),
+        };
+
+        const quotasB = {
+          session: {
+            used: now < resetB ? 20 : 0,
+            total: 100,
+            remaining: now < resetB ? 80 : 100,
+            resetAt: new Date(now < resetB ? resetB : now + duration5h).toISOString(),
+          },
+          weekly: {
+            used: now < weeklyResetB ? 20 : 0,
+            total: 100,
+            remaining: now < weeklyResetB ? 80 : 100,
+            resetAt: new Date(now < weeklyResetB ? weeklyResetB : now + duration7d).toISOString(),
+          },
+        };
+        connections[1] = {
+          ...connections[1],
+          quotaStaggerState: updateStaggerState({
+            connection: connections[1],
+            settings,
+            connections,
+            quotas: quotasB,
+            nowMs: now,
+            observedAtMs: now,
+          }),
+        };
+
+        const decA = getStaggerDecision({ connection: connections[0], settings, connections, nowMs: now });
+        if (decA.ready) {
+          connections[0].quotaStaggerState = markStaggerPing(connections[0].quotaStaggerState, now);
+          if (now >= resetA) resetA = now + duration5h;
+          if (now >= weeklyResetA) {
+            weeklyResetA = now + duration7d;
+            leaderNewWeeklyStart = now;
+          }
+        }
+
+        const targetBWeekly = leaderNewWeeklyStart ? leaderNewWeeklyStart + 3.5 * 24 * 3600 * 1000 : null;
+        const decB = getStaggerDecision({ connection: connections[1], settings, connections, nowMs: now });
+
+        if (decB.ready) {
+          if (targetBWeekly && now < targetBWeekly && now >= weeklyResetB) {
+            bWeeklyActivatedBeforeTarget = true;
+          }
+          connections[1].quotaStaggerState = markStaggerPing(connections[1].quotaStaggerState, now);
+          if (now >= resetB) resetB = now + duration5h;
+          if (now >= weeklyResetB) {
+            weeklyResetB = now + duration7d;
+            bWeeklyActivationTime = now;
+          }
+        } else {
+          if (now >= resetB && targetBWeekly && now < targetBWeekly && now >= weeklyResetB) {
+            bSessionsBlockedByWeekly++;
+          }
+        }
+      }
+
+      expect(leaderNewWeeklyStart).not.toBeNull();
+      const targetBWeekly = leaderNewWeeklyStart + 3.5 * 24 * 3600 * 1000;
+      expect(bWeeklyActivatedBeforeTarget).toBe(false);
+      expect(bSessionsBlockedByWeekly).toBeGreaterThan(0);
+      expect(bWeeklyActivationTime).not.toBeNull();
+      expect(bWeeklyActivationTime).toBeGreaterThanOrEqual(targetBWeekly);
+    });
+
+    it("enforces bounded guard until reset+180s for active weekly unknown plan, reserving exact phase upon idle proof", () => {
+      const group = {
+        id: "g-active-unknown",
+        name: "Active Unknown Plan",
+        enabled: true,
+        connectionIds: ["cx-1", "cx-2"],
+        session: { enabled: true, anchorAt: new Date(fixedNow).toISOString() },
+        weekly: { enabled: true, anchorAt: new Date(fixedNow).toISOString() },
+      };
+      const settings = { quotaStaggerGroups: [group] };
+      const resetWeekly = fixedNow + 3600000;
+
+      const sActive = updateStaggerState({
+        connection: baseConnections[1],
+        settings,
+        connections: baseConnections,
+        quotas: {
+          session: { used: 20, total: 100, remaining: 80, resetAt: new Date(fixedNow + duration5h).toISOString() },
+          weekly: { used: 20, total: 100, remaining: 80, resetAt: new Date(resetWeekly).toISOString() },
+        },
+        nowMs: resetWeekly - 60000,
+        observedAtMs: resetWeekly - 60000,
+      });
+
+      expect(sActive.plannedSlots.weekly.guardUntilMs).toBe(resetWeekly + 180000);
+      expect(sActive.plannedSlots.weekly.notBeforeMs).toBe(resetWeekly + 180000);
+
+      const decAtReset = getStaggerDecision({
+        connection: { ...baseConnections[1], quotaStaggerState: sActive },
+        settings,
+        connections: baseConnections,
+        nowMs: resetWeekly,
+      });
+      expect(decAtReset.waiting).toBe(true);
+      expect(decAtReset.ready).toBe(false);
+
+      const decAfterGuard = getStaggerDecision({
+        connection: { ...baseConnections[1], quotaStaggerState: sActive },
+        settings,
+        connections: baseConnections,
+        nowMs: resetWeekly + 181000,
+      });
+      expect(decAfterGuard.waiting).toBe(false);
+
+      const sIdle1 = updateStaggerState({
+        connection: { ...baseConnections[1], quotaStaggerState: sActive },
+        settings,
+        connections: baseConnections,
+        quotas: {
+          session: { used: 20, total: 100, remaining: 80, resetAt: new Date(fixedNow + duration5h).toISOString() },
+          weekly: { used: 0, total: 100, remaining: 100, resetAt: new Date(resetWeekly + duration7d).toISOString() },
+        },
+        nowMs: resetWeekly,
+        observedAtMs: resetWeekly,
+      });
+
+      const sIdle2 = updateStaggerState({
+        connection: { ...baseConnections[1], quotaStaggerState: sIdle1 },
+        settings,
+        connections: baseConnections,
+        quotas: {
+          session: { used: 20, total: 100, remaining: 80, resetAt: new Date(fixedNow + duration5h).toISOString() },
+          weekly: { used: 0, total: 100, remaining: 100, resetAt: new Date(resetWeekly + 60000 + duration7d).toISOString() },
+        },
+        nowMs: resetWeekly + 60000,
+        observedAtMs: resetWeekly + 60000,
+      });
+
+      expect(sIdle2.windowStatus.weekly).toBe("inactive");
+      expect(sIdle2.observations.weekly.shiftable).toBe(true);
+      expect(Number.isFinite(sIdle2.pendingSlots.weekly)).toBe(true);
+    });
+
+    it("automatically bootstraps all-idle members at anchor+22h with leader ready in 2 ticks and follower phased relative to new leader anchor", () => {
+      const anchor = fixedNow;
+      const group = {
+        id: "g-idle-startup",
+        name: "Idle Startup",
+        enabled: true,
+        connectionIds: ["cx-1", "cx-2"],
+        session: { enabled: true, anchorAt: new Date(anchor).toISOString() },
+        weekly: { enabled: true, anchorAt: new Date(anchor).toISOString() },
+      };
+      const settings = { quotaStaggerGroups: [group] };
+      const t22h = anchor + 22 * 3600 * 1000;
+
+      const s1A = updateStaggerState({
+        connection: baseConnections[0],
+        settings,
+        connections: baseConnections,
+        quotas: {
+          session: { used: 0, total: 100, remaining: 100, resetAt: new Date(t22h + duration5h).toISOString() },
+          weekly: { used: 0, total: 100, remaining: 100, resetAt: new Date(t22h + duration7d).toISOString() },
+        },
+        nowMs: t22h,
+      });
+
+      const s2A = updateStaggerState({
+        connection: { ...baseConnections[0], quotaStaggerState: s1A },
+        settings,
+        connections: baseConnections,
+        quotas: {
+          session: { used: 0, total: 100, remaining: 100, resetAt: new Date(t22h + 60000 + duration5h).toISOString() },
+          weekly: { used: 0, total: 100, remaining: 100, resetAt: new Date(t22h + 60000 + duration7d).toISOString() },
+        },
+        nowMs: t22h + 60000,
+      });
+
+      expect(s2A.ready).toBe(true);
+      expect(s2A.waiting).toBe(false);
+      expect(s2A.phaseAnchors.weekly).toBe(t22h + 60000);
+
+      const connsWithA = baseConnections.map((c) => (c.id === "cx-1" ? { ...c, quotaStaggerState: s2A } : c));
+
+      const s1B = updateStaggerState({
+        connection: baseConnections[1],
+        settings,
+        connections: connsWithA,
+        quotas: {
+          session: { used: 0, total: 100, remaining: 100, resetAt: new Date(t22h + duration5h).toISOString() },
+          weekly: { used: 0, total: 100, remaining: 100, resetAt: new Date(t22h + duration7d).toISOString() },
+        },
+        nowMs: t22h,
+      });
+
+      const s2B = updateStaggerState({
+        connection: { ...baseConnections[1], quotaStaggerState: s1B },
+        settings,
+        connections: connsWithA,
+        quotas: {
+          session: { used: 0, total: 100, remaining: 100, resetAt: new Date(t22h + 60000 + duration5h).toISOString() },
+          weekly: { used: 0, total: 100, remaining: 100, resetAt: new Date(t22h + 60000 + duration7d).toISOString() },
+        },
+        nowMs: t22h + 60000,
+      });
+
+      expect(s2B.ready).toBe(false);
+      expect(s2B.waiting).toBe(true);
+      expect(s2B.pendingSlots.weekly).toBe(s2A.phaseAnchors.weekly + 84 * 3600 * 1000);
+      expect(s2B.pendingSlots.weekly).not.toBe(anchor + 84 * 3600 * 1000);
+    });
+
+    it("releases v1 and v2 holds after migration to v3 signature without interrupting active traffic", () => {
+      const anchor = fixedNow;
+      const group = {
+        id: "g-v3-mig",
+        name: "V3 Migration",
+        enabled: true,
+        connectionIds: ["cx-1", "cx-2"],
+        session: { enabled: true, anchorAt: new Date(anchor).toISOString() },
+        weekly: { enabled: false, anchorAt: null },
+      };
+      const settings = { quotaStaggerGroups: [group] };
+      const v1Sig = `${group.id}|cx-1:codex,cx-2:codex|s:${group.session.anchorAt}|w:off|p:0`;
+      const v2Sig = `v2|${group.id}|cx-1:codex,cx-2:codex|s:${group.session.anchorAt}|w:off|p:0`;
+
+      const v1State = {
+        groupId: group.id,
+        signature: v1Sig,
+        lastObservedAtMs: anchor,
+        pendingSlots: { session: anchor + 5000000 },
+        effectiveDeadlineMs: anchor + 5000000,
+        waiting: true,
+        notBeforeMs: anchor + 5000000,
+        ready: false,
+      };
+      const v2State = {
+        groupId: group.id,
+        signature: v2Sig,
+        lastObservedAtMs: anchor,
+        pendingSlots: { session: anchor + 5000000 },
+        effectiveDeadlineMs: anchor + 5000000,
+        waiting: true,
+        notBeforeMs: anchor + 5000000,
+        ready: false,
+      };
+
+      const decV1 = getStaggerDecision({ connection: { ...baseConnections[1], quotaStaggerState: v1State }, settings, connections: baseConnections, nowMs: anchor });
+      expect(decV1.waiting).toBe(false);
+      expect(decV1.notBeforeMs).toBeNull();
+
+      const decV2 = getStaggerDecision({ connection: { ...baseConnections[1], quotaStaggerState: v2State }, settings, connections: baseConnections, nowMs: anchor });
+      expect(decV2.waiting).toBe(false);
+      expect(decV2.notBeforeMs).toBeNull();
+
+      const v3StateActive = updateStaggerState({
+        connection: { ...baseConnections[1], quotaStaggerState: v2State },
+        settings,
+        connections: baseConnections,
+        quotas: { session: { used: 30, total: 100, remaining: 70, resetAt: new Date(anchor + duration5h).toISOString() } },
+        nowMs: anchor,
+      });
+      expect(v3StateActive.signature.startsWith("v3|")).toBe(true);
+      expect(v3StateActive.windowStatus.session).toBe("active");
+      expect(v3StateActive.waiting).toBe(false);
+      expect(v3StateActive.pendingSlots).toEqual({});
+    });
+
+    it("handles cached, stale, and fixed weekly responses without indefinite forecast and releases guard on fresh sample", () => {
+      const group = {
+        id: "g-fixed-weekly",
+        name: "Fixed Weekly",
+        enabled: true,
+        connectionIds: ["cx-1", "cx-2"],
+        session: { enabled: false, anchorAt: null },
+        weekly: { enabled: true, anchorAt: new Date(fixedNow).toISOString() },
+      };
+      const settings = { quotaStaggerGroups: [group] };
+      const fixedResetAt = new Date(fixedNow + duration7d).toISOString();
+
+      const obs1 = updateStaggerState({
+        connection: baseConnections[1],
+        settings,
+        connections: baseConnections,
+        quotas: { weekly: { used: 0, total: 100, remaining: 100, resetAt: fixedResetAt } },
+        nowMs: fixedNow,
+        observedAtMs: fixedNow,
+      });
+
+      const obs2 = updateStaggerState({
+        connection: { ...baseConnections[1], quotaStaggerState: obs1 },
+        settings,
+        connections: baseConnections,
+        quotas: { weekly: { used: 0, total: 100, remaining: 100, resetAt: fixedResetAt } },
+        nowMs: fixedNow + 60000,
+        observedAtMs: fixedNow + 60000,
+      });
+      expect(obs2.waiting).toBe(false);
+
+      const staleObs = updateStaggerState({
+        connection: { ...baseConnections[1], quotaStaggerState: obs2 },
+        settings,
+        connections: baseConnections,
+        quotas: { weekly: { used: 0, total: 100, remaining: 100, resetAt: fixedResetAt } },
+        nowMs: fixedNow + 700000,
+        observedAtMs: fixedNow + 60000,
+      });
+      expect(staleObs.windowStatus.weekly).toBe("stale_sample");
+      expect(staleObs.waiting).toBe(false);
+
+      const freshObs = updateStaggerState({
+        connection: { ...baseConnections[1], quotaStaggerState: staleObs },
+        settings,
+        connections: baseConnections,
+        quotas: { weekly: { used: 0, total: 100, remaining: 100, resetAt: fixedResetAt } },
+        nowMs: fixedNow + 700000,
+        observedAtMs: fixedNow + 700000,
+      });
+      expect(freshObs.windowStatus.weekly).toBe("observation_only");
+      expect(freshObs.plannedSlots.weekly).toBeUndefined();
+    });
+
+    it("preserves weekly active session idle allowing session catchup within member interval", () => {
+      const anchor = fixedNow;
+      const group = {
+        id: "g-wactive-sidle",
+        name: "Weekly Active Session Idle",
+        enabled: true,
+        connectionIds: ["cx-1", "cx-2"],
+        session: { enabled: true, anchorAt: new Date(anchor).toISOString() },
+        weekly: { enabled: true, anchorAt: new Date(anchor).toISOString() },
+      };
+      const settings = { quotaStaggerGroups: [group] };
+      const tElapsed = anchor + 2 * 3600 * 1000;
+
+      const s1A = updateStaggerState({
+        connection: baseConnections[0],
+        settings,
+        connections: baseConnections,
+        quotas: {
+          session: { used: 0, total: 100, remaining: 100, resetAt: new Date(tElapsed + duration5h).toISOString() },
+          weekly: { used: 35, total: 100, remaining: 65, resetAt: new Date(tElapsed + duration7d).toISOString() },
+        },
+        nowMs: tElapsed,
+      });
+
+      const s2A = updateStaggerState({
+        connection: { ...baseConnections[0], quotaStaggerState: s1A },
+        settings,
+        connections: baseConnections,
+        quotas: {
+          session: { used: 0, total: 100, remaining: 100, resetAt: new Date(tElapsed + 60000 + duration5h).toISOString() },
+          weekly: { used: 35, total: 100, remaining: 65, resetAt: new Date(tElapsed + duration7d).toISOString() },
+        },
+        nowMs: tElapsed + 60000,
+      });
+
+      expect(s2A.windowStatus.weekly).toBe("active");
+      expect(s2A.windowStatus.session).toBe("inactive");
+      expect(s2A.ready).toBe(true);
+      expect(s2A.waiting).toBe(false);
+      expect(s2A.pendingSlots.session).toBe(tElapsed + 60000);
+
+      const connsWithA = baseConnections.map((c) => (c.id === "cx-1" ? { ...c, quotaStaggerState: s2A } : c));
+
+      const s1B = updateStaggerState({
+        connection: baseConnections[1],
+        settings,
+        connections: connsWithA,
+        quotas: {
+          session: { used: 0, total: 100, remaining: 100, resetAt: new Date(tElapsed + duration5h).toISOString() },
+          weekly: { used: 35, total: 100, remaining: 65, resetAt: new Date(tElapsed + duration7d).toISOString() },
+        },
+        nowMs: tElapsed,
+      });
+
+      const s2B = updateStaggerState({
+        connection: { ...baseConnections[1], quotaStaggerState: s1B },
+        settings,
+        connections: connsWithA,
+        quotas: {
+          session: { used: 0, total: 100, remaining: 100, resetAt: new Date(tElapsed + 60000 + duration5h).toISOString() },
+          weekly: { used: 35, total: 100, remaining: 65, resetAt: new Date(tElapsed + duration7d).toISOString() },
+        },
+        nowMs: tElapsed + 60000,
+      });
+
+      expect(s2B.windowStatus.weekly).toBe("active");
+      expect(s2B.windowStatus.session).toBe("inactive");
+      expect(s2B.ready).toBe(false);
+      expect(s2B.waiting).toBe(true);
+      expect(s2B.pendingSlots.session).toBe(s2A.phaseAnchors.session + 2.5 * 3600 * 1000);
+    });
+
+    it("persists established reservations across persistence reload", () => {
+      const anchor = fixedNow;
+      const group = {
+        id: "g-persist",
+        name: "Persist Reservation",
+        enabled: true,
+        connectionIds: ["cx-1", "cx-2"],
+        session: { enabled: false, anchorAt: null },
+        weekly: { enabled: true, anchorAt: new Date(anchor).toISOString() },
+      };
+      const settings = { quotaStaggerGroups: [group] };
+      const newSig = computeGroupSignature(group, baseConnections);
+      const weeklyDeadline = anchor + 84 * 3600 * 1000;
+
+      const establishedState = {
+        groupId: group.id,
+        signature: newSig,
+        lastObservedAtMs: anchor + 60000,
+        lastPingAtMs: null,
+        suppressUntilMs: null,
+        observations: {
+          weekly: {
+            resetAt: new Date(anchor + 60000 + duration7d).toISOString(),
+            resetMs: anchor + 60000 + duration7d,
+            observedAtMs: anchor + 60000,
+            used: 0,
+            isIdle: true,
+          },
+        },
+        pendingSlots: {
+          weekly: weeklyDeadline,
+        },
+        effectiveDeadlineMs: weeklyDeadline,
+        waiting: true,
+        notBeforeMs: weeklyDeadline,
+        ready: false,
+        windowStatus: {
+          session: "disabled",
+          weekly: "inactive",
+        },
+      };
+
+      const serialized = JSON.parse(JSON.stringify(establishedState));
+      const retainedState = updateStaggerState({
+        connection: { ...baseConnections[1], quotaStaggerState: serialized },
+        settings,
+        connections: baseConnections,
+        quotas: {
+          weekly: {
+            used: 0,
+            total: 100,
+            remaining: 100,
+            resetAt: new Date(anchor + 60000 + duration7d).toISOString(),
+          },
+        },
+        nowMs: anchor + 120000,
+        observedAtMs: anchor + 60000,
+      });
+
+      expect(retainedState.signature).toBe(newSig);
+      expect(retainedState.pendingSlots.weekly).toBe(weeklyDeadline);
+      expect(retainedState.effectiveDeadlineMs).toBe(weeklyDeadline);
+      expect(retainedState.waiting).toBe(true);
+      expect(retainedState.notBeforeMs).toBe(weeklyDeadline);
+
+      const decision = getStaggerDecision({
+        connection: { ...baseConnections[1], quotaStaggerState: retainedState },
+        settings,
+        connections: baseConnections,
+        nowMs: anchor + 120000,
+      });
+      expect(decision.waiting).toBe(true);
+      expect(decision.notBeforeMs).toBe(weeklyDeadline);
     });
   });
 });

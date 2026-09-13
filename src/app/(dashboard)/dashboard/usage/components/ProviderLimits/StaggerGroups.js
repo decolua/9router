@@ -8,6 +8,18 @@ import * as quotaStagger from "@/shared/services/quotaStagger";
 
 const STAGGER_PROVIDERS = quotaStagger.STAGGER_PROVIDERS;
 
+export const STAGGER_COPY = {
+  intro: "Stagger session and weekly quota reset windows across accounts using the first eligible ordered member as the phase reference and actual upstream windows.",
+  groupEnabled: "Default OFF. Preserves explicit member order, including Antigravity; first eligible scheduled member is the phase reference.",
+  protectWindowStart: "When enabled, ordinary routed requests are deferred after a member's window expires until its reserved slot. External requests and unknown fixed quotas cannot guarantee phase alignment.",
+  session: "Uses actual upstream session windows; the first eligible ordered member is the phase reference, and forecasts the next activation at that phase. Active windows finish normally and realign when they expire.",
+  weekly: "Aligns weekly windows separately (typically 7 days); a full weekly cycle plus the member offset may be needed.",
+  bothEnabled: "Active windows finish normally without interruption and realign when they expire, using the first eligible ordered member as the phase reference. If both policies are idle past their deadlines, the longer deadline controls: weekly alignment may take a full weekly cycle plus its offset, while the shorter period realigns later because one activation starts both—not independent pings. With Protect Window Start enabled, ordinary routed requests are deferred after expiry until the reserved slot; external requests and unknown fixed quotas cannot guarantee phase alignment.",
+  antigravity: "Antigravity remains an explicit member; when its upstream window is unknown, phase alignment cannot be guaranteed.",
+  mixedDurations: "Different window durations follow their actual upstream windows; equal absolute gaps cannot be guaranteed across mismatched durations.",
+  phaseOrder: "First eligible member is the reference; order sets phase offsets",
+};
+
 export function getSupportedOAuthConnections(connections) {
   if (!Array.isArray(connections)) return [];
   return connections.filter(
@@ -254,7 +266,7 @@ export default function StaggerGroups() {
             )}
           </div>
           <p className="mt-1 text-xs text-text-muted">
-            Stagger session and weekly quota reset windows across accounts using fractional phase offsets.
+            {STAGGER_COPY.intro}
           </p>
         </div>
 
@@ -328,14 +340,14 @@ export default function StaggerGroups() {
                 checked={draftGroup.enabled}
                 onChange={(next) => setDraftGroup({ ...draftGroup, enabled: next })}
                 label="Group Enabled"
-                description="Default OFF. Activation implies consent for auto-ping warmup."
+                description={STAGGER_COPY.groupEnabled}
                 size="sm"
               />
               <Toggle
                 checked={draftGroup.protectWindowStart}
                 onChange={(next) => setDraftGroup({ ...draftGroup, protectWindowStart: next })}
                 label="Protect Window Start"
-                description="Blocks normal routed requests ONLY while known inactive window awaits reserved slot; external use cannot be controlled."
+                description={STAGGER_COPY.protectWindowStart}
                 size="sm"
               />
             </div>
@@ -345,33 +357,33 @@ export default function StaggerGroups() {
                 checked={draftGroup.session?.enabled ?? false}
                 onChange={(next) => setDraftGroup({ ...draftGroup, session: { ...draftGroup.session, enabled: next } })}
                 label="Session staggering"
-                description="Staggers session quota reset windows using fractional phase offsets across members (typically 5 hours or provider-reported limit duration). Initial requests do not guarantee immediate window shifts."
+                description={STAGGER_COPY.session}
                 size="sm"
               />
               <Toggle
                 checked={draftGroup.weekly?.enabled ?? false}
                 onChange={(next) => setDraftGroup({ ...draftGroup, weekly: { ...draftGroup.weekly, enabled: next } })}
                 label="Weekly staggering"
-                description="Staggers weekly quota windows (typically 7 days) only when sliding resets are observed."
+                description={STAGGER_COPY.weekly}
                 size="sm"
               />
             </div>
 
             {draftGroup.session?.enabled && draftGroup.weekly?.enabled && (
               <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-300">
-                When both session and weekly staggering are active, the later window deadline controls. This combined delay can defer an account from being used for multiple days. Protection blocks routed requests while awaiting reserved slots, and external traffic outside 9Router breaks phase alignment.
+                {STAGGER_COPY.bothEnabled}
               </div>
             )}
 
             {draftHasAntigravity && (
               <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-300">
-                Antigravity connections do not support auto-ping and cannot shift unknown model windows. Weekly staggering applies only when verified sliding.
+                {STAGGER_COPY.antigravity}
               </div>
             )}
 
             {draftHasMixedDurations && (
               <div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-2.5 text-xs text-blue-700 dark:text-blue-300">
-                Different window durations use per-provider index/N phase calculation; perpetual equal absolute gaps cannot be guaranteed across mismatched durations.
+                {STAGGER_COPY.mixedDurations}
               </div>
             )}
 
@@ -380,7 +392,7 @@ export default function StaggerGroups() {
                 <label className="text-xs font-semibold text-text-primary">
                   Selected Phase Order ({draftGroup.connectionIds.length} members)
                 </label>
-                <span className="text-[11px] text-text-muted">Stable order sets phase offset</span>
+                <span className="text-[11px] text-text-muted">{STAGGER_COPY.phaseOrder}</span>
               </div>
 
               {draftGroup.connectionIds.length === 0 ? (

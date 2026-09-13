@@ -135,20 +135,112 @@ function buildCodexPingInput(text) {
   }];
 }
 
-async function drainResponseBody(response) {
-  if (typeof response?.text === "function") {
-    await response.text();
-    return;
+const MAX_CODEX_PING_RESPONSE_BYTES = 1024 * 1024;
+
+function getCodexSseTerminalState(message) {
+  if (!message.trim()) return null;
+
+  let eventName = "";
+  const dataLines = [];
+  for (const line of message.split(/\r?\n/)) {
+    if (line.startsWith("event:")) {
+      eventName = line.slice("event:".length).trim();
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice("data:".length).trimStart());
+    }
   }
 
+  if (eventName === "error" || eventName === "response.failed" || eventName === "response.incomplete") {
+    return "failed";
+  }
+
+  const data = dataLines.join("\n");
+  if (!data || data === "[DONE]") return null;
+
+  let payload;
+  try {
+    payload = JSON.parse(data);
+  } catch {
+    return null;
+  }
+
+  const type = payload?.type;
+  const status = payload?.response?.status ?? payload?.status;
+  if (
+    type === "error" ||
+    type === "response.failed" ||
+    type === "response.incomplete" ||
+    payload?.error ||
+    status === "failed" ||
+    status === "incomplete"
+  ) {
+    return "failed";
+  }
+
+  if (
+    (eventName === "response.completed" || type === "response.completed") &&
+    status === "completed"
+  ) {
+    return "completed";
+  }
+
+  return null;
+}
+
+function consumeCodexSseText(text) {
+  if (typeof text !== "string" || text.length === 0 || text.length > MAX_CODEX_PING_RESPONSE_BYTES) {
+    return false;
+  }
+
+  let completed = false;
+  for (const message of text.split(/(?:\r?\n){2}/)) {
+    const terminalState = getCodexSseTerminalState(message);
+    if (terminalState === "failed") return false;
+    if (terminalState === "completed") completed = true;
+  }
+  return completed;
+}
+
+async function consumeCodexPingResponse(response) {
   const reader = response?.body?.getReader?.();
-  if (!reader) return;
+  if (!reader) {
+    return consumeCodexSseText(await response?.text?.());
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let bytesRead = 0;
+  let completed = false;
 
   try {
     while (true) {
-      const { done } = await reader.read();
-      if (done) return;
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      bytesRead += value?.byteLength ?? 0;
+      if (bytesRead > MAX_CODEX_PING_RESPONSE_BYTES) {
+        try { await reader.cancel(); } catch { /* noop */ }
+        return false;
+      }
+
+      buffer += decoder.decode(value, { stream: true });
+      if (buffer.length > MAX_CODEX_PING_RESPONSE_BYTES) return false;
+
+      const messages = buffer.split(/(?:\r?\n){2}/);
+      buffer = messages.pop() || "";
+      for (const message of messages) {
+        const terminalState = getCodexSseTerminalState(message);
+        if (terminalState === "failed") return false;
+        if (terminalState === "completed") completed = true;
+      }
     }
+
+    buffer += decoder.decode();
+    if (buffer.length > MAX_CODEX_PING_RESPONSE_BYTES) return false;
+    const terminalState = getCodexSseTerminalState(buffer);
+    if (terminalState === "failed") return false;
+    if (terminalState === "completed") completed = true;
+    return completed;
   } finally {
     reader.releaseLock?.();
   }
@@ -182,14 +274,50 @@ async function sendCodexPing(connection, providerConfig, proxyOptions, deps) {
     return false;
   }
 
-  // Codex only starts the 5h window after the streaming response completes.
-  await drainResponseBody(response);
-  return true;
+  // Codex only starts the 5h window after a completed Responses stream.
+  try {
+    return await consumeCodexPingResponse(response);
+  } catch {
+    return false;
+  }
 }
 
 function shouldSkipAfterFailure(state, key, nowMs = Date.now()) {
   const failedAt = state.failureCache[key];
   return failedAt && nowMs - failedAt < C.failureCooldownMs;
+}
+
+function replaceActiveConnection(connections, connectionId, patch) {
+  const index = connections.findIndex((connection) => connection?.id === connectionId);
+  if (index === -1) return;
+  connections[index] = { ...connections[index], ...patch };
+}
+
+function mergeLatestActiveConnections(latestConnections, allActiveConnections) {
+  const currentById = new Map(allActiveConnections.map((connection) => [connection.id, connection]));
+  return latestConnections.map((connection) => ({
+    ...connection,
+    ...(currentById.get(connection.id) || {}),
+  }));
+}
+
+function createTickDeps(deps, allActiveConnections) {
+  return {
+    ...deps,
+    updateProviderConnection: async (connectionId, patch) => {
+      const updatedConnection = await deps.updateProviderConnection(connectionId, patch);
+      const returnedConnection = updatedConnection && typeof updatedConnection === "object" ? updatedConnection : {};
+      replaceActiveConnection(allActiveConnections, connectionId, {
+        ...returnedConnection,
+        ...patch,
+      });
+      return updatedConnection;
+    },
+    getProviderConnections: async (...args) => {
+      const latestConnections = (await deps.getProviderConnections(...args)) || [];
+      return mergeLatestActiveConnections(latestConnections, allActiveConnections);
+    },
+  };
 }
 
 async function pingConnection(conn, provider, providerConfig, handler, deps, state = g, settings = null, allActiveConnections = null) {
@@ -220,7 +348,10 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   let connection = conn;
   try {
     const r = await deps.refreshAndUpdateCredentials(connection, false, proxyOptions);
-    connection = r.connection;
+    connection = { ...connection, ...r.connection };
+    if (Array.isArray(currentActiveConnections)) {
+      replaceActiveConnection(currentActiveConnections, connection.id, connection);
+    }
   } catch (e) {
     state.failureCache[key] = Date.now();
     console.warn(`[AutoPing] ${provider}:${conn.id}: refresh failed: ${e.message}`);
@@ -445,26 +576,55 @@ export async function runQuotaAutoPingTick(deps = createDefaultDeps(), state = g
 
     const allActiveConnections = (await deps.getProviderConnections({ isActive: true })) || [];
     const isStaggerFn = deps.isStaggerAutoPingEnabled || isStaggerAutoPingEnabled;
+    const getGroupFn = deps.getStaggerGroup || getStaggerGroup;
+    const targets = [];
 
     for (const [provider, providerConfig] of Object.entries(C.providers)) {
       const handler = providerHandlers[provider];
       if (!handler) continue;
 
       const enabledMap = settings?.[providerConfig.settingsKey]?.connections || {};
-      const providerConns = allActiveConnections.filter(
-        (c) => c.provider === provider && c.authType === "oauth" && c.isActive !== false
-      );
-      const targets = providerConns.filter(
-        (conn) => enabledMap[conn.id] === true || isStaggerFn(settings, conn)
-      );
-
-      for (const conn of targets) {
-        try {
-          await pingConnection(conn, provider, providerConfig, handler, deps, state, settings, allActiveConnections);
-        } catch (e) {
-          state.failureCache[cacheKey(provider, conn.id)] = Date.now();
-          console.warn(`[AutoPing] ${provider}:${conn.id}: ${e.message}`);
+      for (const conn of allActiveConnections) {
+        if (
+          conn.provider === provider &&
+          conn.authType === "oauth" &&
+          conn.isActive !== false &&
+          (enabledMap[conn.id] === true || isStaggerFn(settings, conn))
+        ) {
+          targets.push({ conn, provider, providerConfig, handler });
         }
+      }
+    }
+
+    const groupedTargets = new Map();
+    const targetOrder = [];
+    for (const target of targets) {
+      const group = isStaggerFn(settings, target.conn) ? getGroupFn(settings, target.conn.id) : null;
+      if (!group?.id) {
+        targetOrder.push(target);
+        continue;
+      }
+      if (!groupedTargets.has(group.id)) {
+        groupedTargets.set(group.id, { group, targets: [] });
+        targetOrder.push(group.id);
+      }
+      groupedTargets.get(group.id).targets.push(target);
+    }
+
+    const orderedTargets = targetOrder.flatMap((entry) => {
+      if (typeof entry !== "string") return [entry];
+      const grouped = groupedTargets.get(entry);
+      const groupConnectionIds = Array.isArray(grouped.group.connectionIds) ? grouped.group.connectionIds : [];
+      return grouped.targets.sort((a, b) => groupConnectionIds.indexOf(a.conn.id) - groupConnectionIds.indexOf(b.conn.id));
+    });
+    const tickDeps = createTickDeps(deps, allActiveConnections);
+
+    for (const { conn, provider, providerConfig, handler } of orderedTargets) {
+      try {
+        await pingConnection(conn, provider, providerConfig, handler, tickDeps, state, settings, allActiveConnections);
+      } catch (e) {
+        state.failureCache[cacheKey(provider, conn.id)] = Date.now();
+        console.warn(`[AutoPing] ${provider}:${conn.id}: ${e.message}`);
       }
     }
   } catch (e) {

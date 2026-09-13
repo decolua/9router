@@ -564,6 +564,27 @@ describe("UI helper functions and component exports from StaggerGroups", () => {
     expect(html).toContain("Quota Stagger Groups");
   });
 
+  it("exposes phase-alignment copy without interval-catchup claims", () => {
+    const copy = staggerGroupsModule.STAGGER_COPY;
+    expect(copy.groupEnabled).toContain("Default OFF");
+    expect(copy.groupEnabled).toContain("explicit member order");
+    expect(copy.groupEnabled).toContain("Antigravity");
+    expect(copy.phaseOrder).toContain("First eligible member is the reference");
+    expect(copy.session).toContain("actual upstream session windows");
+    expect(copy.session).toContain("forecasts the next activation");
+    expect(copy.session).toContain("finish normally");
+    expect(copy.session).toContain("realign when they expire");
+    expect(copy.weekly).toContain("separately");
+    expect(copy.bothEnabled).toContain("without interruption");
+    expect(copy.bothEnabled).toContain("longer deadline controls");
+    expect(copy.bothEnabled).toContain("full weekly cycle");
+    expect(copy.bothEnabled).toContain("one activation starts both");
+    expect(copy.bothEnabled).toContain("not independent pings");
+    expect(copy.protectWindowStart).toContain("ordinary routed requests are deferred after");
+    expect(copy.protectWindowStart).toContain("unknown fixed quotas cannot guarantee phase alignment");
+    expect(JSON.stringify(copy)).not.toMatch(/catch.?up|manual pause|immediate/iu);
+  });
+
   it("renders Toggle and verifies prop contract where onChange receives boolean", () => {
     let toggledValue = null;
     const testOnChange = (val) => {

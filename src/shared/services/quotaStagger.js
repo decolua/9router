@@ -53,6 +53,9 @@ export const STAGGER_PROVIDERS = Object.freeze({
   }),
 });
 
+export const STAGGER_SIGNATURE_VERSION = "v3";
+export const STAGGER_SCHEMA_VERSION = "v3";
+
 export function getStaggerPolicyMemberIds(group, connections, policyKey) {
   if (!group || !Array.isArray(group.connectionIds) || !policyKey) return [];
   const connectionList = Array.isArray(connections)
@@ -290,7 +293,7 @@ export function isStaggerAutoPingEnabled(settings, connection) {
   return providerConfig?.autoPing === true;
 }
 
-function computeGroupSignature(group, connections) {
+export function computeGroupSignature(group, connections) {
   const connectionList = Array.isArray(connections)
     ? connections
     : Object.values(connections || {});
@@ -305,14 +308,19 @@ function computeGroupSignature(group, connections) {
     .map((id) => (typeof id === "string" ? id.trim() : ""))
     .filter((id) => {
       const conn = connectionMap.get(id);
-      return conn && conn.isActive !== false && conn.authType === "oauth" && Object.prototype.hasOwnProperty.call(STAGGER_PROVIDERS, conn.provider);
+      return (
+        conn &&
+        conn.isActive !== false &&
+        conn.authType === "oauth" &&
+        Object.prototype.hasOwnProperty.call(STAGGER_PROVIDERS, conn.provider)
+      );
     })
     .map((id) => `${id}:${connectionMap.get(id)?.provider || ""}`)
     .join(",");
   const sessionSig = group.session?.enabled ? `s:${group.session?.anchorAt || ""}` : "s:off";
   const weeklySig = group.weekly?.enabled ? `w:${group.weekly?.anchorAt || ""}` : "w:off";
   const protectSig = group.protectWindowStart ? "p:1" : "p:0";
-  return `${group.id}|${connSig}|${sessionSig}|${weeklySig}|${protectSig}`;
+  return `${STAGGER_SCHEMA_VERSION}|${group.id}|${connSig}|${sessionSig}|${weeklySig}|${protectSig}`;
 }
 
 function resolveWindowDuration(provider, policyKey, quota) {
@@ -345,7 +353,7 @@ function resolveWindowDuration(provider, policyKey, quota) {
   return null;
 }
 
-function calculateNextPhaseSlot({ anchorMs, index, N, durationMs, nowMs, graceMs = 150000 }) {
+function strictNextBoundary({ anchorMs, index, N, durationMs, earliestMs }) {
   if (
     !Number.isFinite(anchorMs) ||
     !Number.isFinite(durationMs) ||
@@ -354,18 +362,14 @@ function calculateNextPhaseSlot({ anchorMs, index, N, durationMs, nowMs, graceMs
     N <= 0 ||
     !Number.isFinite(index) ||
     index < 0 ||
-    !Number.isFinite(nowMs)
+    index >= N ||
+    !Number.isFinite(earliestMs)
   ) {
-    return nowMs;
+    return earliestMs;
   }
-  const phaseOffset = (index / N) * durationMs;
-  const targetSlot0 = anchorMs + phaseOffset;
-  const timeOffset = (nowMs - graceMs) - targetSlot0;
-  if (timeOffset < 0) {
-    return Math.round(targetSlot0);
-  }
-  const cycles = Math.floor(timeOffset / durationMs) + 1;
-  return Math.round(targetSlot0 + cycles * durationMs);
+  const offsetMs = (index / N) * durationMs;
+  const cycle = Math.max(0, Math.ceil((earliestMs - anchorMs - offsetMs) / durationMs));
+  return Math.round(anchorMs + offsetMs + cycle * durationMs);
 }
 
 function findQuotaForPolicy(quotas, policyKey) {
@@ -379,41 +383,152 @@ function findQuotaForPolicy(quotas, policyKey) {
   return null;
 }
 
-export function updateStaggerState({ connection, settings, connections, quotas, nowMs = Date.now(), observedAtMs = null }) {
-  const prevState = connection?.quotaStaggerState && typeof connection.quotaStaggerState === "object"
-    ? connection.quotaStaggerState
-    : {};
+function isFiniteReset(resetMs) {
+  return Number.isFinite(resetMs) && resetMs > 0;
+}
 
+function isFreshObservation(previous, observedAtMs) {
+  return Boolean(
+    previous &&
+    Number.isFinite(previous.observedAtMs) &&
+    observedAtMs > previous.observedAtMs &&
+    observedAtMs - previous.observedAtMs >= 10000 &&
+    observedAtMs - previous.observedAtMs <= 600000
+  );
+}
+
+function isSlidingIdleObservation(previous, resetMs, observedAtMs, durationMs) {
+  if (!isFreshObservation(previous, observedAtMs) || previous.used !== 0) return false;
+  if (!isFiniteReset(previous.resetMs) || !isFiniteReset(resetMs)) return false;
+  const elapsedMs = observedAtMs - previous.observedAtMs;
+  const resetSlideMs = resetMs - previous.resetMs;
+  return (
+    resetSlideMs >= 30000 &&
+    Math.abs(resetSlideMs - elapsedMs) <= 30000 &&
+    Math.abs((resetMs - observedAtMs) - durationMs) <= 300000
+  );
+}
+
+function samePhaseAnchor(a, b, durationMs) {
+  if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(durationMs) || durationMs <= 0) return false;
+  const delta = Math.abs(a - b) % durationMs;
+  return delta <= 1000 || Math.abs(delta - durationMs) <= 1000;
+}
+
+function getReferenceAnchor({ policyKey, policyIndex, policyMemberIds, connectionMap, signature, fallbackAnchorMs }) {
+  if (policyIndex === 0) return null;
+  const leader = connectionMap.get(policyMemberIds[0]);
+  const state = leader?.quotaStaggerState;
+  if (state?.signature === signature) {
+    const observation = state.observations?.[policyKey];
+    const plan = state.plannedSlots?.[policyKey];
+    if (observation?.status === "active" && Number.isFinite(observation.activeAnchorMs)) {
+      return observation.activeAnchorMs;
+    }
+    if (plan && Number.isFinite(plan.referenceAnchorMs)) {
+      return plan.referenceAnchorMs;
+    }
+    if (Number.isFinite(state.phaseAnchors?.[policyKey])) {
+      return state.phaseAnchors[policyKey];
+    }
+  }
+  return Number.isFinite(fallbackAnchorMs) ? fallbackAnchorMs : null;
+}
+
+function deriveStaggerDecision(state, nowMs) {
+  const candidateDeadlines = [];
+  let unresolvedExpiredPlan = false;
+  let hasInactivePendingDue = false;
+
+  const inactivePolicies = ["session", "weekly"].filter((key) =>
+    state.windowStatus?.[key] === "inactive" && Number.isFinite(state.pendingSlots?.[key])
+  );
+  const governingPolicy = inactivePolicies.sort((a, b) =>
+    (state.observations?.[b]?.durationMs || 0) - (state.observations?.[a]?.durationMs || 0)
+  )[0];
+
+  for (const policyKey of ["session", "weekly"]) {
+    const plan = state.plannedSlots?.[policyKey];
+    const status = state.windowStatus?.[policyKey];
+    const pending = state.pendingSlots?.[policyKey];
+
+    if (plan && Number.isFinite(plan.resetMs) && nowMs >= plan.resetMs) {
+      if (Number.isFinite(plan.guardUntilMs) && nowMs < plan.guardUntilMs) {
+        candidateDeadlines.push(plan.guardUntilMs);
+        unresolvedExpiredPlan = true;
+      } else if (!Number.isFinite(plan.guardUntilMs) && status !== "inactive") {
+        const target = Number.isFinite(plan.notBeforeMs) ? plan.notBeforeMs : plan.resetMs;
+        if (nowMs < target) {
+          candidateDeadlines.push(target);
+          unresolvedExpiredPlan = true;
+        }
+      }
+    }
+
+    if (status === "inactive" && Number.isFinite(pending)) {
+      if (!governingPolicy || policyKey === governingPolicy) {
+        candidateDeadlines.push(pending);
+      }
+      if (nowMs >= pending) {
+        hasInactivePendingDue = true;
+      }
+    }
+  }
+
+  if (candidateDeadlines.length === 0 && (!state.plannedSlots || Object.keys(state.plannedSlots).length === 0)) {
+    if (Number.isFinite(state.effectiveDeadlineMs)) {
+      candidateDeadlines.push(state.effectiveDeadlineMs);
+      if (nowMs >= state.effectiveDeadlineMs) {
+        hasInactivePendingDue = true;
+      }
+    }
+  }
+
+  if (candidateDeadlines.length === 0) {
+    return { waiting: false, notBeforeMs: null, ready: false, effectiveDeadlineMs: null };
+  }
+
+  const effectiveDeadlineMs = Math.max(...candidateDeadlines);
+  const isWaiting = unresolvedExpiredPlan || nowMs < effectiveDeadlineMs;
+
+  return {
+    waiting: isWaiting,
+    notBeforeMs: effectiveDeadlineMs,
+    ready: !isWaiting && hasInactivePendingDue,
+    effectiveDeadlineMs,
+  };
+}
+
+export function updateStaggerState({ connection, settings, connections, quotas, nowMs = Date.now(), observedAtMs = null }) {
   const group = getStaggerGroup(settings, connection?.id);
   if (!group) return null;
 
   const signature = computeGroupSignature(group, connections);
-  const isSignatureValid = prevState.signature === signature;
-
-  const rawObservedAtMs = observedAtMs !== null && observedAtMs !== undefined
-    ? observedAtMs
-    : (quotas && quotas.observedAtMs !== undefined && quotas.observedAtMs !== null ? quotas.observedAtMs : nowMs);
+  const previous = connection?.quotaStaggerState && typeof connection.quotaStaggerState === "object"
+    ? connection.quotaStaggerState
+    : {};
+  const signatureValid = previous.signature === signature;
+  const rawObservedAtMs = observedAtMs ?? quotas?.observedAtMs ?? nowMs;
   const sampleObservedAtMs = typeof rawObservedAtMs === "number" ? rawObservedAtMs : Number(rawObservedAtMs);
+  const provider = STAGGER_PROVIDERS[connection?.provider];
 
-  const providerConfig = STAGGER_PROVIDERS[connection.provider];
-  if (!providerConfig || providerConfig.autoPing === false || providerConfig.session.resetMode === "unsupported") {
+  if (!provider || provider.autoPing !== true || provider.session.resetMode === "unsupported") {
     return {
       groupId: group.id,
       signature,
       lastObservedAtMs: nowMs,
-      lastPingAtMs: prevState.lastPingAtMs || null,
+      lastPingAtMs: previous.lastPingAtMs || null,
       suppressUntilMs: null,
-      observations: {},
+      phaseAnchors: {},
+      plannedSlots: {},
       pendingSlots: {},
+      observations: {},
       effectiveDeadlineMs: null,
       waiting: false,
       notBeforeMs: null,
       ready: false,
-      windowStatus: {
-        session: "unsupported",
-        weekly: "unsupported",
-      },
-      reason: providerConfig?.session?.reason || "Unsupported provider for stagger scheduling",
+      windowStatus: { session: "unsupported", weekly: "unsupported" },
+      reason: provider?.session?.reason || "Unsupported provider for stagger scheduling",
     };
   }
 
@@ -422,340 +537,351 @@ export function updateStaggerState({ connection, settings, connections, quotas, 
       groupId: group.id,
       signature,
       lastObservedAtMs: nowMs,
-      lastPingAtMs: prevState.lastPingAtMs || null,
+      lastPingAtMs: previous.lastPingAtMs || null,
       suppressUntilMs: null,
-      observations: isSignatureValid ? (prevState.observations || {}) : {},
+      phaseAnchors: {},
+      plannedSlots: {},
       pendingSlots: {},
+      observations: {},
       effectiveDeadlineMs: null,
       waiting: false,
       notBeforeMs: null,
       ready: false,
-      windowStatus: {
-        session: "stale_sample",
-        weekly: "stale_sample",
-      },
+      windowStatus: { session: "stale_sample", weekly: "stale_sample" },
       reason: "Expired upstream quota sample",
     };
   }
 
-  const activeSuppressUntil = prevState.suppressUntilMs && nowMs < prevState.suppressUntilMs
-    ? prevState.suppressUntilMs
-    : null;
+  const connectionList = Array.isArray(connections) ? connections : Object.values(connections || {});
+  const connectionMap = new Map(connectionList.filter((item) => item?.id).map((item) => [item.id, item]));
+  const next = {
+    groupId: group.id,
+    signature,
+    lastObservedAtMs: sampleObservedAtMs,
+    lastPingAtMs: previous.lastPingAtMs || null,
+    suppressUntilMs: previous.suppressUntilMs && nowMs < previous.suppressUntilMs ? previous.suppressUntilMs : null,
+    phaseAnchors: signatureValid ? { ...(previous.phaseAnchors || {}) } : {},
+    plannedSlots: signatureValid ? { ...(previous.plannedSlots || {}) } : {},
+    pendingSlots: signatureValid ? { ...(previous.pendingSlots || {}) } : {},
+    observations: signatureValid ? { ...(previous.observations || {}) } : {},
+    windowStatus: {},
+    reason: null,
+  };
 
-  const validObs = isSignatureValid ? (prevState.observations || {}) : {};
-  const validPending = isSignatureValid ? (prevState.pendingSlots || {}) : {};
-
-  let nextPending = { ...validPending };
-  const nextObs = { ...validObs };
-  const windowStatus = {};
-  let generalReason = null;
-
-  const policyKeys = ["session", "weekly"];
-  for (const policyKey of policyKeys) {
+  for (const policyKey of ["session", "weekly"]) {
     if (!group[policyKey]?.enabled) {
-      windowStatus[policyKey] = "disabled";
-      delete nextPending[policyKey];
+      next.windowStatus[policyKey] = "disabled";
+      delete next.plannedSlots[policyKey];
+      delete next.pendingSlots[policyKey];
+      delete next.observations[policyKey];
       continue;
     }
 
-    const policyMemberIds = getStaggerPolicyMemberIds(group, connections, policyKey);
-    const policyIndex = policyMemberIds.indexOf(connection.id);
-    const policyN = policyMemberIds.length;
-
-    if (policyN < 2 || policyIndex === -1) {
-      windowStatus[policyKey] = "observation_only";
-      delete nextPending[policyKey];
-      generalReason = "Fewer than 2 active eligible members for policy";
+    const memberIds = getStaggerPolicyMemberIds(group, connections, policyKey);
+    const index = memberIds.indexOf(connection.id);
+    if (memberIds.length < 2 || index < 0) {
+      next.windowStatus[policyKey] = "observation_only";
+      delete next.plannedSlots[policyKey];
+      delete next.pendingSlots[policyKey];
+      next.reason = "Fewer than 2 active eligible members for policy";
       continue;
     }
 
     const quota = findQuotaForPolicy(quotas, policyKey);
     if (!quota || typeof quota !== "object") {
-      windowStatus[policyKey] = "missing";
-      delete nextPending[policyKey];
+      next.windowStatus[policyKey] = "missing";
+      delete next.plannedSlots[policyKey];
+      delete next.pendingSlots[policyKey];
+      delete next.observations[policyKey];
       continue;
     }
 
-    let used = quota.used !== undefined ? quota.used : quota.utilization;
+    let used = quota.used ?? quota.utilization;
     if (typeof used === "string" && used.trim() !== "") used = Number(used);
-    let remaining = quota.remaining !== undefined ? quota.remaining : null;
+    let remaining = quota.remaining ?? null;
     if (typeof remaining === "string" && remaining.trim() !== "") remaining = Number(remaining);
-    let total = quota.total !== undefined ? quota.total : 100;
+    let total = quota.total ?? 100;
     if (typeof total === "string" && total.trim() !== "") total = Number(total);
-
-    if (used === undefined || used === null || !Number.isFinite(used)) {
-      if (remaining !== null && Number.isFinite(remaining) && Number.isFinite(total)) {
-        used = total - remaining;
-      }
-    }
-
-    if (
-      used === undefined ||
-      used === null ||
-      !Number.isFinite(used) ||
-      used < 0 ||
-      !Number.isFinite(total) ||
-      total <= 0 ||
-      used > total ||
-      (remaining !== null && (remaining < 0 || remaining > total))
-    ) {
-      windowStatus[policyKey] = "invalid";
-      delete nextPending[policyKey];
-      continue;
-    }
-
-    if (used > 0) {
-      windowStatus[policyKey] = "active";
-      delete nextPending[policyKey];
-      nextObs[policyKey] = {
-        resetAt: quota.resetAt || null,
-        resetMs: quota.resetAt ? new Date(quota.resetAt).getTime() : null,
-        observedAtMs: sampleObservedAtMs,
-        used,
-        isIdle: false,
-      };
-      continue;
-    }
+    if (used == null && Number.isFinite(remaining) && Number.isFinite(total)) used = total - remaining;
 
     const durationMs = resolveWindowDuration(connection.provider, policyKey, quota);
-    if (!durationMs || !Number.isFinite(durationMs) || durationMs <= 0 || durationMs === Infinity) {
-      windowStatus[policyKey] = "unsupported";
-      delete nextPending[policyKey];
+    if (
+      !Number.isFinite(used) || used < 0 || !Number.isFinite(total) || total <= 0 || used > total ||
+      (remaining !== null && (!Number.isFinite(remaining) || remaining < 0 || remaining > total))
+    ) {
+      next.windowStatus[policyKey] = "invalid";
+      delete next.plannedSlots[policyKey];
+      delete next.pendingSlots[policyKey];
+      delete next.observations[policyKey];
+      continue;
+    }
+    if (!Number.isFinite(durationMs) || durationMs <= 0) {
+      next.windowStatus[policyKey] = "unsupported";
+      delete next.plannedSlots[policyKey];
+      delete next.pendingSlots[policyKey];
+      delete next.observations[policyKey];
       continue;
     }
 
     const resetAt = quota.resetAt || null;
     const resetMs = resetAt ? new Date(resetAt).getTime() : null;
-    const prevObs = validObs[policyKey];
+    const previousObservation = signatureValid ? previous.observations?.[policyKey] : null;
+    const previousPlan = signatureValid ? previous.plannedSlots?.[policyKey] : null;
 
-    const isPrePingSample = Boolean(
-      prevState.lastPingAtMs &&
-      sampleObservedAtMs <= prevState.lastPingAtMs
-    );
+    if (previous.lastPingAtMs && sampleObservedAtMs <= previous.lastPingAtMs) {
+      next.windowStatus[policyKey] = policyKey === "weekly" ? "observation_only" : (connection.provider === "claude" ? "fixed" : "observing");
+      continue;
+    }
 
     const isIdenticalSample = Boolean(
-      prevObs &&
-      Number.isFinite(prevObs.observedAtMs) &&
-      sampleObservedAtMs === prevObs.observedAtMs &&
-      resetMs === prevObs.resetMs
+      signatureValid &&
+      previousObservation &&
+      Number.isFinite(previousObservation.observedAtMs) &&
+      sampleObservedAtMs === previousObservation.observedAtMs &&
+      resetMs === previousObservation.resetMs
     );
-
-    if (isPrePingSample) {
-      windowStatus[policyKey] = policyKey === "weekly" ? "observation_only" : (connection.provider === "claude" ? "fixed" : "observing");
-      delete nextPending[policyKey];
-      nextObs[policyKey] = { resetAt, resetMs, observedAtMs: sampleObservedAtMs, used, isIdle: true };
-      continue;
-    }
 
     if (isIdenticalSample) {
-      if (validPending[policyKey] && !activeSuppressUntil) {
-        nextPending[policyKey] = validPending[policyKey];
-        windowStatus[policyKey] = "inactive";
-        nextObs[policyKey] = prevObs;
+      if (next.pendingSlots[policyKey] != null && !next.suppressUntilMs) {
+        next.windowStatus[policyKey] = "inactive";
+        next.observations[policyKey] = previousObservation;
         continue;
       }
-      windowStatus[policyKey] = policyKey === "weekly" ? "observation_only" : (connection.provider === "claude" ? "fixed" : "observing");
-      delete nextPending[policyKey];
-      nextObs[policyKey] = prevObs;
+      if (next.plannedSlots[policyKey]) {
+        next.windowStatus[policyKey] = previousPlan?.guardUntilMs ? "observation_only" : "active";
+        next.observations[policyKey] = previousObservation;
+        continue;
+      }
+      next.windowStatus[policyKey] = policyKey === "weekly" ? "observation_only" : (connection.provider === "claude" ? "fixed" : "observing");
+      delete next.pendingSlots[policyKey];
+      next.observations[policyKey] = previousObservation;
       continue;
     }
 
-    const isPrevObsFresh = Boolean(
-      prevObs &&
-      Number.isFinite(prevObs.observedAtMs) &&
-      sampleObservedAtMs - prevObs.observedAtMs >= 10000 &&
-      sampleObservedAtMs - prevObs.observedAtMs <= 600000
+    const futureReset = isFiniteReset(resetMs) && resetMs > sampleObservedAtMs;
+    const stableFuture = Boolean(
+      futureReset &&
+      isFreshObservation(previousObservation, sampleObservedAtMs) &&
+      previousObservation.used === 0 &&
+      previousObservation.resetMs === resetMs
     );
-    const prevWasIdle = Boolean(isPrevObsFresh && prevObs.used === 0 && prevObs.isIdle === true);
+    const slidingIdle = isSlidingIdleObservation(previousObservation, resetMs, sampleObservedAtMs, durationMs);
+    const isLeader = index === 0;
+    const fallbackAnchorMs = !isLeader && group[policyKey]?.anchorAt
+      ? new Date(group[policyKey].anchorAt).getTime()
+      : null;
+    let referenceAnchorMs = getReferenceAnchor({
+      policyKey,
+      policyIndex: index,
+      policyMemberIds: memberIds,
+      connectionMap,
+      signature,
+      fallbackAnchorMs,
+    });
+    let status = policyKey === "weekly" ? "observation_only" : "observing";
+    let shiftable = Boolean(previousObservation?.shiftable);
 
-    let isInactive = false;
+    if (used > 0) {
+      status = "active";
+      if (isLeader && futureReset) referenceAnchorMs = resetMs - durationMs;
+    } else if (connection.provider === "claude" && policyKey === "session" && (!futureReset || resetMs <= sampleObservedAtMs)) {
+      status = "idle";
+    } else if (slidingIdle) {
+      status = "idle";
+      if (policyKey === "weekly") shiftable = true;
+    } else if (stableFuture) {
+      status = "active";
+      if (policyKey === "weekly") shiftable = false;
+      if (isLeader) referenceAnchorMs = resetMs - durationMs;
+    } else if (!futureReset && connection.provider === "claude" && policyKey === "session") {
+      status = "idle";
+    } else if (!isFiniteReset(resetMs) && !(connection.provider === "claude" && policyKey === "session")) {
+      status = "invalid";
+    }
 
-    if (connection.provider === "claude" && policyKey === "session") {
-      if (resetAt === null || resetMs === null) {
-        isInactive = true;
-      } else if (Number.isFinite(resetMs) && resetMs <= sampleObservedAtMs) {
-        isInactive = true;
+    if (isLeader && status === "idle") {
+      if (Number.isFinite(previousObservation?.activeAnchorMs)) {
+        referenceAnchorMs = previousObservation.activeAnchorMs;
       } else {
-        windowStatus[policyKey] = "fixed";
-        delete nextPending[policyKey];
-        nextObs[policyKey] = { resetAt, resetMs, observedAtMs: sampleObservedAtMs, used, isIdle: true };
-        continue;
-      }
-    } else if (connection.provider === "codex" && policyKey === "session") {
-      if (!resetAt || !Number.isFinite(resetMs)) {
-        windowStatus[policyKey] = "invalid";
-        delete nextPending[policyKey];
-        continue;
-      }
-      const timeUntilReset = resetMs - sampleObservedAtMs;
-      const diffFromDuration = Math.abs(timeUntilReset - durationMs);
-      const isRoughlyNowPlusDuration = diffFromDuration <= 300000;
-
-      if (prevWasIdle && Number.isFinite(prevObs.resetMs)) {
-        const slideMs = resetMs - prevObs.resetMs;
-        const elapsedMs = sampleObservedAtMs - prevObs.observedAtMs;
-        const isElapsedConsistent = slideMs >= 30000 && Math.abs(slideMs - elapsedMs) <= 30000;
-
-        if (isElapsedConsistent && isRoughlyNowPlusDuration) {
-          isInactive = true;
-        } else if (!isElapsedConsistent && !isRoughlyNowPlusDuration) {
-          windowStatus[policyKey] = "active";
-          delete nextPending[policyKey];
-          nextObs[policyKey] = { resetAt, resetMs, observedAtMs: sampleObservedAtMs, used, isIdle: true };
-          continue;
-        }
-      }
-      if (!isInactive) {
-        windowStatus[policyKey] = "observing";
-        delete nextPending[policyKey];
-        nextObs[policyKey] = { resetAt, resetMs, observedAtMs: sampleObservedAtMs, used, isIdle: true };
-        continue;
-      }
-    } else if (policyKey === "weekly") {
-      if (!resetAt || !Number.isFinite(resetMs)) {
-        windowStatus[policyKey] = "invalid";
-        delete nextPending[policyKey];
-        continue;
-      }
-      const timeUntilReset = resetMs - sampleObservedAtMs;
-      const diffFromDuration = Math.abs(timeUntilReset - durationMs);
-      const isRoughlyNowPlusDuration = diffFromDuration <= 300000;
-
-      if (prevWasIdle && Number.isFinite(prevObs.resetMs)) {
-        const slideMs = resetMs - prevObs.resetMs;
-        const elapsedMs = sampleObservedAtMs - prevObs.observedAtMs;
-        const isElapsedConsistent = slideMs >= 30000 && Math.abs(slideMs - elapsedMs) <= 30000;
-
-        if (isElapsedConsistent && isRoughlyNowPlusDuration) {
-          isInactive = true;
-        }
-      }
-      if (!isInactive) {
-        windowStatus[policyKey] = "observation_only";
-        delete nextPending[policyKey];
-        nextObs[policyKey] = { resetAt, resetMs, observedAtMs: sampleObservedAtMs, used, isIdle: true };
-        continue;
+        referenceAnchorMs = sampleObservedAtMs;
       }
     }
+    if (Number.isFinite(referenceAnchorMs)) {
+      next.phaseAnchors[policyKey] = referenceAnchorMs;
+    }
 
-    if (isInactive) {
-      windowStatus[policyKey] = "inactive";
-      nextObs[policyKey] = { resetAt, resetMs, observedAtMs: sampleObservedAtMs, used, isIdle: true };
-      if (!nextPending[policyKey]) {
-        const anchorMs = new Date(group[policyKey].anchorAt).getTime();
-        nextPending[policyKey] = calculateNextPhaseSlot({
-          anchorMs,
-          index: policyIndex,
-          N: policyN,
+    next.observations[policyKey] = {
+      resetAt,
+      resetMs,
+      observedAtMs: sampleObservedAtMs,
+      used,
+      durationMs,
+      status,
+      isIdle: status === "idle" || used === 0,
+      activeAnchorMs: status === "active" ? referenceAnchorMs : previousObservation?.activeAnchorMs ?? null,
+      shiftable,
+    };
+
+    if (policyKey === "weekly" && (stableFuture || (used === 0 && futureReset && !slidingIdle))) {
+      shiftable = false;
+      delete next.plannedSlots[policyKey];
+    }
+
+    if (status === "invalid") {
+      next.windowStatus[policyKey] = "invalid";
+      delete next.plannedSlots[policyKey];
+      delete next.pendingSlots[policyKey];
+      continue;
+    }
+
+    if (status === "active") {
+      next.windowStatus[policyKey] = "active";
+      delete next.pendingSlots[policyKey];
+
+      const canForecast = policyKey !== "weekly" || shiftable;
+      if (!futureReset) {
+        delete next.plannedSlots[policyKey];
+        continue;
+      }
+      if (!canForecast) {
+        next.plannedSlots[policyKey] = {
+          resetMs,
+          notBeforeMs: resetMs + 180000,
           durationMs,
-          nowMs: sampleObservedAtMs,
-          graceMs: 150000,
-        });
+          referenceAnchorMs: referenceAnchorMs ?? null,
+          guardUntilMs: resetMs + 180000,
+        };
+        continue;
       }
+      if (!Number.isFinite(referenceAnchorMs)) {
+        if (!previousPlan || previousPlan.resetMs !== resetMs) delete next.plannedSlots[policyKey];
+        continue;
+      }
+      const notBeforeMs = strictNextBoundary({
+        anchorMs: referenceAnchorMs,
+        index,
+        N: memberIds.length,
+        durationMs,
+        earliestMs: resetMs,
+      });
+      if (
+        previousPlan &&
+        previousPlan.resetMs === resetMs &&
+        previousPlan.durationMs === durationMs &&
+        samePhaseAnchor(previousPlan.referenceAnchorMs, referenceAnchorMs, durationMs)
+      ) {
+        next.plannedSlots[policyKey] = previousPlan;
+      } else {
+        next.plannedSlots[policyKey] = { resetMs, notBeforeMs, durationMs, referenceAnchorMs };
+      }
+      continue;
     }
-  }
 
-  let effectiveDeadlineMs = null;
-  if (nextPending.session && nextPending.weekly) {
-    effectiveDeadlineMs = Math.max(nextPending.session, nextPending.weekly);
-  } else if (nextPending.session) {
-    effectiveDeadlineMs = nextPending.session;
-  } else if (nextPending.weekly) {
-    effectiveDeadlineMs = nextPending.weekly;
-  }
+    if (status === "idle") {
+      next.windowStatus[policyKey] = "inactive";
+      let targetMs = null;
+      const expiredPlan = previousPlan && Number.isFinite(previousPlan.resetMs) && previousPlan.resetMs <= sampleObservedAtMs
+        ? previousPlan
+        : null;
 
-  let waiting = false;
-  let ready = false;
-  let notBeforeMs = null;
+      if (isLeader) {
+        const oldAnchor = previousObservation?.activeAnchorMs;
+        const targetBoundary = Number.isFinite(oldAnchor) ? oldAnchor + durationMs : null;
+        if (Number.isFinite(targetBoundary) && sampleObservedAtMs <= targetBoundary + 150000) {
+          targetMs = targetBoundary;
+        } else {
+          referenceAnchorMs = sampleObservedAtMs;
+          next.phaseAnchors[policyKey] = referenceAnchorMs;
+          targetMs = sampleObservedAtMs;
+        }
+      } else {
+        const previousPending = previous.pendingSlots?.[policyKey];
+        if (expiredPlan && sampleObservedAtMs <= expiredPlan.notBeforeMs + 150000) {
+          targetMs = expiredPlan.notBeforeMs;
+        } else if (previousPending != null && sampleObservedAtMs <= previousPending + 150000) {
+          targetMs = previousPending;
+        } else if (Number.isFinite(referenceAnchorMs)) {
+          targetMs = strictNextBoundary({
+            anchorMs: referenceAnchorMs,
+            index,
+            N: memberIds.length,
+            durationMs,
+            earliestMs: sampleObservedAtMs,
+          });
+        }
+      }
 
-  if (effectiveDeadlineMs !== null) {
-    notBeforeMs = effectiveDeadlineMs;
-    if (nowMs < effectiveDeadlineMs) {
-      waiting = true;
-      ready = false;
-    } else {
-      waiting = false;
-      ready = true;
+      if (Number.isFinite(targetMs)) {
+        next.pendingSlots[policyKey] = targetMs;
+      } else {
+        delete next.pendingSlots[policyKey];
+      }
+      delete next.plannedSlots[policyKey];
+      continue;
     }
+
+    if (status === "observing" || status === "observation_only") {
+      next.windowStatus[policyKey] = status;
+      delete next.pendingSlots[policyKey];
+      if (previousPlan && futureReset && (!Number.isFinite(previousPlan.resetMs) || previousPlan.resetMs === resetMs)) {
+        next.plannedSlots[policyKey] = previousPlan;
+      } else {
+        delete next.plannedSlots[policyKey];
+      }
+      continue;
+    }
+
+    next.windowStatus[policyKey] = policyKey === "weekly" && stableFuture ? "fixed" : "observing";
+    delete next.pendingSlots[policyKey];
+    if (policyKey === "weekly" && stableFuture) delete next.plannedSlots[policyKey];
   }
 
-  if (activeSuppressUntil) {
-    nextPending = {};
-    effectiveDeadlineMs = null;
-    waiting = false;
-    ready = false;
-    notBeforeMs = null;
+  if (next.suppressUntilMs) {
+    next.pendingSlots = {};
   }
-
-  return {
-    groupId: group.id,
-    signature,
-    lastObservedAtMs: sampleObservedAtMs,
-    lastPingAtMs: prevState.lastPingAtMs || null,
-    suppressUntilMs: activeSuppressUntil,
-    observations: nextObs,
-    pendingSlots: nextPending,
-    effectiveDeadlineMs,
-    waiting,
-    notBeforeMs,
-    ready,
-    windowStatus,
-    reason: generalReason,
-  };
+  const derived = deriveStaggerDecision(next, nowMs);
+  return { ...next, ...derived };
 }
 
 export function getStaggerDecision({ connection, settings, connections, nowMs = Date.now() }) {
   const empty = { groupId: null, waiting: false, notBeforeMs: null, ready: false };
   if (!connection || !settings) return empty;
-
   const group = getStaggerGroup(settings, connection.id);
   if (!group) return empty;
-
-  const expectedSignature = computeGroupSignature(group, connections);
   const state = connection.quotaStaggerState;
-  if (!state || typeof state !== "object") {
+  if (!state || typeof state !== "object" || state.signature !== computeGroupSignature(group, connections)) {
     return { groupId: group.id, waiting: false, notBeforeMs: null, ready: false };
   }
-
-  if (state.signature !== expectedSignature) {
+  if (!Number.isFinite(state.lastObservedAtMs) || state.lastObservedAtMs > nowMs + 60000 || nowMs - state.lastObservedAtMs > 600000) {
     return { groupId: group.id, waiting: false, notBeforeMs: null, ready: false };
   }
-
-  if (!Number.isFinite(state.lastObservedAtMs) || state.lastObservedAtMs > nowMs + 60000) {
+  if (state.suppressUntilMs && nowMs < state.suppressUntilMs) {
     return { groupId: group.id, waiting: false, notBeforeMs: null, ready: false };
   }
-
-  if (nowMs - state.lastObservedAtMs > 600000) {
-    return { groupId: group.id, waiting: false, notBeforeMs: null, ready: false };
-  }
-
-  if (state.effectiveDeadlineMs == null || !Number.isFinite(state.effectiveDeadlineMs)) {
-    return { groupId: group.id, waiting: false, notBeforeMs: null, ready: false };
-  }
-
-  if (nowMs < state.effectiveDeadlineMs) {
-    return {
-      groupId: group.id,
-      waiting: true,
-      notBeforeMs: state.effectiveDeadlineMs,
-      ready: false,
-    };
-  }
-
+  const derived = deriveStaggerDecision(state, nowMs);
   return {
     groupId: group.id,
-    waiting: false,
-    notBeforeMs: state.effectiveDeadlineMs,
-    ready: true,
+    waiting: derived.waiting,
+    notBeforeMs: derived.notBeforeMs,
+    ready: derived.ready,
   };
 }
 
 export function markStaggerPing(state, nowMs = Date.now(), suppressionMs = 300000) {
   if (!state || typeof state !== "object") return state;
   const duration = Number.isFinite(suppressionMs) && suppressionMs > 0 ? suppressionMs : 300000;
+  const nextPlanned = {};
+  if (state.plannedSlots) {
+    for (const [key, plan] of Object.entries(state.plannedSlots)) {
+      if (plan && Number.isFinite(plan.resetMs) && plan.resetMs > nowMs) {
+        nextPlanned[key] = plan;
+      }
+    }
+  }
   return {
     ...state,
     pendingSlots: {},
+    plannedSlots: nextPlanned,
     effectiveDeadlineMs: null,
     waiting: false,
     ready: false,

@@ -103,7 +103,11 @@ describe("quota auto-ping", () => {
         execute: vi.fn().mockResolvedValue({ response: { ok: true, text: codexResponseText } }),
       })),
     };
-    codexResponseText = vi.fn().mockResolvedValue("");
+    codexResponseText = vi.fn().mockResolvedValue([
+      "event: response.completed",
+      `data: ${JSON.stringify({ type: "response.completed", response: { status: "completed" } })}`,
+      "",
+    ].join("\r\n"));
     getExecutor.mockReturnValue({
       execute: vi.fn().mockResolvedValue({ response: { ok: true, text: codexResponseText } }),
     });
@@ -426,6 +430,8 @@ describe("quota auto-ping", () => {
 
     const stateA = deps.updateProviderConnection.mock.calls.find((c) => c[0] === "cx-a")[1].quotaStaggerState;
     const stateB = deps.updateProviderConnection.mock.calls.find((c) => c[0] === "cx-b")[1].quotaStaggerState;
+    stateA.observations.session.status = "idle";
+    stateB.observations.session.status = "idle";
     conns[0].quotaStaggerState = stateA;
     conns[1].quotaStaggerState = stateB;
     deps.updateProviderConnection.mockClear();
@@ -1096,5 +1102,314 @@ describe("quota auto-ping", () => {
     expect(hasQuotaAutoPingEnabled({
       quotaStaggerGroups: [{ id: "g1", enabled: true, session: { enabled: false }, weekly: { enabled: false } }],
     })).toBe(false);
+  });
+
+  describe("PR-3991 realignment and Codex stream hardening", () => {
+    it("two Codex near 6m offset ordering with reverse DB", async () => {
+      const fixedNow = new Date("2026-01-01T12:00:00.000Z").getTime();
+      vi.setSystemTime(fixedNow);
+
+      const group = {
+        id: "grp-offset-codex",
+        name: "Codex 6m Offset",
+        enabled: true,
+        connectionIds: ["cx-ref", "cx-fol"],
+        session: { enabled: true, anchorAt: "2026-01-01T12:00:00.000Z" },
+        weekly: { enabled: false, anchorAt: null },
+      };
+
+      const connRef = { id: "cx-ref", provider: "codex", authType: "oauth", accessToken: "token-ref", isActive: true };
+      const connFol = { id: "cx-fol", provider: "codex", authType: "oauth", accessToken: "token-fol", isActive: true };
+
+      // DB returns them in reverse priority: follower first, reference second
+      deps.getSettings.mockResolvedValue({ quotaStaggerGroups: [group] });
+      deps.getProviderConnections.mockResolvedValue([connFol, connRef]);
+
+      const executionOrder = [];
+      getCodexUsage.mockImplementation(async (token) => {
+        if (token === "token-ref") {
+          executionOrder.push("cx-ref");
+          return {
+            quotas: {
+              session: { used: 10, total: 100, remaining: 90, resetAt: "2026-01-01T17:00:00.000Z" },
+              weekly: { used: 10, total: 100, remaining: 90, resetAt: "2026-01-08T12:00:00.000Z" },
+            },
+          };
+        }
+        executionOrder.push("cx-fol");
+        return {
+          quotas: {
+            session: { used: 15, total: 100, remaining: 85, resetAt: "2026-01-01T17:06:00.000Z" },
+            weekly: { used: 15, total: 100, remaining: 85, resetAt: "2026-01-08T12:06:00.000Z" },
+          },
+        };
+      });
+
+      await runQuotaAutoPingTick(deps, state);
+
+      // Leader/reference cx-ref MUST be processed first regardless of reverse DB priority
+      expect(executionOrder).toEqual(["cx-ref", "cx-fol"]);
+    });
+
+    it("mixed leader Claude follower Codex reference update same scan", async () => {
+      const fixedNow = new Date("2026-01-01T12:00:00.000Z").getTime();
+      vi.setSystemTime(fixedNow);
+
+      const group = {
+        id: "grp-mixed-scan",
+        name: "Claude Leader Codex Follower",
+        enabled: true,
+        connectionIds: ["cl-lead", "cx-follow"],
+        session: { enabled: true, anchorAt: "2026-01-01T12:00:00.000Z" },
+        weekly: { enabled: false, anchorAt: null },
+      };
+
+      const connLead = { id: "cl-lead", provider: "claude", authType: "oauth", accessToken: "tok-cl", isActive: true };
+      const connFollow = { id: "cx-follow", provider: "codex", authType: "oauth", accessToken: "tok-cx", isActive: true };
+
+      // DB returns them in reverse provider order
+      deps.getSettings.mockResolvedValue({ quotaStaggerGroups: [group] });
+      deps.getProviderConnections.mockResolvedValue([connFollow, connLead]);
+
+      getClaudeUsage.mockResolvedValue({
+        quotas: {
+          "session (5h)": { used: 0, total: 100, remaining: 100, resetAt: null },
+          "weekly (7d)": { used: 0, total: 100, remaining: 100, resetAt: "2026-01-08T12:00:00.000Z" },
+        },
+      });
+
+      let followerObservedLeaderState = null;
+      getCodexUsage.mockImplementation(async () => {
+        // Follower reads shared allActiveConnections entry for leader during tick execution
+        return {
+          quotas: {
+            session: { used: 10, total: 100, remaining: 90, resetAt: "2026-01-01T17:00:00.000Z" },
+            weekly: { used: 10, total: 100, remaining: 90, resetAt: "2026-01-08T12:00:00.000Z" },
+          },
+        };
+      });
+
+      await runQuotaAutoPingTick(deps, state);
+
+      // Leader Claude pinged and state updated in DB
+      expect(deps.proxyAwareFetch).toHaveBeenCalledTimes(1);
+      const leadUpdate = deps.updateProviderConnection.mock.calls.find((c) => c[0] === "cl-lead" && c[1].lastPingAt);
+      expect(leadUpdate).toBeDefined();
+
+      // Follower Codex state was computed in the same tick using leader's updated reference epoch
+      const followUpdate = deps.updateProviderConnection.mock.calls.find((c) => c[0] === "cx-follow");
+      expect(followUpdate).toBeDefined();
+      expect(followUpdate[1].quotaStaggerState.phaseAnchors.session).toBe(fixedNow);
+    });
+
+    it("pin/wait later depends on core ready only when due", async () => {
+      const fixedNow = new Date("2026-01-01T12:00:00.000Z").getTime();
+      vi.setSystemTime(fixedNow);
+
+      const group = {
+        id: "grp-due-check",
+        name: "Due Check Group",
+        enabled: true,
+        connectionIds: ["cx-lead", "cx-fol"],
+        session: { enabled: true, anchorAt: "2026-01-01T12:00:00.000Z" },
+        weekly: { enabled: false, anchorAt: null },
+      };
+
+      const conns = [
+        { id: "cx-lead", provider: "codex", authType: "oauth", accessToken: "tok-lead", isActive: true },
+        { id: "cx-fol", provider: "codex", authType: "oauth", accessToken: "tok-fol", isActive: true },
+      ];
+
+      deps.getSettings.mockResolvedValue({ quotaStaggerGroups: [group] });
+      deps.getProviderConnections.mockResolvedValue(conns);
+      getCodexUsage.mockResolvedValue({
+        quotas: {
+          session: { used: 10, total: 100, remaining: 90, resetAt: "2026-01-01T17:00:00.000Z" },
+          weekly: { used: 10, total: 100, remaining: 90, resetAt: "2026-01-08T12:00:00.000Z" },
+        },
+      });
+
+      // Case 1: Core reports waiting for forecast at reset -> ping is held, not sent
+      deps.getStaggerDecision = vi.fn().mockReturnValue({
+        groupId: "grp-due-check",
+        waiting: true,
+        notBeforeMs: fixedNow + 600000,
+        ready: false,
+      });
+
+      await runQuotaAutoPingTick(deps, state);
+
+      expect(deps.getExecutor).not.toHaveBeenCalled();
+      const pingCalls1 = deps.updateProviderConnection.mock.calls.filter((c) => c[1].lastPingAt);
+      expect(pingCalls1).toHaveLength(0);
+
+      // Case 2: Core reports ready only when due -> ping is sent and marked
+      deps.updateProviderConnection.mockClear();
+      deps.getStaggerDecision = vi.fn().mockImplementation(({ connection }) => {
+        if (connection.id === "cx-lead") {
+          return { groupId: "grp-due-check", waiting: false, notBeforeMs: fixedNow, ready: true };
+        }
+        return { groupId: "grp-due-check", waiting: true, notBeforeMs: fixedNow + 9000000, ready: false };
+      });
+
+      await runQuotaAutoPingTick(deps, state);
+
+      expect(deps.getExecutor).toHaveBeenCalledWith("codex");
+      const executor = deps.getExecutor.mock.results[0].value;
+      expect(executor.execute).toHaveBeenCalledTimes(1);
+
+      const leadPingUpdate = deps.updateProviderConnection.mock.calls.find((c) => c[0] === "cx-lead" && c[1].lastPingAt);
+      expect(leadPingUpdate).toBeDefined();
+
+      const folPingUpdate = deps.updateProviderConnection.mock.calls.find((c) => c[0] === "cx-fol" && c[1].lastPingAt);
+      expect(folPingUpdate).toBeUndefined();
+    });
+
+    it("Codex sendPing fails when stream returns response.failed event", async () => {
+      deps.getSettings.mockResolvedValue({ codexAutoPing: { connections: { "codex-1": true } } });
+      deps.getProviderConnections.mockResolvedValue([
+        { id: "codex-1", provider: "codex", authType: "oauth", accessToken: "token" },
+      ]);
+      state.resetCache["codex:codex-1"] = "2026-01-01T17:00:00.000Z";
+      getCodexUsage.mockResolvedValue({
+        quotas: { session: { used: 1, total: 100, remaining: 99, resetAt: "2026-01-01T17:01:00.000Z" } },
+      });
+
+      codexResponseText.mockResolvedValue([
+        "event: response.failed",
+        `data: ${JSON.stringify({ type: "response.failed", error: { message: "Internal failure" } })}`,
+        "",
+      ].join("\n"));
+
+      await runQuotaAutoPingTick(deps, state);
+
+      expect(state.failureCache["codex:codex-1"]).toBeDefined();
+      const pingUpdate = deps.updateProviderConnection.mock.calls.find((c) => c[0] === "codex-1" && c[1].lastPingAt);
+      expect(pingUpdate).toBeUndefined();
+    });
+
+    it("Codex sendPing fails when stream returns response.incomplete event", async () => {
+      deps.getSettings.mockResolvedValue({ codexAutoPing: { connections: { "codex-1": true } } });
+      deps.getProviderConnections.mockResolvedValue([
+        { id: "codex-1", provider: "codex", authType: "oauth", accessToken: "token" },
+      ]);
+      state.resetCache["codex:codex-1"] = "2026-01-01T17:00:00.000Z";
+      getCodexUsage.mockResolvedValue({
+        quotas: { session: { used: 1, total: 100, remaining: 99, resetAt: "2026-01-01T17:01:00.000Z" } },
+      });
+
+      codexResponseText.mockResolvedValue([
+        "event: response.incomplete",
+        `data: ${JSON.stringify({ type: "response.incomplete", response: { status: "incomplete" } })}`,
+        "",
+      ].join("\n"));
+
+      await runQuotaAutoPingTick(deps, state);
+
+      expect(state.failureCache["codex:codex-1"]).toBeDefined();
+      const pingUpdate = deps.updateProviderConnection.mock.calls.find((c) => c[0] === "codex-1" && c[1].lastPingAt);
+      expect(pingUpdate).toBeUndefined();
+    });
+
+    it("Codex sendPing fails when stream closes prematurely without terminal event", async () => {
+      deps.getSettings.mockResolvedValue({ codexAutoPing: { connections: { "codex-1": true } } });
+      deps.getProviderConnections.mockResolvedValue([
+        { id: "codex-1", provider: "codex", authType: "oauth", accessToken: "token" },
+      ]);
+      state.resetCache["codex:codex-1"] = "2026-01-01T17:00:00.000Z";
+      getCodexUsage.mockResolvedValue({
+        quotas: { session: { used: 1, total: 100, remaining: 99, resetAt: "2026-01-01T17:01:00.000Z" } },
+      });
+
+      codexResponseText.mockResolvedValue([
+        "event: response.created",
+        `data: ${JSON.stringify({ type: "response.created", response: { id: "resp_1" } })}`,
+        "",
+      ].join("\n"));
+
+      await runQuotaAutoPingTick(deps, state);
+
+      expect(state.failureCache["codex:codex-1"]).toBeDefined();
+      const pingUpdate = deps.updateProviderConnection.mock.calls.find((c) => c[0] === "codex-1" && c[1].lastPingAt);
+      expect(pingUpdate).toBeUndefined();
+    });
+
+    it("Codex sendPing parses chunked streaming response body via reader and TextDecoder with multiline CRLF", async () => {
+      deps.getSettings.mockResolvedValue({ codexAutoPing: { connections: { "codex-1": true } } });
+      deps.getProviderConnections.mockResolvedValue([
+        { id: "codex-1", provider: "codex", authType: "oauth", accessToken: "token" },
+      ]);
+      state.resetCache["codex:codex-1"] = "2026-01-01T17:00:00.000Z";
+      getCodexUsage.mockResolvedValue({
+        quotas: { session: { used: 1, total: 100, remaining: 99, resetAt: "2026-01-01T17:01:00.000Z" } },
+      });
+
+      const encoder = new TextEncoder();
+      const chunks = [
+        encoder.encode("event: response.created\r\ndata: {}\r\n\r\n"),
+        encoder.encode("event: response.completed\r\ndata: {\"type\": \"response.completed\", \"response\": {\"status\": \"completed\"}}\r\n\r\n"),
+        encoder.encode("data: [DONE]\r\n\r\n"),
+      ];
+
+      let chunkIdx = 0;
+      const reader = {
+        read: vi.fn(async () => {
+          if (chunkIdx < chunks.length) {
+            return { done: false, value: chunks[chunkIdx++] };
+          }
+          return { done: true, value: undefined };
+        }),
+        releaseLock: vi.fn(),
+      };
+
+      deps.getExecutor.mockReturnValue({
+        execute: vi.fn().mockResolvedValue({
+          response: {
+            ok: true,
+            body: { getReader: () => reader },
+          },
+        }),
+      });
+
+      await runQuotaAutoPingTick(deps, state);
+
+      expect(reader.read).toHaveBeenCalled();
+      expect(reader.releaseLock).toHaveBeenCalled();
+      expect(deps.updateProviderConnection).toHaveBeenCalledWith("codex-1", expect.objectContaining({
+        lastPingedResetAt: "2026-01-01T17:01:00.000Z",
+      }));
+    });
+
+    it("Codex sendPing treats stream reader read error as failure and preserves cooldown", async () => {
+      deps.getSettings.mockResolvedValue({ codexAutoPing: { connections: { "codex-1": true } } });
+      deps.getProviderConnections.mockResolvedValue([
+        { id: "codex-1", provider: "codex", authType: "oauth", accessToken: "token" },
+      ]);
+      state.resetCache["codex:codex-1"] = "2026-01-01T17:00:00.000Z";
+      getCodexUsage.mockResolvedValue({
+        quotas: { session: { used: 1, total: 100, remaining: 99, resetAt: "2026-01-01T17:01:00.000Z" } },
+      });
+
+      const reader = {
+        read: vi.fn().mockRejectedValue(new Error("Network connection lost")),
+        releaseLock: vi.fn(),
+      };
+
+      deps.getExecutor.mockReturnValue({
+        execute: vi.fn().mockResolvedValue({
+          response: {
+            ok: true,
+            body: { getReader: () => reader },
+          },
+        }),
+      });
+
+      await runQuotaAutoPingTick(deps, state);
+
+      expect(reader.releaseLock).toHaveBeenCalled();
+      expect(state.failureCache["codex:codex-1"]).toBeDefined();
+      const pingUpdate = deps.updateProviderConnection.mock.calls.find((c) => c[0] === "codex-1" && c[1].lastPingAt);
+      expect(pingUpdate).toBeUndefined();
+    });
   });
 });
