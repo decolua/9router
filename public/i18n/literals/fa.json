@@ -1389,5 +1389,21 @@
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ اطلاعیه ریسک: این ارائه‌دهنده از اشتراک/جلسه OAuth استفاده می‌کند که به طور رسمی برای استفاده پروکسی/روتر مجوز ندارد. حساب ممکن است محدود یا مسدود شود. با مسئولیت خود استفاده کنید.",
   "✓ Confirm Add": "✓ تأیید افزودن",
   "📝 Configure providers in dashboard or use environment variables": "📝 ارائه‌دهندگان را در داشبورد پیکربندی کنید یا از متغیرهای محیطی استفاده کنید",
-  "🔐 OAuth required. Add now and authenticate after Apply; tool list will be discovered after first connect.": "🔐 نیاز به OAuth. اکنون اضافه کنید و پس از اعمال، احراز هویت کنید؛ لیست ابزارها پس از اولین اتصال کشف می‌شود."
+  "🔐 OAuth required. Add now and authenticate after Apply; tool list will be discovered after first connect.": "🔐 نیاز به OAuth. اکنون اضافه کنید و پس از اعمال، احراز هویت کنید؛ لیست ابزارها پس از اولین اتصال کشف می‌شود.",
+  "Combo & Vision Adapter":"آداپتور بینایی و ترکیبی",
+  "Vision Adapter": "آداپتور بینایی",
+  "Skills": "مهارت‌ها",
+  "Cached Cost":"هزینه‌ی کش‌شده",
+  "Compress prompts and outputs to save tokens":"فشرده‌سازی پرامپت‌ها و خروجی‌ها برای صرفه‌جویی در توکن‌ها",
+  "Manage your web providers": "مدیریت ارائه‌دهندگان خدمات وب خود را انجام دهید",
+  "providers":"ارائه‌دهندگان",
+  "combos": "ترکیبی",
+  "Configure enterprise Single Sign-On (SSO) for dashboard access using SAML 2.0 or OIDC.":"پیکربندی ورود تک‌نشانه سازمانی (SSO) برای دسترسی به داشبورد با استفاده از SAML 2.0 یا OIDC.",
+  "Optional SSO via Okta, Entra ID, Keycloak, or OIDC":"SSO اختیاری از طریق Okta، Entra ID، Keycloak یا OIDC",
+  "Single Sign-On (SSO)":"ورود یک‌باره (SSO)",
+  "SSO Protocol":"پروتکل SSO",
+  "Keep legacy password login.":"حفظ ورود با نام کاربری و رمز عبور قدیمی",
+  "Require SSO for dashboard access.":"برای دسترسی به داشبورد نیاز به SSO دارد.",
+  "Allow password or SSO login.":"اجازه ورود با رمز عبور یا ورود یک‌بار مصرف (SSO)",
+  "Save OIDC settings":"ذخیره تنظیمات OIDC"
 }
