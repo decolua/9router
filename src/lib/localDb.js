@@ -16,7 +16,6 @@ export {
   sanitizeComboSystemPromptFields, sanitizeComboThinkingUsageFields, MAX_COMBO_SYSTEM_PROMPT_CHARS,
   getModelAliases, setModelAlias, deleteModelAlias,
   getCustomModels, addCustomModel, deleteCustomModel,
-  getMitmAlias, setMitmAliasAll,
   getPricing, getPricingForModel, updatePricing, resetPricing, resetAllPricing,
   exportDb, importDb,
 } from "@/lib/db/index.js";

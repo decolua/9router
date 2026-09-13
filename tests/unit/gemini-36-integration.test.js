@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createRequire } from "node:module";
 
 import { getModelUpstreamId } from "../../open-sse/config/providerModels.js";
 import { AntigravityExecutor } from "../../open-sse/executors/antigravity.js";
@@ -12,9 +11,6 @@ import {
   getProjectIdForConnection,
   removeConnection,
 } from "../../open-sse/services/projectId.js";
-
-const require = createRequire(import.meta.url);
-const mitmConfig = require("../../src/mitm/config.js");
 
 function cloudCodeResponse(projectId) {
   return {
@@ -91,34 +87,6 @@ describe("Gemini 3.6 Antigravity tiers", () => {
       });
     }
   );
-});
-
-describe("Gemini 3.6 MITM model extraction", () => {
-  it("exports the model extractor from the side-effect-free MITM config module", () => {
-    expect(mitmConfig.extractModel).toBeTypeOf("function");
-  });
-
-  it.each(["high", "medium", "low"])("extracts the %s thinking tier", (tier) => {
-    const body = Buffer.from(JSON.stringify({
-      request: { generationConfig: { thinkingConfig: { thinkingLevel: tier } } },
-    }));
-
-    expect(mitmConfig.extractModel(
-      "/v1internal/models/gemini-3.6-flash-tiered:streamGenerateContent",
-      body
-    )).toBe(`gemini-3.6-flash-${tier}`);
-  });
-
-  it("defaults invalid or missing thinking levels to medium", () => {
-    const body = Buffer.from(JSON.stringify({
-      request: { generationConfig: { thinkingConfig: { thinkingLevel: "unknown" } } },
-    }));
-
-    expect(mitmConfig.extractModel(
-      "/v1internal/models/gemini-3.6-flash-tiered:streamGenerateContent",
-      body
-    )).toBe("gemini-3.6-flash-medium");
-  });
 });
 
 describe("Gemini 3.6 catalogs and pricing", () => {

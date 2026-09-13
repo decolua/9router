@@ -248,7 +248,7 @@ describe("dashboard guard local-only access", () => {
   it("allows local-only route on loopback when requireLogin=false", async () => {
     mocks.getSettings.mockResolvedValue({ requireLogin: false });
 
-    const response = await proxy(localRequest("/api/cli-tools/antigravity-mitm", {
+    const response = await proxy(localRequest("/api/mcp/filesystem/sse", {
       host: "localhost:20128",
       origin: "http://localhost:20128",
     }));
@@ -259,7 +259,7 @@ describe("dashboard guard local-only access", () => {
   it("rejects local-only route from non-loopback host even when requireLogin=false", async () => {
     mocks.getSettings.mockResolvedValue({ requireLogin: false });
 
-    const response = await proxy(request("/api/cli-tools/antigravity-mitm", {
+    const response = await proxy(request("/api/mcp/filesystem/sse", {
       host: "router.example.com",
     }));
 
@@ -269,7 +269,7 @@ describe("dashboard guard local-only access", () => {
   it("rejects local-only route when Origin is non-loopback (CSRF block)", async () => {
     mocks.getSettings.mockResolvedValue({ requireLogin: false });
 
-    const response = await proxy(localRequest("/api/cli-tools/antigravity-mitm", {
+    const response = await proxy(localRequest("/api/mcp/filesystem/sse", {
       host: "localhost:20128",
       origin: "http://evil.example.com",
     }));

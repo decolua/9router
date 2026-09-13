@@ -272,14 +272,6 @@ describe("DB SQLite layer — public API parity", () => {
     expect(after.find((m) => m.id === "m1")).toBeUndefined();
   });
 
-  it("mitmAlias: get/set per tool", async () => {
-    await sqliteDb.setMitmAliasAll("cursor", { "gpt-5": "claude-3" });
-    const a = await sqliteDb.getMitmAlias("cursor");
-    expect(a["gpt-5"]).toBe("claude-3");
-    const all = await sqliteDb.getMitmAlias();
-    expect(all.cursor).toEqual({ "gpt-5": "claude-3" });
-  });
-
   it("disabledModels: add/remove per provider", async () => {
     await sqliteDb.disableModels("openai", ["gpt-3", "gpt-4"]);
     expect(await sqliteDb.getDisabledByProvider("openai")).toEqual(expect.arrayContaining(["gpt-3", "gpt-4"]));

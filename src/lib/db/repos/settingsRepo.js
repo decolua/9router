@@ -1,8 +1,6 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
-const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
-
 const DEFAULT_SETTINGS = {
   cloudEnabled: false,
   stickyRoundRobinLimit: 3,
@@ -44,8 +42,6 @@ const DEFAULT_SETTINGS = {
   outboundProxyEnabled: false,
   outboundProxyUrl: "",
   outboundNoProxy: "",
-  mitmRouterBaseUrl: DEFAULT_MITM_ROUTER_BASE,
-  dnsToolEnabled: {},
 };
 
 async function readRaw() {
