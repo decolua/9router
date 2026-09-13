@@ -7,7 +7,6 @@ export { ClaudeService } from "./claude.js";
 export { CodexService } from "./codex.js";
 export { GeminiCLIService } from "./gemini.js";
 export { IFlowService } from "./iflow.js";
-export { QoderService } from "./qoder.js";
 export { AntigravityService } from "./antigravity.js";
 export { OpenAIService } from "./openai.js";
 export { GitHubService } from "./github.js";

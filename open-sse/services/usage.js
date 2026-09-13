@@ -18,13 +18,11 @@ import { getOpenCodeGoUsage } from "./usage/opencode-go.js";
 import { getGroqUsage } from "./usage/groq.js";
 import { getZedUsage } from "./usage/zed.js";
 import { getXiaomiMimoUsage } from "./usage/xiaomi-mimo.js";
-import { resolveQoderCredentials } from "./qoderModels.js";
 import { getGlmUsage } from "./usage/glm.js";
 import {
   getIflowUsage,
   getOllamaUsage,
   getVercelAiGatewayUsage,
-  getQoderUsage,
 } from "./usage/misc.js";
 
 /**
@@ -40,12 +38,6 @@ const USAGE_HANDLERS = {
   claude: (c) => getClaudeUsage(c.accessToken, c.proxyOptions, { force: c.force }),
   codex: (c) => getCodexUsage(c.accessToken, c.proxyOptions),
   kiro: (c) => getKiroUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
-  qoder: async (c) => {
-    // PAT (pt-...) connections must be exchanged to a job token before the
-    // quota endpoint accepts them.
-    const resolved = await resolveQoderCredentials(c, c.proxyOptions).catch(() => null);
-    return getQoderUsage(resolved?.accessToken || c.accessToken, c.proxyOptions);
-  },
   iflow: (c) => getIflowUsage(c.accessToken),
   ollama: (c) => getOllamaUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),
   glm: (c) => getGlmUsage(c.apiKey, c.provider, c.proxyOptions),

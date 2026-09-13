@@ -113,7 +113,7 @@ function makeQuota({ used, total, resetAt, unlimited = false }) {
   const safeTotal = Math.max(0, toFiniteNumber(total, 0));
   const safeUsed = Math.max(0, toFiniteNumber(used, 0));
   // Do NOT set absolute `remaining` — QuotaTable's getRemainingPercentage treats
-  // `remaining` as a 0–100 percentage (same trap as Qoder credits).
+  // `remaining` as a 0–100 percentage.
   if (unlimited || safeTotal === 0) {
     return {
       used: safeUsed,

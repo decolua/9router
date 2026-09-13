@@ -63,17 +63,6 @@ const OAUTH_TEST_CONFIG = {
     noAuth: true,
   },
   kiro: { checkExpiry: true, refreshable: true },
-  qoder: {
-    // Test by hitting Qoder's userinfo endpoint with the device token.
-    // refreshable: false because the device-flow refresh endpoint returns
-    // 403 for our flow (users re-login when expired). No checkExpiry —
-    // we want the actual URL probe to run so revoked tokens surface.
-    url: "https://openapi.qoder.sh/api/v1/userinfo",
-    method: "GET",
-    authHeader: "Authorization",
-    authPrefix: "Bearer ",
-    refreshable: false,
-  },
   kimi: { checkExpiry: true, refreshable: true },
   "kimi-coding": { checkExpiry: true, refreshable: true },
   cursor: { tokenExists: true },
@@ -774,26 +763,6 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
           headers: { Authorization: `Bearer ${connection.apiKey}` },
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
-      }
-      case "qoder": {
-        // PAT (pt-...) exchange → job token. A successful exchange proves the PAT.
-        const raw = connection.apiKey || "";
-        const pat = raw.startsWith("pt-") ? raw : `pt-${raw}`;
-        const exRes = await fetchWithConnectionProxy(
-          "https://openapi.qoder.sh/api/v1/jobToken/exchange",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Accept: "application/json",
-              "Cosy-Version": "1.0.1",
-              "Cosy-ClientType": "5",
-            },
-            body: JSON.stringify({ personal_token: pat }),
-          },
-          effectiveProxy,
-        );
-        return { valid: exRes.ok, error: exRes.ok ? null : "Invalid Personal Access Token" };
       }
 case "llm7": {
         const baseUrl = connection.providerSpecificData?.baseUrl || "https://api.llm7.io/v1";

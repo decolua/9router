@@ -75,7 +75,6 @@ import p71 from "./perplexity-web.js";
 import p72 from "./perplexity.js";
 import p73 from "./perplexity-agent.js";
 import p74 from "./playht.js";
-import p75 from "./qoder.js";
 import p77 from "./recraft.js";
 import p78 from "./runwayml.js";
 import p79 from "./sdwebui.js";
@@ -200,7 +199,6 @@ export default [
   p72,
   p73,
   p74,
-  p75,
   p77,
   p78,
   p79,

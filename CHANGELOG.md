@@ -1,10 +1,14 @@
+# Unreleased
+
+## Breaking Changes
+- **Qoder**: remove the Qoder provider (#4038) — registry entry and `qd`/`qoder` aliases, COSY executor (WAF-bypass body encoding, `{statusCodeValue, body}` SSE envelope), device-code OAuth with PKCE and PAT (`pt-…`) job-token exchange, usage/quota handler, dynamic model catalog, dashboard UI, assets, and tests. Generic OAuth/device-code/usage behavior is unchanged; stale Qoder rows in existing databases are cleaned by the retired-provider data migration shipped alongside this removal.
+
 # v0.5.75 (2026-09-10)
 
 ## Features
 - **Video**: add OpenRouter and Vertex AI (Veo) video generation on `/v1/videos/*` via a provider adapter layer; poll requests resolve their provider from `x-connection-id` or `?provider=`
 - **Antigravity**: add weekly quota tracking (Gemini weekly / Claude & GPT weekly) and free-tier handling from `retrieveUserQuotaSummary` (#3892)
 - **Codex**: add GPT Image 2.5, Flare and Sunburst image models with multi-image support; add the same ids to the OpenAI catalog
-- **Qoder**: surface usage to all clients and stop inlining large attachments — images upload through `/api/v2/image/upload` like qodercli, oversized file blocks become stubs, context tier auto-escalates
 - **OpenCode Go**: add newly published models (glm-5.3, kimi-k3, deepseek-flash, longcat-2.0, hy4-preview, hy3 on chat/completions; qwen3.8-max, qwen3.8-flash on `/messages`; grok-4.6, gpt-5.6-luna on Responses) and list `deepseek-v4.1-flash` first in the catalog
 - **CLI tools**: group the model selector by provider with full-text search and manual custom model ID entry
 - **CodeBuddy-CN**: replace `deepseek-v4-flash` with `deepseek-v4.1-flash`
@@ -17,7 +21,6 @@
 - **Kiro**: never send a top-level `systemPrompt` (`400 REQUEST_BODY_INVALID`); route requests through current runtime surfaces (#3776)
 - **Codex**: strip Unicode-property tool schema patterns the validator rejects (#3922); restore the `Version` header and single-source the CLI version
 - **DeepSeek**: keep Anthropic-only tool types when forwarding to `/anthropic/v1/messages`
-- **Qoder**: drop the Responses usage plumbing from shared translator/handler code, which changed token accounting for every provider, not just Qoder
 - **Antigravity**: normalize contents and handle intermediate tool responses; protect the OAuth token-refresh path from Google anti-abuse rate limits (#3813)
 - **Providers**: clear stale connection health state (`modelLock_*`, `backoffLevel`, `rateLimitedUntil`, `errorCode`) when a connection is re-validated (#3810, #3830); remove the duplicate `qwen` provider that shadowed `alims-intl`
 - **Video / Vertex**: reject job ids and model ids that would escape the request URL path (SSRF)
@@ -31,7 +34,6 @@
 - **Usage**: add Claude Fable quota tracker support with weekly window normalization (`weekly fable (7d)`)
 - **Dashboard**: group Antigravity Gemini and Claude quotas in Quota Tracker, prune stale hidden keys
 - **OpenCode Go**: add `muse-spark-1.3-contributor` model and support parallel tool calls on Responses path (#3819)
-- **Providers & Models**: align CodeBuddy-CN catalog/capabilities with server config; add GPT-5.6 Sol, Terra, Luna image aliases on Codex (#3806); refresh Qoder catalog with capability mapping and image pass-through
 - **CLI tools**: replace Copilot MITM with VS Code extension setup guide
 - **Gemini**: persist and replay `thoughtSignature` scoped by session namespace
 
@@ -234,7 +236,6 @@
   `GenerateAssistantResponse` to `POST /` + header, bypassing MITM. Also emit
   the now-mandatory initial-response frame and map the `auto` model slot
 - **Kiro**: report real output tokens and stop discarding usable turns
-- **Qoder**: detect billing blocks at stream start and return a synthetic 403
   so combo/account fallback triggers instead of leaking the error into chat
 - **Antigravity**: strip competitive system prompts (Zed IDE's Claude-agent
   prompt) that Antigravity flags with a 429 Quota Exhausted
@@ -290,7 +291,6 @@
 - **Endpoint**: auto-provision a "Default Key" for first-time users so `/v1`
   works without a manual dashboard step
 - **Codex**: support GPT-5.6 Max/Ultra reasoning-level overrides (cx/ routes only)
-- **Qoder**: support PAT (Personal Access Token) connections end-to-end, alongside
   OAuth device flow
 - **CLI tools**: add OpenDesign (manalkaff/opendesign) support
 - **Headroom**: report effective payload savings (tool schema/history bytes broken
@@ -362,7 +362,6 @@
 - **Providers**: add api-airforce, baidu, bazaarlink, bluesminds, kilo-gateway, llm7, morph, sambanova, tencent
 - **OAuth**: zed / trae / windsurf providers + harden callback proxies
 - **CLI tools**: set Claude Code max context tokens
-- **Qoder**: PAT auth + refresh model list
 - **Gemini**: Gemini 3.6 Flash tier routing + Gemini 3.5 Flash Lite
 - **Claude**: bump default Opus to `claude-opus-5`
 - **Kiro**: add Claude Opus 5 models
@@ -660,7 +659,6 @@
 - Kiro: auto-resolve profileArn to prevent 403 on IDC login, enhance profile ARN resolution, update endpoint to `runtime.us-east-1.kiro.dev` (#1713)
 - Tunnel: detect system-installed Tailscale via dual-socket probe (#1723) + non-blocking probes to prevent UI freeze
 - CommandCode: force `stream=true` in transformRequest (#1706)
-- Qoder: increase timeouts for reasoning models and improve stream handling
 - Dashboard: show provider node name instead of connection name in topology (#1770) + show explicit `kind="llm"` combos on combos page (#1684)
 
 ## Docs
@@ -673,7 +671,6 @@
 - i18n: endpoint exposure notice across multiple languages + Russian README
 - Antigravity: add gemini-3.5-flash-extra-low (Low) model
 - xiaomi-tokenplan: add Claude-native MiMo V2.5 Pro alias via dedicated executor
-- Qoder: fetch latest model + dashboard import-model button (#1642)
 - MiniMax: add MiniMax-M3 + update Quota Tracker coding/CN (#1631)
 
 ## Fixes
@@ -685,7 +682,6 @@
 - MiniMax: echo `reasoning_content` on follow-up turns to avoid 400 (#1543)
 - Kiro: handle 400 on tool-bearing history without client tools; add mappable "auto" model slot; fix binary EventStream crash + add models & TTS tool filtering
 - Antigravity: passthrough tab-autocomplete + mark default agent slot mandatory
-- Qoder: allow `qmodel_latest` model key (#1638)
 - Providers: restore one-connection guard for compatible/embedding nodes
 - Model-test: route image/STT probes to their real endpoints, harden STT ping; add opencode-go + xiaomi-tokenplan to connection test (#1576, #1628)
 
@@ -696,7 +692,6 @@
 # v0.4.66 (2026-05-29)
 
 ## Features
-- Add Qoder provider: device-flow OAuth, COSY signing, WAF-bypass body encoding, live model catalog, dashboard quota tracker, 11 models (#1372)
 - Add new models: Claude Opus 4.8 (Claude Code), GPT 5.4 Mini (Codex)
 
 ## Fixes

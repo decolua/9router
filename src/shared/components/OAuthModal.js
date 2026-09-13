@@ -119,8 +119,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const startPolling = useCallback(async (deviceCode, codeVerifier, interval, extraData, deadlineMs) => {
     pollingAbortRef.current = false;
     setPolling(true);
-    // Honor the upstream's expires_in when supplied (qoder sets 300s) so we
-    // don't time out earlier than the device code itself. Default 120s
+    // Honor the upstream's expires_in when supplied so we don't time out
+    // earlier than the device code itself. Default 120s
     // matches the prior behavior for providers that don't surface a value.
     const startedAt = Date.now();
     const deadline = startedAt + (Number.isFinite(deadlineMs) && deadlineMs > 0 ? deadlineMs : 120_000);
@@ -232,7 +232,6 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         "kilocode",
         "codebuddy-cn",
         "codebuddy-intl",
-        "qoder",
         "grok-cli",
       ];
       if (deviceCodeProviders.includes(provider)) {
@@ -257,9 +256,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         const verifyUrl = data.verification_uri_complete || data.verification_uri;
         if (verifyUrl) window.open(verifyUrl, "_blank", "noopener,noreferrer");
 
-        // Pass extraData for Kiro (contains _clientId, _clientSecret) and
-        // Qoder (contains _qoderMachineId / _qoderNonce — needed so mapTokens
-        // can persist the machine id alongside the token).
+        // Pass extraData for providers that need additional device-flow state.
         const extraData = provider === "kiro"
           ? {
               _clientId: data._clientId,
@@ -267,12 +264,6 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               _region: data._region,
               _authMethod: data._authMethod,
               _startUrl: data._startUrl,
-            }
-          : provider === "qoder"
-          ? {
-              _qoderNonce: data._qoderNonce,
-              _qoderMachineId: data._qoderMachineId,
-              _qoderVerifier: data.codeVerifier,
             }
           : (provider === "kimi" || provider === "kimi-coding")
           ? { _kimiDeviceId: data._kimiDeviceId }
@@ -282,8 +273,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           data.codeVerifier,
           data.interval || 5,
           extraData,
-          // Use the upstream's expires_in if present so we don't time out
-          // before the device code itself (qoder gives 300s).
+          // Use the upstream's expires_in if present so we do not time out
+          // before the device code itself.
           Number.isFinite(data.expires_in) && data.expires_in > 0
             ? data.expires_in * 1000
             : undefined,
