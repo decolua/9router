@@ -6,6 +6,7 @@ import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from
 import { openaiToCommandCodeRequest } from "open-sse/translator/request/openai-to-commandcode.js";
 import { resolveQoderCredentials, resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
+import { signRequest } from "open-sse/utils/awsSigv4.js";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).
@@ -231,6 +232,40 @@ export async function POST(request) {
         return NextResponse.json({
           valid: isValid,
           error: isValid ? null : "Invalid API key or Azure configuration",
+        });
+      }
+
+      if (provider === "bedrock") {
+        const { providerSpecificData } = body;
+        const accessKeyId = providerSpecificData?.accessKeyId;
+        if (!accessKeyId) {
+          return NextResponse.json({ valid: false, error: "Missing AWS Access Key ID" });
+        }
+        const region = (providerSpecificData?.region || "us-east-1").trim();
+        const model = getDefaultModel("bedrock") || "global.anthropic.claude-haiku-4-5-20251001-v1:0";
+        const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${model}/invoke`;
+        const payload = JSON.stringify({
+          anthropic_version: "bedrock-2023-05-31",
+          max_tokens: 1,
+          messages: [{ role: "user", content: "test" }],
+        });
+        const headers = signRequest({
+          url,
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+          region,
+          accessKeyId,
+          secretAccessKey: apiKey,
+          sessionToken: providerSpecificData?.sessionToken || null,
+        });
+        const brRes = await fetch(url, { method: "POST", headers, body: payload, signal: AbortSignal.timeout(15000) });
+        // 400 ValidationException still proves the signature was accepted; only
+        // 401/403 mean the credentials (or their Bedrock permissions) are wrong.
+        isValid = brRes.status !== 401 && brRes.status !== 403;
+        return NextResponse.json({
+          valid: isValid,
+          error: isValid ? null : "Invalid AWS credentials, region, or missing Bedrock model access",
         });
       }
 

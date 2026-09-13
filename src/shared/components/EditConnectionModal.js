@@ -22,6 +22,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [accessKeyId, setAccessKeyId] = useState("");
   const [region, setRegion] = useState("");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -48,6 +49,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
         setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
       }
+      if (connection.provider === "bedrock") {
+        setAccessKeyId(connection.providerSpecificData?.accessKeyId || "");
+      }
       // Load region for providers that support it (e.g. xiaomi-tokenplan)
       const providerCfg = AI_PROVIDERS?.[connection.provider];
       if (providerCfg?.regions) {
@@ -62,6 +66,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
+  const isBedrock = connection?.provider === "bedrock";
   const isCompatible = connection
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
@@ -69,7 +74,11 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
 
   // Build providerSpecificData for region-aware providers
   const buildRegionSpecificData = () => {
-    if (providerRegions && region) return { ...((connection?.providerSpecificData) || {}), region };
+    if (providerRegions && region) {
+      const psd = { ...((connection?.providerSpecificData) || {}), region };
+      if (isBedrock) psd.accessKeyId = accessKeyId.trim();
+      return psd;
+    }
     return undefined;
   };
 
@@ -262,6 +271,16 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
               />
             </div>
           </div>
+        )}
+
+        {isBedrock && (
+          <Input
+            label="Access Key ID"
+            value={accessKeyId}
+            onChange={(e) => setAccessKeyId(e.target.value)}
+            placeholder="AKIA..."
+            hint="The matching Secret Access Key is stored as this connection's API key."
+          />
         )}
 
         {providerRegions && (

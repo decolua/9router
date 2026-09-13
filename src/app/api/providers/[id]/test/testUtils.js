@@ -5,6 +5,7 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import { CODEX_CLI_VERSION } from "open-sse/config/appConstants.js";
+import { signRequest } from "open-sse/utils/awsSigv4.js";
 import {
   refreshProviderCredentials,
   shouldRefreshCredentials,
@@ -545,6 +546,23 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         }, effectiveProxy);
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid API key or Azure configuration" };
+      }
+      case "bedrock": {
+        const psd = connection.providerSpecificData || {};
+        const accessKeyId = psd.accessKeyId;
+        if (!accessKeyId) return { valid: false, error: "Missing AWS Access Key ID" };
+        const region = (psd.region || "us-east-1").trim();
+        const model = connection.defaultModel || getDefaultModel("bedrock") || "global.anthropic.claude-haiku-4-5-20251001-v1:0";
+        const url = `https://bedrock-runtime.${region}.amazonaws.com/model/${model}/invoke`;
+        const payload = JSON.stringify({ anthropic_version: "bedrock-2023-05-31", max_tokens: 1, messages: [{ role: "user", content: "test" }] });
+        const headers = signRequest({
+          url, method: "POST", headers: { "Content-Type": "application/json" }, body: payload,
+          region, accessKeyId, secretAccessKey: connection.apiKey, sessionToken: psd.sessionToken || null,
+        });
+        const res = await fetchWithConnectionProxy(url, { method: "POST", headers, body: payload }, effectiveProxy);
+        // A 400 ValidationException still proves the signature was accepted.
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid AWS credentials, region, or missing Bedrock model access" };
       }
       case "openai": {
         const res = await fetchWithConnectionProxy("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
