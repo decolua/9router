@@ -97,6 +97,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   const [batchStopping, setBatchStopping] = useState(false);
   const [batchResults, setBatchResults] = useState({});
   const [batchSummary, setBatchSummary] = useState(null);
+  const [deletingFailed, setDeletingFailed] = useState(false);
   const stopBatchTestRef = useRef(false);
   const notify = useNotificationStore();
 
@@ -117,6 +118,8 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   const shownCount = filteredModels.length;
   const canTest = connections.length > 0;
   const batchRunning = batchTesting || batchStopping;
+  // Models whose latest batch test errored — eligible for bulk delete.
+  const failedModels = filteredModels.filter((m) => batchResults[m.id]?.state === "error");
 
   const handleTestModel = async (modelId) => {
     if (testingModelId) return;
@@ -184,6 +187,38 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     if (!batchTesting) return;
     stopBatchTestRef.current = true;
     setBatchStopping(true);
+  };
+
+  // Bulk-delete every model whose latest batch test errored. Routes each row
+  // through the same delete path as its per-row delete button (custom model
+  // vs alias), then drops its batch result so the row disappears cleanly.
+  const handleDeleteFailedModels = async () => {
+    if (failedModels.length === 0 || deletingFailed) return;
+    if (!window.confirm(`Delete ${failedModels.length} failed model${failedModels.length === 1 ? "" : "s"} from this provider? This cannot be undone.`)) return;
+
+    setDeletingFailed(true);
+    let deleted = 0;
+    try {
+      for (const model of failedModels) {
+        if (model.source === "custom") {
+          await onDeleteCustomModel(model.id);
+        } else {
+          await onDeleteAlias(model.alias);
+        }
+        deleted += 1;
+        setBatchResults((prev) => {
+          const next = { ...prev };
+          delete next[model.id];
+          return next;
+        });
+      }
+      notify.success(`Deleted ${deleted} failed model${deleted === 1 ? "" : "s"}`);
+    } catch (error) {
+      notify.error("Failed to delete models");
+      console.log("Error deleting failed models:", error);
+    } finally {
+      setDeletingFailed(false);
+    }
   };
 
   const handleAdd = async () => {
@@ -306,6 +341,18 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
                 <span className="text-xs text-text-muted tabular-nums">
                   {batchSummary.completed}/{batchSummary.total} · {batchSummary.passed} ok{batchSummary.failed > 0 ? ` · ${batchSummary.failed} fail` : ""}{batchSummary.avgLatencyMs != null ? ` · avg ${batchSummary.avgLatencyMs}ms` : ""}{batchSummary.stopped ? " · stopped" : ""}
                 </span>
+              )}
+              {failedModels.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="danger"
+                  icon="delete"
+                  onClick={handleDeleteFailedModels}
+                  disabled={batchRunning || deletingFailed}
+                  title={`Remove the ${failedModels.length} model(s) whose latest test failed`}
+                >
+                  {deletingFailed ? "Deleting..." : `Delete ${failedModels.length} Failed`}
+                </Button>
               )}
               {batchRunning ? (
                 <Button size="sm" variant="ghost" icon="stop" onClick={handleStopTestModels} disabled={batchStopping}>
