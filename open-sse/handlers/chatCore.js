@@ -19,6 +19,7 @@ import { handleForcedSSEToJson } from "./chatCore/sseToJsonHandler.js";
 import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
+import { prepareWebSearchFallbackBody } from "../services/webSearchFallback.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
@@ -150,6 +151,21 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Skip all translation/normalization — only model and Bearer are swapped
   const clientTool = detectClientTool(clientRawRequest?.headers || {}, body);
   const passthrough = isNativePassthrough(clientTool, provider);
+
+  // Native web_search redirect (layer 1): rewrite the client's built-in search tool into
+  // the 9router_web_search function tool and force non-streaming, so the intercept in
+  // webSearchIntercept.js can run the search and rewrite the response in place.
+  const { body: bodyWithFallback, fallback: webSearchFallbackPlan } = prepareWebSearchFallbackBody(body, {
+    provider,
+    sourceFormat,
+    targetFormat,
+    nativePassthrough: passthrough,
+  });
+  if (webSearchFallbackPlan.enabled) {
+    body = bodyWithFallback;
+    stream = false;
+    log?.debug?.("WEBSEARCH", `Converted ${webSearchFallbackPlan.convertedToolCount} web_search tool(s) to fallback for ${provider}`);
+  }
 
   // Expose raw client headers to translators/executors for session-id resolution
   if (credentials) credentials.rawHeaders = clientRawRequest?.headers || {};
@@ -474,7 +490,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, resetsAtMs);
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
+  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log, webSearchFallbackPlan };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 

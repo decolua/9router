@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Card, Button, Toggle, Input } from "@/shared/components";
+import { Card, Button, Toggle, Input, Select } from "@/shared/components";
+import { AI_PROVIDERS } from "@/shared/constants/providers.js";
 import Modal, { ConfirmModal } from "@/shared/components/Modal";
 import LanguageSwitcher from "@/shared/components/LanguageSwitcher";
 import { useTheme } from "@/shared/hooks/useTheme";
@@ -9,6 +10,11 @@ import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
 import { LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
 import { LOCALE_FLAGS } from "@/shared/constants/locales";
+
+// Providers that can execute a web search (same capability test as webSearchIntercept).
+const SEARCH_PROVIDER_OPTIONS = Object.entries(AI_PROVIDERS)
+  .filter(([, def]) => def.searchConfig || def.searchViaChat)
+  .map(([id, def]) => ({ value: id, label: def.name || id }));
 
 function getLocaleFromCookie() {
   if (typeof document === "undefined") return "en";
@@ -274,6 +280,21 @@ export default function ProfilePage() {
       }
     } catch (err) {
       console.error("Failed to update settings:", err);
+    }
+  };
+
+  const updateWebSearchSettings = async (updates) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, ...updates }));
+      }
+    } catch (err) {
+      console.error("Failed to update web search settings:", err);
     }
   };
 
@@ -1523,6 +1544,69 @@ export default function ProfilePage() {
                 ? ` Combos rotate after ${settings.comboStickyRoundRobinLimit || 1} call${(settings.comboStickyRoundRobinLimit || 1) === 1 ? "" : "s"} per model.`
                 : " Combos always start with their first model."}
             </p>
+          </div>
+        </Card>
+
+        {/* Web Search Redirect */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500 shrink-0">
+              <span className="material-symbols-outlined text-[20px]">travel_explore</span>
+            </div>
+            <h3 className="text-base sm:text-lg font-semibold">Web Search Redirect</h3>
+          </div>
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start sm:items-center justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Serve native web_search tools</p>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  Execute Claude/Responses web_search tools here and return the results instead of sending them upstream
+                </p>
+              </div>
+              <Toggle
+                checked={!!settings.webSearchFallbackProvider}
+                onChange={() =>
+                  settings.webSearchFallbackProvider
+                    ? updateWebSearchSettings({ webSearchFallbackProvider: "" })
+                    : updateWebSearchSettings({ webSearchFallbackProvider: SEARCH_PROVIDER_OPTIONS[0]?.value || "tavily" })
+                }
+                disabled={loading}
+              />
+            </div>
+
+            {settings.webSearchFallbackProvider && (
+              <>
+                <div className="flex items-start sm:items-center justify-between gap-4 pt-2 border-t border-border/50">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm sm:text-base">Search provider</p>
+                    <p className="text-xs sm:text-sm text-text-muted">Provider used to run the search</p>
+                  </div>
+                  <Select
+                    value={settings.webSearchFallbackProvider}
+                    onChange={(e) => updateWebSearchSettings({ webSearchFallbackProvider: e.target.value })}
+                    options={SEARCH_PROVIDER_OPTIONS}
+                    disabled={loading}
+                    className="w-40 sm:w-48 shrink-0"
+                  />
+                </div>
+                <div className="flex items-start sm:items-center justify-between gap-4 pt-2 border-t border-border/50">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm sm:text-base">Route model (optional)</p>
+                    <p className="text-xs sm:text-sm text-text-muted">
+                      provider/model that always handles web_search requests; empty keeps the requested model
+                    </p>
+                  </div>
+                  <Input
+                    type="text"
+                    value={settings.webSearchRouteModel || ""}
+                    onChange={(e) => updateWebSearchSettings({ webSearchRouteModel: e.target.value })}
+                    placeholder="e.g. bai/qwen3.8-flash"
+                    disabled={loading}
+                    className="w-48 sm:w-64 shrink-0"
+                  />
+                </div>
+              </>
+            )}
           </div>
         </Card>
 

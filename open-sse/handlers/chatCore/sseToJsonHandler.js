@@ -4,6 +4,7 @@ import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
+import { applyWebSearchFallback } from "./webSearchIntercept.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
@@ -179,7 +180,11 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, customToolNames, trackDone, appendLog, reqTag, log }) {
+// The web-search intercept runs on the CLIENT-format body, so it is applied at each
+// return site below, same as nonStreamingHandler.js does on the plain JSON path.
+// Without this, a forced-streaming provider hides the search call in SSE and the
+// converted JSON reaches the client as an unanswered tool call.
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, customToolNames, webSearchFallbackPlan, trackDone, appendLog, reqTag, log }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -225,7 +230,8 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
 
       // Client is Responses API → return as-is
       if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
-        return { success: true, response: new Response(JSON.stringify(jsonResponse), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+        const intercepted = await applyWebSearchFallback({ translatedResponse: jsonResponse, sourceFormat, fallbackPlan: webSearchFallbackPlan, log });
+        return { success: true, response: new Response(JSON.stringify(intercepted), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
       }
 
       // Build client-format response.
@@ -281,7 +287,8 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         };
       }
 
-      return { success: true, response: new Response(JSON.stringify(finalResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+      const interceptedResp = await applyWebSearchFallback({ translatedResponse: finalResp, sourceFormat, fallbackPlan: webSearchFallbackPlan, log });
+      return { success: true, response: new Response(JSON.stringify(interceptedResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
     } catch (err) {
       console.error("[ChatCore] Responses API SSE→JSON failed:", err);
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
@@ -351,7 +358,8 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       ? chatCompletionToResponses(parsed, customToolNames)
       : parsed;
 
-    return { success: true, response: new Response(JSON.stringify(finalBody), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+    const interceptedBody = await applyWebSearchFallback({ translatedResponse: finalBody, sourceFormat, fallbackPlan: webSearchFallbackPlan, log });
+    return { success: true, response: new Response(JSON.stringify(interceptedBody), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {
     console.error("[ChatCore] Chat Completions SSE→JSON failed:", err);
     return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
