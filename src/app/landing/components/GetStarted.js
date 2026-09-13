@@ -23,11 +23,11 @@ export default function GetStarted() {
               <div className="flex gap-4">
                 <div className="flex-none w-8 h-8 rounded-full bg-[#f97815]/20 text-[#f97815] flex items-center justify-center font-bold">1</div>
                 <div>
-                  <h4 className="font-bold text-lg">Install 9Router</h4>
-                  <p className="text-sm text-gray-500 mt-1">Run npx command to start the server instantly</p>
+                  <h4 className="font-bold text-lg">Start 9Router</h4>
+                  <p className="text-sm text-gray-500 mt-1">Run the Docker image to start the server instantly</p>
                 </div>
               </div>
-              
+
               <div className="flex gap-4">
                 <div className="flex-none w-8 h-8 rounded-full bg-[#f97815]/20 text-[#f97815] flex items-center justify-center font-bold">2</div>
                 <div>
@@ -59,12 +59,12 @@ export default function GetStarted() {
               
               {/* Terminal content */}
               <div className="p-6 font-mono text-sm leading-relaxed overflow-x-auto">
-                <div 
+                <div
                   className="flex items-center gap-2 mb-4 group cursor-pointer"
-                  onClick={() => handleCopy("npx 9router")}
+                  onClick={() => handleCopy("docker run -p 20128:20128 decolua/9router:latest")}
                 >
                   <span className="text-green-400">$</span>
-                  <span className="text-white">npx 9router</span>
+                  <span className="text-white">docker run -p 20128:20128 decolua/9router:latest</span>
                   <span className="ml-auto text-gray-500 text-xs opacity-0 group-hover:opacity-100">
                     {copied === "landing" ? "✓ Copied" : "Copy"}
                   </span>

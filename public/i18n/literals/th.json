@@ -1323,8 +1323,6 @@
   "name|apiKey": "name|apiKey",
   "no_proxy:": "ไม่มี proxy:",
   "not detected locally": "ไม่พบบนเครื่อง",
-  "npm install -g 9router": "npm install -g 9router",
-  "npx 9router": "npx 9router",
   "open http://localhost:9099": "open http://localhost:9099",
   "openid profile email": "openid profile email",
   "optional context to improve accuracy": "optional context เพื่อเพิ่มความแม่นยำ",

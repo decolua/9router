@@ -73,14 +73,21 @@ Result: Never stop coding, minimal cost + 20-40% token savings via RTK
 
 ## ⚡ Quick Start
 
-**1. Install globally:**
+**1. Run 9Router** — Docker (recommended):
 
 ```bash
-npm install -g 9router
-9router
+docker run -d --name 9router -v 9router-data:/app/data -p 20128:20128 decolua/9router:latest
 ```
 
 🎉 Dashboard opens at `http://localhost:20128`
+
+Or run from source (this repository):
+
+```bash
+cp .env.example .env
+npm install
+PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
+```
 
 **2. Connect a FREE provider (no signup needed):**
 
@@ -96,16 +103,6 @@ Claude Code/Codex/OpenClaw/Cursor/Cline Settings:
 ```
 
 **That's it!** Start coding with FREE AI models.
-
-**Alternative: run from source (this repository):**
-
-This repository package is private (`9router-app`), so source/Docker execution is the expected local development path.
-
-```bash
-cp .env.example .env
-npm install
-PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
-```
 
 Production mode:
 

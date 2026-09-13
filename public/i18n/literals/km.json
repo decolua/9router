@@ -1328,8 +1328,6 @@
   "name|apiKey": "name|apiKey",
   "no_proxy:": "no_proxy៖",
   "not detected locally": "រកមិនឃើញនៅលើម៉ាស៊ីន",
-  "npm install -g 9router": "npm install -g 9router",
-  "npx 9router": "npx 9router",
   "open http://localhost:9099": "open http://localhost:9099",
   "openid profile email": "openid profile email",
   "optional context to improve accuracy": "Context ជាជម្រើសដើម្បីបង្កើនភាពត្រឹមត្រូវ",

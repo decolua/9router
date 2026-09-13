@@ -10,6 +10,7 @@ const origCreate = http.createServer.bind(http);
 // A bare `next start` / `next dev` never loads this file, so it cannot produce a matching
 // header even though the env var is inherited by child processes. Named like x-9r-cli-token
 // so the request-detail header sanitizer redacts it too.
+// (The "x-9r-cli-token" naming is historical — the header now doubles as an app-internal peer secret.)
 const PEER_TOKEN = crypto.randomBytes(24).toString("hex");
 process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
 
@@ -39,7 +40,7 @@ function startBackgroundTokenRefreshFromCustomServer() {
       process.once("SIGTERM", stop);
     })
     .catch((e) => {
-      // Expected in published CLI standalone (src/ not on disk). App bootstrap covers it.
+      // Default when src/ is not on disk (standalone build). App bootstrap covers it.
       if (process.env.DEBUG_BACKGROUND_TOKEN_REFRESH) {
         console.error("[BackgroundTokenRefresh] import failed:", e && e.message ? e.message : e);
       }

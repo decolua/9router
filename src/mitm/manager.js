@@ -62,8 +62,8 @@ function resolveBundledServerPath() {
   return fromCwd;
 }
 
-// Copy bundled server.js into DATA_DIR so MITM doesn't lock node_modules
-// (prevents EBUSY on `npm i -g 9router@latest` while MITM is running).
+// Copy bundled server.js into DATA_DIR so MITM runs self-contained and doesn't lock
+// the repo/node_modules files on disk.
 function ensureRuntimeServer(bundledPath) {
   try {
     if (!bundledPath || !fs.existsSync(bundledPath)) return bundledPath;

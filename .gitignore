@@ -16,9 +16,7 @@
 
 # next.js
 /.next/
-/.next-cli-build/
 /out/
-cli/.build-home/
 product
 # production
 /build
@@ -90,4 +88,3 @@ graphify-out/*
 
 # Kiro local workspace state
 .kiro/
-9router-*

@@ -1,12 +1,8 @@
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
-// CLI bundling needs workspace root so tracing includes hoisted node_modules (slim ~50MB).
-// Docker / default uses projectRoot so server.js lands at /app/server.js (not nested).
-const tracingRoot = process.env.NEXT_TRACING_ROOT_MODE === "workspace"
-  ? join(projectRoot, "..")
-  : projectRoot;
+const tracingRoot = projectRoot;
 const proxyClientMaxBodySize = process.env.NINEROUTER_PROXY_CLIENT_MAX_BODY_SIZE || "128mb";
 
 /** @type {import('next').NextConfig} */
@@ -53,7 +49,7 @@ const nextConfig = {
     config.watchOptions = {
       ...config.watchOptions,
       aggregateTimeout: 300,
-      ignored: /[\\/](node_modules|\.git|logs|\.next|\.next-cli-build|gitbook|cli|open-sse\.old|tests|docs)[\\/]/,
+      ignored: /[\\/](node_modules|\.git|logs|\.next|gitbook|open-sse\.old|tests|docs)[\\/]/,
     };
     return config;
   },

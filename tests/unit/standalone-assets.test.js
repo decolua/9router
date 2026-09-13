@@ -29,11 +29,11 @@ describe("standalone build assets", () => {
   });
 
   it("uses a custom Next dist directory", () => {
-    const projectRoot = createBuildFixture(".next-cli-build");
+    const projectRoot = createBuildFixture(".next-custom");
 
-    copyStandaloneAssets({ projectRoot, distDir: ".next-cli-build" });
+    copyStandaloneAssets({ projectRoot, distDir: ".next-custom" });
 
-    expect(readFileSync(join(projectRoot, ".next-cli-build", "standalone", ".next-cli-build", "static", "chunks", "app.js"), "utf8"))
+    expect(readFileSync(join(projectRoot, ".next-custom", "standalone", ".next-custom", "static", "chunks", "app.js"), "utf8"))
       .toBe("static asset");
   });
 
@@ -46,21 +46,5 @@ describe("standalone build assets", () => {
 
     expect(readFileSync(join(projectRoot, ".next", "standalone", "custom-server.js"), "utf8"))
       .toBe("wrapper");
-  });
-
-  it("does not modify workspace-traced CLI builds", () => {
-    const projectRoot = createBuildFixture(".next-cli-build");
-    const previousMode = process.env.NEXT_TRACING_ROOT_MODE;
-    process.env.NEXT_TRACING_ROOT_MODE = "workspace";
-
-    try {
-      copyStandaloneAssets({ projectRoot, distDir: ".next-cli-build" });
-    } finally {
-      if (previousMode === undefined) delete process.env.NEXT_TRACING_ROOT_MODE;
-      else process.env.NEXT_TRACING_ROOT_MODE = previousMode;
-    }
-
-    expect(() => readFileSync(join(projectRoot, ".next-cli-build", "standalone", ".next-cli-build", "static", "chunks", "app.js")))
-      .toThrow();
   });
 });

@@ -71,11 +71,10 @@
 
 ## ⚡ 快速开始
 
-**1. 全局安装：**
+**1. 运行 9Router** — Docker（推荐）：
 
 ```bash
-npm install -g 9router
-9router
+docker run -d --name 9router -v 9router-data:/app/data -p 20128:20128 decolua/9router:latest
 ```
 
 🎉 控制面板在 `http://localhost:20128` 打开

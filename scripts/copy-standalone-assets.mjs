@@ -3,11 +3,6 @@ import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
 export function copyStandaloneAssets({ projectRoot = process.cwd(), distDir = process.env.NEXT_DIST_DIR || ".next" } = {}) {
-  if (process.env.NEXT_TRACING_ROOT_MODE === "workspace") {
-    console.log("[standalone-assets] Skipping workspace-traced CLI build; CLI packaging handles assets");
-    return;
-  }
-
   const buildDir = resolve(projectRoot, distDir);
   const standaloneDir = resolve(buildDir, "standalone");
 

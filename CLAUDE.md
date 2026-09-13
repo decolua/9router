@@ -6,11 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 9Router (`9router-app`) — a local AI routing gateway + Next.js dashboard. It exposes one OpenAI-compatible endpoint (`/v1/*`) and routes traffic across 40+ upstream providers with format translation, model-combo fallback, multi-account fallback, OAuth/API-key credential management, token refresh, quota/usage tracking, and optional cloud sync.
 
-Two published artifacts live in this one repo:
-- The **dashboard + gateway** (root `package.json`, `9router-app`) — the Next.js server that does the actual routing.
-- The **CLI launcher** (`cli/`, published to npm as `9router`) — a separate package that installs/starts the server and manages the tray. It has its own `package.json`, version, and build.
+The app (root `package.json`, `9router-app`) is the Next.js server that does the actual routing.
 
-The code lives in `src/` (Next.js app + dashboard/compat APIs), `open-sse/` (the provider-agnostic routing/translation engine), `cli/` (the launcher package), and `tests/`.
+The code lives in `src/` (Next.js app + dashboard/compat APIs), `open-sse/` (the provider-agnostic routing/translation engine), and `tests/`.
 
 ## Commands
 
@@ -24,12 +22,6 @@ npm run build && PORT=20128 HOSTNAME=0.0.0.0 npm run start           # productio
 - Bun variants: `npm run dev:bun` / `build:bun` / `start:bun`.
 - Default runtime port is **20128** (dashboard at `/dashboard`, API at `/v1`).
 - Lint: `npx eslint .` (config `eslint.config.mjs`, extends `eslint-config-next`).
-
-CLI package (`cli/`):
-```bash
-npm run cli:pack       # build + npm pack from root
-cd cli && npm run dev  # nodemon watch
-```
 
 Tests (vitest, in `tests/`, an **independent** ESM package — not wired into root `npm test`):
 ```bash
@@ -88,7 +80,7 @@ Pre-translate hooks that compress `tool_result` content in-place to cut tokens. 
 - `custom-server.js` wraps the Next standalone server to derive client IP from the TCP socket and strip attacker-controlled `X-Forwarded-For` — trusting forwarding headers only from a loopback reverse proxy. Preserve this when touching request/IP/rate-limit code.
 - Security-sensitive env: `JWT_SECRET` (session cookie), `INITIAL_PASSWORD` (default `123456` — must override), `API_KEY_SECRET`, `MACHINE_ID_SALT`. Full env contract in `.env.example` and ARCHITECTURE.md's env matrix.
 - Binary/protobuf upstreams (kiro EventStream, cursor protobuf, commandcode NDJSON) don't round-trip through OpenAI — they're handled inside their own executor, not the translator.
-- Versioning: root and `cli/` are versioned independently; changes are logged in `CHANGELOG.md`. Commit style is Conventional Commits (`fix(translator): …`, `feat(...)`).
+- Versioning: changes are logged in `CHANGELOG.md`; the root `package.json` version tracks the release. Commit style is Conventional Commits (`fix(translator): …`, `feat(...)`).
 
 <!-- BEGIN:nextjs-agent-rules -->
 
