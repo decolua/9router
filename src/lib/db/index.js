@@ -1,6 +1,7 @@
 // Public API barrel — all DB functions
 import { getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
+import { sanitizeImportPayload } from "./helpers/retiredData.js";
 
 // Settings
 export {
@@ -97,6 +98,10 @@ export async function importDb(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new Error("Invalid database payload");
   }
+  // Sanitize before writing: retired providers (qoder/nvidia) and standalone
+  // media records must not be reintroduced by an old export file. Usage
+  // history is not part of the payload and is never filtered.
+  payload = sanitizeImportPayload(payload);
   const db = await getAdapter();
 
   db.transaction(() => {

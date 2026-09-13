@@ -7,6 +7,16 @@ import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
 import { getAppVersion } from "./version.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
+import {
+  sanitizeProviderConnections,
+  sanitizeProviderNodes,
+  sanitizeCombos,
+  sanitizeModelAliases,
+  sanitizeCustomModels,
+  sanitizeDisabledModels,
+  sanitizePricing,
+  sanitizeSettings,
+} from "./helpers/retiredData.js";
 
 // Marker file: prevents re-importing legacy JSON when user wipes data.sqlite.
 const MIGRATED_MARKER = path.join(DB_DIR, ".migrated-from-json");
@@ -112,11 +122,22 @@ function syncSchemaFromTables(adapter) {
 function importLegacyMain(adapter, data) {
   if (!data || typeof data !== "object") return;
 
-  if (data.settings) {
-    adapter.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(data.settings)]);
+  // Sanitize legacy JSON through the same retired-provider/media rules as
+  // migration 009 and importDb(): qoder/nvidia rows and standalone media
+  // records must not be reintroduced via a pre-removal db.json.
+  const settings = sanitizeSettings(data.settings);
+  const providerConnections = sanitizeProviderConnections(data.providerConnections);
+  const providerNodes = sanitizeProviderNodes(data.providerNodes);
+  const combos = sanitizeCombos(data.combos);
+  const modelAliases = sanitizeModelAliases(data.modelAliases);
+  const customModels = sanitizeCustomModels(data.customModels);
+  const pricing = sanitizePricing(data.pricing);
+
+  if (settings) {
+    adapter.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(settings)]);
   }
 
-  importWithAssertion(adapter, "providerConnections", data.providerConnections || [], (c) => {
+  importWithAssertion(adapter, "providerConnections", providerConnections || [], (c) => {
     const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
     adapter.run(
       `INSERT OR REPLACE INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -124,7 +145,7 @@ function importLegacyMain(adapter, data) {
     );
   }, (c) => ({ id: c.id ?? null, provider: c.provider ?? null, name: c.name ?? null }));
 
-  importWithAssertion(adapter, "providerNodes", data.providerNodes || [], (n) => {
+  importWithAssertion(adapter, "providerNodes", providerNodes || [], (n) => {
     const { id, type, name, createdAt, updatedAt, ...rest } = n;
     adapter.run(
       `INSERT OR REPLACE INTO providerNodes(id, type, name, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
@@ -147,24 +168,24 @@ function importLegacyMain(adapter, data) {
     );
   }, (k) => ({ id: k.id ?? null, name: k.name ?? null }));
 
-  importWithAssertion(adapter, "combos", data.combos || [], (c) => {
+  importWithAssertion(adapter, "combos", combos || [], (c) => {
     adapter.run(
       `INSERT OR REPLACE INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
       [c.id, c.name, c.kind || null, stringifyJson(c.models || []), c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
     );
   }, (c) => ({ id: c.id ?? null, name: c.name ?? null }));
 
-  for (const [alias, model] of Object.entries(data.modelAliases || {})) {
+  for (const [alias, model] of Object.entries(modelAliases || {})) {
     adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)`, [alias, stringifyJson(model)]);
   }
-  for (const m of data.customModels || []) {
+  for (const m of customModels || []) {
     const k = `${m.providerAlias}|${m.id}|${m.type || "llm"}`;
     adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('customModels', ?, ?)`, [k, stringifyJson(m)]);
   }
   for (const [tool, mappings] of Object.entries(data.mitmAlias || {})) {
     adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('mitmAlias', ?, ?)`, [tool, stringifyJson(mappings || {})]);
   }
-  for (const [provider, models] of Object.entries(data.pricing || {})) {
+  for (const [provider, models] of Object.entries(pricing || {})) {
     adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('pricing', ?, ?)`, [provider, stringifyJson(models || {})]);
   }
 }
@@ -197,7 +218,8 @@ function importLegacyUsage(adapter, data) {
 
 function importLegacyDisabled(adapter, data) {
   if (!data || typeof data.disabled !== "object") return;
-  for (const [provider, ids] of Object.entries(data.disabled)) {
+  const disabled = sanitizeDisabledModels(data.disabled);
+  for (const [provider, ids] of Object.entries(disabled)) {
     adapter.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('disabledModels', ?, ?)`, [provider, stringifyJson(ids || [])]);
   }
 }
