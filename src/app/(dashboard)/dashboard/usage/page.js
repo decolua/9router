@@ -11,6 +11,7 @@ const PERIODS = [
   { value: "7d", label: "7D" },
   { value: "30d", label: "30D" },
   { value: "60d", label: "60D" },
+  { value: "all", label: "All Time" },
 ];
 
 export default function UsagePage() {

@@ -710,6 +710,7 @@ export async function getChartData(period = "7d") {
   }
 
   const bucketCount = period === "7d" ? 7 : period === "30d" ? 30 : 60;
+  if (period === "all") return getAllTimeChartData(db);
   const today = new Date();
   const labelFn = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
@@ -729,6 +730,35 @@ export async function getChartData(period = "7d") {
       cost: dayData ? (dayData.cost || 0) : 0,
     };
   });
+}
+
+function getAllTimeChartData(adapter) {
+  const dayRows = loadDaysInRange(adapter, null);
+  if (!dayRows.length) return [];
+
+  const monthMap = {};
+  for (const row of dayRows) {
+    const day = parseJson(row.data, {});
+    const monthKey = row.dateKey.slice(0, 7);
+    if (!monthMap[monthKey]) monthMap[monthKey] = { tokens: 0, cost: 0 };
+    monthMap[monthKey].tokens += (day.promptTokens || 0) + (day.completionTokens || 0);
+    monthMap[monthKey].cost += day.cost || 0;
+  }
+
+  const monthKeys = Object.keys(monthMap).sort();
+  const [firstYear, firstMonth] = monthKeys[0].split("-").map(Number);
+  const now = new Date();
+  const labelFn = (year, monthIndex) => new Date(year, monthIndex, 1).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+  const result = [];
+  const cursor = new Date(firstYear, firstMonth - 1, 1);
+  const end = new Date(now.getFullYear(), now.getMonth(), 1);
+  while (cursor <= end) {
+    const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
+    const bucket = monthMap[key] || { tokens: 0, cost: 0 };
+    result.push({ label: labelFn(cursor.getFullYear(), cursor.getMonth()), tokens: bucket.tokens, cost: bucket.cost });
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return result;
 }
 
 function formatLogDate(date = new Date()) {
