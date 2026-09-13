@@ -1008,7 +1008,7 @@ codex "tu prompt"
 **Opción 1 — Panel de control (recomendada):**
 
 ```
-Panel de control → CLI Tools → OpenClaw → Selecciona el modelo → Aplicar
+Panel eliminado — edita `~/.openclaw/openclaw.json` manualmente
 ```
 
 **Opción 2 — Manual:** Edita `~/.openclaw/openclaw.json`:

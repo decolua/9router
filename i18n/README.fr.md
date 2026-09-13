@@ -1008,7 +1008,7 @@ codex "votre prompt"
 **Option 1 — Tableau de bord (recommandée) :**
 
 ```
-Tableau de bord → CLI Tools → OpenClaw → Sélectionnez le modèle → Appliquer
+Tableau supprimé — modifiez `~/.openclaw/openclaw.json` manuellement
 ```
 
 **Option 2 — Manuel :** Modifiez `~/.openclaw/openclaw.json` :

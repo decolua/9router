@@ -893,7 +893,7 @@ codex "your prompt"
 **オプション1 — ダッシュボード（推奨）：**
 
 ```
-ダッシュボード → CLI Tools → OpenClaw → モデルを選択 → 適用
+ダッシュボードは削除済み — 手動で `~/.openclaw/openclaw.json` を編集してください
 ```
 
 **オプション2 — 手動:** `~/.openclaw/openclaw.json` を編集:

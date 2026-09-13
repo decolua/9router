@@ -117,7 +117,7 @@ Management domains:
 - Keys/aliases/combos/pricing: `src/app/api/keys*`, `src/app/api/models/alias`, `src/app/api/combos*`, `src/app/api/pricing`
 - Usage: `src/app/api/usage/*`
 - Sync/cloud: `src/app/api/sync/*`, `src/app/api/cloud/*`
-- CLI tooling helpers: `src/app/api/cli-tools/*`
+- (CLI tooling helpers `src/app/api/cli-tools/*` were removed in the cli-tools cleanup.)
 
 ## 2) SSE + Translation Core
 
@@ -427,7 +427,7 @@ flowchart LR
 - `src/app/api/pricing`: pricing overrides for cost calculation
 - `src/app/api/usage/*`: usage and logs APIs
 - `src/app/api/sync/*` + `src/app/api/cloud/*`: cloud sync and cloud-facing helpers
-- `src/app/api/cli-tools/*`: local CLI config writers/checkers
+- (CLI tooling API `src/app/api/cli-tools/*` — local CLI config writers/checkers — removed.)
 
 ### Routing and Execution Core
 

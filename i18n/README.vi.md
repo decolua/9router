@@ -890,7 +890,7 @@ codex "prompt của bạn"
 **Phương án 1 — B điều khiển (khuyên dùng):**
 
 ```
-Bảng điều khiển → CLI Tools → OpenClaw → Chọn Mô hình → Áp dụng
+Cấu hình thủ công — CLI Tools dashboard đã bị gỡ bỏ. Chỉnh sửa `~/.openclaw/openclaw.json`:
 ```
 
 **Phương án 2 — Thủ công:** Chỉnh sửa `~/.openclaw/openclaw.json`:
@@ -1226,7 +1226,6 @@ Hành vi dự kiến từ việc xác thực gần đây:
 - Cấu hình định tuyến: `/api/models/alias`, `/api/combos*`, `/api/keys*`, `/api/pricing`
 - Sử dụng/log: `/api/usage/history`, `/api/usage/logs`, `/api/usage/request-logs`, `/api/usage/[connectionId]`
 - Đồng bộ đám mây: `/api/sync/cloud`, `/api/sync/initialize`, `/api/cloud/*`
--ợ giúp CLI: `/api/cli-tools/claude-settings`, `/api/cli-tools/codex-settings`, `/api/cli-tools/droid-settings`, `/api/cli-tools/openclaw-settings`
 
 ### Hành vi Xác thực
 
