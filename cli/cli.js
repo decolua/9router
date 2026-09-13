@@ -207,6 +207,7 @@ function killByPidFile(pidFile) {
     } catch { }
     try { fs.unlinkSync(pidFile); } catch { }
   } catch { }
+  cleanMitmHostsSync();
 }
 
 // Kill tunnel processes (cloudflared/tailscale) by their PID files
@@ -357,6 +358,45 @@ function waitForExit(pid, timeoutMs) {
     sleepSync(100);
   }
   return false;
+}
+
+// Clean all MITM tool hosts from system hosts file safely
+function cleanMitmHostsSync() {
+  try {
+    const TOOL_HOSTS = [
+      "daily-cloudcode-pa.googleapis.com",
+      "cloudcode-pa.googleapis.com",
+      "api.individual.githubcopilot.com",
+      "runtime.us-east-1.kiro.dev",
+      "q.us-east-1.amazonaws.com",
+      "codewhisperer.us-east-1.amazonaws.com",
+      "api2.cursor.sh"
+    ];
+    const hostsFile = process.platform === "win32"
+      ? path.join(process.env.SystemRoot || "C:\\Windows", "System32", "drivers", "etc", "hosts")
+      : "/etc/hosts";
+    if (!fs.existsSync(hostsFile)) return;
+    const content = fs.readFileSync(hostsFile, "utf8");
+    const eol = process.platform === "win32" ? "\r\n" : "\n";
+    const filtered = content.split(/\r?\n/).filter(l => !TOOL_HOSTS.some(h => l.includes(h))).join(eol);
+    const next = filtered.replace(/[\r\n\s]+$/g, "") + eol;
+    if (next !== content) {
+      try {
+        fs.writeFileSync(hostsFile, next, "utf8");
+      } catch (e) {
+        if (process.platform === "win32") {
+          try {
+            const ps = `$h='${hostsFile}'; $t=@(${TOOL_HOSTS.map(x => `'${x}'`).join(',')}); $c=(Get-Content -LiteralPath $h | Where-Object { $l=$_; -not ($t | Where-Object { $l -match [regex]::Escape($_) }) }); Set-Content -LiteralPath $h -Value $c; ipconfig /flushdns`;
+            const b64 = Buffer.from(ps, "utf16le").toString("base64");
+            execSync(`powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ${b64}`, { stdio: "ignore", windowsHide: true });
+          } catch { }
+        }
+      }
+      if (process.platform === "win32") {
+        try { execSync("ipconfig /flushdns", { stdio: "ignore", windowsHide: true }); } catch { }
+      }
+    }
+  } catch { }
 }
 
 // Kill MIT server by PID file (runs privileged, needs special handling)
@@ -648,6 +688,7 @@ function startServer(updatePromise) {
       } catch (e) { }
       // Kill MIT server (privileged process) via PID file
       killProxyByPidFile();
+      cleanMitmHostsSync();
       // Kill cloudflared/tailscale via PID file (only this app's tunnel)
       killTunnelByPidFile();
       // Kill server process directly
