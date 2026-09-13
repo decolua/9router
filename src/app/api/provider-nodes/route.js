@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createProviderNode, getProviderNodes } from "@/models";
 import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX, CUSTOM_EMBEDDING_PREFIX } from "@/shared/constants/providers";
 import { generateId } from "@/shared/utils";
+import { isOpenAICompatibleApiType } from "open-sse/config/openAICompatible.js";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +47,7 @@ export async function POST(request) {
     const nodeType = type || "openai-compatible";
 
     if (nodeType === "openai-compatible") {
-      if (!apiType || !["chat", "responses"].includes(apiType)) {
+      if (!isOpenAICompatibleApiType(apiType)) {
         return NextResponse.json({ error: "Invalid OpenAI compatible API type" }, { status: 400 });
       }
 

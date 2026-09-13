@@ -30,6 +30,18 @@ export function buildAbortedResponsesTerminalBytes() {
   return sharedEncoder.encode(`${formatIncompleteOpenAIResponsesStreamFailure()}data: [DONE]\n\n`);
 }
 
+// Structured Chat Completions terminal for mid-stream transport failures.
+// The numeric 502 lets Kilo classify the stream error as retryable instead of UnknownError.
+export function buildAbortedChatCompletionsTerminalBytes() {
+  return sharedEncoder.encode(`data: ${JSON.stringify({
+    error: {
+      message: "upstream stream disconnected before completion",
+      type: "upstream_error",
+      code: 502
+    }
+  })}\n\ndata: [DONE]\n\n`);
+}
+
 // Synthesize a response.failed event for streams that close without a terminal event
 export function formatIncompleteOpenAIResponsesStreamFailure() {
   return formatSSE({

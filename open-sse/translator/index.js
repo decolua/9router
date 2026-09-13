@@ -8,6 +8,7 @@ import { applyThinking, captureThinking } from "./concerns/thinkingUnified.js";
 import { captureSessionId } from "../utils/sessionManager.js";
 import { AntigravityExecutor } from "../executors/antigravity.js";
 import { PROVIDERS } from "../providers/index.js";
+import { stripUnsupportedResponsesContentFields } from "./formats/responsesApi.js";
 
 // Registry for translators. Lazy-init guards against circular-import order:
 // translator modules call register() (side-effect) before this module's body runs.
@@ -117,6 +118,10 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     (sourceFormat === FORMATS.OPENAI || sourceFormat === FORMATS.CLAUDE);
   if (!kiroThinkingMappedByTranslator) {
     applyThinking(targetFormat, model, result, provider, thinkingIntent);
+  }
+
+  if (targetFormat === FORMATS.OPENAI_RESPONSES) {
+    stripUnsupportedResponsesContentFields(result);
   }
 
   // Always normalize to clean OpenAI format when target is OpenAI

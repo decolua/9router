@@ -20,7 +20,10 @@ export async function POST(request) {
         const clientBody = body.body || body;
         const { provider, model } = await getModelInfo(clientBody.model);
         const sourceFormat = detectFormat(clientBody);
-        const targetFormat = getTargetFormat(provider);
+        const connections = await getProviderConnections({ provider });
+        const connection = connections.find(c => c.isActive !== false);
+        const credentials = connection ? { providerSpecificData: connection.providerSpecificData } : null;
+        const targetFormat = getTargetFormat(provider, credentials, sourceFormat);
         return NextResponse.json({ success: true, result: { provider, model, sourceFormat, targetFormat } });
       }
 

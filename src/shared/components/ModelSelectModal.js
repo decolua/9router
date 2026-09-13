@@ -8,6 +8,7 @@ import CapacityBadges from "./CapacityBadges";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
+import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -97,6 +98,7 @@ export default function ModelSelectModal({
   const [providerNodes, setProviderNodes] = useState([]);
   const [customModels, setCustomModels] = useState([]);
   const [disabledModels, setDisabledModels] = useState({});
+  const [providerCatalogs, setProviderCatalogs] = useState({});
   // Cursor and Cline expose the usable catalog per account, so the static catalog is
   // kept only as a fallback: it goes stale quickly and entitlements differ per account.
   // Single map driven by LIVE_CATALOG_PROVIDERS so the constant cannot drift
@@ -182,6 +184,31 @@ export default function ModelSelectModal({
   }, [isOpen]);
 
   const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS }), []);
+
+  const catalogProviderIds = useMemo(() => {
+    if (kindFilter) return [];
+    const visibleProviderIds = new Set([
+      ...filteredActiveProviders.map((provider) => provider.provider),
+      ...NO_AUTH_PROVIDER_IDS,
+    ]);
+    return [...visibleProviderIds].filter((providerId) => allProviders[providerId]?.modelsFetcher);
+  }, [allProviders, filteredActiveProviders, kindFilter]);
+
+  useEffect(() => {
+    if (!isOpen || catalogProviderIds.length === 0) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    Promise.all(catalogProviderIds.map(async (providerId) => {
+      const models = await fetchSuggestedModels(allProviders[providerId].modelsFetcher);
+      return [providerId, models.filter((model) => typeof model?.id === "string" && model.id.trim())];
+    })).then((entries) => {
+      if (!cancelled) setProviderCatalogs(Object.fromEntries(entries));
+    });
+
+    return () => { cancelled = true; };
+  }, [allProviders, catalogProviderIds, isOpen]);
 
   // Group models by provider with priority order
   const groupedModels = useMemo(() => {
@@ -276,14 +303,24 @@ export default function ModelSelectModal({
             if (supports) combined = [{ id: providerId, name: providerInfo.name, value: alias }];
           }
         } else {
-          // LLM/null kind: merge hardcoded models (e.g. mimo-free → mimo-auto) with user-added models
+          // LLM/null kind: merge live and hardcoded catalogs with user-added models.
+          // Model ids remain provider-relative here, so nested ids such as
+          // "kilo-auto/free" become the routed value "kc/kilo-auto/free".
           const registeredLlms = customRegisteredModels.filter((m) => !getModelKind(m) || getModelKind(m) === "llm");
-          const seen = new Set([...aliasModels, ...registeredLlms].map((m) => m.value));
+          const liveCatalog = (providerCatalogs[providerId] || []).map((m) => ({
+            id: m.id,
+            name: m.name || m.id,
+            value: `${alias}/${m.id}`,
+          }));
           const hardcoded = getModelsByProviderId(providerId)
             .filter((m) => !getModelKind(m) || getModelKind(m) === "llm")
-            .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) }))
-            .filter((m) => !seen.has(m.value));
-          combined = [...registeredLlms, ...aliasModels.filter((m) => !registeredLlms.some((registered) => registered.value === m.value)), ...hardcoded];
+            .map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) }));
+          const seen = new Set();
+          combined = [...registeredLlms, ...aliasModels, ...liveCatalog, ...hardcoded].filter((m) => {
+            if (seen.has(m.value)) return false;
+            seen.add(m.value);
+            return true;
+          });
         }
 
         if (combined.length > 0) {
@@ -420,7 +457,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders, cursorModels, clineModels, clinepassModels]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders, cursorModels, clineModels, clinepassModels, providerCatalogs]);
 
   // Filter combos by search query (and hide combos when kindFilter is set — combos are LLM-only by design)
   const filteredCombos = useMemo(() => {
@@ -450,13 +487,14 @@ export default function ModelSelectModal({
         if (models.length === 0) return;
       }
       if (query) {
-        const providerNameMatches = group.name.toLowerCase().includes(query);
-        models = models.filter(
-          (m) =>
-            m.name.toLowerCase().includes(query) ||
-            m.id.toLowerCase().includes(query)
-        );
-        if (models.length === 0 && !providerNameMatches) return;
+        const providerMatches = [providerId, group.name, group.alias]
+          .some((value) => value?.toLowerCase().includes(query));
+        if (!providerMatches) {
+          models = models.filter((m) =>
+            [m.name, m.id, m.value].some((value) => value?.toLowerCase().includes(query))
+          );
+          if (models.length === 0) return;
+        }
       }
       filtered[providerId] = {
         ...group,

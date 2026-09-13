@@ -1,17 +1,22 @@
 import { NextResponse } from "next/server";
 import { deleteProviderConnectionsByProvider, deleteProviderNode, getProviderConnections, getProviderNodeById, updateProviderConnection, updateProviderNode } from "@/models";
+import { isOpenAICompatibleApiType } from "open-sse/config/openAICompatible.js";
 
 // PUT /api/provider-nodes/[id] - Update provider node
 export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, prefix, apiType, baseUrl } = body;
     const node = await getProviderNodeById(id);
 
     if (!node) {
       return NextResponse.json({ error: "Provider node not found" }, { status: 404 });
     }
+
+    const name = body.name ?? node.name;
+    const prefix = body.prefix ?? node.prefix;
+    const apiType = body.apiType ?? node.apiType;
+    const baseUrl = body.baseUrl ?? node.baseUrl;
 
     if (!name?.trim()) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -22,7 +27,7 @@ export async function PUT(request, { params }) {
     }
 
     // Only validate apiType for OpenAI Compatible nodes
-    if (node.type === "openai-compatible" && (!apiType || !["chat", "responses"].includes(apiType))) {
+    if (node.type === "openai-compatible" && !isOpenAICompatibleApiType(apiType)) {
       return NextResponse.json({ error: "Invalid OpenAI compatible API type" }, { status: 400 });
     }
 

@@ -73,4 +73,27 @@ describe("getCapabilitiesForModel", () => {
       maxOutput: 128000,
     });
   });
+
+  it("reports DeepSeek V4.1 as vision-capable from the model tables alone", () => {
+    // The id carries no "vision"/"vl" token, so without an explicit pattern the
+    // capability falls through to the text-only *deepseek-v4* entry and
+    // chatCore strips images before translation (#vision).
+    for (const model of [
+      "deepseek-v4.1-flash",
+      "deepseek-v4.1-flash-beta",
+      "deepseek/deepseek-v4.1-flash",
+    ]) {
+      expect(getCapabilitiesForModel("openrouter", model)).toMatchObject({
+        vision: true,
+        reasoning: true,
+        thinkingFormat: "deepseek",
+      });
+    }
+  });
+
+  it("keeps text-only DeepSeek V4 Pro/Flash free of vision", () => {
+    for (const model of ["deepseek-v4-pro", "deepseek-v4-flash"]) {
+      expect(getCapabilitiesForModel("openrouter", model).vision).toBe(false);
+    }
+  });
 });

@@ -247,14 +247,15 @@ describe("compressWithHeadroom", () => {
       expect(calls).toContain(3000);
     });
 
-    it("falls back to the default timeout when timeoutMs is 0", async () => {
+    it("does not install an abort deadline when timeoutMs is 0", async () => {
       makeSuccessfulFetch();
       const calls = captureTimeoutCalls();
       const body = { messages: [{ role: "user", content: "hello" }] };
 
       await compressWithHeadroom(body, { enabled: true, url: "http://localhost:8787", timeoutMs: 0 });
 
-      expect(calls).toContain(3000);
+      expect(calls).toEqual([]);
+      expect(global.fetch.mock.calls[0][1]).not.toHaveProperty("signal");
     });
 
     it("falls back to the default timeout when timeoutMs is negative", async () => {

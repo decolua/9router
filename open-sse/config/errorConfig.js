@@ -45,6 +45,7 @@ export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 const COOLDOWN = {
   long: 2 * 60 * 1000,
   short: 5 * 1000,
+  cloudflareTimeout: 2 * 1000,
 };
 
 /**
@@ -72,6 +73,7 @@ export const ERROR_RULES = [
   { status: 402, cooldownMs: COOLDOWN.long },
   { status: 403, cooldownMs: COOLDOWN.long },
   { status: 404, cooldownMs: COOLDOWN.long },
+  { status: 524, cooldownMs: COOLDOWN.cloudflareTimeout },
   { status: 429, backoff: true },
 ];
 
