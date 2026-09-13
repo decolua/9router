@@ -363,11 +363,21 @@ export function parseQuotaData(provider, data) {
       case "github":
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([name, quota]) => {
+            if (data.tokenBasedBilling === true && quota.unlimited === true
+              && (name === "chat" || name === "completions")) return;
+            if (name === "premium_interactions" && quota.unlimited === false
+              && quota.total === 0 && quota.used === 0 && (quota.creditsUsed ?? 0) === 0) return;
+
             normalizedQuotas.push({
-              name,
+              name: quota.displayName || name,
+              modelKey: name,
               used: quota.used || 0,
               total: quota.total || 0,
               resetAt: quota.resetAt || null,
+              unlimited: quota.unlimited,
+              remainingPercentage: quota.remainingPercentage,
+              creditsUsed: quota.creditsUsed,
+              unit: quota.unit,
             });
           });
         }

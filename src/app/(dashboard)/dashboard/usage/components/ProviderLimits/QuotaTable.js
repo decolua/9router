@@ -187,18 +187,25 @@ export default function QuotaTable({
                 )}
 
                 <div className={`flex items-center justify-between gap-1 min-w-0 ${compact ? "text-[10px]" : "text-xs"}`}>
-                  <span
-                    className="text-text-muted truncate"
-                    title={
-                      isUnlimited
+                  <div className={`min-w-0 ${compact ? "space-y-1" : "space-y-1.5"}`}>
+                    <span
+                      className="block text-text-muted truncate"
+                      title={
+                        isUnlimited
+                          ? `${quota.used.toLocaleString()} used · Unlimited`
+                          : `${quota.used.toLocaleString()} / ${quota.total > 0 || quota.unlimited === false ? quota.total.toLocaleString() : "∞"}`
+                      }
+                    >
+                      {isUnlimited
                         ? `${quota.used.toLocaleString()} used · Unlimited`
-                        : `${quota.used.toLocaleString()} / ${quota.total > 0 ? quota.total.toLocaleString() : "∞"}`
-                    }
-                  >
-                    {isUnlimited
-                      ? `${quota.used.toLocaleString()} used · Unlimited`
-                      : `${quota.used.toLocaleString()} / ${quota.total > 0 ? quota.total.toLocaleString() : "∞"}`}
-                  </span>
+                        : `${quota.used.toLocaleString()} / ${quota.total > 0 || quota.unlimited === false ? quota.total.toLocaleString() : "∞"}`}
+                    </span>
+                    {quota.creditsUsed !== undefined && (
+                      <div className="text-xs text-text-muted">
+                        {quota.creditsUsed.toLocaleString()} AI Credits used
+                      </div>
+                    )}
+                  </div>
                   <span className={`font-medium ${isUnlimited ? "text-green-600 dark:text-green-400" : colors.text} shrink-0`}>
                     {isUnlimited ? "Unlimited" : `${quota.remaining}%`}
                   </span>

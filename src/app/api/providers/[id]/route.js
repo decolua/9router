@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isValidGitHubCreditLimit } from "open-sse/services/githubCreditLimit.js";
 import {
   getProviderConnectionById,
   getProxyPoolById,
@@ -107,6 +108,10 @@ export async function PUT(request, { params }) {
     }
 
     const proxyConfig = normalizeProxyConfig(body);
+    if (existing.provider === "github" && providerSpecificData?.aiCreditLimit !== undefined
+      && !isValidGitHubCreditLimit(providerSpecificData.aiCreditLimit)) {
+      return NextResponse.json({ error: "AI Credits limit must be a non-negative number or null to disable." }, { status: 400 });
+    }
     if (proxyConfig.error) {
       return NextResponse.json({ error: proxyConfig.error }, { status: 400 });
     }

@@ -46,14 +46,31 @@ export async function getGitHubUsage(accessToken, providerSpecificData, proxyOpt
       // Paid plan format
       const snapshots = data.quota_snapshots;
       const resetAt = parseResetTime(data.quota_reset_date);
+      const creditLimit = providerSpecificData?.aiCreditLimit;
+      const creditsUsed = parseQuotaNumber(snapshots.premium_interactions?.credits_used);
 
       return {
         plan: data.copilot_plan,
+        tokenBasedBilling: data.token_based_billing === true,
         resetDate: data.quota_reset_date,
         quotas: {
-          chat: { ...formatGitHubQuotaSnapshot(snapshots.chat), resetAt },
-          completions: { ...formatGitHubQuotaSnapshot(snapshots.completions), resetAt },
-          premium_interactions: { ...formatGitHubQuotaSnapshot(snapshots.premium_interactions), resetAt },
+          chat: formatGitHubQuotaSnapshot(snapshots.chat, resetAt),
+          completions: formatGitHubQuotaSnapshot(snapshots.completions, resetAt),
+          premium_interactions: {
+            ...formatGitHubQuotaSnapshot(snapshots.premium_interactions, resetAt),
+            ...(data.token_based_billing ? { displayName: "AI Credits", unit: "AI Credits" } : {}),
+          },
+          ...(typeof creditLimit === "number" && Number.isFinite(creditLimit) && creditLimit >= 0 && creditsUsed !== undefined ? {
+            ai_credit_limit: {
+              displayName: "Local AI Credits limit",
+              unit: "AI Credits",
+              used: creditsUsed,
+              total: creditLimit,
+              unlimited: false,
+              remainingPercentage: creditLimit > 0 ? Math.max(0, (1 - creditsUsed / creditLimit) * 100) : 0,
+              resetAt: parseResetTime(snapshots.premium_interactions?.quota_reset_at) || resetAt,
+            },
+          } : {}),
         },
       };
     } else if (data.monthly_quotas || data.limited_user_quotas) {
@@ -88,13 +105,30 @@ export async function getGitHubUsage(accessToken, providerSpecificData, proxyOpt
   }
 }
 
-function formatGitHubQuotaSnapshot(quota) {
-  if (!quota) return { used: 0, total: 0, unlimited: true };
+function parseQuotaNumber(value) {
+  if (typeof value !== "number" && (typeof value !== "string" || !value.trim())) return undefined;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
+function formatGitHubQuotaSnapshot(quota, resetAt) {
+  if (!quota) return { used: 0, total: 0, unlimited: true, resetAt };
+
+  const total = parseQuotaNumber(quota.entitlement) ?? 0;
+  const remaining = parseQuotaNumber(quota.quota_remaining) ?? parseQuotaNumber(quota.remaining);
+  const remainingPercentage = parseQuotaNumber(quota.percent_remaining);
+  const creditsUsed = parseQuotaNumber(quota.credits_used);
+  const used = remaining !== undefined
+    ? Math.max(0, total - remaining)
+    : total * (1 - Math.min(remainingPercentage ?? 100, 100) / 100);
 
   return {
-    used: quota.entitlement - quota.remaining,
-    total: quota.entitlement,
-    remaining: quota.remaining,
+    used,
+    total,
+    remaining,
     unlimited: quota.unlimited || false,
+    ...(remainingPercentage !== undefined ? { remainingPercentage: Math.min(remainingPercentage, 100) } : {}),
+    ...(creditsUsed !== undefined ? { creditsUsed } : {}),
+    resetAt: parseResetTime(quota.quota_reset_at) || resetAt,
   };
 }

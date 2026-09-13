@@ -152,9 +152,9 @@ export default function ProviderLimitCard({
             // For Antigravity, use remainingPercentage if available, otherwise calculate
             const percentage =
               quota.remainingPercentage !== undefined
-                ? Math.round(((quota.total - quota.used) / quota.total) * 100)
+                ? Math.round(quota.remainingPercentage)
                 : calculatePercentage(quota.used, quota.total);
-            const unlimited = quota.total === 0 || quota.total === null;
+            const unlimited = quota.unlimited ?? (quota.total === 0 || quota.total === null);
 
             return (
               <QuotaProgressBar
@@ -162,6 +162,8 @@ export default function ProviderLimitCard({
                 label={quota.name}
                 used={quota.used}
                 total={quota.total}
+                creditsUsed={quota.creditsUsed}
+                unit={quota.unit}
                 percentage={percentage}
                 unlimited={unlimited}
                 resetTime={quota.resetAt}

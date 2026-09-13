@@ -64,6 +64,51 @@ Dashboard → Home → Quota Overview
 
 ## Real-Time Token Consumption
 
+### GitHub Copilot AI Credits
+
+Copilot quota rows show **AI Credits used** when GitHub supplies an actual
+`credits_used` value, including on unlimited organization plans. This value is
+displayed separately from budget usage because the two can have different bases.
+For token-based billing, the premium interactions row is labeled **AI Credits**.
+Unlimited chat and completion rows are hidden for these accounts; finite quotas
+remain visible. This depends on the billing mode, not the presence of credits used.
+An unallocated premium quota (zero allowance and no usage) is also hidden rather
+than shown as exhausted. Real exhausted allowances and local cutoffs remain visible.
+Legacy chat, completions, and premium interaction quotas remain supported. If
+GitHub does not report consumed credits, the tracker does not estimate them from
+request counts or remaining percentages.
+
+#### Local AI Credits cutoff
+
+Edit a GitHub connection and set **AI Credits limit per billing period** to a
+non-negative number. Blank disables it; zero blocks all requests. The quota
+tracker shows a separate **Local AI Credits limit** row when usage is available.
+The limit is compared with GitHub's total reported `credits_used`, not just usage
+since the limit was configured, and works with unlimited organization plans.
+
+Before routing each request, 9Router checks usage fetched through the connection's
+proxy. Usage checks share an in-memory cache for **30 seconds** per credential and
+proxy, per server process. Concurrent checks share the same pending fetch. Failed
+or unverifiable checks are also cached for this interval and block requests; an
+expired successful reading is never reused when a refresh fails. Dashboard quota
+refreshes are separate from this cache.
+
+Set `GITHUB_CREDIT_USAGE_CACHE_TTL_MS` to a positive duration in milliseconds and
+restart 9Router to adjust the interval. Lower intervals detect usage changes sooner
+but call GitHub more often. Changing a limit applies immediately against the cached
+usage; changing credentials or proxy settings triggers a separate usage check.
+
+It blocks requests at or above the limit (429), and fails closed if usage
+cannot be verified (503). Requests can resume when GitHub reports usage below the
+limit after reset, or you raise or remove the limit; routing cooldowns may delay
+resumption. Other configured connections can still be used by fallback routing.
+
+This is a local cutoff, **not a guaranteed spending ceiling**: provider reporting
+delays, cached readings, concurrent/in-flight requests, and usage outside 9Router
+can exceed it. The cache can delay cutoff detection by the configured interval.
+It applies only to requests routed through this connection. Leave headroom and
+use provider-side spending controls where available for stronger protection.
+
 ### Per-Request Tracking
 
 Every request shows detailed token usage:

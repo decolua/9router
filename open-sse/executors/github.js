@@ -12,6 +12,7 @@ import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 import { SSE_DONE } from "../utils/sseConstants.js";
 import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
 import crypto from "crypto";
+import { checkGitHubCreditLimit } from "../services/githubCreditLimit.js";
 
 export class GithubExecutor extends BaseExecutor {
   constructor() {
@@ -122,6 +123,15 @@ export class GithubExecutor extends BaseExecutor {
 
   async execute(options) {
     const { model, log } = options;
+    const creditLimitError = await checkGitHubCreditLimit(options.credentials, options.proxyOptions);
+    if (creditLimitError) {
+      return {
+        response: Response.json({ error: { message: creditLimitError.message, type: "credit_limit_error" } }, { status: creditLimitError.status }),
+        url: this.config.baseUrl,
+        headers: {},
+        transformedBody: options.body,
+      };
+    }
 
     // Claude models: route to Copilot's Anthropic-native /v1/messages shim — the only
     // Copilot endpoint that surfaces prompt-cache token counts for Claude. Detected by
