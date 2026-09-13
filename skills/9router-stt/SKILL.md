@@ -1,6 +1,6 @@
 ---
 name: 9router-stt
-description: Speech-to-text via 9Router /v1/audio/transcriptions using OpenAI Whisper / Groq / Gemini / Deepgram / AssemblyAI / NVIDIA / HuggingFace models. Use when the user wants to transcribe audio, convert speech to text, or get subtitles from audio files.
+description: Speech-to-text via 9Router /v1/audio/transcriptions using OpenAI Whisper / Groq / Gemini / Deepgram / AssemblyAI / HuggingFace models. Use when the user wants to transcribe audio, convert speech to text, or get subtitles from audio files.
 ---
 
 # 9Router — Speech-to-Text
@@ -75,5 +75,4 @@ Default (`response_format=json`):
 | `gemini` | `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-2.5-flash-lite` | Server converts to `generateContent` with audio inline |
 | `deepgram` | `nova-3`, `nova-2`, `whisper-large` | Token auth; server adapts response |
 | `assemblyai` | `universal-3-pro`, `universal-2` | Async upload+poll handled server-side |
-| `nvidia` | `nvidia/parakeet-ctc-1.1b-asr` | NIM endpoint |
 | `huggingface` | `openai/whisper-large-v3`, `openai/whisper-small` | HF Inference API |

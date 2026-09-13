@@ -334,10 +334,6 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
         <sub>Cohere</sub>
       </td>
       <td align="center" width="100">
-        <img src="../public/providers/nvidia.png" width="50" alt="NVIDIA"/><br/>
-        <sub>NVIDIA</sub>
-      </td>
-      <td align="center" width="100">
         <img src="../public/providers/siliconflow.png" width="50" alt="SiliconFlow"/><br/>
         <sub>SiliconFlow</sub>
       </td>

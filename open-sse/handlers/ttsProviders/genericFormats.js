@@ -28,17 +28,6 @@ async function deepgram({ baseUrl, apiKey, text, modelId }) {
   return responseToBase64(res, "mp3");
 }
 
-// Nvidia NIM: POST { input: { text }, voice, model } → binary
-async function nvidia({ baseUrl, apiKey, text, modelId, voiceId }) {
-  const res = await fetch(baseUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-    body: JSON.stringify({ input: { text }, voice: voiceId || "default", model: modelId }),
-  });
-  if (!res.ok) await throwUpstreamError(res);
-  return responseToBase64(res, "wav");
-}
-
 // HuggingFace: POST {baseUrl}/{modelId} { inputs: text } → binary
 async function huggingface({ baseUrl, apiKey, text, modelId }) {
   if (!modelId || modelId.includes("..")) throw new Error("Invalid HuggingFace model ID");
@@ -176,7 +165,6 @@ async function openaiCompat({ baseUrl, apiKey, text, modelId, voiceId }) {
 export const FORMAT_HANDLERS = {
   hyperbolic,
   deepgram,
-  "nvidia-tts": nvidia,
   "huggingface-tts": huggingface,
   inworld,
   cartesia,

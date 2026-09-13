@@ -437,6 +437,9 @@
   "groq": {
     "baseUrl": "https://api.groq.com/openai/v1/chat/completions",
     "validateUrl": "https://api.groq.com/openai/v1/models",
+    "usage": {
+      "url": "https://api.groq.com/openai/v1/models"
+    },
     "format": "openai"
   },
   "hyperbolic": {
@@ -686,11 +689,6 @@
     "validateUrl": "https://api.studio.nebius.ai/v1/models",
     "format": "openai"
   },
-  "nvidia": {
-    "baseUrl": "https://integrate.api.nvidia.com/v1/chat/completions",
-    "validateUrl": "https://integrate.api.nvidia.com/v1/models",
-    "format": "openai"
-  },
   "ollama-local": {
     "baseUrl": "http://localhost:11434/api/chat",
     "format": "ollama"
@@ -708,6 +706,9 @@
   "opencode-go": {
     "baseUrl": "https://opencode.ai/zen/go/v1/chat/completions",
     "headers": {},
+    "usage": {
+      "url": "https://opencode.ai/zen/go/v1/usage"
+    },
     "format": "openai",
     "transports": [
       {
@@ -1007,6 +1008,11 @@
     "quirks": {
       "preserveCacheControl": true
     },
+    "format": "openai"
+  },
+  "byteplus-coding-plan": {
+    "baseUrl": "https://ark.ap-southeast.bytepluses.com/api/coding/v3/chat/completions",
+    "headers": {},
     "format": "openai"
   }
 }

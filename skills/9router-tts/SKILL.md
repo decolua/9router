@@ -75,6 +75,6 @@ Default → raw audio bytes (Content-Type `audio/mp3`).
 | `google-tts` | language code e.g. `en`, `vi` | **noAuth** |
 | `local-device` | OS voice name (`say -v ?` / SAPI) | **noAuth**; needs `ffmpeg` |
 | `deepgram` | `aura-asteria-en` etc | Token auth |
-| `nvidia`, `inworld`, `cartesia`, `playht` | `model/voice` | Provider-specific auth header |
+| `inworld`, `cartesia`, `playht` | `model/voice` | Provider-specific auth header |
 | `coqui`, `tortoise` | speaker / voice id | Localhost noAuth |
 | `hyperbolic` | model id | Body = `{text}` only |

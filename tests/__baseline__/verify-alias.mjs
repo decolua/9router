@@ -13,7 +13,7 @@ const ALIAS_TOKENS = [
   "cc","cx","gc","qw","if","ag","gh","kr","cu","kc","kmc","cl","oc","ocg","qd","qoder",
   "el","openai","vercel","vercel-ai-gateway","anthropic","gemini","openrouter","glm","kimi",
   "minimax","minimax-cn","hf","huggingface","ds","deepseek","cmc","commandcode","groq","xai",
-  "mistral","pplx","perplexity","together","fireworks","cerebras","cohere","nvidia","nebius",
+  "mistral","pplx","perplexity","together","fireworks","cerebras","cohere","nebius",
   "siliconflow","hyp","hyperbolic","dg","deepgram","aai","assemblyai","nb","nanobanana","ch",
   "chutes","ark","volcengine-ark","byteplus","bpm","cursor","vx","vertex","vxp","vertex-partner",
   "gw","grok-web","gcli","gb","grok-build","grok-cli","pw","perplexity-web","mimo","xiaomi-mimo",

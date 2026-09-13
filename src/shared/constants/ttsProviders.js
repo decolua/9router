@@ -49,12 +49,6 @@ export const TTS_PROVIDER_CONFIG = {
     voiceSource: "api-language", // from API with language picker
   },
   // ── Config-driven providers (load models from providers.js → ttsConfig.models) ──
-  "nvidia": {
-    hasModelSelector: true,
-    hasBrowseButton: false,
-    hasVoiceIdInput: true,
-    voiceSource: "config",
-  },
   "hyperbolic": {
     hasModelSelector: true,
     hasBrowseButton: false,

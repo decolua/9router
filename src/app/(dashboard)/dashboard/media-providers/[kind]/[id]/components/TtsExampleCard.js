@@ -107,7 +107,7 @@ export function TtsExampleCard({ providerId }) {
       }
     }
     // api-language (edge-tts, local-device, elevenlabs): NO default load, wait for user to pick language
-    // config (nvidia, hyperbolic, deepgram, huggingface, cartesia, playht, coqui, tortoise, inworld, qwen):
+    // config (hyperbolic, deepgram, huggingface, cartesia, playht, coqui, tortoise, inworld, qwen):
     // use ttsConfig.models for model selector; voice is empty by default (backend uses provider default)
   }, [providerId]);
 

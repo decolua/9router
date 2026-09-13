@@ -84,17 +84,6 @@ async function transcribeAssemblyAI(cfg, file, model, token) {
   return createErrorResult(504, "AssemblyAI timeout after 120s");
 }
 
-// Nvidia NIM: multipart, normalize response
-async function transcribeNvidia(cfg, file, model, token) {
-  const fd = new FormData();
-  fd.append("file", file, file.name || "audio.wav");
-  fd.append("model", model);
-  const res = await fetch(cfg.baseUrl, { method: "POST", headers: buildAuthHeaders(cfg, token), body: fd });
-  if (!res.ok) return upstreamError(res);
-  const data = await res.json();
-  return jsonResponse({ text: data.text || data.transcript || "" });
-}
-
 // Gemini: generateContent with inline_data audio + transcription prompt
 async function transcribeGemini(cfg, file, model, token, formData) {
   const buf = await file.arrayBuffer();
@@ -190,7 +179,6 @@ export async function handleSttCore({ provider, model, formData, credentials, st
     switch (cfg.format) {
       case "deepgram":        return await transcribeDeepgram(cfg, file, model, token, formData);
       case "assemblyai":      return await transcribeAssemblyAI(cfg, file, model, token);
-      case "nvidia-asr":      return await transcribeNvidia(cfg, file, model, token);
       case "huggingface-asr": return await transcribeHuggingFace(cfg, file, model, token);
       case "gemini-stt":      return await transcribeGemini(cfg, file, model, token, formData);
       default:                return await transcribeOpenAICompatible(cfg, file, model, token, formData);
