@@ -17,6 +17,9 @@ export function sanitizeComboSystemPromptFields(data) {
   if (typeof data.systemPrompt === "string") {
     out.systemPrompt = data.systemPrompt.slice(0, MAX_COMBO_SYSTEM_PROMPT_CHARS).trim();
   }
+  if ("systemPromptMode" in data) {
+    out.systemPromptMode = (data.systemPromptMode === "override" || data.systemPromptMode === "append") ? data.systemPromptMode : "override";
+  }
   return out;
 }
 
@@ -52,6 +55,7 @@ function rowToCombo(row) {
     models: parseJson(row.models, []),
     systemPromptEnabled: !!row.systemPromptEnabled,
     systemPrompt: row.systemPrompt || "",
+    systemPromptMode: row.systemPromptMode === "append" ? "append" : "override",
     thinkingUsageMode: row.thinkingUsageMode || null,
     thinkingUsageMinRatio: toRatioOrNull(row.thinkingUsageMinRatio),
     thinkingUsageMaxRatio: toRatioOrNull(row.thinkingUsageMaxRatio),
@@ -89,6 +93,7 @@ export async function createCombo(data) {
     models: data.models || [],
     systemPromptEnabled,
     systemPrompt: data.systemPrompt || "",
+    systemPromptMode: data.systemPromptMode === "append" ? "append" : "override",
     thinkingUsageMode: data.thinkingUsageMode || null,
     thinkingUsageMinRatio: toRatioOrNull(data.thinkingUsageMinRatio),
     thinkingUsageMaxRatio: toRatioOrNull(data.thinkingUsageMaxRatio),
@@ -96,8 +101,8 @@ export async function createCombo(data) {
     updatedAt: now,
   };
   db.run(
-    `INSERT INTO combos(id, name, kind, models, systemPromptEnabled, systemPrompt, thinkingUsageMode, thinkingUsageMinRatio, thinkingUsageMaxRatio, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [combo.id, combo.name, combo.kind, stringifyJson(combo.models), systemPromptEnabled ? 1 : 0, combo.systemPrompt, combo.thinkingUsageMode, combo.thinkingUsageMinRatio, combo.thinkingUsageMaxRatio, combo.createdAt, combo.updatedAt]
+    `INSERT INTO combos(id, name, kind, models, systemPromptEnabled, systemPrompt, systemPromptMode, thinkingUsageMode, thinkingUsageMinRatio, thinkingUsageMaxRatio, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [combo.id, combo.name, combo.kind, stringifyJson(combo.models), systemPromptEnabled ? 1 : 0, combo.systemPrompt, combo.systemPromptMode, combo.thinkingUsageMode, combo.thinkingUsageMinRatio, combo.thinkingUsageMaxRatio, combo.createdAt, combo.updatedAt]
   );
   return combo;
 }
@@ -110,8 +115,8 @@ export async function updateCombo(id, data) {
     if (!row) return;
     const merged = { ...rowToCombo(row), ...data, updatedAt: new Date().toISOString() };
     db.run(
-      `UPDATE combos SET name = ?, kind = ?, models = ?, systemPromptEnabled = ?, systemPrompt = ?, thinkingUsageMode = ?, thinkingUsageMinRatio = ?, thinkingUsageMaxRatio = ?, updatedAt = ? WHERE id = ?`,
-      [merged.name, merged.kind, stringifyJson(merged.models || []), merged.systemPromptEnabled === true || merged.systemPromptEnabled === 1 ? 1 : 0, merged.systemPrompt || "", merged.thinkingUsageMode ?? null, merged.thinkingUsageMinRatio ?? null, merged.thinkingUsageMaxRatio ?? null, merged.updatedAt, id]
+      `UPDATE combos SET name = ?, kind = ?, models = ?, systemPromptEnabled = ?, systemPrompt = ?, systemPromptMode = ?, thinkingUsageMode = ?, thinkingUsageMinRatio = ?, thinkingUsageMaxRatio = ?, updatedAt = ? WHERE id = ?`,
+      [merged.name, merged.kind, stringifyJson(merged.models || []), merged.systemPromptEnabled === true || merged.systemPromptEnabled === 1 ? 1 : 0, merged.systemPrompt || "", merged.systemPromptMode === "append" ? "append" : "override", merged.thinkingUsageMode ?? null, merged.thinkingUsageMinRatio ?? null, merged.thinkingUsageMaxRatio ?? null, merged.updatedAt, id]
     );
     result = merged;
   });

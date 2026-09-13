@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -94,6 +94,10 @@ export const TABLES = {
       models: "TEXT NOT NULL",
       systemPromptEnabled: "INTEGER DEFAULT 0",
       systemPrompt: "TEXT",
+      // Per-combo identity-prompt mode: NULL/'override' → custom replaces the
+      // default identity prompt (legacy behavior); 'append' → custom is injected
+      // BEFORE the default identity prompt with a blank line between.
+      systemPromptMode: "TEXT",
       // Per-combo hidden-thinking usage-synthesis config: mode NULL/'auto'
       // (legacy request-driven gate), 'off' (never synthesize) or 'always'
       // (synthesize unconditionally); ratios are 0..1 bounds of a per-request

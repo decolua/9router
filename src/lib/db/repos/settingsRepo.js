@@ -17,6 +17,10 @@ const DEFAULT_SETTINGS = {
   comboStrategy: "fallback",
   comboStickyRoundRobinLimit: 1,
   comboStrategies: {},
+  // App-level default identity system prompt for combos. Empty → computed
+  // fallback to DEFAULT_COMBO_IDENTITY_PROMPT at resolve time (never baked into
+  // backups via exportSettings). {name} is substituted per-combo.
+  defaultIdentitySystemPrompt: "",
   capacityAdapter: {
     vision: { enabled: true, roundRobin: false, models: [] },
     pdf: { enabled: false, roundRobin: false, models: [] },

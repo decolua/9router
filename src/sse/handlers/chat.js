@@ -9,7 +9,7 @@ import {
 } from "../services/auth.js";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
 import { getSettings, getComboByName } from "@/lib/localDb";
-import { getModelInfo, resolveComboSystemPrompt, resolveComboThinkingUsage } from "../services/model.js";
+import { getModelInfo, resolveComboSystemPrompt, resolveComboThinkingUsage, resolveDefaultIdentitySystemPrompt } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
@@ -70,6 +70,9 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Enforce API key if enabled in settings
   const settings = await getSettings();
+  // App-level default identity prompt (settings → built-in template), resolved
+  // once per request; threaded into combo resolution and single-model calls.
+  const defaultIdentityPrompt = resolveDefaultIdentitySystemPrompt(settings);
   if (settings.requireApiKey) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
@@ -100,7 +103,7 @@ export async function handleChat(request, clientRawRequest = null) {
   if (comboModels) {
     // Per-combo identity system prompt — injected into every member request and
     // stripped from the final response (defense-in-depth against leaks).
-    const comboPrompt = resolveComboSystemPrompt(comboRow);
+    const comboPrompt = resolveComboSystemPrompt(comboRow, defaultIdentityPrompt);
     // Per-combo hidden-thinking usage-synthesis config (off/auto/always +
     // ratio bounds); null = nothing explicitly configured → legacy gate.
     const comboThinkingUsage = resolveComboThinkingUsage(comboRow);
@@ -126,7 +129,7 @@ export async function handleChat(request, clientRawRequest = null) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
             cleanRawReq = { ...clientRawRequest, body: cleanBody };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, modelStr, comboPrompt, comboThinkingUsage);
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, modelStr, comboPrompt, comboThinkingUsage, defaultIdentityPrompt);
         },
         log,
         comboName: modelStr,
@@ -142,7 +145,7 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: augmentedModels,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, modelStr, comboPrompt, comboThinkingUsage),
+        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, modelStr, comboPrompt, comboThinkingUsage, defaultIdentityPrompt),
         adapterAdded
       ),
       log,
@@ -163,7 +166,7 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: soloAugmented,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, null, null, null, defaultIdentityPrompt),
         adapterAdded
       ),
       log,
@@ -172,7 +175,7 @@ export async function handleChat(request, clientRawRequest = null) {
     });
   }
 
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, null, null, null, defaultIdentityPrompt);
 }
 
 /**
@@ -186,7 +189,7 @@ export async function handleChat(request, clientRawRequest = null) {
  *   usage-synthesis config of the owning combo ({mode, minRatio, maxRatio});
  *   null keeps the legacy request-driven gate (outermost EXPLICIT combo wins).
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, requestedModel = null, comboSystemPrompt = null, comboThinkingUsage = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, requestedModel = null, comboSystemPrompt = null, comboThinkingUsage = null, defaultIdentityPrompt = null) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -197,8 +200,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       // Nested combo: keep the outer combo as the requested model when present,
       // otherwise this combo itself is what the client asked for.
       const comboRequestedModel = requestedModel || modelStr;
-      // Identity prompt: outermost combo wins (client-visible identity).
-      const nestedPrompt = comboSystemPrompt || resolveComboSystemPrompt(nestedRow);
+      // Identity prompt: outermost combo wins (client-visible identity) — the outer
+      // combo's resolved prompt already carries the composed override/append text,
+      // so a nested combo inherits it and never re-appends the default.
+      const nestedPrompt = comboSystemPrompt || resolveComboSystemPrompt(nestedRow, defaultIdentityPrompt);
       // Thinking-usage config: outermost EXPLICIT combo wins — a null (nothing
       // configured) must not shadow the nested combo's own setting.
       const nestedThinkingUsage = comboThinkingUsage || resolveComboThinkingUsage(nestedRow);
@@ -222,7 +227,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, comboRequestedModel, nestedPrompt, nestedThinkingUsage);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, comboRequestedModel, nestedPrompt, nestedThinkingUsage, defaultIdentityPrompt);
           },
           log,
           comboName: modelStr,
@@ -237,7 +242,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         body,
         models: augmentedModels,
         handleSingleModel: withCapacityAdapterStripping(
-          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, comboRequestedModel, nestedPrompt, nestedThinkingUsage),
+          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, comboRequestedModel, nestedPrompt, nestedThinkingUsage, defaultIdentityPrompt),
           adapterAdded
         ),
         log,

@@ -45,7 +45,7 @@ export async function PUT(request, { params }) {
     const prev = await getComboById(id);
     // Identity-prompt + thinking-usage fields go through the sanitizers only —
     // drop raw values so wrongly-typed payloads can't leak into the merge.
-    const { systemPromptEnabled, systemPrompt, thinkingUsageMode, thinkingUsageMinRatio, thinkingUsageMaxRatio, ...rest } = body;
+    const { systemPromptEnabled, systemPrompt, systemPromptMode, thinkingUsageMode, thinkingUsageMinRatio, thinkingUsageMaxRatio, ...rest } = body;
     const combo = await updateCombo(id, { ...rest, ...sanitizeComboSystemPromptFields(body), ...sanitizeComboThinkingUsageFields(body) });
     
     if (!combo) {

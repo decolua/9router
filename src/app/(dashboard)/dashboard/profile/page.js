@@ -32,6 +32,9 @@ export default function ProfilePage() {
   const [passLoading, setPassLoading] = useState(false);
   const [dbLoading, setDbLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
+  const [identityDraft, setIdentityDraft] = useState("");
+  const [identityStatus, setIdentityStatus] = useState({ type: "", message: "" });
+  const [identityLoading, setIdentityLoading] = useState(false);
   const [dbAuth, setDbAuth] = useState({ open: false, mode: "", password: "" });
   const pendingImportRef = useRef(null);
   const [oidcForm, setOidcForm] = useState({
@@ -122,6 +125,7 @@ export default function ProfilePage() {
           outboundProxyUrl: data?.outboundProxyUrl || "",
           outboundNoProxy: data?.outboundNoProxy || "",
         });
+        setIdentityDraft(data?.defaultIdentitySystemPrompt || "");
         setLoading(false);
       })
       .catch((err) => {
@@ -662,6 +666,38 @@ export default function ProfilePage() {
     } catch (err) {
       console.error("Failed to update enableObservability:", err);
     }
+  };
+
+  const saveIdentityPrompt = async (value) => {
+    setIdentityLoading(true);
+    setIdentityStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ defaultIdentitySystemPrompt: value }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSettings(prev => ({ ...prev, ...data }));
+        setIdentityDraft(data?.defaultIdentitySystemPrompt || "");
+        setIdentityStatus({ type: "success", message: "Identity prompt saved" });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setIdentityStatus({ type: "error", message: data?.error || "Failed to save identity prompt" });
+      }
+    } catch (err) {
+      console.error("Failed to save identity prompt:", err);
+      setIdentityStatus({ type: "error", message: "An error occurred while saving the identity prompt" });
+    } finally {
+      setIdentityLoading(false);
+    }
+  };
+
+  const resetIdentityPrompt = async () => {
+    setIdentityDraft("");
+    await saveIdentityPrompt("");
+    setIdentityStatus({ type: "success", message: "Reset to default identity prompt" });
   };
 
   const reloadSettings = async () => {
@@ -1623,6 +1659,59 @@ export default function ProfilePage() {
             {proxyStatus.message && (
               <p className={`text-xs sm:text-sm ${proxyStatus.type === "error" ? "text-red-500" : "text-green-500"} pt-2 border-t border-border/50`}>
                 {proxyStatus.message}
+              </p>
+            )}
+          </div>
+        </Card>
+
+        {/* Identity System Prompt */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-blue-500/10 text-blue-500 shrink-0">
+              <span className="material-symbols-outlined text-[20px]">badge</span>
+            </div>
+            <div>
+              <h3 className="text-base sm:text-lg font-semibold">Identity System Prompt</h3>
+              <p className="text-xs text-text-muted">
+                Default identity prompt used by combos with Identity system prompt enabled
+              </p>
+            </div>
+          </div>
+          <p className="text-xs sm:text-sm text-text-muted mb-2">
+            {"{name}"} is replaced with the combo name. Used directly in Override mode;
+            injected after the combo's custom text in Append mode. Leave empty to use the
+            built-in hardened template.
+          </p>
+          <textarea
+            value={identityDraft}
+            onChange={(e) => setIdentityDraft(e.target.value)}
+            maxLength={4000}
+            rows={8}
+            placeholder="Built-in hardened template (empty = default)"
+            className="w-full rounded-lg border border-black/10 dark:border-white/10 bg-black/[0.01] dark:bg-white/[0.01] p-2.5 text-xs resize-y focus:outline-none focus:ring-1 focus:ring-primary/50 font-mono"
+            disabled={loading}
+          />
+          <div className="flex items-center gap-2 mt-3">
+            <Button
+              variant="primary"
+              icon="save"
+              loading={identityLoading}
+              disabled={loading}
+              onClick={() => saveIdentityPrompt(identityDraft)}
+            >
+              Save
+            </Button>
+            <Button
+              variant="outline"
+              icon="restart_alt"
+              disabled={loading || identityLoading}
+              onClick={resetIdentityPrompt}
+            >
+              Reset to default
+            </Button>
+            {identityStatus.message && (
+              <p className={`text-sm ${identityStatus.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
+                {identityStatus.message}
               </p>
             )}
           </div>

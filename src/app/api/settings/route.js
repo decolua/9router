@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSettings, updateSettings } from "@/lib/localDb";
+import { getSettings, updateSettings, MAX_COMBO_SYSTEM_PROMPT_CHARS } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
 import bcrypt from "bcryptjs";
@@ -74,6 +74,13 @@ export async function PATCH(request) {
       if (!body.oidcClientSecret || !String(body.oidcClientSecret).trim()) {
         delete body.oidcClientSecret;
       }
+    }
+
+    // Default identity prompt: trim + cap length; empty → "" → resolver falls
+    // back to the built-in hardened template.
+    if (Object.prototype.hasOwnProperty.call(body, "defaultIdentitySystemPrompt")) {
+      const v = String(body.defaultIdentitySystemPrompt ?? "").trim();
+      body.defaultIdentitySystemPrompt = v.slice(0, MAX_COMBO_SYSTEM_PROMPT_CHARS);
     }
 
     const settings = await updateSettings(body);

@@ -368,6 +368,37 @@ describe("DB SQLite layer — public API parity", () => {
     await sqliteDb.deleteCombo(combo.id);
   });
 
+  it("systemPromptMode roundtrips and legacy rows default to override", async () => {
+    // Explicit append survives create → export → import
+    const combo = await sqliteDb.createCombo({ name: "combo-mode-rt", models: ["m1"], systemPromptEnabled: true, systemPrompt: "Custom {name}.", systemPromptMode: "append" });
+    expect(combo.systemPromptMode).toBe("append");
+    const snap = await sqliteDb.exportDb();
+    expect(snap.combos.find((c) => c.id === combo.id)).toMatchObject({ systemPromptMode: "append" });
+
+    await sqliteDb.importDb(snap);
+    expect((await sqliteDb.getComboById(combo.id)).systemPromptMode).toBe("append");
+
+    // Legacy export without the field imports as "override"
+    await sqliteDb.importDb({ ...snap, combos: snap.combos.map((c) => ({ ...c, systemPromptMode: undefined })) });
+    expect((await sqliteDb.getComboById(combo.id)).systemPromptMode).toBe("override");
+    await sqliteDb.deleteCombo(combo.id);
+  });
+
+  it("defaultIdentitySystemPrompt roundtrips in settings blob", async () => {
+    const before = (await sqliteDb.getSettings()).defaultIdentitySystemPrompt;
+    expect(before).toBe(""); // merged default
+    await sqliteDb.updateSettings({ defaultIdentitySystemPrompt: "You are {name}, the router." });
+    const snap = await sqliteDb.exportDb();
+    expect(snap.settings.defaultIdentitySystemPrompt).toBe("You are {name}, the router.");
+
+    await sqliteDb.importDb({ ...snap, settings: { defaultIdentitySystemPrompt: "" } });
+    expect((await sqliteDb.getSettings()).defaultIdentitySystemPrompt).toBe("");
+
+    await sqliteDb.updateSettings({ defaultIdentitySystemPrompt: "You are {name}, the router." });
+    await sqliteDb.importDb(snap);
+    expect((await sqliteDb.getSettings()).defaultIdentitySystemPrompt).toBe("You are {name}, the router.");
+  });
+
   it("pricing: user pricing merged with constants", async () => {
     await sqliteDb.updatePricing({ openai: { "gpt-test": { input: 1, output: 2 } } });
     const p = await sqliteDb.getPricing();

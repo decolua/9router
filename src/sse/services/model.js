@@ -95,17 +95,55 @@ export async function getComboModels(modelStr) {
 }
 
 /**
- * Resolve the per-combo identity system prompt (Explicit Identity Grounding +
- * Constraint Binding). The resolved text is both what gets injected into the
- * upstream request and the needle stripped from responses.
+ * Resolve the app-level default identity system prompt template (un-substituted,
+ * still carrying its "{name}" placeholder). Falls back to the built-in hardened
+ * template until a default is configured in Settings.
+ * @param {object} [settings] - App settings blob (from getSettings())
+ * @returns {string} The default identity prompt template
+ */
+export function resolveDefaultIdentitySystemPrompt(settings) {
+  const custom = (
+    settings && typeof settings.defaultIdentitySystemPrompt === "string"
+      ? settings.defaultIdentitySystemPrompt
+      : ""
+  ).trim();
+  return (custom || DEFAULT_COMBO_IDENTITY_PROMPT).trim();
+}
+
+/**
+ * Resolve the per-combo identity system prompt. The resolved text is both what
+ * gets injected into the upstream request and the needle stripped from responses.
+ * Mode 'override' (legacy/default): custom text replaces the default template
+ * (empty custom → default template). Mode 'append': custom text is injected
+ * BEFORE the default template with a blank line between (empty custom → default
+ * template only). "{name}" is substituted in both custom and default using the
+ * combo name.
  * @param {object} combo - Full combo row (from getComboByName)
+ * @param {string} [defaultPrompt] - Pre-substituted app-level default template;
+ *   omitted/empty falls back to resolveDefaultIdentitySystemPrompt()
  * @returns {string|null} Prompt text, or null when off (toggle off / media combo)
  */
-export function resolveComboSystemPrompt(combo) {
+export function resolveComboSystemPrompt(combo, defaultPrompt) {
   if (!combo || !combo.systemPromptEnabled || combo.kind) return null;
   const name = combo.name || "";
-  const custom = typeof combo.systemPrompt === "string" ? combo.systemPrompt.trim() : "";
-  const template = custom || DEFAULT_COMBO_IDENTITY_PROMPT;
+  const custom = (typeof combo.systemPrompt === "string" ? combo.systemPrompt.trim() : "");
+  const base = (typeof defaultPrompt === "string" && defaultPrompt.trim())
+    ? defaultPrompt.trim()
+    : resolveDefaultIdentitySystemPrompt();
+  const mode = combo.systemPromptMode === "append" ? "append" : "override";
+
+  if (mode === "append") {
+    if (!custom) {
+      const def = base.replaceAll("{name}", name).trim();
+      return def || null;
+    }
+    const left = custom.replaceAll("{name}", name).trim();
+    const right = base.replaceAll("{name}", name).trim();
+    return [left, right].filter(Boolean).join("\n\n") || null;
+  }
+
+  // override — custom replaces the default template (empty custom → default)
+  const template = custom || base;
   const prompt = template.replaceAll("{name}", name).trim();
   return prompt || null;
 }

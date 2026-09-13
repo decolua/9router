@@ -300,6 +300,11 @@ const THINKING_USAGE_MODES = [
   { value: "off", label: "Off — never synthesize" },
 ];
 
+const SYSTEM_PROMPT_MODES = [
+  { value: "override", label: "Override — replace the default identity prompt" },
+  { value: "append", label: "Append — inject before the default identity prompt" },
+];
+
 function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
   const current = strategy.fallbackStrategy || "fallback";
@@ -662,6 +667,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const [models, setModels] = useState(combo?.models || []);
   const [systemPromptEnabled, setSystemPromptEnabled] = useState(!!combo?.systemPromptEnabled);
   const [systemPrompt, setSystemPrompt] = useState(combo?.systemPrompt || "");
+  const [systemPromptMode, setSystemPromptMode] = useState(combo?.systemPromptMode === "append" ? "append" : "override");
   const [thinkingUsageMode, setThinkingUsageMode] = useState(combo?.thinkingUsageMode || "auto");
   // Percent strings; "" means "not set" → fixed 75% default (stored as null).
   const [thinkingMinPct, setThinkingMinPct] = useState(combo?.thinkingUsageMinRatio != null ? String(Math.round(combo.thinkingUsageMinRatio * 100)) : "");
@@ -768,7 +774,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
       [minRatio, maxRatio] = [maxRatio, minRatio];
     }
     await onSave({
-      name: name.trim(), models, systemPromptEnabled, systemPrompt,
+      name: name.trim(), models, systemPromptEnabled, systemPrompt, systemPromptMode,
       thinkingUsageMode,
       thinkingUsageMinRatio: minRatio,
       thinkingUsageMaxRatio: maxRatio,
@@ -856,13 +862,24 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
               size="sm"
             />
             {systemPromptEnabled && (
-              <div className="mt-2">
+              <div className="mt-2 flex flex-col gap-2">
+                <Select
+                  label="Prompt mode"
+                  options={SYSTEM_PROMPT_MODES}
+                  value={systemPromptMode}
+                  onChange={(e) => setSystemPromptMode(e.target.value)}
+                  hint={systemPromptMode === "append"
+                    ? "Your text below is injected before the default identity prompt (blank line between)."
+                    : "Your text below replaces the default identity prompt (empty → default)."}
+                />
                 <textarea
                   value={systemPrompt}
                   onChange={(e) => setSystemPrompt(e.target.value)}
                   maxLength={4000}
                   rows={5}
-                  placeholder={"Optional override — leave empty to use the built-in hardened template.\n{name} is replaced with the combo name."}
+                  placeholder={systemPromptMode === "append"
+                    ? "Optional text injected before the default identity prompt.\n{name} is replaced with the combo name."
+                    : "Custom override — leave empty to use the default identity prompt.\n{name} is replaced with the combo name."}
                   className="w-full rounded-lg border border-black/10 dark:border-white/10 bg-black/[0.01] dark:bg-white/[0.01] p-2.5 text-xs resize-y focus:outline-none focus:ring-1 focus:ring-primary/50 font-mono"
                 />
                 <p className="text-[10px] text-text-muted mt-0.5">
