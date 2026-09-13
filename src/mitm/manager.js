@@ -247,6 +247,12 @@ async function loadDnsToolState() {
  * Re-apply DNS for tools previously enabled — called on app startup after MITM running.
  */
 async function restoreToolDNS(sudoPassword) {
+  const status = await getMitmStatus();
+  if (!status?.running) {
+    try { removeAllDNSEntriesSync(); } catch { /* ignore */ }
+    log("DNS restore: MITM server is not running, skipping tool DNS restoration & cleaning hosts");
+    return;
+  }
   const state = await loadDnsToolState();
   const password = sudoPassword || getCachedPassword() || await loadEncryptedPassword();
   for (const [tool, enabled] of Object.entries(state)) {
@@ -697,6 +703,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
       }
     });
     serverProcess.on("exit", (code) => {
+      try { removeAllDNSEntriesSync(); } catch { /* ignore */ }
       log(`Server exited (code: ${code})`);
       serverProcess = null;
       serverPid = null;
@@ -709,6 +716,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
 
   const health = await pollMitmHealth(8000, MITM_PORT);
   if (!health) {
+    try { removeAllDNSEntriesSync(); } catch { /* ignore */ }
     if (serverProcess && !serverProcess.killed) { try { serverProcess.kill(); } catch { /* ignore */ } serverProcess = null; }
     const processUsing443 = getProcessUsingPort443();
     const portInfo = processUsing443 ? ` Port 443 already in use by ${processUsing443}.` : "";
