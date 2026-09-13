@@ -1,7 +1,8 @@
+import { buildSearchRequest } from "open-sse/handlers/search/callers.js";
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import { CODEX_CLI_VERSION } from "open-sse/config/appConstants.js";
@@ -518,6 +519,18 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
 
   try {
     switch (connection.provider) {
+      case "google-pse": {
+        const { url, init } = buildSearchRequest({
+          id: connection.provider, ...AI_PROVIDERS[connection.provider].searchConfig,
+        }, {
+          token: connection.apiKey, providerSpecificData: { cx: connection.providerSpecificData?.cx },
+          query: "ping", maxResults: 1,
+        });
+        const res = await fetchWithConnectionProxy(url, {
+          ...init, signal: AbortSignal.timeout(8000),
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : `Google PSE validation failed (HTTP ${res.status})` };
+      }
       case "cloudflare-ai": {
         const psd = connection.providerSpecificData || {};
         const accountId = psd.accountId;

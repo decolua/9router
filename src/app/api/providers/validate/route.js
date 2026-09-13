@@ -1,3 +1,4 @@
+import { buildSearchRequest } from "open-sse/handlers/search/callers.js";
 import { NextResponse } from "next/server";
 import { getProviderNodeById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider, AI_PROVIDERS } from "@/shared/constants/providers";
@@ -8,8 +9,8 @@ import { resolveQoderCredentials, resolveQoderModels } from "open-sse/services/q
 import { normalizeProviderId } from "@/lib/providerNormalization";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
-// Returns true if API key is accepted (status !== 401 && !== 403).
-async function probeWebProvider(provider, apiKey) {
+// Google PSE needs a successful search with its engine ID; other providers use an auth probe.
+async function probeWebProvider(provider, apiKey, providerSpecificData) {
   const p = AI_PROVIDERS[provider];
   if (!p) return null;
   // Skip if provider has dual-purpose (LLM + search), let LLM validate handle it
@@ -20,6 +21,14 @@ async function probeWebProvider(provider, apiKey) {
   if (!cfg) return null;
   if (cfg.authType === "none") return true; // no-auth (e.g. searxng)
 
+  if (provider === "google-pse") {
+    const { url, init } = buildSearchRequest({ id: provider, ...cfg }, {
+      token: apiKey, providerSpecificData: { cx: providerSpecificData?.cx }, query: "ping", maxResults: 1,
+    });
+    const res = await fetch(url, { ...init, signal: AbortSignal.timeout(8000) });
+    return res.ok;
+  }
+
   let url = cfg.validateUrl || cfg.baseUrl;
   const headers = { "Content-Type": "application/json" };
   let body;
@@ -29,7 +38,6 @@ async function probeWebProvider(provider, apiKey) {
     case "bearer":              headers["Authorization"] = `Bearer ${apiKey}`; break;
     case "x-api-key":           headers["x-api-key"] = apiKey; break;
     case "x-subscription-token":headers["x-subscription-token"] = apiKey; break;
-    case "key":                 url += `?key=${encodeURIComponent(apiKey)}&q=ping&cx=test`; break; // google-pse
     case "api_key":             url += `?api_key=${encodeURIComponent(apiKey)}&q=ping&engine=google`; break; // searchapi
   }
 
@@ -235,11 +243,13 @@ export async function POST(request) {
       }
 
       // Generic probe for webSearch/webFetch providers (config-driven)
-      const webResult = await probeWebProvider(provider, apiKey);
+      const webResult = await probeWebProvider(provider, apiKey, providerSpecificData);
       if (webResult !== null) {
         return NextResponse.json({
           valid: webResult,
-          error: webResult ? null : "Invalid API key",
+          error: webResult ? null : provider === "google-pse"
+            ? "Google PSE validation failed. Check the API key, Search Engine ID (cx), and quota."
+            : "Invalid API key",
         });
       }
 

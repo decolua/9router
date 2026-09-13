@@ -14,6 +14,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     name: "",
     priority: 1,
     apiKey: "",
+    cx: "",
   });
   const [azureData, setAzureData] = useState({
     azureEndpoint: "",
@@ -35,6 +36,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         name: connection.name || "",
         priority: connection.priority || 1,
         apiKey: "",
+        cx: connection.providerSpecificData?.cx || "",
       });
       // Load Azure-specific data if present
       if (connection.provider === "azure" && connection.providerSpecificData) {
@@ -59,6 +61,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     }
   }, [connection]);
 
+  const isGooglePse = connection?.provider === "google-pse";
+  const missingCx = isGooglePse && !formData.cx.trim();
+  const googlePseData = isGooglePse ? { ...connection.providerSpecificData, cx: formData.cx.trim() } : undefined;
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
@@ -89,7 +94,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   };
 
   const handleValidate = async () => {
-    if (!connection?.provider || !formData.apiKey) return;
+    if (!connection?.provider || !formData.apiKey || missingCx) return;
     setValidating(true);
     setValidationResult(null);
     try {
@@ -101,6 +106,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           apiKey: formData.apiKey,
           ...(isAzure ? { providerSpecificData: azureData } : {}),
           ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
+          ...(isGooglePse ? { providerSpecificData: googlePseData } : {}),
           ...(providerRegions ? { providerSpecificData: buildRegionSpecificData() } : {}),
         }),
       });
@@ -114,13 +120,17 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   };
 
   const handleSubmit = async () => {
-    if (!connection) return;
+    if (!connection || missingCx) return;
     setSaving(true);
     try {
       const updates = {
         name: formData.name,
         priority: formData.priority,
       };
+      if (isGooglePse) {
+        updates.providerSpecificData = googlePseData;
+        if (googlePseData.cx !== connection.providerSpecificData?.cx) updates.testStatus = "unknown";
+      }
       if (!isOAuth && formData.apiKey) {
         updates.apiKey = formData.apiKey;
         let isValid = validationResult === "success";
@@ -136,6 +146,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
                 apiKey: formData.apiKey,
                 ...(isAzure ? { providerSpecificData: azureData } : {}),
                 ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
+                ...(isGooglePse ? { providerSpecificData: googlePseData } : {}),
                 ...(providerRegions ? { providerSpecificData: buildRegionSpecificData() } : {}),
               }),
             });
@@ -215,7 +226,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
                 className="flex-1"
               />
               <div className="pt-6">
-                <Button onClick={handleValidate} disabled={!formData.apiKey || validating || saving} variant="secondary">
+                <Button onClick={handleValidate} disabled={!formData.apiKey || missingCx || validating || saving} variant="secondary">
                   {validating ? "Checking..." : "Check"}
                 </Button>
               </div>
@@ -228,6 +239,14 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           </>
         )}
 
+        {isGooglePse && (
+          <Input
+            label="Search Engine ID (cx)"
+            value={formData.cx}
+            onChange={(e) => { setFormData({ ...formData, cx: e.target.value }); setValidationResult(null); setTestResult(null); }}
+            hint="Save changes before testing the stored connection."
+          />
+        )}
         {isAzure && (
           <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
             <h3 className="font-semibold mb-3 text-sm">Azure OpenAI Configuration</h3>
@@ -287,7 +306,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         )}
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={saving}>{saving ? "Saving..." : "Save"}</Button>
+          <Button onClick={handleSubmit} fullWidth disabled={saving || missingCx}>{saving ? "Saving..." : "Save"}</Button>
           <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
         </div>
       </div>
