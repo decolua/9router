@@ -57,7 +57,18 @@ const USAGE_EXTRACTORS = {
   commandcode(raw) {
     const input = n(raw.inputTokens), output = n(raw.outputTokens);
     const total = typeof raw.totalTokens === "number" ? raw.totalTokens : input + output;
-    return { promptTokens: input, completionTokens: output, totalTokens: total };
+    // CommandCode's `inputTokens` is INCLUSIVE of cache reads (upstream sends
+    // inputTokenDetails.noCacheTokens + cacheReadTokens === inputTokens), so
+    // promptTokens stays as-is and the cached count is passed through as a
+    // detail only. That lets usage tracking + billing charge those tokens at
+    // the cached rate instead of the full input rate. Do NOT add it to
+    // promptTokens or the cache portion gets billed twice.
+    const cached = n(raw.cachedInputTokens) || n(raw.inputTokenDetails?.cacheReadTokens) || n(raw.cacheReadTokens);
+    const reasoning = n(raw.reasoningTokens) || n(raw.outputTokenDetails?.reasoningTokens);
+    const out = { promptTokens: input, completionTokens: output, totalTokens: total };
+    if (cached > 0) out.cachedTokens = cached;
+    if (reasoning > 0) out.reasoningTokens = reasoning;
+    return out;
   },
 };
 

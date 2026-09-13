@@ -27,6 +27,10 @@ export default {
       "x-cli-environment": "cli",
     },
   },
+  features: {
+    usage: true,
+    usageApikey: true,
+  },
   models: [
     { id: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro" },
     { id: "deepseek/deepseek-v4-flash", name: "DeepSeek V4 Flash" },

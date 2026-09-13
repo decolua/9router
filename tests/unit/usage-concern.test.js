@@ -62,6 +62,25 @@ describe("toOpenAIUsage", () => {
     expect(u.total_tokens).toBe(99);
   });
 
+  it("commandcode: passes prompt-cache reads through as a detail (inputTokens already includes them)", () => {
+    const u = toOpenAIUsage(
+      {
+        inputTokens: 22044,
+        inputTokenDetails: { noCacheTokens: 156, cacheReadTokens: 21888 },
+        outputTokens: 16,
+        totalTokens: 22060,
+        cachedInputTokens: 21888,
+        reasoningTokens: 16,
+      },
+      "commandcode"
+    );
+    // prompt_tokens must NOT be inflated — upstream's inputTokens is cache-inclusive
+    expect(u.prompt_tokens).toBe(22044);
+    expect(u.prompt_tokens_details.cached_tokens).toBe(21888);
+    expect(u.completion_tokens_details.reasoning_tokens).toBe(16);
+    expect(u.total_tokens).toBe(22060);
+  });
+
   it("unknown kind / null raw -> null", () => {
     expect(toOpenAIUsage({}, "nope")).toBeNull();
     expect(toOpenAIUsage(null, "claude")).toBeNull();

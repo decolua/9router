@@ -661,6 +661,24 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "commandcode":
+        // 5-hour / weekly credit windows plus the plan's monthly allowance.
+        // remainingPercentage only — the UI reads `remaining` as a 0–100
+        // percentage, never as an absolute credit amount.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+              unlimited: quota.unlimited,
+            });
+          });
+        }
+        break;
+
       default:
         // Generic fallback for unknown providers
         if (data.quotas) {
