@@ -2,7 +2,13 @@
 import "open-sse/index.js";
 
 import { generatePKCE } from "../utils/pkce.js";
-import { extractCodexAccountInfo, fetchKiroProfileArn } from "../providerHelpers.js";
+import { CLAUDE_CONFIG } from "../constants/oauth.js";
+import {
+  claudeProfileFields,
+  extractCodexAccountInfo,
+  fetchClaudeProfile,
+  fetchKiroProfileArn,
+} from "../providerHelpers.js";
 
 import claude from "./claude.js";
 import codex from "./codex.js";
@@ -56,7 +62,7 @@ const PROVIDERS = {
 export { PROVIDERS };
 
 // Re-export helpers that other files import from this path
-export { extractCodexAccountInfo, fetchKiroProfileArn };
+export { claudeProfileFields, extractCodexAccountInfo, fetchClaudeProfile, fetchKiroProfileArn };
 
 /**
  * Get provider handler
@@ -198,6 +204,46 @@ export async function pollForToken(providerName, deviceCode, codeVerifier, extra
   }
 
   return { success: false, error: result.data.error, errorDescription: result.data.error_description };
+}
+
+// Run-once guard across the process lifetime
+let claudeBackfillDone = false;
+
+// Backfill email + profile info for existing claude OAuth connections missing them.
+// Unlike the codex backfill (a local idToken decode) this hits Anthropic once per
+// connection, so callers should not await it — the guard resets on failure and the
+// next call retries.
+export async function backfillClaudeProfiles() {
+  if (claudeBackfillDone) return;
+  claudeBackfillDone = true;
+  try {
+    const { getProviderConnections, updateProviderConnection } = await import("@/lib/localDb");
+    const connections = await getProviderConnections();
+    const targets = connections.filter((c) => (
+      c.provider === "claude"
+      && c.authType === "oauth"
+      && !!c.accessToken
+      && (!c.email || !c.providerSpecificData?.claudeAccountUuid)
+    ));
+    for (const conn of targets) {
+      const profile = await fetchClaudeProfile(conn.accessToken, CLAUDE_CONFIG.profileUrl);
+      const fields = claudeProfileFields(profile);
+      const patch = {};
+      if (!conn.email && fields.email) patch.email = fields.email;
+      if (fields.providerSpecificData) {
+        patch.providerSpecificData = {
+          ...(conn.providerSpecificData || {}),
+          ...fields.providerSpecificData,
+        };
+      }
+      if (Object.keys(patch).length) {
+        await updateProviderConnection(conn.id, patch);
+      }
+    }
+  } catch (err) {
+    claudeBackfillDone = false;
+    console.log("backfillClaudeProfiles failed:", err?.message || err);
+  }
 }
 
 // Run-once guard across the process lifetime

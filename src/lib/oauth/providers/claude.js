@@ -1,4 +1,5 @@
 import { CLAUDE_CONFIG } from "../constants/oauth.js";
+import { claudeProfileFields, fetchClaudeProfile } from "../providerHelpers.js";
 
 const claude = {
   config: CLAUDE_CONFIG,
@@ -49,11 +50,16 @@ const claude = {
 
     return await response.json();
   },
-  mapTokens: (tokens) => ({
+  postExchange: async (tokens) => {
+    const profile = await fetchClaudeProfile(tokens.access_token, CLAUDE_CONFIG.profileUrl);
+    return { profile };
+  },
+  mapTokens: (tokens, extra) => ({
     accessToken: tokens.access_token,
     refreshToken: tokens.refresh_token,
     expiresIn: tokens.expires_in,
     scope: tokens.scope,
+    ...claudeProfileFields(extra?.profile),
   }),
 };
 
