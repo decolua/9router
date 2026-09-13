@@ -256,10 +256,10 @@ describe("pool block synthesis & propagation", () => {
       [GPT_OSS]: { remainingPercentage: 0, resetAt: weeklyReset },
     } });
 
-    const resetMs = await handleAntigravityQuotaError("ag-berinda", 429, CLAUDE, "token", {});
+    const resetMs = await handleAntigravityQuotaError("ag-exhausted", 429, CLAUDE, "token", {});
     expect(resetMs).toBe(Date.parse(weeklyReset));
 
-    const cached = getAntigravityQuotaCache().get("ag-berinda");
+    const cached = getAntigravityQuotaCache().get("ag-exhausted");
     expect(cached[CLAUDE].remainingPercentage).toBe(0);
     expect(cached[CLAUDE_SIBLING].remainingPercentage).toBe(0);
     expect(cached[GPT_OSS].remainingPercentage).toBe(0);
