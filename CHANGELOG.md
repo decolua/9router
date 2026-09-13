@@ -1,6 +1,7 @@
 # Unreleased
 
 ## Breaking Changes
+- **Token Saver**: remove the token-saver feature (RTK tool_result compression, Headroom external compress proxy, Caveman mode, Ponytail, PXPipe) — the `X-9Router-Token-Saver` request header, the dashboard token-saver pages, their settings keys, and the `/api/headroom/*` and `/api/pxpipe/*` API routes. `open-sse/rtk/systemInject.js` survives as the shared injector for the combo identity prompt
 - **Tunnel**: remove Cloudflare Tunnel and Tailscale Funnel remote-access features — the dashboard Endpoint page UI, `/api/tunnel` routes, CLI settings menu and tunnel commands, and the background watchdog/monitoring. The gateway is now local-only
 - **CLI**: remove the `cli/` launcher package (published to npm as `9router` for `npx 9router` / `npm i -g 9router`). Distribution is now Docker/source only; the app itself is unchanged
 - **Updater**: remove the npm self-update flow, the "new version available" banner and version check (`/api/version*`), and the Shutdown control — these only made sense under the CLI launcher

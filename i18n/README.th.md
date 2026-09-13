@@ -5,7 +5,7 @@
   
   # 9Router - Free AI Router
   
-  **ไม่ต้องหยุดเขียนโค้ด ประหยัดโทเค็น 20-40% ด้วย RTK + สลับอัตโนมัติไปยังโมเดล AI ฟรีและราคาถูก**
+  **ไม่ต้องหยุดเขียนโค้ด สลับอัตโนมัติไปยังโมเดล AI ฟรีและราคาถูก**
   
   **ผู้ให้บริการ AI ฟรีสำหรับ OpenClaw**
   
@@ -33,7 +33,6 @@
 
 **9Router แก้ปัญหาเหล่านี้:**
 
-- ✅ **ประหยัดโทเค็น RTK** - บีบอัดผลลัพธ์จากเครื่องมือ (`git diff`, `grep`, `ls`...) ก่อนส่งให้ LLM
 - ✅ **เพิ่มประสิทธิภาพสมาชิก** - ติดตามโควตา ใช้ทุกบิตก่อนรีเซ็ต
 - ✅ **สลับอัตโนมัติ** - สมาชิก → ถูก → ฟรี, ไม่มีเวลาหยุดทำงาน
 - ✅ **รองรับหลายบัญชี** - Round-robin ระหว่างบัญชีของผู้ให้บริการแต่ละราย
@@ -52,7 +51,6 @@
        ↓
 ┌─────────────────────────────────────────────┐
 │           9Router (Smart Router)            │
-│  • RTK Token Saver (ตัดโทเค็น tool_result) │
 │  • แปลงรูปแบบ (OpenAI ↔ Claude)           │
 │  • ติดตามโควตา                              │
 │  • รีเฟรชโทเค็นอัตโนมัติ                     │
@@ -64,7 +62,7 @@
        │   ↓ งบหมด
        └─→ [Tier 3: ฟรี] Kiro, OpenCode Free, Vertex ($300 เครดิตฟรี)
 
-ผลลัพธ์: ไม่ต้องหยุดเขียนโค้ด ค่าใช้จ่ายน้อยที่สุด + ประหยัดโทเค็น 20-40% ด้วย RTK
+ผลลัพธ์: ไม่ต้องหยุดเขียนโค้ด ค่าใช้จ่ายน้อยที่สุด
 ```
 
 ---
@@ -330,10 +328,6 @@ URL ค่าเริ่มต้น:
 
 | ฟีเจอร์ | ทำอะไร | ทำไมถึงสำคัญ |
 |---------|--------------|----------------|
-| 🚀 **RTK Token Saver** ([RTK](https://github.com/rtk-ai/rtk) ⭐40K) | บีบอัดผลลัพธ์จากเครื่องมือ (`git diff`, `grep`, `ls`, `tree`...) ก่อนส่งให้ LLM | ประหยัด **โทเค็น input 20-40%** ต่อคำขอ |
-| 🧠 **Headroom Token Saver** ([Headroom](https://github.com/chopratejas/headroom)) | พร็อกซี `/v1/compress` ภายนอกก่อนเลือกผู้ให้บริการ | ประหยัดโทเค็นบริบทมากขึ้นโดยไม่ต้องเปลี่ยน client |
-| 🪨 **Caveman Mode** ([Caveman](https://github.com/JuliusBrussee/caveman) ⭐52K) | ฉีด caveman-speak prompt → LLM ตอบสั้นกระชับ เนื้อหาทางเทคนิคยังครบถ้วน | ประหยัด **โทเค็น output สูงสุด 65%** |
-| 🐴 **Ponytail** ([Ponytail](https://github.com/DietrichGebert/ponytail)) | ฉีด prompt "lazy senior dev" → LLM เขียนโค้ดน้อยที่สุด YAGNI-first (Lite/Full/Ultra) | **โทเค็น output น้อยลง, ไม่ต้อง refactor มาก** |
 | 🎯 **Smart 3-Tier Fallback** | เลือกเส้นทางอัตโนมัติ: สมาชิก → ถูก → ฟรี | ไม่ต้องหยุดเขียนโค้ด, ไม่มีเวลาหยุดทำงาน |
 | 📊 **ติดตามโควตาแบบ Real-Time** | นับโทเค็นแบบ live + นับถอยหลังรีเซ็ต | เพิ่มประสิทธิภาพมูลค่าสมาชิก |
 | 🔄 **แปลงรูปแบบ** | OpenAI ↔ Claude ↔ Gemini ↔ Cursor ↔ Kiro ↔ Vertex | ใช้ได้กับเครื่องมือ CLI ทุกประเภท |
@@ -347,62 +341,6 @@ URL ค่าเริ่มต้น:
 
 <details>
 <summary><b>📖 รายละเอียดฟีเจอร์</b></summary>
-
-### 🚀 RTK Token Saver
-
-ผลลัพธ์จากเครื่องมือ (`git diff`, `grep`, `find`, `ls`, `tree`, log dumps...) มักกินงบประมาณ prompt 30-50% RTK ตรวจสอบและบีบอัดอย่างชาญฉลาดแบบ lossless **ก่อน**คำขอถึง LLM:
-
-- **ตัวกรอง:** `git-diff`, `git-status`, `grep`, `find`, `ls`, `tree`, `dedup-log`, `smart-truncate`, `read-numbered`, `search-list`
-- **ตรวจจับอัตโนมัติ:** ไม่ต้องตั้งค่า — RTK .peek 1KB แรกของแต่ละ `tool_result` และเลือกตัวกรองที่ถูกต้อง
-- **ปลอดภัยโดยการออกแบบ:** ถ้าตัวกรองล้มเหลว, ขว้าง error, หรือทำให้ผลลัพธ์ใหญ่ขึ้น RTK จะเก็บข้อความต้นฉบับไว้โดยเงียบๆ ไม่มี error ทำให้คำขอของคุณล้มเหลว
-- **ใช้ได้ทุกที่:** ใช้ได้กับทุกรูปแบบ (OpenAI, Claude, Gemini, Cursor, Kiro, OpenAI Responses) เพราะทำงาน **ก่อน**การแปลงรูปแบบใดๆ
-- **เปิดใช้งานเป็นค่าเริ่มต้น:** ปิด/เปิดได้ตลอดเวลาใน แดชบอร์ด → ตั้งค่า Endpoint
-
-```
-ไม่ใช้ RTK: ส่ง 47K โทเค็นให้ LLM
-ใช้ RTK:    ส่ง 28K โทเค็นให้ LLM   (ประหยัด 40% · บริบทเดียวกัน · คำตอบเดียวกัน)
-```
-
-### 🧠 Headroom Token Saver
-
-Headroom เป็นตัวเลือกและทำงานแยกกัน 9Router เรียก endpoint `/v1/compress` ของ Headroom จากนั้นยังคงเลือกเส้นทาง, fallback, auth และติดตามการใช้งานตามปกติ:
-
-```
-Client → 9Router → Headroom /v1/compress → 9Router → provider
-```
-
-ตั้งค่าท้องถิ่น:
-
-```bash
-pip install "headroom-ai[proxy]"
-headroom proxy --port 8787
-```
-
-เปิดใช้งานใน แดชบอร์ด → Endpoint → Token Saver → Headroom URL ค่าเริ่มต้น: `http://localhost:8787`
-
-ตัวอย่าง Docker:
-
-```bash
-# Headroom service ใน Docker network เดียวกัน
-http://host.docker.internal:8787
-```
-
-ถ้า Headroom ดับหรือคืน error, 9Router จะ fail open และส่งคำขอต้นฉบับ
-
-### 🐴 Ponytail (Lazy Senior Dev)
-
-Ponytail ฉีด prompt *"lazy senior dev"* เข้าไปในทุกคำขอ ทำให้ LLM เขียนโค้ดน้อยที่สุดแบบ YAGNI-first — ลบมากกว่าเพิ่ม, stdlib มากกว่า dep ใหม่, one-liner มากกว่า abstraction
-
-- **Lite** — สร้างตามที่ขอ, บอกชื่อทางเลือกที่ lazy กว่า
-- **Full** — บังคับ YAGNI ladder: stdlib → native → existing deps → one-liner → minimal code
-- **Ultra** — YAGNI extremist: ลบก่อน, ส่ง one-liner, ตั้งคำถามกับ requirement ที่เหลือในคำตอบเดียวกัน
-
-```
-ไม่ใช้ Ponytail: โค้ดเยอะ, abstraction เยอะ, "เผื่อไว้" scaffolding
-ใช้ Ponytail:    diff สั้นที่สุดที่ทำงานได้, ไม่เพิ่ม abstraction ที่ไม่ได้ขอ, โทเค็นน้อยลง
-```
-
-ไม่มีวันแลก: input validation, error handling ที่ป้องกัน data loss, security, accessibility หรือสิ่งที่ขอมาอย่างชัดเจน เปิดใช้งานใน แดชบอร์ด → Endpoint → Ponytail ใช้คู่กับ Caveman (ความกระชับ output) และ RTK (การบีบอัด input) ได้
 
 ### 🎯 Smart 3-Tier Fallback
 
@@ -639,7 +577,6 @@ Combo: "openclaw-free"
 - ถ้าปัญหายังคงอยู่: แดชบอร์ด → ผู้ให้บริการ → เชื่อมต่อใหม่
 
 **ค่าใช้จ่ายสูง**
-- เปิดใช้ RTK ใน แดชบอร์ด → ตั้งค่า Endpoint (เปิดเป็นค่าเริ่มต้น, ประหยัด 20-40% โทเค็น)
 - ตรวจสอบสถิติการใช้งานในแดชบอร์ด
 - สลับโมเดลหลักไป GLM/MiniMax
 - ใช้ชั้นฟรี (Kiro, OpenCode Free, Vertex) สำหรับงานที่ไม่สำคัญ

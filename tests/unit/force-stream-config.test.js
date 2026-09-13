@@ -55,24 +55,6 @@ vi.mock("../../open-sse/utils/toolDeduper.js", () => ({
   dedupeTools: vi.fn((tools) => ({ tools, stripped: [] })),
 }));
 
-vi.mock("../../open-sse/rtk/caveman.js", () => ({
-  injectCaveman: vi.fn(),
-}));
-
-vi.mock("../../open-sse/rtk/ponytail.js", () => ({
-  injectPonytail: vi.fn(),
-}));
-
-vi.mock("../../open-sse/rtk/index.js", () => ({
-  compressMessages: vi.fn(() => null),
-  formatRtkLog: vi.fn(() => ""),
-}));
-
-vi.mock("../../open-sse/rtk/headroom.js", () => ({
-  compressWithHeadroom: vi.fn(async () => null),
-  formatHeadroomLog: vi.fn(() => ""),
-}));
-
 vi.mock("../../open-sse/providers/capabilities.js", () => ({
   getCapabilitiesForModel: vi.fn(() => ({})),
 }));

@@ -49,7 +49,6 @@
        ↓
 ┌─────────────────────────────────────────────┐
 │           9Router (Smart Router)            │
-│  • RTK Token Saver (节省 20-40% Token)      │
 │  • 格式转换 (OpenAI ↔ Claude)               │
 │  • 配额追踪 (Quota tracking)                │
 │  • 自动刷新 OAuth Token                     │
@@ -61,7 +60,7 @@
        │   ↓ 触及预算上限
        └─→ [Tier 3: 免费] Kiro AI, OpenCode Free, Vertex AI ($300 credits)
 
-结果：永不停歇的编程体验，最低成本 + 通过 RTK 节省 20-40% Token
+结果：永不停歇的编程体验，最低成本
 ```
 
 ---

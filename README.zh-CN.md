@@ -2,9 +2,9 @@
 <div align="center">
   <img src="./images/9router.png?1" alt="9Router Dashboard" width="800"/>
   
-  # 9Router - 免费 AI 路由器与 Token 节省器
+  # 9Router - 免费 AI 路由器
   
-  **编程永不停歇。使用 RTK + 自动切换到免费/低价 AI 模型，节省 20-40% 的 tokens。**
+  **编程永不停歇。自动切换到免费/低价 AI 模型。**
   
   **将所有 AI 编程工具（Claude Code、Cursor、Antigravity、Copilot、Codex、Gemini、OpenCode、Cline、OpenClaw...）连接到 40+ AI 提供商和 100+ 模型。**
   
@@ -27,13 +27,11 @@
 
 - ❌ 订阅配额每月到期却未使用
 - ❌ 速率限制在编程中途打断你
-- ❌ 工具输出（git diff、grep、ls...）快速消耗 tokens
 - ❌ 昂贵的 API（每个提供商 $20-50/月）
 - ❌ 需要手动在提供商之间切换
 
 **9Router 解决这一切：**
 
-- ✅ **RTK Token 节省器** - 自动压缩 tool_result 内容，每次请求节省 20-40% tokens
 - ✅ **充分利用订阅** - 追踪配额，在重置前用尽每一分额度
 - ✅ **自动切换** - 订阅 → 低价 → 免费，零停机时间
 - ✅ **多账户支持** - 按提供商在账户之间轮询
@@ -52,7 +50,6 @@
        ↓
 ┌─────────────────────────────────────────────┐
 │           9Router（智能路由器）              │
-│  • RTK Token 节省器（减少 tool_result tokens）│
 │  • 格式转换（OpenAI ↔ Claude）              │
 │  • 配额追踪                                  │
 │  • 自动刷新 token                           │
@@ -64,7 +61,7 @@
        │   ↓ 预算超限
        └─→ [第三层：免费] Kiro、OpenCode Free、Vertex ($300 额度)
 
-结果：编程永不停歇，最小成本 + 通过 RTK 节省 20-40% tokens
+结果：编程永不停歇，最小成本
 ```
 
 ---
@@ -392,8 +389,6 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 | 功能 | 作用 | 为什么重要 |
 |---------|--------------|----------------|
-| 🚀 **RTK Token 节省器**（[RTK](https://github.com/rtk-ai/rtk) ⭐40K） | 压缩工具输出（`git diff`、`grep`、`ls`、`tree`...）后再发送给 LLM | 每次请求节省 **20-40% 输入 tokens** |
-| 🪨 **Caveman 模式**（[Caveman](https://github.com/JuliusBrussee/caveman) ⭐52K） | 注入 caveman 风格提示词 → LLM 回复简洁，保留技术实质 | 节省 **高达 65% 输出 tokens** |
 | 🎯 **智能三层切换** | 自动路由：订阅 → 低价 → 免费 | 编程永不停歇，零停机时间 |
 | 📊 **实时配额追踪** | 实时 token 计数 + 重置倒计时 | 充分利用订阅价值 |
 | 🔄 **格式转换** | OpenAI ↔ Claude ↔ Gemini ↔ Cursor ↔ Kiro ↔ Vertex | 兼容任何 CLI 工具 |
@@ -407,21 +402,6 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 <details>
 <summary><b>📖 功能详情</b></summary>
-
-### 🚀 RTK Token 节省器
-
-工具输出（`git diff`、`grep`、`find`、`ls`、`tree`、日志转储...）通常占用 30-50% 的提示词预算。RTK 在请求到达 LLM 之前检测并应用智能、无损压缩：
-
-- **过滤器：** `git-diff`、`git-status`、`grep`、`find`、`ls`、`tree`、`dedup-log`、`smart-truncate`、`read-numbered`、`search-list`
-- **自动检测：** 无需配置 — RTK 检查每个 `tool_result` 的前 1KB，选择合适的过滤器。
-- **安全设计：** 如果过滤器失败、抛出异常或使输出变大，RTK 会静默保留原始文本。错误永远不会中断你的请求。
-- **通用兼容：** 适用于所有格式（OpenAI、Claude、Gemini、Cursor、Kiro、OpenAI Responses），因为它在任何格式转换**之前**运行。
-- **默认开启：** 可随时在控制面板 → 端点设置中切换。
-
-```
-不使用 RTK：47K tokens 发送给 LLM
-使用 RTK：    28K tokens 发送给 LLM   (节省 40% · 相同上下文 · 相同答案)
-```
 
 ### 🎯 智能三层切换
 
@@ -522,7 +502,6 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 
 | 等级 | 提供商 | 成本 | 配额重置 | 适用场景 |
 |------|----------|------|-------------|----------|
-| **🚀 TOKEN 节省器** | **RTK（内置）** | **免费** | 始终开启 | **每次请求节省 20-40% tokens** |
 | **💳 订阅** | Claude Code (Pro/Max) | $20-200/月 | 5小时 + 每周 | 已有订阅的用户 |
 | | Codex (Plus/Pro) | $20-200/月 | 5小时 + 每周 | OpenAI 用户 |
 | | GitHub Copilot | $10-19/月 | 每月 | GitHub 用户 |
@@ -534,7 +513,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
  | | OpenCode Free | $0 |  varies* | 无需认证，自动获取模型（列表会变化） |
  | | Vertex AI | $300 额度 | 新 GCP 账户 | Gemini 3 Pro + DeepSeek + GLM-5（使用 Vertex AI Studio 端点消耗免费额度） |
 
-**💡 专业提示：** RTK + Kiro AI + OpenCode Free 组合 = **$0 成本 + 节省 20-40% tokens**！
+**💡 专业提示：** Kiro AI + OpenCode Free 组合 = **$0 成本**！
 
 ---
 
@@ -602,7 +581,7 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
   3. oc/<auto>                 （OpenCode Free，无需认证）
 
 月成本：$0
-质量：生产级模型 + RTK 节省 20-40% tokens
+质量：生产级模型
 ```
 
 ### 场景 3："我需要 24/7 编码，不中断"
@@ -925,7 +904,7 @@ Vertex 合作伙伴（通过 Vertex 提供 Anthropic / DeepSeek / GLM / Qwen）�
   2. kr/glm-5 (通过 Kiro 免费使用 GLM-5)
   3. vertex/gemini-3.1-pro-preview ($300 免费额度)
 
-成本：通过 RTK 永久 $0（+ 节省 20-40% tokens）！
+成本：永久 $0！
 ```
 
 </details>
@@ -1208,7 +1187,6 @@ docker stop 9router && docker rm 9router
 - 如果问题持续：控制面板 → 提供商 → 重新连接
 
 **高成本**
-- 在控制面板 → 端点设置中启用 RTK（默认开启，节省 20-40% tokens）
 - 在控制面板中检查使用统计
 - 将主模型切换到 GLM/MiniMax
 - 对于非关键任务使用免费等级（Kiro、OpenCode Free、Vertex）
@@ -1296,10 +1274,8 @@ Authorization: Bearer your-api-key
 站在巨人的肩膀上构建：
 
 - **CLIProxyAPI** — 启发了这个 JavaScript 移植的原始 Go 实现。
-- **[RTK](https://github.com/rtk-ai/rtk)** ![Stars](https://img.shields.io/github/stars/rtk-ai/rtk?style=flat&color=yellow) — Rust token 节省器。9Router 将其压缩管道移植到 JS → 每次请求 **减少 20-40% 输入 tokens**。
-- **[Caveman](https://github.com/JuliusBrussee/caveman)** ![Stars](https://img.shields.io/github/stars/JuliusBrussee/caveman?style=flat&color=yellow) by **[@JuliusBrussee](https://github.com/JuliusBrussee)** — 病毒式传播的 *"为什么用很多 token 当少的 token 就能搞定"*。9Router 适配其提示词 → **减少 65% 输出 tokens**。
 
-非常感谢这些作者 — 没有他们的工作，9Router 的 token 节省功能就不会存在。在 GitHub 上给他们加星！
+非常感谢这些作者 — 没有他们的工作，9Router 就不会存在。在 GitHub 上给他们加星！
 
 ---
 

@@ -49,11 +49,6 @@ async function runNativeCodexRequest(model, reasoning) {
     credentials: { accessToken: "test-token", providerSpecificData: {} },
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
     connectionId: "test-connection",
-    rtkEnabled: false,
-    headroomEnabled: false,
-    cavemanEnabled: false,
-    ponytailEnabled: false,
-    pxpipeEnabled: false,
     sourceFormatOverride: "openai-responses",
     clientRawRequest: {
       endpoint: "/v1/responses",

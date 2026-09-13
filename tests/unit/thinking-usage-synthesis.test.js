@@ -756,7 +756,7 @@ describe("non-streaming JSON synthesis", () => {
       clientRawRequest: null, requestedModel: "oc/big-pickle",
       reqLogger: { logProviderResponse() {}, logConvertedResponse() {} },
       toolNameMap: null, customToolNames: null,
-      trackDone: () => {}, appendLog: () => {}, pxpipe: null, reqTag: "", log: null,
+      trackDone: () => {}, appendLog: () => {}, reqTag: "", log: null,
       thinkingIntent, thinkingSynthesis,
     });
     return JSON.parse(await result.response.text());

@@ -1,9 +1,9 @@
 <div align="center">
   <img src="../images/9router.png?1" alt="Painel do 9Router" width="800"/>
   
-  # 9Router — roteador de IA GRATUITO e economizador de tokens
+  # 9Router — roteador de IA GRATUITO
   
-  **Nunca pare de codificar. Economize 20-40% de tokens com RTK + fallback automático para modelos de IA GRATUITOS e baratos.**
+  **Nunca pare de codificar. Fallback automático para modelos de IA GRATUITOS e baratos.**
   
   **Conecte todas as ferramentas de código de IA (Claude Code, Cursor, Antigravity, Copilot, Codex, Gemini, OpenCode, Cline, OpenClaw...) a mais de 40 provedores de IA e mais de 100 modelos.**
   
@@ -29,13 +29,11 @@
 
 - ❌ A cota de assinatura expira sem ser utilizada todos os meses
 - ❌ Os limites de requisições interrompem você durante a programação
-- ❌ Saídas de ferramentas (`git diff`, `grep`, `ls`...) consomem tokens rapidamente
 - ❌ APIs caras ($20–50/mês por provedor)
 - ❌ Troca manual entre provedores
 
 **9Router resolve isso:**
 
-- ✅ **RTK Token Saver** - Compactação automática do conteúdo de `tool_result`, economize 20-40% de tokens por solicitação
 - ✅ **Maximize as assinaturas** - Rastreie a cota, aproveite toda a cota antes da renovação
 - ✅ **Auto fallback** - Assinatura → Econômico → Gratuito, sem tempo de inatividade
 - ✅ **Múltiplas contas** - Round-robin entre contas por provedor
@@ -54,7 +52,6 @@
        ↓
 ┌─────────────────────────────────────────────┐
 │           9Router (Roteador inteligente)            │
-│  • RTK Token Saver (reduz tokens de `tool_result`) │
 │  • Tradução de formatos (OpenAI ↔ Claude)     │
 │  • Acompanhamento de cotas                           │
 │  • Renovação automática de token                       │
@@ -66,7 +63,7 @@
        │   ↓ limite de orçamento
        └─→ [Nível 3: GRATUITO] Kiro, OpenCode Free, Vertex ($300 em créditos)
 
-Resultado: programe sem interrupções, com custo mínimo e economia de 20% a 40% dos tokens via RTK
+Resultado: programe sem interrupções, com custo mínimo
 ```
 
 ---
@@ -512,10 +509,6 @@ terceiros por meio de um provedor chamado "Auto-hospedado".
 
 | Recurso | O que faz | Por que é importante |
 | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| 🚀 **RTK Token Saver** ([RTK](https://github.com/rtk-ai/rtk) ⭐40K) | Compactar saídas de ferramentas (`git diff`, `grep`, `ls`, `tree`...) antes de enviar para LLM | Economize **20-40% de tokens de entrada** por solicitação |
-| 🧠 **Headroom Token Saver** ([Headroom](https://github.com/chopratejas/headroom)) | Proxy `/v1/compress` externo opcional antes do roteamento do provedor | Economize mais tokens de contexto sem alterar clientes |
-| 🪨 **Modo Caveman** ([Caveman](https://github.com/JuliusBrussee/caveman) ⭐52K) | Injetar prompt de fala do homem das cavernas → Respostas do LLM concisas, substância técnica preservada | Economize **até 65% de tokens de produção** |
-| 🐴 **Ponytail** ([Ponytail](https://github.com/DietrichGebert/ponytail)) | Injetar prompt "lazy senior dev" → LLM escreve código mínimo YAGNI primeiro (Lite/Full/Ultra) | **Menos tokens de saída, menos refatoração** |
 | 🎯 **Fallback inteligente de 3 camadas** | Rota automática: Assinatura → Barato → Grátis | Nunca pare de codificar, tempo de inatividade zero |
 | 📊 **Acompanhamento de cotas em tempo real** | Contagem de tokens ao vivo + contagem regressiva de redefinição | Maximizar o valor da assinatura |
 | 🔄 **Tradução de formato** | OpenAI ↔ Claude ↔ Gemini ↔ Cursor ↔ Kiro ↔ Vertex | Funciona com qualquer ferramenta CLI |
@@ -527,69 +520,8 @@ terceiros por meio de um provedor chamado "Auto-hospedado".
 | 📊 **Análise de uso** | Acompanhe tokens, custos e tendências ao longo do tempo | Otimizar gastos |
 | 🌐 **Implante em qualquer lugar** | Localhost, VPS, Docker, Cloudflare Workers | Opções flexíveis de implantação |
 
-Configure `X-9Router-Token-Saver: off` para ignorar todos os economizadores de tokens para uma solicitação de chat.
-
 <details>
 <summary><b>📖 Detalhes do recurso</b></summary>
-
-### 🚀 RTK Token Saver
-
-As saídas da ferramenta (`git diff`, `grep`, `find`, `ls`, `tree`, despejos de log...) geralmente consomem de 30 a 50% do seu orçamento de contexto. O RTK os detecta e aplica compactação inteligente e sem perdas **antes** que a solicitação chegue ao LLM:
-
-- **Filtros:** `git-diff`, `git-status`, `grep`, `find`, `ls`, `tree`, `dedup-log`, `smart-truncate`, `read-numbered`, `search-list`
-- **Detecção automática:** Não é necessária configuração — o RTK inspeciona o primeiro 1 KB de cada `tool_result` e escolhe o filtro correto.
-- **Seguro por design:** Se um filtro falhar, gerar uma exceção ou aumentar a saída, o RTK mantém silenciosamente o texto original. Erros nunca interrompem sua solicitação.
-- **Universal:** Funciona em todos os formatos (OpenAI, Claude, Gemini, Cursor, Kiro, OpenAI Responses) porque é executado **antes** de qualquer tradução de formato.
-- **Padrão ATIVADO:** Alterne a qualquer momento em Painel → Configurações de endpoint.
-
-```
-Sem RTK: 47 mil tokens enviados ao LLM
-Com RTK: 28 mil tokens enviados ao LLM (40% de economia · mesmo contexto · mesma resposta)
-```
-
-### 🧠 Headroom Token Saver
-
-O headroom é opcional e funciona separadamente. 9Router chama o endpoint `/v1/compress` local do Headroom e, em seguida, mantém roteamento normal, fallback, autenticação e rastreamento de uso:
-
-```
-Cliente → 9Router → Headroom /v1/compress → 9Router → provedor
-```
-
-Configuração local:
-
-```bash
-pip install "headroom-ai[proxy]"
-headroom proxy --port 8787
-```
-
-Habilite em Painel → Endpoint → Economia de tokens → Headroom. URL padrão: `http://localhost:8787`.
-
-Exemplos de Docker:
-
-```bash
-# Serviço Headroom na mesma rede Docker
-http://headroom:8787
-
-# Headroom em execução na máquina host
-http://host.docker.internal:8787
-```
-
-Se o Headroom estiver inativo ou retornar um erro, o o 9Router seguirá em modo aberto e enviará a solicitação original.
-
-### 🐴 Ponytail (desenvolvedor sênior preguiçoso)
-
-O Ponytail injeta um prompt do sistema _"lazy senior dev"_ em cada solicitação, direcionando o LLM para o código mínimo, primeiro YAGNI - preferindo exclusão a adição, stdlib sobre novos deps, one-liners sobre abstrações. Adaptado de [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail).
-
-- **Lite** — Construa o que for solicitado, nomeie a alternativa mais preguiçosa.
-- **Full** — escada YAGNI aplicada: stdlib → nativo → dependências existentes → one-liner → código mínimo.
-- **Ultra** — Extremista YAGNI: exclua primeiro, envie a linha única, desafie o restante do requisito na mesma resposta.
-
-```
-Sem Ponytail: código verboso, abstrações extras e estrutura "por precaução"
-Com Ponytail: menor diff funcional, sem abstrações não solicitadas e menos tokens
-```
-
-Nunca negocie: validação de entrada, tratamento de erros que evita perda de dados, segurança, acessibilidade ou qualquer coisa explicitamente solicitada. Ative em Painel → Endpoint → Ponytail. Pode ser combinado com Caveman (concisão de saída) e RTK (compressão de entrada).
 
 ### 🎯 Fallback inteligente de 3 camadas
 
@@ -693,7 +625,6 @@ Tradução perfeita entre formatos:
 
 | Nível | Provedor | Custo | Redefinição de cota | Melhor para |
 | ------------------- | --------------------- | ------------ | ---------------- | --------------------------------------- |
-| **🚀 ECONOMIA DE TOKEN** | **RTK (integrado)** | **GRÁTIS** | Sempre ligado | **Economize 20-40% de tokens em CADA solicitação** |
 | **💳 ASSINATURA** | Claude Code (Pro/Max) | $20-200/mo | 5h + semanalmente | Já inscrito |
 |                     | Codex (Plus/Pro) | $20-200/mo | 5h + semanalmente | Usuários OpenAI |
 |                     | GitHub Copilot | $10-19/mo | Mensalmente | Usuários do GitHub |
@@ -705,7 +636,7 @@ Tradução perfeita entre formatos:
  |                     | OpenCode Free | $0 | Varia* | Sem autenticação, modelos de busca automática (a lista muda ao longo do tempo) |
 |                     | Vertex AI | Créditos $300 | Novas contas do GCP | Gemini 3 Pro + DeepSeek + GLM-5 (use o endpoint Vertex AI Studio para obter créditos gratuitos) |
 
-**💡 Dica profissional:** combinação RTK + Kiro AI + OpenCode grátis = **custo $0 + economia de token de 20-40%**!
+**💡 Dica profissional:** combinação Kiro AI + OpenCode grátis = **custo $0**!
 
 ---
 
@@ -777,7 +708,7 @@ Combo: "free-forever"
   3. oc/<auto>                 (OpenCode Free, sem autenticação)
 
 Custo mensal: $0
-Qualidade: modelos prontos para produção + economia de 20–40% com RTK
+Qualidade: modelos prontos para produção
 ```
 
 ### Caso 3: "Preciso de codificação 24 horas por dia, 7 dias por semana, sem interrupções"
@@ -1112,7 +1043,7 @@ Modelos:
   2. kr/glm-5 (GLM-5 gratuito via Kiro)
   3. vertex/gemini-3.1-pro-preview ($300 free credits)
 
-Custo: $0 (+ economia de 20–40% de tokens com RTK)!
+Custo: $0!
 ```
 
 </details>
@@ -1417,7 +1348,6 @@ Notas:
 
 **Custos elevados**
 
-- Habilite RTK no Dashboard → Configurações de endpoint (padrão LIGADO, economiza 20-40% de tokens)
 - Verifique as estatísticas de uso no Dashboard
 - Mude o modelo primário para GLM/MiniMax
 - Use o nível gratuito (Kiro, OpenCode Free, Vertex) para tarefas não críticas
@@ -1506,11 +1436,8 @@ Obrigado a todos os colaboradores que ajudaram a tornar o 9Router melhor!
 Construído sobre ombros de gigantes:
 
 - **[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)** — implementação Go original que inspirou esta versão JavaScript.
-- **[RTK](https://github.com/rtk-ai/rtk)** ![Stars](https://img.shields.io/github/stars/rtk-ai/rtk?style=flat&color=yellow) — Economizador de tokens em Rust. O 9Router porta seu pipeline de compactação para JS → **−20-40% de tokens de entrada** em cada solicitação.
-- **[Caveman](https://github.com/JuliusBrussee/caveman)** ![Stars](https://img.shields.io/github/stars/JuliusBrussee/caveman?style=flat&color=yellow) por **[@JuliusBrussee](https://github.com/JuliusBrussee)** — viral _"por que usar muitos tokens quando poucos tokens resolvem"_. 9Router adapta seu prompt → **−65% tokens de saída**.
-- **[Ponytail](https://github.com/DietrichGebert/ponytail)** ![Estrelas](https://img.shields.io/github/stars/DietrichGebert/ponytail?style=flat&color=yellow) por **[@DietrichGebert](https://github.com/DietrichGebert)** — _"desenvolvedor sênior preguiçoso"_ habilidade. 9Router injeta sua abordagem YAGNI-first → **menos tokens, menos código, diferenças mais curtas**.
 
-Um grande agradecimento a esses autores – sem o trabalho deles, os recursos de economia de tokens do 9Router não existiriam. Dê uma ⭐ a eles no GitHub!
+Um grande agradecimento a esses autores – sem o trabalho deles, o 9Router não existiria. Dê uma ⭐ a eles no GitHub!
 
 ---
 

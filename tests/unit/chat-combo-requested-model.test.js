@@ -47,8 +47,6 @@ vi.mock("../../src/sse/services/tokenRefresh.js", () => ({
   updateProviderCredentials: vi.fn(),
   checkAndRefreshToken: async (_provider, credentials) => credentials,
 }));
-vi.mock("@/lib/pxpipe/loader.js", () => ({ getTransform: async () => null }));
-vi.mock("@/lib/pxpipe/events.js", () => ({ appendPxpipeEvent: vi.fn() }));
 vi.mock("../../open-sse/utils/error.js", () => ({
   errorResponse: (status, message) => Response.json({ error: message }, { status }),
   unavailableResponse: (status, message) => Response.json({ error: message }, { status }),

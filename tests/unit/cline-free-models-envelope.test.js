@@ -137,7 +137,6 @@ describe("cline free-models envelope in nonStreamingHandler", () => {
       customToolNames: null,
       trackDone: () => {},
       appendLog: () => {},
-      pxpipe: null,
       reqTag: "t",
       log: null,
     });

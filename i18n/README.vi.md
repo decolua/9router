@@ -1,9 +1,9 @@
 <div align="center">
   <img src="../images/9router.png?1" alt="Bảng điều khiển 9Router" width="800"/>
   
-  # 9Router - Free AI Router & Token Saver
+  # 9Router - Free AI Router
   
-  **Không bao giờ ngừng code. Tiết kiệm 20-40% token với RTK + tự động dự phòng sang các mô hình AI MIỄN PHÍ & giá rẻ.**
+  **Không bao giờ ngừng code. Tự động dự phòng sang các mô hình AI MIỄN PHÍ & giá rẻ.**
   
   **Kết nối tất cả công cụ AI Code (Claude Code, Codex, Cursor, Cline, Copilot, Antigravity...) tới 40+ Nhà cung cấp AI & 100+ Mô hình.**
   
@@ -22,13 +22,11 @@
 
 - ❌ Hạn mức gói đăng ký hết hạn mỗi tháng mà không dùng hết
 - ❌ Giới hạn tốc độ (rate limit) làm gián đoạn công việc mid-coding
-- ❌ Kết quả của công cụ (git diff, grep, ls...) ngốn rất nhiều token
 - ❌ Chi phí API đắt đỏ ($20-50/tháng cho từng nhà cung cấp)
 - ❌ Phải chuyển đổi thủ công giữa các nhà cung cấp AI
 
 **9Router giải quyết vấn đề này:**
 
-- ✅ **RTK Token Saver** - Tự động nén nội dung `tool_result`, tiết kiệm 20-40% token trên mỗi request
 - ✅ **Tối đa hóa gói đăng ký** - Theo dõi hạn mức, tận dụng triệt để trước khi reset
 - ✅ **Tự động dự phòng (Auto Fallback)** - Gói đăng ký → Giá rẻ → Miễn phí, không lo downtime
 - ✅ **Đa tài khoản (Multi-account)** - Xoay vòng (round-robin) các tài khoản cho mỗi nhà cung cấp
@@ -47,7 +45,6 @@
        ↓
 ┌─────────────────────────────────────────────┐
 │           9Router (Smart Router)            │
-│  • RTK Token Saver (nén tool_result token) │
 │  • Dịch chuyển định dạng (OpenAI ↔ Claude) │
 │  • Quota tracking (theo dõi hạn mức)       │
 │  • Tự động làm mới OAuth Token             │
@@ -59,7 +56,7 @@
        │   ↓ chạm ngân sách
        └─→ [Tier 3: MIỄN PHÍ] Kiro AI, OpenCode Free, Vertex AI ($300 credits)
 
-Kết quả: Không bao giờ ngừng code, chi phí tối thiểu + tiết kiệm 20-40% token qua RTK
+Kết quả: Không bao giờ ngừng code, chi phí tối thiểu
 ```
 
 ---

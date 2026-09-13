@@ -71,8 +71,8 @@ State is **no longer `db.json`**. It's a SQLite layer under `src/lib/db/` with a
 - DB file location resolves via `src/lib/db/paths.js` (`DATA_DIR`, else `~/.9router/`).
 - Usage/logs (`src/lib/usageDb.js`, `usage.json` + `log.txt`) still live under `~/.9router` and do **not** follow `DATA_DIR`.
 
-### RTK token saver (`open-sse/rtk/`)
-Pre-translate hooks that compress `tool_result` content in-place to cut tokens. **Fail-open**: any error returns null and leaves the body untouched — never throw out of them. Skips `is_error`/`status:"error"` results to preserve traces.
+### Shared injector (`open-sse/rtk/systemInject.js`)
+The token-saver feature (RTK/Headroom/Caveman/Ponytail/PXPipe) is removed; the `rtk/` directory now only holds `systemInject.js`, a shared identity/system-prompt injector used by the combo identity-prompt feature. **Fail-open**: any error returns null and leaves the body untouched — never throw out of it.
 
 ## Conventions & gotchas
 
